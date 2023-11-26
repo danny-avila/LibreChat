@@ -1,7 +1,8 @@
-// const { Agent, ProxyAgent } = require('undici');
-const BaseClient = require('./BaseClient');
-const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const Anthropic = require('@anthropic-ai/sdk');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
+const { getResponseSender, EModelEndpoint } = require('~/server/routes/endpoints/schemas');
+const { getModelMaxTokens } = require('~/utils');
+const BaseClient = require('./BaseClient');
 
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
@@ -9,13 +10,9 @@ const AI_PROMPT = '\n\nAssistant:';
 const tokenizersCache = {};
 
 class AnthropicClient extends BaseClient {
-  constructor(apiKey, options = {}, cacheOptions = {}, baseURL) {
-    super(apiKey, options, cacheOptions);
+  constructor(apiKey, options = {}) {
+    super(apiKey, options);
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
-    this.sender = 'Anthropic';
-    if (baseURL) {
-      this.baseURL = baseURL;
-    }
     this.userLabel = HUMAN_PROMPT;
     this.assistantLabel = AI_PROMPT;
     this.setOptions(options);
@@ -43,13 +40,13 @@ class AnthropicClient extends BaseClient {
       ...modelOptions,
       // set some good defaults (check for undefined in some cases because they may be 0)
       model: modelOptions.model || 'claude-1',
-      temperature: typeof modelOptions.temperature === 'undefined' ? 0.7 : modelOptions.temperature, // 0 - 1, 0.7 is recommended
+      temperature: typeof modelOptions.temperature === 'undefined' ? 1 : modelOptions.temperature, // 0 - 1, 1 is default
       topP: typeof modelOptions.topP === 'undefined' ? 0.7 : modelOptions.topP, // 0 - 1, default: 0.7
       topK: typeof modelOptions.topK === 'undefined' ? 40 : modelOptions.topK, // 1-40, default: 40
       stop: modelOptions.stop, // no stop method for now
     };
 
-    this.maxContextTokens = this.options.maxContextTokens || 99999;
+    this.maxContextTokens = getModelMaxTokens(this.modelOptions.model) ?? 100000;
     this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1500;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
@@ -61,6 +58,14 @@ class AnthropicClient extends BaseClient {
         }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`,
       );
     }
+
+    this.sender =
+      this.options.sender ??
+      getResponseSender({
+        model: this.modelOptions.model,
+        endpoint: EModelEndpoint.anthropic,
+        modelLabel: this.options.modelLabel,
+      });
 
     this.startToken = '||>';
     this.endToken = '';
@@ -81,16 +86,15 @@ class AnthropicClient extends BaseClient {
   }
 
   getClient() {
-    if (this.baseURL) {
-      return new Anthropic({
-        apiKey: this.apiKey,
-        baseURL: this.baseURL,
-      });
-    } else {
-      return new Anthropic({
-        apiKey: this.apiKey,
-      });
+    const options = {
+      apiKey: this.apiKey,
+    };
+
+    if (this.options.reverseProxyUrl) {
+      options.baseURL = this.options.reverseProxyUrl;
     }
+
+    return new Anthropic(options);
   }
 
   async buildMessages(messages, parentMessageId) {
