@@ -1,5 +1,3 @@
-// const path = require('path');
-// require('module-alias')({ base: path.resolve(__dirname, '..') });
 const connectDb = require('../api/lib/db/connectDb');
 const { askQuestion, silentExit } = require('./helpers');
 const User = require('../api/models/User');
