@@ -82,7 +82,7 @@ Now select the free option.
 
 **2.** On the left panel, click on `keys`.
 
-![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-11-26%20152128.png)
+![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-11-26%20165630.png)
 
 **3.** Click on `Add` and insert a name for your key.
 
