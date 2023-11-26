@@ -117,6 +117,7 @@ const getAnthropicModels = () => {
   let models = [
     'claude-2.1',
     'claude-2',
+    'claude-1.2',
     'claude-1',
     'claude-1-100k',
     'claude-instant-1',
