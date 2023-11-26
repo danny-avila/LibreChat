@@ -51,7 +51,7 @@ This is the authentication key to use when utilizing the search endpoint. Please
 
 ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-11-26%20151753.png)
 
-Now select the free option.
+Now select the free option or select your preferred option (may incur charges).
 
 ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-11-26%20151758.png)
 
