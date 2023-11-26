@@ -63,7 +63,7 @@ class AzureAISearch extends Tool {
   }
 
   getApiVersion() {
-    return process.env.AZURE_AI_SEARCH_API_VERSION || '2020-06-30';
+    return process.env.AZURE_AI_SEARCH_API_VERSION || '2023-11-01';
   }
 
   getQueryType() {
