@@ -14,7 +14,7 @@ function encodeImage(imagePath) {
   });
 }
 
-async function encodeAndMove(req, file) {
+async function updateAndEncode(req, file) {
   const { publicPath, imageOutput } = req.app.locals.config;
   const userPath = path.join(imageOutput, req.user.id);
 
@@ -23,24 +23,16 @@ async function encodeAndMove(req, file) {
   }
   const filepath = path.join(publicPath, file.filepath);
 
-  if (!filepath.includes('temp')) {
-    const base64 = await encodeImage(filepath);
-    return [file, base64];
-  }
-
-  const newPath = path.join(userPath, path.basename(file.filepath));
-  await fs.promises.rename(filepath, newPath);
-  const newFilePath = path.posix.join('/', 'images', req.user.id, path.basename(file.filepath));
   const promises = [];
-  promises.push(updateFile({ file_id: file.file_id, filepath: newFilePath }));
-  promises.push(encodeImage(newPath));
+  promises.push(updateFile({ file_id: file.file_id }));
+  promises.push(encodeImage(filepath));
   return await Promise.all(promises);
 }
 
 async function encodeAndFormat(req, files) {
   const promises = [];
   for (let file of files) {
-    promises.push(encodeAndMove(req, file));
+    promises.push(updateAndEncode(req, file));
   }
 
   // TODO: make detail configurable, as of now resizing is done

@@ -7,12 +7,17 @@ import {
   useSetRecoilState,
 } from 'recoil';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
-import type { TOptionSettings } from '~/common';
+import type { TOptionSettings, ExtendedFile } from '~/common';
 import { useEffect } from 'react';
 
 const conversationByIndex = atomFamily<TConversation | null, string | number>({
   key: 'conversationByIndex',
   default: null,
+});
+
+const filesByIndex = atomFamily<Map<string, ExtendedFile>, string | number>({
+  key: 'filesByIndex',
+  default: new Map(),
 });
 
 const conversationKeysAtom = atom<(string | number)[]>({
@@ -99,6 +104,7 @@ function useCreateConversationAtom(key: string | number) {
 
 export default {
   conversationByIndex,
+  filesByIndex,
   presetByIndex,
   submissionByIndex,
   textByIndex,
