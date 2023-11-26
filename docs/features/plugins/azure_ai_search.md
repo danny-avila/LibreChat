@@ -5,12 +5,7 @@ Through the plugins endpoint, you can use Azure AI Search for answers to your qu
 
 ### Required
 
-To get started, you need to get an Azure AI Search endpoint URL, index name, and an API Key. You can then define these as follows in your `.env` file:
-```env
-AZURE_AI_SEARCH_SERVICE_ENDPOINT="..."
-AZURE_AI_SEARCH_INDEX_NAME="..."
-AZURE_AI_SEARCH_API_KEY="..."
-```
+To get started, you need to get an Azure AI Search endpoint URL, index name, and an API Key. You can then define on instalation of plugin.
 
 ### AZURE_AI_SEARCH_SERVICE_ENDPOINT
 
@@ -24,7 +19,7 @@ This is the name of the index to be searched (e.g., `hotels-sample-index`).
 
 This is the authentication key to use when utilizing the search endpoint. Please issue it from the management console. Use the Value, not the name of the authentication key.
 
-# Tutorial
+# Introduction to tutorial
 
 ## Create or log in to your account on Azure Portal
 
