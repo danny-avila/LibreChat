@@ -9,6 +9,7 @@ const PaypalReturnHandler = () => {
     const paymentId = searchParams.get('paymentId');
     const PayerID = searchParams.get('PayerID');
     const paymentReference = searchParams.get('paymentReference');
+    const planId = searchParams.get('planId');
 
     console.log(`[PaypalReturnHandler] Payment ID: ${paymentId}, Payer ID: ${PayerID}, Payment Reference: ${paymentReference}`);
 
@@ -17,6 +18,7 @@ const PaypalReturnHandler = () => {
         PayerID,
         paymentId,
         paymentReference,
+        planId,
         paymentMethod: 'paypal'
       }).toString();
 

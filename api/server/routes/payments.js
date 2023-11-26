@@ -7,7 +7,7 @@ const PaymentRefUserId = require('../../models/paymentReference.js');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 const util = require('util');
 const {
-  singlePaymentTimeTracker,
+  calcExpiryDate,
   createPaymentRecord,
   getUserSessionFromReference } = require('../../subscriptionManagement/subscriptionUtils.js');
 const moment = require('moment-timezone');
@@ -55,7 +55,8 @@ router.post('/create-payment-paypal', requireJwtAuth, async (req, res) => {
         payment_method: 'paypal'
       },
       redirect_urls: {
-        return_url: `${baseUrl}/subscription/paypal-return?paymentReference=${paymentReference}&paymentMethod=paypal`,
+        return_url: `${baseUrl}/subscription/paypal-return?paymentReference=${paymentReference}&paymentMethod=paypal` +
+          `&planId=${planId}`,
         cancel_url: `${baseUrl}/subscription/payment-cancelled`
       },
       transactions: [{
@@ -67,6 +68,8 @@ router.post('/create-payment-paypal', requireJwtAuth, async (req, res) => {
         }
       }]
     };
+
+    console.log(`paypal return url: ${paymentDetails.return_url}`)
 
     const paymentResult = await createPayment(paymentDetails);
     let approvalUrl = paymentResult.links.find(link => link.rel === 'approval_url');
@@ -121,10 +124,11 @@ router.post('/create-payment-wechatpay', requireJwtAuth, async (req, res) => {
         `?paymentReference=${paymentReference}` +
         '&paymentMethod=wechatpay' +
         `&userId=${userId}` +
-        '&sessionId={CHECKOUT_SESSION_ID}',
+        '&sessionId={CHECKOUT_SESSION_ID}' +
+        `&planId=${planId}`,
       cancel_url: `${baseUrl}/subscription/payment-failed`,
     };
-
+    console.log(`wechatpay successful url: ${stripeParams.success_url}`)
     const session = await stripe.checkout.sessions.create(stripeParams);
     res.json({ sessionId: session.id });
   } catch (error) {
@@ -167,10 +171,11 @@ router.post('/create-payment-alipay', requireJwtAuth, async (req, res) => {
         `?paymentReference=${paymentReference}` +
         '&paymentMethod=alipay' +
         `&userId=${userId}` +
-        '&sessionId={CHECKOUT_SESSION_ID}',
+        '&sessionId={CHECKOUT_SESSION_ID}' +
+        `&planId=${planId}`,
       cancel_url: `${baseUrl}/subscription/payment-failed`,
     };
-
+    console.log(`alipay successful url: ${stripeParams.success_url}`)
     const session = await stripe.checkout.sessions.create(stripeParams);
     res.json({ sessionId: session.id });
   } catch (error) {
@@ -180,14 +185,15 @@ router.post('/create-payment-alipay', requireJwtAuth, async (req, res) => {
 });
 
 router.get('/verify-wechatpay', requireJwtAuth, async (req, res) => {
-  const { userId, sessionId } = req.query;
+  const { userId, sessionId, planId } = req.query;
+  console.log(`plan type is: ${planId}`)
 
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     if (session.payment_status === 'paid') {
       console.log('[Verify WeChat Pay] Payment status is paid. Processing start and end times.');
-      const { startTime, endTime } = singlePaymentTimeTracker();
+      const { startTime, endTime } = calcExpiryDate(planId);
       console.log('[Verify WeChat Pay] Calculated startTime and endTime:', startTime, endTime);
       // const userSession = await getUserSessionFromReference(paymentReference);
 
@@ -199,6 +205,7 @@ router.get('/verify-wechatpay', requireJwtAuth, async (req, res) => {
         session.id,
         session.amount_total,
         session.currency,
+        planId,
         startTime,
         endTime
       );
@@ -224,12 +231,13 @@ router.get('/verify-wechatpay', requireJwtAuth, async (req, res) => {
 });
 
 router.get('/verify-alipay', requireJwtAuth, async (req, res) => {
-  const { userId, sessionId } = req.query;
+  const { userId, sessionId, planId } = req.query;
+  console.log(`plan type is: ${planId}`)
 
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     if (session.payment_status === 'paid') {
-      const { startTime, endTime } = singlePaymentTimeTracker();
+      const { startTime, endTime } = calcExpiryDate(planId);
 
       await createPaymentRecord(
         userId,
@@ -237,6 +245,7 @@ router.get('/verify-alipay', requireJwtAuth, async (req, res) => {
         session.id,
         session.amount_total,
         session.currency,
+        planId,
         startTime,
         endTime
       );
@@ -262,7 +271,8 @@ router.get('/verify-alipay', requireJwtAuth, async (req, res) => {
 });
 
 router.get('/success', async (req, res) => {
-  const { paymentMethod, PayerID, paymentId, paymentReference } = req.query;
+  const { paymentMethod, PayerID, paymentId, paymentReference, planId } = req.query;
+  console.log(`plan type is: ${planId}`)
 
   console.log(
     `[Payment Success] Start processing with paymentMethod: ${paymentMethod},` +
@@ -290,7 +300,7 @@ router.get('/success', async (req, res) => {
         executedPayment = await executePayment(paymentId, execute_payment_json);
         transaction = executedPayment.transactions[0];
         sale = transaction.related_resources[0].sale;
-        ({ startTime, endTime } = singlePaymentTimeTracker());
+        ({ startTime, endTime } = calcExpiryDate(planId));
         break;
       }
 
@@ -305,6 +315,7 @@ router.get('/success', async (req, res) => {
       paymentId,
       sale.amount.total,
       sale.amount.currency,
+      planId,
       startTime,
       endTime
     );

@@ -9,12 +9,14 @@ const WeChatPayReturnHandler = () => {
     const paymentReference = searchParams.get('paymentReference');
     const userId = searchParams.get('userId');
     const sessionId=searchParams.get('sessionId');
+    const planId = searchParams.get('planId');
 
     if (paymentReference) {
       const queryParams = new URLSearchParams({
         paymentReference,
         userId,
         sessionId,
+        planId,
         paymentMethod: 'wechatpay'
       }).toString();
 

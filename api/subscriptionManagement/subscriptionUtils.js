@@ -1,12 +1,23 @@
 const PaymentRefUserId = require('../models/paymentReference.js'); // Store paymentreference and userID
 const Payment = require('../models/payments.js');
 
-const singlePaymentTimeTracker = () => {
+const calcExpiryDate = (planType) => {
   const startTime = new Date();
+  let endTime = new Date(startTime);
 
-  // Assuming the end time is set to one month after the start time
-  const endTime = new Date(startTime);
-  endTime.setMonth(startTime.getMonth() + 1);
+  switch (planType) {
+    case 'month':
+      endTime.setMonth(startTime.getMonth() + 1);
+      break;
+    case 'quarter':
+      endTime.setMonth(startTime.getMonth() + 3);
+      break;
+    case 'year':
+      endTime.setFullYear(startTime.getFullYear() + 1);
+      break;
+    default:
+      throw new Error('Invalid plan type');
+  }
 
   return {
     startTime,
@@ -14,7 +25,7 @@ const singlePaymentTimeTracker = () => {
   };
 };
 
-async function createPaymentRecord(userId, paymentMethod, paymentId, amount, currency, startTime, endTime) {
+async function createPaymentRecord(userId, paymentMethod, paymentId, amount, currency, planId, startTime, endTime) {
   const paymentRecord = new Payment({
     userId,
     amount,
@@ -23,6 +34,7 @@ async function createPaymentRecord(userId, paymentMethod, paymentId, amount, cur
     paymentMethod,
     paymentStatus: 'Completed',
     paymentReference: '',
+    planId,
     startTime,
     endTime
   });
@@ -46,7 +58,7 @@ async function getUserSessionFromReference(paymentReference) {
 }
 
 module.exports = {
-  singlePaymentTimeTracker,
+  calcExpiryDate,
   createPaymentRecord,
   getUserSessionFromReference
 };

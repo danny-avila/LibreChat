@@ -27,6 +27,10 @@ const paymentSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  planId: {
+    type: String,
+    required: true
+  },
   startTime: {
     type: Date,
     required: true
