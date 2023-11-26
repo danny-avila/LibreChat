@@ -154,9 +154,9 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
     if (messagesCount >= dailyQuota) {
       // User exceeded daily quota, check for valid subscription
       console.log(`User ${userId} exceeded daily quota. Checking subscription...`);
-      const latestPayment = await Payment.findOne({ userId: userId }).sort({ endTime: -1 });
+      const latestPayment = await Payment.findOne({ userId: userId }).sort({ expirationDate: -1 });
 
-      if (!latestPayment || new Date() > latestPayment.endTime) {
+      if (!latestPayment || new Date() > latestPayment.expirationDate) {
         console.log(`User ${userId} does not have a valid subscription`);
         return handleError(res, { text:`超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，+ 
         如需购买更多额度, 请点击<a href="${baseUrl}/subscription/${userId}">付费计划</a>` });

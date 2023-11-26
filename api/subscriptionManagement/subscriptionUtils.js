@@ -2,30 +2,39 @@ const PaymentRefUserId = require('../models/paymentReference.js'); // Store paym
 const Payment = require('../models/payments.js');
 
 const calcExpiryDate = (planType) => {
-  const startTime = new Date();
-  let endTime = new Date(startTime);
+  const subscriptionStartDate = new Date();
+  let expirationDate = new Date(subscriptionStartDate);
 
   switch (planType) {
     case 'month':
-      endTime.setMonth(startTime.getMonth() + 1);
+      expirationDate.setMonth(subscriptionStartDate.getMonth() + 1);
       break;
     case 'quarter':
-      endTime.setMonth(startTime.getMonth() + 3);
+      expirationDate.setMonth(subscriptionStartDate.getMonth() + 3);
       break;
     case 'year':
-      endTime.setFullYear(startTime.getFullYear() + 1);
+      expirationDate.setFullYear(subscriptionStartDate.getFullYear() + 1);
       break;
     default:
       throw new Error('Invalid plan type');
   }
 
   return {
-    startTime,
-    endTime
+    subscriptionStartDate,
+    expirationDate
   };
 };
 
-async function createPaymentRecord(userId, paymentMethod, paymentId, amount, currency, planId, startTime, endTime) {
+async function createPaymentRecord(
+  userId,
+  paymentMethod,
+  paymentId,
+  amount,
+  currency,
+  planId,
+  subscriptionStartDate,
+  expirationDate
+) {
   const paymentRecord = new Payment({
     userId,
     amount,
@@ -35,8 +44,8 @@ async function createPaymentRecord(userId, paymentMethod, paymentId, amount, cur
     paymentStatus: 'Completed',
     paymentReference: '',
     planId,
-    startTime,
-    endTime
+    subscriptionStartDate,
+    expirationDate
   });
 
   await paymentRecord.save();

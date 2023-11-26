@@ -32,7 +32,7 @@ const PaypalReturnHandler = () => {
         .then(response => response.json())
         .then(data => {
           if (data.status === 'success') {
-            navigate(`/subscription/${data.userId}/payment-success?paymentId=${data.paymentId}&startTime=${data.startTime}&endTime=${data.endTime}`);
+            navigate(`/subscription/${data.userId}/payment-success?paymentId=${data.paymentId}&subscriptionStartDate=${data.subscriptionStartDate}&expirationDate=${data.expirationDate}`);
           } else {
             navigate(`/subscription/${data.userId}/payment-failed?error=${data.error}`);
           }

@@ -31,11 +31,11 @@ const paymentSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  startTime: {
+  subscriptionStartDate: {
     type: Date,
     required: true
   },
-  endTime: {
+  expirationDate: {
     type: Date,
     required: true
   }

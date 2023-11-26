@@ -92,7 +92,8 @@ function SubscriptionContent() {
       const body = JSON.stringify({
         userId, // Include userId for backend processing
         paymentReference, // Include the generated payment reference
-        amount: amountToCharge
+        amount: amountToCharge,
+        planId: selectedPlan.planId
       });
 
       const token = Cookies.get('token');
@@ -122,7 +123,7 @@ function SubscriptionContent() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ userId, paymentReference, planId: selectedPlan.planId })
+        body
       })
 
       const data = await response.json();
@@ -232,7 +233,7 @@ function SubscriptionContent() {
   useEffect(() => {
     const fetchSubscriptionData = async () => {
       try {
-        const response = await fetch(`/api/payments/subscription-endtime/${userId}`, {
+        const response = await fetch(`/api/payments/subscription-expirationdate/${userId}`, {
           headers: {
             'Authorization': `Bearer ${Cookies.get('token')}`,
           },

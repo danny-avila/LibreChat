@@ -193,8 +193,8 @@ router.get('/verify-wechatpay', requireJwtAuth, async (req, res) => {
 
     if (session.payment_status === 'paid') {
       console.log('[Verify WeChat Pay] Payment status is paid. Processing start and end times.');
-      const { startTime, endTime } = calcExpiryDate(planId);
-      console.log('[Verify WeChat Pay] Calculated startTime and endTime:', startTime, endTime);
+      const { subscriptionStartDate, expirationDate } = calcExpiryDate(planId);
+      console.log('[Verify WeChat Pay] Calculated subscriptionStartDate and expirationDate:', subscriptionStartDate, expirationDate);
       // const userSession = await getUserSessionFromReference(paymentReference);
 
       // console.log('[Verify WeChat Pay] User session found:', userSession);
@@ -206,18 +206,18 @@ router.get('/verify-wechatpay', requireJwtAuth, async (req, res) => {
         session.amount_total,
         session.currency,
         planId,
-        startTime,
-        endTime
+        subscriptionStartDate,
+        expirationDate
       );
 
-      const formattedStartTime = moment(startTime).format('MMM D, YYYY HH:mm:ss');
-      const formattedEndTime = moment(endTime).format('MMM D, YYYY HH:mm:ss');
+      const formattedSubscriptionStartDate = moment(subscriptionStartDate).format('MMM D, YYYY HH:mm:ss');
+      const formattedExpirationDate = moment(expirationDate).format('MMM D, YYYY HH:mm:ss');
 
       res.json({
         status: 'success',
         userId: userId,
-        startTime: formattedStartTime,
-        endTime: formattedEndTime
+        subscriptionStartDate: formattedSubscriptionStartDate,
+        expirationDate: formattedExpirationDate
       });
     } else if (session.payment_status === 'unpaid') {
       res.json({ status: 'pending' });
@@ -237,7 +237,7 @@ router.get('/verify-alipay', requireJwtAuth, async (req, res) => {
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     if (session.payment_status === 'paid') {
-      const { startTime, endTime } = calcExpiryDate(planId);
+      const { subscriptionStartDate, expirationDate } = calcExpiryDate(planId);
 
       await createPaymentRecord(
         userId,
@@ -246,18 +246,18 @@ router.get('/verify-alipay', requireJwtAuth, async (req, res) => {
         session.amount_total,
         session.currency,
         planId,
-        startTime,
-        endTime
+        subscriptionStartDate,
+        expirationDate
       );
 
-      const formattedStartTime = moment(startTime).format('MMM D, YYYY HH:mm:ss');
-      const formattedEndTime = moment(endTime).format('MMM D, YYYY HH:mm:ss');
+      const formattedSubscriptionStartDate = moment(subscriptionStartDate).format('MMM D, YYYY HH:mm:ss');
+      const formattedExpirationDate = moment(expirationDate).format('MMM D, YYYY HH:mm:ss');
 
       res.json({
         status: 'success',
         userId: userId,
-        startTime: formattedStartTime,
-        endTime: formattedEndTime
+        subscriptionStartDate: formattedSubscriptionStartDate,
+        expirationDate: formattedExpirationDate
       });
     } else if (session.payment_status === 'unpaid') {
       res.json({ status: 'pending' });
@@ -288,7 +288,7 @@ router.get('/success', async (req, res) => {
       return res.redirect(`${baseUrl}/subscription/payment-failed`);
     }
 
-    let executedPayment, transaction, sale, startTime, endTime;
+    let executedPayment, transaction, sale, subscriptionStartDate, expirationDate;
 
     switch(paymentMethod) {
       case 'paypal': {
@@ -300,7 +300,7 @@ router.get('/success', async (req, res) => {
         executedPayment = await executePayment(paymentId, execute_payment_json);
         transaction = executedPayment.transactions[0];
         sale = transaction.related_resources[0].sale;
-        ({ startTime, endTime } = calcExpiryDate(planId));
+        ({ subscriptionStartDate, expirationDate } = calcExpiryDate(planId));
         break;
       }
 
@@ -316,12 +316,12 @@ router.get('/success', async (req, res) => {
       sale.amount.total,
       sale.amount.currency,
       planId,
-      startTime,
-      endTime
+      subscriptionStartDate,
+      expirationDate
     );
 
-    const formattedStartTime = moment(startTime).format('MMM D, YYYY HH:mm:ss');
-    const formattedEndTime = moment(endTime).format('MMM D, YYYY HH:mm:ss');
+    const formattedSubscriptionStartDate = moment(subscriptionStartDate).format('MMM D, YYYY HH:mm:ss');
+    const formattedExpirationDate = moment(expirationDate).format('MMM D, YYYY HH:mm:ss');
 
     console.log(
       `[Payment Success] Payment processed successfully for userId: ${userSession.userId}, ` +
@@ -332,8 +332,8 @@ router.get('/success', async (req, res) => {
       status: 'success',
       paymentId: paymentId,
       userId: userSession.userId,
-      startTime: formattedStartTime,
-      endTime: formattedEndTime
+      subscriptionStartDate: formattedSubscriptionStartDate,
+      expirationDate: formattedExpirationDate
     });
   } catch (error) {
     console.error(`[Payment Success] Execution failed: ${error}, Response: ${error.response}`);
@@ -341,18 +341,18 @@ router.get('/success', async (req, res) => {
 });
 
 // endpoint to get the latest subscription end time for a user
-router.get('/subscription-endtime/:userId', requireJwtAuth, async (req, res) => {
+router.get('/subscription-expirationdate/:userId', requireJwtAuth, async (req, res) => {
   try {
     const userId = req.params.userId;
 
     // Find the latest payment for this user
-    const latestPayment = await Payment.findOne({ userId: userId }).sort({ endTime: -1 });
+    const latestPayment = await Payment.findOne({ userId: userId }).sort({ expirationDate: -1 });
 
     if (!latestPayment) {
       return res.status(404).json({ message: 'No subscription found for this user.' });
     }
 
-    const subscriptionDueDime = moment(latestPayment.endTime).format('YYYY-MM-DD');
+    const subscriptionDueDime = moment(latestPayment.expirationDate).format('YYYY-MM-DD');
 
     // Send back the subscription end time
     res.json({ dueTime: subscriptionDueDime });

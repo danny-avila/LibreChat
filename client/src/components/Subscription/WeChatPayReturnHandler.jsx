@@ -30,7 +30,7 @@ const WeChatPayReturnHandler = () => {
         .then(response => response.json())
         .then(data => {
           if (data.status === 'success') {
-            navigate(`/subscription/${data.userId}/payment-success?startTime=${data.startTime}&endTime=${data.endTime}`);
+            navigate(`/subscription/${data.userId}/payment-success?subscriptionStartDate=${data.subscriptionStartDate}&expirationDate=${data.expirationDate}`);
           } else if (data.status === 'pending') {
             // Navigate to a pending payment page or show a pending message
             navigate('/subscription/payment-pending');

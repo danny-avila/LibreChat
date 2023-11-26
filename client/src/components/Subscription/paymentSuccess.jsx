@@ -10,13 +10,13 @@ const PaymentSuccess = () => {
   const [searchParams] = useSearchParams();
   const lang = useRecoilValue(store.lang);
   const paymentId = searchParams.get('paymentId');
-  const startTime = searchParams.get('startTime');
-  const endTime = searchParams.get('endTime');
+  const subscriptionStartDate = searchParams.get('subscriptionStartDate');
+  const expirationDate = searchParams.get('expirationDate');
 
   useEffect(() => {
     console.log(`Payment successful for user ID: ${userId} with Payment ID: ${paymentId}`);
-    console.log(`Start Time: ${startTime}, End Time: ${endTime}`);
-  }, [userId, paymentId, startTime, endTime]);
+    console.log(`Start Time: ${subscriptionStartDate}, End Time: ${expirationDate}`);
+  }, [userId, paymentId, subscriptionStartDate, expirationDate]);
 
   return (
     <div className="payment-message-container">
@@ -24,8 +24,8 @@ const PaymentSuccess = () => {
         <h1 className="title">{localize(lang, 'com_ui_confirmation_for_subscribing')}</h1>
         <p></p>
         <p>{localize(lang, 'com_ui_thanks_for_subscribing')}</p>
-        <p>{localize(lang, 'com_ui_access_info').replace('{startTime}', startTime).replace('{endTime}', endTime)}</p>
-        <p>{localize(lang, 'com_ui_renewal_reminder').replace('{endTime}', endTime)}</p>
+        <p>{localize(lang, 'com_ui_access_info').replace('{subscriptionStartDate}', subscriptionStartDate).replace('{expirationDate}', expirationDate)}</p>
+        <p>{localize(lang, 'com_ui_renewal_reminder').replace('{expirationDate}', expirationDate)}</p>
       </div>
     </div>
   );

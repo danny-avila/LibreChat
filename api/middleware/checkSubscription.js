@@ -7,9 +7,9 @@ const checkSubscription = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userId = decoded.id;
 
-    const latestPayment = await Payment.findOne({ userId: userId }).sort({ endTime: -1 });
+    const latestPayment = await Payment.findOne({ userId: userId }).sort({ expirationDate: -1 });
 
-    if (!latestPayment || new Date() > latestPayment.endTime) {
+    if (!latestPayment || new Date() > latestPayment.expirationDate) {
       return  res.end(); // res.status(200).send('Access restricted');
     }
 
