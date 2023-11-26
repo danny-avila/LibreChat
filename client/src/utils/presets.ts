@@ -24,7 +24,7 @@ export const getPresetTitle = (preset: TPreset) => {
     if (model) {
       _title += `: ${model}`;
     }
-  } else if (endpoint === EModelEndpoint.google) {
+  } else if (endpoint === EModelEndpoint.google || endpoint === EModelEndpoint.anthropic) {
     if (modelLabel) {
       _title = modelLabel;
     }

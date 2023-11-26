@@ -86,7 +86,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <div className="flex justify-between">
               <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_temperature')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default')}: 0.2)</small>
+                <small className="opacity-40">({localize('com_endpoint_default')}: 1)</small>
               </Label>
               <InputNumber
                 id="temp-int"
