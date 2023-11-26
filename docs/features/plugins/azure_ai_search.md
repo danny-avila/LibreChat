@@ -42,7 +42,7 @@ AZURE_AI_SEARCH_SEARCH_OPTION_SELECT=field1,field2,field3
 
 #### AZURE_AI_SEARCH_API_VERSION
 
-Specify the version of the search API. When using new features such as semantic search, you may need to specify the preview version. The default value is '2020-06-30'.
+Specify the version of the search API. When using new features such as semantic search or vector search, you may need to specify the preview version. The default value is '2020-06-30'.
 
 #### AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE
 
