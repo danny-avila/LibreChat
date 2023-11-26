@@ -34,7 +34,7 @@ For details on each parameter, please refer to the following document:
 https://learn.microsoft.com/en-us/rest/api/searchservice/search-documents
 
 ```env
-AZURE_COGNITIVE_SEARCH_API_VERSION=2023-07-01-Preview
+AZURE_COGNITIVE_SEARCH_API_VERSION=2023-10-01-Preview
 AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_QUERY_TYPE=simple
 AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_TOP=3
 AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_SELECT=field1,field2,field3
