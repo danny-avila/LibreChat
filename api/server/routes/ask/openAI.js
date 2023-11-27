@@ -53,13 +53,15 @@ router.post('/', requireJwtAuth, async (req, res) => {
   someTimeAgo.setSeconds(currentTime.getSeconds() - 60 * 60 * 24); // 24 hours
   if (endpointOption.modelOptions.model in quota) {
     let messagesCount = await getMessagesCount({
-      senderId: req.user.id,
-      model: endpointOption.modelOptions.model,
-      updatedAt: { $gte: someTimeAgo },
+      $and: [
+        { senderId: req.user.id },
+        { model: endpointOption.modelOptions.model },
+        { updatedAt: { $gte: someTimeAgo } },
+      ]
     });
     let dailyQuota = (quota[endpointOption.modelOptions.model]).toFixed(0);
     if (messagesCount >= dailyQuota) {
-      return handleError(res, { text: `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，通过此网页购买更多额度：https://www.iaitok.com/pay` });
+      return handleError(res, { text: `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，通过此网页可以购买更多额度：https://iaitok.com/pay` });
     }
   }
 
@@ -118,7 +120,8 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
           model: endpointOption.modelOptions.model,
           unfinished: true,
           cancelled: false,
-          error: false
+          error: false,
+          senderId: req.user.id,
         });
       }
     }

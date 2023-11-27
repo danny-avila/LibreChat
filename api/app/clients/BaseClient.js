@@ -422,6 +422,7 @@ class BaseClient {
       sender: this.sender,
       text: await this.sendCompletion(payload, opts),
       promptTokens,
+      senderId: user,
     };
 
     if (tokenCountMap && this.getTokenCountForResponse) {
