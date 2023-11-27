@@ -5,6 +5,14 @@ const userSchema = require('./schema/userSchema.js');
 const { SESSION_EXPIRY } = process.env ?? {};
 const expires = eval(SESSION_EXPIRY) ?? 1000 * 60 * 15;
 
+//Remove refreshToken from the response
+userSchema.set('toJSON', {
+  transform: function (_doc, ret) {
+    delete ret.refreshToken;
+    return ret;
+  },
+});
+
 userSchema.methods.toJSON = function () {
   return {
     id: this._id,
@@ -21,6 +29,7 @@ userSchema.methods.toJSON = function () {
     followers: this.followers,
     following: this.following,
     biography: this.biography,
+    proMemberExpiredAt: this.proMemberExpiredAt,
   };
 };
 

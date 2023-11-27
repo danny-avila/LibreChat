@@ -26,6 +26,9 @@ const messageSchema = mongoose.Schema(
     model: {
       type: String,
     },
+    senderId: {
+      type: String,
+    },
     conversationSignature: {
       type: String,
       // required: true

@@ -14,6 +14,7 @@ const {
 } = require('../../middleware');
 const trieSensitive = require('../../../utils/trieSensitive');
 const { handleError } = require('../../utils');
+const User = require('../../../models/User');
 router.post('/abort', handleAbort());
 
 router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, res) => {
@@ -74,6 +75,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
           cancelled: false,
           error: false,
           user,
+          senderId: req.user.id,
         });
       }
 
@@ -100,24 +102,35 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
 
     const isSensitive = await trieSensitive.checkSensitiveWords(text);
     if (isSensitive) {
+      //return handleError(res, { text: '请回避敏感词汇，谢谢！' });
       throw new Error('请回避敏感词汇，谢谢！');
     }
 
-    let someTimeAgo = new Date();
-    someTimeAgo.setSeconds(someTimeAgo.getSeconds() - 60 * 60 * 24); // 24 hours
+    let currentTime = new Date();
+    const user = await User.findById(req.user.id).exec();
+    let quota = 0;
+    if ('proMemberExpiredAt' in user && user.proMemberExpiredAt > currentTime) {
+      // If not proMember, check quota
+      quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY_PRO_MEMBER']);
+    } else {
+      quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY']);
+    }
 
-    let quota = JSON.parse(process.env['CHAT_QUOTA_PER_SECOND']);
-    if (endpointOption.model in quota) {
+    let someTimeAgo = currentTime;
+    someTimeAgo.setSeconds(currentTime.getSeconds() - 60 * 60 * 24); // 24 hours
+    if (endpointOption.modelOptions.model in quota) {
       let messagesCount = await getMessagesCount({
-        senderId: req.user.id,
-        model: endpointOption.model,
-        updatedAt: { $gte: someTimeAgo },
+        $and: [
+          { senderId: req.user.id },
+          { model: endpointOption.modelOptions.model },
+          { updatedAt: { $gte: someTimeAgo } },
+        ],
       });
-      let dailyQuota = (quota[endpointOption.model] * 60 * 60 * 24).toFixed(0);
+      let dailyQuota = quota[endpointOption.modelOptions.model].toFixed(0);
       if (messagesCount >= dailyQuota) {
-        // throw new Error("Exceed daily quota! Please contact 615547 to purchase more quota via Wechat");
+        // return handleError(res, { text: `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，通过此网页可以购买更多额度：https://iaitok.com/pay` });
         throw new Error(
-          `超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，如需购买更多额度，请加微信：615547`,
+          `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，通过此网页可以购买更多额度：https://iaitok.com/pay`,
         );
       }
     }
