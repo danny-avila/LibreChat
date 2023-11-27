@@ -62,6 +62,25 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('gpt-4-1106-preview')).toBe(maxTokensMap['gpt-4-1106']);
     expect(getModelMaxTokens('gpt-4-1106-vision-preview')).toBe(maxTokensMap['gpt-4-1106']);
   });
+
+  test('should return correct tokens for Anthropic models', () => {
+    const models = [
+      'claude-2.1',
+      'claude-2',
+      'claude-1.2',
+      'claude-1',
+      'claude-1-100k',
+      'claude-instant-1',
+      'claude-instant-1-100k',
+    ];
+
+    const claude21MaxTokens = maxTokensMap['claude-2.1'];
+    const claudeMaxTokens = maxTokensMap['claude-'];
+    models.forEach((model) => {
+      const expectedTokens = model === 'claude-2.1' ? claude21MaxTokens : claudeMaxTokens;
+      expect(getModelMaxTokens(model)).toEqual(expectedTokens);
+    });
+  });
 });
 
 describe('matchModelName', () => {

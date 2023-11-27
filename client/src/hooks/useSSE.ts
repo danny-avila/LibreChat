@@ -23,6 +23,7 @@ type TResData = {
   requestMessage: TMessage;
   responseMessage: TMessage;
   conversation: TConversation;
+  conversationId?: string;
 };
 
 export default function useSSE(submission: TSubmission | null, index = 0) {
@@ -36,6 +37,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     setIsSubmitting,
     resetLatestMessage,
     invalidateConvos,
+    newConversation,
   } = useChatHelpers(index, paramId);
 
   const { data: startupConfig } = useGetStartupConfig();
@@ -210,6 +212,9 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     });
     setIsSubmitting(false);
     setMessages([...messages, message, errorResponse]);
+    if (data.conversationId && paramId === 'new') {
+      newConversation({ template: { conversationId: data.conversationId } });
+    }
     return;
   };
 

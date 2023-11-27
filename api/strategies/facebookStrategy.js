@@ -1,7 +1,5 @@
 const FacebookStrategy = require('passport-facebook').Strategy;
 const User = require('../models/User');
-const config = require('../../config/loader');
-const domains = config.domains;
 
 const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -44,7 +42,7 @@ module.exports = () =>
     {
       clientID: process.env.FACEBOOK_CLIENT_ID,
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-      callbackURL: `${domains.server}${process.env.FACEBOOK_CALLBACK_URL}`,
+      callbackURL: `${process.env.DOMAIN_SERVER}${process.env.FACEBOOK_CALLBACK_URL}`,
       proxy: true,
       scope: ['public_profile'],
       profileFields: ['id', 'email', 'name'],

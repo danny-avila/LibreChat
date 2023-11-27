@@ -8,7 +8,6 @@
     "packages/*"
   ],
   "scripts": {
-    "install": "node config/install.js",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "rebuild:package-lock": "node config/packages",

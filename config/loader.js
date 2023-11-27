@@ -35,7 +35,8 @@ class Env {
     if (fs.existsSync(this.envMap.default)) {
       hasDefault = true;
       dotenv.config({
-        path: this.resolve(this.envMap.default),
+        // path: this.resolve(this.envMap.default),
+        path: path.resolve(__dirname, '..', this.envMap.default),
       });
     } else {
       console.warn('The default .env file was not found');
@@ -49,7 +50,8 @@ class Env {
     // check if the file exists
     if (fs.existsSync(envFile)) {
       dotenv.config({
-        path: this.resolve(envFile),
+        // path: this.resolve(envFile),
+        path: path.resolve(__dirname, '..', envFile),
       });
     } else if (!hasDefault) {
       console.warn('No env files found, have you completed the install process?');
