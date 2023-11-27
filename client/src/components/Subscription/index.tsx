@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { TUser, useGetUserByIdQuery } from '@librechat/data-provider';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
@@ -14,7 +14,6 @@ function SubscriptionContent() {
   const [darkMode, setDarkMode] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [subscriptionUser, setSubscriptionUser] = useState<TUser | null>(null);
   const [error, setError] = useState('');
-  const [searchParams] = useSearchParams();
   const { userId = '' } = useParams();
   const lang = useRecoilValue(store.lang);
   const navigate = useNavigate();
@@ -52,16 +51,6 @@ function SubscriptionContent() {
       setSubscriptionUser(getUserByIdQuery.data);
     }
   }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data]);
-
-  // Effect for handling payment status confirmation
-  useEffect(() => {
-    const paymentStatus = searchParams.get('paymentStatus');
-    const paymentId = searchParams.get('paymentId');
-    const payerId = searchParams.get('PayerID');
-    if (paymentStatus) {
-      handlePayPalPaymentConfirmation(paymentStatus, userId, paymentId, payerId);
-    }
-  }, [searchParams, userId, handlePayPalPaymentConfirmation]);
 
   //Effect for darkmode
   useEffect(() => {
@@ -102,10 +91,6 @@ function SubscriptionContent() {
       // Select the endpoint based on the payment method
       let endpoint = '';
       switch (paymentMethod) {
-        case 'paypal':
-          console.log(`Sending request with planId: ${planType}`);
-          endpoint = '/api/payments/create-payment-paypal';
-          break;
         case 'wechat_pay':
           endpoint = '/api/payments/create-payment-wechatpay';
           break;
@@ -136,9 +121,7 @@ function SubscriptionContent() {
       }
 
       // Handle response based on payment method
-      if (paymentMethod === 'paypal' && data.approval_url) {
-        window.location.href = data.approval_url;
-      } else if (paymentMethod === 'wechat_pay') {
+      if (paymentMethod === 'wechat_pay') {
         if (data.sessionId) {
           console.log('Stripe Public Key:', STRIPE_PUBLIC_KEY);
           const stripe = await loadStripe(STRIPE_PUBLIC_KEY);
@@ -192,56 +175,6 @@ function SubscriptionContent() {
         console.error('An unexpected error occurred:', error);
         setError(`An unexpected error occurred: ${JSON.stringify(error)}`);
       }
-    }
-  }
-
-  async function handlePayPalPaymentConfirmation(paymentStatus, userId, paymentId, payerId) {
-    console.log(
-      `handlePaypalPaymentConfirmation called with paymentStatus: ${paymentStatus},` +
-      `userId: ${userId}, paymentId: ${paymentId}, payerId: ${payerId}`);
-
-    try {
-      const body = JSON.stringify({
-        userId,
-        paymentId,
-        payerId,
-      });
-
-      const token = Cookies.get('token');
-
-      const response = await fetch('/api/payments/execute-payment', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body
-      });
-
-      const confirmationResult = await response.json();
-      console.log('Received response from /execute-payment:', confirmationResult);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      if (confirmationResult.success) {
-        console.log('Payment was successfully confirmed.');
-        navigate(`/subscription/${userId}/payment-success`);
-      } else {
-        console.log('Payment failed to confirm.');
-        setError('Payment confirmation failed. Please try again.');
-        navigate(`/subscription/${userId}/payment-failed`);
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        console.error(`An error occurred during payment confirmation: ${error.message}`);
-        setError(`An error occurred: ${error.message}`);
-      } else {
-        console.error('An unexpected error occurred during payment confirmation:', error);
-        setError('An unexpected error occurred. Please try again.');
-      }
-      navigate(`/subscription/${userId}/payment-failed`);
     }
   }
 
@@ -343,7 +276,6 @@ function SubscriptionContent() {
                 fontSize: '1.5rem',
                 marginBottom: '0.5rem'
               }}>
-
               </h2>
             </div>
 
@@ -410,28 +342,6 @@ function SubscriptionContent() {
                   {localize(lang, 'com_ui_ali')}
                 </button>
 
-              </div>
-
-              <div style={{ marginBottom: '10px' }}>
-                <button
-                  onClick={() => {
-                    console.log(`PayPal button clicked with planId: ${option.planId}`);
-                    handleSubscription('paypal', option.planId);
-                  }}
-                  style={{
-                    width: '90%',
-                    padding: '10px',
-                    backgroundColor: '#108ee9',
-                    color: 'white',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    border: 'none',
-                    fontSize: '16px',
-                    margin: '0 auto'
-                  }}
-                >
-                  {localize(lang, 'com_ui_paypal')}
-                </button>
               </div>
             </div>
           </div>

@@ -82,7 +82,6 @@ export default {
   com_ui_monthly_benefits: '无限对话额度',
   com_ui_quartely_benefits: '九折优惠',
   com_ui_yearly_benefits: '八折优惠',
-  com_ui_paypal: '贝宝',
   com_ui_wechat: '微信支付',
   com_ui_ali: '支付宝',
   com_ui_union: '银联支付',

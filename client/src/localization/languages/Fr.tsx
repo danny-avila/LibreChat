@@ -32,7 +32,6 @@ export default {
   com_ui_monthly_benefits: 'Quota de Chat Illimité',
   com_ui_quartely_benefits: '10% Économies Mensuelles',
   com_ui_yearly_benefits: '20% Économies Mensuelles',
-  com_ui_paypal: 'PayPal',
   com_ui_wechat: 'WeChat Pay',
   com_ui_ali: 'Alipay',
   com_ui_union: 'UnionPay',

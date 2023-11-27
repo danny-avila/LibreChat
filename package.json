@@ -39,7 +39,6 @@
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "dependencies": {
-    "@paypal/checkout-server-sdk": "^1.0.3",
     "@stripe/stripe-js": "^2.2.0",
     "axios": "^1.4.0",
     "cookie-parser": "^1.4.6",
@@ -54,7 +53,6 @@
     "nodemailer": "^6.9.3",
     "passport": "^0.6.0",
     "passport-github2": "^0.1.12",
-    "paypal-rest-sdk": "^1.8.1",
     "react-ga": "^3.3.1",
     "stripe": "^14.5.0",
     "uuid": "^9.0.1"
