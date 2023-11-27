@@ -107,9 +107,9 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     }
 
     let currentTime = new Date();
-    const user = await User.findById(req.user.id).exec();
+    const cur_user = await User.findById(req.user.id).exec();
     let quota = 0;
-    if ('proMemberExpiredAt' in user && user.proMemberExpiredAt > currentTime) {
+    if ('proMemberExpiredAt' in cur_user && cur_user.proMemberExpiredAt > currentTime) {
       // If not proMember, check quota
       quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY_PRO_MEMBER']);
     } else {
