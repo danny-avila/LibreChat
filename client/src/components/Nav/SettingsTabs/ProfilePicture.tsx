@@ -65,8 +65,8 @@ function ProfilePictureUpload() {
   const showUploadButton = input !== null;
 
   return (
-    <div className="flex items-center space-x-2">
-      <span className="text-xs">Profile Picture</span>
+    <div className="flex items-center justify-between">
+      <span>Profile Picture</span>
       <label
         htmlFor={'file-upload-profile-picture'}
         className={cn(
@@ -75,7 +75,7 @@ function ProfilePictureUpload() {
         )}
       >
         <FileUp className="mr-1 flex w-[22px] items-center stroke-1" />
-        <span className="flex text-xs ">
+        <span>
           {status === 'success'
             ? localize('com_ui_upload_success')
             : status === 'invalid'

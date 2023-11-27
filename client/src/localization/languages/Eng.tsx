@@ -265,6 +265,7 @@ export default {
   com_nav_search_placeholder: 'Search messages',
   com_nav_setting_general: 'General',
   com_nav_setting_data: 'Data controls',
+  com_nav_setting_account: 'Account',
   com_nav_language: 'Language',
   com_nav_lang_auto: 'Auto detect',
   com_nav_lang_english: 'English',

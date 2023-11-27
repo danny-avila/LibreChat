@@ -15,7 +15,6 @@ import AutoScrollSwitch from './AutoScrollSwitch';
 import DangerButton from './DangerButton';
 import store from '~/store';
 import { Dropdown } from '~/components/ui';
-import ProfilePicture from './ProfilePicture';
 
 export const ThemeSelector = ({
   theme,
@@ -187,9 +186,6 @@ function General() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <AutoScrollSwitch />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <ProfilePicture />
         </div>
       </div>
     </Tabs.Content>
