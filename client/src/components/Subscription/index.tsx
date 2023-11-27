@@ -27,22 +27,22 @@ function SubscriptionContent() {
       planId: 'month',
       price: '120.00',
       currencySymbol: '￥',
-      benefits: 'Unlimited Quota',
-      name: 'Monthly Plan'
+      benefits: localize(lang, 'com_ui_monthly_benefits'),
+      name: localize(lang, 'com_ui_monthly_plan')
     },
     {
       planId: 'quarter',
       price: '320.00',
       currencySymbol: '￥',
-      benefits: '10% Monthly Savings',
-      name: 'Quarterly Plan'
+      benefits: localize(lang, 'com_ui_quartely_benefits'),
+      name: localize(lang, 'com_ui_quarterly_plan')
     },
     {
       planId: 'year',
       price: '1100.00',
       currencySymbol: '￥',
-      benefits: '20% Monthly Savings',
-      name: 'Yearly Plan'
+      benefits: localize(lang, 'com_ui_yearly_benefits'),
+      name: localize(lang, 'com_ui_yearly_plan')
     }
   ];
 
@@ -90,8 +90,8 @@ function SubscriptionContent() {
 
     try {
       const body = JSON.stringify({
-        userId, // Include userId for backend processing
-        paymentReference, // Include the generated payment reference
+        userId,
+        paymentReference,
         amount: amountToCharge,
         planId: selectedPlan.planId
       });
@@ -104,7 +104,6 @@ function SubscriptionContent() {
       switch (paymentMethod) {
         case 'paypal':
           console.log(`Sending request with planId: ${planType}`);
-          // console.log('Request body:', JSON.stringify({ userId, paymentReference, planId: selectedPlan.planId }));
           endpoint = '/api/payments/create-payment-paypal';
           break;
         case 'wechat_pay':
@@ -358,10 +357,7 @@ function SubscriptionContent() {
             <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
               <div style={{ marginBottom: '10px' }}>
                 <button
-                  onClick={() => {
-                    console.log(`PayPal button clicked with planId: ${option.planId}`);
-                    handleSubscription('paypal', option.planId);
-                  }}
+                  onClick={() => handleSubscription('unionpay', option.planId)}
                   style={{
                     width: '90%',
                     padding: '10px',
@@ -374,10 +370,9 @@ function SubscriptionContent() {
                     margin: '0 auto'
                   }}
                 >
-                PayPal
+                  {localize(lang, 'com_ui_union')}
                 </button>
               </div>
-
               <div style={{ marginBottom: '10px' }}>
                 <button
                   onClick={() => handleSubscription('wechat_pay', option.planId)}
@@ -393,7 +388,7 @@ function SubscriptionContent() {
                     margin: '0 auto'
                   }}
                 >
-                WeChat Pay
+                  {localize(lang, 'com_ui_wechat')}
                 </button>
               </div>
 
@@ -412,14 +407,17 @@ function SubscriptionContent() {
                     margin: '0 auto'
                   }}
                 >
-                Alipay
+                  {localize(lang, 'com_ui_ali')}
                 </button>
 
               </div>
 
               <div style={{ marginBottom: '10px' }}>
                 <button
-                  onClick={() => handleSubscription('unionpay', option.planId)}
+                  onClick={() => {
+                    console.log(`PayPal button clicked with planId: ${option.planId}`);
+                    handleSubscription('paypal', option.planId);
+                  }}
                   style={{
                     width: '90%',
                     padding: '10px',
@@ -432,7 +430,7 @@ function SubscriptionContent() {
                     margin: '0 auto'
                   }}
                 >
-                UnionPay
+                  {localize(lang, 'com_ui_paypal')}
                 </button>
               </div>
             </div>
