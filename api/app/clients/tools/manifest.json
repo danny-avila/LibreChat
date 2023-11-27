@@ -166,6 +166,22 @@
     ]
   },
   {
+    "name": "Image Editor",
+    "pluginKey": "imageeditor",
+    "description": "Plugin for editing image like for resize, crop, blur and many more feature",
+    "icon": "https://imgur.com/iLE5ceA.png",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
+    "name": "Link Reader",
+    "pluginKey": "linkreader",
+    "description": "A plugin that allows users to input any url, gets content from it, including webpage, youtube, PDF, PPT, image, word, pages, numbers, excels, google drive etc. It searches up-to-date info in google.",
+    "icon": "https://gochitchat.ai/linkreader/logo.png",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "CodeBrew",
     "pluginKey": "CodeBrew",
     "description": "Use 'CodeBrew' to virtually interpret Python, Node, C, C++, Java, C#, PHP, MySQL, Rust or Go code.",

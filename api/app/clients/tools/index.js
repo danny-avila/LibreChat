@@ -16,6 +16,7 @@ const CodeSherpaTools = require('./structured/CodeSherpaTools');
 const availableTools = require('./manifest.json');
 const CodeInterpreter = require('./CodeInterpreter');
 const CodeBrew = require('./CodeBrew');
+const StructuredLinkReader = require('./structured/LinkReader');
 
 module.exports = {
   availableTools,
@@ -26,6 +27,7 @@ module.exports = {
   StableDiffusionAPI,
   StructuredSD,
   WolframAlphaAPI,
+  StructuredLinkReader,
   StructuredWolfram,
   SelfReflectionTool,
   AzureCognitiveSearch,
