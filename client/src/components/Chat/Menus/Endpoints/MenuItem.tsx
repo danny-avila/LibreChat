@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { FC } from 'react';
-import { useLocalize, useUserKey, useOriginNavigate } from '~/hooks';
+import { useLocalize, useUserKey } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 import { useChatContext } from '~/Providers';
 import { icons } from './Icons';
@@ -30,7 +30,6 @@ const MenuItem: FC<MenuItemProps> = ({
   const [isDialogOpen, setDialogOpen] = useState(false);
   const { newConversation } = useChatContext();
   const { getExpiry } = useUserKey(endpoint);
-  const navigate = useOriginNavigate();
   const localize = useLocalize();
   const expiryTime = getExpiry();
 
@@ -41,8 +40,7 @@ const MenuItem: FC<MenuItemProps> = ({
       if (!expiryTime) {
         setDialogOpen(true);
       }
-      newConversation({ template: { endpoint: newEndpoint } });
-      navigate('new');
+      newConversation({ template: { endpoint: newEndpoint, conversationId: 'new' } });
     }
   };
 
