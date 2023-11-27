@@ -140,11 +140,13 @@ function CodingAssistant() {
       widget={true}
       visible={widget === 'ca'}
       saveAsPreset={setTextHandler}
-      switchToSimpleMode={() => {
-        setWidget('');
-      }}
+      closePopover={() => setWidget('')}
+      // switchToSimpleMode={() => {
+      //   setWidget('');
+      // }}
       additionalButton={{
         label: showExample ? '恢复' : '示例',
+        buttonClass: '',
         handler: showExampleHandler,
         icon: <MessagesSquared className="mr-1 w-[14px]" />,
       }}

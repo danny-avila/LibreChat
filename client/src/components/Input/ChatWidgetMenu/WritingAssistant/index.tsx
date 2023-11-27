@@ -74,9 +74,10 @@ function WritingAssistant() {
       widget={true}
       visible={widget === 'wa'}
       saveAsPreset={setTextHandler}
-      switchToSimpleMode={() => {
-        setWidget('');
-      }}
+      closePopover={() => setWidget('')}
+      // switchToSimpleMode={() => {
+      //   setWidget('');
+      // }}
       additionalButton={{
         label: showExample ? '恢复' : '示例',
         buttonClass: '',
