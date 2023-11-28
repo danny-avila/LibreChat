@@ -2,7 +2,7 @@ const { StructuredTool } = require('langchain/tools');
 const { z } = require('zod');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 
-class AzureCognitiveSearch extends StructuredTool {
+class AzureAISearch extends StructuredTool {
   constructor(fields = {}) {
     super();
     this.serviceEndpoint =
@@ -113,4 +113,4 @@ class AzureCognitiveSearch extends StructuredTool {
   }
 }
 
-module.exports = AzureCognitiveSearch;
+module.exports = AzureAISearch;

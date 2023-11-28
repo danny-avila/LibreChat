@@ -1,7 +1,7 @@
 const { Tool } = require('langchain/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 
-class AzureCognitiveSearch extends Tool {
+class AzureAISearch extends Tool {
   constructor(fields = {}) {
     super();
     this.serviceEndpoint =
@@ -108,4 +108,4 @@ class AzureCognitiveSearch extends Tool {
   }
 }
 
-module.exports = AzureCognitiveSearch;
+module.exports = AzureAISearch;
