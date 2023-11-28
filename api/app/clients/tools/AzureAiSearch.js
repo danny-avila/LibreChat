@@ -6,15 +6,15 @@ class AzureAISearch extends StructuredTool {
   constructor(fields = {}) {
     super();
     this.serviceEndpoint =
-      fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT || fields.AZURE_COGNITIVE_SEARCH_SERVICE_ENDPOINT || this.getServiceEndpoint();
-    this.indexName = fields.AZURE_AI_SEARCH_INDEX_NAME || process.env.AZURE_AI_SEARCH_INDEX_NAME || fields.AZURE_COGNITIVE_SEARCH_INDEX_NAME || this.getIndexName();
-    this.apiKey = fields.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_AI_SEARCH_API_KEY || fields.AZURE_COGNITIVE_SEARCH_API_KEY || this.getApiKey();
+        fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_COGNITIVE_SEARCH_SERVICE_ENDPOINT || this.getServiceEndpoint();
+    this.indexName = fields.AZURE_AI_SEARCH_INDEX_NAME || process.env.AZURE_AI_SEARCH_INDEX_NAME || process.env.AZURE_COGNITIVE_SEARCH_INDEX_NAME || this.getIndexName();
+    this.apiKey = fields.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_COGNITIVE_SEARCH_API_KEY || this.getApiKey();
 
-    this.apiVersion = fields.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_AI_SEARCH_API_VERSION || fields.AZURE_COGNITIVE_SEARCH_API_VERSION || this.getApiVersion();
+    this.apiVersion = fields.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_COGNITIVE_SEARCH_API_VERSION || this.getApiVersion();
 
-    this.queryType = fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || fields.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_QUERY_TYPE || this.getQueryType();
-    this.top = fields.AZURE_AI_SEARCH_SEARCH_OPTION_TOP || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_TOP || fields.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_TOP || this.getTop();
-    this.select = fields.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT || fields.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_SELECT || this.getSelect();
+    this.queryType = fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_QUERY_TYPE || this.getQueryType();
+    this.top = fields.AZURE_AI_SEARCH_SEARCH_OPTION_TOP || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_TOP || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_TOP || this.getTop();
+    this.select = fields.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_SELECT || this.getSelect();
 
     this.client = new SearchClient(
       this.serviceEndpoint,
