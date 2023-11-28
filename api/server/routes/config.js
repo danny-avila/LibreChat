@@ -22,7 +22,7 @@ router.get('/', async function (req, res) {
       registrationEnabled: isEnabled(process.env.ALLOW_REGISTRATION),
       socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
       emailEnabled:
-        !process.env.EMAIL_SERVICE &&
+        (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
         !!process.env.EMAIL_USERNAME &&
         !!process.env.EMAIL_PASSWORD &&
         !!process.env.EMAIL_FROM,
