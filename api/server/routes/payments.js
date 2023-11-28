@@ -323,9 +323,10 @@ router.get('/subscription-expirationdate/:userId', requireJwtAuth, async (req, r
     }
 
     const subscriptionDueDime = moment(latestPayment.expirationDate).format('YYYY-MM-DD');
+    const planId = latestPayment.planId;
 
     // Send back the subscription end time
-    res.json({ dueTime: subscriptionDueDime });
+    res.json({ dueTime: subscriptionDueDime, planId: planId });
   } catch (error) {
     res.status(500).json({ message: 'Internal server error' });
   }

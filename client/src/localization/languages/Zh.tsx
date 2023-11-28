@@ -73,6 +73,8 @@ export default {
   com_ui_copy_invitation_link: '复制邀请链接',
   com_ui_pricing: '订阅价格',
   com_ui_expiration_date: '有效期限',
+  com_ui_exp_data_loading_message: '正在加载订阅到期日期...',
+  com_ui_subscription_confirmation: '此计划无有效订阅',
   com_ui_reminder:
     '请在有效期限或之前续订您的订阅。',
   com_ui_payment_method: '支付方式',

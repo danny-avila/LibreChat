@@ -71,6 +71,8 @@ export default {
   com_ui_copied_success: 'Kopiert',
   com_ui_copy_invitation_link: 'Einladungslink kopieren',
   com_ui_expiration_date: 'Ablaufdatum',
+  com_ui_exp_data_loading_message: 'Ablaufdatum des Abonnements wird geladen...',
+  com_ui_subscription_confirmation: 'Kein aktives Abonnement für diesen Tarif',
   com_ui_reminder:
     'Bitte erneuern Sie Ihr Abonnement vor oder am Ablauftag!',
   com_ui_payment_method: 'Zahlungsmethode',

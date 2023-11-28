@@ -23,6 +23,8 @@ export default {
   com_ui_others_homepage: 'Profilo di {0}',
   com_ui_subscriptionpage: 'Il Mio Piano',
   com_ui_expiration_date: 'Data di Scadenza',
+  com_ui_exp_data_loading_message: 'Caricamento della data di scadenza dell abbonamento...',
+  com_ui_subscription_confirmation: 'Nessun abbonamento attivo per questo piano',
   com_ui_reminder:
     'Si prega di rinnovare labbonamento prima o alla data di scadenza!',
   com_ui_payment_method: 'Metodo di Pagamento',

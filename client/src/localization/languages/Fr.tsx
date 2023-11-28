@@ -23,6 +23,8 @@ export default {
   com_ui_others_homepage: 'Profil de {0}',
   com_ui_subscriptionpage: 'Mon Plan',
   com_ui_expiration_date: 'Date dexpiration',
+  com_ui_exp_data_loading_message: 'Chargement de la date d expiration de l abonnement...',
+  com_ui_subscription_confirmation: 'Aucun abonnement actif pour ce plan',
   com_ui_reminder:
     'Veuillez renouveler votre abonnement avant ou le jour de lexpiration!',
   com_ui_payment_method: 'Méthode de paiement',

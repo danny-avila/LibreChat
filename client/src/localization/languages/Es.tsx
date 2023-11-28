@@ -71,6 +71,8 @@ export default {
   com_ui_copied_success: 'Copiado',
   com_ui_copy_invitation_link: 'Copiar enlace de invitación',
   com_ui_expiration_date: 'Fecha de Vencimiento',
+  com_ui_exp_data_loading_message: 'Cargando fecha de vencimiento de la suscripción...',
+  com_ui_subscription_confirmation: 'No hay una suscripción activa para este plan',
   com_ui_reminder:
     '¡Por favor renueve su suscripción antes o en el día de vencimiento!',
   com_ui_payment_method: 'Método de Pago',

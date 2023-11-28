@@ -18,6 +18,7 @@ function SubscriptionContent() {
   const lang = useRecoilValue(store.lang);
   const navigate = useNavigate();
   const [subscriptionDueDate, setSubscriptionDueDate] = useState('');
+  const [subscribedPlanId, setSubscribedPlanId] = useState('');
 
   const getUserByIdQuery = useGetUserByIdQuery(userId);
 
@@ -190,6 +191,7 @@ function SubscriptionContent() {
         const data = await response.json();
         if (response.ok) {
           setSubscriptionDueDate(data.dueTime);
+          setSubscribedPlanId(data.planId);
         } else {
           setError(data.message);
         }
@@ -266,7 +268,11 @@ function SubscriptionContent() {
                 listStyleType: 'disc',
                 paddingLeft: '1.5rem',
               }}>
-                <li>{subscriptionDueDate ? subscriptionDueDate : 'Loading subscription expiration date...'}</li>
+                <li>
+                  {subscribedPlanId === option.planId ?
+                    (subscriptionDueDate ? subscriptionDueDate : localize(lang, 'com_ui_exp_data_loading_message')) :
+                    localize(lang, 'com_ui_subscription_confirmation')}
+                </li>
                 <li>{localize(lang, 'com_ui_reminder')}</li>
               </ul>
             </div>

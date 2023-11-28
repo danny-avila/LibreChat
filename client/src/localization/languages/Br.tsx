@@ -72,6 +72,8 @@ export default {
   com_ui_copy_invitation_link: 'Copiar link do convite',
   com_ui_plan_subscription: 'Assinatura do Plano',
   com_ui_expiration_date: 'Data de Expiração',
+  com_ui_exp_data_loading_message: 'Carregando data de expiração da assinatura...',
+  com_ui_subscription_confirmation: 'Nenhuma assinatura ativa para este plano',
   com_ui_reminder:
     'Por favor, renove sua assinatura antes ou na data de expiração!',
   com_ui_payment_method: 'Método de Pagamento',

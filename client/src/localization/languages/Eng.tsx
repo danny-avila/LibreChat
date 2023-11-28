@@ -77,6 +77,8 @@ export default {
   com_ui_copy_invitation_link: 'Copy Invitation Link',
   com_ui_pricing: 'Pricing',
   com_ui_expiration_date: 'Expiration Date',
+  com_ui_exp_data_loading_message: 'Loading subscription expiration date...',
+  com_ui_subscription_confirmation: 'No active subscription for this plan',
   com_ui_reminder:
     'Please renew your subscription before or on the expiration day!',
   com_ui_payment_method: 'Payment Methods',
