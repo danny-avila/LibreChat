@@ -25,13 +25,19 @@ const getFiles = async (filter) => {
 /**
  * Creates a new file with a TTL of 1 hour.
  * @param {MongoFile} data - The file data to be created, must contain file_id.
+ * @param {boolean} disableTTL - Whether to disable the TTL.
  * @returns {Promise<MongoFile>} A promise that resolves to the created file document.
  */
-const createFile = async (data) => {
+const createFile = async (data, disableTTL) => {
   const fileData = {
     ...data,
     expiresAt: new Date(Date.now() + 3600 * 1000),
   };
+
+  if (disableTTL) {
+    delete fileData.expiresAt;
+  }
+
   return await File.findOneAndUpdate({ file_id: data.file_id }, fileData, {
     new: true,
     upsert: true,
