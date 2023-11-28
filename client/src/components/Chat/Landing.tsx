@@ -2,8 +2,11 @@ import type { ReactNode } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { icons } from './Menus/Endpoints/Icons';
 import { useChatContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
+
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();
+  const localize = useLocalize();
   let { endpoint } = conversation ?? {};
   if (
     endpoint === EModelEndpoint.assistant ||
@@ -22,7 +25,9 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
             {icons[endpoint ?? 'unknown']({ size: 41, className: 'h-2/3 w-2/3' })}
           </div>
         </div>
-        <div className="mb-5 text-2xl font-medium dark:text-white">How can I help you today?</div>
+        <div className="mb-5 text-2xl font-medium dark:text-white">
+          {localize('com_nav_welcome_message')}
+        </div>
       </div>
     </div>
   );
