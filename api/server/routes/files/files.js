@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const axios = require('axios');
 const express = require('express');
 const { FileSources } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -66,6 +67,32 @@ router.delete('/', async (req, res) => {
   } catch (error) {
     logger.error('[/files] Error deleting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
+
+router.get('/download/:fileId', async (req, res) => {
+  try {
+    const { fileId } = req.params;
+
+    const options = {
+      headers: {
+        // TODO: Client initialization for OpenAI API Authentication
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      responseType: 'stream',
+    };
+
+    const fileResponse = await axios.get(`https://api.openai.com/v1/files/${fileId}`, {
+      headers: options.headers,
+    });
+    const { filename } = fileResponse.data;
+
+    const response = await axios.get(`https://api.openai.com/v1/files/${fileId}/content`, options);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    response.data.pipe(res);
+  } catch (error) {
+    console.error('Error downloading file:', error);
+    res.status(500).send('Error downloading file');
   }
 });
 
