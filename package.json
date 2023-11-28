@@ -101,6 +101,7 @@
     "ag-grid-community": "^30.2.1",
     "ag-grid-react": "^30.2.1",
     "react-ga": "^3.3.1",
+    "rollup": "^4.6.0",
     "sharp": "^0.32.6",
     "vite": "^5.0.0"
   }

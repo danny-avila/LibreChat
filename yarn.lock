@@ -2321,7 +2321,7 @@
   dependencies:
     ioredis "^5.3.2"
 
-"@librechat/backend@file:/Users/Diameter/Documents/GitHub/aitok_librechat_merge/LibreChat/api":
+"@librechat/backend@file:/Users/Diameter/Documents/GitHub/aitok_librechat_dev/api":
   version "0.6.0"
   resolved "file:api"
   dependencies:
@@ -2373,7 +2373,7 @@
     winston "^3.10.0"
     zod "^3.22.4"
 
-"@librechat/frontend@file:/Users/Diameter/Documents/GitHub/aitok_librechat_merge/LibreChat/client":
+"@librechat/frontend@file:/Users/Diameter/Documents/GitHub/aitok_librechat_dev/client":
   version "0.6.0"
   resolved "file:client"
   dependencies:
@@ -3028,18 +3028,18 @@
     picomatch "^2.2.2"
 
 "@rollup/pluginutils@^5.0.1":
-  version "5.0.4"
-  resolved "https://registry.npmjs.org/@rollup/pluginutils/-/pluginutils-5.0.4.tgz"
-  integrity sha512-0KJnIoRI8A+a1dqOYLxH8vBf8bphDmty5QvIm2hqm7oFCFYKCAZWWd2hXgMibaPsNDhI0AtpYfQZJG47pt/k4g==
+  version "5.0.5"
+  resolved "https://registry.npmjs.org/@rollup/pluginutils/-/pluginutils-5.0.5.tgz"
+  integrity sha512-6aEYR910NyP73oHiJglti74iRyOwgFU4x3meH/H8OJx6Ry0j6cOVZ5X/wTvub7G7Ao6qaHBEaNsV3GLJkSsF+Q==
   dependencies:
     "@types/estree" "^1.0.0"
     estree-walker "^2.0.2"
     picomatch "^2.3.1"
 
-"@rollup/rollup-darwin-x64@4.4.1":
-  version "4.4.1"
-  resolved "https://registry.npmjs.org/@rollup/rollup-darwin-x64/-/rollup-darwin-x64-4.4.1.tgz"
-  integrity sha512-Ogqvf4/Ve/faMaiPRvzsJEqajbqs00LO+8vtrPBVvLgdw4wBg6ZDXdkDAZO+4MLnrc8mhGV6VJAzYScZdPLtJg==
+"@rollup/rollup-darwin-x64@4.6.0":
+  version "4.6.0"
+  resolved "https://registry.npmjs.org/@rollup/rollup-darwin-x64/-/rollup-darwin-x64-4.6.0.tgz"
+  integrity sha512-+ANnmjkcOBaV25n0+M0Bere3roeVAnwlKW65qagtuAfIxXF9YxUneRyAn/RDcIdRa7QrjRNJL3jR7T43ObGe8Q==
 
 "@sinclair/typebox@^0.27.8":
   version "0.27.8"
@@ -8789,7 +8789,7 @@ levn@^0.4.1:
     prelude-ls "^1.2.1"
     type-check "~0.4.0"
 
-librechat-data-provider@*, "librechat-data-provider@file:/Users/Diameter/Documents/GitHub/aitok_librechat_merge/LibreChat/packages/data-provider":
+librechat-data-provider@*, "librechat-data-provider@file:/Users/Diameter/Documents/GitHub/aitok_librechat_dev/packages/data-provider":
   version "0.2.1"
   resolved "file:packages/data-provider"
   dependencies:
@@ -11689,30 +11689,37 @@ rollup-plugin-typescript2@^0.35.0:
     semver "^7.3.7"
     tslib "^2.4.0"
 
-rollup@^1.20.0||^2.0.0||^3.0.0, rollup@^2.68.0||^3.0.0, rollup@^2.78.0||^3.0.0, rollup@^3.26.0, rollup@^3.27.1, rollup@>=1.26.3:
-  version "3.29.1"
-  resolved "https://registry.npmjs.org/rollup/-/rollup-3.29.1.tgz"
-  integrity sha512-c+ebvQz0VIH4KhhCpDsI+Bik0eT8ZFEVZEYw0cGMVqIP8zc+gnwl7iXCamTw7vzv2MeuZFZfdx5JJIq+ehzDlg==
+rollup@^1.20.0||^2.0.0||^3.0.0||^4.0.0, rollup@^2.68.0||^3.0.0, rollup@^2.78.0||^3.0.0, rollup@^4.2.0, rollup@^4.6.0, rollup@>=1.26.3:
+  version "4.6.0"
+  resolved "https://registry.npmjs.org/rollup/-/rollup-4.6.0.tgz"
+  integrity sha512-R8i5Her4oO1LiMQ3jKf7MUglYV/mhQ5g5OKeld5CnkmPdIGo79FDDQYqPhq/PCVuTQVuxsWgIbDy9F+zdHn80w==
+  optionalDependencies:
+    "@rollup/rollup-android-arm-eabi" "4.6.0"
+    "@rollup/rollup-android-arm64" "4.6.0"
+    "@rollup/rollup-darwin-arm64" "4.6.0"
+    "@rollup/rollup-darwin-x64" "4.6.0"
+    "@rollup/rollup-linux-arm-gnueabihf" "4.6.0"
+    "@rollup/rollup-linux-arm64-gnu" "4.6.0"
+    "@rollup/rollup-linux-arm64-musl" "4.6.0"
+    "@rollup/rollup-linux-x64-gnu" "4.6.0"
+    "@rollup/rollup-linux-x64-musl" "4.6.0"
+    "@rollup/rollup-win32-arm64-msvc" "4.6.0"
+    "@rollup/rollup-win32-ia32-msvc" "4.6.0"
+    "@rollup/rollup-win32-x64-msvc" "4.6.0"
+    fsevents "~2.3.2"
+
+rollup@^3.26.0:
+  version "3.29.4"
+  resolved "https://registry.npmjs.org/rollup/-/rollup-3.29.4.tgz"
+  integrity sha512-oWzmBZwvYrU0iJHtDmhsm662rC15FRXmcjCk1xD771dFDx5jJ02ufAQQTn0etB2emNk4J9EZg/yWKpsn9BWGRw==
   optionalDependencies:
     fsevents "~2.3.2"
 
-rollup@^4.2.0:
-  version "4.4.1"
-  resolved "https://registry.npmjs.org/rollup/-/rollup-4.4.1.tgz"
-  integrity sha512-idZzrUpWSblPJX66i+GzrpjKE3vbYrlWirUHteoAbjKReZwa0cohAErOYA5efoMmNCdvG9yrJS+w9Kl6csaH4w==
+rollup@^3.27.1:
+  version "3.29.4"
+  resolved "https://registry.npmjs.org/rollup/-/rollup-3.29.4.tgz"
+  integrity sha512-oWzmBZwvYrU0iJHtDmhsm662rC15FRXmcjCk1xD771dFDx5jJ02ufAQQTn0etB2emNk4J9EZg/yWKpsn9BWGRw==
   optionalDependencies:
-    "@rollup/rollup-android-arm-eabi" "4.4.1"
-    "@rollup/rollup-android-arm64" "4.4.1"
-    "@rollup/rollup-darwin-arm64" "4.4.1"
-    "@rollup/rollup-darwin-x64" "4.4.1"
-    "@rollup/rollup-linux-arm-gnueabihf" "4.4.1"
-    "@rollup/rollup-linux-arm64-gnu" "4.4.1"
-    "@rollup/rollup-linux-arm64-musl" "4.4.1"
-    "@rollup/rollup-linux-x64-gnu" "4.4.1"
-    "@rollup/rollup-linux-x64-musl" "4.4.1"
-    "@rollup/rollup-win32-arm64-msvc" "4.4.1"
-    "@rollup/rollup-win32-ia32-msvc" "4.4.1"
-    "@rollup/rollup-win32-x64-msvc" "4.4.1"
     fsevents "~2.3.2"
 
 run-async@^2.4.1:
