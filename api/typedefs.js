@@ -363,6 +363,41 @@
  */
 
 /**
+ * @exports Action
+ * @typedef {Object} Action
+ * @property {string} tool - The name of the function.
+ * @property {Object} toolInput - The args to invoke the function with.
+ * @property {string} toolCallId - The ID of the tool call.
+ * @property {Run['id']} run_id - Run identifier.
+ * @property {Thread['id']} thread_id - Thread identifier.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports StructuredTool
+ * @typedef {Object} StructuredTool
+ * @property {string} name - The name of the function.
+ * @property {string} description - The description of the function.
+ * @property {import('zod').ZodTypeAny} schema - The structured zod schema.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ToolOutput
+ * @typedef {Object} ToolOutput
+ * @property {string} tool_call_id - The ID of the tool call.
+ * @property {Object} output - The output of the tool, which can vary in structure.
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ToolOutputs
+ * @typedef {Object} ToolOutputs
+ * @property {ToolOutput[]} tool_outputs - Array of tool outputs.
+ * @memberof typedefs
+ */
+
+/**
  * @typedef {Object} ModelOptions
  * @property {string} modelName - The name of the model.
  * @property {number} [temperature] - The temperature setting for the model.
