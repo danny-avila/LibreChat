@@ -29,14 +29,14 @@ class AzureAISearch extends Tool {
    * The name of the tool.
    * @type {string}
    */
-  name = 'azure-cognitive-search';
+  name = 'azure-ai-search';
 
   /**
    * A description for the agent to use
    * @type {string}
    */
   description =
-    'Use the \'azure-cognitive-search\' tool to retrieve search results relevant to your input';
+    'Use the \'azure-ai-search\' tool to retrieve search results relevant to your input';
 
   getServiceEndpoint() {
     const serviceEndpoint = process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_COGNITIVE_SEARCH_SERVICE_ENDPOINT || '';
@@ -102,8 +102,8 @@ class AzureAISearch extends Tool {
       }
       return JSON.stringify(resultDocuments);
     } catch (error) {
-      console.error(`Azure Cognitive Search request failed: ${error}`);
-      return 'There was an error with Azure Cognitive Search.';
+      console.error(`Azure AI Search request failed: ${error}`);
+      return 'There was an error with Azure AI Search.';
     }
   }
 }
