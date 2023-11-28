@@ -5,7 +5,14 @@ Through the plugins endpoint, you can use Azure AI Search for answers to your qu
 
 ### Required
 
-To get started, you need to get an Azure AI Search endpoint URL, index name, and an API Key. You can then define on instalation of plugin.
+To get started, you need to get a Azure Cognitive Search endpoint URL, index name, and a API Key. You can then define these as follows in your `.env` file:
+
+```env
+AZURE_COGNITIVE_SEARCH_SERVICE_ENDPOINT="..."
+AZURE_COGNITIVE_SEARCH_INDEX_NAME="..."
+AZURE_COGNITIVE_SEARCH_API_KEY="..."
+```
+Or you need to get an Azure AI Search endpoint URL, index name, and an API Key. You can define them during the installation of the plugin.
 
 ### AZURE_AI_SEARCH_SERVICE_ENDPOINT
 
