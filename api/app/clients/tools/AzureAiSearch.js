@@ -5,16 +5,19 @@ const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 class AzureAISearch extends StructuredTool {
   constructor(fields = {}) {
     super();
-    this.serviceEndpoint =
-        fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_COGNITIVE_SEARCH_SERVICE_ENDPOINT || this.getServiceEndpoint();
-    this.indexName = fields.AZURE_AI_SEARCH_INDEX_NAME || process.env.AZURE_AI_SEARCH_INDEX_NAME || process.env.AZURE_COGNITIVE_SEARCH_INDEX_NAME || this.getIndexName();
-    this.apiKey = fields.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_COGNITIVE_SEARCH_API_KEY || this.getApiKey();
+    this.serviceEndpoint = fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_COGNITIVE_SEARCH_SERVICE_ENDPOINT;
+    this.indexName = fields.AZURE_AI_SEARCH_INDEX_NAME || process.env.AZURE_AI_SEARCH_INDEX_NAME || process.env.AZURE_COGNITIVE_SEARCH_INDEX_NAME;
+    this.apiKey = fields.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_COGNITIVE_SEARCH_API_KEY;
 
-    this.apiVersion = fields.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_COGNITIVE_SEARCH_API_VERSION || this.getApiVersion();
+    this.apiVersion = fields.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_COGNITIVE_SEARCH_API_VERSION || '2023-11-01';
 
-    this.queryType = fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_QUERY_TYPE || this.getQueryType();
-    this.top = fields.AZURE_AI_SEARCH_SEARCH_OPTION_TOP || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_TOP || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_TOP || this.getTop();
-    this.select = fields.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_SELECT || this.getSelect();
+    this.queryType = fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_QUERY_TYPE || 'simple';
+    this.top = fields.AZURE_AI_SEARCH_SEARCH_OPTION_TOP || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_TOP || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_TOP || 5;
+    this.select = fields.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT || process.env.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_SELECT;
+
+    if (!this.serviceEndpoint || !this.indexName || !this.apiKey) {
+      throw new Error('Missing AZURE_AI_SEARCH_SERVICE_ENDPOINT, AZURE_AI_SEARCH_INDEX_NAME or AZURE_AI_SEARCH_API_KEY environment variable.');
+    }
 
     this.client = new SearchClient(
       this.serviceEndpoint,
@@ -42,54 +45,6 @@ class AzureAISearch extends StructuredTool {
   description =
     'Use the \'azure-ai-search\' tool to retrieve search results relevant to your input';
 
-  getServiceEndpoint() {
-    const serviceEndpoint = process.env.AZURE_AI_SEARCH_SERVICE_ENDPOINT || process.env.AZURE_COGNITIVE_SEARCH_SERVICE_ENDPOINT || '';
-    if (!serviceEndpoint) {
-      throw new Error('Missing AZURE_AI_SEARCH_SERVICE_ENDPOINT or AZURE_COGNITIVE_SEARCH_SERVICE_ENDPOINT environment variable.');
-    }
-    return serviceEndpoint;
-  }
-
-  getIndexName() {
-    const indexName = process.env.AZURE_AI_SEARCH_INDEX_NAME || process.env.AZURE_COGNITIVE_SEARCH_INDEX_NAME || '';
-    if (!indexName) {
-      throw new Error('Missing AZURE_AI_SEARCH_INDEX_NAME or AZURE_COGNITIVE_SEARCH_INDEX_NAME environment variable.');
-    }
-    return indexName;
-  }
-
-  getApiKey() {
-    const apiKey = process.env.AZURE_AI_SEARCH_API_KEY || process.env.AZURE_COGNITIVE_SEARCH_API_KEY || '';
-    if (!apiKey) {
-      throw new Error('Missing AZURE_AI_SEARCH_API_KEY or AZURE_COGNITIVE_SEARCH_API_KEY environment variable.');
-    }
-    return apiKey;
-  }
-
-  getApiVersion() {
-    return process.env.AZURE_AI_SEARCH_API_VERSION || process.env.AZURE_COGNITIVE_SEARCH_API_VERSION || '2023-11-01';
-  }
-
-  getQueryType() {
-    return process.env.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_QUERY_TYPE || 'simple';
-  }
-
-  getTop() {
-    if (process.env.AZURE_AI_SEARCH_SEARCH_OPTION_TOP || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_TOP) {
-      return Number(process.env.AZURE_AI_SEARCH_SEARCH_OPTION_TOP || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_TOP);
-    } else {
-      return 5;
-    }
-  }
-
-  getSelect() {
-    if (process.env.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_SELECT) {
-      return (process.env.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_SELECT).split(',');
-    } else {
-      return null;
-    }
-  }
-
   async _call(data) {
     const { query } = data;
     try {
@@ -98,7 +53,7 @@ class AzureAISearch extends StructuredTool {
         top: this.top,
       };
       if (this.select) {
-        searchOption.select = this.select;
+        searchOption.select = this.select.split(',');
       }
       const searchResults = await this.client.search(query, searchOption);
       const resultDocuments = [];
