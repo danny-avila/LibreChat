@@ -131,7 +131,7 @@ const requestPasswordReset = async (email) => {
   const link = `${domains.client}/reset-password?token=${resetToken}&userId=${user._id}`;
 
   const emailEnabled =
-    !!process.env.EMAIL_SERVICE &&
+    (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
     !!process.env.EMAIL_USERNAME &&
     !!process.env.EMAIL_PASSWORD &&
     !!process.env.EMAIL_FROM;
