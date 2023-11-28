@@ -7,6 +7,10 @@ const paymentSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  planId: {
+    type: String,
+    required: true
+  },
   amount: {
     type: Number,
     required: true
@@ -19,15 +23,15 @@ const paymentSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  paymentReference: {
+    type: String,
+    required: true
+  },
   paymentMethod: {
     type: String,
     required: true
   },
   paymentStatus: {
-    type: String,
-    required: true
-  },
-  planId: {
     type: String,
     required: true
   },

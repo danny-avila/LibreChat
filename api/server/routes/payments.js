@@ -32,8 +32,7 @@ const planPricing = {
 
 // Endpoint for creating WeChat Pay payment
 router.post('/create-payment-wechatpay', requireJwtAuth, async (req, res) => {
-  const { paymentReference, planId } = req.body;
-  const userId = req.user._id;
+  const { userId, paymentReference, planId } = req.body;
 
   if (!planPricing[planId]) {
     return res.status(400).json({ error: 'Invalid planId' });
@@ -43,7 +42,7 @@ router.post('/create-payment-wechatpay', requireJwtAuth, async (req, res) => {
 
   await PaymentRefUserId.savePaymentRefUserId({
     paymentReference,
-    userId: userId
+    userId
   });
 
   try {
@@ -82,8 +81,7 @@ router.post('/create-payment-wechatpay', requireJwtAuth, async (req, res) => {
 
 // Alipay Endpoint
 router.post('/create-payment-alipay', requireJwtAuth, async (req, res) => {
-  const { paymentReference, planId } = req.body;
-  const userId = req.user._id;
+  const { userId, paymentReference, planId } = req.body;
 
   if (!planPricing[planId]) {
     return res.status(400).json({ error: 'Invalid planId' });
@@ -93,7 +91,7 @@ router.post('/create-payment-alipay', requireJwtAuth, async (req, res) => {
 
   await PaymentRefUserId.savePaymentRefUserId({
     paymentReference,
-    userId: userId
+    userId
   });
 
   try {
@@ -130,8 +128,7 @@ router.post('/create-payment-alipay', requireJwtAuth, async (req, res) => {
 router.post('/create-payment-unionpay', requireJwtAuth, async (req, res) => {
   console.log('Create Union Pay - Start');
 
-  const { paymentReference, planId } = req.body;
-  const userId = req.user._id;
+  const { userId, paymentReference, planId } = req.body;
 
   console.log(`Received data: Payment Reference: ${paymentReference}, Plan ID: ${planId}, User ID: ${userId}`);
 
@@ -185,7 +182,7 @@ router.post('/create-payment-unionpay', requireJwtAuth, async (req, res) => {
 });
 
 router.get('/verify-wechatpay', requireJwtAuth, async (req, res) => {
-  const { userId, sessionId, planId } = req.query;
+  const { paymentReference, userId, sessionId, planId } = req.query;
   console.log(`plan type is: ${planId}`)
 
   try {
@@ -198,11 +195,13 @@ router.get('/verify-wechatpay', requireJwtAuth, async (req, res) => {
 
       await createPaymentRecord(
         userId,
-        'wechat_pay',
-        session.id,
-        session.amount_total,
-        session.currency,
         planId,
+        session.amount_total / 100, // The amount is unit total, for example cents. So divivision by 100 is needed.
+        session.currency,
+        session.id,
+        paymentReference,
+        'wechat_pay',
+        session.payment_status,
         subscriptionStartDate,
         expirationDate
       );
@@ -228,7 +227,7 @@ router.get('/verify-wechatpay', requireJwtAuth, async (req, res) => {
 });
 
 router.get('/verify-alipay', requireJwtAuth, async (req, res) => {
-  const { userId, sessionId, planId } = req.query;
+  const { paymentReference, userId, sessionId, planId } = req.query;
   console.log(`plan type is: ${planId}`)
 
   try {
@@ -238,11 +237,13 @@ router.get('/verify-alipay', requireJwtAuth, async (req, res) => {
 
       await createPaymentRecord(
         userId,
-        'alipay',
-        session.id,
-        session.amount_total,
-        session.currency,
         planId,
+        session.amount_total / 100, // The amount is unit total, for example cents. So divivision by 100 is needed.
+        session.currency,
+        session.id,
+        paymentReference,
+        'alipay',
+        session.payment_status,
         subscriptionStartDate,
         expirationDate
       );
@@ -268,7 +269,7 @@ router.get('/verify-alipay', requireJwtAuth, async (req, res) => {
 });
 
 router.get('/verify-unionpay', requireJwtAuth, async (req, res) => {
-  const { userId, sessionId, planId } = req.query;
+  const { paymentReference, userId, sessionId, planId } = req.query;
   console.log(`plan type is: ${planId}`)
 
   try {
@@ -278,11 +279,13 @@ router.get('/verify-unionpay', requireJwtAuth, async (req, res) => {
 
       await createPaymentRecord(
         userId,
-        'unionpay',
-        session.id,
-        session.amount_total,
-        session.currency,
         planId,
+        session.amount_total / 100, // The amount is unit total, for example cents. So divivision by 100 is needed.
+        session.currency,
+        session.id,
+        paymentReference,
+        'unionpay',
+        session.payment_status,
         subscriptionStartDate,
         expirationDate
       );

@@ -27,23 +27,25 @@ const calcExpiryDate = (planType) => {
 
 async function createPaymentRecord(
   userId,
-  paymentMethod,
-  paymentId,
+  planId,
   amount,
   currency,
-  planId,
+  paymentId,
+  paymentReference,
+  paymentMethod,
+  paymentStatus,
   subscriptionStartDate,
   expirationDate
 ) {
   const paymentRecord = new Payment({
     userId,
+    planId,
     amount,
     currency,
     paymentId,
+    paymentReference,
     paymentMethod,
-    paymentStatus: 'Completed',
-    paymentReference: '',
-    planId,
+    paymentStatus,
     subscriptionStartDate,
     expirationDate
   });
