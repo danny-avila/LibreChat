@@ -12,7 +12,7 @@ import buildTree from '~/utils/buildTree';
 import { Spinner } from '../svg';
 import MultiMessage from '../Messages/MultiMessage';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
-import { useScreenshot } from '~/hooks/screenshotContext';
+import { useScreenshot } from '~/hooks/';
 import { useRecoilValue } from 'recoil';
 import { useLocalize } from '~/hooks';
 import { Plugin } from '../svg';

@@ -5,7 +5,7 @@ import { CSSTransition } from 'react-transition-group';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import MultiMessage from '../Messages/MultiMessage';
 import buildTree from '~/utils/buildTree';
-import { useScreenshot } from '~/hooks/screenshotContext.jsx';
+import { useScreenshot } from '~/hooks/';
 import {
   TConversation,
   TMessage,
