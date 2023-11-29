@@ -7,18 +7,18 @@ const sendEmail = async (email, subject, payload, template) => {
   try {
     const transporterOptions = {
       // Use STARTTLS by default instead of obligatory TLS
-      secure: process.env.EMAIL_ENCRYPTION === "tls",
+      secure: process.env.EMAIL_ENCRYPTION === 'tls',
       // If explicit STARTTLS is set, require it when connecting
-      requireTls: process.env.EMAIL_ENCRYPTION === "starttls",
+      requireTls: process.env.EMAIL_ENCRYPTION === 'starttls',
       tls: {
         // Whether to accept unsigned certificates
-        rejectUnauthorized: process.env.EMAIL_ALLOW_SELFSIGNED === "true"
+        rejectUnauthorized: process.env.EMAIL_ALLOW_SELFSIGNED === 'true',
       },
       auth: {
         user: process.env.EMAIL_USERNAME,
         pass: process.env.EMAIL_PASSWORD,
       },
-    }
+    };
 
     if (process.env.EMAIL_ENCRYPTION_HOSTNAME) {
       // Check the certificate against this name explicitly
@@ -40,7 +40,8 @@ const sendEmail = async (email, subject, payload, template) => {
     const options = () => {
       return {
         // Header address should contain name-addr
-        from: `"${process.env.EMAIL_FROM_NAME || process.env.APP_TITLE}"` +
+        from:
+          `"${process.env.EMAIL_FROM_NAME || process.env.APP_TITLE}"` +
           `<${process.env.EMAIL_FROM}>`,
         to: `"${payload.name}" <${email}>`,
         envelope: {
