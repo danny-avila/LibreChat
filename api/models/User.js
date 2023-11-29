@@ -105,11 +105,15 @@ const userSchema = mongoose.Schema(
     biography: {
       type: String,
       default: ''
-    }
+    },
     // profession: {
     //   type: String,
     //   default: ''
-    // }
+    // },
+    proMemberExpiredAt: {
+      type: Date,
+      default: ''
+    }
   },
   { timestamps: true }
 );
@@ -137,7 +141,8 @@ userSchema.methods.toJSON = function () {
     updatedAt: this.updatedAt,
     followers: this.followers,
     following: this.following,
-    biography: this.biography
+    biography: this.biography,
+    proMemberExpiredAt: this.proMemberExpiredAt,
   };
 };
 
