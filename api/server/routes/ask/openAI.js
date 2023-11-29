@@ -46,38 +46,27 @@ router.post('/', requireJwtAuth, async (req, res) => {
   };
 
   let currentTime = new Date();
-  console.log('Current Time:', currentTime);
-
   const user = await User.findById(req.user.id).exec();
-  console.log('Fetched User:', user);
-
   const userId = req.user.id; // Make sure userId is defined
   const latestPayment = await Payment.findOne({ userId: userId }).sort({ expirationDate: -1 });
-  console.log('Latest Payment:', latestPayment);
 
   let quota = 0;
   // Check if the user is a pro member and if their pro membership has not expired
   if (('proMemberExpiredAt' in user) && (user.proMemberExpiredAt > currentTime)) {
-    console.log('User is a pro member and membership has not expired');
     quota = JSON.parse(proMemberChatQuota);
   }
   // Check if the latest payment's expiration date is greater than the current time
   else if (latestPayment && latestPayment.expirationDate > currentTime) {
-    console.log('Latest payment is valid');
     quota = JSON.parse(proMemberChatQuota); // or some other quota specific to valid payment
   }
   else {
-    console.log('User is not a pro member or no valid latest payment');
     quota = JSON.parse(regMemberChatQuota);
   }
-  console.log('User Quota:', quota);
 
   let someTimeAgo = new Date(currentTime.getTime());
   someTimeAgo.setSeconds(currentTime.getSeconds() - 60 * 60 * 24); // 24 hours ago
-  console.log('Some Time Ago:', someTimeAgo);
 
   if (endpointOption.modelOptions.model in quota) {
-    console.log('Model found in quota:', endpointOption.modelOptions.model);
     let messagesCount = await getMessagesCount({
       $and: [
         { senderId: req.user.id },
@@ -85,10 +74,8 @@ router.post('/', requireJwtAuth, async (req, res) => {
         { updatedAt: { $gte: someTimeAgo } },
       ]
     });
-    console.log('Messages Count:', messagesCount);
 
     let dailyQuota = (quota[endpointOption.modelOptions.model]).toFixed(0);
-    console.log('Daily Quota for Model:', dailyQuota);
 
     if (messagesCount >= dailyQuota) {
       console.log('User has exceeded daily quota');
