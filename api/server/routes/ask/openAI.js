@@ -17,7 +17,8 @@ const Payment = require('../../../models/payments');
 
 const abortControllers = new Map();
 const baseUrl = process.env.BASE_URL
-const chatQuotaPerSecond = process.env.CHAT_QUOTA_PER_SECOND
+const proMemberChatQuota = process.env['CHAT_QUOTA_PER_DAY_PRO_MEMBER']
+const regMemberChatQuota = process.env['CHAT_QUOTA_PER_DAY']
 
 router.post('/abort', requireJwtAuth, async (req, res) => {
   return await abortMessage(req, res, abortControllers);
@@ -45,17 +46,38 @@ router.post('/', requireJwtAuth, async (req, res) => {
   };
 
   let currentTime = new Date();
-  const user = await User.findById(req.user.id).exec();
-  let quota = 0;
-  if (('proMemberExpiredAt' in user) && (user.proMemberExpiredAt > currentTime)) { // If not proMember, check quota
-    quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY_PRO_MEMBER']);
-  } else {
-    quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY']);
-  }
+  console.log('Current Time:', currentTime);
 
-  let someTimeAgo = currentTime;
-  someTimeAgo.setSeconds(currentTime.getSeconds() - 60 * 60 * 24); // 24 hours
+  const user = await User.findById(req.user.id).exec();
+  console.log('Fetched User:', user);
+
+  const userId = req.user.id; // Make sure userId is defined
+  const latestPayment = await Payment.findOne({ userId: userId }).sort({ expirationDate: -1 });
+  console.log('Latest Payment:', latestPayment);
+
+  let quota = 0;
+  // Check if the user is a pro member and if their pro membership has not expired
+  if (('proMemberExpiredAt' in user) && (user.proMemberExpiredAt > currentTime)) {
+    console.log('User is a pro member and membership has not expired');
+    quota = JSON.parse(proMemberChatQuota);
+  }
+  // Check if the latest payment's expiration date is greater than the current time
+  else if (latestPayment && latestPayment.expirationDate > currentTime) {
+    console.log('Latest payment is valid');
+    quota = JSON.parse(proMemberChatQuota); // or some other quota specific to valid payment
+  }
+  else {
+    console.log('User is not a pro member or no valid latest payment');
+    quota = JSON.parse(regMemberChatQuota);
+  }
+  console.log('User Quota:', quota);
+
+  let someTimeAgo = new Date(currentTime.getTime());
+  someTimeAgo.setSeconds(currentTime.getSeconds() - 60 * 60 * 24); // 24 hours ago
+  console.log('Some Time Ago:', someTimeAgo);
+
   if (endpointOption.modelOptions.model in quota) {
+    console.log('Model found in quota:', endpointOption.modelOptions.model);
     let messagesCount = await getMessagesCount({
       $and: [
         { senderId: req.user.id },
@@ -63,10 +85,23 @@ router.post('/', requireJwtAuth, async (req, res) => {
         { updatedAt: { $gte: someTimeAgo } },
       ]
     });
+    console.log('Messages Count:', messagesCount);
+
     let dailyQuota = (quota[endpointOption.modelOptions.model]).toFixed(0);
+    console.log('Daily Quota for Model:', dailyQuota);
+
     if (messagesCount >= dailyQuota) {
-      return handleError(res, { text: `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，通过此网页可以购买更多额度：https://iaitok.com/pay` });
+      console.log('User has exceeded daily quota');
+      return handleError(res, {
+        text: `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，
+                 如果您是一般用户通过 https://iaitok.com/pay 或者 ${baseUrl}/subscription/${userId} 
+                 可以购买更多额度；如果您是已经付费用户，请稍作休息`
+      });
+    } else {
+      console.log('User has not exceeded daily quota');
     }
+  } else {
+    console.log('Model not found in quota:', endpointOption.modelOptions.model);
   }
 
   console.log('ask log');
@@ -158,44 +193,6 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
       responseMessage: responseMessage
     };
   };
-
-  // Quota and subscription check
-  let someTimeAgo = new Date();
-  const userId = req.user.id;
-  someTimeAgo.setSeconds(someTimeAgo.getSeconds() - 60 * 60 * 24); // 24 hours
-  console.log('someTimeAgo:', someTimeAgo);
-  let quota = JSON.parse(chatQuotaPerSecond);
-  console.log('quota:', quota);
-  console.log('Checking quota for model:', endpointOption.modelOptions.model);
-
-  if (endpointOption.modelOptions.model in quota) {
-    let messagesCount = await getMessagesCount({
-      senderId: userId,
-      model: endpointOption.modelOptions.model,
-      updatedAt: { $gte: someTimeAgo },
-    });
-
-    let dailyQuota = (quota[endpointOption.modelOptions.model] * 60 * 60 * 24).toFixed(0);
-
-    console.log(`User ${userId} message count: ${messagesCount}, Daily quota: ${dailyQuota}`);
-
-    if (messagesCount >= dailyQuota) {
-      // User exceeded daily quota, check for valid subscription
-      console.log(`User ${userId} exceeded daily quota. Checking subscription...`);
-      const latestPayment = await Payment.findOne({ userId: userId }).sort({ expirationDate: -1 });
-
-      if (!latestPayment || new Date() > latestPayment.expirationDate) {
-        console.log(`User ${userId} does not have a valid subscription`);
-        return handleError(res, { text:`超出了您的使用额度(${endpointOption.model}每天${dailyQuota}条消息)，+ 
-        如需购买更多额度, 请点击<a href="${baseUrl}/subscription/${userId}">付费计划</a>` });
-      }
-      console.log(`User ${userId} has a valid subscription`);
-    }
-  } else {
-    console.log('Invalid model option for quota check');
-    res.status(400).json({ message: 'Invalid model option.' });
-    return;
-  }
 
   const onStart = (userMessage) => {
     sendMessage(res, { message: userMessage, created: true });
