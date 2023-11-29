@@ -31,7 +31,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   let responseMessageId;
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
-  const sender = getResponseSender(endpointOption);
+  const sender = getResponseSender({ ...endpointOption, model: endpointOption.modelOptions.model });
   const user = req.user.id;
 
   const getReqData = (data = {}) => {
