@@ -4,7 +4,8 @@ export default {
   com_ui_examples: 'Örnekler',
   com_ui_new_chat: 'Yeni Sohbet',
   com_ui_example_quantum_computing: 'Kuantum bilgisayarını basit terimlerle açıkla',
-  com_ui_example_10_year_old_b_day: '10 yaşındaki bir çocuğun doğum günü için yaratıcı fikirlerin var mı?',
+  com_ui_example_10_year_old_b_day:
+    '10 yaşındaki bir çocuğun doğum günü için yaratıcı fikirlerin var mı?',
   com_ui_example_http_in_js: 'Javascript\'te HTTP isteği nasıl yapılır?',
   com_ui_capabilities: 'Yetenekler',
   com_ui_capability_remember: 'Kullanıcının önceki konuşmada söylediklerini hatırlar',
@@ -26,7 +27,8 @@ export default {
   com_ui_showing: 'Gösteriliyor',
   com_ui_of: 'of',
   com_ui_entries: 'Girişler',
-  com_ui_pay_per_call: 'Tüm yapay zeka konuşmaları bir yerde. Ayda bir değil, çağrı başına ödeme yapın',
+  com_ui_pay_per_call:
+    'Tüm yapay zeka konuşmaları bir yerde. Ayda bir değil, çağrı başına ödeme yapın',
   com_ui_enter: 'Gir',
   com_ui_submit: 'Gönder',
   com_ui_upload_success: 'Dosya başarıyla yüklendi',
@@ -48,10 +50,14 @@ export default {
   com_ui_delete: 'Sil',
   com_ui_delete_conversation: 'Sohbeti sil?',
   com_ui_delete_conversation_confirm: 'Bu silinecek',
-  com_auth_error_login: 'Sağlanan bilgilerle giriş yapılamıyor. Lütfen kimlik bilgilerinizi kontrol edip tekrar deneyin.',
-  com_auth_error_login_rl: 'Kısa bir süre içinde çok fazla giriş denemesi. Lütfen daha sonra tekrar deneyin.',
-  com_auth_error_login_ban: 'Hesabınız servisimizin ihlaller nedeniyle geçici olarak engellenmiştir.',
-  com_auth_error_login_server: 'Dahili bir server hatası oluştu. Lütfen birkaç dakika bekleyin ve tekrar deneyin.',
+  com_auth_error_login:
+    'Sağlanan bilgilerle giriş yapılamıyor. Lütfen kimlik bilgilerinizi kontrol edip tekrar deneyin.',
+  com_auth_error_login_rl:
+    'Kısa bir süre içinde çok fazla giriş denemesi. Lütfen daha sonra tekrar deneyin.',
+  com_auth_error_login_ban:
+    'Hesabınız servisimizin ihlaller nedeniyle geçici olarak engellenmiştir.',
+  com_auth_error_login_server:
+    'Dahili bir server hatası oluştu. Lütfen birkaç dakika bekleyin ve tekrar deneyin.',
   com_auth_no_account: 'Hesabınız yok mu?',
   com_auth_sign_up: 'Kayıt ol',
   com_auth_sign_in: 'Giriş yap',
@@ -74,7 +80,7 @@ export default {
   com_auth_password_not_match: 'Şifreler uyuşmuyor',
   com_auth_continue: 'Devam et',
   com_auth_create_account: 'Hesabını oluştur',
-  com_auth_error_create: 'Hesabınızı kaydetmeye çalışırken bir hata oluştu. Lütfen tekrar deneyin.',  
+  com_auth_error_create: 'Hesabınızı kaydetmeye çalışırken bir hata oluştu. Lütfen tekrar deneyin.',
   com_auth_full_name: 'Tam Adı',
   com_auth_name_required: 'Ad gereklidir',
   com_auth_name_min_length: 'Ad en az 3 karakter olmalıdır',
@@ -90,8 +96,10 @@ export default {
   com_auth_here: 'BURAYA',
   com_auth_to_reset_your_password: 'şifrenizi sıfırlamak için.',
   com_auth_reset_password_link_sent: 'E-posta Gönderildi',
-  com_auth_reset_password_email_sent: 'Şifrenizi sıfırlamak için size daha fazla talimat içeren bir e-posta gönderildi.',
-  com_auth_error_reset_password: 'Şifrenizi sıfırlama konusunda bir sorun oluştu. Sağlanan e-posta adresi ile ilişkilendirilmiş bir kullanıcı bulunamadı. Lütfen tekrar deneyin.',
+  com_auth_reset_password_email_sent:
+    'Şifrenizi sıfırlamak için size daha fazla talimat içeren bir e-posta gönderildi.',
+  com_auth_error_reset_password:
+    'Şifrenizi sıfırlama konusunda bir sorun oluştu. Sağlanan e-posta adresi ile ilişkilendirilmiş bir kullanıcı bulunamadı. Lütfen tekrar deneyin.',
   com_auth_reset_password_success: 'Şifre Sıfırlama Başarılı',
   com_auth_login_with_new_password: 'Artık yeni şifrenizle giriş yapabilirsiniz.',
   com_auth_error_invalid_reset_token: 'Bu şifre sıfırlama belirteci artık geçerli değil.',
@@ -103,8 +111,10 @@ export default {
   com_endpoint_bing_enable_sydney: 'Sydney\'i Etkinleştir',
   com_endpoint_bing_to_enable_sydney: 'Sydney\'i etkinleştirmek için',
   com_endpoint_bing_jailbreak: 'Jailbreak',
-  com_endpoint_bing_context_placeholder: 'Bing, konuşma için başvurabileceği "bağlam" için 7k tokena kadar kullanabilir. Belirli bir sınır bilinmemekle birlikte, 7k tokeni aşan hatalara neden olabilir',
-  com_endpoint_bing_system_message_placeholder: 'UYARI: Bu özelliği yanlış kullanmak sizi Bing kullanımından MEN edebilir! "Sistem Mesajı" na tıklayarak tam talimatları ve varsayılan mesajı görebilirsiniz, ki bu da güvenli kabul edilen "Sydney" önceden ayarıdır.',
+  com_endpoint_bing_context_placeholder:
+    'Bing, konuşma için başvurabileceği "bağlam" için 7k tokena kadar kullanabilir. Belirli bir sınır bilinmemekle birlikte, 7k tokeni aşan hatalara neden olabilir',
+  com_endpoint_bing_system_message_placeholder:
+    'UYARI: Bu özelliği yanlış kullanmak sizi Bing kullanımından MEN edebilir! "Sistem Mesajı" na tıklayarak tam talimatları ve varsayılan mesajı görebilirsiniz, ki bu da güvenli kabul edilen "Sydney" önceden ayarıdır.',
   com_endpoint_system_message: 'Sistem Mesajı',
   com_endpoint_default_blank: 'varsayılan: boş',
   com_endpoint_default_false: 'varsayılan: false',
@@ -115,12 +125,17 @@ export default {
   com_endpoint_tone_style: 'Ton Stili',
   com_endpoint_token_count: 'Token Sayısı',
   com_endpoint_output: 'Çıkış',
-  com_endpoint_google_temp: 'Daha yüksek değerler = daha rastgele, daha düşük değerler = daha odaklanmış ve belirleyici. Bunlardan birini değiştirmenizi öneririz, ancak her ikisini birden değil.',
-  com_endpoint_google_topp: 'Top-p, modelin çıkış için token seçme şeklini değiştirir. Token\'lar, en yüksek K (topK parametresini görmek için) olasılıktan en düşük olasılığa kadar seçilir, toplam olasılıkları top-p değerine eşit olana kadar.',
-  com_endpoint_google_topk: 'Top-k, modelin çıkış için token seçme şeklini değiştirir. 1 top-k, seçilen tokenın modelin kelime dağarcığındaki tüm tokenlar arasında en olası olduğu anlamına gelir (ayrıca aç gözlü kod çözme denir), 3 top-k ise bir sonraki tokenın 3 en olası token arasından seçildiği anlamına gelir (sıcaklık kullanılarak).',
-  com_endpoint_google_maxoutputtokens: 'Yanıtta üretilebilecek maksimum token sayısı. Daha kısa yanıtlar için daha düşük bir değer belirtin ve daha uzun yanıtlar için daha yüksek bir değer belirtin.',
+  com_endpoint_google_temp:
+    'Daha yüksek değerler = daha rastgele, daha düşük değerler = daha odaklanmış ve belirleyici. Bunlardan birini değiştirmenizi öneririz, ancak her ikisini birden değil.',
+  com_endpoint_google_topp:
+    'Top-p, modelin çıkış için token seçme şeklini değiştirir. Token\'lar, en yüksek K (topK parametresini görmek için) olasılıktan en düşük olasılığa kadar seçilir, toplam olasılıkları top-p değerine eşit olana kadar.',
+  com_endpoint_google_topk:
+    'Top-k, modelin çıkış için token seçme şeklini değiştirir. 1 top-k, seçilen tokenın modelin kelime dağarcığındaki tüm tokenlar arasında en olası olduğu anlamına gelir (ayrıca aç gözlü kod çözme denir), 3 top-k ise bir sonraki tokenın 3 en olası token arasından seçildiği anlamına gelir (sıcaklık kullanılarak).',
+  com_endpoint_google_maxoutputtokens:
+    'Yanıtta üretilebilecek maksimum token sayısı. Daha kısa yanıtlar için daha düşük bir değer belirtin ve daha uzun yanıtlar için daha yüksek bir değer belirtin.',
   com_endpoint_google_custom_name_placeholder: 'PaLM2 için özel bir ad belirleyin',
-  com_endpoint_prompt_prefix_placeholder: 'Özel talimatları veya bağlamı ayarlayın. Boşsa göz ardı edilir.',
+  com_endpoint_prompt_prefix_placeholder:
+    'Özel talimatları veya bağlamı ayarlayın. Boşsa göz ardı edilir.',
   com_endpoint_custom_name: 'Özel Ad',
   com_endpoint_prompt_prefix: 'Talimat Öneki',
   com_endpoint_temperature: 'Sıcaklık',
@@ -128,26 +143,36 @@ export default {
   com_endpoint_top_p: 'Top P',
   com_endpoint_top_k: 'Top K',
   com_endpoint_max_output_tokens: 'Maksimum Çıkış Tokenları',
-  com_endpoint_openai_temp: 'Daha yüksek değerler = daha rastgele, daha düşük değerler = daha odaklanmış ve belirleyici. Bunlardan birini değiştirmenizi öneririz, ancak her ikisini birden değil.',
-  com_endpoint_openai_max: 'Oluşturulacak maksimum token sayısı. Giriş tokenlarının toplam uzunluğu, modelin bağlam uzunluğu tarafından sınırlanır.',
-  com_endpoint_openai_topp: 'Sıcaklıkla örnekleme alternatifi olan bir başka seçenek, modelin top_p olasılık kütlesine sahip tokenların sonuçlarını düşünmesidir. Bu nedenle 0.1, yalnızca top 10% olasılık kütlesini oluşturan token\'ların düşünüldüğü anlamına gelir. Bunları veya sıcaklığı değiştirmenizi öneririz, ancak her ikisini birden değil.',
-  com_endpoint_openai_freq: 'Metindeki mevcut frekanslarına dayanarak yeni tokenları cezalandırmak için -2.0 ile 2.0 arasında bir sayı. Pozitif değerler, modelin aynı satırı kelimesi kelimesine tekrar etme olasılığını azaltır.',
-  com_endpoint_openai_pres: 'Metindeki varolup olmadıklarına dayanarak yeni tokenları cezalandırmak için -2.0 ile 2.0 arasında bir sayı. Pozitif değerler, modelin yeni konulardan bahsetme olasılığını artırır.',
+  com_endpoint_openai_temp:
+    'Daha yüksek değerler = daha rastgele, daha düşük değerler = daha odaklanmış ve belirleyici. Bunlardan birini değiştirmenizi öneririz, ancak her ikisini birden değil.',
+  com_endpoint_openai_max:
+    'Oluşturulacak maksimum token sayısı. Giriş tokenlarının toplam uzunluğu, modelin bağlam uzunluğu tarafından sınırlanır.',
+  com_endpoint_openai_topp:
+    'Sıcaklıkla örnekleme alternatifi olan bir başka seçenek, modelin top_p olasılık kütlesine sahip tokenların sonuçlarını düşünmesidir. Bu nedenle 0.1, yalnızca top 10% olasılık kütlesini oluşturan token\'ların düşünüldüğü anlamına gelir. Bunları veya sıcaklığı değiştirmenizi öneririz, ancak her ikisini birden değil.',
+  com_endpoint_openai_freq:
+    'Metindeki mevcut frekanslarına dayanarak yeni tokenları cezalandırmak için -2.0 ile 2.0 arasında bir sayı. Pozitif değerler, modelin aynı satırı kelimesi kelimesine tekrar etme olasılığını azaltır.',
+  com_endpoint_openai_pres:
+    'Metindeki varolup olmadıklarına dayanarak yeni tokenları cezalandırmak için -2.0 ile 2.0 arasında bir sayı. Pozitif değerler, modelin yeni konulardan bahsetme olasılığını artırır.',
   com_endpoint_openai_custom_name_placeholder: 'ChatGPT için özel bir ad belirleyin',
-  com_endpoint_openai_prompt_prefix_placeholder: 'Sistem Mesajı\'na dahil edilecek özel talimatları ayarlayın. Varsayılan: yok',
-  com_endpoint_anthropic_temp: '0 ile 1 arasında bir değer. Analitik / çoklu seçim için daha yakın bir sıcaklık kullanın ve yaratıcı ve üretken görevler için daha yakın 1 kullanın. Bunlardan birini değiştirmenizi öneririz, ancak her ikisini birden değil.',
-  com_endpoint_anthropic_topp: 'Top-p, modelin çıkış için token seçme şeklini değiştirir. Token\'lar, en yüksek K (topK parametresini görmek için) olasılıktan en düşük olasılığa kadar seçilir, toplam olasılıkları top-p değerine eşit olana kadar.',
-  com_endpoint_anthropic_topk: 'Top-k, modelin çıkış için token seçme şeklini değiştirir. 1 top-k, seçilen tokenın modelin kelime dağarcığındaki tüm tokenlar arasında en olası olduğu anlamına gelir (ayrıca aç gözlü kod çözme denir), 3 top-k ise bir sonraki tokenın 3 en olası token arasından seçildiği anlamına gelir (sıcaklık kullanılarak).',
-  com_endpoint_anthropic_maxoutputtokens: 'Yanıtta üretilebilecek maksimum token sayısı. Daha kısa yanıtlar için daha düşük bir değer belirtin ve daha uzun yanıtlar için daha yüksek bir değer belirtin.',
+  com_endpoint_openai_prompt_prefix_placeholder:
+    'Sistem Mesajı\'na dahil edilecek özel talimatları ayarlayın. Varsayılan: yok',
+  com_endpoint_anthropic_temp:
+    '0 ile 1 arasında bir değer. Analitik / çoklu seçim için daha yakın bir sıcaklık kullanın ve yaratıcı ve üretken görevler için daha yakın 1 kullanın. Bunlardan birini değiştirmenizi öneririz, ancak her ikisini birden değil.',
+  com_endpoint_anthropic_topp:
+    'Top-p, modelin çıkış için token seçme şeklini değiştirir. Token\'lar, en yüksek K (topK parametresini görmek için) olasılıktan en düşük olasılığa kadar seçilir, toplam olasılıkları top-p değerine eşit olana kadar.',
+  com_endpoint_anthropic_topk:
+    'Top-k, modelin çıkış için token seçme şeklini değiştirir. 1 top-k, seçilen tokenın modelin kelime dağarcığındaki tüm tokenlar arasında en olası olduğu anlamına gelir (ayrıca aç gözlü kod çözme denir), 3 top-k ise bir sonraki tokenın 3 en olası token arasından seçildiği anlamına gelir (sıcaklık kullanılarak).',
+  com_endpoint_anthropic_maxoutputtokens:
+    'Yanıtta üretilebilecek maksimum token sayısı. Daha kısa yanıtlar için daha düşük bir değer belirtin ve daha uzun yanıtlar için daha yüksek bir değer belirtin.',
   com_endpoint_anthropic_custom_name_placeholder: 'Anthropic için özel bir ad belirleyin',
   com_endpoint_frequency_penalty: 'Frekans Cezası',
   com_endpoint_presence_penalty: 'Varlık Cezası',
   com_endpoint_plug_use_functions: 'Fonksiyonları Kullan',
   com_endpoint_plug_skip_completion: 'Tamamlamayı Atla',
   com_endpoint_disabled_with_tools: 'araçlarla devre dışı bırakıldı',
-  com_endpoint_disabled_with_tools_placeholder: 'Araçlar Seçiliyken Devre Dışı Bırakıldı',  
+  com_endpoint_disabled_with_tools_placeholder: 'Araçlar Seçiliyken Devre Dışı Bırakıldı',
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
-  'Sistem Mesajı\'na dahil edilecek özel talimatları ayarlayın. Varsayılan: hiçbiri',
+    'Sistem Mesajı\'na dahil edilecek özel talimatları ayarlayın. Varsayılan: hiçbiri',
   com_endpoint_import: 'İçe Aktar',
   com_endpoint_set_custom_name: 'Bu ön ayarı bulmak için özel bir ad belirleyin',
   com_endpoint_preset: 'ön ayar',
@@ -185,7 +210,8 @@ export default {
   com_endpoint_config_key_encryption: 'Anahtarınız şifreli ve silinecek',
   com_endpoint_config_key_expiry: 'süresi dolduğunda',
   com_endpoint_config_key_import_json_key: 'Servis Hesabı JSON Anahtarını İçe Aktar.',
-  com_endpoint_config_key_import_json_key_success: 'Servis Hesabı JSON Anahtarı Başarıyla İçe Aktarıldı',
+  com_endpoint_config_key_import_json_key_success:
+    'Servis Hesabı JSON Anahtarı Başarıyla İçe Aktarıldı',
   com_endpoint_config_key_import_json_key_invalid:
     'Geçersiz Servis Hesabı JSON Anahtarı, doğru dosyayı mı içe aktardınız?',
   com_endpoint_config_key_get_edge_key: 'Bing için Erişim belirtecinizi almak için giriş yapın',
@@ -193,7 +219,8 @@ export default {
     'Siteye giriş yapılırken dev araçları veya bir uzantı kullanarak _U çerezinin içeriğini kopyalayın. Bu başarısız olursa, bu',
   com_endpoint_config_key_edge_instructions: 'talimatları',
   com_endpoint_config_key_edge_full_key_string: 'tam çerez dizilerini sağlamak için.',
-  com_endpoint_config_key_chatgpt: 'ChatGPT \'Free Version\' için Erişim belirtecinizi almak için giriş yapın',
+  com_endpoint_config_key_chatgpt:
+    'ChatGPT \'Free Version\' için Erişim belirtecinizi almak için giriş yapın',
   com_endpoint_config_key_chatgpt_then_visit: 'ardından ziyaret edin',
   com_endpoint_config_key_chatgpt_copy_token: 'Erişim belirtecini kopyalayın.',
   com_endpoint_config_key_google_need_to: 'Şunlara ihtiyacınız var:',
