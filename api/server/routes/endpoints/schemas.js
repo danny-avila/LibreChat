@@ -8,7 +8,43 @@ const EModelEndpoint = {
   google: 'google',
   gptPlugins: 'gptPlugins',
   anthropic: 'anthropic',
+  assistant: 'assistant',
 };
+
+const alternateName = {
+  [EModelEndpoint.openAI]: 'OpenAI',
+  [EModelEndpoint.assistant]: 'Assistants',
+  [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
+  [EModelEndpoint.bingAI]: 'Bing',
+  [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
+  [EModelEndpoint.gptPlugins]: 'Plugins',
+  [EModelEndpoint.google]: 'PaLM',
+  [EModelEndpoint.anthropic]: 'Anthropic',
+};
+
+const supportsFiles = {
+  [EModelEndpoint.openAI]: true,
+  [EModelEndpoint.assistant]: true,
+};
+
+const openAIModels = [
+  'gpt-3.5-turbo-16k-0613',
+  'gpt-3.5-turbo-16k',
+  'gpt-4-1106-preview',
+  'gpt-3.5-turbo',
+  'gpt-3.5-turbo-1106',
+  'gpt-4-vision-preview',
+  'gpt-4',
+  'gpt-3.5-turbo-instruct-0914',
+  'gpt-3.5-turbo-0613',
+  'gpt-3.5-turbo-0301',
+  'gpt-3.5-turbo-instruct',
+  'gpt-4-0613',
+  'text-davinci-003',
+  'gpt-4-0314',
+];
+
+const visionModels = ['gpt-4-vision', 'llava-13b'];
 
 const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
@@ -263,14 +299,33 @@ const gptPluginsSchema = tConversationSchema
     },
   }));
 
+const assistantSchema = tConversationSchema
+  .pick({
+    model: true,
+    assistant_id: true,
+    thread_id: true,
+  })
+  .transform((obj) => {
+    const newObj = { ...obj };
+    Object.keys(newObj).forEach((key) => {
+      const value = newObj[key];
+      if (value === undefined || value === null) {
+        delete newObj[key];
+      }
+    });
+    return newObj;
+  })
+  .catch(() => ({}));
+
 const endpointSchemas = {
-  openAI: openAISchema,
-  azureOpenAI: openAISchema,
-  google: googleSchema,
-  bingAI: bingAISchema,
-  anthropic: anthropicSchema,
-  chatGPTBrowser: chatGPTBrowserSchema,
-  gptPlugins: gptPluginsSchema,
+  [EModelEndpoint.openAI]: openAISchema,
+  [EModelEndpoint.assistant]: assistantSchema,
+  [EModelEndpoint.azureOpenAI]: openAISchema,
+  [EModelEndpoint.google]: googleSchema,
+  [EModelEndpoint.bingAI]: bingAISchema,
+  [EModelEndpoint.anthropic]: anthropicSchema,
+  [EModelEndpoint.chatGPTBrowser]: chatGPTBrowserSchema,
+  [EModelEndpoint.gptPlugins]: gptPluginsSchema,
 };
 
 function getFirstDefinedValue(possibleValues) {
@@ -301,21 +356,35 @@ const parseConvo = (endpoint, conversation, possibleValues) => {
 };
 
 const getResponseSender = (endpointOption) => {
-  const { endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
+  const { model, endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
 
-  if (['openAI', 'azureOpenAI', 'gptPlugins', 'chatGPTBrowser'].includes(endpoint)) {
-    return chatGptLabel ?? 'ChatGPT';
+  if (
+    [
+      EModelEndpoint.openAI,
+      EModelEndpoint.azureOpenAI,
+      EModelEndpoint.gptPlugins,
+      EModelEndpoint.chatGPTBrowser,
+    ].includes(endpoint)
+  ) {
+    if (chatGptLabel) {
+      return chatGptLabel;
+    } else if (model && model.includes('gpt-3')) {
+      return 'GPT-3.5';
+    } else if (model && model.includes('gpt-4')) {
+      return 'GPT-4';
+    }
+    return alternateName[endpoint] ?? 'ChatGPT';
   }
 
-  if (endpoint === 'bingAI') {
+  if (endpoint === EModelEndpoint.bingAI) {
     return jailbreak ? 'Sydney' : 'BingAI';
   }
 
-  if (endpoint === 'anthropic') {
-    return modelLabel ?? 'Anthropic';
+  if (endpoint === EModelEndpoint.anthropic) {
+    return modelLabel ?? 'Claude';
   }
 
-  if (endpoint === 'google') {
+  if (endpoint === EModelEndpoint.google) {
     return modelLabel ?? 'PaLM2';
   }
 
@@ -325,4 +394,9 @@ const getResponseSender = (endpointOption) => {
 module.exports = {
   parseConvo,
   getResponseSender,
+  EModelEndpoint,
+  supportsFiles,
+  openAIModels,
+  visionModels,
+  alternateName,
 };

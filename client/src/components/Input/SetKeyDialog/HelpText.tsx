@@ -1,10 +1,11 @@
-import React from 'react';
+import { memo } from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
 function HelpText({ endpoint }: { endpoint: string }) {
   const localize = useLocalize();
   const textMap = {
-    bingAI: (
+    [EModelEndpoint.bingAI]: (
       <small className="break-all text-gray-600">
         {localize('com_endpoint_config_key_get_edge_key')}{' '}
         <a
@@ -28,7 +29,7 @@ function HelpText({ endpoint }: { endpoint: string }) {
         {localize('com_endpoint_config_key_edge_full_token_string')}
       </small>
     ),
-    chatGPTBrowser: (
+    [EModelEndpoint.chatGPTBrowser]: (
       <small className="break-all text-gray-600">
         {localize('com_endpoint_config_key_chatgpt')}{' '}
         <a
@@ -53,7 +54,7 @@ function HelpText({ endpoint }: { endpoint: string }) {
         {localize('com_endpoint_config_key_chatgpt_copy_token')}
       </small>
     ),
-    google: (
+    [EModelEndpoint.google]: (
       <small className="break-all text-gray-600">
         {localize('com_endpoint_config_key_google_need_to')}{' '}
         <a
@@ -82,4 +83,4 @@ function HelpText({ endpoint }: { endpoint: string }) {
   return textMap[endpoint] || null;
 }
 
-export default React.memo(HelpText);
+export default memo(HelpText);

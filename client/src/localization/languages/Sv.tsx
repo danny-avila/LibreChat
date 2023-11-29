@@ -246,6 +246,7 @@ export default {
   com_nav_confirm_clear: 'Bekräfta rensning', // Confirm Clear
   com_nav_close_sidebar: 'Stäng sidofält', // Close sidebar
   com_nav_open_sidebar: 'Öppna sidofält', // Open sidebar
+  com_nav_send_message: 'Skicka meddelande', // Send message
   com_nav_log_out: 'Logga ut', // Log out
   com_nav_user: 'ANVÄNDARE', // USER
   com_nav_clear_conversation: 'Rensa konversationer', // Clear conversations

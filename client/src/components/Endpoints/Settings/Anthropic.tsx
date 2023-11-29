@@ -40,7 +40,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             setValue={setModel}
             availableValues={models}
             disabled={readonly}
-            className={cn(defaultTextProps, 'z-50 flex w-full resize-none', removeFocusOutlines)}
+            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
             containerClassName="flex w-full resize-none"
           />
         </div>
@@ -75,7 +75,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             placeholder={localize('com_endpoint_prompt_prefix_placeholder')}
             className={cn(
               defaultTextProps,
-              'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
+              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
             )}
           />
         </div>
@@ -86,7 +86,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <div className="flex justify-between">
               <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_temperature')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default')}: 0.2)</small>
+                <small className="opacity-40">({localize('com_endpoint_default')}: 1)</small>
               </Label>
               <InputNumber
                 id="temp-int"
@@ -122,10 +122,12 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
-              {localize('com_endpoint_top_p')}{' '}
-              <small className="opacity-40">
-                ({localize('com_endpoint_default_with_num', '0.7')})
-              </small>
+              <Label htmlFor="top-p-int" className="text-left text-sm font-medium">
+                {localize('com_endpoint_top_p')}{' '}
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default_with_num', '0.7')})
+                </small>
+              </Label>
               <InputNumber
                 id="top-p-int"
                 disabled={readonly}
@@ -201,10 +203,12 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
-              {localize('com_endpoint_max_output_tokens')}{' '}
-              <small className="opacity-40">
-                ({localize('com_endpoint_default_with_num', '4000')})
-              </small>
+              <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
+                {localize('com_endpoint_max_output_tokens')}{' '}
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default_with_num', '4000')})
+                </small>
+              </Label>
               <InputNumber
                 id="max-tokens-int"
                 disabled={readonly}

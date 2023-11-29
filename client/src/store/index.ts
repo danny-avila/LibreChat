@@ -1,5 +1,6 @@
 import conversation from './conversation';
 import conversations from './conversations';
+import families from './families';
 import endpoints from './endpoints';
 import models from './models';
 import user from './user';
@@ -14,6 +15,7 @@ import tabValue from './tabValue';
 import widget from './widget';
 
 export default {
+  ...families,
   ...conversation,
   ...conversations,
   ...endpoints,

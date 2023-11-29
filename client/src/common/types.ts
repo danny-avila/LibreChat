@@ -32,6 +32,7 @@ export type TShowToast = {
   message: string;
   severity?: NotificationSeverity;
   showIcon?: boolean;
+  duration?: number;
 };
 
 export type TBaseSettingsProps = {
@@ -47,6 +48,8 @@ export type TSettingsProps = TBaseSettingsProps & {
 
 export type TModels = {
   models: string[];
+  showAbove?: boolean;
+  popover?: boolean;
 };
 
 export type TModelSelectProps = TSettingsProps & TModels;
@@ -64,7 +67,7 @@ export type TSetOptionsPayload = {
   addExample: () => void;
   removeExample: () => void;
   setAgentOption: TSetOption;
-  getConversation: () => TConversation | TPreset | null;
+  // getConversation: () => TConversation | TPreset | null;
   checkPluginSelection: (value: string) => boolean;
   setTools: (newValue: string) => void;
 };
@@ -203,3 +206,29 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
     className?: string;
     endpoint?: string | null;
   };
+
+export type Option = Record<string, unknown> & {
+  label?: string;
+  value: string | number | null;
+};
+
+export type TOptionSettings = {
+  showExamples?: boolean;
+  isCodeChat?: boolean;
+};
+
+export interface ExtendedFile {
+  file: File;
+  file_id: string;
+  temp_file_id?: string;
+  type?: string;
+  filepath?: string;
+  filename?: string;
+  width?: number;
+  height?: number;
+  size: number;
+  preview: string;
+  progress: number;
+}
+
+export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

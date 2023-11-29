@@ -65,6 +65,7 @@ export default {
   com_ui_of: 'of',
   com_ui_entries: 'Entries',
   com_ui_pay_per_call: 'All AI conversations in one place. Pay per call and not per month',
+  com_ui_new_footer: 'All AI conversations in one place.',
   com_ui_enter: 'Enter',
   com_ui_submit: 'Submit',
   com_ui_upload_success: 'Successfully uploaded file',
@@ -222,6 +223,7 @@ export default {
   com_endpoint_set_custom_name: 'Set a custom name, in case you can find this preset',
   com_endpoint_preset: 'preset',
   com_endpoint_presets: 'presets',
+  com_endpoint_preset_selected: 'Preset Active!',
   com_endpoint_preset_name: 'Preset Name',
   com_endpoint_new_topic: 'New Topic',
   com_endpoint: 'Endpoint',
@@ -241,7 +243,7 @@ export default {
   com_endpoint_presets_clear_warning:
     'Are you sure you want to clear all presets? This is irreversible.',
   com_endpoint_not_implemented: 'Not implemented',
-  com_endpoint_no_presets: 'No preset yet',
+  com_endpoint_no_presets: 'No presets yet, use the settings button to create one',
   com_endpoint_not_available: 'No endpoint available',
   com_endpoint_confirm: 'Confirm',
   com_endpoint_edit_preset: 'Edit Preset',
@@ -280,6 +282,7 @@ export default {
   com_endpoint_config_key_google_service_account: 'Create a Service Account',
   com_endpoint_config_key_google_vertex_api_role:
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
+  com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
   com_nav_plugin_store: 'Plugin store',
   com_nav_plugin_search: 'Search plugins',
@@ -329,6 +332,7 @@ export default {
   com_nav_confirm_clear: 'Confirm Clear',
   com_nav_close_sidebar: 'Close sidebar',
   com_nav_open_sidebar: 'Open sidebar',
+  com_nav_send_message: 'Send message',
   com_nav_log_out: 'Log out',
   com_nav_user: 'USER',
   com_nav_clear_conversation: 'Clear conversations',
@@ -375,4 +379,6 @@ export default {
     'We apologize for any inconvenience caused. The default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.',
   com_error_unknown:
     'Oops! Something went wrong. Please try again in a few moments. Here\'s the specific error message we encountered: {0}',
+  com_nav_lang_arabic: 'العربية',
+  com_nav_lang_dutch: 'Nederlands',
 };

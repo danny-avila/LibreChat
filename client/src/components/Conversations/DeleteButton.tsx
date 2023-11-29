@@ -1,17 +1,15 @@
-import TrashIcon from '../svg/TrashIcon';
-import CrossIcon from '../svg/CrossIcon';
-import { useRecoilValue } from 'recoil';
+import { useParams } from 'react-router-dom';
 import { useDeleteConversationMutation } from 'librechat-data-provider';
-import { Dialog, DialogTrigger, Label } from '~/components/ui/';
-import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useLocalize, useConversations, useConversation } from '~/hooks';
-import store from '~/store';
+import { Dialog, DialogTrigger, Label } from '~/components/ui';
+import DialogTemplate from '~/components/ui/DialogTemplate';
+import { TrashIcon, CrossIcon } from '~/components/svg';
 
 export default function DeleteButton({ conversationId, renaming, retainView, title }) {
   const localize = useLocalize();
-  const currentConversation = useRecoilValue(store.conversation) || {};
   const { newConversation } = useConversation();
   const { refreshConversations } = useConversations();
+  const { conversationId: currentConvoId } = useParams();
   const deleteConvoMutation = useDeleteConversationMutation(conversationId);
 
   const confirmDelete = () => {
@@ -19,9 +17,7 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
       { conversationId, source: 'button' },
       {
         onSuccess: () => {
-          if (
-            (currentConversation as { conversationId?: string }).conversationId == conversationId
-          ) {
+          if (currentConvoId == conversationId) {
             newConversation();
           }
 

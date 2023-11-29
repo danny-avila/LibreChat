@@ -17,7 +17,8 @@ import { useLocalize } from '~/hooks';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { Spinner } from '../svg';
 import { useNavigate } from 'react-router-dom';
-import { alternateName } from '~/utils';
+// import { alternateName } from '~/utils';
+import { alternateName } from 'librechat-data-provider';
 
 export default function Recommendations() {
   const [tabValue, setTabValue] = useState<string>(
@@ -565,7 +566,7 @@ export default function Recommendations() {
                         messageId={convoData[convoIdx].conversationId}
                         conversation={convoData[convoIdx]}
                         messagesTree={msgTree}
-                        scrollToBottom={null}
+                        scrollToBottom={null || undefined}
                         currentEditId={-1}
                         setCurrentEditId={null}
                         isSearchView={true}

@@ -24,7 +24,7 @@ export type TSubmission = {
   isRegenerate?: boolean;
   conversationId?: string;
   initialResponse: TMessage;
-  conversation: TConversation;
+  conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
 };
 
@@ -129,11 +129,12 @@ export type TConfig = {
   availableTools?: [];
   plugins?: Record<string, string>;
   azure?: boolean;
+  order: number;
 };
 
 export type TModelsConfig = Record<string, string[]>;
 
-export type TEndpointsConfig = Record<string, TConfig | null>;
+export type TEndpointsConfig = Record<string, TConfig>;
 
 export type TUpdateTokenCountResponse = {
   count: number;

@@ -1,3 +1,4 @@
+import { defaultEndpoints } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 
 const getEndpointsFilter = (config: TEndpointsConfig) => {
@@ -9,19 +10,11 @@ const getEndpointsFilter = (config: TEndpointsConfig) => {
 };
 
 const getAvailableEndpoints = (filter: Record<string, boolean>) => {
-  const endpoints = [
-    'azureOpenAI',
-    'openAI',
-    'chatGPTBrowser',
-    'gptPlugins',
-    'bingAI',
-    'google',
-    'anthropic',
-  ];
+  const endpoints = defaultEndpoints;
   return endpoints.filter((endpoint) => filter[endpoint]);
 };
 
 export default function mapEndpoints(config: TEndpointsConfig) {
   const filter = getEndpointsFilter(config);
-  return getAvailableEndpoints(filter);
+  return getAvailableEndpoints(filter).sort((a, b) => config[a].order - config[b].order);
 }

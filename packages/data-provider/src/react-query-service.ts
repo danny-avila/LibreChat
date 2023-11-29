@@ -5,33 +5,34 @@ import {
   useQueryClient,
   UseMutationResult,
   QueryObserverResult,
-  QueryClient,
 } from '@tanstack/react-query';
 import * as t from './types';
 import * as s from './schemas';
 import * as dataService from './data-service';
 
-export enum QueryKeys {
-  messages = 'messages',
-  allConversations = 'allConversations',
-  conversation = 'conversation',
-  searchEnabled = 'searchEnabled',
-  user = 'user',
-  name = 'name', // user key name
-  models = 'models',
-  balance = 'balance',
-  userById = 'userById',
-  endpoints = 'endpoints',
-  presets = 'presets',
-  searchResults = 'searchResults',
-  tokenCount = 'tokenCount',
-  availablePlugins = 'availablePlugins',
-  startupConfig = 'startupConfig',
-  recommendations = 'recommendations',
-  numOfReferrals = 'numOfReferrals',
-  likedConversations = 'likedConversations',
-  publicConversatons = 'publicConversatons',
-}
+// export enum QueryKeys {
+//   messages = 'messages',
+//   allConversations = 'allConversations',
+//   conversation = 'conversation',
+//   searchEnabled = 'searchEnabled',
+//   user = 'user',
+//   name = 'name', // user key name
+//   models = 'models',
+//   balance = 'balance',
+//   userById = 'userById',
+//   endpoints = 'endpoints',
+//   presets = 'presets',
+//   searchResults = 'searchResults',
+//   tokenCount = 'tokenCount',
+//   availablePlugins = 'availablePlugins',
+//   startupConfig = 'startupConfig',
+//   recommendations = 'recommendations',
+//   numOfReferrals = 'numOfReferrals',
+//   likedConversations = 'likedConversations',
+//   publicConversatons = 'publicConversatons',
+// }
+import request from './request';
+import { QueryKeys } from './keys';
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
   void,
@@ -71,11 +72,12 @@ export const useGetUserByIdQuery = (id: string): QueryObserverResult<t.TUser> =>
   });
 };
 
-export const useGetMessagesByConvoId = (
+// export const useGetMessagesByConvoId = (
+export const useGetMessagesByConvoId = <TData = s.TMessage[]>(
   id: string,
-  config?: UseQueryOptions<s.TMessage[]>,
-): QueryObserverResult<s.TMessage[]> => {
-  return useQuery<s.TMessage[]>(
+  config?: UseQueryOptions<s.TMessage[], unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<s.TMessage[], unknown, TData>(
     [QueryKeys.messages, id],
     () => dataService.getMessagesByConvoId(id),
     {
@@ -105,6 +107,40 @@ export const useGetConversationByIdQuery = (
   return useQuery<s.TConversation>(
     [QueryKeys.conversation, id],
     () => dataService.getConversationById(id),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+/* like above, but first try the convos query data */
+export const useGetConvoIdQuery = (
+  id: string,
+  config?: UseQueryOptions<s.TConversation>,
+): QueryObserverResult<s.TConversation> => {
+  const queryClient = useQueryClient();
+  return useQuery<s.TConversation>(
+    [QueryKeys.conversation, id],
+    () => {
+      const defaultQuery = () => dataService.getConversationById(id);
+
+      const convosQueryKey = [QueryKeys.allConversations, { pageNumber: '1', active: true }];
+      const convosQuery = queryClient.getQueryData<t.TGetConversationsResponse>(convosQueryKey);
+
+      if (!convosQuery) {
+        return defaultQuery();
+      }
+
+      const convo = convosQuery.conversations?.find((c) => c.conversationId === id);
+      if (convo) {
+        return convo;
+      }
+
+      return defaultQuery();
+    },
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
@@ -223,7 +259,7 @@ export const useGetConversationsQuery = (
   config?: UseQueryOptions<t.TGetConversationsResponse>,
 ): QueryObserverResult<t.TGetConversationsResponse> => {
   return useQuery<t.TGetConversationsResponse>(
-    [QueryKeys.allConversations, pageNumber],
+    [QueryKeys.allConversations, { pageNumber, active: true }],
     () => dataService.getConversations(pageNumber),
     {
       refetchOnReconnect: false,
@@ -402,7 +438,7 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation(() => dataService.refreshToken(), {
+  return useMutation(() => request.refreshToken(), {
     onMutate: () => {
       queryClient.invalidateQueries([QueryKeys.models]);
     },

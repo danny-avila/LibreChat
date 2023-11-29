@@ -16,14 +16,14 @@ export default function MobileNav({ setNavVisible }) {
   const navigate = useNavigate();
   const { user } = useAuthContext();
   const { userId = '' } = useParams();
-  const [profileUser, setProfileUser] = useState(null);
+  const [profileUser, setProfileUser] = useState({ username: '' });
   const [profileName, setProfileName] = useState('');
 
   const getUserByIdQuery = useGetUserByIdQuery(userId);
 
   useEffect(() => {
     getUserByIdQuery.refetch();
-  }, [userId]);
+  }, [userId, getUserByIdQuery]);
 
   useEffect(() => {
     if (getUserByIdQuery.isSuccess) {
@@ -40,7 +40,7 @@ export default function MobileNav({ setNavVisible }) {
     } else {
       setProfileName(localize('com_ui_others_homepage', profileUser.username));
     }
-  }, [profileUser, userId, user]);
+  }, [profileUser, userId, user, localize]);
 
   useEffect(() => {
     if (location.pathname === '/home') {
@@ -54,11 +54,11 @@ export default function MobileNav({ setNavVisible }) {
     } else if (location.pathname.substring(0, 8) === '/profile') {
       setTitle(profileName);
     } else if (conversation) {
-      setTitle(conversation.title);
+      setTitle(conversation.title || localize('com_endpoint_new_topic'));
     } else {
       setTitle(localize('com_ui_new_chat'));
     }
-  }, [conversation, location.pathname, profileName]);
+  }, [conversation, profileName, localize]);
 
   return (
     <div className="fixed left-0 right-0 top-0 z-10 flex items-center border-b border-white/20 bg-gray-800 pl-1 pt-1 text-gray-200 sm:pl-3 md:hidden">
@@ -95,6 +95,7 @@ export default function MobileNav({ setNavVisible }) {
           newConversation();
           navigate('/chat/new');
         }}
+        title="Start a new chat"
       >
         <svg
           stroke="currentColor"

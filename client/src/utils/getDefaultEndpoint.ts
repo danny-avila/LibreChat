@@ -1,19 +1,10 @@
 import type { TConversation, TPreset, TEndpointsConfig } from 'librechat-data-provider';
 import getLocalStorageItems from './getLocalStorageItems';
+import mapEndpoints from './mapEndpoints';
 
 type TConvoSetup = Partial<TPreset> | Partial<TConversation>;
 
 type TDefaultEndpoint = { convoSetup: TConvoSetup; endpointsConfig: TEndpointsConfig };
-
-const defaultEndpoints = [
-  'openAI',
-  'azureOpenAI',
-  'bingAI',
-  'chatGPTBrowser',
-  'gptPlugins',
-  'google',
-  'anthropic',
-];
 
 const getEndpointFromSetup = (convoSetup: TConvoSetup, endpointsConfig: TEndpointsConfig) => {
   const { endpoint: targetEndpoint } = convoSetup || {};
@@ -47,7 +38,8 @@ const getEndpointFromLocalStorage = (endpointsConfig: TEndpointsConfig) => {
 };
 
 const getDefinedEndpoint = (endpointsConfig: TEndpointsConfig) => {
-  return defaultEndpoints.find((e) => Object.hasOwn(endpointsConfig ?? {}, e)) ?? 'openAI';
+  const endpoints = mapEndpoints(endpointsConfig);
+  return endpoints.find((e) => Object.hasOwn(endpointsConfig ?? {}, e));
 };
 
 const getDefaultEndpoint = ({ convoSetup, endpointsConfig }: TDefaultEndpoint) => {

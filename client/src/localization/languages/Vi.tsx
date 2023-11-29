@@ -29,7 +29,7 @@ export default {
   com_ui_of: 'của',
   com_ui_entries: 'mục',
   com_ui_pay_per_call:
-    'Tất cả các cuộc trò chuyện AI ở một nơi. Thanh toán theo cuộc gọi, không phải hàng tháng',
+    'Tất cả các cuộc hội thoại AI ở một nơi. Trả tiền cho mỗi cuộc gọi chứ không phải mỗi tháng',
   com_ui_enter: 'Nhập',
   com_ui_submit: 'Gửi',
   com_ui_upload_success: 'Tải tệp thành công',
@@ -253,6 +253,7 @@ export default {
   com_nav_confirm_clear: 'Xác nhận xóa',
   com_nav_close_sidebar: 'Đóng thanh bên',
   com_nav_open_sidebar: 'Mở thanh bên',
+  com_nav_send_message: 'Gửi tin nhắn',
   com_nav_log_out: 'Đăng xuất',
   com_nav_user: 'NGƯỜI DÙNG',
   com_nav_clear_conversation: 'Xóa cuộc trò chuyện',

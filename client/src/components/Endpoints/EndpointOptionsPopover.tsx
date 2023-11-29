@@ -1,13 +1,13 @@
-import React from 'react';
 import { Save } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { Button } from '~/components/ui';
 import { CheckMark, CrossIcon } from '~/components/svg';
-import PopoverButtons from './PopoverButtons';
+// import PopoverButtons from './PopoverButtons';
+import type { ReactNode } from 'react';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { unknown } from 'zod';
-import { Content } from '@radix-ui/react-dialog';
+// import { unknown } from 'zod';
+// import { Content } from '@radix-ui/react-dialog';
 
 type TEndpointOptionsPopoverProps = {
   children: React.ReactNode;
@@ -23,17 +23,19 @@ type TEndpointOptionsPopoverProps = {
   endpoint: EModelEndpoint;
   saveAsPreset: () => void;
   closePopover: () => void;
+  PopoverButtons: ReactNode;
 };
 
 export default function EndpointOptionsPopover({
   children,
   content,
-  endpoint,
+  // endpoint,
   visible,
   widget = false,
   additionalButton = null,
   saveAsPreset,
   closePopover,
+  PopoverButtons,
 }: TEndpointOptionsPopoverProps) {
   const localize = useLocalize();
   const cardStyle =
@@ -85,7 +87,8 @@ export default function EndpointOptionsPopover({
                 {additionalButton.label}
               </Button>
             )}
-            <PopoverButtons endpoint={endpoint} />
+            {/* <PopoverButtons endpoint={endpoint} /> */}
+            {PopoverButtons}
             <Button
               type="button"
               className={cn(

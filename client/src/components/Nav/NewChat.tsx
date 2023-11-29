@@ -1,13 +1,16 @@
 import React from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { useRecoilValue, useRecoilState } from 'recoil';
+// import { useNavigate, useParams } from 'react-router-dom';
+// import { useRecoilValue, useRecoilState } from 'recoil';
+import { useParams } from 'react-router-dom';
+import { useRecoilState } from 'recoil';
 import { useAuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
-import { useLocalize, useConversation } from '~/hooks';
+import { useLocalize, useConversation, useNewConvo, useOriginNavigate } from '~/hooks';
 
-export default function NewChat() {
+export default function NewChat({ toggleNav }: { toggleNav: () => void }) {
   const { newConversation } = useConversation();
-  const navigate = useNavigate();
+  const { newConversation: newConvo } = useNewConvo();
+  const navigate = useOriginNavigate();
   const localize = useLocalize();
   const [widget, setWidget] = useRecoilState(store.widget); // eslint-disable-line
   const { user } = useAuthContext();
@@ -25,8 +28,10 @@ export default function NewChat() {
     // dispatch(setInputValue(''));
     // dispatch(setQuery(''));
     setWidget('');
+    newConvo();
     newConversation();
-    navigate('/chat/new');
+    navigate('new');
+    toggleNav();
   };
 
   return (

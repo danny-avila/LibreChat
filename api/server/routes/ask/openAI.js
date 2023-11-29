@@ -15,6 +15,7 @@ const {
 const trieSensitive = require('../../../utils/trieSensitive');
 const { handleError } = require('../../utils');
 const User = require('../../../models/User');
+
 router.post('/abort', handleAbort());
 
 router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, res) => {
@@ -135,7 +136,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       }
     }
 
-    let response = await client.sendMessage(text, {
+    const messageOptions = {
       user,
       parentMessageId,
       conversationId,
@@ -149,7 +150,9 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
         text,
         parentMessageId: overrideParentMessageId || userMessageId,
       }),
-    });
+    };
+
+    let response = await client.sendMessage(text, messageOptions);
 
     if (overrideParentMessageId) {
       response.parentMessageId = overrideParentMessageId;
@@ -159,7 +162,10 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       response = { ...response, ...metadata };
     }
 
-    await saveMessage({ ...response, user });
+    if (client.options.attachments) {
+      userMessage.files = client.options.attachments;
+      delete userMessage.image_urls;
+    }
 
     sendMessage(res, {
       title: await getConvoTitle(user, conversationId),
@@ -169,6 +175,9 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       responseMessage: response,
     });
     res.end();
+
+    await saveMessage({ ...response, user });
+    await saveMessage(userMessage);
 
     if (parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
       addTitle(req, {

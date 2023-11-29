@@ -92,3 +92,9 @@ export const followUser = () => {
 export const likeConversation = () => {
   return '/api/convos/like';
 };
+
+export const assistants = (id?: string) => `/api/assistants${id ? `/${id}` : ''}`;
+
+export const files = () => '/api/files';
+
+export const images = () => `${files()}/images`;

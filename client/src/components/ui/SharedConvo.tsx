@@ -13,10 +13,11 @@ import { Spinner } from '../svg';
 import MultiMessage from '../Messages/MultiMessage';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useScreenshot } from '~/hooks/';
-import { useRecoilValue } from 'recoil';
+// import { useRecoilValue } from 'recoil';
 import { useLocalize } from '~/hooks';
 import { Plugin } from '../svg';
-import { alternateName } from '~/utils/';
+// import { alternateName } from '~/utils/';
+import { alternateName } from 'librechat-data-provider';
 
 export default function SharedConvo() {
   const [conversation, setConversation] = useState<TConversation | null>(null);
@@ -227,27 +228,27 @@ export default function SharedConvo() {
   // increase view count upon page load
   useEffect(() => {
     incrementViewCount(); // set viewCount
-  }, []);
+  });
 
   // Get recommendations on mount
   useEffect(() => {
     fetchConversation();
-  }, [token]);
+  });
 
   // Check if the conversation has been set as private
   useEffect(() => {
     if (conversation && !conversation.isPrivate) {
       setIsPrivate(false);
-      fetchMessagesByConvoId(conversation.conversationId);
+      fetchMessagesByConvoId(conversation.conversationId || '');
       fetchConvoUser(conversation.user);
-      setPageTitle(conversation.title);
+      setPageTitle(conversation.title || '');
       setShareLink(
         window.location.protocol +
           '//' +
           window.location.host +
           `/chat/share/${conversation.conversationId}`,
       );
-      setNumOfLikes(conversation.likes);
+      setNumOfLikes(conversation.likes || 0);
 
       if (user && conversation.likedBy) {
         setLiked(conversation.likedBy[user?.id] ? true : false);
@@ -388,7 +389,7 @@ export default function SharedConvo() {
                       messageId={conversation.conversationId}
                       conversation={conversation}
                       messagesTree={msgTree}
-                      scrollToBottom={null}
+                      scrollToBottom={null || undefined}
                       currentEditId={-1}
                       setCurrentEditId={null}
                       isSearchView={true}

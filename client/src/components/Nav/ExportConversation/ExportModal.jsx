@@ -1,27 +1,33 @@
-import { useEffect, useState } from 'react';
-import { useRecoilValue, useRecoilCallback } from 'recoil';
-import filenamify from 'filenamify';
-import exportFromJSON from 'export-from-json';
 import download from 'downloadjs';
-import { Dialog, DialogButton, Input, Label, Checkbox, Dropdown } from '~/components/ui/';
+import filenamify from 'filenamify';
+import { useRecoilCallback } from 'recoil';
+import { useEffect, useState } from 'react';
+import exportFromJSON from 'export-from-json';
 import DialogTemplate from '~/components/ui/DialogTemplate';
+import { useGetMessagesByConvoId } from 'librechat-data-provider';
+import { Dialog, DialogButton, Input, Label, Checkbox, Dropdown } from '~/components/ui/';
 import { cn, defaultTextProps, removeFocusOutlines, cleanupPreset } from '~/utils/';
 import { useScreenshot, useLocalize } from '~/hooks';
+import { buildTree } from '~/utils';
 import store from '~/store';
 
-export default function ExportModel({ open, onOpenChange }) {
+export default function ExportModal({ open, onOpenChange, conversation }) {
   const { captureScreenshot } = useScreenshot();
   const localize = useLocalize();
 
   const [filename, setFileName] = useState('');
-  const [type, setType] = useState('');
+  const [type, setType] = useState('Select a file type');
 
   const [includeOptions, setIncludeOptions] = useState(true);
   const [exportBranches, setExportBranches] = useState(false);
   const [recursive, setRecursive] = useState(true);
 
-  const conversation = useRecoilValue(store.conversation) || {};
-  const messagesTree = useRecoilValue(store.messagesTree) || [];
+  const { data: messagesTree = null } = useGetMessagesByConvoId(conversation.conversationId ?? '', {
+    select: (data) => {
+      const dataTree = buildTree(data, false);
+      return dataTree?.length === 0 ? null : dataTree ?? null;
+    },
+  });
 
   const getSiblingIdx = useRecoilCallback(
     ({ snapshot }) =>
@@ -357,22 +363,11 @@ export default function ExportModel({ open, onOpenChange }) {
                   )}
                 />
               </div>
-              <div className="col-span-1 flex flex-col items-start justify-start gap-2">
+              <div className="col-span-1 flex w-full flex-col items-start justify-start gap-2">
                 <Label htmlFor="type" className="text-left text-sm font-medium">
                   {localize('com_nav_export_type')}
                 </Label>
-                <Dropdown
-                  id="type"
-                  value={type}
-                  onChange={_setType}
-                  options={typeOptions}
-                  className={cn(
-                    defaultTextProps,
-                    'flex h-10 max-h-10 w-full resize-none',
-                    removeFocusOutlines,
-                  )}
-                  containerClassName="flex w-full resize-none"
-                />
+                <Dropdown id="type" value={type} onChange={_setType} options={typeOptions} />
               </div>
             </div>
             <div className="grid w-full gap-6 sm:grid-cols-2">

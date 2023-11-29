@@ -1,8 +1,8 @@
-import React from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { Plugin, GPTIcon, AnthropicIcon, AzureMinimalIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks';
-import { cn } from '~/utils';
 import { IconProps } from '~/common';
+import { cn } from '~/utils';
 
 const Icon: React.FC<IconProps> = (props) => {
   const { size = 30, isCreatedByUser, button, model = true, endpoint, error, jailbreak } = props;
@@ -19,7 +19,7 @@ const Icon: React.FC<IconProps> = (props) => {
           width: size,
           height: size,
         }}
-        className={`relative flex items-center justify-center ${props.className ?? ''}`}
+        className={cn('relative flex items-center justify-center', props.className ?? '')}
       >
         <img
           className="rounded-sm"
@@ -33,12 +33,12 @@ const Icon: React.FC<IconProps> = (props) => {
     );
   } else {
     const endpointIcons = {
-      azureOpenAI: {
+      [EModelEndpoint.azureOpenAI]: {
         icon: <AzureMinimalIcon size={size * 0.5555555555555556} />,
         bg: 'linear-gradient(0.375turn, #61bde2, #4389d0)',
         name: 'ChatGPT',
       },
-      openAI: {
+      [EModelEndpoint.openAI]: {
         icon: <GPTIcon size={size * 0.5555555555555556} />,
         bg:
           typeof model === 'string' && model.toLowerCase().includes('gpt-4')
@@ -46,18 +46,21 @@ const Icon: React.FC<IconProps> = (props) => {
             : '#19C37D',
         name: 'ChatGPT',
       },
-      gptPlugins: {
+      [EModelEndpoint.gptPlugins]: {
         icon: <Plugin size={size * 0.7} />,
         bg: `rgba(69, 89, 164, ${button ? 0.75 : 1})`,
         name: 'Plugins',
       },
-      google: { icon: <img src="/assets/google-palm.svg" alt="Palm Icon" />, name: 'PaLM2' },
-      anthropic: {
+      [EModelEndpoint.google]: {
+        icon: <img src="/assets/google-palm.svg" alt="Palm Icon" />,
+        name: 'PaLM2',
+      },
+      [EModelEndpoint.anthropic]: {
         icon: <AnthropicIcon size={size * 0.5555555555555556} />,
         bg: '#d09a74',
         name: 'Claude',
       },
-      bingAI: {
+      [EModelEndpoint.bingAI]: {
         icon: jailbreak ? (
           <img src="/assets/bingai-jb.png" alt="Bing Icon" />
         ) : (
@@ -65,7 +68,7 @@ const Icon: React.FC<IconProps> = (props) => {
         ),
         name: jailbreak ? 'Sydney' : 'BingAI',
       },
-      chatGPTBrowser: {
+      [EModelEndpoint.chatGPTBrowser]: {
         icon: <GPTIcon size={size * 0.5555555555555556} />,
         bg:
           typeof model === 'string' && model.toLowerCase().includes('gpt-4')
