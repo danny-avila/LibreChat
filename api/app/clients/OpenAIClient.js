@@ -829,9 +829,12 @@ ${convo}
         return '';
       }
       if (
+        err?.message?.includes('stream ended') ||
+        err?.message?.includes('The server had an error processing your request') ||
         err?.message?.includes('missing finish_reason') ||
         (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason'))
       ) {
+        console.error(err);
         await abortController.abortCompletion();
         return intermediateReply;
       } else if (err instanceof OpenAI.APIError) {
