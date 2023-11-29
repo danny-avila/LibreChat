@@ -14,6 +14,7 @@ import Korean from './languages/Ko';
 import TraditionalChinese from './languages/ZhTraditional';
 import Vietnamese from './languages/Vi';
 import Turkish from './languages/Tr';
+import Dutch from './languages/Nl';
 // === import additional language files here === //
 
 const languageMap: { [key: string]: unknown } = {
@@ -33,6 +34,7 @@ const languageMap: { [key: string]: unknown } = {
   'zh-TC': TraditionalChinese,
   'vi-VN': Vietnamese,
   'tr-TR': Turkish,
+  'nl-NL': Dutch,
   // Add additional language mappings here
 };
 

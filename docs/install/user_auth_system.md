@@ -34,7 +34,7 @@ To set up the mod system, review [the setup guide](../features/mod_system.md).
 
 *Please Note: If you are wanting this to work in development mode, you will need to create a file called `.env.development` in the root directory and set `DOMAIN_CLIENT` to `http://localhost:3090` or whatever port  is provided by vite when runnning `npm run frontend-dev`*
 
-Important: When you run the app for the first time, you need to create a new account by clicking on "Sign up" on the login page. The first account you make will be the admin account. The admin account doesn't have any special features right now, but it might be useful if you want to make an admin dashboard to manage other users later. 
+Important: When you run the app for the first time, you need to create a new account by clicking on "Sign up" on the login page. The first account you make will be the admin account. The admin account doesn't have any special features right now, but it might be useful if you want to make an admin dashboard to manage other users later.
 
 ⚠️ **__For the first time, you should use a local account (email and password) to sign up and log in.__**
 
@@ -62,12 +62,12 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 
 ---
 
-## Facebook Authentication 
+## Facebook Authentication
 ### (It only works with a domain, not with localhost)
 
 1. Go to [Facebook Developer Portal](https://developers.facebook.com/)
 2. Create a new Application and give it a name
-4. In the Dashboard tab select product and select "Facebook login", then tap on "Configure" and "Settings". Male sure "OAuth client access", "Web OAuth access", "Apply HTTPS" and "Use limited mode for redirect URIs" are **enabled** 
+4. In the Dashboard tab select product and select "Facebook login", then tap on "Configure" and "Settings". Male sure "OAuth client access", "Web OAuth access", "Apply HTTPS" and "Use limited mode for redirect URIs" are **enabled**
 5. In the Valid OAuth Redirect URIs add "your-domain/oauth/facebook/callback" (example: http://example.com/oauth/facebook/callback)
 6. Save changes and in the "settings" tab, reset the Client Secret
 7. Put the Client ID and Client Secret in the .env file:
@@ -169,25 +169,43 @@ DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for every
 8. Save the .env file
 
 ---
-## **Email and Password Reset** 
+## **Email and Password Reset**
 
 ### General setup
 
-in the .env file modify this 4 variables:
+in the .env file modify these variables:
 
 ```
-EMAIL_SERVICE=   # eg. gmail
-EMAIL_USERNAME=  # eg. your email address if using gmail
-EMAIL_PASSWORD=  # eg. this is the "app password" if using gmail
-EMAIL_FROM=      # eg. email address for from field like noreply@librechat.ai
+EMAIL_SERVICE=                  # eg. gmail - see https://community.nodemailer.com/2-0-0-beta/setup-smtp/well-known-services/
+EMAIL_HOST=                     # eg. example.com - if EMAIL_SERVICE is not set, connect to this server.
+EMAIL_PORT=25                   # eg. 25 - mail server port to connect to with EMAIL_HOST (usually 25, 465, 587)
+EMAIL_ENCRYPTION=               # eg. starttls - valid values: starttls (force STARTTLS), tls (obligatory TLS), anything else (use STARTTLS if available)
+EMAIL_ENCRYPTION_HOSTNAME=      # eg. example.com - check the name in the certificate against this instead of EMAIL_HOST
+EMAIL_ALLOW_SELFSIGNED=         # eg. true - valid values: true (allow self-signed), anything else (disallow self-signed)
+EMAIL_USERNAME=                 # eg. me@gmail.com - the username used for authentication. For consumer services, this MUST usually match EMAIL_FROM.
+EMAIL_PASSWORD=                 # eg. password - the password used for authentication
+EMAIL_FROM_NAME=                # eg. LibreChat - the human-readable address in the From is constructed as "EMAIL_FROM_NAME <EMAIL_FROM>". Defaults to APP_TITLE.
 ```
 
-EMAIL_SERVICE is the name of the email service you are using (Gmail, Outlook, Yahoo Mail, ProtonMail, iCloud Mail, etc.).
-EMAIL_USERNAME is the username of the email service (usually, it will be the email address, but in some cases, it can be an actual username used to access the account).
-EMAIL_PASSWORD is the password used to access the email service. This is not the password to access the email account directly, but a password specifically generated for this service.
-EMAIL_FROM is the email address that will appear in the "from" field when a user receives an email.
+If you want to use one of the predefined services, configure only these variables:
 
-### Setup with Gmail 
+EMAIL\_SERVICE is the name of the email service you are using (Gmail, Outlook, Yahoo Mail, ProtonMail, iCloud Mail, etc.) as defined in the NodeMailer well-known services linked above.
+EMAIL\_USERNAME is the username of the email service (usually, it will be the email address, but in some cases, it can be an actual username used to access the account).
+EMAIL\_PASSWORD is the password used to access the email service. This is not the password to access the email account directly, but a password specifically generated for this service.
+EMAIL\_FROM is the email address that will appear in the "from" field when a user receives an email.
+EMAIL\_FROM\_NAME is the name that will appear in the "from" field when a user receives an email. If left unset, it defaults to the app title.
+
+If you want to use a generic SMTP service or need advanced configuration for one of the predefined providers, configure these variables:
+
+EMAIL\_HOST is the hostname to connect to, or an IP address.
+EMAIL\_PORT is the port to connect to. Be aware that different ports usually come with different requirements - 25 is for mailserver-to-mailserver, 465 requires encryption at the start of the connection, and 587 allows submission of mail as a user.
+EMAIL\_ENCRYPTION defines if encryption is required at the start (`tls`) or started after the connection is set up (`starttls`). If either of these values are set, they are enforced. If they are not set, an encrypted connection is started if available.
+EMAIL\_ENCRYPTION\_HOSTNAME allows specification of a hostname against which the certificate is validated. Use this if the mail server does have a valid certificate, but you are connecting with an IP or a different name for some reason.
+EMAIL\_ALLOW\_SELFSIGNED defines whether self-signed certificates can be accepted from the server. As the mails being sent contain sensitive information, ONLY use this for testing.
+
+NOTE: ⚠️ **Failing to perform either of the below setups will result in LibreChat using the unsecured password reset! This allows anyone to reset any password on your server immediately, without mail being sent at all!** The variable EMAIL\_FROM does not support all email providers **but is still required**. To stay updated, check the bug fixes [here](https://github.com/danny-avila/LibreChat/tags).
+
+### Setup with Gmail
 
 1. Create a Google Account and enable 2-step verification.
 2. In the [Google Account settings](https://myaccount.google.com/), click on the "Security" tab and open "2-step verification."
@@ -200,11 +218,23 @@ EMAIL_SERVICE=gmail
 EMAIL_USERNAME=your-email
 EMAIL_PASSWORD=your-app-password
 EMAIL_FROM=email address for the from field, e.g., noreply@librechat.ai
+EMAIL_FROM_NAME="My LibreChat Server"
 ```
 
-NOTE: ⚠️ **Failing to set the 4 values will result in LibreChat using the unsecured password reset!** The variable EMAIL_FROM does not support all email providers **but is still required**. To stay updated, check the bug fixes [here](https://github.com/danny-avila/LibreChat/tags).
+### Setup with custom mail server
 
+1. Gather your SMTP login data from your provider. The steps are different for each, but they will usually list values for all variables.
+2. In the .env file, modify the variables as follows, assuming some sensible example values:
 
+```
+EMAIL_HOST=mail.example.com
+EMAIL_PORT=587
+EMAIL_ENCRYPTION=starttls
+EMAIL_USERNAME=your-email
+EMAIL_PASSWORD=your-app-password
+EMAIL_FROM=email address for the from field, e.g., noreply@librechat.ai
+EMAIL_FROM_NAME="My LibreChat Server"
+```
 
 ## **Disable User Registration**
 
@@ -220,7 +250,7 @@ If you previously implemented your own user system using the original scaffoldin
 
 ### For user updating from an older version of the app:
 
-When the first account is registered, the application will automatically migrate any conversations and presets that you created before the user system was implemented to that account. 
+When the first account is registered, the application will automatically migrate any conversations and presets that you created before the user system was implemented to that account.
 if you use login for the first time with a social login account (eg. Google, facebook, etc.), the conversations and presets that you created before the user system was implemented will NOT be migrated to that account.
 
 ## **Manual User Registration**
