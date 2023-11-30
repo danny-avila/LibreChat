@@ -11,7 +11,7 @@ const moment = require('moment-timezone');
 const Stripe = require('stripe');
 
 // Convert callback-based functions to promises
-const baseUrl = process.env.BASE_URL;
+const baseFrontendUrl = process.env.BASE_FRONTEND_URL;
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 // planPricing
@@ -62,13 +62,13 @@ router.post('/create-payment-wechatpay', requireJwtAuth, async (req, res) => {
         quantity: 1,
       }],
       mode: 'payment',
-      success_url: `${baseUrl}/subscription/wechat-return` +
+      success_url: `${baseFrontendUrl}/subscription/wechat-return` +
         `?paymentReference=${paymentReference}` +
         '&paymentMethod=wechatpay' +
         `&userId=${userId}` +
         '&sessionId={CHECKOUT_SESSION_ID}' +
         `&planId=${planId}`,
-      cancel_url: `${baseUrl}/subscription/payment-failed`,
+      cancel_url: `${baseFrontendUrl}/subscription/payment-failed`,
     };
     console.log(`wechatpay successful url: ${stripeParams.success_url}`)
     const session = await stripe.checkout.sessions.create(stripeParams);
@@ -108,13 +108,13 @@ router.post('/create-payment-alipay', requireJwtAuth, async (req, res) => {
         quantity: 1,
       }],
       mode: 'payment',
-      success_url: `${baseUrl}/subscription/alipay-return` +
+      success_url: `${baseFrontendUrl}/subscription/alipay-return` +
         `?paymentReference=${paymentReference}` +
         '&paymentMethod=alipay' +
         `&userId=${userId}` +
         '&sessionId={CHECKOUT_SESSION_ID}' +
         `&planId=${planId}`,
-      cancel_url: `${baseUrl}/subscription/payment-failed`,
+      cancel_url: `${baseFrontendUrl}/subscription/payment-failed`,
     };
     console.log(`alipay successful url: ${stripeParams.success_url}`)
     const session = await stripe.checkout.sessions.create(stripeParams);
@@ -161,13 +161,13 @@ router.post('/create-payment-unionpay', requireJwtAuth, async (req, res) => {
         quantity: 1,
       }],
       mode: 'payment',
-      success_url: `${baseUrl}/subscription/unionpay-return` +
+      success_url: `${baseFrontendUrl}/subscription/unionpay-return` +
         `?paymentReference=${paymentReference}` +
         '&paymentMethod=unionpay' +
         `&userId=${userId}` +
         '&sessionId={CHECKOUT_SESSION_ID}' +
         `&planId=${planId}`,
-      cancel_url: `${baseUrl}/subscription/payment-failed`,
+      cancel_url: `${baseFrontendUrl}/subscription/payment-failed`,
     };
 
     console.log('Creating Stripe checkout session with params:', JSON.stringify(stripeParams));

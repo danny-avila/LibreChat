@@ -16,7 +16,7 @@ const trieSensitive = require('../../../utils/trieSensitive');
 const Payment = require('../../../models/payments');
 
 const abortControllers = new Map();
-const baseUrl = process.env.BASE_URL
+const baseFrontendUrl = process.env.BASE_FRONTEND_URL
 const proMemberChatQuota = process.env['CHAT_QUOTA_PER_DAY_PRO_MEMBER']
 const regMemberChatQuota = process.env['CHAT_QUOTA_PER_DAY']
 
@@ -81,7 +81,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
       console.log('User has exceeded daily quota');
       return handleError(res, {
         text: `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，
-                 如果您是一般用户通过 https://iaitok.com/pay 或者 ${baseUrl}/subscription/${userId} 
+                 如果您是一般用户通过 https://iaitok.com/pay 或者 ${baseFrontendUrl}/subscription/${userId} 
                  可以购买更多额度；如果您是已经付费用户，请稍作休息`
       });
     } else {
