@@ -34,16 +34,8 @@ class AzureAISearch extends Tool {
     this.client = new SearchClient(this.serviceEndpoint, this.indexName, new AzureKeyCredential(this.apiKey), { apiVersion: this.apiVersion });
   }
 
-  /**
-   * The name of the tool.
-   * @type {string}
-   */
   name = 'azure-ai-search';
 
-  /**
-   * A description for the agent to use
-   * @type {string}
-   */
   description =
     'Use the \'azure-ai-search\' tool to retrieve search results relevant to your input';
 
