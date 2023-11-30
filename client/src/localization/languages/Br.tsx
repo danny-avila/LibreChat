@@ -226,6 +226,7 @@ export default {
   com_endpoint_config_key_google_vertex_api: 'API no Google Cloud, depois',
   com_endpoint_config_key_google_vertex_api_role:
     'Certifique-se de clicar em "Criar e Continuar" para dar pelo menos a função de "Usuário do Vertex AI". Por último, crie uma chave JSON para importar aqui.',
+  com_nav_welcome_message: 'Como eu posso ajudar hoje?',
   com_nav_auto_scroll: 'Auto-rolar para o mais recente ao abrir',
   com_nav_plugin_store: 'Loja de plugins',
   com_nav_plugin_search: 'Pesquisar plugins',
