@@ -25,6 +25,7 @@ import store from '~/store';
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
+  const [showStopButton, setShowStopButton] = useState(true);
   const [filesLoading, setFilesLoading] = useState(false);
   const setFilesToDelete = useSetFilesToDelete();
 
@@ -130,6 +131,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       isEdited = false,
     } = {},
   ) => {
+    setShowStopButton(true);
     if (!!isSubmitting || text === '') {
       return;
     }
@@ -369,5 +371,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     invalidateConvos,
     filesLoading,
     setFilesLoading,
+    showStopButton,
+    setShowStopButton,
   };
 }

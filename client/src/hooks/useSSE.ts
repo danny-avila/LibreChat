@@ -17,7 +17,7 @@ import useChatHelpers from './useChatHelpers';
 import useSetStorage from './useSetStorage';
 
 type TResData = {
-  plugin: TResPlugin;
+  plugin?: TResPlugin;
   final?: boolean;
   initial?: boolean;
   requestMessage: TMessage;
@@ -91,16 +91,19 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     const { requestMessage, responseMessage, conversation } = data;
     const { messages, isRegenerate = false } = submission;
 
+    const convoUpdate = conversation ?? submission.conversation;
+
     // update the messages
     if (isRegenerate) {
-      setMessages([...messages, responseMessage]);
+      const messagesUpdate = [...messages, responseMessage].filter((msg) => msg);
+      setMessages(messagesUpdate);
     } else {
-      setMessages([...messages, requestMessage, responseMessage]);
+      const messagesUpdate = [...messages, requestMessage, responseMessage].filter((msg) => msg);
+      setMessages(messagesUpdate);
     }
-    setIsSubmitting(false);
 
     // refresh title
-    if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (requestMessage?.parentMessageId == '00000000-0000-0000-0000-000000000000') {
       setTimeout(() => {
         invalidateConvos();
       }, 2000);
@@ -114,12 +117,14 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     setConversation((prevState) => {
       const update = {
         ...prevState,
-        ...conversation,
+        ...convoUpdate,
       };
 
       setStorage(update);
       return update;
     });
+
+    setIsSubmitting(false);
   };
 
   const createdHandler = (data: TResData, submission: TSubmission) => {
@@ -176,7 +181,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     } else {
       setMessages([...messages, requestMessage, responseMessage]);
     }
-    setIsSubmitting(false);
 
     // refresh title
     if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
@@ -199,6 +203,8 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       setStorage(update);
       return update;
     });
+
+    setIsSubmitting(false);
   };
 
   const errorHandler = (data: TResData, submission: TSubmission) => {
@@ -210,11 +216,13 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       error: true,
       parentMessageId: message?.messageId,
     });
-    setIsSubmitting(false);
+
     setMessages([...messages, message, errorResponse]);
     if (data.conversationId && paramId === 'new') {
       newConversation({ template: { conversationId: data.conversationId } });
     }
+
+    setIsSubmitting(false);
     return;
   };
 
@@ -240,7 +248,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       .catch((error) => {
         console.error('Error aborting request');
         console.error(error);
-        // errorHandler({ text: 'Error aborting request' }, { ...submission, message });
+        setIsSubmitting(false);
       });
     return;
   };
@@ -324,7 +332,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         const e = new Event('cancel');
         events.dispatchEvent(e);
       }
-      setIsSubmitting(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);

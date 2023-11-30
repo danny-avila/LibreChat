@@ -8,7 +8,7 @@ async function abortMessage(req, res) {
   const { abortKey } = req.body;
 
   if (!abortControllers.has(abortKey) && !res.headersSent) {
-    return res.status(404).send('Request not found');
+    return res.status(404).send({ message: 'Request not found' });
   }
 
   const { abortController } = abortControllers.get(abortKey);
