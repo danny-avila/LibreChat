@@ -17,15 +17,15 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 // planPricing
 const planPricing = {
   month: {
-    price: '120.00',
+    price: 120.00,
     currency: 'CNY'
   },
   quarter: {
-    price: '320.00',
+    price: 320.00,
     currency: 'CNY'
   },
   year: {
-    price: '1100.00',
+    price: 1100.00,
     currency: 'CNY'
   }
 };
@@ -57,7 +57,7 @@ router.post('/create-payment-wechatpay', requireJwtAuth, async (req, res) => {
           product_data: {
             name: `Subscription - ${planId}`,
           },
-          unit_amount: parseInt(priceDetails.price * 100), // Convert to smallest currency unit, e.g., cents
+          unit_amount: priceDetails.price * 100, // Convert to smallest currency unit, e.g., cents
         },
         quantity: 1,
       }],
@@ -103,7 +103,7 @@ router.post('/create-payment-alipay', requireJwtAuth, async (req, res) => {
           product_data: {
             name: `Subscription - ${planId}`,
           },
-          unit_amount: parseInt(priceDetails.price * 100), // Convert to smallest currency unit
+          unit_amount: priceDetails.price * 100, // Convert to smallest currency unit
         },
         quantity: 1,
       }],
@@ -156,7 +156,7 @@ router.post('/create-payment-unionpay', requireJwtAuth, async (req, res) => {
           product_data: {
             name: `Subscription - ${planId}`,
           },
-          unit_amount: parseInt(priceDetails.price * 100),
+          unit_amount: priceDetails.price * 100,
         },
         quantity: 1,
       }],
