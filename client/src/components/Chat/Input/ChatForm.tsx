@@ -19,6 +19,8 @@ export default function ChatForm({ index = 0 }) {
     handleStopGenerating,
     filesLoading,
     setFilesLoading,
+    showStopButton,
+    setShowStopButton,
   } = useChatContext();
 
   const submitMessage = () => {
@@ -46,10 +48,10 @@ export default function ChatForm({ index = 0 }) {
               endpoint={conversation?.endpoint}
             />
             <AttachFile endpoint={conversation?.endpoint ?? ''} />
-            {isSubmitting ? (
-              <StopButton stop={handleStopGenerating} />
+            {isSubmitting && showStopButton ? (
+              <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
-              <SendButton text={text} disabled={filesLoading} />
+              <SendButton text={text} disabled={filesLoading || isSubmitting} />
             )}
           </div>
         </div>
