@@ -185,7 +185,7 @@ const resetPassword = async (userId, token, password) => {
     {
       name: user.name,
     },
-    'resetPassword.handlebars',
+    'passwordReset.handlebars',
   );
 
   await passwordResetToken.deleteOne();
