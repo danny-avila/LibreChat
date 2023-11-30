@@ -11,7 +11,7 @@ pip install litellm
 ```
 
 ### Create a config.yaml for litellm proxy 
-More information about configs here: https://docs.litellm.ai/docs/simple_proxy#proxy-configs 
+More information on LiteLLM configurations here: https://docs.litellm.ai/docs/simple_proxy#proxy-configs 
 
 ```yaml
 model_list:
@@ -67,3 +67,30 @@ OPENAI_API_KEY=sk-1234
 ```shell
 docker compose up
 ```
+
+---
+
+### Why use LiteLLM?
+
+1. **Access to Multiple LLMs**: It allows calling over 100 LLMs from platforms like Huggingface, Bedrock, TogetherAI, etc., using OpenAI's ChatCompletions and Completions format.
+
+2. **Load Balancing**: Capable of handling over 1,000 requests per second during load tests, it balances load across various models and deployments.
+
+3. **Authentication & Spend Tracking**: The server supports virtual keys for authentication and tracks spending.
+
+Key components and features include:
+
+- **Installation**: Easy installation.
+- **Testing**: Testing features to route requests to specific models.
+- **Server Endpoints**: Offers multiple endpoints for chat completions, completions, embeddings, model lists, and key generation.
+- **Supported LLMs**: Supports a wide range of LLMs, including AWS Bedrock, Azure OpenAI, Huggingface, AWS Sagemaker, Anthropic, and more.
+- **Proxy Configurations**: Allows setting various parameters like model list, server settings, environment variables, and more.
+- **Multiple Models Management**: Configurations can be set up for managing multiple models with fallbacks, cooldowns, retries, and timeouts.
+- **Embedding Models Support**: Special configurations for embedding models.
+- **Authentication Management**: Features for managing authentication through virtual keys, model upgrades/downgrades, and tracking spend.
+- **Custom Configurations**: Supports setting model-specific parameters, caching responses, and custom prompt templates.
+- **Debugging Tools**: Options for debugging and logging proxy input/output.
+- **Deployment and Performance**: Information on deploying LiteLLM Proxy and its performance metrics.
+- **Proxy CLI Arguments**: A wide range of command-line arguments for customization.
+
+Overall, LiteLLM Server offers a comprehensive suite of tools for managing, deploying, and interacting with a variety of LLMs, making it a versatile choice for large-scale AI applications.
