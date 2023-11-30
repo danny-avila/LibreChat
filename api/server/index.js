@@ -11,6 +11,7 @@ const passport = require('passport');
 const port = process.env.PORT || 3080;
 const host = process.env.HOST || 'localhost';
 const projectPath = path.join(__dirname, '..', '..', 'client');
+const paymentsRoute = require('./routes/payments');
 
 // Init the config and validate it
 const config = require('../../config/loader');
@@ -59,6 +60,7 @@ config.validate(); // Validate the config
   app.use('/oauth', routes.oauth);
   // api endpoint
   app.use('/api/auth', routes.auth);
+  app.use('/api/payments', paymentsRoute);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
   app.use('/api/ask', routes.ask);

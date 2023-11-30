@@ -3,12 +3,18 @@ import Root from './Root';
 import Chat from './Chat';
 import Search from './Search';
 import Profile from '../components/Profile';
+import Subscription from '../components/Subscription';
 import { Login, Registration, RequestPasswordReset, ResetPassword } from '../components/Auth';
 import { AuthContextProvider } from '../hooks/AuthContext';
 import ApiErrorWatcher from '../components/Auth/ApiErrorWatcher';
 import Leaderboard from '~/components/ui/Leaderboard';
 import SharedConvo from '~/components/ui/SharedConvo';
 import Recommendations from '~/components/ui/Recommendations';
+import PaymentSuccess from '../components/Subscription/paymentSuccess';
+import PaymentFailed from '../components/Subscription/paymentFailed';
+import WeChatPayReturnHandler from '../components/Subscription/WeChatPayReturnHandler';
+import AliPayReturnHandler from '../components/Subscription/AliPayReturnHandler';
+import UnionPayReturnHandler from '../components/Subscription/UnionPayReturnHandler';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -68,7 +74,41 @@ export const router = createBrowserRouter([
           {
             path: 'profile/:userId?',
             element: <Profile />
-          }
+          },
+          {
+            path: 'subscription',
+            element: <Outlet />,
+            children: [
+              {
+                index: true,
+                element: <Navigate to="/" replace={true} />
+              },
+              {
+                path: ':userId?',
+                element: <Subscription />
+              },
+              {
+                path: 'wechat-return',
+                element: <WeChatPayReturnHandler />
+              },
+              {
+                path: 'alipay-return',
+                element: <AliPayReturnHandler />
+              },
+              {
+                path: 'unionpay-return',
+                element: <UnionPayReturnHandler />
+              },
+              {
+                path: ':userId/payment-success',
+                element: <PaymentSuccess />
+              },
+              {
+                path: ':userId/payment-failed',
+                element: <PaymentFailed />
+              }
+            ]
+          },
         ]
       }
     ]

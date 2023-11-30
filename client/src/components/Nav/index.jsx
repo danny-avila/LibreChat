@@ -218,6 +218,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const openLeaderboardHandler = () => navigate('/leaderboard');
   const openHomepageHandler = () => navigate('/home');
   const openProfileHandler = () => navigate(`/profile/${user.id}`);
+  const openSubscriptionHandler = () => navigate(`/subscription/${user.id}`);
 
   useEffect(() => {
     if (user) setRefLink(window.location.protocol + '//' + window.location.host +`/register/${user.id}`);
@@ -303,6 +304,15 @@ export default function Nav({ navVisible, setNavVisible }) {
                   svg={() => <ProfileIcon />}
                   text={localize(lang, 'com_ui_homepage')}
                   clickHandler={ openProfileHandler }
+                />
+              )}
+              {user && (
+                <NavLink
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                  // Add an SVG or icon for the Profile link here
+                  svg={() => <ProfileIcon />}
+                  text={localize(lang, 'com_ui_subscriptionpage')}
+                  clickHandler={ openSubscriptionHandler }
                 />
               )}
               <NavLink
