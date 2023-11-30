@@ -1,4 +1,4 @@
-export default function StopButton({ stop }) {
+export default function StopButton({ stop, setShowStopButton }) {
   return (
     <div className="absolute bottom-0 right-2 top-0 p-1 md:right-3 md:p-2">
       <div className="flex h-full">
@@ -7,7 +7,10 @@ export default function StopButton({ stop }) {
             type="button"
             className="border-gizmo-gray-950 rounded-full border-2 p-1 dark:border-gray-200"
             aria-label="Stop generating"
-            onClick={stop}
+            onClick={(e) => {
+              setShowStopButton(false);
+              stop(e);
+            }}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
