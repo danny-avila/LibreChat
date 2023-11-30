@@ -42,16 +42,8 @@ class AzureAISearch extends StructuredTool {
     });
   }
 
-  /**
-   * The name of the tool.
-   * @type {string}
-   */
   name = 'azure-ai-search';
 
-  /**
-   * A description for the agent to use
-   * @type {string}
-   */
   description =
     'Use the \'azure-ai-search\' tool to retrieve search results relevant to your input';
 
