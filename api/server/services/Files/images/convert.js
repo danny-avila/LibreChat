@@ -6,14 +6,14 @@ const { resizeImageBuffer } = require('./resize');
 /**
  * Converts an image file or buffer to WebP format with specified resolution.
  *
- * @param {object} req - The request object, containing user and app configuration data.
- * @param {object} file - The file object, containing either a path or a buffer.
+ * @param {Express.Request} req - The request object, containing user and app configuration data.
+ * @param {Buffer | Express.Multer.File} file - The file object, containing either a path or a buffer.
  * @param {'low' | 'high'} [resolution='high'] - The desired resolution for the output image.
- * @param {string} [ext='.png'] - The extension of the input file, if it is a buffer.
+ * @param {string} [basename=''] - The basename of the input file, if it is a buffer.
  * @returns {Promise<{filepath: string, bytes: number, width: number, height: number}>} An object containing the path, size, and dimensions of the converted image.
  * @throws Throws an error if there is an issue during the conversion process.
  */
-async function convertToWebP(req, file, resolution = 'high', ext = '.png') {
+async function convertToWebP(req, file, resolution = 'high', basename = '') {
   try {
     let inputBuffer;
 
@@ -33,7 +33,7 @@ async function convertToWebP(req, file, resolution = 'high', ext = '.png') {
       height,
     } = await resizeImageBuffer(inputBuffer, resolution);
 
-    const extension = file.path ? path.extname(file.path) : ext; // Default extension if input is a buffer
+    const extension = path.extname(file.path ?? basename); // Default extension if input is a buffer
     const { imageOutput } = req.app.locals.config;
     const userPath = path.join(imageOutput, req.user.id);
 
@@ -42,7 +42,7 @@ async function convertToWebP(req, file, resolution = 'high', ext = '.png') {
     }
 
     // Generate a new path for the output file
-    const newFileName = file.path ? path.basename(file.path) : `image-${Date.now()}.webp`;
+    const newFileName = path.basename(file.path ?? basename);
     const newPath = path.join(userPath, newFileName);
 
     if (extension.toLowerCase() === '.webp') {

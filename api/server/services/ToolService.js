@@ -1,5 +1,6 @@
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { loadTools } = require('~/app/clients/tools/util');
+const { sendMessage } = require('~/server/utils');
 
 /**
  * Formats a `StructuredTool` instance into a format that is compatible
@@ -24,17 +25,18 @@ function formatToOpenAIAssistantTool(tool) {
 /**
  * Processes return required actions from run.
  *
- * @param {Express.Request} req - The Express Request object.
+ * @param {OpenAIClient} openai - OpenAI Client.
  * @param {Action[]} actions - The actions to submit outputs for.
  * @returns {Promise<ToolOutputs>} The outputs of the tools.
  *
  */
-async function processActions(req, actions) {
+async function processActions(openai, actions) {
+  console.log('Processing actions...');
   console.dir(actions, { depth: null });
   const tools = actions.map((action) => action.tool);
   const loadedTools = await loadTools({
-    user: req.user.id,
-    model: req.body.model ?? 'gpt-3.5-turbo-1106',
+    user: openai.req.user.id,
+    model: openai.req.body.model ?? 'gpt-3.5-turbo-1106',
     tools,
     functions: true,
     options: {
@@ -58,6 +60,22 @@ async function processActions(req, actions) {
     try {
       const promise = tool._call(action.toolInput).then((output) => {
         actions[i].output = output;
+        const toolCall = {
+          function: {
+            name: action.tool,
+            arguments: JSON.stringify(action.toolInput),
+            output,
+          },
+          id: action.toolCallId,
+          type: 'function',
+        };
+        openai.seenToolCalls.set(toolCall.id, toolCall);
+        sendMessage(openai.res, {
+          toolCall,
+          // result: tool.result, // we can append tool properties to message stream
+          index: openai.mappedOrder.get(action.toolCallId),
+          id: toolCall.id,
+        });
         return {
           tool_call_id: action.toolCallId,
           output,

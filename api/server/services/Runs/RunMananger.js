@@ -64,6 +64,9 @@ class RunManager {
         return await currentStepPromise;
       }
 
+      if (step.type === 'tool_calls') {
+        await currentStepPromise;
+      }
       if (step.type === 'message_creation' && step.status === 'completed') {
         await currentStepPromise;
       }

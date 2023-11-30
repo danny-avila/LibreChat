@@ -1,8 +1,13 @@
 const crypto = require('crypto');
 const OpenAI = require('openai');
 const { logger } = require('~/config');
-const { sendMessage } = require('../../utils');
-const { initThread, createRun, handleRun } = require('../../services/AssistantService');
+const { sendMessage } = require('~/server/utils');
+const {
+  initThread,
+  createRun,
+  handleRun,
+  createOnTextProgress,
+} = require('~/server/services/AssistantService');
 const express = require('express');
 const router = express.Router();
 const {
@@ -14,13 +19,14 @@ const {
   // createAbortController,
 } = require('../../middleware');
 
-// const thread = {
-//   id: 'thread_LexzJUVugYFqfslS7c7iL3Zo',
-// "thread_nZoiCbPauU60LqY1Q0ME1elg"
-// };
-
+const defaultModel = 'gpt-3.5-turbo-1106';
 /**
- * Chat with an assistant.
+ * @route POST /
+ * @desc Chat with an assistant
+ * @access Public
+ * @param {express.Request} req - The request object, containing the request data.
+ * @param {express.Response} res - The response object, used to send back a response.
+ * @returns {void}
  */
 router.post('/', setHeaders, async (req, res) => {
   try {
@@ -38,6 +44,9 @@ router.post('/', setHeaders, async (req, res) => {
     }
 
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
+    openai.req = req;
+    openai.res = res;
+    createOnTextProgress(openai);
     console.log(messages);
 
     const initThreadBody = {
@@ -66,8 +75,10 @@ router.post('/', setHeaders, async (req, res) => {
     const run = await createRun({
       openai,
       thread_id,
-      body: { assistant_id, model: 'gpt-3.5-turbo-1106' },
+      body: { assistant_id, model: req.body.model ?? defaultModel },
     });
+
+    // todo: retry logic
     const response = await handleRun({ openai, thread_id, run_id: run.id });
 
     // TODO: parse responses, save to db, send to user
@@ -93,9 +104,9 @@ router.post('/', setHeaders, async (req, res) => {
         parentMessageId: 'fake-user-message-id',
         isCreatedByUser: false,
         isEdited: false,
-        model: 'gpt-3.5-turbo-1106',
+        model: defaultModel,
         sender: 'Assistant',
-        text: response.choices[0].text,
+        text: response.text,
       },
     });
     res.end();
