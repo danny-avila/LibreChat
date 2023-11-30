@@ -73,6 +73,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [User Auth System](docs/install/user_auth_system.md)
     * [Online MongoDB Database](docs/install/mongodb.md)
     * [Default Language](docs/install/default_language.md)
+    * [LiteLLM Proxy: Load Balance LLMs + Spend Tracking](docs/install/litellm.md)
 </details>
 
 <details>

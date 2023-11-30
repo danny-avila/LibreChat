@@ -93,6 +93,7 @@ nav:
         - User Auth System: 'install/user_auth_system.md'
         - Online MongoDB Database: 'install/mongodb.md'
         - Languages: 'install/default_language.md'
+        - LiteLLM Proxy: 'install/litellm.md'
         - Miscellaneous: 'install/misc.md'
   - Features:
     - Plugins:
