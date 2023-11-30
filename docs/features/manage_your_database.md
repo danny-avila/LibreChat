@@ -1,6 +1,11 @@
+<img src="https://github.com/danny-avila/LibreChat/assets/32828263/98616233-ec67-494c-bc59-b44a200a326a" height="50">
+
 # Manage Your MongoDB Database with Mongo Express
 
 To enhance the security of your data, external ports for MongoDB are not exposed outside of the docker environment. However, you can safely access and manage your MongoDB database using Mongo Express, a convenient web-based administrative interface. Follow this guide to set up Mongo Express in your Docker environment.
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/612cee31-7fc2-4660-98c0-06627e581bd8)
+
 
 ## Mongo-Express Setup
 
