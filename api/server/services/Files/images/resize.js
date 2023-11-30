@@ -43,7 +43,7 @@ async function resizeImage(inputFilePath, resolution) {
     throw new Error('Invalid resolution parameter');
   }
 
-  const resizedBuffer = await sharp(inputFilePath).resize(resizeOptions).toBuffer();
+  const resizedBuffer = await sharp(inputFilePath).rotate().resize(resizeOptions).toBuffer();
 
   const resizedMetadata = await sharp(resizedBuffer).metadata();
   return { buffer: resizedBuffer, width: resizedMetadata.width, height: resizedMetadata.height };
