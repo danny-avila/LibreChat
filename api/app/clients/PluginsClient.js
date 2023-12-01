@@ -53,7 +53,9 @@ class PluginsClient extends OpenAIClient {
   }
 
   getFunctionModelName(input) {
-    if (input.includes('gpt-3.5-turbo')) {
+    if (/-(?!0314)\d{4}/.test(input)) {
+      return input;
+    } else if (input.includes('gpt-3.5-turbo')) {
       return 'gpt-3.5-turbo';
     } else if (input.includes('gpt-4')) {
       return 'gpt-4';
