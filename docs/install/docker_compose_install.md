@@ -26,6 +26,9 @@ Before running LibreChat with Docker, you need to configure some settings:
 #### [API Keys and Tokens Setup](apis_and_tokens.md) (Required)
 You must set up at least one of these tokens or APIs to run the app.
 
+#### [Manage Your MongoDB Database](../features/manage_your_database.md) (Optional)
+Safely access and manage your MongoDB database using Mongo Express
+
 #### [User Authentication System Setup](../install/user_auth_system.md) (Optional)
 How to set up the user/auth system and Google login.
 

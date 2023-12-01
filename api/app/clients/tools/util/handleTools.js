@@ -17,7 +17,7 @@ const {
   StableDiffusionAPI,
   DALLE3,
   StructuredSD,
-  AzureCognitiveSearch,
+  AzureAISearch,
   StructuredACS,
   E2BTools,
   CodeSherpa,
@@ -101,7 +101,7 @@ const loadTools = async ({
     wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
     'dall-e': OpenAICreateImage,
     'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
-    'azure-cognitive-search': functions ? StructuredACS : AzureCognitiveSearch,
+    'azure-ai-search': functions ? StructuredACS : AzureAISearch,
     CodeBrew: CodeBrew,
   };
 
