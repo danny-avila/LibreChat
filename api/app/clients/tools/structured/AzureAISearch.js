@@ -2,62 +2,61 @@ const { StructuredTool } = require('langchain/tools');
 const { z } = require('zod');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 
-class AzureAISearch extends StructuredTool {
-  static DEFAULT_API_VERSION = '2023-11-01';
-  static DEFAULT_QUERY_TYPE = 'simple';
-  static DEFAULT_TOP = 5;
+const DEFAULT_API_VERSION = '2020-06-30';
+const DEFAULT_QUERY_TYPE = 'simple';
+const DEFAULT_TOP = 5;
 
+class AzureAISearch extends StructuredTool {
   constructor(fields = {}) {
     super();
-    this.initializeProperties(fields);
-    this.initializeClient();
-    this.initializeSchema();
-  }
+    this.serviceEndpoint = this.getEnvVar('AZURE_COGNITIVE_SEARCH_SERVICE_ENDPOINT', fields);
+    this.indexName = this.getEnvVar('AZURE_COGNITIVE_SEARCH_INDEX_NAME', fields);
+    this.apiKey = this.getEnvVar('AZURE_COGNITIVE_SEARCH_API_KEY', fields);
+    this.apiVersion = this.getEnvVar('AZURE_COGNITIVE_SEARCH_API_VERSION', fields, DEFAULT_API_VERSION);
+    this.queryType = this.getEnvVar('AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_QUERY_TYPE', fields, DEFAULT_QUERY_TYPE);
+    this.top = Number(this.getEnvVar('AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_TOP', fields, DEFAULT_TOP));
+    this.select = this.getSelect(fields);
 
-  initializeProperties(fields) {
-    const getValue = (fieldNames, defaultValue) => {
-      for (const name of fieldNames) {
-        const value = fields[name] || process.env[name];
-        if (value !== undefined && value !== null) return value;
-      }
-      return defaultValue;
-    };
-
-    this.serviceEndpoint = getValue(['AZURE_AI_SEARCH_SERVICE_ENDPOINT', 'AZURE_COGNITIVE_SEARCH_SERVICE_ENDPOINT'], null);
-    this.indexName = getValue(['AZURE_AI_SEARCH_INDEX_NAME', 'AZURE_COGNITIVE_SEARCH_INDEX_NAME'], null);
-    this.apiKey = getValue(['AZURE_AI_SEARCH_API_KEY', 'AZURE_COGNITIVE_SEARCH_API_KEY'], null);
-    this.apiVersion = getValue(['AZURE_AI_SEARCH_API_VERSION', 'AZURE_COGNITIVE_SEARCH_API_VERSION'], AzureAISearch.DEFAULT_API_VERSION);
-    this.queryType = getValue(['AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE', 'AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_QUERY_TYPE'], AzureAISearch.DEFAULT_QUERY_TYPE);
-    this.top = getValue(['AZURE_AI_SEARCH_SEARCH_OPTION_TOP', 'AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_TOP'], AzureAISearch.DEFAULT_TOP);
-    this.select = getValue(['AZURE_AI_SEARCH_SEARCH_OPTION_SELECT', 'AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_SELECT'], null);
-  }
-
-  initializeClient() {
-    this.client = new SearchClient(this.serviceEndpoint, this.indexName, new AzureKeyCredential(this.apiKey), { apiVersion: this.apiVersion });
-  }
-
-  initializeSchema() {
+    this.client = new SearchClient(
+      this.serviceEndpoint,
+      this.indexName,
+      new AzureKeyCredential(this.apiKey),
+      { apiVersion: this.apiVersion },
+    );
     this.schema = z.object({
       query: z.string().describe('Search word or phrase to Azure AI Search'),
     });
   }
 
-  name = 'azure-ai-search';
+  getEnvVar(name, fields, defaultValue = '') {
+    const value = fields[name] || process.env[name] || defaultValue;
+    if (!value) {
+      throw new Error(`Missing ${name} environment variable.`);
+    }
+    return value;
+  }
 
-  description =
-    'Use the \'azure-ai-search\' tool to retrieve search results relevant to your input';
+  getSelect(fields) {
+    const select = fields.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_SELECT || process.env.AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_SELECT;
+    return select ? select.split(',') : null;
+  }
 
   async _call(data) {
     const { query } = data;
     try {
-      const searchOptions = {
+      const searchOption = {
         queryType: this.queryType,
         top: this.top,
-        select: this.select
       };
-
-      const searchResults = await this.client.search(query, searchOptions);
-      return JSON.stringify(searchResults.results.map(result => result.document));
+      if (this.select) {
+        searchOption.select = this.select;
+      }
+      const searchResults = await this.client.search(query, searchOption);
+      const resultDocuments = [];
+      for await (const result of searchResults.results) {
+        resultDocuments.push(result.document);
+      }
+      return JSON.stringify(resultDocuments);
     } catch (error) {
       console.error(`Azure AI Search request failed: ${error}`);
       return 'There was an error with Azure AI Search.';
