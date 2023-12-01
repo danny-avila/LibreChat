@@ -29,7 +29,7 @@ class AzureAISearch extends StructuredTool {
     this.apiVersion = getValue(['AZURE_AI_SEARCH_API_VERSION', 'AZURE_COGNITIVE_SEARCH_API_VERSION'], AzureAISearch.DEFAULT_API_VERSION);
     this.queryType = getValue(['AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE', 'AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_QUERY_TYPE'], AzureAISearch.DEFAULT_QUERY_TYPE);
     this.top = getValue(['AZURE_AI_SEARCH_SEARCH_OPTION_TOP', 'AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_TOP'], AzureAISearch.DEFAULT_TOP);
-    this.select = this.getSelect();
+    this.select = getValue(['AZURE_AI_SEARCH_SEARCH_OPTION_SELECT', 'AZURE_COGNITIVE_SEARCH_SEARCH_OPTION_SELECT'], null);
   }
 
   initializeClient() {
