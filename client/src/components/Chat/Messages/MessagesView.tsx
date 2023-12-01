@@ -14,11 +14,12 @@ export default function MessagesView({
   messagesTree?: TMessage[] | null;
   Header?: ReactNode;
 }) {
+  const timeoutIdRef = useRef<NodeJS.Timeout>();
   const scrollableRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
-  const { conversation, showPopover, setAbortScroll } = useChatContext();
+  const { conversation, setAbortScroll } = useChatContext();
   const { conversationId } = conversation ?? {};
 
   const { screenshotTargetRef } = useScreenshot();
@@ -36,24 +37,21 @@ export default function MessagesView({
   }, [scrollableRef]);
 
   useLayoutEffect(() => {
-    const timeoutId = setTimeout(() => {
-      checkIfAtBottom();
-    }, 650);
-
-    // Add a listener on the window object
-    window.addEventListener('scroll', checkIfAtBottom);
+    const scrollableElement = scrollableRef.current;
+    if (!scrollableElement) {
+      return;
+    }
+    const timeoutId = setTimeout(checkIfAtBottom, 650);
 
     return () => {
       clearTimeout(timeoutId);
-      window.removeEventListener('scroll', checkIfAtBottom);
     };
-  }, [_messagesTree, checkIfAtBottom]);
+  }, [checkIfAtBottom]);
 
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const debouncedHandleScroll = () => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(checkIfAtBottom, 100);
-  };
+  const debouncedHandleScroll = useCallback(() => {
+    clearTimeout(timeoutIdRef.current);
+    timeoutIdRef.current = setTimeout(checkIfAtBottom, 100);
+  }, [checkIfAtBottom]);
 
   const scrollCallback = () => setShowScrollButton(false);
   const { scrollToRef: scrollToBottom, handleSmoothToRef } = useScrollToRef({
@@ -66,13 +64,17 @@ export default function MessagesView({
   });
 
   return (
-    <div
-      className="flex-1 overflow-y-auto pt-0"
-      ref={scrollableRef}
-      onScroll={debouncedHandleScroll}
-    >
-      <div className="dark:gpt-dark-gray h-full">
-        <div>
+    <div className="flex-1 overflow-hidden overflow-y-auto">
+      <div className="dark:gpt-dark-gray relative h-full">
+        <div
+          onScroll={debouncedHandleScroll}
+          ref={scrollableRef}
+          style={{
+            height: '100%',
+            overflowY: 'auto',
+            width: '100%',
+          }}
+        >
           <div className="flex flex-col pb-9 text-sm dark:bg-transparent">
             {(_messagesTree && _messagesTree?.length == 0) || _messagesTree === null ? (
               <div className="flex w-full items-center justify-center gap-1 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-900/50 dark:bg-gray-800 dark:text-gray-300">
@@ -90,18 +92,6 @@ export default function MessagesView({
                     setCurrentEditId={setCurrentEditId}
                     currentEditId={currentEditId ?? null}
                   />
-                  <CSSTransition
-                    in={showScrollButton}
-                    timeout={400}
-                    classNames="scroll-down"
-                    unmountOnExit={false}
-                    // appear
-                  >
-                    {() =>
-                      showScrollButton &&
-                      !showPopover && <ScrollToBottom scrollHandler={handleSmoothToRef} />
-                    }
-                  </CSSTransition>
                 </div>
               </>
             )}
@@ -111,6 +101,15 @@ export default function MessagesView({
             />
           </div>
         </div>
+        <CSSTransition
+          in={showScrollButton}
+          timeout={400}
+          classNames="scroll-down"
+          unmountOnExit={false}
+          // appear
+        >
+          {() => showScrollButton && <ScrollToBottom scrollHandler={handleSmoothToRef} />}
+        </CSSTransition>
       </div>
     </div>
   );
