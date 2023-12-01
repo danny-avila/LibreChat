@@ -8,6 +8,7 @@ import { useChatHelpers } from '~/hooks';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
+import ChatWidget from '../Input/ChatWidgetMenu';
 
 function ChatView({
   messagesTree,
@@ -28,6 +29,11 @@ function ChatView({
               <Landing />
             )}
             <OptionsBar messagesTree={messagesTree} />
+            <div className="relative flex flex-row py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
+              <span className="flex w-full flex-row items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
+                <ChatWidget />
+              </span>
+            </div>
             <div className="gizmo:border-t-0 gizmo:pl-0 gizmo:md:pl-0 w-full border-t pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-2 md:pt-0 md:dark:border-transparent">
               <ChatForm index={index} />
             </div>
