@@ -101,7 +101,16 @@ process.on('uncaughtException', (err) => {
       console.error('Meilisearch error, search will be disabled');
       messageCount++;
     }
-  } else {
-    process.exit(1);
+
+    return;
   }
+
+  if (err.message.includes('OpenAIError')) {
+    console.error(
+      '\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.',
+    );
+    return;
+  }
+
+  process.exit(1);
 });

@@ -31,6 +31,9 @@ In this video we're going to install LibreChat on Windows 11 using Docker and Gi
   - `docker-compose up`
 - Visit http://localhost:3080/ to access LibreChat. Create an account and start chatting.
 
+- [Manage Your MongoDB Database  (optional)](../features/manage_your_database.md)
+Safely access and manage your MongoDB database using Mongo Express
+
 Have fun!
 
 ---
