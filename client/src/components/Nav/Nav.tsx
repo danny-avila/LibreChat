@@ -183,7 +183,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       location.pathname.substring(0, 11) === '/chat/share'
     ) {
       newConversation();
-      navigate('/chat/new');
+      navigate('/c/new');
       setWidget(`${type}`);
     } else {
       setWidget(widget === `${type}` ? '' : `${type}`);

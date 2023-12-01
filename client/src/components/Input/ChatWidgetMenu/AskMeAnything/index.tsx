@@ -19,7 +19,8 @@ function AskMeAnything() {
   const [topic, setTopic] = useState<string>('');
   const [showExample, setShowExample] = useState<boolean>(false);
   const [widget, setWidget] = useRecoilState(store.widget);
-  const [text, setText] = useRecoilState(store.text);
+  // const [text, setText] = useRecoilState(store.text);
+  const [text, setText] = useRecoilState(store.textByIndex(0));
   const [cache, setCache] = useState<Cache>({
     type: '',
     topic: '',

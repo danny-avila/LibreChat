@@ -33,7 +33,7 @@ export default function Search() {
       }
     } else {
       // conversationId (in url) should always follow conversation?.conversationId, unless conversation is null
-      navigate(`/chat/${conversation?.conversationId}`);
+      navigate(`/c/${conversation?.conversationId}`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation, query, searchQuery]);

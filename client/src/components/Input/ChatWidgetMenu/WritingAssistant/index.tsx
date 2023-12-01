@@ -17,7 +17,8 @@ https://www.griproom.com/fun/how-to-write-better-prompts-for-chat-gpt
 function WritingAssistant() {
   const [type, setType] = useState<string>('作文');
   const [showExample, setShowExample] = useState<boolean>(false);
-  const [text, setText] = useRecoilState(store.text);
+  // const [text, setText] = useRecoilState(store.text);
+  const [text, setText] = useRecoilState(store.textByIndex(0));
   const [widget, setWidget] = useRecoilState(store.widget);
   const allTemplates = {
     作文: EssayTemplate({ type }),

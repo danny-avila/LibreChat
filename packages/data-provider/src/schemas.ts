@@ -209,6 +209,7 @@ export const tConversationSchema = z.object({
   isPrivate: z.boolean().optional(),
   likes: z.number().optional(),
   likedBy: z.optional(z.record(z.unknown())),
+  viewCount: z.number().optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   thread_id: z.string().optional(),

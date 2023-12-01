@@ -75,7 +75,7 @@ export default function Conversation({ conversation, retainView }) {
       switchToConversation(conversation);
     }
     setWidget('');
-    navigate(`/chat/${conversationId}`);
+    navigate(`/c/${conversationId}`);
   };
 
   const renameHandler = (e) => {

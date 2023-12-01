@@ -93,7 +93,7 @@ export default function MobileNav({ setNavVisible }) {
         className="px-3"
         onClick={() => {
           newConversation();
-          navigate('/chat/new');
+          navigate('/c/new');
         }}
         title="Start a new chat"
       >

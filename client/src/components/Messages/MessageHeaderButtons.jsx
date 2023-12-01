@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useRecoilValue } from 'recoil';
+// import { useRecoilValue } from 'recoil';
 import PrivateButton from '../Conversations/PrivateButton';
 import { CSSTransition } from 'react-transition-group';
 import store from '~/store';
@@ -10,11 +10,13 @@ import {
 } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
-export default function MessageHeaderButtons() {
+export default function MessageHeaderButtons({ conversationId, index = 0 }) {
   const { user } = useAuthContext();
   const localize = useLocalize();
-  const conversation = useRecoilValue(store.conversation);
-  const { conversationId } = conversation;
+  // const [shouldNavigate, setShouldNavigate] = useState(true);
+  const { conversation } = store.useCreateConversationAtom(index);
+  // const conversation = useRecoilValue(store.conversation);
+  // const { conversationId } = conversation;
   const updateConvoMutation = useUpdateConversationMutation(conversation?.conversationId);
   const likeConvoMutation = useLikeConversationMutation(conversation?.conversationId);
   const { viewCount } = conversation;
@@ -73,7 +75,7 @@ export default function MessageHeaderButtons() {
     setNumOfLikes(conversation.likes);
     setPrivateState(conversation.isPrivate);
     setLikedBy({ ...(conversation.likedBy || {}) });
-  }, [conversation]);
+  }, [conversation, user.id]);
 
   return (
     <>

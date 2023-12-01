@@ -92,7 +92,7 @@ export default function Chat() {
     // messagesTree is null when user navigates, but not on page refresh, so we need to navigate in this case
     else if (conversation?.conversationId !== conversationId && !messagesTree) {
       if (shouldNavigate) {
-        navigate(`/chat/${conversation?.conversationId}`);
+        navigate(`/c/${conversation?.conversationId}`);
       } else {
         setShouldNavigate(true);
       }

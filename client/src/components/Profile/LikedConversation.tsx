@@ -28,7 +28,7 @@ function LikedConversations() {
           onClick={() => {
             if (convo.user === user?.id) {
               switchToConversation(convo);
-              navigate(`/chat/${convo.conversationId}`);
+              navigate(`/c/${convo.conversationId}`);
             } else {
               navigate(`/chat/share/${convo.conversationId}`);
             }

@@ -90,7 +90,7 @@ export default function Messages({ isSearchView = false }) {
             </div>
           ) : (
             <>
-              <MessageHeaderButtons />
+              <MessageHeaderButtons conversationId={conversationId} index={0} />
               <MultiMessage
                 key={conversationId} // avoid internal state mixture
                 messageId={conversationId ?? null}

@@ -20,7 +20,8 @@ function CodingAssistant() {
   const [showExample, setShowExample] = useState<boolean>(false);
   const [widget, setWidget] = useRecoilState(store.widget);
   const [inputTitle, setInputTitle] = useState<string>('用途');
-  const [text, setText] = useRecoilState(store.text);
+  // const [text, setText] = useRecoilState(store.text);
+  const [text, setText] = useRecoilState(store.textByIndex(0));
   const [cache, setCache] = useState<Cache>({
     lang: '',
     type: '',
