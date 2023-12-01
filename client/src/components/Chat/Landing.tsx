@@ -3,6 +3,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { icons } from './Menus/Endpoints/Icons';
 import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import WarningIcon from '../svg/WarningIcon';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();
@@ -27,6 +28,15 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
         </div>
         <div className="mb-5 text-2xl font-medium dark:text-white">
           {localize('com_nav_welcome_message')}
+        </div>
+        <div className="flex flex-col items-center justify-start">
+          <WarningIcon />
+          <h4
+            id="reminder"
+            className="inline-block border border-red-500 p-2 text-center font-bold text-red-500"
+          >
+            {localize('com_ui_convo_public_reminder')}
+          </h4>
         </div>
       </div>
     </div>
