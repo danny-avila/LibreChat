@@ -2,7 +2,7 @@ const { StructuredTool } = require('langchain/tools');
 const { z } = require('zod');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 
-const DEFAULT_API_VERSION = '2020-06-30';
+const DEFAULT_API_VERSION = '2023-11-01';
 const DEFAULT_QUERY_TYPE = 'simple';
 const DEFAULT_TOP = 5;
 
