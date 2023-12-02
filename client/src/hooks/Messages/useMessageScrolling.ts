@@ -1,10 +1,11 @@
 import { useRecoilValue } from 'recoil';
 import { useLayoutEffect, useState, useRef, useCallback, useEffect } from 'react';
+import type { TMessage } from 'librechat-data-provider';
 import useScrollToRef from '../useScrollToRef';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
 
-export default function useMessageScrolling() {
+export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const autoScroll = useRecoilValue(store.autoScroll);
 
   const timeoutIdRef = useRef<NodeJS.Timeout>();
@@ -55,10 +56,14 @@ export default function useMessageScrolling() {
   });
 
   useEffect(() => {
+    if (!messagesTree) {
+      return;
+    }
+
     if (isSubmitting && scrollToBottom && !abortScroll) {
       scrollToBottom();
     }
-  }, [isSubmitting, scrollToBottom, abortScroll]);
+  }, [isSubmitting, messagesTree, scrollToBottom, abortScroll]);
 
   useEffect(() => {
     if (scrollToBottom && autoScroll && conversationId !== 'new') {

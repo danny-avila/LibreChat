@@ -23,7 +23,7 @@ export default function MessagesView({
     showScrollButton,
     handleSmoothToRef,
     debouncedHandleScroll,
-  } = useMessageScrolling();
+  } = useMessageScrolling(_messagesTree);
 
   const { conversationId } = conversation ?? {};
 
