@@ -1,7 +1,6 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
-import { GearIcon, DataIcon } from '~/components/svg';
-import { UserIcon } from 'lucide-react';
+import { GearIcon, DataIcon, UserIcon } from '~/components/svg';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import type { TDialogProps } from '~/common';
 import { General, Data, Account } from './SettingsTabs';

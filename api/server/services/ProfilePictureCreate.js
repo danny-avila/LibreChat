@@ -1,7 +1,7 @@
 const sharp = require('sharp');
 const { storage, ref, uploadBytes, getDownloadURL } = require('./firebase');
 const fetch = require('node-fetch');
-const fs = require('fs').promises; // Aggiunta per gestire i file
+const fs = require('fs').promises;
 
 async function convertToWebP(inputBuffer) {
   return sharp(inputBuffer).resize({ width: 150 }).toFormat('webp').toBuffer();
@@ -27,14 +27,24 @@ async function uploadProfilePicture(userId, input) {
     } else if (input instanceof Buffer) {
       imageBuffer = input;
     } else if (typeof input === 'object' && input instanceof File) {
-      // Se l'input è un oggetto File, leggi il suo contenuto come buffer
       const fileContent = await fs.readFile(input.path);
       imageBuffer = Buffer.from(fileContent);
     } else {
       throw new Error('Invalid input type. Expected URL, Buffer, or File.');
     }
 
-    const webPBuffer = await convertToWebP(imageBuffer);
+    const { width, height } = await sharp(imageBuffer).metadata();
+    const minSize = Math.min(width, height);
+    const squaredBuffer = await sharp(imageBuffer)
+      .extract({
+        left: Math.floor((width - minSize) / 2),
+        top: Math.floor((height - minSize) / 2),
+        width: minSize,
+        height: minSize,
+      })
+      .toBuffer();
+
+    const webPBuffer = await convertToWebP(squaredBuffer);
 
     await uploadBytes(profilePicRef, webPBuffer);
 

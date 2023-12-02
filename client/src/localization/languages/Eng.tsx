@@ -51,6 +51,8 @@ export default {
   com_ui_delete: 'Delete',
   com_ui_delete_conversation: 'Delete chat?',
   com_ui_delete_conversation_confirm: 'This will delete',
+  com_ui_preview: 'Preview',
+  com_ui_upload: 'Upload',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
@@ -230,6 +232,8 @@ export default {
   com_endpoint_config_key_google_vertex_api_role:
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
+  com_nav_profile_picture: 'Profile Picture',
+  com_nav_change_picture: 'Change picture',
   com_nav_plugin_store: 'Plugin store',
   com_nav_plugin_search: 'Search plugins',
   com_nav_plugin_auth_error:

@@ -1,12 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer'); // Aggiunto per gestire i dati FormData
+const multer = require('multer');
 
 const uploadProfilePicture = require('~/server/services/ProfilePictureCreate');
 const { requireJwtAuth } = require('../middleware/');
 const { getUserController } = require('../controllers/AuthController');
 
-// Configura multer per gestire i dati FormData
 const upload = multer();
 
 router.get('/', requireJwtAuth, getUserController);
@@ -14,7 +13,7 @@ router.get('/', requireJwtAuth, getUserController);
 router.post('/', upload.single('input'), async (req, res) => {
   try {
     const { userId } = req.body;
-    const input = req.file.buffer; // Utilizza req.file.buffer per ottenere i dati del file
+    const input = req.file.buffer;
 
     if (!userId) {
       throw new Error('User ID is undefined');

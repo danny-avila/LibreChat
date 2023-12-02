@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileUp } from 'lucide-react';
+import { FileImage } from 'lucide-react';
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils/';
 import { useLocalize } from '~/hooks';
@@ -78,7 +78,7 @@ function ProfilePictureUpload() {
   return (
     <>
       <div className="flex items-center justify-between">
-        <span>Profile Picture</span>
+        <span>{localize('com_nav_profile_picture')}</span>
         <label
           htmlFor={'file-upload-profile-picture'}
           className={cn(
@@ -86,13 +86,13 @@ function ProfilePictureUpload() {
             statusColor,
           )}
         >
-          <FileUp className="mr-1 flex w-[22px] items-center stroke-1" />
+          <FileImage className="mr-1 flex w-[22px] items-center stroke-1" />
           <span>
             {status === 'success'
               ? localize('com_ui_upload_success')
               : status === 'invalid'
                 ? localize('com_ui_upload_invalid')
-                : localize('com_endpoint_import')}
+                : localize('com_nav_change_picture')}
           </span>
           <input
             id={'file-upload-profile-picture'}
@@ -112,7 +112,7 @@ function ProfilePictureUpload() {
         >
           <DialogHeader>
             <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-              Preview
+              {localize('com_ui_preview')}
             </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center justify-center">
@@ -121,7 +121,13 @@ function ProfilePictureUpload() {
                 src={previewUrl}
                 alt="Preview"
                 className="mb-2 rounded-full"
-                style={{ maxWidth: '100%', maxHeight: '150px' }}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '150px',
+                  width: '150px',
+                  height: '150px',
+                  objectFit: 'cover',
+                }}
               />
             )}
             {showUploadButton && (
@@ -129,7 +135,7 @@ function ProfilePictureUpload() {
                 className="mt-4 rounded bg-green-500 px-4 py-2 text-white"
                 onClick={handleUpload}
               >
-                Upload
+                {localize('com_ui_upload')}
               </button>
             )}
           </div>

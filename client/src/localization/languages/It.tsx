@@ -50,6 +50,8 @@ export default {
   com_ui_chats: 'chat',
   com_ui_delete_conversation: 'Elimina chat?',
   com_ui_delete_conversation_confirm: 'Questo eliminerà',
+  com_ui_preview: 'Anteprima',
+  com_ui_upload: 'Carica',
   com_auth_error_login:
     'Impossibile accedere con le informazioni fornite. Controlla le tue credenziali e riprova.',
   com_auth_error_login_rl:
@@ -228,6 +230,8 @@ export default {
   com_endpoint_config_key_google_vertex_api_role:
     'Assicurati di fare clic su \'Crea e continua\' per dare almeno il ruolo \'Utente Vertex AI\'. Infine, crea una chiave JSON da importare qui.',
   com_nav_auto_scroll: 'Scorrimento automatico',
+  com_nav_profile_picture: 'Immagine del profilo',
+  com_nav_change_picture: 'Cambia immagine',
   com_nav_plugin_store: 'Negozio dei plugin',
   com_nav_plugin_search: 'Cerca plugin',
   com_nav_plugin_auth_error:

@@ -35,3 +35,4 @@ export { default as BingAIMinimalIcon } from './BingAIMinimalIcon';
 export { default as PaLMinimalIcon } from './PaLMinimalIcon';
 export { default as AnthropicMinimalIcon } from './AnthropicMinimalIcon';
 export { default as SendMessageIcon } from './SendMessageIcon';
+export { default as UserIcon } from './UserIcon';

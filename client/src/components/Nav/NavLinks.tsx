@@ -119,7 +119,7 @@ function NavLinks() {
                 <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                    svg={() => <GearIcon />}
+                    svg={() => <GearIcon className="icon-md" />}
                     text={localize('com_nav_settings')}
                     clickHandler={() => setShowSettings(true)}
                   />
