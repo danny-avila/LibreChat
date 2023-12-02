@@ -12,7 +12,7 @@ import {
 } from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
 import AutoScrollSwitch from './AutoScrollSwitch';
-import DangerButton from './DangerButton';
+import DangerButton from '../DangerButton';
 import store from '~/store';
 import { Dropdown } from '~/components/ui';
 
