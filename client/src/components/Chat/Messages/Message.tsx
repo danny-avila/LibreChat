@@ -1,120 +1,38 @@
-/* eslint-disable react-hooks/exhaustive-deps */
-import { useEffect } from 'react';
-import copy from 'copy-to-clipboard';
-import { useRecoilValue } from 'recoil';
 import { Plugin } from '~/components/Messages/Content';
 import MessageContent from './Content/MessageContent';
-import { Icon } from '~/components/Endpoints';
-import SiblingSwitch from './SiblingSwitch';
 import type { TMessageProps } from '~/common';
-import { useChatContext } from '~/Providers';
+import SiblingSwitch from './SiblingSwitch';
+import { useMessageHelpers } from '~/hooks';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
-import store from '~/store';
 
 export default function Message(props: TMessageProps) {
-  const autoScroll = useRecoilValue(store.autoScroll);
-  const {
-    message,
-    scrollToBottom,
-    currentEditId,
-    setCurrentEditId,
-    siblingIdx,
-    siblingCount,
-    setSiblingIdx,
-  } = props;
+  const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
+    props;
 
   const {
     ask,
-    regenerate,
-    abortScroll,
-    isSubmitting,
+    icon,
+    edit,
+    isLast,
+    enterEdit,
+    handleScroll,
     conversation,
-    setAbortScroll,
-    handleContinue,
+    isSubmitting,
     latestMessage,
-    setLatestMessage,
-  } = useChatContext();
-
-  const { conversationId } = conversation ?? {};
+    handleContinue,
+    copyToClipboard,
+    regenerateMessage,
+  } = useMessageHelpers(props);
 
   const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
-
-  const isLast = !children?.length;
-  const edit = messageId === currentEditId;
-
-  useEffect(() => {
-    if (isSubmitting && scrollToBottom && !abortScroll) {
-      scrollToBottom();
-    }
-  }, [isSubmitting, text, scrollToBottom, abortScroll]);
-
-  useEffect(() => {
-    if (scrollToBottom && autoScroll && conversationId !== 'new') {
-      scrollToBottom();
-    }
-  }, [autoScroll, conversationId, scrollToBottom]);
-
-  useEffect(() => {
-    if (!message) {
-      return;
-    } else if (isLast) {
-      setLatestMessage({ ...message });
-    }
-  }, [isLast, message, setLatestMessage]);
 
   if (!message) {
     return null;
   }
-
-  const enterEdit = (cancel?: boolean) =>
-    setCurrentEditId && setCurrentEditId(cancel ? -1 : messageId);
-
-  const handleScroll = () => {
-    if (isSubmitting) {
-      setAbortScroll(true);
-    } else {
-      setAbortScroll(false);
-    }
-  };
-
-  // const commonClasses =
-  //   'w-full border-b text-gray-800 group border-black/10 dark:border-gray-900/50 dark:text-gray-100 dark:border-none';
-  // const uniqueClasses = isCreatedByUser
-  //   ? 'bg-white dark:bg-gray-800 dark:text-gray-20'
-  //   : 'bg-white dark:bg-gray-800 dark:text-gray-70';
-
-  // const messageProps = {
-  //   className: cn(commonClasses, uniqueClasses),
-  //   titleclass: '',
-  // };
-
-  const icon = Icon({
-    ...conversation,
-    ...message,
-    model: message?.model ?? conversation?.model,
-    size: 28.8,
-  });
-
-  const regenerateMessage = () => {
-    if (isSubmitting && isCreatedByUser) {
-      return;
-    }
-
-    regenerate(message);
-  };
-
-  const copyToClipboard = (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
-    setIsCopied(true);
-    copy(text ?? '');
-
-    setTimeout(() => {
-      setIsCopied(false);
-    }, 3000);
-  };
 
   return (
     <>
@@ -198,7 +116,6 @@ export default function Message(props: TMessageProps) {
         messageId={messageId}
         conversation={conversation}
         messagesTree={children ?? []}
-        scrollToBottom={scrollToBottom}
         currentEditId={currentEditId}
         setCurrentEditId={setCurrentEditId}
       />
