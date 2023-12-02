@@ -2,7 +2,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { MessagesSquared, GPTIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
-import { Button } from '~/components';
+import { Button } from '~/components/ui';
 import { cn } from '~/utils/';
 
 type TPopoverButton = {
