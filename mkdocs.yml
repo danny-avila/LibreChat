@@ -88,6 +88,7 @@ nav:
         - Mac Install: 'install/mac_install.md'
         - Windows Install: 'install/windows_install.md'
     - Configuration:
+        - .env Configuration: 'install/dotenv.md'
         - Free AI APIs: 'install/free_ai_apis.md'
         - APIs and Tokens: 'install/apis_and_tokens.md'
         - User Auth System: 'install/user_auth_system.md'
