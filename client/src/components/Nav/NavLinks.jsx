@@ -14,7 +14,6 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { cn } from '~/utils/';
 import DotsIcon from '../svg/DotsIcon';
 import Profile from '../Profile';
-import Subscription from '../Subscription';
 import store from '~/store';
 import { localize } from '~/localization/Translation';
 
@@ -24,7 +23,6 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
   const [showClearConvos, setShowClearConvos] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [showSubscription, setShowSubscription] = useState(false);
   const { user } = useAuthContext();
 
   const conversation = useRecoilValue(store.conversation) || {};
@@ -127,7 +125,6 @@ export default function NavLinks({ clearSearch, isSearchEnabled }) {
       {showClearConvos && <ClearConvos open={showClearConvos} onOpenChange={setShowClearConvos} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
       {showProfile && <Profile isOpen={showProfile} setIsOpen={setShowProfile} user={user} />}
-      {showSubscription && <Subscription isOpen={showSubscription} setIsOpen={setShowSubscription} user={user} />}
     </>
   );
 }
