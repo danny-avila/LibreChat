@@ -4,10 +4,12 @@ export default {
   com_ui_examples: 'Exemples',
   com_ui_new_chat: 'Nouvelle conversation',
   com_ui_example_quantum_computing: 'Expliquer l\'informatique quantique en termes simples',
-  com_ui_example_10_year_old_b_day: 'Tu as des idées créatives pour l\'anniversaire d\'un enfant de 10 ans ?',
+  com_ui_example_10_year_old_b_day:
+    'Tu as des idées créatives pour l\'anniversaire d\'un enfant de 10 ans ?',
   com_ui_example_http_in_js: 'Comment faire une requête HTTP en Javascript ?',
   com_ui_capabilities: 'Capacités',
-  com_ui_capability_remember: 'Se souvient de ce que l\'utilisateur a dit plus tôt dans la conversation',
+  com_ui_capability_remember:
+    'Se souvient de ce que l\'utilisateur a dit plus tôt dans la conversation',
   com_ui_capability_correction: 'Permet à l\'utilisateur de fournir des corrections de suivi',
   com_ui_capability_decline_requests: 'Formé à refuser les demandes inappropriées',
   com_ui_limitations: 'Limitations',
@@ -28,7 +30,8 @@ export default {
   com_ui_showing: 'Affichage',
   com_ui_of: 'de',
   com_ui_entries: 'Entrées',
-  com_ui_pay_per_call: 'Toutes les conversations IA au même endroit. Payez à la demande et non par mois',
+  com_ui_pay_per_call:
+    'Toutes les conversations IA au même endroit. Payez à la demande et non par mois',
   com_ui_enter: 'Entrer',
   com_ui_submit: 'Soumettre',
   com_ui_upload_success: 'Fichier téléchargé avec succès',
@@ -44,7 +47,8 @@ export default {
   com_ui_all: 'tout',
   com_ui_clear: 'Effacer',
   com_ui_revoke: 'Révoquer',
-  com_ui_revoke_info: 'Révoquer toutes les informations d\'identification fournies par l\'utilisateur',
+  com_ui_revoke_info:
+    'Révoquer toutes les informations d\'identification fournies par l\'utilisateur',
   com_ui_confirm_action: 'Confirmer l\'action',
   com_ui_chats: 'discussions',
   com_ui_delete: 'Supprimer',
@@ -102,8 +106,10 @@ export default {
   com_auth_error_reset_password:
     'Il y a eu un problème pour réinitialiser votre mot de passe. Aucun utilisateur n\'a été trouvé avec l\'adresse courriel fournie. Veuillez réessayer.',
   com_auth_reset_password_success: 'Réinitialisation du mot de passe réussie',
-  com_auth_login_with_new_password: 'Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.',
-  com_auth_error_invalid_reset_token: 'Ce jeton de réinitialisation de mot de passe n\'est plus valide.',
+  com_auth_login_with_new_password:
+    'Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.',
+  com_auth_error_invalid_reset_token:
+    'Ce jeton de réinitialisation de mot de passe n\'est plus valide.',
   com_auth_click_here: 'Cliquez ici',
   com_auth_to_try_again: 'pour réessayer.',
   com_auth_submit_registration: 'Soumettre l\'inscription',
@@ -135,7 +141,8 @@ export default {
   com_endpoint_google_maxoutputtokens:
     'Nombre maximum de jetons qui peuvent être générés dans la réponse. Spécifiez une valeur plus faible pour des réponses plus courtes et une valeur plus élevée pour des réponses plus longues.',
   com_endpoint_google_custom_name_placeholder: 'Définir un nom personnalisé pour PaLM2',
-  com_endpoint_google_prompt_prefix_placeholder: 'Définir des instructions ou un contexte personnalisés. Ignoré si vide.',
+  com_endpoint_google_prompt_prefix_placeholder:
+    'Définir des instructions ou un contexte personnalisés. Ignoré si vide.',
   com_endpoint_custom_name: 'Nom personnalisé',
   com_endpoint_prompt_prefix: 'Préfixe du prompt',
   com_endpoint_temperature: 'Température',
@@ -174,9 +181,10 @@ export default {
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Définir des instructions personnalisées à inclure dans le message système. Par défaut : aucun',
   com_endpoint_import: 'Importer',
-  com_endpoint_set_custom_name: 'Définir un nom personnalisé, au cas où vous trouveriez ce préréglage',
+  com_endpoint_set_custom_name:
+    'Définir un nom personnalisé, au cas où vous trouveriez ce préréglage',
   com_endpoint_preset: 'préréglage',
-  com_endpoint_presets: 'préréglages',  
+  com_endpoint_presets: 'préréglages',
   com_endpoint_preset_name: 'Nom du préréglage',
   com_endpoint_new_topic: 'Nouveau sujet',
   com_endpoint: 'Endpoint',
@@ -210,15 +218,18 @@ export default {
   com_endpoint_config_key_encryption: 'Votre clé sera cryptée et supprimée à',
   com_endpoint_config_key_expiry: 'l\'heure d\'expiration',
   com_endpoint_config_key_import_json_key: 'Importez la clé JSON du compte de service.',
-  com_endpoint_config_key_import_json_key_success: 'Clé JSON du compte de service importé avec succès',
+  com_endpoint_config_key_import_json_key_success:
+    'Clé JSON du compte de service importé avec succès',
   com_endpoint_config_key_import_json_key_invalid:
     'Clé JSON du compte de service invalide. Avez-vous importé le bon fichier ?',
-  com_endpoint_config_key_get_edge_key: 'Pour obtenir votre jeton d\'accès pour Bing, connectez-vous à',
+  com_endpoint_config_key_get_edge_key:
+    'Pour obtenir votre jeton d\'accès pour Bing, connectez-vous à',
   com_endpoint_config_key_get_edge_key_dev_tool:
     'Utilisez dev tools ou une extension lorsque vous êtes connecté au site pour copier le contenu du cookie _U. Si cela échoue, suivez ces',
   com_endpoint_config_key_edge_instructions: 'instructions',
   com_endpoint_config_key_edge_full_key_string: 'pour fournir les chaînes complètes des cookies.',
-  com_endpoint_config_key_chatgpt: 'Pour obtenir votre jeton d\'accès pour ChatGPT \'Version gratuite\', se connecter à',
+  com_endpoint_config_key_chatgpt:
+    'Pour obtenir votre jeton d\'accès pour ChatGPT \'Version gratuite\', se connecter à',
   com_endpoint_config_key_chatgpt_then_visit: 'puis visitez',
   com_endpoint_config_key_chatgpt_copy_token: 'Copiez le jeton d\'accès.',
   com_endpoint_config_key_google_need_to: 'Vous devez',

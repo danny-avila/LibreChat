@@ -26,7 +26,7 @@
   </a>
 </p>
 
-## All-In-One AI Conversations with LibreChat ##
+## All-In-One AI Conversations with LibreChat
 LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
@@ -73,6 +73,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [User Auth System](docs/install/user_auth_system.md)
     * [Online MongoDB Database](docs/install/mongodb.md)
     * [Default Language](docs/install/default_language.md)
+    * [LiteLLM Proxy: Load Balance LLMs + Spend Tracking](docs/install/litellm.md)
 </details>
 
 <details>
@@ -101,6 +102,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)
   * [Token Usage](docs/features/token_usage.md)
+  * [Manage Your Database](docs/features/manage_your_database.md)
 </details>
 
 <details>

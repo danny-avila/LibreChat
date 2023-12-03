@@ -9,7 +9,6 @@ export default function MultiMessage({
   // messageId is used recursively here
   messageId,
   messagesTree,
-  scrollToBottom,
   currentEditId,
   setCurrentEditId,
 }: TMessageProps) {
@@ -45,7 +44,6 @@ export default function MultiMessage({
     <Message
       key={message.messageId}
       message={message}
-      scrollToBottom={scrollToBottom}
       currentEditId={currentEditId}
       setCurrentEditId={setCurrentEditId}
       siblingIdx={messagesTree.length - siblingIdx - 1}

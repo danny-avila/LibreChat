@@ -2,7 +2,7 @@
 
 There are APIs offering free/free-trial access to AI APIs via reverse proxy.
 
-Here is a well-maintained public list of [Free AI APIs](https://github.com/NovaOSS/free-ai-apis) that may or may not be compatible with LibreChat
+Here is a well-maintained public list of [Free AI APIs](https://github.com/zukixa/cool-ai-stuff) that may or may not be compatible with LibreChat
 
 ### [OpenRouter](https://openrouter.ai/) ⇆ (preferred)
 

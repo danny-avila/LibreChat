@@ -1,14 +1,14 @@
-const { sendMessage, sendError, countTokens, isEnabled } = require('../utils');
-const { saveMessage, getConvo, getConvoTitle } = require('../../models');
-const clearPendingReq = require('../../cache/clearPendingReq');
-const spendTokens = require('../../models/spendTokens');
+const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/utils');
+const { saveMessage, getConvo, getConvoTitle } = require('~/models');
+const clearPendingReq = require('~/cache/clearPendingReq');
 const abortControllers = require('./abortControllers');
+const spendTokens = require('~/models/spendTokens');
 
 async function abortMessage(req, res) {
   const { abortKey } = req.body;
 
   if (!abortControllers.has(abortKey) && !res.headersSent) {
-    return res.status(404).send('Request not found');
+    return res.status(404).send({ message: 'Request not found' });
   }
 
   const { abortController } = abortControllers.get(abortKey);

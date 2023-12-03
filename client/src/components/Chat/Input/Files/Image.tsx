@@ -68,7 +68,6 @@ const Image = ({
                   cx="60"
                   cy="60"
                 />
-                {/* <circle className="origin-[50%_50%] -rotate-90 transition-[stroke-dashoffset]" stroke="currentColor" strokeWidth="10" strokeDashoffset="311.01767270538954" strokeDasharray="345.57519189487726 345.57519189487726" fill="transparent" r="55" cx="60" cy="60"/>*/}
                 <circle
                   className="origin-[50%_50%] -rotate-90 transition-[stroke-dashoffset]"
                   stroke="currentColor"
