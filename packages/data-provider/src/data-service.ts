@@ -1,4 +1,5 @@
 import * as f from './types/files';
+import * as p from './types/presets';
 import * as a from './types/assistants';
 import * as t from './types';
 import * as s from './schemas';
@@ -73,15 +74,15 @@ export function getPresets(): Promise<s.TPreset[]> {
   return request.get(endpoints.presets());
 }
 
-export function createPreset(payload: s.TPreset): Promise<s.TPreset[]> {
+export function createPreset(payload: s.TPreset): Promise<s.TPreset> {
   return request.post(endpoints.presets(), payload);
 }
 
-export function updatePreset(payload: s.TPreset): Promise<s.TPreset[]> {
+export function updatePreset(payload: s.TPreset): Promise<s.TPreset> {
   return request.post(endpoints.presets(), payload);
 }
 
-export function deletePreset(arg: s.TPreset | object): Promise<s.TPreset[]> {
+export function deletePreset(arg: s.TPreset | undefined): Promise<p.PresetDeleteResponse> {
   return request.post(endpoints.deletePreset(), arg);
 }
 

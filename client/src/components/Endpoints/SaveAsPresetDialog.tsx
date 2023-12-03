@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useCreatePresetMutation } from 'librechat-data-provider';
 import type { TEditPresetProps } from '~/common';
-import { Dialog, Input, Label } from '~/components/ui/';
-import DialogTemplate from '~/components/ui/DialogTemplate';
 import { cn, defaultTextPropsLabel, removeFocusOutlines, cleanupPreset } from '~/utils/';
+import DialogTemplate from '~/components/ui/DialogTemplate';
+import { Dialog, Input, Label } from '~/components/ui/';
+import { NotificationSeverity } from '~/common';
+import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 
 const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) => {
   const [title, setTitle] = useState<string>(preset?.title || 'My Preset');
   const createPresetMutation = useCreatePresetMutation();
+  const { showToast } = useToastContext();
   const localize = useLocalize();
 
   const submitPreset = () => {
@@ -18,7 +21,24 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
         title,
       },
     });
-    createPresetMutation.mutate(_preset);
+
+    const toastTitle = _preset.title
+      ? `\`${_preset.title}\``
+      : localize('com_endpoint_preset_title');
+
+    createPresetMutation.mutate(_preset, {
+      onSuccess: () => {
+        showToast({
+          message: `${toastTitle} ${localize('com_endpoint_preset_saved')}`,
+        });
+      },
+      onError: () => {
+        showToast({
+          message: localize('com_endpoint_preset_save_error'),
+          severity: NotificationSeverity.ERROR,
+        });
+      },
+    });
   };
 
   useEffect(() => {
