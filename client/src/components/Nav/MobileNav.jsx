@@ -18,8 +18,6 @@ export default function MobileNav({ setNavVisible }) {
   const { userId = '' } = useParams();
   const [profileUser, setProfileUser] = useState(null);
   const [profileName, setProfileName] = useState('');
-  const [subscriptionUser, setSubscriptionUser] = useState(null);
-  const [subscriberName, setSubscriberName] = useState('');
 
   const getUserByIdQuery = useGetUserByIdQuery(userId);
 
@@ -32,10 +30,6 @@ export default function MobileNav({ setNavVisible }) {
   }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data]);
 
   useEffect(() => {
-    if (getUserByIdQuery.isSuccess) setSubscriptionUser(getUserByIdQuery.data);
-  }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data]);
-
-  useEffect(() => {
     if (!profileUser) return;
     if (user && user.id === userId) {
       setProfileName(localize(lang, 'com_ui_homepage'));
@@ -45,22 +39,12 @@ export default function MobileNav({ setNavVisible }) {
   }, [profileUser, userId, lang, user]);
 
   useEffect(() => {
-    if (!subscriptionUser) return;
-    if (user && user.id === userId) {
-      setSubscriberName(localize(lang, 'com_ui_subscriptionpage'));
-    } else {
-      setSubscriberName(localize(lang, 'com_ui_others_homepage', subscriptionUser.username));
-    }
-  }, [subscriptionUser, userId, lang, user]);
-
-  useEffect(() => {
     if (location.pathname === '/home') setTitle(localize(lang, 'com_ui_recommendation'));
     else if (location.pathname === '/leaderboard') setTitle(localize(lang, 'com_ui_leaderboard'));
     else if (location.pathname === '/chat/new') setTitle(localize(lang, 'com_ui_new_chat'));
     else if (location.pathname.substring(0, 11) === '/chat/share') setTitle(' ');
     else if (location.pathname.substring(0, 8) === '/profile') setTitle(profileName);
     else if (conversation) setTitle(conversation.title);
-    else if (location.pathname.substring(0, 8) === '/subscription') setTitle(subscriberName);
     else setTitle(localize(lang, 'com_ui_new_chat'));
   }, [lang, conversation, location.pathname, profileName]);
 

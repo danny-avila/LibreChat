@@ -20,4 +20,3 @@ export { default as SelectDropDown } from './SelectDropDown';
 export { default as DialogTemplate } from './DialogTemplate';
 export { default as MultiSelectDropDown } from './MultiSelectDropDown';
 export { default as Profile } from '../Profile';
-export { default as Subscription } from '../Subscription';
