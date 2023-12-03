@@ -26,6 +26,23 @@
   </a>
 </p>
 
+# Features
+ - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
+ - 💬 Multimodal Chat:
+     - Upload and analyze images with GPT-4-Vision 📸 
+     - More filetypes and Assistants API integration in Active Development 🚧 
+ - 🤖 AI model selection: OpenAI API, Azure, BingAI, ChatGPT Browser, PaLM2, Anthropic (Claude), Plugins
+ - 💾 Create, Save, & Share Custom Presets
+ - 🔄 Edit, Resubmit, and Continue messages with conversation branching
+ - 📤 Export conversations as screenshots, markdown, text, json.
+ - 🔍 Search all messages/conversations
+ - 🔌 Plugins, including web access, image generation with DALL-E-3 and more
+ - 👥 Multi-User, Secure Authentication with Moderation and Token spend tools
+ - ⚙️ Configure Proxy, Reverse Proxy, Docker, many Deployment options, and completely Open-Source
+
+[For a thorough review of our features, see our docs here](https://docs.librechat.ai/features/plugins/introduction.html) 📚
+
+
 ## All-In-One AI Conversations with LibreChat
 LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
 
@@ -35,15 +52,6 @@ With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use f
 
 [![Watch the video](https://img.youtube.com/vi/pNIOs1ovsXw/maxresdefault.jpg)](https://youtu.be/pNIOs1ovsXw)
 Click on the thumbnail to open the video☝️
-
-# Features
-- Response streaming identical to ChatGPT through server-sent events
-- UI from original ChatGPT, including Dark mode
-- AI model selection: OpenAI API, BingAI, ChatGPT Browser, PaLM2, Anthropic (Claude), Plugins
-- Create, Save, & Share custom presets - [More info on prompt presets here](https://github.com/danny-avila/LibreChat/releases/tag/v0.3.0)
-- Edit and Resubmit messages with conversation branching
-- Search all messages/conversations - [More info here](https://github.com/danny-avila/LibreChat/releases/tag/v0.1.0)
-- Plugins now available (including web access, image generation and more)
 
 ---
 
