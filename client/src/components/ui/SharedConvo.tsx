@@ -228,12 +228,12 @@ export default function SharedConvo() {
   // increase view count upon page load
   useEffect(() => {
     incrementViewCount(); // set viewCount
-  });
+  }, []);
 
   // Get recommendations on mount
   useEffect(() => {
     fetchConversation();
-  });
+  }, [token]);
 
   // Check if the conversation has been set as private
   useEffect(() => {
