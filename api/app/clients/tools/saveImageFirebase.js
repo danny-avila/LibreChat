@@ -6,6 +6,8 @@ async function saveImageToFirebaseStorage(imageUrl, imageName) {
 
   // Upload image to Firebase Storage using the image URL
   await uploadBytes(storageRef, await fetch(imageUrl).then((response) => response.buffer()));
+
+  return imageName;
 }
 
 async function getFirebaseStorageImageUrl(imageName) {
@@ -14,4 +16,9 @@ async function getFirebaseStorageImageUrl(imageName) {
   return `![generated image](${await getDownloadURL(storageRef)})`;
 }
 
-module.exports = { saveImageToFirebaseStorage, getFirebaseStorageImageUrl };
+// Export the functions and the variable
+module.exports = {
+  saveImageToFirebaseStorage,
+  getFirebaseStorageImageUrl,
+  imageNameFirebase: null,
+};

@@ -100,7 +100,8 @@ Guidelines:
 
     const regex = /img-[\w\d]+.png/;
     const match = theImageUrl.match(regex);
-    let imageName = '1.png';
+    // Generating a unique image name
+    let imageName = `image_${Date.now()}.png`;
 
     if (match) {
       imageName = match[0];
