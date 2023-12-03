@@ -1,5 +1,5 @@
 import type { TPreset } from 'librechat-data-provider';
-import { EModelEndpoint, alternateName } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 
 export const getPresetIcon = (preset: TPreset, Icon) => {
   return Icon({
@@ -13,23 +13,24 @@ export const getPresetIcon = (preset: TPreset, Icon) => {
 };
 
 export const getPresetTitle = (preset: TPreset) => {
-  const { endpoint } = preset;
-  let _title = `${alternateName[endpoint ?? '']}`;
+  const { endpoint, title: presetTitle } = preset;
   const { chatGptLabel, modelLabel, model, jailbreak, toneStyle } = preset;
+  let _title = '';
+  let label = '';
 
   if (endpoint === EModelEndpoint.azureOpenAI || endpoint === EModelEndpoint.openAI) {
     if (chatGptLabel) {
-      _title = chatGptLabel;
+      label = ': ' + chatGptLabel;
     }
     if (model) {
-      _title += `: ${model}`;
+      _title += model;
     }
   } else if (endpoint === EModelEndpoint.google || endpoint === EModelEndpoint.anthropic) {
     if (modelLabel) {
-      _title = modelLabel;
+      label = ': ' + modelLabel;
     }
     if (model) {
-      _title += `: ${model}`;
+      _title += model;
     }
   } else if (endpoint === EModelEndpoint.bingAI) {
     if (jailbreak) {
@@ -40,16 +41,21 @@ export const getPresetTitle = (preset: TPreset) => {
     }
   } else if (endpoint === EModelEndpoint.chatGPTBrowser) {
     if (model) {
-      _title += `: ${model}`;
+      _title += model;
     }
   } else if (endpoint === EModelEndpoint.gptPlugins) {
     if (model) {
-      _title += `: ${model}`;
+      _title += model;
     }
-  } else if (endpoint === null) {
-    null;
-  } else {
-    null;
   }
-  return _title;
+
+  if (
+    presetTitle &&
+    presetTitle.length > 0 &&
+    presetTitle.trim() !== 'New Chat' &&
+    !label.includes(presetTitle)
+  ) {
+    _title += ': ' + presetTitle;
+  }
+  return `${_title}${label}`;
 };
