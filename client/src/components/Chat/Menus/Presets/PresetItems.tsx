@@ -33,7 +33,6 @@ const PresetItems: FC<{
 }) => {
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const localize = useLocalize();
-  console.log('defaultPreset', defaultPreset);
   return (
     <>
       <div

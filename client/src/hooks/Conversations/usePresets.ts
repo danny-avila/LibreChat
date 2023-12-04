@@ -42,7 +42,6 @@ export default function usePresets() {
       hasLoaded.current = true;
       return;
     }
-    console.log('[initial default preset]', defaultPreset);
     setDefaultPreset(defaultPreset);
     hasLoaded.current = true;
     // dependencies are stable and only needed once
@@ -165,7 +164,6 @@ export default function usePresets() {
       return;
     }
 
-    console.log('preset', newPreset, endpoint);
     newConversation({ preset: newPreset });
   };
 
