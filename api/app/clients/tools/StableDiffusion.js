@@ -26,7 +26,10 @@ Guidelines:
   }
 
   getMarkdownImageUrl(imageName) {
-    const imageUrl = path.join(this.relativeImageUrl, imageName).replace(/\\/g, '/').replace('public/', '');
+    const imageUrl = path
+      .join(this.relativeImageUrl, imageName)
+      .replace(/\\/g, '/')
+      .replace('public/', '');
     return `![generated image](/${imageUrl})`;
   }
 
@@ -43,7 +46,11 @@ Guidelines:
     const payload = {
       prompt: input.split('|')[0],
       negative_prompt: input.split('|')[1],
-      steps: 20
+      sampler_index: 'DPM++ 2M Karras',
+      cfg_scale: 4.5,
+      steps: 22,
+      width: 1024,
+      height: 1024,
     };
     const response = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
     const image = response.data.images[0];
@@ -68,8 +75,8 @@ Guidelines:
       await sharp(buffer)
         .withMetadata({
           iptcpng: {
-            parameters: info
-          }
+            parameters: info,
+          },
         })
         .toFile(this.outputPath + '/' + imageName);
       this.result = this.getMarkdownImageUrl(imageName);

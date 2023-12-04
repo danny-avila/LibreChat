@@ -1,35 +1,35 @@
-﻿Please include a summary of the changes and the related issue. Please also include relevant motivation and context. List any dependencies that are required for this change.
+# Pull Request Template
 
 
+### ⚠️ Before Submitting a PR, read the [Contributing Docs](./CONTRIBUTING.md) in full!
 
-## Type of change
+## Summary
 
-Please delete options that are not relevant.
+Please provide a brief summary of your changes and the related issue. Include any motivation and context that is relevant to your changes. If there are any dependencies necessary for your changes, please list them here.
+
+## Change Type
+
+Please delete any irrelevant options.
 
 - [ ] Bug fix (non-breaking change which fixes an issue)
 - [ ] New feature (non-breaking change which adds functionality)
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] This change requires a documentation update
-- [ ] Documentation update  
-  
+- [ ] Documentation update 
 
-## How Has This Been Tested?
+## Testing
 
-Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce. Please also list any relevant details for your test configuration:
-##
-
+Please describe your test process and include instructions so that we can reproduce your test. If there are any important variables for your testing configuration, list them here.
 
 ### **Test Configuration**:
-##
 
+## Checklist
 
-## Checklist:
-
-- [ ] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
-- [ ] Any dependent changes have been merged and published in downstream modules
+- [ ] My code adheres to this project's style guidelines
+- [ ] I have performed a self-review of my own code
+- [ ] I have commented in any complex areas of my code
+- [ ] I have made pertinent documentation changes
+- [ ] My changes do not introduce new warnings
+- [ ] I have written tests demonstrating that my changes are effective or that my feature works
+- [ ] Local unit tests pass with my changes
+- [ ] Any changes dependent on mine have been merged and published in downstream modules.

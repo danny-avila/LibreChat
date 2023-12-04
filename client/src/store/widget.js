@@ -2,9 +2,9 @@ import { atom } from 'recoil';
 
 const widget = atom({
   key: 'widget',
-  default: ''
+  default: '',
 });
 
 export default {
-  widget
+  widget,
 };

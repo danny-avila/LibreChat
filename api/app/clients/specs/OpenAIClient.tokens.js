@@ -16,7 +16,7 @@ require('dotenv').config();
 const { OpenAIClient } = require('../');
 
 function timeout(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const run = async () => {
@@ -46,7 +46,7 @@ const run = async () => {
       model,
     },
     proxy: process.env.PROXY || null,
-    debug: true
+    debug: true,
   };
 
   let apiKey = process.env.OPENAI_API_KEY;
@@ -59,7 +59,13 @@ const run = async () => {
   function printProgressBar(percentageUsed) {
     const filledBlocks = Math.round(percentageUsed / 2); // Each block represents 2%
     const emptyBlocks = 50 - filledBlocks; // Total blocks is 50 (each represents 2%), so the rest are empty
-    const progressBar = '[' + '█'.repeat(filledBlocks) + ' '.repeat(emptyBlocks) + '] ' + percentageUsed.toFixed(2) + '%';
+    const progressBar =
+      '[' +
+      '█'.repeat(filledBlocks) +
+      ' '.repeat(emptyBlocks) +
+      '] ' +
+      percentageUsed.toFixed(2) +
+      '%';
     console.log(progressBar);
   }
 
@@ -78,10 +84,10 @@ const run = async () => {
       // encoder.free();
 
       const memoryUsageDuringLoop = process.memoryUsage().heapUsed;
-      const percentageUsed = memoryUsageDuringLoop / maxMemory * 100;
+      const percentageUsed = (memoryUsageDuringLoop / maxMemory) * 100;
       printProgressBar(percentageUsed);
 
-      if (i === (iterations - 1)) {
+      if (i === iterations - 1) {
         console.log(' done');
         // encoder.free();
       }
@@ -100,7 +106,7 @@ const run = async () => {
   await timeout(15000);
   const memoryUsageAfterTimeout = process.memoryUsage().heapUsed;
   console.log(`Post timeout: ${memoryUsageAfterTimeout / 1024 / 1024} megabytes`);
-}
+};
 
 run();
 

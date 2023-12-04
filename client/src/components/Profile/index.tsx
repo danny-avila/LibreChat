@@ -3,21 +3,21 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/Tabs';
 import { cn } from '~/utils';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useNavigate, useParams } from 'react-router-dom';
-import { TUser, useFollowUserMutation, useGetUserByIdQuery } from '@librechat/data-provider';
+import { TUser, useFollowUserMutation, useGetUserByIdQuery } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import LikedConversations from './LikedConversation';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
-import { localize } from '~/localization/Translation';
 import PublicConversations from './PublicConversations';
 import { Spinner } from '../svg';
 import UserIcon from '../svg/UserIcon';
 import CheckMark from '../svg/CheckMark';
 import { log } from 'console';
 import EditIcon from '../svg/EditIcon';
+import { useLocalize } from '~/hooks';
 
 function ProfileContent() {
-  let initialBio = '来个大开脑洞，自爆一下你的人生经验，让大家开开眼界！';
+  const initialBio = '来个大开脑洞，自爆一下你的人生经验，让大家开开眼界！';
   // let initialProfession = '未填写';
   const [tabValue, setTabValue] = useState<string>('');
   const [profileUser, setProfileUser] = useState<TUser | null>(null);
@@ -32,7 +32,7 @@ function ProfileContent() {
   // new commit
   const { userId = '' } = useParams();
   const { user, token } = useAuthContext();
-  const lang = useRecoilValue(store.lang);
+  const localize = useLocalize();
   const navigate = useNavigate();
   useDocumentTitle('Profile');
 
@@ -42,7 +42,7 @@ function ProfileContent() {
   const defaultClasses = 'p-2 rounded-md min-w-[75px] font-normal text-xs';
   const defaultSelected = cn(
     defaultClasses,
-    'font-medium data-[state=active]:text-white text-xs text-white'
+    'font-medium data-[state=active]:text-white text-xs text-white',
   );
 
   // Component to display user's followers and who they are following
@@ -67,9 +67,13 @@ function ProfileContent() {
         <button
           className="visible absolute right-1 z-10 rounded-md p-1 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600"
           onClick={() => {
-            if (copied === true) return;
+            if (copied === true) {
+              return;
+            }
 
-            navigator.clipboard.writeText(window.location.protocol + '//' + window.location.host + `/profile/${id}`);
+            navigator.clipboard.writeText(
+              window.location.protocol + '//' + window.location.host + `/profile/${id}`,
+            );
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
           }}
@@ -90,7 +94,7 @@ function ProfileContent() {
               >
                 <polyline points="20 6 9 17 4 12" />
               </svg>
-              {localize(lang, 'com_ui_copy_success')}
+              {localize('com_ui_copy_success')}
             </div>
           ) : (
             <div className="flex w-[92px] flex-row items-center gap-1">
@@ -113,7 +117,7 @@ function ProfileContent() {
                   />
                 </g>
               </svg>
-              {localize(lang, 'com_ui_share')}
+              {localize('com_ui_share')}
             </div>
           )}
         </button>
@@ -124,7 +128,7 @@ function ProfileContent() {
   const followUserController = () => {
     const payload = {
       user: user,
-      otherUser: profileUser
+      otherUser: profileUser,
     };
 
     if (profileUser) {
@@ -133,7 +137,9 @@ function ProfileContent() {
         delete user?.following[profileUser.id];
       } else {
         payload['isFollowing'] = true;
-        if (user) user.following[profileUser.id] = new Date();
+        if (user) {
+          user.following[profileUser.id] = new Date();
+        }
       }
     }
 
@@ -151,7 +157,7 @@ function ProfileContent() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const requestBody = {
-      biography: bio
+      biography: bio,
       // profession: profession
     };
 
@@ -160,9 +166,9 @@ function ProfileContent() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
       });
       if (bioResponse.ok) {
         const responseData = await bioResponse.json();
@@ -188,7 +194,7 @@ function ProfileContent() {
     e.preventDefault();
     console.log('newUsername', newUsername);
     const requestBody = {
-      username: newUsername
+      username: newUsername,
     };
 
     try {
@@ -196,9 +202,9 @@ function ProfileContent() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
       });
       if (usernameResponse.ok) {
         const responseData = await usernameResponse.json();
@@ -214,7 +220,6 @@ function ProfileContent() {
       alert(`An error occurred: ${error}`);
     }
     setIsEditing(false);
-
   };
 
   useEffect(() => {
@@ -246,8 +251,11 @@ function ProfileContent() {
   }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data, user]);
 
   useEffect(() => {
-    if (userId === user?.id) setTabValue('likes');
-    else setTabValue('conversations');
+    if (userId === user?.id) {
+      setTabValue('likes');
+    } else {
+      setTabValue('conversations');
+    }
   }, [user, userId]);
 
   // toggle expand button
@@ -280,8 +288,10 @@ function ProfileContent() {
   return (
     <>
       <button
-        className='absolute flex flex-row w-fit top-12 right-0 mx-2 my-1 py-2 px-3 items-center rounded-md text-gray-800 md:top-1 md:left-12 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600'
-        onClick={() => {history.back()}}
+        className="absolute right-0 top-12 mx-2 my-1 flex w-fit flex-row items-center rounded-md px-3 py-2 text-gray-800 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600 md:left-12 md:top-1"
+        onClick={() => {
+          history.back();
+        }}
       >
         <svg
           stroke="currentColor"
@@ -298,7 +308,7 @@ function ProfileContent() {
           <line x1="1" y1="12" x2="19" y2="12" />
           <polyline points="8 19 1 12 8 5" />
         </svg>
-        {localize(lang, 'com_ui_back')}
+        {localize('com_ui_back')}
       </button>
       <div className="flex h-full flex-col justify-center md:mx-36">
         <div className="mt-6 flex flex-col flex-wrap items-start md:my-4 md:flex-row md:gap-6">
@@ -323,14 +333,14 @@ function ProfileContent() {
                   <div>
                     <form onSubmit={handleChangeUsername}>
                       <input
-                        className='text-black pl-2'
+                        className="pl-2 text-black"
                         type="text"
                         id="newUsernameInput"
                         placeholder="Enter new username"
                         value={newUsername}
                         onChange={handleUsernameChange}
                       />
-                      <button className='pl-4' type="submit">
+                      <button className="pl-4" type="submit">
                         <CheckMark />
                       </button>
                     </form>
@@ -349,7 +359,9 @@ function ProfileContent() {
             <button
               className="w-32 text-gray-600 hover:text-black dark:text-gray-400 dark:hover:text-gray-200"
               onClick={() => {
-                if (copied) return;
+                if (copied) {
+                  return;
+                }
                 setCopied(true);
                 window.navigator.clipboard.writeText(window.location.href);
                 setTimeout(() => setCopied(false), 2000);
@@ -372,7 +384,7 @@ function ProfileContent() {
                     >
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
-                    {localize(lang, 'com_ui_copy_success')}
+                    {localize('com_ui_copy_success')}
                   </>
                 ) : (
                   <>
@@ -395,7 +407,7 @@ function ProfileContent() {
                         />
                       </g>
                     </svg>
-                    {localize(lang, 'com_ui_share_profile')}
+                    {localize('com_ui_share_profile')}
                   </>
                 )}
               </div>
@@ -409,7 +421,7 @@ function ProfileContent() {
             >
               {numOfFollowers}
               <br />
-              {localize(lang, 'com_ui_followers')}
+              {localize('com_ui_followers')}
             </button>
             {/*Number of following */}
             <button
@@ -420,7 +432,7 @@ function ProfileContent() {
             >
               {numOfFollowing}
               <br />
-              {localize(lang, 'com_ui_following')}
+              {localize('com_ui_following')}
             </button>
           </div>
           {/*Follow user button */}
@@ -429,7 +441,7 @@ function ProfileContent() {
               className="w-24 self-center rounded-md bg-gray-200 px-3 py-1 text-center text-lg font-bold text-gray-800 hover:text-black dark:bg-gray-600 dark:text-gray-400 dark:hover:text-gray-200"
               onClick={followUserController}
             >
-              {isFollower ? localize(lang, 'com_ui_unfollow') : localize(lang, 'com_ui_follow')}
+              {isFollower ? localize('com_ui_unfollow') : localize('com_ui_follow')}
             </button>
           )}
         </div>
@@ -443,7 +455,7 @@ function ProfileContent() {
               <form className="flex flex-col space-y-4" onSubmit={handleSubmit}>
                 <div className="flex items-center">
                   <label htmlFor="bio" className="flex items-center justify-center pl-5 pr-5">
-                    <span className="text-lg">{localize(lang, 'com_ui_about_yourself')}</span>
+                    <span className="text-lg">{localize('com_ui_about_yourself')}</span>
                   </label>
                   <textarea
                     id="bio"
@@ -460,14 +472,14 @@ function ProfileContent() {
                     onClick={handleEditProfile}
                     className="rounded px-4 py-1 hover:bg-gray-500"
                   >
-                    {localize(lang, 'com_ui_back')}
+                    {localize('com_ui_back')}
                   </button>
                   <button
                     type="submit"
                     className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
                     onClick={handleSubmit}
                   >
-                    {localize(lang, 'com_ui_save')}
+                    {localize('com_ui_save')}
                   </button>
                 </div>
               </form>
@@ -478,7 +490,10 @@ function ProfileContent() {
                   {expanded ? (
                     <div>
                       <div className="pl-1">{bio}</div>
-                      <button className="ml-2 text-green-500 hover:text-green-300" onClick={toggleExpand}>
+                      <button
+                        className="ml-2 text-green-500 hover:text-green-300"
+                        onClick={toggleExpand}
+                      >
                         Show Less
                       </button>
                     </div>
@@ -486,7 +501,10 @@ function ProfileContent() {
                     <div className="pl-1">
                       {bio.length > 100 ? `${bio.slice(0, 100)}...` : bio}
                       {bio.length > 100 && (
-                        <button className="ml-2 text-green-500 hover:text-green-300" onClick={toggleExpand}>
+                        <button
+                          className="ml-2 text-green-500 hover:text-green-300"
+                          onClick={toggleExpand}
+                        >
                           {expanded ? 'Show Less' : 'Show More'}
                         </button>
                       )}
@@ -525,19 +543,19 @@ function ProfileContent() {
             <TabsList className="bg-white">
               {userId === user?.id && (
                 <TabsTrigger value="likes" className="text-gray-500 dark:text-gray-200">
-                  {localize(lang, 'com_ui_my_likes')}
+                  {localize('com_ui_my_likes')}
                 </TabsTrigger>
               )}
               {userId != user?.id && (
                 <TabsTrigger value="conversations" className="text-gray-500 dark:text-gray-200">
-                  {localize(lang, 'com_ui_conversations')}
+                  {localize('com_ui_conversations')}
                 </TabsTrigger>
               )}
               <TabsTrigger value="followers" className="text-gray-500 dark:text-gray-200">
-                {localize(lang, 'com_ui_followers')}
+                {localize('com_ui_followers')}
               </TabsTrigger>
               <TabsTrigger value="following" className="text-gray-500 dark:text-gray-200">
-                {localize(lang, 'com_ui_following')}
+                {localize('com_ui_following')}
               </TabsTrigger>
             </TabsList>
           </Tabs>

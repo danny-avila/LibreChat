@@ -4,7 +4,11 @@ const { getMessages, deleteMessages } = require('./Message');
 
 const getConvo = async (user, conversationId) => {
   try {
-    return await Conversation.findOne({ user, conversationId }).exec();
+    if (conversationId != null) {
+      return await Conversation.findOne({ conversationId }).lean();
+    } else {
+      return await Conversation.findOne({ user, conversationId }).lean();
+    }
   } catch (error) {
     console.log(error);
     return { message: 'Error getting single conversation' };
@@ -31,8 +35,8 @@ module.exports = {
 
       return await Conversation.findOneAndUpdate({ conversationId: conversationId, user }, update, {
         new: true,
-        upsert: true
-      }).exec();
+        upsert: true,
+      });
     } catch (error) {
       console.log(error);
       return { message: 'Error saving conversation' };
@@ -43,10 +47,10 @@ module.exports = {
       const totalConvos = (await Conversation.countDocuments({ user })) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
       const convos = await Conversation.find({ user })
-        .sort({ createdAt: -1, created: -1 })
+        .sort({ createdAt: -1 })
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
-        .exec();
+        .lean();
       return { conversations: convos, pages: totalPages, pageNumber, pageSize };
     } catch (error) {
       console.log(error);
@@ -62,35 +66,27 @@ module.exports = {
       const cache = {};
       const convoMap = {};
       const promises = [];
-      // will handle a syncing solution soon
-      const deletedConvoIds = [];
 
       convoIds.forEach((convo) =>
         promises.push(
           Conversation.findOne({
             user,
-            conversationId: convo.conversationId
-          }).exec()
-        )
+            conversationId: convo.conversationId,
+          }).lean(),
+        ),
       );
 
-      const results = (await Promise.all(promises)).filter((convo, i) => {
-        if (!convo) {
-          deletedConvoIds.push(convoIds[i].conversationId);
-          return false;
-        } else {
-          const page = Math.floor(i / pageSize) + 1;
-          if (!cache[page]) {
-            cache[page] = [];
-          }
-          cache[page].push(convo);
-          convoMap[convo.conversationId] = convo;
-          return true;
+      const results = (await Promise.all(promises)).filter(Boolean);
+
+      results.forEach((convo, i) => {
+        const page = Math.floor(i / pageSize) + 1;
+        if (!cache[page]) {
+          cache[page] = [];
         }
+        cache[page].push(convo);
+        convoMap[convo.conversationId] = convo;
       });
 
-      // const startIndex = (pageNumber - 1) * pageSize;
-      // const convos = results.slice(startIndex, startIndex + pageSize);
       const totalPages = Math.ceil(results.length / pageSize);
       cache.pages = totalPages;
       cache.pageSize = pageSize;
@@ -100,9 +96,7 @@ module.exports = {
         pages: totalPages || 1,
         pageNumber,
         pageSize,
-        // will handle a syncing solution soon
-        filter: new Set(deletedConvoIds),
-        convoMap
+        convoMap,
       };
     } catch (error) {
       console.log(error);
@@ -126,10 +120,27 @@ module.exports = {
       return { message: 'Error getting conversation title' };
     }
   },
+  /**
+   * Asynchronously deletes conversations and associated messages for a given user and filter.
+   *
+   * @async
+   * @function
+   * @param {string|ObjectId} user - The user's ID.
+   * @param {Object} filter - Additional filter criteria for the conversations to be deleted.
+   * @returns {Promise<{ n: number, ok: number, deletedCount: number, messages: { n: number, ok: number, deletedCount: number } }>}
+   *          An object containing the count of deleted conversations and associated messages.
+   * @throws {Error} Throws an error if there's an issue with the database operations.
+   *
+   * @example
+   * const user = 'someUserId';
+   * const filter = { someField: 'someValue' };
+   * const result = await deleteConvos(user, filter);
+   * console.log(result); // { n: 5, ok: 1, deletedCount: 5, messages: { n: 10, ok: 1, deletedCount: 10 } }
+   */
   deleteConvos: async (user, filter) => {
     let toRemove = await Conversation.find({ ...filter, user }).select('conversationId');
     const ids = toRemove.map((instance) => instance.conversationId);
-    let deleteCount = await Conversation.deleteMany({ ...filter, user }).exec();
+    let deleteCount = await Conversation.deleteMany({ ...filter, user });
     deleteCount.messages = await deleteMessages({ conversationId: { $in: ids } });
     return deleteCount;
   },
@@ -137,7 +148,7 @@ module.exports = {
     try {
       return await Conversation.find({
         user: { $ne: userId },
-        isPrivate: { $eq: false }
+        isPrivate: { $eq: false },
       })
         .sort({ createdAt: -1 })
         .limit(200)
@@ -151,7 +162,7 @@ module.exports = {
     try {
       return await Conversation.find({
         user: { $in: following },
-        isPrivate: { $eq: false }
+        isPrivate: { $eq: false },
       })
         .sort({ createdAt: -1 })
         .limit(200)
@@ -175,7 +186,7 @@ module.exports = {
         return await Conversation.findOneAndUpdate(
           { conversationId },
           { $currentDate: update, $inc: { likes: 1 } },
-          { new: true, upsert: false }
+          { new: true, upsert: false },
         ).exec();
       } else {
         // User request is the same as DB record
@@ -186,14 +197,14 @@ module.exports = {
           return await Conversation.findOneAndUpdate(
             { conversationId },
             { $currentDate: update, $inc: { likes: 1 } },
-            { new: true, upsert: false }
+            { new: true, upsert: false },
           ).exec();
         } else {
           // User request is different from DB record
           return await Conversation.findOneAndUpdate(
             { conversationId },
             { $unset: update, $inc: { likes: -1 } },
-            { new: true, upsert: false }
+            { new: true, upsert: false },
           ).exec();
         }
       }
@@ -209,16 +220,16 @@ module.exports = {
         {
           $match: {
             isPrivate: { $eq: false },
-            user: { $ne: userId }
-          }
+            user: { $ne: userId },
+          },
         }, // Filter for documents where isPrivate is false and user is not equal to userId
         {
           $addFields: {
-            totalLikesAndViewCount: { $sum: ['$likes', '$viewCount'] }
-          }
+            totalLikesAndViewCount: { $sum: ['$likes', '$viewCount'] },
+          },
         },
         { $sort: { totalLikesAndViewCount: -1 } },
-        { $limit: 200 }
+        { $limit: 200 },
       ]);
     } catch (error) {
       console.log(error);
@@ -245,7 +256,7 @@ module.exports = {
     try {
       const dbResponse = await Conversation.find({
         user: { $eq: userId },
-        isPrivate: { $eq: false }
+        isPrivate: { $eq: false },
       })
         .sort({ createdAt: -1 })
         .limit(30)
@@ -264,11 +275,11 @@ module.exports = {
       return await Conversation.findOneAndUpdate(
         { conversationId },
         { $inc: { viewCount: 1 } },
-        { new: true, upsert: false }
+        { new: true, upsert: false },
       ).exec();
     } catch (error) {
       console.log(error);
       return { message: `Error increasing view count for conversation ${conversationId}` };
     }
-  }
+  },
 };

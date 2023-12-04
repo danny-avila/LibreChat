@@ -1,158 +1,158 @@
 const conversationPreset = {
-  // endpoint: [azureOpenAI, openAI, bingAI, chatGPTBrowser]
+  // endpoint: [azureOpenAI, openAI, bingAI, anthropic, chatGPTBrowser]
   endpoint: {
     type: String,
     default: null,
-    required: true
+    required: true,
   },
   // for azureOpenAI, openAI, chatGPTBrowser only
   model: {
     type: String,
-    default: null,
-    required: false
+    // default: null,
+    required: false,
   },
   // for azureOpenAI, openAI only
   chatGptLabel: {
     type: String,
-    default: null,
-    required: false
+    // default: null,
+    required: false,
   },
   // for google only
   modelLabel: {
     type: String,
-    default: null,
-    required: false
+    // default: null,
+    required: false,
   },
   promptPrefix: {
     type: String,
-    default: null,
-    required: false
+    // default: null,
+    required: false,
   },
   temperature: {
     type: Number,
-    default: 1,
-    required: false
+    // default: 1,
+    required: false,
   },
   top_p: {
     type: Number,
-    default: 1,
-    required: false
+    // default: 1,
+    required: false,
   },
   // for google only
   topP: {
     type: Number,
-    default: 0.95,
-    required: false
+    // default: 0.95,
+    required: false,
   },
   topK: {
     type: Number,
-    default: 40,
-    required: false
+    // default: 40,
+    required: false,
   },
   maxOutputTokens: {
     type: Number,
-    default: 1024,
-    required: false
+    // default: 1024,
+    required: false,
   },
   presence_penalty: {
     type: Number,
-    default: 0,
-    required: false
+    // default: 0,
+    required: false,
   },
   frequency_penalty: {
     type: Number,
-    default: 0,
-    required: false
+    // default: 0,
+    required: false,
   },
   // for bingai only
   jailbreak: {
     type: Boolean,
-    default: false
+    // default: false,
   },
   context: {
     type: String,
-    default: null
+    // default: null,
   },
   systemMessage: {
     type: String,
-    default: null
+    // default: null,
   },
   toneStyle: {
     type: String,
-    default: null
-  }
+    // default: null,
+  },
 };
 
 const agentOptions = {
   model: {
     type: String,
-    default: null,
-    required: false
+    // default: null,
+    required: false,
   },
   // for azureOpenAI, openAI only
   chatGptLabel: {
     type: String,
-    default: null,
-    required: false
+    // default: null,
+    required: false,
   },
   // for google only
   modelLabel: {
     type: String,
-    default: null,
-    required: false
+    // default: null,
+    required: false,
   },
   promptPrefix: {
     type: String,
-    default: null,
-    required: false
+    // default: null,
+    required: false,
   },
   temperature: {
     type: Number,
-    default: 1,
-    required: false
+    // default: 1,
+    required: false,
   },
   top_p: {
     type: Number,
-    default: 1,
-    required: false
+    // default: 1,
+    required: false,
   },
   // for google only
   topP: {
     type: Number,
-    default: 0.95,
-    required: false
+    // default: 0.95,
+    required: false,
   },
   topK: {
     type: Number,
-    default: 40,
-    required: false
+    // default: 40,
+    required: false,
   },
   maxOutputTokens: {
     type: Number,
-    default: 1024,
-    required: false
+    // default: 1024,
+    required: false,
   },
   presence_penalty: {
     type: Number,
-    default: 0,
-    required: false
+    // default: 0,
+    required: false,
   },
   frequency_penalty: {
     type: Number,
-    default: 0,
-    required: false
+    // default: 0,
+    required: false,
   },
   context: {
     type: String,
-    default: null
+    // default: null,
   },
   systemMessage: {
     type: String,
-    default: null
-  }
+    // default: null,
+  },
 };
-  
+
 module.exports = {
   conversationPreset,
-  agentOptions
+  agentOptions,
 };

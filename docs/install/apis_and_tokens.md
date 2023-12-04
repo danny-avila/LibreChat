@@ -37,6 +37,12 @@ To get your Bing Access Token, you have a few options:
   - Expand the "Cookies" (Under "Storage")
   - Copy the value of the "\_U" cookie and save it in ./.env as BING_ACCESS_TOKEN
 
+## Anthropic Endpoint (Claude)
+
+- Create an account at [https://console.anthropic.com/](https://console.anthropic.com/)
+- Go to [https://console.anthropic.com/account/keys](https://console.anthropic.com/account/keys) and get your api key
+- add it to `ANTHROPIC_API_KEY=` in the `.env` file
+
 ## Google's PaLM 2
 
 To setup PaLM 2 (via Google Cloud Vertex AI API), you need to:
@@ -78,6 +84,46 @@ https://{AZURE_OPENAI_API_INSTANCE_NAME}.openai.azure.com/openai/deployments/{AZ
 ```
 You should also consider changing the `AZURE_OPENAI_MODELS` variable to the models available in your deployment.
 
+#### Additional Configuration Notes
+
+- **Endpoint Construction**: The provided variables help customize the construction of the API URL for Azure.
+
+- **Model Deployment Naming**: As of 2023-11-10, the Azure API allows only one model per deployment. It's advisable to name your deployments after the model name (e.g., "gpt-3.5-turbo") for easy deployment switching. This is facilitated by setting `AZURE_USE_MODEL_AS_DEPLOYMENT_NAME` to `TRUE`.
+
+Alternatively, use custom deployment names and set `AZURE_OPENAI_DEFAULT_MODEL` for expected functionality.
+
+- **`AZURE_OPENAI_MODELS`**: List the available models, separated by commas without spaces. The first listed model will be the default. If left blank, internal settings will be used. Note that deployment names can't have periods, which are removed when generating the endpoint.
+
+Example use:
+
+```bash
+# .env file
+AZURE_OPENAI_MODELS=gpt-3.5-turbo,gpt-4,gpt-5
+
+```
+
+- **`AZURE_USE_MODEL_AS_DEPLOYMENT_NAME`**: Enable using the model name as the deployment name for the API URL.
+
+Example use:
+
+```bash
+# .env file
+AZURE_USE_MODEL_AS_DEPLOYMENT_NAME=TRUE
+
+```
+
+Note: Azure API does not use the `model` in the payload and is more of an identifying field for the LibreChat App. If using non-model deployment names, but you're having issues with the model not being recognized, you should set this field. It will also not be used as the deployment name if AZURE_USE_MODEL_AS_DEPLOYMENT_NAME is enabled, which will prioritize what the user selects as the model.
+
+- **`AZURE_OPENAI_DEFAULT_MODEL`**: Override the model setting for Azure, useful if using custom deployment names.
+
+Example use:
+
+```bash
+# .env file
+AZURE_OPENAI_DEFAULT_MODEL=gpt-3.5-turbo # do include periods in the model name here
+
+```
+
 ### Optional Variables
 
 * `AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME`: The deployment name for completion. This is currently not in use but may be used in future.
@@ -85,22 +131,21 @@ You should also consider changing the `AZURE_OPENAI_MODELS` variable to the mode
 
 These two variables are optional but may be used in future updates of this project.
 
-### Plugin Endpoint Variables
+### Using Plugins with Azure
 
-Note: The Plugins endpoint may not work as expected with Azure OpenAI, which may not support OpenAI Functions yet. Even when results were generated, they were not great compared to the regular OpenAI endpoint. You should set the "Functions" off in the Agent settings, and it's recommend to not skip completion with functions off.
+Note: To use the Plugins endpoint with Azure OpenAI, you need a deployment supporting [function calling](https://techcommunity.microsoft.com/t5/azure-ai-services-blog/function-calling-is-now-available-in-azure-openai-service/ba-p/3879241). Otherwise, you need to set "Functions" off in the Agent settings. When you are not using "functions" mode, it's recommend to have "skip completion" off as well, which is a review step of what the agent generated.
 
-To use Azure with the Plugins endpoint, there are some extra steps to take as the langchain library is particular with envrionment variables:
+To use Azure with the Plugins endpoint, make sure the following environment variables are set:
 
-* `PLUGINS_USE_AZURE`: If set to "true" or any truthy value, this will enable the program to use Azure with the Plugins endpoint. 
-* `AZURE_OPENAI_API_KEY`: Your Azure API key must be set to this environment variable, not to be confused with `AZURE_API_KEY`, which can remain as before.
-* `OPENAI_API_KEY`: Must be omitted or commented to use Azure with Plugins
-
-These steps are quick workarounds as other solutions would require renaming environment variables. This is due to langchain overriding environment variables, and will have to be solved with a later solution.
-
+* `PLUGINS_USE_AZURE`: If set to "true" or any truthy value, this will enable the program to use Azure with the Plugins endpoint.
+* `AZURE_API_KEY`: Your Azure API key must be set with an environment variable.
 
 ## That's it! You're all set. 🎉
 
 ---
+ ## [Free AI APIs](free_ai_apis.md)
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+---
+
+>⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
 

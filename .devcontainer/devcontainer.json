@@ -39,7 +39,7 @@
             }
         }
     },
-    "postCreateCommand": ""
+    "postCreateCommand": "",
     // "workspaceMount": "src=${localWorkspaceFolder},dst=/code,type=bind,consistency=cached"
 
     // "runArgs": [
@@ -54,4 +54,5 @@
     // "settings": {
     //     "terminal.integrated.shell.linux": "/bin/bash"
     // },
+    "features": {"ghcr.io/devcontainers/features/git:1": {}}
 }

@@ -31,10 +31,36 @@
     ]
   },
   {
+    "name": "E2B Code Interpreter",
+    "pluginKey": "e2b_code_interpreter",
+    "description": "[Experimental] Sandboxed cloud environment where you can run any process, use filesystem and access the internet. Requires https://github.com/e2b-dev/chatgpt-plugin",
+    "icon": "https://raw.githubusercontent.com/e2b-dev/chatgpt-plugin/main/logo.png",
+    "authConfig": [
+      {
+        "authField": "E2B_SERVER_URL",
+        "label": "E2B Server URL",
+        "description": "Hosted endpoint must be provided"
+      }
+    ]
+  },
+  {
+    "name": "CodeSherpa",
+    "pluginKey": "codesherpa_tools",
+    "description": "[Experimental] A REPL for your chat. Requires https://github.com/iamgreggarcia/codesherpa",
+    "icon": "https://github.com/iamgreggarcia/codesherpa/blob/main/localserver/_logo.png",
+    "authConfig": [
+      {
+        "authField": "CODESHERPA_SERVER_URL",
+        "label": "CodeSherpa Server URL",
+        "description": "Hosted endpoint must be provided"
+      }
+    ]
+  },
+  {
     "name": "Browser",
-    "pluginKey": "browser",
+    "pluginKey": "web-browser",
     "description": "Scrape and summarize webpage data",
-    "icon": "/assets/web-browser.png",
+    "icon": "/assets/web-browser.svg",
     "authConfig": [
       {
         "authField": "OPENAI_API_KEY",
@@ -70,6 +96,19 @@
     ]
   },
   {
+    "name": "DALL-E-3",
+    "pluginKey": "dalle",
+    "description": "[DALL-E-3] Create realistic images and art from a description in natural language",
+    "icon": "https://i.imgur.com/u2TzXzH.png",
+    "authConfig": [
+      {
+        "authField": "DALLE_API_KEY",
+        "label": "OpenAI API Key",
+        "description": "You can use DALL-E with your API Key from OpenAI."
+      }
+    ]
+  },
+  {
     "name": "Calculator",
     "pluginKey": "calculator",
     "description": "Perform simple and complex mathematical calculations.",
@@ -91,29 +130,6 @@
     ]
   },
   {
-    "name": "Txt2Img",
-    "pluginKey": "runpod-img-endpoint",
-    "description": "Generate images given any text input.",
-    "icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ3L_LHTYGNHVr3bJJvxpaZBk6ptQIQipU6im4zHK3gsiozh0KG2r7Snaz-WUIbHyFccLU&usqp=CAU",
-    "authConfig": [
-      {
-        "authField": "RUNPOD_ENDPOINT_URL",
-        "label": "Your Runpod Image Generation ENDPOINT URL",
-        "description": "You need to provide the URL of your Runpod Image generation API. For instructions on how to obtain this, see <a href='https://docs.runpod.io/reference/'>Runpod Docs</a>."
-      },
-      {
-        "authField": "RUNPOD_API_KEY",
-        "label": "Your Runpod API Key",
-        "description": "You need to provide the API Key of your Runpod Image generation API. For instructions on how to obtain this, see <a href='https://docs.runpod.io/reference/'>Runpod Docs</a>."
-      },
-      {
-        "authField": "RUNPOD_USE_SYNC",
-        "label": "Your Runpod use sync method over async",
-        "description": "You need to tell whether you prefer to use sync method over async."
-      }
-    ]
-  },
-  {
     "name": "Zapier",
     "pluginKey": "zapier",
     "description": "Interact with over 5,000+ apps like Google Sheets, Gmail, HubSpot, Salesforce, and thousands more.",
@@ -125,5 +141,48 @@
         "description": "You can use Zapier with your API Key from Zapier."
       }
     ]
+  },
+  {
+    "name": "Azure AI Search",
+    "pluginKey": "azure-ai-search",
+    "description": "Use Azure AI Search to find information",
+    "icon": "https://i.imgur.com/E7crPze.png",
+    "authConfig": [
+      {
+        "authField": "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
+        "label": "Azure AI Search Endpoint",
+        "description": "You need to provide your Endpoint for Azure AI Search."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_INDEX_NAME",
+        "label": "Azure AI Search Index Name",
+        "description": "You need to provide your Index Name for Azure AI Search."
+      },
+      {
+        "authField": "AZURE_AI_SEARCH_API_KEY",
+        "label": "Azure AI Search API Key",
+        "description": "You need to provideq your API Key for Azure AI Search."
+      }
+    ]
+  },
+  {
+    "name": "Code Interpreter",
+    "pluginKey": "codeinterpreter",
+    "description": "[Experimental] Analyze files and run code online with ease. Requires dockerized python server in /pyserver/",
+    "icon": "/assets/code.png",
+    "authConfig": [
+      {
+        "authField": "OPENAI_API_KEY",
+        "label": "OpenAI API Key",
+        "description": "Gets Code from Open AI API"
+      }
+    ]
+  },
+  {
+    "name": "CodeBrew",
+    "pluginKey": "CodeBrew",
+    "description": "Use 'CodeBrew' to virtually interpret Python, Node, C, C++, Java, C#, PHP, MySQL, Rust or Go code.",
+    "icon": "https://imgur.com/iLE5ceA.png",
+    "authConfig": []
   }
 ]

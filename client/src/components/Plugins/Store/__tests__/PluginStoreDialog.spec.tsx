@@ -1,9 +1,9 @@
-import { render } from 'layout-test-utils';
+import { render, screen, fireEvent } from 'test/layout-test-utils';
 import PluginStoreDialog from '../PluginStoreDialog';
 import userEvent from '@testing-library/user-event';
-import * as mockDataProvider from '@librechat/data-provider';
+import * as mockDataProvider from 'librechat-data-provider';
 
-jest.mock('@librechat/data-provider');
+jest.mock('librechat-data-provider');
 
 class ResizeObserver {
   observe() {
@@ -29,9 +29,9 @@ const pluginsQueryResult = [
       {
         authField: 'GOOGLE_CSE_ID',
         label: 'Google CSE ID',
-        description: 'This is your Google Custom Search Engine ID.'
-      }
-    ]
+        description: 'This is your Google Custom Search Engine ID.',
+      },
+    ],
   },
   {
     name: 'Wolfram',
@@ -43,66 +43,66 @@ const pluginsQueryResult = [
       {
         authField: 'WOLFRAM_APP_ID',
         label: 'Wolfram App ID',
-        description: 'An AppID must be supplied in all calls to the Wolfram|Alpha API.'
-      }
-    ]
+        description: 'An AppID must be supplied in all calls to the Wolfram|Alpha API.',
+      },
+    ],
   },
   {
     name: 'Calculator',
     pluginKey: 'calculator',
     description: 'A simple calculator plugin',
     icon: 'https://i.imgur.com/SMmVkNB.png',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 1',
     pluginKey: 'plugin1',
     description: 'description for Plugin 1.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 2',
     pluginKey: 'plugin2',
     description: 'description for Plugin 2.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 3',
     pluginKey: 'plugin3',
     description: 'description for Plugin 3.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 4',
     pluginKey: 'plugin4',
     description: 'description for Plugin 4.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 5',
     pluginKey: 'plugin5',
     description: 'description for Plugin 5.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 6',
     pluginKey: 'plugin6',
     description: 'description for Plugin 6.',
     icon: 'mock-icon',
-    authConfig: []
+    authConfig: [],
   },
   {
     name: 'Plugin 7',
     pluginKey: 'plugin7',
     description: 'description for Plugin 7.',
     icon: 'mock-icon',
-    authConfig: []
-  }
+    authConfig: [],
+  },
 ];
 
 const setup = ({
@@ -110,20 +110,29 @@ const setup = ({
     isLoading: false,
     isError: false,
     data: {
-      plugins: ['wolfram']
-    }
+      plugins: ['wolfram'],
+    },
+  },
+  useRefreshTokenMutationReturnValue = {
+    isLoading: false,
+    isError: false,
+    mutate: jest.fn(),
+    data: {
+      token: 'mock-token',
+      user: {},
+    },
   },
   useAvailablePluginsQueryReturnValue = {
     isLoading: false,
     isError: false,
-    data: pluginsQueryResult
+    data: pluginsQueryResult,
   },
   useUpdateUserPluginsMutationReturnValue = {
     isLoading: false,
     isError: false,
     mutate: jest.fn(),
-    data: {}
-  }
+    data: {},
+  },
 } = {}) => {
   const mockUseAvailablePluginsQuery = jest
     .spyOn(mockDataProvider, 'useAvailablePluginsQuery')
@@ -137,6 +146,10 @@ const setup = ({
     .spyOn(mockDataProvider, 'useGetUserQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetUserQueryReturnValue);
+  const mockUseRefreshTokenMutation = jest
+    .spyOn(mockDataProvider, 'useRefreshTokenMutation')
+    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
+    .mockReturnValue(useRefreshTokenMutationReturnValue);
   const mockSetIsOpen = jest.fn();
   const renderResult = render(<PluginStoreDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
 
@@ -145,7 +158,8 @@ const setup = ({
     mockUseGetUserQuery,
     mockUseAvailablePluginsQuery,
     mockUseUpdateUserPluginsMutation,
-    mockSetIsOpen
+    mockUseRefreshTokenMutation,
+    mockSetIsOpen,
   };
 };
 
@@ -187,4 +201,21 @@ test('allows the user to navigate between pages', async () => {
   expect(getByText('Google')).toBeInTheDocument();
   expect(getByText('Wolfram')).toBeInTheDocument();
   expect(getByText('Plugin 1')).toBeInTheDocument();
+});
+
+test('allows the user to search for plugins', async () => {
+  setup();
+
+  const searchInput = screen.getByPlaceholderText('Search plugins');
+  fireEvent.change(searchInput, { target: { value: 'Google' } });
+
+  expect(screen.getByText('Google')).toBeInTheDocument();
+  expect(screen.queryByText('Wolfram')).not.toBeInTheDocument();
+  expect(screen.queryByText('Plugin 1')).not.toBeInTheDocument();
+
+  fireEvent.change(searchInput, { target: { value: 'Plugin 1' } });
+
+  expect(screen.getByText('Plugin 1')).toBeInTheDocument();
+  expect(screen.queryByText('Google')).not.toBeInTheDocument();
+  expect(screen.queryByText('Wolfram')).not.toBeInTheDocument();
 });

@@ -1,15 +1,13 @@
 const { getUserPluginAuthValue } = require('../../../../server/services/PluginService');
 const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { ZapierToolKit } = require('langchain/agents');
-const {
-  SerpAPI,
-  ZapierNLAWrapper
-} = require('langchain/tools');
+const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
 const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
 const {
   availableTools,
+  CodeInterpreter,
   AIPluginTool,
   GoogleSearchAPI,
   WolframAlphaAPI,
@@ -17,15 +15,29 @@ const {
   HttpRequestTool,
   OpenAICreateImage,
   StableDiffusionAPI,
+  DALLE3,
   StructuredSD,
-  RunPodImgEndpointAPI,
+  AzureAISearch,
+  StructuredACS,
+  E2BTools,
+  CodeSherpa,
+  CodeSherpaTools,
+  CodeBrew,
 } = require('../');
+const { loadSpecs } = require('./loadSpecs');
+const { loadToolSuite } = require('./loadToolSuite');
+
+const getOpenAIKey = async (options, user) => {
+  let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
+  openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
+  return openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
+};
 
 const validateTools = async (user, tools = []) => {
   try {
     const validToolsSet = new Set(tools);
     const availableToolsToValidate = availableTools.filter((tool) =>
-      validToolsSet.has(tool.pluginKey)
+      validToolsSet.has(tool.pluginKey),
     );
 
     const validateCredentials = async (authField, toolName) => {
@@ -74,23 +86,63 @@ const loadToolWithAuth = async (user, authFields, ToolConstructor, options = {})
   };
 };
 
-const loadTools = async ({ user, model, functions = null, tools = [], options = {} }) => {
+const loadTools = async ({
+  user,
+  model,
+  functions = null,
+  returnMap = false,
+  tools = [],
+  options = {},
+}) => {
   const toolConstructors = {
     calculator: Calculator,
+    codeinterpreter: CodeInterpreter,
     google: GoogleSearchAPI,
     wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
     'dall-e': OpenAICreateImage,
     'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
-    'runpod-img-endpoint': RunPodImgEndpointAPI,
-
+    'azure-ai-search': functions ? StructuredACS : AzureAISearch,
+    CodeBrew: CodeBrew,
   };
 
+  const openAIApiKey = await getOpenAIKey(options, user);
+
   const customConstructors = {
-    browser: async () => {
-      let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
-      openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
-      openAIApiKey = openAIApiKey || await getUserPluginAuthValue(user, 'OPENAI_API_KEY');
-      return new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
+    e2b_code_interpreter: async () => {
+      if (!functions) {
+        return null;
+      }
+
+      return await loadToolSuite({
+        pluginKey: 'e2b_code_interpreter',
+        tools: E2BTools,
+        user,
+        options: {
+          model,
+          openAIApiKey,
+          ...options,
+        },
+      });
+    },
+    codesherpa_tools: async () => {
+      if (!functions) {
+        return null;
+      }
+
+      return await loadToolSuite({
+        pluginKey: 'codesherpa_tools',
+        tools: CodeSherpaTools,
+        user,
+        options,
+      });
+    },
+    'web-browser': async () => {
+      // let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
+      // openAIApiKey = openAIApiKey === 'user_provided' ? null : openAIApiKey;
+      // openAIApiKey = openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
+      const browser = new WebBrowser({ model, embeddings: new OpenAIEmbeddings({ openAIApiKey }) });
+      browser.description_for_model = browser.description;
+      return browser;
     },
     serpapi: async () => {
       let apiKey = process.env.SERPAPI_API_KEY;
@@ -100,7 +152,7 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
       return new SerpAPI(apiKey, {
         location: 'Austin,Texas,United States',
         hl: 'en',
-        gl: 'us'
+        gl: 'us',
       });
     },
     zapier: async () => {
@@ -116,16 +168,21 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
         new HttpRequestTool(),
         await AIPluginTool.fromPluginUrl(
           'https://www.klarna.com/.well-known/ai-plugin.json',
-          new ChatOpenAI({ openAIApiKey: options.openAIApiKey, temperature: 0 })
-        )
+          new ChatOpenAI({ openAIApiKey: options.openAIApiKey, temperature: 0 }),
+        ),
       ];
-    }
+    },
   };
 
   const requestedTools = {};
 
+  if (functions) {
+    toolConstructors.dalle = DALLE3;
+    toolConstructors.codesherpa = CodeSherpa;
+  }
+
   const toolOptions = {
-    serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' }
+    serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
   };
 
   const toolAuthFields = {};
@@ -137,6 +194,8 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
 
     toolAuthFields[tool.pluginKey] = tool.authConfig.map((auth) => auth.authField);
   });
+
+  const remainingTools = [];
 
   for (const tool of tools) {
     if (customConstructors[tool]) {
@@ -150,16 +209,58 @@ const loadTools = async ({ user, model, functions = null, tools = [], options = 
         user,
         toolAuthFields[tool],
         toolConstructors[tool],
-        options
+        options,
       );
       requestedTools[tool] = toolInstance;
+      continue;
+    }
+
+    if (functions) {
+      remainingTools.push(tool);
     }
   }
 
-  return requestedTools;
+  let specs = null;
+  if (functions && remainingTools.length > 0) {
+    specs = await loadSpecs({
+      llm: model,
+      user,
+      message: options.message,
+      memory: options.memory,
+      signal: options.signal,
+      tools: remainingTools,
+      map: true,
+      verbose: false,
+    });
+  }
+
+  for (const tool of remainingTools) {
+    if (specs && specs[tool]) {
+      requestedTools[tool] = specs[tool];
+    }
+  }
+
+  if (returnMap) {
+    return requestedTools;
+  }
+
+  // load tools
+  let result = [];
+  for (const tool of tools) {
+    const validTool = requestedTools[tool];
+    const plugin = await validTool();
+
+    if (Array.isArray(plugin)) {
+      result = [...result, ...plugin];
+    } else if (plugin) {
+      result.push(plugin);
+    }
+  }
+
+  return result;
 };
 
 module.exports = {
   validateTools,
-  loadTools
+  loadTools,
 };

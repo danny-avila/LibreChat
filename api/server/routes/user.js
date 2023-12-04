@@ -1,6 +1,12 @@
 const express = require('express');
-const requireJwtAuth = require('../../middleware/requireJwtAuth');
-const { getUserController, updateUserPluginsController, followUserController, postBiographyController, usernameController } = require('../controllers/UserController');
+const requireJwtAuth = require('../middleware/requireJwtAuth');
+const {
+  getUserController,
+  updateUserPluginsController,
+  followUserController,
+  postBiographyController,
+  usernameController,
+} = require('../controllers/UserController');
 
 const router = express.Router();
 

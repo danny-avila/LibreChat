@@ -5,25 +5,24 @@ import { CSSTransition } from 'react-transition-group';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import MultiMessage from '../Messages/MultiMessage';
 import buildTree from '~/utils/buildTree';
-import { useScreenshot } from '~/utils/screenshotContext.jsx';
+import { useScreenshot } from '~/hooks/';
 import {
   TConversation,
   TMessage,
   TUser,
-  useLikeConversationMutation
-} from '@librechat/data-provider';
+  useLikeConversationMutation,
+} from 'librechat-data-provider';
 import SwitchPage from './SwitchPage';
-import store from '~/store';
-import { localize } from '~/localization/Translation';
-import { useRecoilValue } from 'recoil';
+import { useLocalize } from '~/hooks';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { Spinner } from '../svg';
 import { useNavigate } from 'react-router-dom';
-import { alternateName } from '~/utils';
+// import { alternateName } from '~/utils';
+import { alternateName } from 'librechat-data-provider';
 
 export default function Recommendations() {
   const [tabValue, setTabValue] = useState<string>(
-    window.sessionStorage.getItem('tab') || 'recent'
+    window.sessionStorage.getItem('tab') || 'recent',
   );
 
   // UI states
@@ -45,15 +44,15 @@ export default function Recommendations() {
 
   // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
   const { user, token } = useAuthContext();
-  const lang = useRecoilValue(store.lang);
-  const title = localize(lang, 'com_ui_recommendation');
+  const localize = useLocalize();
+  const title = localize('com_ui_recommendation');
   const navigate = useNavigate();
 
   // createdDate
   const [ConvoCreatedDate, setConvoCreatedDate] = useState<string>('time');
   // Data provider
   const likeConvoMutation = useLikeConversationMutation(
-    convoData && convoData.length > 0 ? convoData[convoIdx].conversationId : ''
+    convoData && convoData.length > 0 ? convoData[convoIdx].conversationId || '' : '',
   );
   console.log(convoData);
   // Allows navigation to user's profile page
@@ -70,7 +69,7 @@ export default function Recommendations() {
   const saveIdx = () => {
     const idxPackage = { cacheIdx: cacheIdx, convoIdx: convoIdx };
     window.sessionStorage.setItem(`${tabValue}Idx`, JSON.stringify(idxPackage));
-  }
+  };
 
   const plugins = (
     <>
@@ -83,26 +82,42 @@ export default function Recommendations() {
   );
 
   const getConversationTitle = () => {
-    if (!convoData || convoData.length < 1) return '';
+    if (!convoData || convoData.length < 1) {
+      return '';
+    }
     const conversation = convoData[convoIdx];
     const { endpoint, model } = conversation;
-    let _title = `${alternateName[endpoint] ?? endpoint}`;
+    let _title = `${alternateName[endpoint || 'openAI'] ?? endpoint}`;
 
     if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
       const { chatGptLabel } = conversation;
-      if (model) _title += `: ${model}`;
-      if (chatGptLabel) _title += ` as ${chatGptLabel}`;
+      if (model) {
+        _title += `: ${model}`;
+      }
+      if (chatGptLabel) {
+        _title += ` as ${chatGptLabel}`;
+      }
     } else if (endpoint === 'google') {
       _title = 'PaLM';
       const { modelLabel, model } = conversation;
-      if (model) _title += `: ${model}`;
-      if (modelLabel) _title += ` as ${modelLabel}`;
+      if (model) {
+        _title += `: ${model}`;
+      }
+      if (modelLabel) {
+        _title += ` as ${modelLabel}`;
+      }
     } else if (endpoint === 'bingAI') {
       const { jailbreak, toneStyle } = conversation;
-      if (toneStyle) _title += `: ${toneStyle}`;
-      if (jailbreak) _title += ' as Sydney';
+      if (toneStyle) {
+        _title += `: ${toneStyle}`;
+      }
+      if (jailbreak) {
+        _title += ' as Sydney';
+      }
     } else if (endpoint === 'chatGPTBrowser') {
-      if (model) _title += `: ${model}`;
+      if (model) {
+        _title += `: ${model}`;
+      }
     } else if (endpoint === 'gptPlugins') {
       return plugins;
     } else if (endpoint === null) {
@@ -133,8 +148,8 @@ export default function Recommendations() {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
       const responseObject = await response.json();
 
@@ -182,16 +197,16 @@ export default function Recommendations() {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       const userResponse = await fetch(`/api/user/${userId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       const messagesResponseObject = await messagesResponse.json();
@@ -218,7 +233,7 @@ export default function Recommendations() {
       saveCache();
       saveIdx();
 
-      setMsgTree(buildTree(messagesResponseObject));
+      setMsgTree(buildTree(messagesResponseObject) || null);
       setConvoUser(userResponseObject);
     } catch (error) {
       console.log(error);
@@ -227,23 +242,29 @@ export default function Recommendations() {
 
   // Likes a conversation
   async function likeConversation() {
-    if (!convoData || !user) return;
+    if (!convoData || !user) {
+      return;
+    }
 
     // update component state
     setLiked(!liked);
 
     // Initiate these properties if they do not exist
-    if (!convoData[convoIdx].likedBy) convoData[convoIdx].likedBy = {};
-    if (!convoData[convoIdx].likes) convoData[convoIdx].likes = 0;
+    if (!convoData[convoIdx].likedBy) {
+      convoData[convoIdx].likedBy = {};
+    }
+    if (!convoData[convoIdx].likes) {
+      convoData[convoIdx].likes = 0;
+    }
 
     // update state object
     if (liked) {
       setNumOfLikes(numOfLikes - 1);
-      convoData[convoIdx].likes = convoData[convoIdx].likes - 1;
+      convoData[convoIdx].likes = convoData[convoIdx].likes || 0 - 1;
       delete convoData[convoIdx].likedBy[user.id];
     } else {
       setNumOfLikes(numOfLikes + 1);
-      convoData[convoIdx].likes = convoData[convoIdx].likes + 1;
+      convoData[convoIdx].likes = convoData[convoIdx].likes || 0 + 1;
       convoData[convoIdx].likedBy[user.id] = new Date();
     }
 
@@ -268,7 +289,9 @@ export default function Recommendations() {
 
   // Copies conversations share link
   const copyShareLinkHandler = () => {
-    if (copied) return;
+    if (copied) {
+      return;
+    }
     navigator.clipboard.writeText(shareLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -292,8 +315,8 @@ export default function Recommendations() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
       const responseObject = await response.json();
       setViewCount(responseObject?.viewCount);
@@ -314,17 +337,23 @@ export default function Recommendations() {
       // Get from cache if possible
       if (cache[cacheIdx]) {
         const { user, messages } = cache[cacheIdx];
-        setMsgTree(buildTree(messages));
+        console.log(messages);
+        setMsgTree(buildTree(messages ?? null) || null);
         setConvoUser(user);
       } else {
         fetchConvoMessagesAndUser(
-          convoData[convoIdx].conversationId,
-          convoData[convoIdx].user || ''
+          convoData[convoIdx].conversationId || 'null',
+          convoData[convoIdx].user || '',
         );
       }
 
-      setShareLink(window.location.protocol + '//' + window.location.host + `/chat/share/${convoData[convoIdx].conversationId}`);
-      setNumOfLikes(convoData[convoIdx].likes);
+      setShareLink(
+        window.location.protocol +
+          '//' +
+          window.location.host +
+          `/chat/share/${convoData[convoIdx].conversationId}`,
+      );
+      setNumOfLikes(convoData[convoIdx].likes || 0);
 
       // set convo created data
       const isoTimeString = convoData[convoIdx].createdAt;
@@ -335,7 +364,7 @@ export default function Recommendations() {
 
       // You can format these numeric components as needed, e.g., as a string
       const formattedDate = `${year}-${month}-${day}`;
-      setConvoCreatedDate(formattedDate)
+      setConvoCreatedDate(formattedDate);
 
       const likedBy = convoData[convoIdx].likedBy;
       if (likedBy) {
@@ -344,7 +373,7 @@ export default function Recommendations() {
         setLiked(false);
       }
 
-      incrementViewCount(convoData[convoIdx].conversationId); //increase view count for current conversation
+      incrementViewCount(convoData[convoIdx].conversationId || 'null'); //increase view count for current conversation
 
       saveIdx();
     }
@@ -358,7 +387,7 @@ export default function Recommendations() {
     'p-2 rounded-md min-w-[75px] font-normal bg-white/[.60] dark:bg-gray-700 text-black text-xs';
   const defaultSelected = cn(
     defaultClasses,
-    'font-medium data-[state=active]:text-white text-xs text-white'
+    'font-medium data-[state=active]:text-white text-xs text-white',
   );
   const selectedTab = (val: string) => val + '-tab ' + defaultSelected;
 
@@ -378,21 +407,21 @@ export default function Recommendations() {
               className={`${tabValue === 'recent' ? selectedTab('creative') : defaultClasses}`}
               onClick={tabClickHandler('recent')}
             >
-              {localize(lang, 'com_ui_recent')}
+              {localize('com_ui_recent')}
             </TabsTrigger>
             <TabsTrigger
               value="hottest"
               className={`${tabValue === 'hottest' ? selectedTab('balanced') : defaultClasses}`}
               onClick={tabClickHandler('hottest')}
             >
-              {localize(lang, 'com_ui_hottest')}
+              {localize('com_ui_hottest')}
             </TabsTrigger>
             <TabsTrigger
               value="following"
               className={`${tabValue === 'following' ? selectedTab('fast') : defaultClasses}`}
               onClick={tabClickHandler('following')}
             >
-              {localize(lang, 'com_ui_my_following')}
+              {localize('com_ui_my_following')}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -418,7 +447,7 @@ export default function Recommendations() {
                       title={convoUser?.username}
                       style={{
                         width: 25,
-                        height: 25
+                        height: 25,
                       }}
                       className={'relative flex items-center justify-center justify-self-center'}
                     >
@@ -462,7 +491,7 @@ export default function Recommendations() {
                           />
                         </g>
                       </svg>
-                      {localize(lang, 'com_ui_share')}
+                      {localize('com_ui_share')}
                     </button>
 
                     {/*Like button*/}
@@ -486,11 +515,16 @@ export default function Recommendations() {
                           <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
                         </svg>
                       </div>
-                      <div>{localize(lang, 'com_ui_number_of_likes', numOfLikes ? numOfLikes.toString() : '0')}</div>
+                      <div>
+                        {localize(
+                          'com_ui_number_of_likes',
+                          numOfLikes ? numOfLikes.toString() : '0',
+                        )}
+                      </div>
                     </button>
                     {/*View Count Display*/}
                     <div>
-                      {localize(lang, 'com_ui_number_of_views', viewCount ? viewCount.toString() : '0')}
+                      {localize('com_ui_number_of_views', viewCount ? viewCount.toString() : '0')}
                     </div>
                   </div>
                 </div>
@@ -509,11 +543,11 @@ export default function Recommendations() {
                       <>
                         {Object.keys(user?.following || {}).length === 0 ? ( // The user might not be following anyone...
                           <>
-                            <div className="ml-2 mt-2">{localize(lang, 'com_ui_no_following')}</div>
+                            <div className="ml-2 mt-2">{localize('com_ui_no_following')}</div>
                           </>
                         ) : (
                           // The users whom the current user is following does not have any public conversations
-                          <div>{localize(lang, 'com_ui_following_no_convo')}</div>
+                          <div>{localize('com_ui_following_no_convo')}</div>
                         )}
                       </>
                     ) : (
@@ -532,7 +566,7 @@ export default function Recommendations() {
                         messageId={convoData[convoIdx].conversationId}
                         conversation={convoData[convoIdx]}
                         messagesTree={msgTree}
-                        scrollToBottom={null}
+                        scrollToBottom={null || undefined}
                         currentEditId={-1}
                         setCurrentEditId={null}
                         isSearchView={true}
@@ -557,7 +591,7 @@ export default function Recommendations() {
               unmountOnExit={false}
             >
               <div className="text-md invisible absolute bottom-20 rounded-full bg-gray-200 px-3 py-1 text-black opacity-0">
-                {localize(lang, 'com_ui_copied')}
+                {localize('com_ui_copied')}
               </div>
             </CSSTransition>
           </>

@@ -8,10 +8,10 @@ import TextareaAutosize from 'react-textarea-autosize';
 import store from '~/store';
 
 type Cache = {
-  lang: string,
-  type: string,
-  topic: string,
-}
+  lang: string;
+  type: string;
+  topic: string;
+};
 
 function CodingAssistant() {
   const [lang, setLang] = useState<string>('Python');
@@ -20,11 +20,12 @@ function CodingAssistant() {
   const [showExample, setShowExample] = useState<boolean>(false);
   const [widget, setWidget] = useRecoilState(store.widget);
   const [inputTitle, setInputTitle] = useState<string>('用途');
-  const [text, setText] = useRecoilState(store.text);
+  // const [text, setText] = useRecoilState(store.text);
+  const [text, setText] = useRecoilState(store.textByIndex(0));
   const [cache, setCache] = useState<Cache>({
     lang: '',
     type: '',
-    topic: ''
+    topic: '',
   });
 
   const defaultTextProps =
@@ -52,7 +53,7 @@ function CodingAssistant() {
       setCache({
         lang: lang,
         type: type,
-        topic: topic
+        topic: topic,
       });
       setLang('Python');
       setType('代码生成');
@@ -62,8 +63,8 @@ function CodingAssistant() {
   };
 
   const content = () => {
-    return(
-      <div className="pb-12 max-h-[450px] h-[60vh] overflow-y-auto md:h-[450px]">
+    return (
+      <div className="h-[60vh] max-h-[450px] overflow-y-auto pb-12 md:h-[450px]">
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="col-span-1 flex flex-col items-center justify-start gap-6">
             <div className="grid w-full items-center gap-y-2">
@@ -75,10 +76,10 @@ function CodingAssistant() {
                 disabled={false}
                 className={cn(
                   defaultTextProps,
-                  'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                  'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
                 )}
                 containerClassName="flex w-full resize-none"
-                subContainerClassName=''
+                subContainerClassName=""
               />
             </div>
             <div className="grid w-full items-center gap-y-2">
@@ -90,27 +91,27 @@ function CodingAssistant() {
                 disabled={false}
                 className={cn(
                   defaultTextProps,
-                  'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                  'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
                 )}
                 containerClassName="flex w-full resize-none"
-                subContainerClassName=''
+                subContainerClassName=""
               />
             </div>
           </div>
           <div className="col-span-1 flex flex-col items-center justify-start gap-6">
             <div className="grid w-full items-center gap-1">
               <Label htmlFor="context" className="text-left text-sm font-medium">
-                { inputTitle }
+                {inputTitle}
               </Label>
               <TextareaAutosize
                 id="topic"
-                title={ inputTitle }
+                title={inputTitle}
                 disabled={false}
                 value={topic || ''}
                 onChange={(e) => setTopic(e.target.value || '')}
                 className={cn(
                   defaultTextProps,
-                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
+                  'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2',
                 )}
               />
             </div>
@@ -118,7 +119,7 @@ function CodingAssistant() {
         </div>
       </div>
     );
-  }
+  };
 
   useEffect(() => {
     if (type === '代码生成') {
@@ -134,23 +135,21 @@ function CodingAssistant() {
     }
   }, [type]);
 
-  return(
+  return (
     <EndpointOptionsPopover
-      content={
-        <div className="px-4 py-4">
-          { content() }
-        </div>
-      }
+      content={<div className="px-4 py-4">{content()}</div>}
       widget={true}
-      visible={ widget === 'ca' }
-      saveAsPreset={ setTextHandler }
-      switchToSimpleMode={() => {
-        setWidget('');
-      }}
+      visible={widget === 'ca'}
+      saveAsPreset={setTextHandler}
+      closePopover={() => setWidget('')}
+      // switchToSimpleMode={() => {
+      //   setWidget('');
+      // }}
       additionalButton={{
-        label: (showExample ? '恢复' : '示例'),
+        label: showExample ? '恢复' : '示例',
+        buttonClass: '',
         handler: showExampleHandler,
-        icon: <MessagesSquared className="mr-1 w-[14px]" />
+        icon: <MessagesSquared className="mr-1 w-[14px]" />,
       }}
     />
   );

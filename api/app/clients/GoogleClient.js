@@ -1,10 +1,7 @@
 const BaseClient = require('./BaseClient');
 const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
-const {
-  encoding_for_model: encodingForModel,
-  get_encoding: getEncoding
-} = require('@dqbd/tiktoken');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 
 const tokenizersCache = {};
 
@@ -29,7 +26,8 @@ class GoogleClient extends BaseClient {
 
     jwtClient.authorize((err) => {
       if (err) {
-        console.log(err);
+        console.error('Error: jwtClient failed to authorize');
+        console.error(err.message);
         throw err;
       }
     });
@@ -43,20 +41,20 @@ class GoogleClient extends BaseClient {
       // nested options aren't spread properly, so we need to do this manually
       this.options.modelOptions = {
         ...this.options.modelOptions,
-        ...options.modelOptions
+        ...options.modelOptions,
       };
       delete options.modelOptions;
       // now we can merge options
       this.options = {
         ...this.options,
-        ...options
+        ...options,
       };
     } else {
       this.options = options;
     }
 
     this.options.examples = this.options.examples.filter(
-      (obj) => obj.input.content !== '' && obj.output.content !== ''
+      (obj) => obj.input.content !== '' && obj.output.content !== '',
     );
 
     const modelOptions = this.options.modelOptions || {};
@@ -66,7 +64,7 @@ class GoogleClient extends BaseClient {
       model: modelOptions.model || 'chat-bison',
       temperature: typeof modelOptions.temperature === 'undefined' ? 0.2 : modelOptions.temperature, // 0 - 1, 0.2 is recommended
       topP: typeof modelOptions.topP === 'undefined' ? 0.95 : modelOptions.topP, // 0 - 1, default: 0.95
-      topK: typeof modelOptions.topK === 'undefined' ? 40 : modelOptions.topK // 1-40, default: 40
+      topK: typeof modelOptions.topK === 'undefined' ? 40 : modelOptions.topK, // 1-40, default: 40
       // stop: modelOptions.stop // no stop method for now
     };
 
@@ -86,7 +84,7 @@ class GoogleClient extends BaseClient {
       throw new Error(
         `maxPromptTokens + maxOutputTokens (${this.maxPromptTokens} + ${this.maxResponseTokens} = ${
           this.maxPromptTokens + this.maxResponseTokens
-        }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`
+        }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`,
       );
     }
 
@@ -105,7 +103,7 @@ class GoogleClient extends BaseClient {
       this.endToken = '<|im_end|>';
       this.gptEncoder = this.constructor.getTokenizer('text-davinci-003', true, {
         '<|im_start|>': 100264,
-        '<|im_end|>': 100265
+        '<|im_end|>': 100265,
       });
     } else {
       // Previously I was trying to use "<|endoftext|>" but there seems to be some bug with OpenAI's token counting
@@ -143,7 +141,7 @@ class GoogleClient extends BaseClient {
   getMessageMapMethod() {
     return ((message) => ({
       author: message?.author ?? (message.isCreatedByUser ? this.userLabel : this.modelLabel),
-      content: message?.content ?? message.text
+      content: message?.content ?? message.text,
     })).bind(this);
   }
 
@@ -153,9 +151,9 @@ class GoogleClient extends BaseClient {
       instances: [
         {
           messages: formattedMessages,
-        }
+        },
       ],
-      parameters: this.options.modelOptions
+      parameters: this.options.modelOptions,
     };
 
     if (this.options.promptPrefix) {
@@ -170,8 +168,8 @@ class GoogleClient extends BaseClient {
     if (this.isTextModel) {
       payload.instances = [
         {
-          prompt: messages[messages.length -1].content
-        }
+          prompt: messages[messages.length - 1].content,
+        },
       ];
     }
 
@@ -199,9 +197,9 @@ class GoogleClient extends BaseClient {
       method: 'POST',
       agent: new Agent({
         bodyTimeout: 0,
-        headersTimeout: 0
+        headersTimeout: 0,
       }),
-      signal: abortController.signal
+      signal: abortController.signal,
     };
 
     if (this.options.proxy) {
@@ -216,7 +214,9 @@ class GoogleClient extends BaseClient {
 
   getSaveOptions() {
     return {
-      ...this.modelOptions
+      promptPrefix: this.options.promptPrefix,
+      modelLabel: this.options.modelLabel,
+      ...this.modelOptions,
     };
   }
 
@@ -237,7 +237,7 @@ class GoogleClient extends BaseClient {
         '';
       if (blocked === true) {
         reply = `Google blocked a proper response to your message:\n${JSON.stringify(
-          result.predictions[0].safetyAttributes
+          result.predictions[0].safetyAttributes,
         )}${reply.length > 0 ? `\nAI Response:\n${reply}` : ''}`;
       }
       if (this.options.debug) {
@@ -245,7 +245,8 @@ class GoogleClient extends BaseClient {
         console.debug(result);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error: failed to send completion to Google');
+      console.error(err.message);
     }
 
     if (!blocked) {

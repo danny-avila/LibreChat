@@ -17,5 +17,5 @@ if (trackingId) {
 root.render(
   <ApiErrorBoundaryProvider>
     <App />
-  </ApiErrorBoundaryProvider>
+  </ApiErrorBoundaryProvider>,
 );

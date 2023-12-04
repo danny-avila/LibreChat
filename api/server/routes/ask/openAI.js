@@ -1,107 +1,61 @@
 const express = require('express');
 const router = express.Router();
-const { titleConvo, OpenAIClient } = require('../../../app');
-const { getAzureCredentials, abortMessage } = require('../../../utils');
-const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
+const { getResponseSender } = require('../endpoints/schemas');
+const { sendMessage, createOnProgress } = require('../../utils');
+const { addTitle, initializeClient } = require('../endpoints/openAI');
+const { saveMessage, getConvoTitle, getConvo, getMessagesCount } = require('../../../models');
 const {
-  handleError,
-  sendMessage,
-  createOnProgress,
-} = require('./handlers');
-const requireJwtAuth = require('../../../middleware/requireJwtAuth');
-const User = require('../../../models/User');
-const { getMessagesCount } = require('../../../models/Message');
+  handleAbort,
+  createAbortController,
+  handleAbortError,
+  setHeaders,
+  validateEndpoint,
+  buildEndpointOption,
+} = require('../../middleware');
 const trieSensitive = require('../../../utils/trieSensitive');
+const { handleError } = require('../../utils');
+const User = require('../../../models/User');
 
-const abortControllers = new Map();
+router.post('/abort', handleAbort());
 
-router.post('/abort', requireJwtAuth, async (req, res) => {
-  return await abortMessage(req, res, abortControllers);
-});
-
-router.post('/', requireJwtAuth, async (req, res) => {
-  const { endpoint, text, parentMessageId, conversationId } = req.body;
-  if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
-  if (!isOpenAI) return handleError(res, { text: 'Illegal request' });
-
-  const isSensitive = await trieSensitive.checkSensitiveWords(text);
-  if(isSensitive) return handleError(res, { text:'请回避敏感词汇，谢谢！' });
-  // build endpoint option
-  const endpointOption = {
-    chatGptLabel: req.body?.chatGptLabel ?? null,
-    promptPrefix: req.body?.promptPrefix ?? null,
-    modelOptions: {
-      model: req.body?.model ?? 'gpt-3.5-turbo',
-      temperature: req.body?.temperature ?? 1,
-      top_p: req.body?.top_p ?? 1,
-      presence_penalty: req.body?.presence_penalty ?? 0,
-      frequency_penalty: req.body?.frequency_penalty ?? 0
-    }
-  };
-
-  let currentTime = new Date();
-  const user = await User.findById(req.user.id).exec();
-  let quota = 0;
-  if (('proMemberExpiredAt' in user) && (user.proMemberExpiredAt > currentTime)) { // If not proMember, check quota
-    quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY_PRO_MEMBER']);
-  } else {
-    quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY']);
-  }
-
-  let someTimeAgo = currentTime;
-  someTimeAgo.setSeconds(currentTime.getSeconds() - 60 * 60 * 24); // 24 hours
-  if (endpointOption.modelOptions.model in quota) {
-    let messagesCount = await getMessagesCount({
-      $and: [
-        { senderId: req.user.id },
-        { model: endpointOption.modelOptions.model },
-        { updatedAt: { $gte: someTimeAgo } },
-      ]
-    });
-    let dailyQuota = (quota[endpointOption.modelOptions.model]).toFixed(0);
-    if (messagesCount >= dailyQuota) {
-      return handleError(res, { text: `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，通过此网页可以购买更多额度：https://iaitok.com/pay` });
-    }
-  }
-
-  console.log('ask log');
-  console.dir({ text, conversationId, endpointOption }, { depth: null });
-
-  // eslint-disable-next-line no-use-before-define
-  return await ask({
+router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, res) => {
+  let {
     text,
     endpointOption,
     conversationId,
-    parentMessageId,
-    endpoint,
-    req,
-    res
-  });
-});
-
-const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, conversationId, req, res }) => {
-  res.writeHead(200, {
-    Connection: 'keep-alive',
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no'
-  });
+    parentMessageId = null,
+    overrideParentMessageId = null,
+  } = req.body;
+  console.log('ask log');
+  console.dir({ text, conversationId, endpointOption }, { depth: null });
+  let metadata;
   let userMessage;
+  let promptTokens;
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
+  let saveDelay = 100;
+  const sender = getResponseSender({ ...endpointOption, model: endpointOption.modelOptions.model });
   const newConvo = !conversationId;
-  const { overrideParentMessageId = null } = req.body;
   const user = req.user.id;
+  if (text.length === 0) {
+    return handleError(res, { text: 'Prompt empty or too short' });
+  }
 
-  const getIds = (data) => {
-    userMessage = data.userMessage;
-    userMessageId = userMessage.messageId;
-    responseMessageId = data.responseMessageId;
-    if (!conversationId) {
-      conversationId = data.conversationId;
+  const addMetadata = (data) => (metadata = data);
+
+  const getReqData = (data = {}) => {
+    for (let key in data) {
+      if (key === 'userMessage') {
+        userMessage = data[key];
+        userMessageId = data[key].messageId;
+      } else if (key === 'responseMessageId') {
+        responseMessageId = data[key];
+      } else if (key === 'promptTokens') {
+        promptTokens = data[key];
+      } else if (!conversationId && key === 'conversationId') {
+        conversationId = data[key];
+      }
     }
   };
 
@@ -109,134 +63,139 @@ const ask = async ({ text, endpointOption, parentMessageId = null, endpoint, con
     onProgress: ({ text: partialText }) => {
       const currentTimestamp = Date.now();
 
-      if (currentTimestamp - lastSavedTimestamp > 500) {
+      if (currentTimestamp - lastSavedTimestamp > saveDelay) {
         lastSavedTimestamp = currentTimestamp;
         saveMessage({
           messageId: responseMessageId,
-          sender: 'ChatGPT',
+          sender,
           conversationId,
-          parentMessageId: overrideParentMessageId || userMessageId,
+          parentMessageId: overrideParentMessageId ?? userMessageId,
           text: partialText,
           model: endpointOption.modelOptions.model,
           unfinished: true,
           cancelled: false,
           error: false,
+          user,
           senderId: req.user.id,
         });
       }
-    }
+
+      if (saveDelay < 500) {
+        saveDelay = 500;
+      }
+    },
   });
 
-  const abortController = new AbortController();
-  abortController.abortAsk = async function () {
-    this.abort();
+  const getAbortData = () => ({
+    sender,
+    conversationId,
+    messageId: responseMessageId,
+    parentMessageId: overrideParentMessageId ?? userMessageId,
+    text: getPartialText(),
+    userMessage,
+    promptTokens,
+  });
 
-    const responseMessage = {
-      messageId: responseMessageId,
-      sender: endpointOption?.chatGptLabel || 'ChatGPT',
-      conversationId,
-      parentMessageId: overrideParentMessageId || userMessageId,
-      text: getPartialText(),
-      model: endpointOption.modelOptions.model,
-      unfinished: false,
-      cancelled: true,
-      error: false,
-    };
-
-    saveMessage(responseMessage);
-
-    return {
-      title: await getConvoTitle(req.user.id, conversationId),
-      final: true,
-      conversation: await getConvo(req.user.id, conversationId),
-      requestMessage: userMessage,
-      responseMessage: responseMessage
-    };
-  };
-
-  const onStart = (userMessage) => {
-    sendMessage(res, { message: userMessage, created: true });
-    abortControllers.set(userMessage.conversationId, { abortController, ...endpointOption });
-  };
+  const { abortController, onStart } = createAbortController(req, res, getAbortData);
 
   try {
-    const clientOptions = {
-      // debug: true,
-      // contextStrategy: 'refine',
-      reverseProxyUrl: process.env.OPENAI_REVERSE_PROXY || null,
-      proxy: process.env.PROXY || null,
-      endpoint,
-      ...endpointOption
-    };
+    const { client } = await initializeClient({ req, res, endpointOption });
 
-    let oaiApiKey = req.body?.token ?? process.env.OPENAI_API_KEY;
-
-    if (process.env.AZURE_API_KEY && endpoint === 'azureOpenAI') {
-      clientOptions.azure = JSON.parse(req.body?.token) ?? getAzureCredentials();
-      // clientOptions.reverseProxyUrl = process.env.AZURE_REVERSE_PROXY ?? genAzureChatCompletion({ ...clientOptions.azure });
-      oaiApiKey = clientOptions.azure.azureOpenAIApiKey;
+    const isSensitive = await trieSensitive.checkSensitiveWords(text);
+    if (isSensitive) {
+      //return handleError(res, { text: '请回避敏感词汇，谢谢！' });
+      throw new Error('请回避敏感词汇，谢谢！');
     }
 
-    const client = new OpenAIClient(oaiApiKey, clientOptions);
+    let currentTime = new Date();
+    const cur_user = await User.findById(req.user.id).exec();
+    let quota = 0;
+    if ('proMemberExpiredAt' in cur_user && cur_user.proMemberExpiredAt > currentTime) {
+      // If not proMember, check quota
+      quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY_PRO_MEMBER']);
+    } else {
+      quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY']);
+    }
 
-    let response = await client.sendMessage(text, {
+    let someTimeAgo = currentTime;
+    someTimeAgo.setSeconds(currentTime.getSeconds() - 60 * 60 * 24); // 24 hours
+    if (endpointOption.modelOptions.model in quota) {
+      let messagesCount = await getMessagesCount({
+        $and: [
+          { senderId: req.user.id },
+          { model: endpointOption.modelOptions.model },
+          { updatedAt: { $gte: someTimeAgo } },
+        ],
+      });
+      let dailyQuota = quota[endpointOption.modelOptions.model].toFixed(0);
+      if (messagesCount >= dailyQuota) {
+        // return handleError(res, { text: `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，通过此网页可以购买更多额度：https://iaitok.com/pay` });
+        throw new Error(
+          `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，通过此网页可以购买更多额度：https://iaitok.com/pay`,
+        );
+      }
+    }
+
+    const messageOptions = {
       user,
       parentMessageId,
       conversationId,
       overrideParentMessageId,
-      getIds,
+      getReqData,
       onStart,
+      addMetadata,
+      abortController,
       onProgress: progressCallback.call(null, {
         res,
         text,
-        parentMessageId: overrideParentMessageId || userMessageId
+        parentMessageId: overrideParentMessageId || userMessageId,
       }),
-      abortController
-    });
+    };
+
+    let response = await client.sendMessage(text, messageOptions);
 
     if (overrideParentMessageId) {
       response.parentMessageId = overrideParentMessageId;
     }
 
-    console.log('promptTokens, completionTokens:', response.promptTokens, response.completionTokens);
-    await saveMessage(response);
+    if (metadata) {
+      response = { ...response, ...metadata };
+    }
+
+    if (client.options.attachments) {
+      userMessage.files = client.options.attachments;
+      delete userMessage.image_urls;
+    }
 
     sendMessage(res, {
-      title: await getConvoTitle(req.user.id, conversationId),
+      title: await getConvoTitle(user, conversationId),
       final: true,
-      conversation: await getConvo(req.user.id, conversationId),
+      conversation: await getConvo(user, conversationId),
       requestMessage: userMessage,
-      responseMessage: response
+      responseMessage: response,
     });
     res.end();
 
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
-      const title = await titleConvo({ text, response });
-      await saveConvo(req.user.id, {
-        conversationId,
-        title
+    await saveMessage({ ...response, user });
+    await saveMessage(userMessage);
+
+    if (parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
+      addTitle(req, {
+        text,
+        response,
+        client,
       });
     }
   } catch (error) {
-    console.error(error);
     const partialText = getPartialText();
-    if (partialText?.length > 2) {
-      return await abortMessage(req, res, abortControllers);
-    } else {
-      const errorMessage = {
-        messageId: responseMessageId,
-        sender: 'ChatGPT',
-        conversationId,
-        parentMessageId: userMessageId,
-        unfinished: false,
-        cancelled: false,
-        error: true,
-        text: error.message
-      };
-      await saveMessage(errorMessage);
-      handleError(res, errorMessage);
-    }
+    handleAbortError(res, req, error, {
+      partialText,
+      conversationId,
+      sender,
+      messageId: responseMessageId,
+      parentMessageId: userMessageId ?? parentMessageId,
+    });
   }
-};
+});
 
 module.exports = router;

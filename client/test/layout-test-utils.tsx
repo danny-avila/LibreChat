@@ -1,3 +1,4 @@
+import './matchMedia.mock';
 import React from 'react';
 import { render as rtlRender } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -13,7 +14,14 @@ function renderWithProvidersWrapper(ui, { ...options } = {}) {
       <QueryClientProvider client={client}>
         <RecoilRoot>
           <Router>
-            <AuthContextProvider>{children}</AuthContextProvider>
+            <AuthContextProvider
+              authConfig={{
+                loginRedirect: '',
+                test: true,
+              }}
+            >
+              {children}
+            </AuthContextProvider>
           </Router>
         </RecoilRoot>
       </QueryClientProvider>

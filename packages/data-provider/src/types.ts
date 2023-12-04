@@ -1,80 +1,37 @@
-export type TMessage = {
-  messageId: string;
-  conversationId: string;
-  clientId: string;
-  parentMessageId: string;
-  sender: string;
-  text: string;
-  isCreatedByUser: boolean;
-  error: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+import OpenAI from 'openai';
+import type { UseMutationResult } from '@tanstack/react-query';
+import type { TResPlugin, TMessage, TConversation, TEndpointOption } from './schemas';
 
-export type TExample = {
-  input: string;
-  output: string;
-};
+export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
+export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
+export type TOpenAIFunctionCall = OpenAI.Chat.ChatCompletionCreateParams.FunctionCallOption;
 
-export enum EModelEndpoint {
-  azureOpenAI = 'azureOpenAI',
-  openAI = 'openAI',
-  bingAI = 'bingAI',
-  chatGPT = 'chatGPT',
-  chatGPTBrowser = 'chatGPTBrowser',
-  google = 'google',
-  gptPlugins = 'gptPlugins',
-}
+export type TMutation = UseMutationResult<unknown>;
+
+export * from './schemas';
+
+export type TMessages = TMessage[];
+
+export type TMessagesAtom = TMessages | null;
 
 export type TSubmission = {
-  clientId?: string;
-  context?: string;
-  conversationId?: string;
-  conversationSignature?: string;
-  current: boolean;
-  endpoint: EModelEndpoint;
-  invocationId: number;
-  isCreatedByUser: boolean;
-  jailbreak: boolean;
-  jailbreakConversationId?: string;
-  messageId: string;
-  overrideParentMessageId?: string | boolean;
-  parentMessageId?: string;
-  sender: string;
-  systemMessage?: string;
-  text: string;
-  toneStyle?: string;
-  model?: string;
-  promptPrefix?: string;
-  temperature?: number;
-  top_p?: number;
-  presence_penalty?: number;
-  frequence_penalty?: number;
-  conversation: TConversation;
+  plugin?: TResPlugin;
+  plugins?: TResPlugin[];
   message: TMessage;
+  isEdited?: boolean;
+  isContinued?: boolean;
+  messages: TMessage[];
+  isRegenerate?: boolean;
+  conversationId?: string;
+  initialResponse: TMessage;
+  conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
 };
 
-export type TEndpointOption = {
-  endpoint: EModelEndpoint;
-  model?: string;
-  promptPrefix?: string;
-  temperature?: number;
-}
-
-export type TPluginAuthConfig = {
-  authField: string;
-  label: string;
-  description: string;
-};
-
-export type TPlugin = {
-  name: string;
+export type TPluginAction = {
   pluginKey: string;
-  description: string;
-  icon: string;
-  authConfig: TPluginAuthConfig[];
-  authenticated: boolean;
+  action: 'install' | 'uninstall';
+  auth?: unknown;
 };
 
 export type TUpdateUserPlugins = {
@@ -83,67 +40,15 @@ export type TUpdateUserPlugins = {
   auth?: unknown;
 };
 
-export type TConversation = {
-  conversationId: string;
-  title: string;
-  user?: string;
-  endpoint: EModelEndpoint;
-  suggestions?: string[];
-  messages?: TMessage[];
-  tools?: TPlugin[];
-  createdAt: string;
-  updatedAt: string;
-  // google only
-  modelLabel?: string;
-  examples?: TExample[];
-  // for azureOpenAI, openAI only
-  chatGptLabel?: string;
-  userLabel?: string;
-  model?: string;
-  promptPrefix?: string;
-  temperature?: number;
-  topP?: number;
-  topK?: number;
-  // bing and google
-  context?: string;
-  top_p?: number;
-  presence_penalty?: number;
-  // for bingAI only
-  jailbreak?: boolean;
-  jailbreakConversationId?: string;
-  conversationSignature?: string;
-  parentMessageId?: string;
-  clientId?: string;
-  invocationId?: string;
-  toneStyle?: string;
-  isPrivate: boolean;
-  likes: number;
-  likedBy: object
-};
-
-export type TPreset = {
-  title: string;
-  endpoint: EModelEndpoint;
-  conversationSignature?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  presetId?: string;
-  user?: string;
-  // for azureOpenAI, openAI only
-  chatGptLabel?: string;
-  frequence_penalty?: number;
-  model?: string;
-  presence_penalty?: number;
-  promptPrefix?: string;
-  temperature?: number;
-  top_p?: number;
-  //for BingAI
-  clientId?: string;
-  invocationId?: number;
-  jailbreak?: boolean;
-  jailbreakPresetId?: string;
-  presetSignature?: string;
-  toneStyle?: string;
+export type TError = {
+  message: string;
+  code?: number;
+  response?: {
+    data?: {
+      message?: string;
+    };
+    status?: number;
+  };
 };
 
 export type TUser = {
@@ -171,6 +76,19 @@ export type TGetConversationsResponse = {
   pageNumber: string;
   pageSize: string | number;
   pages: string | number;
+};
+
+export type TUpdateMessageRequest = {
+  conversationId: string;
+  messageId: string;
+  model: string;
+  text: string;
+};
+
+export type TUpdateUserKeyRequest = {
+  name: string;
+  value: string;
+  expiresAt: string;
 };
 
 export type TUpdateConversationRequest = {
@@ -205,16 +123,18 @@ export type TSearchResults = {
   filter: object;
 };
 
-export type TEndpoints = {
-  azureOpenAI: boolean;
-  bingAI: boolean;
-  ChatGptBrowser: {
-    availableModels: [];
-  };
-  OpenAI: {
-    availableModels: [];
-  };
+export type TConfig = {
+  availableModels?: [];
+  userProvide?: boolean | null;
+  availableTools?: [];
+  plugins?: Record<string, string>;
+  azure?: boolean;
+  order: number;
 };
+
+export type TModelsConfig = Record<string, string[]>;
+
+export type TEndpointsConfig = Record<string, TConfig>;
 
 export type TUpdateTokenCountResponse = {
   count: number;
@@ -257,21 +177,32 @@ export type TResetPassword = {
 };
 
 export type TStartupConfig = {
-  appTitle: boolean;
+  appTitle: string;
   googleLoginEnabled: boolean;
+  facebookLoginEnabled: boolean;
   openidLoginEnabled: boolean;
   githubLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
+  discordLoginEnabled: boolean;
   serverDomain: string;
   registrationEnabled: boolean;
-}
+  socialLoginEnabled: boolean;
+  emailEnabled: boolean;
+  checkBalance: boolean;
+  customFooter?: string;
+};
 
 export type TRefreshTokenResponse = {
   token: string;
   user: TUser;
 };
 
+export type TCheckUserKeyResponse = {
+  expiresAt: string;
+};
+
 export type TRequestPasswordResetResponse = {
-  link: string;
+  link?: string;
+  message?: string;
 };

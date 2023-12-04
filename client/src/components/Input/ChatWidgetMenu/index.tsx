@@ -4,7 +4,7 @@ import CodingAssistant from './CodingAssistant';
 import AskMeAnything from './AskMeAnything';
 
 export default function ChatWidget() {
-  return(
+  return (
     <>
       <WritingAssistant />
       <CodingAssistant />

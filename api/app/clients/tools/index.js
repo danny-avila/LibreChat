@@ -2,13 +2,21 @@ const GoogleSearchAPI = require('./GoogleSearch');
 const HttpRequestTool = require('./HttpRequestTool');
 const AIPluginTool = require('./AIPluginTool');
 const OpenAICreateImage = require('./DALL-E');
+const DALLE3 = require('./structured/DALLE3');
 const StructuredSD = require('./structured/StableDiffusion');
 const StableDiffusionAPI = require('./StableDiffusion');
-const RunPodImgEndpointAPI = require('./RunPodImgEndpoint');
 const WolframAlphaAPI = require('./Wolfram');
 const StructuredWolfram = require('./structured/Wolfram');
 const SelfReflectionTool = require('./SelfReflection');
+const AzureAiSearch = require('./AzureAiSearch');
+const StructuredACS = require('./structured/AzureAISearch');
+const ChatTool = require('./structured/ChatTool');
+const E2BTools = require('./structured/E2BTools');
+const CodeSherpa = require('./structured/CodeSherpa');
+const CodeSherpaTools = require('./structured/CodeSherpaTools');
 const availableTools = require('./manifest.json');
+const CodeInterpreter = require('./CodeInterpreter');
+const CodeBrew = require('./CodeBrew');
 
 module.exports = {
   availableTools,
@@ -16,10 +24,18 @@ module.exports = {
   HttpRequestTool,
   AIPluginTool,
   OpenAICreateImage,
+  DALLE3,
   StableDiffusionAPI,
   StructuredSD,
-  RunPodImgEndpointAPI,
   WolframAlphaAPI,
   StructuredWolfram,
-  SelfReflectionTool
-}
+  SelfReflectionTool,
+  AzureAiSearch,
+  StructuredACS,
+  E2BTools,
+  ChatTool,
+  CodeSherpa,
+  CodeSherpaTools,
+  CodeInterpreter,
+  CodeBrew,
+};

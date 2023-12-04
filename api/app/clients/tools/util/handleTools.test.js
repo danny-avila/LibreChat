@@ -7,11 +7,11 @@ const mockUser = {
 var mockPluginService = {
   updateUserPluginAuth: jest.fn(),
   deleteUserPluginAuth: jest.fn(),
-  getUserPluginAuthValue: jest.fn()
+  getUserPluginAuthValue: jest.fn(),
 };
 
 jest.mock('../../../../models/User', () => {
-  return function() {
+  return function () {
     return mockUser;
   };
 });
@@ -42,9 +42,11 @@ describe('Tool Handlers', () => {
     mockPluginService.getUserPluginAuthValue.mockImplementation((userId, authField) => {
       return userAuthValues[`${userId}-${authField}`];
     });
-    mockPluginService.updateUserPluginAuth.mockImplementation((userId, authField, _pluginKey, credential) => {
-      userAuthValues[`${userId}-${authField}`] = credential;
-    });
+    mockPluginService.updateUserPluginAuth.mockImplementation(
+      (userId, authField, _pluginKey, credential) => {
+        userAuthValues[`${userId}-${authField}`] = credential;
+      },
+    );
 
     fakeUser = new User({
       name: 'Fake User',
@@ -57,11 +59,16 @@ describe('Tool Handlers', () => {
       role: 'USER',
       googleId: null,
       plugins: [],
-      refreshToken: []
+      refreshToken: [],
     });
     await fakeUser.save();
     for (const authConfig of authConfigs) {
-      await PluginService.updateUserPluginAuth(fakeUser._id, authConfig.authField, pluginKey, mockCredential);
+      await PluginService.updateUserPluginAuth(
+        fakeUser._id,
+        authConfig.authField,
+        pluginKey,
+        mockCredential,
+      );
     }
   });
 
@@ -76,7 +83,6 @@ describe('Tool Handlers', () => {
     it('returns valid tools given input tools and user authentication', async () => {
       const validTools = await validateTools(fakeUser._id, initialTools);
       expect(validTools).toBeDefined();
-      console.log('validateTools: validTools', validTools);
       expect(validTools.some((tool) => tool === pluginKey)).toBeTruthy();
       expect(validTools.length).toBeGreaterThan(0);
     });
@@ -113,14 +119,15 @@ describe('Tool Handlers', () => {
     const sampleTools = [...initialTools, 'calculator'];
     let ToolClass2 = Calculator;
     let remainingTools = availableTools.filter(
-      (tool) => sampleTools.indexOf(tool.pluginKey) === -1
+      (tool) => sampleTools.indexOf(tool.pluginKey) === -1,
     );
 
     beforeAll(async () => {
       toolFunctions = await loadTools({
         user: fakeUser._id,
         model: BaseChatModel,
-        tools: sampleTools
+        tools: sampleTools,
+        returnMap: true,
       });
       loadTool1 = toolFunctions[sampleTools[0]];
       loadTool2 = toolFunctions[sampleTools[1]];
@@ -161,7 +168,8 @@ describe('Tool Handlers', () => {
       toolFunctions = await loadTools({
         user: fakeUser._id,
         model: BaseChatModel,
-        tools: [testPluginKey]
+        tools: [testPluginKey],
+        returnMap: true,
       });
       const Tool = await toolFunctions[testPluginKey]();
       expect(Tool).toBeInstanceOf(TestClass);
@@ -169,7 +177,8 @@ describe('Tool Handlers', () => {
     it('returns an empty object when no tools are requested', async () => {
       toolFunctions = await loadTools({
         user: fakeUser._id,
-        model: BaseChatModel
+        model: BaseChatModel,
+        returnMap: true,
       });
       expect(toolFunctions).toEqual({});
     });
@@ -179,7 +188,8 @@ describe('Tool Handlers', () => {
         user: fakeUser._id,
         model: BaseChatModel,
         tools: ['stable-diffusion'],
-        functions: true
+        functions: true,
+        returnMap: true,
       });
       const structuredTool = await toolFunctions['stable-diffusion']();
       expect(structuredTool).toBeInstanceOf(StructuredSD);

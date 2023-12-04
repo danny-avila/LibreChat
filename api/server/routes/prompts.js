@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { savePrompt, getPrompts, deletePrompts } = require('../../models/Prompt');
+const { getPrompts } = require('../../models/Prompt');
 
 router.get('/', async (req, res) => {
   let filter = {};

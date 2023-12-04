@@ -17,11 +17,12 @@ https://www.griproom.com/fun/how-to-write-better-prompts-for-chat-gpt
 function WritingAssistant() {
   const [type, setType] = useState<string>('作文');
   const [showExample, setShowExample] = useState<boolean>(false);
-  const [text, setText] = useRecoilState(store.text);
+  // const [text, setText] = useRecoilState(store.text);
+  const [text, setText] = useRecoilState(store.textByIndex(0));
   const [widget, setWidget] = useRecoilState(store.widget);
   const allTemplates = {
-    '作文': EssayTemplate({ type })
-  }
+    作文: EssayTemplate({ type }),
+  };
   const template = allTemplates[type];
 
   const defaultTextProps =
@@ -35,11 +36,11 @@ function WritingAssistant() {
   const showExampleHandler = () => {
     showExample ? restoreFields() : setExample();
     setShowExample(!showExample);
-  }
+  };
 
   const content = () => {
-    return(
-      <div className="pb-12 max-h-[450px] h-[60vh] overflow-y-auto md:h-[450px]">
+    return (
+      <div className="h-[60vh] max-h-[450px] overflow-y-auto pb-12 md:h-[450px]">
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="col-span-1 flex flex-col items-center justify-start gap-6">
             <div className="grid w-full items-center gap-y-2">
@@ -51,10 +52,10 @@ function WritingAssistant() {
                 disabled={false}
                 className={cn(
                   defaultTextProps,
-                  'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+                  'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
                 )}
                 containerClassName="flex w-full resize-none"
-                subContainerClassName=''
+                subContainerClassName=""
               />
               {template.SubType()}
             </div>
@@ -66,25 +67,23 @@ function WritingAssistant() {
         </div>
       </div>
     );
-  }
+  };
 
-  return(
+  return (
     <EndpointOptionsPopover
-      content={
-        <div className="px-4 py-4">
-          { content() }
-        </div>
-      }
+      content={<div className="px-4 py-4">{content()}</div>}
       widget={true}
-      visible={ widget === 'wa' }
-      saveAsPreset={ setTextHandler }
-      switchToSimpleMode={() => {
-        setWidget('');
-      }}
+      visible={widget === 'wa'}
+      saveAsPreset={setTextHandler}
+      closePopover={() => setWidget('')}
+      // switchToSimpleMode={() => {
+      //   setWidget('');
+      // }}
       additionalButton={{
-        label: (showExample ? '恢复' : '示例'),
+        label: showExample ? '恢复' : '示例',
+        buttonClass: '',
         handler: showExampleHandler,
-        icon: <MessagesSquared className="mr-1 w-[14px]" />
+        icon: <MessagesSquared className="mr-1 w-[14px]" />,
       }}
     />
   );

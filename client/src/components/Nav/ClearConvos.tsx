@@ -1,41 +1,51 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Dialog, DialogTemplate } from '../ui/';
+import { useState } from 'react';
+import { Dialog } from '~/components/ui/';
+import DialogTemplate from '~/components/ui/DialogTemplate';
 import { ClearChatsButton } from './SettingsTabs/';
-import { useClearConversationsMutation } from '@librechat/data-provider';
-import store from '~/store';
-import { useRecoilValue } from 'recoil';
-import { localize } from '~/localization/Translation';
+import { useClearConversationsMutation } from 'librechat-data-provider';
+import { useLocalize, useConversation, useConversations } from '~/hooks';
 
 const ClearConvos = ({ open, onOpenChange }) => {
-  const lang = useRecoilValue(store.lang);
-  const { newConversation } = store.useConversation();
-  const { refreshConversations } = store.useConversations();
+  const { newConversation } = useConversation();
+  const { refreshConversations } = useConversations();
   const clearConvosMutation = useClearConversationsMutation();
   const [confirmClear, setConfirmClear] = useState(false);
+  const localize = useLocalize();
 
-  const clearConvos = useCallback(() => {
+  // Clear all conversations
+  const clearConvos = () => {
     if (confirmClear) {
       console.log('Clearing conversations...');
-      clearConvosMutation.mutate({});
+      clearConvosMutation.mutate(
+        {},
+        {
+          onSuccess: () => {
+            newConversation();
+            refreshConversations();
+          },
+        },
+      );
       setConfirmClear(false);
     } else {
       setConfirmClear(true);
     }
-  }, [confirmClear, clearConvosMutation]);
-
-  useEffect(() => {
-    if (clearConvosMutation.isSuccess) {
-      refreshConversations();
-      newConversation();
-    }
-  }, [clearConvosMutation.isSuccess, newConversation, refreshConversations]);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={localize(lang, 'com_nav_clear_conversation')}
-        description={localize(lang, 'com_nav_clear_conversation_confirm_message')}
-        leftButtons={<ClearChatsButton showText={false} confirmClear={confirmClear} onClick={clearConvos} />}
+        title={localize('com_nav_clear_conversation')}
+        className="w-full max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
+        headerClassName="border-none"
+        description={localize('com_nav_clear_conversation_confirm_message')}
+        buttons={
+          <ClearChatsButton
+            showText={false}
+            confirmClear={confirmClear}
+            onClick={clearConvos}
+            className="w-[77px]"
+          />
+        }
       />
     </Dialog>
   );

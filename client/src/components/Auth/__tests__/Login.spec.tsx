@@ -1,36 +1,48 @@
-import { render, waitFor } from 'layout-test-utils';
+import { render, waitFor } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import Login from '../Login';
-import * as mockDataProvider from '@librechat/data-provider';
+import * as mockDataProvider from 'librechat-data-provider';
 
-jest.mock('@librechat/data-provider');
+jest.mock('librechat-data-provider');
 
 const setup = ({
   useGetUserQueryReturnValue = {
     isLoading: false,
     isError: false,
-    data: {}
+    data: {},
   },
   useLoginUserReturnValue = {
     isLoading: false,
     isError: false,
     mutate: jest.fn(),
     data: {},
-    isSuccess: false
+    isSuccess: false,
+  },
+  useRefreshTokenMutationReturnValue = {
+    isLoading: false,
+    isError: false,
+    mutate: jest.fn(),
+    data: {
+      token: 'mock-token',
+      user: {},
+    },
   },
   useGetStartupCongfigReturnValue = {
     isLoading: false,
     isError: false,
     data: {
       googleLoginEnabled: true,
+      facebookLoginEnabled: true,
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
       githubLoginEnabled: true,
+      discordLoginEnabled: true,
       registrationEnabled: true,
-      serverDomain: 'mock-server'
-    }
-  }
+      socialLoginEnabled: true,
+      serverDomain: 'mock-server',
+    },
+  },
 } = {}) => {
   const mockUseLoginUser = jest
     .spyOn(mockDataProvider, 'useLoginUserMutation')
@@ -44,12 +56,17 @@ const setup = ({
     .spyOn(mockDataProvider, 'useGetStartupConfig')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetStartupCongfigReturnValue);
+  const mockUseRefreshTokenMutation = jest
+    .spyOn(mockDataProvider, 'useRefreshTokenMutation')
+    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
+    .mockReturnValue(useRefreshTokenMutationReturnValue);
   const renderResult = render(<Login />);
   return {
     ...renderResult,
     mockUseLoginUser,
     mockUseGetUserQuery,
-    mockUseGetStartupConfig
+    mockUseGetStartupConfig,
+    mockUseRefreshTokenMutation,
   };
 };
 
@@ -63,7 +80,22 @@ test('renders login form', () => {
   expect(getByRole('link', { name: /Login with Google/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute(
     'href',
-    'mock-server/oauth/google'
+    'mock-server/oauth/google',
+  );
+  expect(getByRole('link', { name: /Login with Facebook/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Facebook/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/facebook',
+  );
+  expect(getByRole('link', { name: /Login with Github/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Github/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/github',
+  );
+  expect(getByRole('link', { name: /Login with Discord/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Login with Discord/i })).toHaveAttribute(
+    'href',
+    'mock-server/oauth/discord',
   );
 });
 
@@ -74,8 +106,8 @@ test('calls loginUser.mutate on login', async () => {
     useLoginUserReturnValue: {
       isLoading: false,
       mutate: mutate,
-      isError: false
-    }
+      isError: false,
+    },
   });
 
   const emailInput = getByLabelText(/email/i);
@@ -96,8 +128,8 @@ test('Navigates to / on successful login', async () => {
       isLoading: false,
       mutate: jest.fn(),
       isError: false,
-      isSuccess: true
-    }
+      isSuccess: true,
+    },
   });
 
   const emailInput = getByLabelText(/email/i);

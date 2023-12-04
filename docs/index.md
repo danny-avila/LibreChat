@@ -37,7 +37,7 @@ With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use f
   <iframe 
     width="1000" 
     height="500" 
-    src="https://www.youtube.com/embed/0NqT98CY8ag?controls=1?autoplay=1&mute=1&loop=1" 
+    src="https://www.youtube.com/embed/pNIOs1ovsXw?controls=1?autoplay=1&mute=1&loop=1" 
     title="Librechat Overview" 
     frameborder="0" 
     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; loop" 
@@ -54,6 +54,13 @@ With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use f
 - Edit and Resubmit messages with conversation branching
 - Search all messages/conversations - [More info here](https://github.com/danny-avila/LibreChat/releases/tag/v0.1.0)
 - Plugins now available (including web access, image generation and more)
+
+---
+
+## ⚠️ [Breaking Changes](general_info/breaking_changes.md) ⚠️
+**Applies to [v0.5.4](general_info/breaking_changes.md#v054) & [v0.5.5](general_info/breaking_changes.md#v055)**
+
+**Please read this before updating from a previous version**
 
 ---
 

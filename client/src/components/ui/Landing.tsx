@@ -5,17 +5,16 @@ import SunIcon from '../svg/SunIcon';
 import LightningIcon from '../svg/LightningIcon';
 import CautionIcon from '../svg/CautionIcon';
 import store from '~/store';
-import { localize } from '~/localization/Translation';
-import { useGetStartupConfig } from '@librechat/data-provider';
+import { useLocalize } from '~/hooks';
+import { useGetStartupConfig } from 'librechat-data-provider';
 import WarningIcon from '../svg/WarningIcon';
 
 export default function Landing() {
   const { data: config } = useGetStartupConfig();
   const setText = useSetRecoilState(store.text);
   const conversation = useRecoilValue(store.conversation);
-  const lang = useRecoilValue(store.lang);
-  // @ts-ignore TODO: Fix anti-pattern - requires refactoring conversation store
-  const { title = localize(lang, 'com_ui_new_chat') } = conversation || {};
+  const localize = useLocalize();
+  const { title = localize('com_ui_new_chat') } = conversation ?? {};
 
   useDocumentTitle(title);
 
@@ -27,11 +26,12 @@ export default function Landing() {
   };
 
   return (
-    <div className="pb-48 flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
+    <div className="flex h-full flex-col items-center overflow-y-auto pt-0 text-sm dark:bg-gray-800">
       <div className="w-full px-6 text-gray-800 dark:text-gray-100 md:flex md:max-w-2xl md:flex-col lg:max-w-3xl">
         <h1
           id="landing-title"
-          className="mb-5 ml-auto mr-auto mt-3 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-10 md:mt-[7vh]"
+          data-testid="landing-title"
+          className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
         >
           {config?.appTitle || 'LibreChat'}
         </h1>
@@ -39,71 +39,71 @@ export default function Landing() {
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <SunIcon />
-              {localize(lang, 'com_ui_examples')}
+              {localize('com_ui_examples')}
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;{localize(lang, 'com_ui_example_quantum_computing')}&quot; →
+                &quot;{localize('com_ui_example_quantum_computing')}&quot; →
               </button>
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;{localize(lang, 'com_ui_example_10_year_old_b_day')}&quot; →
+                &quot;{localize('com_ui_example_10_year_old_b_day')}&quot; →
               </button>
               <button
                 onClick={clickHandler}
                 className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900"
               >
-                &quot;{localize(lang, 'com_ui_example_http_in_js')}&quot; →
+                &quot;{localize('com_ui_example_http_in_js')}&quot; →
               </button>
             </ul>
           </div>
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <LightningIcon />
-              {localize(lang, 'com_ui_capabilities')}
+              {localize('com_ui_capabilities')}
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_capability_remember')}
+                {localize('com_ui_capability_remember')}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_capability_correction')}
+                {localize('com_ui_capability_correction')}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_capability_decline_requests')}
+                {localize('com_ui_capability_decline_requests')}
               </li>
             </ul>
           </div>
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">
             <h2 className="m-auto flex items-center gap-3 text-lg font-normal md:flex-col md:gap-2">
               <CautionIcon />
-              {localize(lang, 'com_ui_limitations')}
+              {localize('com_ui_limitations')}
             </h2>
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_limitation_incorrect_info')}
+                {localize('com_ui_limitation_incorrect_info')}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_limitation_harmful_biased')}
+                {localize('com_ui_limitation_harmful_biased')}
               </li>
               <li className="w-full rounded-md bg-gray-50 p-3 dark:bg-white/5">
-                {localize(lang, 'com_ui_limitation_limited_2021')}
+                {localize('com_ui_limitation_limited_2021')}
               </li>
             </ul>
           </div>
         </div>
-        <div className='flex flex-col justify-start items-center'>
+        <div className="flex flex-col items-center justify-start">
           <WarningIcon />
           <h4
-            id='reminder'
-            className='text-center text-red-500 border border-red-500 p-2 inline-block font-bold'
+            id="reminder"
+            className="inline-block border border-red-500 p-2 text-center font-bold text-red-500"
           >
-            {localize(lang, 'com_ui_convo_public_reminder')}
+            {localize('com_ui_convo_public_reminder')}
           </h4>
         </div>
 

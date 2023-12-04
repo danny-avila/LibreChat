@@ -1,12 +1,13 @@
 const PluginAuth = require('../../models/schema/pluginAuthSchema');
-const { encrypt, decrypt } = require('../../utils/');
+const { encrypt, decrypt } = require('../utils/');
 
 const getUserPluginAuthValue = async (user, authField) => {
   try {
-    const pluginAuth = await PluginAuth.findOne({ user, authField });
+    const pluginAuth = await PluginAuth.findOne({ user, authField }).lean();
     if (!pluginAuth) {
       return null;
     }
+
     const decryptedValue = decrypt(pluginAuth.value);
     return decryptedValue;
   } catch (err) {
@@ -43,11 +44,11 @@ const getUserPluginAuthValue = async (user, authField) => {
 const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   try {
     const encryptedValue = encrypt(value);
-    const pluginAuth = await PluginAuth.findOne({ userId, authField });
+    const pluginAuth = await PluginAuth.findOne({ userId, authField }).lean();
     if (pluginAuth) {
       const pluginAuth = await PluginAuth.updateOne(
         { userId, authField },
-        { $set: { value: encryptedValue } }
+        { $set: { value: encryptedValue } },
       );
       return pluginAuth;
     } else {
@@ -55,9 +56,9 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
         userId,
         authField,
         value: encryptedValue,
-        pluginKey
+        pluginKey,
       });
-      newPluginAuth.save();
+      await newPluginAuth.save();
       return newPluginAuth;
     }
   } catch (err) {
@@ -79,5 +80,5 @@ const deleteUserPluginAuth = async (userId, authField) => {
 module.exports = {
   getUserPluginAuthValue,
   updateUserPluginAuth,
-  deleteUserPluginAuth
+  deleteUserPluginAuth,
 };

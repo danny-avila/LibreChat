@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const Keyv = require('keyv');
-const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('@dqbd/tiktoken');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
 const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
@@ -9,11 +9,7 @@ const CHATGPT_MODEL = 'gpt-3.5-turbo';
 const tokenizersCache = {};
 
 class ChatGPTClient extends BaseClient {
-  constructor(
-    apiKey,
-    options = {},
-    cacheOptions = {},
-  ) {
+  constructor(apiKey, options = {}, cacheOptions = {}) {
     super(apiKey, options, cacheOptions);
 
     cacheOptions.namespace = cacheOptions.namespace || 'chatgpt';
@@ -49,13 +45,16 @@ class ChatGPTClient extends BaseClient {
       model: modelOptions.model || CHATGPT_MODEL,
       temperature: typeof modelOptions.temperature === 'undefined' ? 0.8 : modelOptions.temperature,
       top_p: typeof modelOptions.top_p === 'undefined' ? 1 : modelOptions.top_p,
-      presence_penalty: typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
+      presence_penalty:
+        typeof modelOptions.presence_penalty === 'undefined' ? 1 : modelOptions.presence_penalty,
       stop: modelOptions.stop,
     };
 
-    this.isChatGptModel = this.modelOptions.model.startsWith('gpt-');
+    this.isChatGptModel = this.modelOptions.model.includes('gpt-');
     const { isChatGptModel } = this;
-    this.isUnofficialChatGptModel = this.modelOptions.model.startsWith('text-chat') || this.modelOptions.model.startsWith('text-davinci-002-render');
+    this.isUnofficialChatGptModel =
+      this.modelOptions.model.startsWith('text-chat') ||
+      this.modelOptions.model.startsWith('text-davinci-002-render');
     const { isUnofficialChatGptModel } = this;
 
     // Davinci models have a max context length of 4097 tokens.
@@ -64,10 +63,15 @@ class ChatGPTClient extends BaseClient {
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
     // Earlier messages will be dropped until the prompt is within the limit.
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
-    this.maxPromptTokens = this.options.maxPromptTokens || (this.maxContextTokens - this.maxResponseTokens);
+    this.maxPromptTokens =
+      this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
     if (this.maxPromptTokens + this.maxResponseTokens > this.maxContextTokens) {
-      throw new Error(`maxPromptTokens + max_tokens (${this.maxPromptTokens} + ${this.maxResponseTokens} = ${this.maxPromptTokens + this.maxResponseTokens}) must be less than or equal to maxContextTokens (${this.maxContextTokens})`);
+      throw new Error(
+        `maxPromptTokens + max_tokens (${this.maxPromptTokens} + ${this.maxResponseTokens} = ${
+          this.maxPromptTokens + this.maxResponseTokens
+        }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`,
+      );
     }
 
     this.userLabel = this.options.userLabel || 'User';
@@ -149,6 +153,11 @@ class ChatGPTClient extends BaseClient {
     } else {
       modelOptions.prompt = input;
     }
+
+    if (this.useOpenRouter && modelOptions.prompt) {
+      delete modelOptions.stop;
+    }
+
     const { debug } = this.options;
     const url = this.completionsUrl;
     if (debug) {
@@ -173,6 +182,11 @@ class ChatGPTClient extends BaseClient {
       opts.headers['api-key'] = this.apiKey;
     } else if (this.apiKey) {
       opts.headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+
+    if (this.useOpenRouter) {
+      opts.headers['HTTP-Referer'] = 'https://librechat.ai';
+      opts.headers['X-Title'] = 'LibreChat';
     }
 
     if (this.options.headers) {
@@ -249,13 +263,10 @@ class ChatGPTClient extends BaseClient {
         }
       });
     }
-    const response = await fetch(
-      url,
-      {
-        ...opts,
-        signal: abortController.signal,
-      },
-    );
+    const response = await fetch(url, {
+      ...opts,
+      signal: abortController.signal,
+    });
     if (response.status !== 200) {
       const body = await response.text();
       const error = new Error(`Failed to send message. HTTP ${response.status} - ${body}`);
@@ -299,10 +310,7 @@ ${botMessage.message}
       .trim();
   }
 
-  async sendMessage(
-    message,
-    opts = {},
-  ) {
+  async sendMessage(message, opts = {}) {
     if (opts.clientOptions && typeof opts.clientOptions === 'object') {
       this.setOptions(opts.clientOptions);
     }
@@ -310,9 +318,10 @@ ${botMessage.message}
     const conversationId = opts.conversationId || crypto.randomUUID();
     const parentMessageId = opts.parentMessageId || crypto.randomUUID();
 
-    let conversation = typeof opts.conversation === 'object'
-      ? opts.conversation
-      : await this.conversationsCache.get(conversationId);
+    let conversation =
+      typeof opts.conversation === 'object'
+        ? opts.conversation
+        : await this.conversationsCache.get(conversationId);
 
     let isNewConversation = false;
     if (!conversation) {
@@ -357,8 +366,9 @@ ${botMessage.message}
           if (progressMessage === '[DONE]') {
             return;
           }
-          const token = this.isChatGptModel ?
-            progressMessage.choices[0].delta.content : progressMessage.choices[0].text;
+          const token = this.isChatGptModel
+            ? progressMessage.choices[0].delta.content
+            : progressMessage.choices[0].text;
           // first event's delta content is always undefined
           if (!token) {
             return;
@@ -427,9 +437,7 @@ ${botMessage.message}
     return returnData;
   }
 
-  async buildPrompt(messages, parentMessageId, { isChatGptModel = false, promptPrefix = null }) {
-    const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
-
+  async buildPrompt(messages, { isChatGptModel = false, promptPrefix = null }) {
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
     if (promptPrefix) {
       // If the prompt prefix doesn't end with the end token, add it.
@@ -438,10 +446,11 @@ ${botMessage.message}
       }
       promptPrefix = `${this.startToken}Instructions:\n${promptPrefix}`;
     } else {
-      const currentDateString = new Date().toLocaleDateString(
-        'en-us',
-        { year: 'numeric', month: 'long', day: 'numeric' },
-      );
+      const currentDateString = new Date().toLocaleDateString('en-us', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
       promptPrefix = `${this.startToken}Instructions:\nYou are ChatGPT, a large language model trained by OpenAI. Respond conversationally.\nCurrent date: ${currentDateString}${this.endToken}\n\n`;
     }
 
@@ -460,7 +469,8 @@ ${botMessage.message}
 
     let currentTokenCount;
     if (isChatGptModel) {
-      currentTokenCount = this.getTokenCountForMessage(instructionsPayload) +
+      currentTokenCount =
+        this.getTokenCountForMessage(instructionsPayload) +
         this.getTokenCountForMessage(messagePayload);
     } else {
       currentTokenCount = this.getTokenCount(`${promptPrefix}${promptSuffix}`);
@@ -473,10 +483,15 @@ ${botMessage.message}
     // Iterate backwards through the messages, adding them to the prompt until we reach the max token count.
     // Do this within a recursive async function so that it doesn't block the event loop for too long.
     const buildPromptBody = async () => {
-      if (currentTokenCount < maxTokenCount && orderedMessages.length > 0) {
-        const message = orderedMessages.pop();
-        const roleLabel = message?.isCreatedByUser || message?.role?.toLowerCase() === 'user' ? this.userLabel : this.chatGptLabel;
-        const messageString = `${this.startToken}${roleLabel}:\n${message?.text ?? message?.message}${this.endToken}\n`;
+      if (currentTokenCount < maxTokenCount && messages.length > 0) {
+        const message = messages.pop();
+        const roleLabel =
+          message?.isCreatedByUser || message?.role?.toLowerCase() === 'user'
+            ? this.userLabel
+            : this.chatGptLabel;
+        const messageString = `${this.startToken}${roleLabel}:\n${
+          message?.text ?? message?.message
+        }${this.endToken}\n`;
         let newPromptBody;
         if (promptBody || isChatGptModel) {
           newPromptBody = `${messageString}${promptBody}`;
@@ -498,12 +513,14 @@ ${botMessage.message}
             return false;
           }
           // This is the first message, so we can't add it. Just throw an error.
-          throw new Error(`Prompt is too long. Max token count is ${maxTokenCount}, but prompt is ${newTokenCount} tokens long.`);
+          throw new Error(
+            `Prompt is too long. Max token count is ${maxTokenCount}, but prompt is ${newTokenCount} tokens long.`,
+          );
         }
         promptBody = newPromptBody;
         currentTokenCount = newTokenCount;
         // wait for next tick to avoid blocking the event loop
-        await new Promise(resolve => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
         return buildPromptBody();
       }
       return true;
@@ -514,12 +531,15 @@ ${botMessage.message}
     const prompt = `${promptBody}${promptSuffix}`;
     if (isChatGptModel) {
       messagePayload.content = prompt;
-      // Add 2 tokens for metadata after all messages have been counted.
-      currentTokenCount += 2;
+      // Add 3 tokens for Assistant Label priming after all messages have been counted.
+      currentTokenCount += 3;
     }
 
     // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
-    this.modelOptions.max_tokens = Math.min(this.maxContextTokens - currentTokenCount, this.maxResponseTokens);
+    this.modelOptions.max_tokens = Math.min(
+      this.maxContextTokens - currentTokenCount,
+      this.maxResponseTokens,
+    );
 
     if (this.options.debug) {
       console.debug(`Prompt : ${prompt}`);
@@ -528,7 +548,7 @@ ${botMessage.message}
     if (isChatGptModel) {
       return { prompt: [instructionsPayload, messagePayload], context };
     }
-    return { prompt, context };
+    return { prompt, context, promptTokens: currentTokenCount };
   }
 
   getTokenCount(text) {
@@ -536,36 +556,32 @@ ${botMessage.message}
   }
 
   /**
- * Algorithm adapted from "6. Counting tokens for chat API calls" of
- * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
- *
- * An additional 2 tokens need to be added for metadata after all messages have been counted.
- *
- * @param {*} message
- */
+   * Algorithm adapted from "6. Counting tokens for chat API calls" of
+   * https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
+   *
+   * An additional 3 tokens need to be added for assistant label priming after all messages have been counted.
+   *
+   * @param {Object} message
+   */
   getTokenCountForMessage(message) {
-    let tokensPerMessage;
-    let nameAdjustment;
-    if (this.modelOptions.model.startsWith('gpt-4')) {
-      tokensPerMessage = 3;
-      nameAdjustment = 1;
-    } else {
+    // Note: gpt-3.5-turbo and gpt-4 may update over time. Use default for these as well as for unknown models
+    let tokensPerMessage = 3;
+    let tokensPerName = 1;
+
+    if (this.modelOptions.model === 'gpt-3.5-turbo-0301') {
       tokensPerMessage = 4;
-      nameAdjustment = -1;
+      tokensPerName = -1;
     }
 
-    // Map each property of the message to the number of tokens it contains
-    const propertyTokenCounts = Object.entries(message).map(([key, value]) => {
-      // Count the number of tokens in the property value
-      const numTokens = this.getTokenCount(value);
+    let numTokens = tokensPerMessage;
+    for (let [key, value] of Object.entries(message)) {
+      numTokens += this.getTokenCount(value);
+      if (key === 'name') {
+        numTokens += tokensPerName;
+      }
+    }
 
-      // Adjust by `nameAdjustment` tokens if the property key is 'name'
-      const adjustment = (key === 'name') ? nameAdjustment : 0;
-      return numTokens + adjustment;
-    });
-
-    // Sum the number of tokens in all properties and add `tokensPerMessage` for metadata
-    return propertyTokenCounts.reduce((a, b) => a + b, tokensPerMessage);
+    return numTokens;
   }
 }
 

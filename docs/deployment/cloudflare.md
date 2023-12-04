@@ -21,7 +21,7 @@
   (in the Name section, if you use @ it will use you main domain, but if you want to use a subdomain write it in the Name section)
    - For example: if you want to acces with chat.yourdomain.com just set in the Name section `chat`
 
-**NOTE:** You have to set yourdomain.com the same way in both ngnix-proxy-manager and the Cloudflare records. So, if you have set it in the records as chat.yourdomain.com, you will also need to set chat.yourdomain.com in ngnix-proxy-manager."
+**NOTE:** You have to set yourdomain.com the same way in both nginx-proxy-manager and the Cloudflare records. So, if you have set it in the records as chat.yourdomain.com, you will also need to set chat.yourdomain.com in nginx-proxy-manager."
 
 ## Cloudflare Zero Trust extra protection (optional)
 

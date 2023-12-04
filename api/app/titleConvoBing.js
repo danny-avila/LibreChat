@@ -1,8 +1,14 @@
-const _ = require('lodash');
+const { isEnabled } = require('../server/utils');
+const throttle = require('lodash/throttle');
 
 const titleConvo = async ({ text, response }) => {
   let title = 'New Chat';
-  const { BingAIClient } = (await import('@waylaidwanderer/chatgpt-api'));
+  const { TITLE_CONVO = 'true' } = process.env ?? {};
+  if (!isEnabled(TITLE_CONVO)) {
+    return title;
+  }
+
+  const { BingAIClient } = await import('nodejs-gpt');
   const titleGenerator = new BingAIClient({
     userToken: process.env.BINGAI_TOKEN,
     debug: false,
@@ -17,11 +23,11 @@ const titleConvo = async ({ text, response }) => {
       "${text}"
       ||>Response:
       "${JSON.stringify(response?.text)}"`,
-    toneStyle: 'precise'
+    toneStyle: 'precise',
   };
   const titlePrompt = 'Title:';
   try {
-    const res = await titleGenerator.sendMessage(titlePrompt, options)
+    const res = await titleGenerator.sendMessage(titlePrompt, options);
     title = res.response.replace(/Title: /, '').replace(/[".]/g, '');
   } catch (e) {
     console.error(e);
@@ -32,6 +38,6 @@ const titleConvo = async ({ text, response }) => {
   return title;
 };
 
-const throttledTitleConvo = _.throttle(titleConvo, 3000);
+const throttledTitleConvo = throttle(titleConvo, 3000);
 
 module.exports = throttledTitleConvo;

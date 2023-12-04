@@ -6,49 +6,42 @@ import { useState } from 'react';
 import { cn } from '~/utils/';
 
 type Cache = {
-  subType: string,
-  level: string,
-  wordCount: string,
-  paragraphCount: string,
-  easyMode: boolean,
-  topic: string,
-  paraTopic: string[],
-  refAuthor: string,
-  refTitle: string,
-  refType: string
-}
+  subType: string;
+  level: string;
+  wordCount: string;
+  paragraphCount: string;
+  easyMode: boolean;
+  topic: string;
+  paraTopic: string[];
+  refAuthor: string;
+  refTitle: string;
+  refType: string;
+};
 
 function getParagraphFields({ paragraphCount, paraTopic, setParaTopic }) {
   const numOfParagraph = Number(paragraphCount);
   const defaultTextProps =
-  	'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
+    'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
   const rows = new Array(numOfParagraph);
 
   for (let i = 0; i < numOfParagraph; i++) {
-    rows.push(<input className={cn(
-      defaultTextProps,
-      'flex max-h-[300px] h-[30px] w-full resize-none px-3 py-2'
-    )}
-    key={`paragraph${i + 1}`}
-    value={paraTopic[i]}
-    placeholder={`段落${i + 1}`}
-    title={`段落${i + 1}`}
-    onChange={
-      (e) => {
-        const newTopics = structuredClone(paraTopic);
-        newTopics[i] = e.target.value || '';
-        setParaTopic(newTopics)
-      }
-    }
-    />
-    )
+    rows.push(
+      <input
+        className={cn(defaultTextProps, 'flex h-[30px] max-h-[300px] w-full resize-none px-3 py-2')}
+        key={`paragraph${i + 1}`}
+        value={paraTopic[i]}
+        placeholder={`段落${i + 1}`}
+        title={`段落${i + 1}`}
+        onChange={(e) => {
+          const newTopics = structuredClone(paraTopic);
+          newTopics[i] = e.target.value || '';
+          setParaTopic(newTopics);
+        }}
+      />,
+    );
   }
 
-  return (
-    <div className='flex flex-col gap-1 overflow-auto h-[100px]'>
-      {rows}
-    </div>
-  );
+  return <div className="flex h-[100px] flex-col gap-1 overflow-auto">{rows}</div>;
 }
 
 export default function EssayTemplate({ type }: { type: string }) {
@@ -56,16 +49,16 @@ export default function EssayTemplate({ type }: { type: string }) {
     'rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:outline-none focus:ring-gray-400 focus:ring-opacity-20 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 focus:dark:bg-gray-600 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
   const selectDropDownStyle = cn(
     defaultTextProps,
-    'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0'
+    'flex w-full resize-none focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0',
   );
   const inputStyle = cn(
     defaultTextProps,
-    'flex max-h-[300px] min-h-[25px] w-full resize-none px-3 py-2'
+    'flex max-h-[300px] min-h-[25px] w-full resize-none px-3 py-2',
   );
-  const defaultSubType: string = '全文';
-  const defaultAuthor: string = '高中生';
-  const defaultWordCount: string = '500';
-  const defaultParagraphCount: string = '3';
+  const defaultSubType = '全文';
+  const defaultAuthor = '高中生';
+  const defaultWordCount = '500';
+  const defaultParagraphCount = '3';
 
   const [level, setLevel] = useState<string>(defaultAuthor);
   const [subType, setSubType] = useState<string>(defaultSubType);
@@ -87,15 +80,17 @@ export default function EssayTemplate({ type }: { type: string }) {
     paraTopic: [],
     refAuthor: '',
     refTitle: '',
-    refType: ''
+    refType: '',
   });
 
   const paragraphFields = getParagraphFields({ paragraphCount, paraTopic, setParaTopic });
 
-  if (type !== '作文') return null;
+  if (type !== '作文') {
+    return null;
+  }
 
   const SubType = () => {
-    return(
+    return (
       <SelectDropDown
         title={'副类型'}
         value={subType}
@@ -104,32 +99,42 @@ export default function EssayTemplate({ type }: { type: string }) {
         disabled={false}
         className={selectDropDownStyle}
         containerClassName="flex w-full resize-none"
-        subContainerClassName=''
+        subContainerClassName=""
       />
     );
-  }
+  };
 
-  const Author =
+  const Author = (
     <div className="grid w-full items-center gap-y-2">
       <SelectDropDown
         title={'写作水平'}
         value={level}
         setValue={(value: string) => setLevel(value)}
-        availableValues={['小学三年级', '小学六年级', '初中生', '高中生', '本科生', '学士', '硕士', '博士']}
+        availableValues={[
+          '小学三年级',
+          '小学六年级',
+          '初中生',
+          '高中生',
+          '本科生',
+          '学士',
+          '硕士',
+          '博士',
+        ]}
         disabled={false}
         className={selectDropDownStyle}
         containerClassName="flex w-full resize-none"
-        subContainerClassName=''
+        subContainerClassName=""
       />
     </div>
+  );
 
-  const WordCountInput =
+  const WordCountInput = (
     <div className="grid w-full items-center gap-2">
       <Label htmlFor="context" className="text-left text-sm font-medium">
         字数 <small className="opacity-40">(不能小于100，不能大于800)</small>
       </Label>
       <input
-        id='wordCount'
+        id="wordCount"
         type="number"
         min={'100'}
         max={'800'}
@@ -138,184 +143,198 @@ export default function EssayTemplate({ type }: { type: string }) {
         className={inputStyle}
       />
     </div>
+  );
 
-  const FullEssayTopicInputs =
+  const FullEssayTopicInputs = (
     <div className="grid w-full items-center gap-2">
-      <div className='flex flex-row gap-6'>
+      <div className="flex flex-row gap-6">
         <Label htmlFor="context" className="text-left text-sm font-medium">
           主题
         </Label>
-        <div className='flex flex-row gap-2 items-center'>
+        <div className="flex flex-row items-center gap-2">
           <Switch.Root
-            className="w-[30px] h-[16px] bg-blue-500 rounded-full relative data-[state=checked]:bg-violet-700 outline-none cursor-default"
+            className="relative h-[16px] w-[30px] cursor-default rounded-full bg-blue-500 outline-none data-[state=checked]:bg-violet-700"
             id="easy-mode-switch"
             checked={!easyMode}
             onCheckedChange={(prev) => setEasyMode(!prev)}
           >
-            <Switch.Thumb className="block w-[14px] h-[14px] bg-white rounded-full transition-transform duration-100 translate-x-0.5 will-change-transform data-[state=checked]:translate-x-[13px]" />
+            <Switch.Thumb className="block h-[14px] w-[14px] translate-x-0.5 rounded-full bg-white transition-transform duration-100 will-change-transform data-[state=checked]:translate-x-[13px]" />
           </Switch.Root>
           <Label id="easy-mode-text" htmlFor="context" className="text-left text-sm font-medium">
             {easyMode ? '简约' : '微调'}
           </Label>
         </div>
       </div>
-      {
-        easyMode ? <TextareaAutosize
+      {easyMode ? (
+        <TextareaAutosize
           id="essay-topic"
           disabled={false}
           value={topic || ''}
           onChange={(e) => setTopic(e.target.value || '')}
           className={cn(
             defaultTextProps,
-            'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2'
+            'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2',
           )}
-        /> : paragraphFields
-      }
+        />
+      ) : (
+        paragraphFields
+      )}
     </div>
+  );
 
-  const EssayParagraphInputs =
+  const EssayParagraphInputs = (
     <div className="grid w-full items-center gap-1">
       <Label htmlFor="context" className="text-left text-sm font-medium">
         主题
       </Label>
       <TextareaAutosize
         id="essay-topic"
-        title='文章主题'
-        placeholder='文章主题'
+        title="文章主题"
+        placeholder="文章主题"
         disabled={false}
         value={topic || ''}
         onChange={(e) => setTopic(e.target.value || '')}
         className={cn(
           defaultTextProps,
-          'flex max-h-[300px] min-h-[50px] w-full resize-none px-3 py-2'
+          'flex max-h-[300px] min-h-[50px] w-full resize-none px-3 py-2',
         )}
       />
       <TextareaAutosize
         id="essay-paragraph-topic"
-        title='段落主题'
-        placeholder='段落主题'
+        title="段落主题"
+        placeholder="段落主题"
         disabled={false}
         value={paraTopic[0] || ''}
-        onChange={
-          (e) => {
-            const newTopics = structuredClone(paraTopic);
-            newTopics[0] = e.target.value || '';
-            setParaTopic(newTopics)
-          }
-        }
+        onChange={(e) => {
+          const newTopics = structuredClone(paraTopic);
+          newTopics[0] = e.target.value || '';
+          setParaTopic(newTopics);
+        }}
         className={cn(
           defaultTextProps,
-          'flex max-h-[300px] min-h-[50px] w-full resize-none px-3 py-2'
+          'flex max-h-[300px] min-h-[50px] w-full resize-none px-3 py-2',
         )}
       />
     </div>
+  );
 
-  const ParagraphCountInput =
+  const ParagraphCountInput = (
     <div className="grid w-full items-center gap-2">
       <Label htmlFor="context" className="text-left text-sm font-medium">
         段落 <small className="opacity-40">(不能小于1，不能大于5)</small>
       </Label>
       <input
-        id='paragraphCount'
+        id="paragraphCount"
         type="number"
-        min='1'
+        min="1"
         max="5"
         value={paragraphCount || 0}
         onChange={(e) => setParagraphCount(e.target.value || '0')}
         className={inputStyle}
-        disabled={(subType === '文章段落')}
+        disabled={subType === '文章段落'}
       />
-      {(subType === '全文') && FullEssayTopicInputs}
-      {(subType === '文章段落') && EssayParagraphInputs}
+      {subType === '全文' && FullEssayTopicInputs}
+      {subType === '文章段落' && EssayParagraphInputs}
     </div>
+  );
 
-  const ReferenceText =
+  const ReferenceText = (
     <div className="grid w-full items-center gap-2">
       <Label htmlFor="context" className="text-left text-sm font-medium">
-        文本引用 <small className="opacity-40">(如若引用文本，须填写文本类型以及其名字与作者)</small>
+        文本引用{' '}
+        <small className="opacity-40">(如若引用文本，须填写文本类型以及其名字与作者)</small>
       </Label>
       <input
-        id='refTitleInput'
-        title='类型'
-        placeholder='类型'
+        id="refTitleInput"
+        title="类型"
+        placeholder="类型"
         value={refType || ''}
         onChange={(e) => setRefType(e.target.value || '')}
         className={inputStyle}
       />
       <input
-        id='refTitleInput'
-        title='名字'
-        placeholder='名字'
+        id="refTitleInput"
+        title="名字"
+        placeholder="名字"
         value={refTitle || ''}
         onChange={(e) => setRefTitle(e.target.value || '')}
         className={inputStyle}
       />
       <input
-        id='refAuthorInput'
-        title='作者'
-        placeholder='作者'
+        id="refAuthorInput"
+        title="作者"
+        placeholder="作者"
         value={refAuthor || ''}
         onChange={(e) => setRefAuthor(e.target.value || '')}
         className={inputStyle}
       />
     </div>
+  );
 
   const LayoutLeft = () => {
-    return(
+    return (
       <>
         {Author}
         {WordCountInput}
       </>
     );
-  }
+  };
 
   const LayoutRight = () => {
-    return(
+    return (
       <>
         {ParagraphCountInput}
         {ReferenceText}
       </>
     );
-  }
+  };
 
   function getRefText() {
-    if (refAuthor && refType && refTitle) return(`引用${refAuthor}的${refType}《${refTitle}》。`);
-    else return('');
+    if (refAuthor && refType && refTitle) {
+      return `引用${refAuthor}的${refType}《${refTitle}》。`;
+    } else {
+      return '';
+    }
   }
 
   function getEssayPrompt() {
     if (easyMode) {
-      return(
+      return (
         `以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，主题是：${topic}。` +
-          getRefText()
+        getRefText()
       );
     } else {
       const topics: string[] = [];
 
-      topics.push(`以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，第1段的主题是：${paraTopic[0]}。`);
+      topics.push(
+        `以${level}的水平写一篇${wordCount}字的作文。作文要分成${paragraphCount}个段落，第1段的主题是：${paraTopic[0]}。`,
+      );
 
       for (let i = 1; i < Number(paragraphCount); i++) {
         topics.push(`第${i + 1}段的主题是${paraTopic[i]}。`);
       }
 
-      return (topics.join('') + getRefText());
+      return topics.join('') + getRefText();
     }
   }
 
   function getEssayParagraphPrompt() {
-    return(
+    return (
       `以${level}的水平写一篇${wordCount}字的作文段落。作文主题是：${topic}。段落的主题是：${paraTopic[0]}。` +
-        getRefText()
+      getRefText()
     );
   }
 
   const getPromptText = () => {
     switch (subType) {
-      default: return getEssayPrompt();
-      case ('全文'): return getEssayPrompt();
-      case ('文章段落'): return getEssayParagraphPrompt();
+      default:
+        return getEssayPrompt();
+      case '全文':
+        return getEssayPrompt();
+      case '文章段落':
+        return getEssayParagraphPrompt();
     }
-  }
+  };
 
   const setExample = () => {
     setCache({
@@ -328,7 +347,7 @@ export default function EssayTemplate({ type }: { type: string }) {
       paraTopic: paraTopic,
       refAuthor: refAuthor,
       refTitle: refTitle,
-      refType: refType
+      refType: refType,
     });
     setSubType('全文');
     setLevel('高中生');
@@ -339,7 +358,7 @@ export default function EssayTemplate({ type }: { type: string }) {
     setRefAuthor('壹知识露哥');
     setRefTitle('AI技术欺骗人类，霍金：不要滥用，否则对人类产生灾难性影响');
     setRefType('百度帖子');
-  }
+  };
 
   const restoreFields = () => {
     setSubType(cache.subType);
@@ -352,7 +371,7 @@ export default function EssayTemplate({ type }: { type: string }) {
     setRefAuthor(cache.refAuthor);
     setRefTitle(cache.refTitle);
     setRefType(cache.refType);
-  }
+  };
 
-  return({ SubType, LayoutLeft, LayoutRight, getPromptText, setExample, restoreFields })
+  return { SubType, LayoutLeft, LayoutRight, getPromptText, setExample, restoreFields };
 }

@@ -23,5 +23,5 @@
     }
   },
   "exclude": ["node_modules", "dist", "types"],
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "types/index.d.ts"]
 }

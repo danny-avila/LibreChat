@@ -18,15 +18,16 @@ if (!cached) {
 }
 
 async function connectDb() {
-  if (cached.conn) {
+  if (cached.conn && cached.conn?._readyState === 1) {
     return cached.conn;
   }
 
-  if (!cached.promise) {
+  const disconnected = cached.conn && cached.conn?._readyState !== 1;
+  if (!cached.promise || disconnected) {
     const opts = {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      bufferCommands: false
+      bufferCommands: false,
       // bufferMaxEntries: 0,
       // useFindAndModify: true,
       // useCreateIndex: true

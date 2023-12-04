@@ -1,30 +1,34 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { titleConvo, GoogleClient } = require('../../../app');
-// const GoogleClient = require('../../../app/google/GoogleClient');
+const { GoogleClient } = require('../../../app');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress } = require('./handlers');
-const requireJwtAuth = require('../../../middleware/requireJwtAuth');
+const { handleError, sendMessage, createOnProgress } = require('../../utils');
+const { getUserKey, checkUserKeyExpiry } = require('../../services/UserService');
+const { setHeaders } = require('../../middleware');
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.post('/', setHeaders, async (req, res) => {
   const { endpoint, text, parentMessageId, conversationId: oldConversationId } = req.body;
-  if (text.length === 0) return handleError(res, { text: 'Prompt empty or too short' });
-  if (endpoint !== 'google') return handleError(res, { text: 'Illegal request' });
+  if (text.length === 0) {
+    return handleError(res, { text: 'Prompt empty or too short' });
+  }
+  if (endpoint !== 'google') {
+    return handleError(res, { text: 'Illegal request' });
+  }
 
   // build endpoint option
   const endpointOption = {
     examples: req.body?.examples ?? [{ input: { content: '' }, output: { content: '' } }],
     promptPrefix: req.body?.promptPrefix ?? null,
-    token: req.body?.token ?? null,
+    key: req.body?.key ?? null,
     modelOptions: {
       model: req.body?.model ?? 'chat-bison',
       modelLabel: req.body?.modelLabel ?? null,
       temperature: req.body?.temperature ?? 0.2,
       maxOutputTokens: req.body?.maxOutputTokens ?? 1024,
       topP: req.body?.topP ?? 0.95,
-      topK: req.body?.topK ?? 40
-    }
+      topK: req.body?.topK ?? 40,
+    },
   };
 
   const availableModels = ['chat-bison', 'text-bison', 'codechat-bison'];
@@ -41,31 +45,32 @@ router.post('/', requireJwtAuth, async (req, res) => {
     conversationId,
     parentMessageId,
     req,
-    res
+    res,
   });
 });
 
 const ask = async ({ text, endpointOption, parentMessageId = null, conversationId, req, res }) => {
-  res.writeHead(200, {
-    Connection: 'keep-alive',
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    'Access-Control-Allow-Origin': '*',
-    'X-Accel-Buffering': 'no'
-  });
   let userMessage;
   let userMessageId;
+  // let promptTokens;
   let responseMessageId;
   let lastSavedTimestamp = 0;
   const { overrideParentMessageId = null } = req.body;
+  const user = req.user.id;
 
   try {
-    const getIds = (data) => {
-      userMessage = data.userMessage;
-      userMessageId = userMessage.messageId;
-      responseMessageId = data.responseMessageId;
-      if (!conversationId) {
-        conversationId = data.conversationId;
+    const getReqData = (data = {}) => {
+      for (let key in data) {
+        if (key === 'userMessage') {
+          userMessage = data[key];
+          userMessageId = data[key].messageId;
+        } else if (key === 'responseMessageId') {
+          responseMessageId = data[key];
+          // } else if (key === 'promptTokens') {
+          //   promptTokens = data[key];
+        } else if (!conversationId && key === 'conversationId') {
+          conversationId = data[key];
+        }
       }
 
       sendMessage(res, { message: userMessage, created: true });
@@ -84,25 +89,31 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
             text: partialText,
             unfinished: true,
             cancelled: false,
-            error: false
+            error: false,
+            user,
           });
         }
-      }
+      },
     });
 
     const abortController = new AbortController();
 
+    const isUserProvided = process.env.PALM_KEY === 'user_provided';
+
     let key;
-    if (endpointOption.token) {
-      key = JSON.parse(endpointOption.token);
-      delete endpointOption.token;
+    if (endpointOption.key && isUserProvided) {
+      checkUserKeyExpiry(
+        endpointOption.key,
+        'Your GOOGLE_TOKEN has expired. Please provide your token again.',
+      );
+      key = await getUserKey({ userId: user, name: 'google' });
+      key = JSON.parse(key);
+      delete endpointOption.key;
       console.log('Using service account key provided by User for PaLM models');
     }
 
     try {
-      if (!key) {
-        key = require('../../../data/auth.json');
-      }
+      key = require('../../../data/auth.json');
     } catch (e) {
       console.log('No \'auth.json\' file (service account key) found in /api/data/ for PaLM models');
     }
@@ -111,53 +122,45 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       // debug: true, // for testing
       reverseProxyUrl: process.env.GOOGLE_REVERSE_PROXY || null,
       proxy: process.env.PROXY || null,
-      ...endpointOption
+      ...endpointOption,
     };
 
     const client = new GoogleClient(key, clientOptions);
 
     let response = await client.sendMessage(text, {
-      getIds,
-      user: req.user.id,
+      getReqData,
+      user,
       conversationId,
       parentMessageId,
       overrideParentMessageId,
       onProgress: progressCallback.call(null, {
         res,
         text,
-        parentMessageId: overrideParentMessageId || userMessageId
+        parentMessageId: overrideParentMessageId || userMessageId,
       }),
-      abortController
+      abortController,
     });
 
     if (overrideParentMessageId) {
       response.parentMessageId = overrideParentMessageId;
     }
 
-    await saveConvo(req.user.id, {
+    await saveConvo(user, {
       ...endpointOption,
       ...endpointOption.modelOptions,
       conversationId,
-      endpoint: 'google'
+      endpoint: 'google',
     });
 
-    await saveMessage(response);
+    await saveMessage({ ...response, user });
     sendMessage(res, {
-      title: await getConvoTitle(req.user.id, conversationId),
+      title: await getConvoTitle(user, conversationId),
       final: true,
-      conversation: await getConvo(req.user.id, conversationId),
+      conversation: await getConvo(user, conversationId),
       requestMessage: userMessage,
-      responseMessage: response
+      responseMessage: response,
     });
     res.end();
-
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      const title = await titleConvo({ text, response });
-      await saveConvo(req.user.id, {
-        conversationId,
-        title
-      });
-    }
   } catch (error) {
     console.error(error);
     const errorMessage = {
@@ -168,9 +171,9 @@ const ask = async ({ text, endpointOption, parentMessageId = null, conversationI
       unfinished: false,
       cancelled: false,
       error: true,
-      text: error.message
+      text: error.message,
     };
-    await saveMessage(errorMessage);
+    await saveMessage({ ...errorMessage, user });
     handleError(res, errorMessage);
   }
 };

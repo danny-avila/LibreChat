@@ -1,7 +1,8 @@
 // German phrases
 
 export default {
-  com_ui_following_no_convo: 'Die Benutzer, denen du folgst, haben keine öffentlichen Unterhaltungen.',
+  com_ui_following_no_convo:
+    'Die Benutzer, denen du folgst, haben keine öffentlichen Unterhaltungen.',
   com_ui_no_following: 'Du folgst noch keinen Benutzern.',
   com_ui_my_following: 'Folge',
   com_ui_recent: 'Neueste',
@@ -37,8 +38,7 @@ export default {
     'Irgendwelche kreativen Ideen für den Geburtstags eines 10-Jährigen?',
   com_ui_example_http_in_js: 'Wie mache ich eine HTTP Anfrage in Javascript?',
   com_ui_capabilities: 'Funktionen',
-  com_ui_capability_remember:
-    'Erinnert sich an die vorherigen Nachrichten',
+  com_ui_capability_remember: 'Erinnert sich an die vorherigen Nachrichten',
   com_ui_capability_correction: 'Möglichkeit zur Bearbeitung der Frage',
   com_ui_capability_decline_requests: 'Blockiert unangemessene Anfragen',
   com_ui_limitations: 'Limitationen',
@@ -74,8 +74,9 @@ export default {
   com_auth_no_account: 'Du hast noch keinen Account?',
   com_auth_sign_up: 'Registrieren',
   com_auth_sign_in: 'Anmelden',
-  com_auth_or: 'Or',
   com_auth_google_login: 'Anmelden mit Google',
+  com_auth_facebook_login: 'Anmelden mit Facebook',
+  com_auth_or: 'Or',
   com_auth_github_login: 'Anmelden mit Github',
   com_auth_discord_login: 'Anmelden mit Discord',
   com_auth_email: 'E-Mail',
@@ -111,18 +112,18 @@ export default {
   com_auth_to_reset_your_password: 'um dein Passwort zurückzusetzen.',
   com_auth_reset_password_link_sent: 'E-Mail gesendet',
   com_auth_reset_password_email_sent:
-    'Es wurde eine E-Mail an {0} mit Anweisungen zum Zurücksetzen Ihres Passworts gesendet. Bitte überprüfen Sie Ihren Spam- / Junk-Ordner, wenn Sie diese E-Mail in Kürze nicht sehen.',
+    'Du hast eine E-Mail mit weiteren Anweisungen zum Zurücksetzen deines Passworts erhalten.',
   com_auth_error_reset_password:
     'Es gab ein Problem beim Zurücksetzen ihres Passworts. Es wurde kein Benutzer mit der angegebenen E-Mail Adresse gefunden. Bitte überprüfen sie die E-Mail und versuchen sie es erneut.',
   com_auth_reset_password_success: 'Passwort erfolgreich zurückgesetzt',
-  com_auth_login_with_new_password:
-    'Du kannst dich jetzt mit deinem neuen Passwort anmelden.',
+  com_auth_login_with_new_password: 'Du kannst dich jetzt mit deinem neuen Passwort anmelden.',
   com_auth_error_invalid_reset_token:
     'Dieser Link zum Passwort zurücksetzen ist nicht mehr gültig.',
   com_auth_click_here: 'Klick hier',
   com_auth_to_try_again: 'um es nochmal zu versuchen.',
   com_auth_submit_registration: 'Registrieren',
   com_auth_welcome_back: 'Willkommen zurück!',
+  com_endpoint_open_menu: 'Öffne Menü',
   com_endpoint_bing_enable_sydney: 'Aktiviere Sydney',
   com_endpoint_bing_to_enable_sydney: 'Um Sydney zu aktivieren',
   com_endpoint_bing_jailbreak: 'Jailbreak',
@@ -189,9 +190,9 @@ export default {
     'Legen Sie benutzerdefinierte Anweisungen fest, die in die Systemmeldung aufgenommen werden sollen. Standard: leer',
   com_endpoint_set_custom_name:
     'Legen sie einen Namen fest, damit sie die Preset wiederfinden können',
-  com_endpoint_preset_name: 'Voreingestellter Name',
-  com_endpoint_new_topic: 'Neues Thema',
+  com_endpoint_preset_name: 'Preset Name',
   com_endpoint: 'Endpunkt',
+  com_endpoint_new_topic: 'Neues Thema',
   com_endpoint_hide_endpoints: 'Endpunkte ausblenden',
   com_endpoint_show_endpoints: 'Endpunkte anzeigen',
   com_endpoint_hide: 'Verstecke',
@@ -201,11 +202,11 @@ export default {
   com_endpoint_agent: 'Agent',
   com_endpoint_show_what_settings: 'Zeige {0} Einstellungen',
   com_endpoint_save: 'Speichern',
-  com_endpoint_import: 'Importieren',
   com_endpoint_export: 'Exportieren',
   com_endpoint_save_as_preset: 'Als Preset speichern',
-  com_endpoint_confirm: 'Bestätigen Sie',
   com_endpoint_not_implemented: 'Nicht implementiert',
+  com_endpoint_import: 'Importieren',
+  com_endpoint_confirm: 'Bestätigen Sie',
   com_endpoint_edit_preset: 'Bearbeite Preset',
   com_endpoint_no_presets: 'Noch keine Voreinstellung vorhanden',
   com_endpoint_clear_presets: 'Voreinstellungen löschen',
@@ -219,6 +220,10 @@ export default {
   com_endpoint_func_hover: 'Aktiviere die Plugin Funktion für ChatGPT',
   com_endpoint_skip_hover:
     'Aktivieren Sie das Überspringen des Abschlussschritts, der die endgültige Antwort und die generierten Schritte überprüft.',
+  com_nav_plugin_store: 'Plugin-Store',
+  com_nav_plugin_search: 'Suche nach Plugins',
+  com_nav_plugin_auth_error:
+    'Beim Versuch, dieses Plugin zu authentifizieren, ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.',
   com_endpoint_config_token: 'Konfigurationstoken',
   com_endpoint_token_name: 'Tokenname',
   com_endpoint_token_set: 'Token für {0} festlegen',
@@ -230,24 +235,19 @@ export default {
     'Um Ihren Zugriffs-Token für Bing zu erhalten, melden Sie sich auf ',
   com_endpoint_config_token_bing2:
     ' an. Verwenden Sie Entwicklertools oder eine Erweiterung, während Sie auf der Website angemeldet sind, um den Inhalt des _U-Cookies zu kopieren.\nWenn dies fehlschlägt, befolgen Sie diese ',
-  com_endpoint_config_token_bing3:
-    ', um die vollständigen Cookie-Schlüssel einzugeben.',
+  com_endpoint_config_token_bing3: ', um die vollständigen Cookie-Schlüssel einzugeben.',
   com_endpoint_config_token_chatgpt1:
     'Um Ihren Zugriffs-Token für ChatGPT \'Free Version\' zu erhalten, melden Sie sich auf ',
-  com_endpoint_config_token_chatgpt2:
-    ' und besuchen Sie anschließend ',
-  com_endpoint_config_token_chatgpt3:
-    '. Kopieren Sie den Zugriffs-Token.',
+  com_endpoint_config_token_chatgpt2: ' und besuchen Sie anschließend ',
+  com_endpoint_config_token_chatgpt3: '. Kopieren Sie den Zugriffs-Token.',
   com_endpoint_config_token_google_import_json_key:
     'Importieren Sie den Service-Account-JSON-Schlüssel',
   com_endpoint_config_token_google_import_json_key_success:
     'Import des Service-Account-JSON-Schlüssels erfolgreich',
   com_endpoint_config_token_google_import_json_key_invalid:
     'Ungültiger Service-Account-JSON-Schlüssel. Haben Sie die richtige Datei importiert?',
-  com_endpoint_config_token_google1:
-    'Sie müssen die ',
-  com_endpoint_config_token_google2:
-    ' API in Google Cloud aktivieren und anschließend ',
+  com_endpoint_config_token_google1: 'Sie müssen die ',
+  com_endpoint_config_token_google2: ' API in Google Cloud aktivieren und anschließend ',
   com_endpoint_config_token_google3:
     '. Klicken Sie unbedingt auf \'Erstellen und Fortfahren\', um mindestens die Rolle \'Vertex AI-Benutzer\' zu erteilen. Erstellen Sie abschließend einen JSON-Schlüssel, den Sie hier importieren können.',
   com_nav_export_filename: 'Dateiname',
@@ -269,8 +269,9 @@ export default {
   com_nav_confirm_clear: 'Bestätige Löschung aller Chats',
   com_nav_close_sidebar: 'Schließe Seitenleiste',
   com_nav_open_sidebar: 'Öffne Seitenleiste',
+  com_nav_send_message: 'Sende Nachricht',
   com_nav_log_out: 'Ausloggen',
-  com_nav_user: 'BENUTZER',
+  com_nav_user: 'USER',
   com_nav_clear_conversation: 'Lösche Konversation',
   com_nav_clear_conversation_confirm_message:
     'Bist du sicher, dass du alle Konversationen löschen möchtest? Dies ist unwiederruflich!',
@@ -278,10 +279,10 @@ export default {
   com_nav_settings: 'Einstellungen',
   com_nav_search_placeholder: 'Durchsuche Nachrichten',
   com_nav_setting_general: 'Generell',
+  com_nav_lang_german: 'Deutsch',
   com_nav_language: 'Sprache',
   com_nav_lang_english: 'English',
   com_nav_lang_chinese: '中文',
-  com_nav_lang_german: 'Deutsch',
   com_nav_lang_spanish: 'Español',
   com_nav_lang_french: 'Français ',
   com_nav_lang_italian: 'Italiano',
@@ -297,7 +298,7 @@ export default {
   com_msg_save_submit: 'Speichern & Senden',
   com_msg_cancel: 'Abbrechen',
   com_msg_open_conversation:
-  'Klicken Sie auf den Titel einer Nachricht, um ihre Konversation zu öffnen.',
+    'Klicken Sie auf den Titel einer Nachricht, um ihre Konversation zu öffnen.',
   com_msg_choose_another_model: 'Wählen Sie ein anderes Modell oder passen Sie GPT erneut an',
   com_msg_edit_message: 'Bearbeiten Sie Ihre Nachricht oder generieren Sie sie neu.',
   com_error_invalid_api_key:

@@ -9,9 +9,9 @@ export default function SetLanguage() {
     lang ||
     (navigator.languages.length > 1
       ? navigator.languages[0].startsWith('zh')
-        ? 'cn'
+        ? 'zh-CN'
         : navigator.languages[0].substring(0, 2)
-      : 'cn');
+      : 'zh-CN');
 
   useEffect(() => {
     if (languageCode) {

@@ -7,7 +7,7 @@ version: 2
 updates:
   - package-ecosystem: "npm" # See documentation for possible values
     directory: "/api" # Location of package manifests
-    target-branch: "develop"
+    target-branch: "dev"
     versioning-strategy: increase-if-necessary
     schedule:
       interval: "weekly"
@@ -20,7 +20,7 @@ updates:
       include: "scope"
   - package-ecosystem: "npm" # See documentation for possible values
     directory: "/client" # Location of package manifests
-    target-branch: "develop"
+    target-branch: "dev"
     versioning-strategy: increase-if-necessary
     schedule:
       interval: "weekly"
@@ -33,7 +33,7 @@ updates:
       include: "scope"
   - package-ecosystem: "npm" # See documentation for possible values
     directory: "/" # Location of package manifests
-    target-branch: "develop"
+    target-branch: "dev"
     versioning-strategy: increase-if-necessary
     schedule:
       interval: "weekly"

@@ -1,19 +1,30 @@
 // From https://platform.openai.com/docs/api-reference/images/create
 // To use this tool, you must pass in a configured OpenAIApi object.
 const fs = require('fs');
-const { Configuration, OpenAIApi } = require('openai');
+const path = require('path');
+const OpenAI = require('openai');
 // const { genAzureEndpoint } = require('../../../utils/genAzureEndpoints');
 const { Tool } = require('langchain/tools');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const saveImageFromUrl = require('./saveImageFromUrl');
-const path = require('path');
+const extractBaseURL = require('../../../utils/extractBaseURL');
+const { DALLE_REVERSE_PROXY, PROXY } = process.env;
 
 class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
 
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
+    const config = { apiKey };
+    if (DALLE_REVERSE_PROXY) {
+      config.baseURL = extractBaseURL(DALLE_REVERSE_PROXY);
+    }
+
+    if (PROXY) {
+      config.httpAgent = new HttpsProxyAgent(PROXY);
+    }
+
     // let azureKey = fields.AZURE_API_KEY || process.env.AZURE_API_KEY;
-    let config = { apiKey };
 
     // if (azureKey) {
     //   apiKey = azureKey;
@@ -36,7 +47,7 @@ class OpenAICreateImage extends Tool {
     //     }
     //   };
     // }
-    this.openaiApi = new OpenAIApi(new Configuration(config));
+    this.openai = new OpenAI(config);
     this.name = 'dall-e';
     this.description = `You can generate images with 'dall-e'. This tool is exclusively for visual content.
 Guidelines:
@@ -56,24 +67,30 @@ Guidelines:
   }
 
   replaceUnwantedChars(inputString) {
-    return inputString.replace(/\r\n|\r|\n/g, ' ').replace('"', '').trim();
+    return inputString
+      .replace(/\r\n|\r|\n/g, ' ')
+      .replace(/"/g, '')
+      .trim();
   }
 
   getMarkdownImageUrl(imageName) {
-    const imageUrl = path.join(this.relativeImageUrl, imageName).replace(/\\/g, '/').replace('public/', '');
+    const imageUrl = path
+      .join(this.relativeImageUrl, imageName)
+      .replace(/\\/g, '/')
+      .replace('public/', '');
     return `![generated image](/${imageUrl})`;
   }
 
   async _call(input) {
-    const resp = await this.openaiApi.createImage({
+    const resp = await this.openai.images.generate({
       prompt: this.replaceUnwantedChars(input),
       // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
       n: 1,
       // size: '1024x1024'
-      size: '512x512'
+      size: '512x512',
     });
 
-    const theImageUrl = resp.data.data[0].url;
+    const theImageUrl = resp.data[0].url;
 
     if (!theImageUrl) {
       throw new Error('No image URL returned from OpenAI API.');

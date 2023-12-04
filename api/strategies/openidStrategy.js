@@ -1,11 +1,8 @@
 const passport = require('passport');
-// const jwt = require('jsonwebtoken');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const config = require('../../config/loader');
-const domains = config.domains;
 
 const User = require('../models/User');
 
@@ -20,9 +17,9 @@ const downloadImage = async (url, imagePath, accessToken) => {
   try {
     const response = await axios.get(url, {
       headers: {
-        'Authorization': `Bearer ${accessToken}`
+        Authorization: `Bearer ${accessToken}`,
       },
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
     });
 
     fs.mkdirSync(path.dirname(imagePath), { recursive: true });
@@ -37,20 +34,21 @@ const downloadImage = async (url, imagePath, accessToken) => {
   }
 };
 
-Issuer.discover(process.env.OPENID_ISSUER)
-  .then(issuer => {
+async function setupOpenId() {
+  try {
+    const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
     const client = new issuer.Client({
       client_id: process.env.OPENID_CLIENT_ID,
       client_secret: process.env.OPENID_CLIENT_SECRET,
-      redirect_uris: [domains.server + process.env.OPENID_CALLBACK_URL]
+      redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
     });
 
     const openidLogin = new OpenIDStrategy(
       {
         client,
         params: {
-          scope: process.env.OPENID_SCOPE
-        }
+          scope: process.env.OPENID_SCOPE,
+        },
       },
       async (tokenset, userinfo, done) => {
         try {
@@ -67,21 +65,23 @@ Issuer.discover(process.env.OPENID_ISSUER)
             fullName = userinfo.given_name;
           } else if (userinfo.family_name) {
             fullName = userinfo.family_name;
+          } else {
+            fullName = userinfo.username || userinfo.email;
           }
 
           if (!user) {
             user = new User({
               provider: 'openid',
               openidId: userinfo.sub,
-              username: userinfo.given_name || '',
+              username: userinfo.username || userinfo.given_name || '',
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
-              name: fullName
+              name: fullName,
             });
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
-            user.username = userinfo.given_name || '';
+            user.username = userinfo.username || userinfo.given_name || '';
             user.name = fullName;
           }
 
@@ -97,9 +97,22 @@ Issuer.discover(process.env.OPENID_ISSUER)
               fileName = userinfo.sub + '.png';
             }
 
-            const imagePath = path.join(__dirname, '..', '..', 'client', 'public', 'images', 'openid', fileName);
+            const imagePath = path.join(
+              __dirname,
+              '..',
+              '..',
+              'client',
+              'public',
+              'images',
+              'openid',
+              fileName,
+            );
 
-            const imagePathOrEmpty = await downloadImage(imageUrl, imagePath, tokenset.access_token);
+            const imagePathOrEmpty = await downloadImage(
+              imageUrl,
+              imagePath,
+              tokenset.access_token,
+            );
 
             user.avatar = imagePathOrEmpty;
           } else {
@@ -112,12 +125,13 @@ Issuer.discover(process.env.OPENID_ISSUER)
         } catch (err) {
           done(err);
         }
-      }
+      },
     );
 
     passport.use('openid', openidLogin);
-
-  })
-  .catch(err => {
+  } catch (err) {
     console.error(err);
-  });
+  }
+}
+
+module.exports = setupOpenId;

@@ -11,17 +11,29 @@ class StableDiffusionAPI extends StructuredTool {
     super();
     this.name = 'stable-diffusion';
     this.url = fields.SD_WEBUI_URL || this.getServerURL();
-    this.description = `You can generate images with 'stable-diffusion'. This tool is exclusively for visual content.
-Guidelines:
-- Visually describe the moods, details, structures, styles, and/or proportions of the image. Remember, the focus is on visual attributes.
-- Craft your input by "showing" and not "telling" the imagery. Think in terms of what you'd want to see in a photograph or a painting.
-- Here's an example for generating a realistic portrait photo of a man:
-"prompt":"photo of a man in black clothes, half body, high detailed skin, coastline, overcast weather, wind, waves, 8k uhd, dslr, soft lighting, high quality, film grain, Fujifilm XT3"
-"negative_prompt":"semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime, out of frame, low quality, ugly, mutation, deformed"
-- Generate images only once per human query unless explicitly requested by the user`;
+    this.description_for_model = `// Generate images and visuals using text.
+// Guidelines:
+// - ALWAYS use {{"prompt": "7+ detailed keywords", "negative_prompt": "7+ detailed keywords"}} structure for queries.
+// - ALWAYS include the markdown url in your final response to show the user: ![caption](/images/id.png)
+// - Visually describe the moods, details, structures, styles, and/or proportions of the image. Remember, the focus is on visual attributes.
+// - Craft your input by "showing" and not "telling" the imagery. Think in terms of what you'd want to see in a photograph or a painting.
+// - Here's an example for generating a realistic portrait photo of a man:
+// "prompt":"photo of a man in black clothes, half body, high detailed skin, coastline, overcast weather, wind, waves, 8k uhd, dslr, soft lighting, high quality, film grain, Fujifilm XT3"
+// "negative_prompt":"semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime, out of frame, low quality, ugly, mutation, deformed"
+// - Generate images only once per human query unless explicitly requested by the user`;
+    this.description =
+      'You can generate images using text with \'stable-diffusion\'. This tool is exclusively for visual content.';
     this.schema = z.object({
-      prompt: z.string().describe('Detailed keywords to describe the subject, using at least 7 keywords to accurately describe the image, separated by comma'),
-      negative_prompt: z.string().describe('Keywords we want to exclude from the final image, using at least 7 keywords to accurately describe the image, separated by comma')
+      prompt: z
+        .string()
+        .describe(
+          'Detailed keywords to describe the subject, using at least 7 keywords to accurately describe the image, separated by comma',
+        ),
+      negative_prompt: z
+        .string()
+        .describe(
+          'Keywords we want to exclude from the final image, using at least 7 keywords to accurately describe the image, separated by comma',
+        ),
     });
   }
 
@@ -30,7 +42,10 @@ Guidelines:
   }
 
   getMarkdownImageUrl(imageName) {
-    const imageUrl = path.join(this.relativeImageUrl, imageName).replace(/\\/g, '/').replace('public/', '');
+    const imageUrl = path
+      .join(this.relativeImageUrl, imageName)
+      .replace(/\\/g, '/')
+      .replace('public/', '');
     return `![generated image](/${imageUrl})`;
   }
 
@@ -48,7 +63,11 @@ Guidelines:
     const payload = {
       prompt,
       negative_prompt,
-      steps: 20
+      sampler_index: 'DPM++ 2M Karras',
+      cfg_scale: 4.5,
+      steps: 22,
+      width: 1024,
+      height: 1024,
     };
     const response = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
     const image = response.data.images[0];
@@ -58,7 +77,17 @@ Guidelines:
 
     // Generate unique name
     const imageName = `${Date.now()}.png`;
-    this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client', 'public', 'images');
+    this.outputPath = path.resolve(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      '..',
+      '..',
+      'client',
+      'public',
+      'images',
+    );
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
 
@@ -72,8 +101,8 @@ Guidelines:
       await sharp(buffer)
         .withMetadata({
           iptcpng: {
-            parameters: info
-          }
+            parameters: info,
+          },
         })
         .toFile(this.outputPath + '/' + imageName);
       this.result = this.getMarkdownImageUrl(imageName);

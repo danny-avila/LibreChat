@@ -1,13 +1,7 @@
-const connectDb = require("@librechat/backend/lib/db/connectDb");
-const migrateDb = require("@librechat/backend/lib/db/migrateDb");
-const { registerUser } = require("@librechat/backend/server/services/auth.service");
-const { askQuestion } = require("./helpers");
-const User = require("@librechat/backend/models/User");
-
-const silentExit = (code = 0) => {
-  console.log = () => {};
-  process.exit(code);
-}
+const connectDb = require('../api/lib/db/connectDb');
+const { registerUser } = require('../api/server/services/AuthService');
+const { askQuestion, silentExit } = require('./helpers');
+const User = require('../api/models/User');
 
 (async () => {
   /**
@@ -16,7 +10,9 @@ const silentExit = (code = 0) => {
    */
   // Warn the user if this is taking a while
   let timeout = setTimeout(() => {
-    console.orange('This is taking a while... You may need to check your connection if this fails.');
+    console.orange(
+      'This is taking a while... You may need to check your connection if this fails.',
+    );
     timeout = setTimeout(() => {
       console.orange('Still going... Might as well assume the connection failed...');
       timeout = setTimeout(() => {
@@ -26,10 +22,9 @@ const silentExit = (code = 0) => {
   }, 5000);
   // Attempt to connect to the database
   try {
-    console.orange('Warming up the engines...')
+    console.orange('Warming up the engines...');
     await connectDb();
     clearTimeout(timeout);
-    await migrateDb();
   } catch (e) {
     console.error(e);
     silentExit(1);
@@ -38,15 +33,17 @@ const silentExit = (code = 0) => {
   /**
    * Show the welcome / help menu
    */
-  console.purple('--------------------------')
-  console.purple('Create a new user account!')
-  console.purple('--------------------------')
+  console.purple('--------------------------');
+  console.purple('Create a new user account!');
+  console.purple('--------------------------');
   // If we don't have enough arguments, show the help menu
   if (process.argv.length < 5) {
-    console.orange('Usage: npm run create-user <email> <name> <username>')
-    console.orange('Note: if you do not pass in the arguments, you will be prompted for them.')
-    console.orange('If you really need to pass in the password, you can do so as the 4th argument (not recommended for security).')
-    console.purple('--------------------------')
+    console.orange('Usage: npm run create-user <email> <name> <username>');
+    console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
+    console.orange(
+      'If you really need to pass in the password, you can do so as the 4th argument (not recommended for security).',
+    );
+    console.purple('--------------------------');
   }
 
   /**
@@ -130,6 +127,22 @@ const silentExit = (code = 0) => {
   }
 
   // Done!
-  console.green("User created successfully!")
-  silentExit(0);
+  const userCreated = await User.findOne({ $or: [{ email }, { username }] });
+  if (userCreated) {
+    console.green('User created successfully!');
+    silentExit(0);
+  }
 })();
+
+process.on('uncaughtException', (err) => {
+  if (!err.message.includes('fetch failed')) {
+    console.error('There was an uncaught error:');
+    console.error(err);
+  }
+
+  if (err.message.includes('fetch failed')) {
+    return;
+  } else {
+    process.exit(1);
+  }
+});

@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "QR Codes",
+  "name_for_model": "qrCodes",
+  "description_for_human": "Create QR codes.",
+  "description_for_model": "Plugin for generating QR codes.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://chatgpt-qrcode-46d7d4ebefc8.herokuapp.com/openapi.yaml"
+  },
+  "logo_url": "https://chatgpt-qrcode-46d7d4ebefc8.herokuapp.com/logo.png",
+  "contact_email": "chrismountzou@gmail.com",
+  "legal_info_url": "https://raw.githubusercontent.com/mountzou/qrCodeGPTv1/master/legal"
+}

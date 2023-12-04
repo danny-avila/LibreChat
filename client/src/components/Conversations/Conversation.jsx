@@ -1,20 +1,24 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
-import { useUpdateConversationMutation } from '@librechat/data-provider';
-import RenameButton from './RenameButton';
+import { useUpdateConversationMutation } from 'librechat-data-provider';
+import { useConversations, useConversation } from '~/hooks';
+import { MinimalIcon } from '~/components/Endpoints';
+import { NotificationSeverity } from '~/common';
+import { useToastContext } from '~/Providers';
 import DeleteButton from './DeleteButton';
-import ConvoIcon from '../svg/ConvoIcon';
+import RenameButton from './RenameButton';
 import store from '~/store';
 import { useNavigate, useParams } from 'react-router-dom';
 
 export default function Conversation({ conversation, retainView }) {
+  const { showToast } = useToastContext();
   const [widget, setWidget] = useRecoilState(store.widget); // eslint-disable-line
   const [currentConversation, setCurrentConversation] = useRecoilState(store.conversation);
   const { conversationId: convoId } = useParams();
   const setSubmission = useSetRecoilState(store.submission);
 
-  const { refreshConversations } = store.useConversations();
-  const { switchToConversation } = store.useConversation();
+  const { refreshConversations } = useConversations();
+  const { switchToConversation } = useConversation();
 
   const updateConvoMutation = useUpdateConversationMutation(currentConversation?.conversationId);
 
@@ -49,9 +53,11 @@ export default function Conversation({ conversation, retainView }) {
   //   }
   // };
   const clickHandler = async () => {
-    if (currentConversation?.conversationId === conversationId &&
+    if (
+      currentConversation?.conversationId === conversationId &&
       currentConversation?.conversationId === convoId &&
-      conversationId === convoId) {
+      conversationId === convoId
+    ) {
       return;
     }
 
@@ -69,7 +75,7 @@ export default function Conversation({ conversation, retainView }) {
       switchToConversation(conversation);
     }
     setWidget('');
-    navigate(`/chat/${conversationId}`);
+    navigate(`/c/${conversationId}`);
   };
 
   const renameHandler = (e) => {
@@ -92,21 +98,37 @@ export default function Conversation({ conversation, retainView }) {
     if (titleInput === title) {
       return;
     }
-    updateConvoMutation.mutate({ conversationId, title: titleInput });
+    updateConvoMutation.mutate(
+      { conversationId, title: titleInput },
+      {
+        onSuccess: () => {
+          refreshConversations();
+          if (conversationId == currentConversation?.conversationId) {
+            setCurrentConversation((prevState) => ({
+              ...prevState,
+              title: titleInput,
+            }));
+          }
+        },
+        onError: () => {
+          setTitleInput(title);
+          showToast({
+            message: 'Failed to rename conversation',
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
   };
 
-  useEffect(() => {
-    if (updateConvoMutation.isSuccess) {
-      refreshConversations();
-      if (conversationId == currentConversation?.conversationId) {
-        setCurrentConversation((prevState) => ({
-          ...prevState,
-          title: titleInput
-        }));
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [updateConvoMutation.isSuccess]);
+  const icon = MinimalIcon({
+    size: 20,
+    endpoint: conversation.endpoint,
+    model: conversation.model,
+    error: false,
+    className: 'mr-0',
+  });
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -116,18 +138,21 @@ export default function Conversation({ conversation, retainView }) {
 
   const aProps = {
     className:
-      'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800'
+      'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800',
   };
 
-  if (currentConversation?.conversationId !== conversationId || currentConversation?.conversationId !== convoId) {
+  if (
+    currentConversation?.conversationId !== conversationId ||
+    currentConversation?.conversationId !== convoId
+  ) {
     aProps.className =
-      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-800 hover:pr-4';
+      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-900 hover:pr-4';
   }
 
   return (
     <a data-testid="convo-item" onClick={() => clickHandler()} {...aProps}>
-      <ConvoIcon />
-      <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all pr-8">
+      {icon}
+      <div className="relative max-h-5 flex-1 overflow-hidden text-ellipsis break-all">
         {renaming === true ? (
           <input
             ref={inputRef}
@@ -143,9 +168,9 @@ export default function Conversation({ conversation, retainView }) {
         )}
       </div>
 
-      {(currentConversation?.conversationId === conversationId &&
-        currentConversation?.conversationId === convoId &&
-        conversationId === convoId) ? (
+      {currentConversation?.conversationId === conversationId &&
+      currentConversation?.conversationId === convoId &&
+      conversationId === convoId ? (
           <div className="visible absolute right-1 z-10 ml-3 flex text-gray-300">
             <RenameButton
               conversationId={conversationId}
@@ -158,10 +183,12 @@ export default function Conversation({ conversation, retainView }) {
               renaming={renaming}
               cancelHandler={cancelHandler}
               retainView={retainView}
+              title={title}
             />
           </div>
         ) : (
-          <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-900 group-hover:from-gray-700/70" />
+        // <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-900 group-hover:from-gray-700/70" />
+          <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-black group-hover:from-gray-900" />
         )}
     </a>
   );

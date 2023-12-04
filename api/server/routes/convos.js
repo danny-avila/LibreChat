@@ -10,14 +10,16 @@ const {
   getLikedConvos,
   getPublicConvos,
   getFollowingConvos,
-  increaseConvoViewCount
+  increaseConvoViewCount,
 } = require('../../models/Conversation');
-const requireJwtAuth = require('../../middleware/requireJwtAuth');
+const requireJwtAuth = require('../middleware/requireJwtAuth');
 const { duplicateMessages } = require('../../models/Message');
 const crypto = require('crypto');
 const Conversation = require('../../models/schema/convoSchema');
 
-router.get('/', requireJwtAuth, async (req, res) => {
+router.use(requireJwtAuth);
+
+router.get('/', async (req, res) => {
   const pageNumber = req.query.pageNumber || 1;
   if (!req.user) {
     res.status(401).send();
@@ -81,31 +83,39 @@ router.get('/publicConvos/:userId', requireJwtAuth, async (req, res) => {
   }
 });
 
-router.get('/:conversationId', requireJwtAuth, async (req, res) => {
+router.get('/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
   const convo = await getConvo(req.user.id, conversationId);
 
-  if (convo) res.status(200).send(convo.toObject());
-  else res.status(404).end();
+  if (convo) {
+    res.status(200).send(convo);
+  } else {
+    res.status(404).end();
+  }
 });
 
-router.get('/share/:conversationId', requireJwtAuth, async (req, res) => {
+router.get('/share/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
   const convo = await getSharedConvo(conversationId);
 
-  if (convo.isPrivate) res.status(200).send({ isPrivate: true });
-  else if (!convo.isPrivate) res.status(200).send(convo);
-  else res.status(404).end();
+  if (convo.isPrivate) {
+    res.status(200).send({ isPrivate: true });
+  } else if (!convo.isPrivate) {
+    res.status(200).send(convo);
+  } else {
+    res.status(404).end();
+  }
 });
 
-router.post('/clear', requireJwtAuth, async (req, res) => {
+router.post('/clear', async (req, res) => {
   let filter = {};
   const { conversationId, source } = req.body.arg;
   if (conversationId) {
     filter = { conversationId };
   }
 
-  console.log('source:', source);
+  // for debugging deletion source
+  // console.log('source:', source);
 
   if (source === 'button' && !conversationId) {
     return res.status(200).send('No conversationId provided');
@@ -120,7 +130,7 @@ router.post('/clear', requireJwtAuth, async (req, res) => {
   }
 });
 
-router.post('/update', requireJwtAuth, async (req, res) => {
+router.post('/update', async (req, res) => {
   const update = req.body.arg;
   console.log('in update', update);
   try {
@@ -175,7 +185,7 @@ router.post('/:conversationId/viewcount/increment', async (req, res) => {
   try {
     const dbResponse = await increaseConvoViewCount(conversationId);
     console.log(
-      `routes: viewcount updated for conversationId ${conversationId}: viewCount=${dbResponse?.viewCount}`
+      `routes: viewcount updated for conversationId ${conversationId}: viewCount=${dbResponse?.viewCount}`,
     );
 
     res.status(200).send(dbResponse);

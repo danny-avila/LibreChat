@@ -57,7 +57,7 @@ function extractShortVersion(openapiSpec) {
     const shortApiSpec = {
       openapi: fullApiSpec.openapi,
       info: fullApiSpec.info,
-      paths: {}
+      paths: {},
     };
 
     for (let path in fullApiSpec.paths) {
@@ -68,8 +68,8 @@ function extractShortVersion(openapiSpec) {
           operationId: fullApiSpec.paths[path][method].operationId,
           parameters: fullApiSpec.paths[path][method].parameters?.map((parameter) => ({
             name: parameter.name,
-            description: parameter.description
-          }))
+            description: parameter.description,
+          })),
         };
       }
     }
@@ -199,14 +199,16 @@ class AIPluginTool extends Tool {
     const apiUrlRes = await fetch(aiPluginJson.api.url, {});
     if (!apiUrlRes.ok) {
       throw new Error(
-        `Failed to fetch API spec from ${aiPluginJson.api.url} with status ${apiUrlRes.status}`
+        `Failed to fetch API spec from ${aiPluginJson.api.url} with status ${apiUrlRes.status}`,
       );
     }
     const apiUrlJson = await apiUrlRes.text();
     const shortApiSpec = extractShortVersion(apiUrlJson);
     return new AIPluginTool({
       name: aiPluginJson.name_for_model.toLowerCase(),
-      description: `A \`tool\` to learn the API documentation for ${aiPluginJson.name_for_model.toLowerCase()}, after which you can use 'http_request' to make the actual API call. Short description of how to use the API's results: ${aiPluginJson.description_for_model})`,
+      description: `A \`tool\` to learn the API documentation for ${aiPluginJson.name_for_model.toLowerCase()}, after which you can use 'http_request' to make the actual API call. Short description of how to use the API's results: ${
+        aiPluginJson.description_for_model
+      })`,
       apiSpec: `
 As an AI, your task is to identify the operationId of the relevant API path based on the condensed OpenAPI specifications provided.
 
@@ -228,7 +230,7 @@ ${shortApiSpec}
 \`\`\`
 `,
       openaiSpec: apiUrlJson,
-      model: model
+      model: model,
     });
   }
 }

@@ -52,7 +52,7 @@ class TrieSensitive {
         stopFlag = 'first';
         stopToken = char;
         if (currentToken !== '') {
-          if (currentToken.length > 1) tokens.push(currentToken);
+          if (currentToken.length > 1) {tokens.push(currentToken);}
           currentToken = '';
         }
       } else {
@@ -88,7 +88,7 @@ class TrieSensitive {
     if (!TrieSensitive.instanceFromFile) {
       const fs = require('fs').promises;
       const lexiconData = await fs.readFile(file, 'utf-8');
-      const lexiconWords = lexiconData.split('\n').map(word => word);
+      const lexiconWords = lexiconData.split('\n').map((word) => word);
 
       const trie = new TrieSensitive();
       for (const word of lexiconWords) {
@@ -105,7 +105,9 @@ class TrieSensitive {
     if (!TrieSensitive.instanceFromBase64File) {
       const fs = require('fs').promises;
       const lexiconData = await fs.readFile(file, 'utf-8');
-      const lexiconWords = lexiconData.split('\n').map(word => Buffer.from(word, 'base64').toString('utf-8'));
+      const lexiconWords = lexiconData
+        .split('\n')
+        .map((word) => Buffer.from(word, 'base64').toString('utf-8'));
 
       const trie = new TrieSensitive();
       for (const word of lexiconWords) {
@@ -120,8 +122,12 @@ class TrieSensitive {
 
   static async checkSensitiveWords(text) {
     const path = require('path');
-    const sensitiveWordsTrie = await TrieSensitive.initializeFromBase64File(path.resolve(__dirname, 'sensitive_library/sw.txt'));
-    const stopWordsTrie = await TrieSensitive.initializeFromFile(path.resolve(__dirname, 'sensitive_library/stw.txt'));
+    const sensitiveWordsTrie = await TrieSensitive.initializeFromBase64File(
+      path.resolve(__dirname, 'sensitive_library/sw.txt'),
+    );
+    const stopWordsTrie = await TrieSensitive.initializeFromFile(
+      path.resolve(__dirname, 'sensitive_library/stw.txt'),
+    );
 
     const words = TrieSensitive.splitWords(text, stopWordsTrie);
     for (const word of words) {

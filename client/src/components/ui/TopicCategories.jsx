@@ -48,8 +48,8 @@ const TopicCategories = ({ convoArray }) => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       if (!response.ok) {
@@ -63,8 +63,8 @@ const TopicCategories = ({ convoArray }) => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
       if (!messagesResponse.ok) {
         throw new Error('Failed to fetch messages');

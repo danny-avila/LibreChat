@@ -5,7 +5,7 @@ const User = require('../../models/User');
 const getUserController = async (req, res) => {
   try {
     const { userId } = req.params;
-    if (userId == undefined || userId === req.user.id) res.status(200).send(req.user);
+    if (userId == undefined || userId === req.user.id) {res.status(200).send(req.user);}
     else {
       const user = await User.findById(userId).exec();
       const id = user._id;
@@ -41,7 +41,7 @@ const postBiographyController = async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $set: updatedFields },
-      { new: true }
+      { new: true },
     );
 
     if (!updatedUser) {
@@ -72,13 +72,13 @@ const usernameController = async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $set: updatedFields },
-      { new: true }
+      { new: true },
     );
 
     if (!updatedUser) {
       return res.status(404).json({ message: 'User not found' });
     }
-    console.log('in controller', updatedUser)
+    console.log('in controller', updatedUser);
 
     res.status(200).json(updatedUser);
   } catch (error) {
@@ -140,19 +140,26 @@ const followUserController = async (req, res) => {
     const otherUserUpdate = {};
 
     // Build the updates
-    userUpdate[`following.${otherUser.id}`] = { name: otherUser.name, username: otherUser.username };
+    userUpdate[`following.${otherUser.id}`] = {
+      name: otherUser.name,
+      username: otherUser.username,
+    };
     otherUserUpdate[`followers.${user.id}`] = { name: user.name, username: user.username };
 
     // Updates to the DB
     if (isFollowing) {
       await User.findByIdAndUpdate(user.id, { $set: userUpdate }, { new: true, upsert: false });
-      dbResponse = await User.findByIdAndUpdate(otherUser.id, { $set: otherUserUpdate }, { new: true, upsert: false });
+      dbResponse = await User.findByIdAndUpdate(
+        otherUser.id,
+        { $set: otherUserUpdate },
+        { new: true, upsert: false },
+      );
     } else {
       await User.findByIdAndUpdate(user.id, { $unset: userUpdate }, { new: true, upsert: false });
       dbResponse = await User.findByIdAndUpdate(
         otherUser.id,
         { $unset: otherUserUpdate },
-        { new: true, upsert: false }
+        { new: true, upsert: false },
       );
     }
     // Returns the updated profile page user
@@ -166,12 +173,12 @@ const followUserController = async (req, res) => {
     console.log(err);
     res.status(500).json({ message: err.message });
   }
-}
+};
 
 module.exports = {
   getUserController,
   updateUserPluginsController,
   followUserController,
   postBiographyController,
-  usernameController
+  usernameController,
 };
