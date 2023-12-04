@@ -36,11 +36,11 @@ export const getPresetTitle = (preset: TPreset) => {
   }
 
   if (label && presetTitle && label.toLowerCase().includes(presetTitle.toLowerCase())) {
-    title = label;
+    title = label + ': ';
     label = '';
   } else if (presetTitle && presetTitle.trim() !== 'New Chat') {
-    title = presetTitle;
+    title = presetTitle + ': ';
   }
 
-  return `${title}: ${modelInfo}${label ? ` (${label})` : ''}`.trim();
+  return `${title}${modelInfo}${label ? ` (${label})` : ''}`.trim();
 };

@@ -43,6 +43,9 @@ export default function usePresets() {
       return;
     }
     setDefaultPreset(defaultPreset);
+    if (!conversation?.conversationId || conversation.conversationId === 'new') {
+      newConversation({ preset: defaultPreset });
+    }
     hasLoaded.current = true;
     // dependencies are stable and only needed once
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,9 +86,10 @@ export default function usePresets() {
     onSuccess: (data, preset) => {
       const toastTitle = data.title ? `"${data.title}"` : localize('com_endpoint_preset_title');
       let message = `${toastTitle} ${localize('com_endpoint_preset_saved')}`;
-      if (data.defaultPreset) {
+      if (data.defaultPreset && data.presetId !== _defaultPreset?.presetId) {
         message = `${toastTitle} ${localize('com_endpoint_preset_default')}`;
         setDefaultPreset(data);
+        newConversation({ preset: data });
       } else if (preset?.defaultPreset === false) {
         setDefaultPreset(null);
         message = `${toastTitle} ${localize('com_endpoint_preset_default_removed')}`;
