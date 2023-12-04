@@ -5,8 +5,8 @@ import {
   useCreatePresetMutation,
 } from 'librechat-data-provider';
 import filenamify from 'filenamify';
-import { useCallback } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useCallback, useEffect, useRef } from 'react';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import exportFromJSON from 'export-from-json';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TPreset } from 'librechat-data-provider';
@@ -25,10 +25,29 @@ export default function usePresets() {
   const { user } = useAuthContext();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
+  const hasLoaded = useRef(false);
 
+  const [_defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
   const setPresetModalVisible = useSetRecoilState(store.presetModalVisible);
   const { preset, conversation, newConversation, setPreset } = useChatContext();
   const presetsQuery = useGetPresetsQuery({ enabled: !!user });
+
+  useEffect(() => {
+    if (_defaultPreset || !presetsQuery.data || hasLoaded.current) {
+      return;
+    }
+
+    const defaultPreset = presetsQuery.data.find((p) => p.defaultPreset);
+    if (!defaultPreset) {
+      hasLoaded.current = true;
+      return;
+    }
+    console.log('[initial default preset]', defaultPreset);
+    setDefaultPreset(defaultPreset);
+    hasLoaded.current = true;
+    // dependencies are stable and only needed once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetsQuery.data]);
 
   const setPresets = useCallback(
     (presets: TPreset[]) => {
@@ -62,10 +81,18 @@ export default function usePresets() {
   });
   const createPresetMutation = useCreatePresetMutation();
   const updatePreset = useUpdatePresetMutation({
-    onSuccess: (data) => {
-      const toastTitle = data.title ? `\`${data.title}\`` : localize('com_endpoint_preset_title');
+    onSuccess: (data, preset) => {
+      const toastTitle = data.title ? `"${data.title}"` : localize('com_endpoint_preset_title');
+      let message = `${toastTitle} ${localize('com_endpoint_preset_saved')}`;
+      if (data.defaultPreset) {
+        message = `${toastTitle} ${localize('com_endpoint_preset_default')}`;
+        setDefaultPreset(data);
+      } else if (preset?.defaultPreset === false) {
+        setDefaultPreset(null);
+        message = `${toastTitle} ${localize('com_endpoint_preset_default_removed')}`;
+      }
       showToast({
-        message: `${toastTitle} ${localize('com_endpoint_preset_saved')}`,
+        message,
       });
       queryClient.invalidateQueries([QueryKeys.presets]);
     },
@@ -114,7 +141,7 @@ export default function usePresets() {
     }
 
     const toastTitle = newPreset.title
-      ? `\`${newPreset.title}\``
+      ? `"${newPreset.title}"`
       : localize('com_endpoint_preset_title');
 
     showToast({
@@ -164,6 +191,10 @@ export default function usePresets() {
     updatePreset.mutate(cleanupPreset({ preset }));
   };
 
+  const onSetDefaultPreset = (preset: TPreset, remove = false) => {
+    updatePreset.mutate({ ...preset, defaultPreset: !remove });
+  };
+
   const exportPreset = () => {
     if (!preset) {
       return;
@@ -178,6 +209,7 @@ export default function usePresets() {
 
   return {
     presetsQuery,
+    onSetDefaultPreset,
     onFileSelected,
     onSelectPreset,
     onChangePreset,

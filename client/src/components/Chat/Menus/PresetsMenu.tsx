@@ -9,6 +9,7 @@ const PresetsMenu: FC = () => {
   const localize = useLocalize();
   const {
     presetsQuery,
+    onSetDefaultPreset,
     onFileSelected,
     onSelectPreset,
     onChangePreset,
@@ -53,6 +54,7 @@ const PresetsMenu: FC = () => {
           >
             <PresetItems
               presets={presets}
+              onSetDefaultPreset={onSetDefaultPreset}
               onSelectPreset={onSelectPreset}
               onChangePreset={onChangePreset}
               onDeletePreset={onDeletePreset}
