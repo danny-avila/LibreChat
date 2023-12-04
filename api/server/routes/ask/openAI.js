@@ -131,7 +131,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       if (messagesCount >= dailyQuota) {
         // return handleError(res, { text: `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，通过此网页可以购买更多额度：https://iaitok.com/pay` });
         throw new Error(
-          `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)，通过此网页可以购买更多额度：https://iaitok.com/pay`,
+          `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)。由于我们需要支付越来越多每月上万人民币的OpenAI API费用，请支持我们持续提供ChatGPT服务，并通过此网页可以购买更多额度：${process.env['PAYMENT_URL']}`,
         );
       }
     }
