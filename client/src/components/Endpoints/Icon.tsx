@@ -1,6 +1,6 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import { Plugin, GPTIcon, AnthropicIcon, AzureMinimalIcon } from '~/components/svg';
-import { useAuthContext } from '~/hooks';
+import { useAuthContext } from '~/hooks/AuthContext';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
