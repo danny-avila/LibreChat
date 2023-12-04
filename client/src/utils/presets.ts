@@ -13,49 +13,34 @@ export const getPresetIcon = (preset: TPreset, Icon) => {
 };
 
 export const getPresetTitle = (preset: TPreset) => {
-  const { endpoint, title: presetTitle } = preset;
-  const { chatGptLabel, modelLabel, model, jailbreak, toneStyle } = preset;
-  let _title = '';
+  const {
+    endpoint,
+    title: presetTitle,
+    model,
+    chatGptLabel,
+    modelLabel,
+    jailbreak,
+    toneStyle,
+  } = preset;
+  let title = '';
+  let modelInfo = model || '';
   let label = '';
 
-  if (endpoint === EModelEndpoint.azureOpenAI || endpoint === EModelEndpoint.openAI) {
-    if (chatGptLabel) {
-      label = ': ' + chatGptLabel;
-    }
-    if (model) {
-      _title += model;
-    }
-  } else if (endpoint === EModelEndpoint.google || endpoint === EModelEndpoint.anthropic) {
-    if (modelLabel) {
-      label = ': ' + modelLabel;
-    }
-    if (model) {
-      _title += model;
-    }
+  if (endpoint && [EModelEndpoint.azureOpenAI, EModelEndpoint.openAI].includes(endpoint)) {
+    label = chatGptLabel || '';
+  } else if (endpoint && [EModelEndpoint.google, EModelEndpoint.anthropic].includes(endpoint)) {
+    label = modelLabel || '';
   } else if (endpoint === EModelEndpoint.bingAI) {
-    if (jailbreak) {
-      _title = 'Sydney';
-    }
-    if (toneStyle) {
-      _title += `: ${toneStyle}`;
-    }
-  } else if (endpoint === EModelEndpoint.chatGPTBrowser) {
-    if (model) {
-      _title += model;
-    }
-  } else if (endpoint === EModelEndpoint.gptPlugins) {
-    if (model) {
-      _title += model;
-    }
+    modelInfo = jailbreak ? 'Sydney' : modelInfo;
+    label = toneStyle ? `: ${toneStyle}` : '';
   }
 
-  if (
-    presetTitle &&
-    presetTitle.length > 0 &&
-    presetTitle.trim() !== 'New Chat' &&
-    !label.includes(presetTitle)
-  ) {
-    _title += ': ' + presetTitle;
+  if (label && presetTitle && label.toLowerCase().includes(presetTitle.toLowerCase())) {
+    title = label;
+    label = '';
+  } else if (presetTitle && presetTitle.trim() !== 'New Chat') {
+    title = presetTitle;
   }
-  return `${_title}${label}`;
+
+  return `${title}: ${modelInfo}${label ? ` (${label})` : ''}`.trim();
 };
