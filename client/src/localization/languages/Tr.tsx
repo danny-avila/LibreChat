@@ -1,4 +1,4 @@
-// English phrases
+// Turkish phrases
 
 export default {
   com_ui_examples: 'Örnekler',
@@ -22,13 +22,14 @@ export default {
   com_ui_use_prompt: 'İpucu kullan',
   com_ui_prev: 'Önceki',
   com_ui_next: 'Sonraki',
+  com_ui_stop: 'Durdur',
   com_ui_prompt_templates: 'İpucu Şablonları',
   com_ui_hide_prompt_templates: 'İpucu Şablonlarını Gizle',
   com_ui_showing: 'Gösteriliyor',
   com_ui_of: 'of',
   com_ui_entries: 'Girişler',
   com_ui_pay_per_call:
-    'Tüm yapay zeka konuşmaları bir yerde. Ayda bir değil, çağrı başına ödeme yapın',
+    'Tüm yapay zekalar bir yerde. Ayda bir değil, çağrı başına ödeme yapın',
   com_ui_enter: 'Gir',
   com_ui_submit: 'Gönder',
   com_ui_upload_success: 'Dosya başarıyla yüklendi',
@@ -40,7 +41,7 @@ export default {
   com_ui_regenerate: 'Yeniden oluştur',
   com_ui_continue: 'Devam et',
   com_ui_edit: 'Düzenle',
-  com_ui_success: 'Başarı',
+  com_ui_success: 'Başarılı',
   com_ui_all: 'tümü',
   com_ui_clear: 'Temizle',
   com_ui_revoke: 'İptal et',
@@ -48,7 +49,7 @@ export default {
   com_ui_confirm_action: 'İşlemi Onayla',
   com_ui_chats: 'sohbetler',
   com_ui_delete: 'Sil',
-  com_ui_delete_conversation: 'Sohbeti sil?',
+  com_ui_delete_conversation: 'Sohbet silinecek?',
   com_ui_delete_conversation_confirm: 'Bu silinecek',
   com_auth_error_login:
     'Sağlanan bilgilerle giriş yapılamıyor. Lütfen kimlik bilgilerinizi kontrol edip tekrar deneyin.',
@@ -79,7 +80,7 @@ export default {
   com_auth_password_confirm: 'Şifreyi onayla',
   com_auth_password_not_match: 'Şifreler uyuşmuyor',
   com_auth_continue: 'Devam et',
-  com_auth_create_account: 'Hesabını oluştur',
+  com_auth_create_account: 'Hesap oluşturun',
   com_auth_error_create: 'Hesabınızı kaydetmeye çalışırken bir hata oluştu. Lütfen tekrar deneyin.',
   com_auth_full_name: 'Tam Adı',
   com_auth_name_required: 'Ad gereklidir',
@@ -177,6 +178,7 @@ export default {
   com_endpoint_set_custom_name: 'Bu ön ayarı bulmak için özel bir ad belirleyin',
   com_endpoint_preset: 'ön ayar',
   com_endpoint_presets: 'ön ayarlar',
+  com_endpoint_preset_selected: 'Ön Ayar Etkin!',
   com_endpoint_preset_name: 'Ön Ayar Adı',
   com_endpoint_new_topic: 'Yeni Konu',
   com_endpoint: 'Nokta',
@@ -229,6 +231,7 @@ export default {
   com_endpoint_config_key_google_service_account: 'Bir Servis Hesabı Oluşturun',
   com_endpoint_config_key_google_vertex_api_role:
     'Lütfen \'Oluştur ve Devam Et\'e tıklayarak en az \'Vertex AI Kullanıcısı\' rolünü verdiğinizden emin olun. Son olarak, buraya içe aktarmak için bir JSON anahtarı oluşturun.',
+  com_nav_welcome_message: 'Bugün size nasıl yardımcı olabilirim?',
   com_nav_auto_scroll: 'Açıkta En Yeniye Otomatik Kaydır',
   com_nav_plugin_store: 'Eklenti Mağazası',
   com_nav_plugin_search: 'Eklentileri Ara',
@@ -254,6 +257,7 @@ export default {
   com_nav_confirm_clear: 'Temizlemeyi Onayla',
   com_nav_close_sidebar: 'Kenar çubuğunu kapat',
   com_nav_open_sidebar: 'Kenar çubuğunu aç',
+  com_nav_send_message: 'Mesaj gönder',
   com_nav_log_out: 'Çıkış yap',
   com_nav_user: 'KULLANICI',
   com_nav_clear_conversation: 'Sohbetleri Temizle',
