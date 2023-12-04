@@ -16,6 +16,11 @@ const preset = atom<TPreset | null>({
   default: null,
 });
 
+const defaultPreset = atom<TPreset | null>({
+  key: 'defaultPreset',
+  default: null,
+});
+
 const presetModalVisible = atom<boolean>({
   key: 'presetModalVisible',
   default: false,
@@ -24,5 +29,6 @@ const presetModalVisible = atom<boolean>({
 export default {
   preset,
   presets,
+  defaultPreset,
   presetModalVisible,
 };
