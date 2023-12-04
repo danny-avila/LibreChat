@@ -148,21 +148,22 @@ BINGAI_HOST=
 ### ChatGPT
 see: [ChatGPT Free Access token](./apis_and_tokens.md#chatgpt-free-access-token)
 
-> **Warning**: The default reverse proxy (based on [PandoraNext](https://github.com/pandora-next/deploy)) needs to be updated and is not working anymore. To use this endpoint you'll have to set up your own.
-> For more information: [https://github.com/waylaidwanderer/node-chatgpt-api#using-a-reverse-proxy](https://github.com/waylaidwanderer/node-chatgpt-api#using-a-reverse-proxy)
+> **Warning**: To use this endpoint you'll have to set up your own reverse proxy. Here is the installation guide to deploy your own (based on [PandoraNext](https://github.com/pandora-next/deploy)): **[PandoraNext Deployment Guide](../features/pandoranext.md)**
 
 ```bash
 CHATGPT_REVERSE_PROXY=<YOUR-REVERSE-PROXY>
 ```
 
-> Note: If you're a GPT plus user you can add gpt-4-plugins, gpt-4-code-interpreter, and gpt-4-browsing to the list above and use the models for these features; however, the view/display portion of these features are not supported, but you can use the underlying models, which have higher token context
+> ~~Note: If you're a GPT plus user you can add gpt-4, gpt-4-plugins, gpt-4-code-interpreter, and gpt-4-browsing to the list above and use the models for these features; however, the view/display portion of these features are not supported, but you can use the underlying models, which have higher token context~~
+> **Note:** The current method only works with `text-davinci-002-render-sha`
 
 - Leave `CHATGPT_TOKEN=` blank to disable this endpoint
 - Set `CHATGPT_TOKEN=` to "user_provided" to allow users to provide their own API key from the WebUI
+    - It is not recommended to provide your token in the `.env` file since it expires often and sharing it could get you banned.
 
 ```bash
 CHATGPT_TOKEN=
-CHATGPT_MODELS=text-davinci-002-render-sha,gpt-4
+CHATGPT_MODELS=text-davinci-002-render-sha
 ```
 
 ### OpenAI
