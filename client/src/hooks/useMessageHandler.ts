@@ -3,7 +3,7 @@ import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { parseConvo, getResponseSender, useGetEndpointsQuery } from 'librechat-data-provider';
 import type { TMessage, TSubmission, TEndpointOption } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
-import useUserKey from './useUserKey';
+import useUserKey from './Input/useUserKey';
 import store from '~/store';
 
 const useMessageHandler = () => {

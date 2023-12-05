@@ -2,20 +2,13 @@ import { useEffect, useRef } from 'react';
 import { TEndpointOption, getResponseSender } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import { useChatContext } from '~/Providers/ChatContext';
-import useFileHandling from './useFileHandling';
+import useFileHandling from '~/hooks/useFileHandling';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
-export default function useTextarea({ setText, submitMessage }) {
-  const {
-    conversation,
-    isSubmitting,
-    latestMessage,
-    setShowBingToneSetting,
-    textareaHeight,
-    setTextareaHeight,
-    setFilesLoading,
-  } = useChatContext();
+export default function useTextarea({ setText, submitMessage, disabled = false }) {
+  const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
+    useChatContext();
   const isComposing = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const { handleFiles } = useFileHandling();
@@ -88,6 +81,9 @@ export default function useTextarea({ setText, submitMessage }) {
   };
 
   const getPlaceholderText = () => {
+    if (disabled) {
+      return 'Set your Key in the Header menu to chat.';
+    }
     if (isNotAppendable) {
       return 'Edit your message or Regenerate.';
     }
@@ -95,16 +91,6 @@ export default function useTextarea({ setText, submitMessage }) {
     const sender = getResponseSender(conversation as TEndpointOption);
 
     return `Message ${sender ? sender : 'ChatGPT'}…`;
-  };
-
-  const onHeightChange = (height: number) => {
-    if (height > 208 && textareaHeight < 208) {
-      setTextareaHeight(Math.min(height, 208));
-    } else if (height > 208) {
-      return;
-    } else {
-      setTextareaHeight(height);
-    }
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -123,6 +109,5 @@ export default function useTextarea({ setText, submitMessage }) {
     handleCompositionStart,
     handleCompositionEnd,
     placeholder: getPlaceholderText(),
-    onHeightChange,
   };
 }
