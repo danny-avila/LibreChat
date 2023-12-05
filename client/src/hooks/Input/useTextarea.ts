@@ -3,6 +3,7 @@ import { TEndpointOption, getResponseSender } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import { useChatContext } from '~/Providers/ChatContext';
 import useFileHandling from '~/hooks/useFileHandling';
+import useLocalize from '~/hooks/useLocalize';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
@@ -12,6 +13,7 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
   const isComposing = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const { handleFiles } = useFileHandling();
+  const localize = useLocalize();
 
   const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
@@ -82,15 +84,15 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
 
   const getPlaceholderText = () => {
     if (disabled) {
-      return 'Set your Key in the Header menu to chat.';
+      return localize('com_endpoint_config_placeholder');
     }
     if (isNotAppendable) {
-      return 'Edit your message or Regenerate.';
+      return localize('com_endpoint_message_not_appendable');
     }
 
     const sender = getResponseSender(conversation as TEndpointOption);
 
-    return `Message ${sender ? sender : 'ChatGPT'}…`;
+    return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
