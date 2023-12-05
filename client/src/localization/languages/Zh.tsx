@@ -261,7 +261,7 @@ export default {
   com_endpoint_config_key_google_service_account: '创建一个服务账号',
   com_endpoint_config_key_google_vertex_api_role:
     '确保单击“创建并继续”以至少授予“Vertex AI 用户”角色。最后，创建一个要在此处导入的JSON密钥。',
-  com_nav_welcome_message: '今天我能帮你什么？',
+  com_nav_welcome_message: '新推出了GPT-4-1106、GPT-4-Vision图片功能，并改进了界面和提示词预设！',
   com_nav_auto_scroll: '打开时自动滚动到最新内容',
   com_nav_plugin_store: '插件商店',
   com_nav_plugin_search: '搜索插件',
