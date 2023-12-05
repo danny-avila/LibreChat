@@ -130,7 +130,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       let dailyQuota = quota[endpointOption.modelOptions.model].toFixed(0);
       if (messagesCount >= dailyQuota) {
         throw new Error(
-          `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)。由于需要支付越来越多、每月上万元的API费用，请支持我们持续提供GPT服务、通过此网页购买更多额度：${process.env['PAYMENT_URL']}`,
+          `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)。由于需要支付越来越多、每月上万元的API费用，请支持我们持续提供GPT服务、通过此网页购买更多额度：https://iaitok.com`,
         );
       }
     }
