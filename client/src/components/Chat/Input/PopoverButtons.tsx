@@ -42,7 +42,7 @@ export default function PopoverButtons({
         label: `Show ${showAgentSettings ? 'Completion' : 'Agent'} Settings`,
         buttonClass: '',
         handler: () => setShowAgentSettings((prev) => !prev),
-        icon: <GPTIcon className={cn('mr-1 mt-[2px] w-[14px]', iconClass)} size={14} />,
+        icon: <GPTIcon className={cn('mr-1 w-[14px]', iconClass)} size={24} />,
       },
     ],
   };
