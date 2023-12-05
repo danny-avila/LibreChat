@@ -6,7 +6,7 @@ import type { Plugin } from 'vite';
 // https://vitejs.dev/config/
 export default defineConfig({
   server: {
-    host: '0.0.0.0',
+    host: 'localhost',
     port: 3090,
     strictPort: false,
     proxy: {
@@ -65,13 +65,13 @@ export function sourcemapExclude(opts?: SourcemapExclude): Plugin {
   };
 }
 
-// function htmlPlugin(env: ReturnType<typeof loadEnv>) {
-//   return {
-//     name: 'html-transform',
-//     transformIndexHtml: {
-//       enforce: 'pre' as const,
-//       transform: (html: string): string =>
-//         html.replace(/%(.*?)%/g, (match, p1) => env[p1] ?? match),
-//     },
-//   };
-// }
+function htmlPlugin(env: ReturnType<typeof loadEnv>) {
+  return {
+    name: 'html-transform',
+    transformIndexHtml: {
+      enforce: 'pre' as const,
+      transform: (html: string): string =>
+        html.replace(/%(.*?)%/g, (match, p1) => env[p1] ?? match),
+    },
+  };
+}
