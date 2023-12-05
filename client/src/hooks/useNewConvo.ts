@@ -45,7 +45,16 @@ const useNewConvo = (index = 0) => {
         const { endpoint = null } = conversation;
         const buildDefaultConversation = endpoint === null || buildDefault;
         const activePreset =
-          !preset && defaultPreset && buildDefaultConversation ? defaultPreset : preset;
+          // use default preset only when it's defined,
+          // preset is not provided,
+          // endpoint matches or is null (to allow endpoint change),
+          // and buildDefaultConversation is true
+          defaultPreset &&
+          !preset &&
+          (defaultPreset.endpoint === endpoint || !endpoint) &&
+          buildDefaultConversation
+            ? defaultPreset
+            : preset;
 
         if (buildDefaultConversation) {
           const defaultEndpoint = getDefaultEndpoint({
