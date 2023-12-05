@@ -19,6 +19,7 @@ router.get('/', async function (req, res) {
       githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
+      emailLoginEnabled: isEnabled(process.env.ALLOW_EMAIL_LOGIN),
       registrationEnabled: isEnabled(process.env.ALLOW_REGISTRATION),
       socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
       emailEnabled:
