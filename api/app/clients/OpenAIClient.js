@@ -725,7 +725,7 @@ ${convo}
       if (!abortController) {
         abortController = new AbortController();
       }
-      let modelOptions = { ...this.modelOptions };
+      const modelOptions = { ...this.modelOptions };
       if (typeof onProgress === 'function') {
         modelOptions.stream = true;
       }
