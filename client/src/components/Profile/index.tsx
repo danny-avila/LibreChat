@@ -6,13 +6,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { TUser, useFollowUserMutation, useGetUserByIdQuery } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import LikedConversations from './LikedConversation';
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
 import PublicConversations from './PublicConversations';
 import { Spinner } from '../svg';
 import UserIcon from '../svg/UserIcon';
 import CheckMark from '../svg/CheckMark';
-import { log } from 'console';
 import EditIcon from '../svg/EditIcon';
 import { useLocalize } from '~/hooks';
 
@@ -49,7 +46,6 @@ function ProfileContent() {
   // Displays username only
   function ListItem({ id, info }: { id: string; info: TUser }) {
     const [copied, setCopied] = useState<boolean>(false);
-    const lang = useRecoilValue(store.lang);
 
     return (
       <div className="group relative my-2 flex cursor-pointer flex-row items-center">
@@ -278,7 +274,7 @@ function ProfileContent() {
         setNumOfFollowing(Object.keys(followUserMutation.data.following).length);
       }
     }
-  }, [followUserMutation.isSuccess, followUserMutation.data]);
+  }, [followUserMutation.isSuccess, followUserMutation.data, isFollower]);
 
   const [isEditing, setIsEditing] = useState(false);
   const handleUsernameClick = () => {
