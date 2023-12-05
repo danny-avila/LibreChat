@@ -771,6 +771,7 @@ ${convo}
         ...opts,
       });
 
+      let UnexpectedRoleError = false;
       if (modelOptions.stream) {
         const stream = await openai.beta.chat.completions
           .stream({
@@ -782,6 +783,12 @@ ${convo}
           })
           .on('error', (err) => {
             handleOpenAIErrors(err, errorCallback, 'stream');
+          })
+          .on('finalMessage', (message) => {
+            if (message?.role !== 'assistant') {
+              stream.messages.push({ role: 'assistant', content: intermediateReply });
+              UnexpectedRoleError = true;
+            }
           });
 
         for await (const chunk of stream) {
@@ -794,9 +801,11 @@ ${convo}
           }
         }
 
-        chatCompletion = await stream.finalChatCompletion().catch((err) => {
-          handleOpenAIErrors(err, errorCallback, 'finalChatCompletion');
-        });
+        if (!UnexpectedRoleError) {
+          chatCompletion = await stream.finalChatCompletion().catch((err) => {
+            handleOpenAIErrors(err, errorCallback, 'finalChatCompletion');
+          });
+        }
       }
       // regular completion
       else {
@@ -809,7 +818,11 @@ ${convo}
           });
       }
 
-      if (!chatCompletion && error) {
+      if (!chatCompletion && UnexpectedRoleError) {
+        throw new Error(
+          'OpenAIError: Invalid final message: OpenAI expects final message to include role=assistant',
+        );
+      } else if (!chatCompletion && error) {
         throw new Error(error);
       } else if (!chatCompletion) {
         throw new Error('Chat completion failed');
@@ -829,7 +842,9 @@ ${convo}
         return '';
       }
       if (
-        err?.message?.includes('stream ended') ||
+        err?.message?.includes(
+          'OpenAIError: Invalid final message: OpenAI expects final message to include role=assistant',
+        ) ||
         err?.message?.includes('The server had an error processing your request') ||
         err?.message?.includes('missing finish_reason') ||
         (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason'))
