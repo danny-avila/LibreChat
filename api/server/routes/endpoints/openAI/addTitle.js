@@ -1,9 +1,14 @@
-const { isEnabled } = require('../../../utils');
-const { saveConvo } = require('../../../../models');
+const { saveConvo } = require('~/models');
+const { isEnabled } = require('~/server/utils');
 
 const addTitle = async (req, { text, response, client }) => {
   const { TITLE_CONVO = 'true' } = process.env ?? {};
   if (!isEnabled(TITLE_CONVO)) {
+    return;
+  }
+
+  // If the request was aborted, don't generate the title.
+  if (client.abortController.signal.aborted) {
     return;
   }
 
