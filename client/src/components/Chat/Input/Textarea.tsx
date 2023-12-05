@@ -3,7 +3,7 @@ import { supportsFiles } from 'librechat-data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useTextarea } from '~/hooks';
 
-export default function Textarea({ value, onChange, setText, submitMessage, endpoint }) {
+export default function Textarea({ value, disabled, onChange, setText, submitMessage, endpoint }) {
   const {
     inputRef,
     handlePaste,
@@ -11,22 +11,21 @@ export default function Textarea({ value, onChange, setText, submitMessage, endp
     handleKeyDown,
     handleCompositionStart,
     handleCompositionEnd,
-    onHeightChange,
     placeholder,
-  } = useTextarea({ setText, submitMessage });
+  } = useTextarea({ setText, submitMessage, disabled });
 
   return (
     <TextareaAutosize
       ref={inputRef}
       autoFocus
       value={value}
+      disabled={!!disabled}
       onChange={onChange}
       onPaste={handlePaste}
       onKeyUp={handleKeyUp}
       onKeyDown={handleKeyDown}
       onCompositionStart={handleCompositionStart}
       onCompositionEnd={handleCompositionEnd}
-      onHeightChange={onHeightChange}
       id="prompt-textarea"
       tabIndex={0}
       data-testid="text-input"
