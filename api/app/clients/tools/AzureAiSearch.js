@@ -17,17 +17,40 @@ class AzureAISearch extends StructuredTool {
     super();
 
     // Initialize properties using helper function
-    this.serviceEndpoint = this._initializeField(fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT, 'AZURE_AI_SEARCH_SERVICE_ENDPOINT');
-    this.indexName = this._initializeField(fields.AZURE_AI_SEARCH_INDEX_NAME, 'AZURE_AI_SEARCH_INDEX_NAME');
+    this.serviceEndpoint = this._initializeField(
+      fields.AZURE_AI_SEARCH_SERVICE_ENDPOINT,
+      'AZURE_AI_SEARCH_SERVICE_ENDPOINT',
+    );
+    this.indexName = this._initializeField(
+      fields.AZURE_AI_SEARCH_INDEX_NAME,
+      'AZURE_AI_SEARCH_INDEX_NAME',
+    );
     this.apiKey = this._initializeField(fields.AZURE_AI_SEARCH_API_KEY, 'AZURE_AI_SEARCH_API_KEY');
-    this.apiVersion = this._initializeField(fields.AZURE_AI_SEARCH_API_VERSION, 'AZURE_AI_SEARCH_API_VERSION', AzureAISearch.DEFAULT_API_VERSION);
-    this.queryType = this._initializeField(fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE, 'AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE', AzureAISearch.DEFAULT_QUERY_TYPE);
-    this.top = this._initializeField(fields.AZURE_AI_SEARCH_SEARCH_OPTION_TOP, 'AZURE_AI_SEARCH_SEARCH_OPTION_TOP', AzureAISearch.DEFAULT_TOP);
-    this.select = this._initializeField(fields.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT, 'AZURE_AI_SEARCH_SEARCH_OPTION_SELECT');
+    this.apiVersion = this._initializeField(
+      fields.AZURE_AI_SEARCH_API_VERSION,
+      'AZURE_AI_SEARCH_API_VERSION',
+      AzureAISearch.DEFAULT_API_VERSION,
+    );
+    this.queryType = this._initializeField(
+      fields.AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE,
+      'AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE',
+      AzureAISearch.DEFAULT_QUERY_TYPE,
+    );
+    this.top = this._initializeField(
+      fields.AZURE_AI_SEARCH_SEARCH_OPTION_TOP,
+      'AZURE_AI_SEARCH_SEARCH_OPTION_TOP',
+      AzureAISearch.DEFAULT_TOP,
+    );
+    this.select = this._initializeField(
+      fields.AZURE_AI_SEARCH_SEARCH_OPTION_SELECT,
+      'AZURE_AI_SEARCH_SEARCH_OPTION_SELECT',
+    );
 
     // Check for required fields
     if (!this.serviceEndpoint || !this.indexName || !this.apiKey) {
-      throw new Error('Missing AZURE_AI_SEARCH_SERVICE_ENDPOINT, AZURE_AI_SEARCH_INDEX_NAME, or AZURE_AI_SEARCH_API_KEY environment variable.');
+      throw new Error(
+        'Missing AZURE_AI_SEARCH_SERVICE_ENDPOINT, AZURE_AI_SEARCH_INDEX_NAME, or AZURE_AI_SEARCH_API_KEY environment variable.',
+      );
     }
 
     // Create SearchClient
@@ -35,7 +58,7 @@ class AzureAISearch extends StructuredTool {
       this.serviceEndpoint,
       this.indexName,
       new AzureKeyCredential(this.apiKey),
-      { apiVersion: this.apiVersion }
+      { apiVersion: this.apiVersion },
     );
 
     // Define schema
