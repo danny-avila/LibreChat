@@ -210,6 +210,11 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const errorHandler = (data: TResData, submission: TSubmission) => {
     const { messages, message } = submission;
 
+    if (!data.conversationId) {
+      setIsSubmitting(false);
+      return;
+    }
+
     console.log('Error:', data);
     const errorResponse = tMessageSchema.parse({
       ...data,
