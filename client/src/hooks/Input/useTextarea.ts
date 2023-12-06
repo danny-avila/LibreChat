@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import debounce from 'lodash/debounce';
 import { TEndpointOption, getResponseSender } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import { useChatContext } from '~/Providers/ChatContext';
@@ -15,8 +16,9 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
   const { handleFiles } = useFileHandling();
   const localize = useLocalize();
 
-  const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
+  const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
+  // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
@@ -43,6 +45,44 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
 
     return () => clearTimeout(timeoutId);
   }, [isSubmitting]);
+
+  useEffect(() => {
+    if (inputRef.current?.value) {
+      return;
+    }
+
+    const getPlaceholderText = () => {
+      if (disabled) {
+        return localize('com_endpoint_config_placeholder');
+      }
+      if (isNotAppendable) {
+        return localize('com_endpoint_message_not_appendable');
+      }
+
+      const sender = getResponseSender(conversation as TEndpointOption);
+
+      return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
+    };
+
+    const placeholder = getPlaceholderText();
+
+    if (inputRef.current?.getAttribute('placeholder') === placeholder) {
+      return;
+    }
+
+    const setPlaceholder = () => {
+      const placeholder = getPlaceholderText();
+
+      if (inputRef.current?.getAttribute('placeholder') !== placeholder) {
+        inputRef.current?.setAttribute('placeholder', placeholder);
+      }
+    };
+
+    const debouncedSetPlaceholder = debounce(setPlaceholder, 80);
+    debouncedSetPlaceholder();
+
+    return () => debouncedSetPlaceholder.cancel();
+  }, [conversation, disabled, latestMessage, isNotAppendable, localize]);
 
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Enter' && isSubmitting) {
@@ -82,19 +122,6 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
     isComposing.current = false;
   };
 
-  const getPlaceholderText = () => {
-    if (disabled) {
-      return localize('com_endpoint_config_placeholder');
-    }
-    if (isNotAppendable) {
-      return localize('com_endpoint_message_not_appendable');
-    }
-
-    const sender = getResponseSender(conversation as TEndpointOption);
-
-    return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
-  };
-
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (e.clipboardData && e.clipboardData.files.length > 0) {
       e.preventDefault();
@@ -110,6 +137,5 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
     handlePaste,
     handleCompositionStart,
     handleCompositionEnd,
-    placeholder: getPlaceholderText(),
   };
 }
