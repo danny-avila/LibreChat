@@ -1,0 +1,70 @@
+name: Production Release to http://aitok.us in AWS Singapore
+on:
+  release:
+    types:
+      - released  # Trigger the workflow on a published release, skipping prereleases
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the repository
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      # Set up Docker
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v1
+
+      # Log in to GitHub Container Registry
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+
+      # Get Tag Name
+      - name: Get Tag Name
+        id: tag_name
+        run: echo "TAG_NAME=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+
+      # Run docker-compose build
+      - name: Build Docker images
+        run: |
+          cp .env.example .env
+          echo "version=${{ env.TAG_NAME }}" > client/public/assets/version.txt
+          docker-compose build
+      
+      # Tag it properly before push to github
+      - name: tag image and push
+        run: |
+          docker tag librechat:latest ghcr.io/${{ github.repository_owner }}/librechat:${{ env.TAG_NAME }}
+          docker push ghcr.io/${{ github.repository_owner }}/librechat:${{ env.TAG_NAME }}
+
+      - name: Download task def
+        run: |
+          aws ecs describe-task-definition --task-definition libreChat --query taskDefinition > task-definition.json
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: libreChat
+          image: ghcr.io/${{ github.repository_owner }}/librechat:${{ env.TAG_NAME }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: libreChat
+          cluster: production
+          wait-for-service-stability: true
