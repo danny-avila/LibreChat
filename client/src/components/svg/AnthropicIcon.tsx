@@ -1,5 +1,11 @@
 import { cn } from '~/utils';
-export default function AnthropicIcon({ size = 25, className = '' }) {
+export default function AnthropicIcon({
+  size = 25,
+  className = '',
+}: {
+  size?: number;
+  className?: string;
+}) {
   return (
     <svg
       viewBox="0 0 24 16"
