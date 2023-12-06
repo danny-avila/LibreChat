@@ -210,6 +210,11 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const errorHandler = (data: TResData, submission: TSubmission) => {
     const { messages, message } = submission;
 
+    if (!data.conversationId) {
+      setIsSubmitting(false);
+      return;
+    }
+
     console.log('Error:', data);
     const errorResponse = tMessageSchema.parse({
       ...data,
@@ -307,12 +312,13 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     events.onerror = function (e: MessageEvent) {
       console.log('error in opening conn.');
+      console.log(e);
       startupConfig?.checkBalance && balanceQuery.refetch();
       events.close();
 
       let data = {} as TResData;
       try {
-        data = JSON.parse(e.data);
+        data = JSON.parse(e.data ?? data);
       } catch (error) {
         console.error(error);
         console.log(e);
