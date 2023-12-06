@@ -318,7 +318,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
       let data = {} as TResData;
       try {
-        data = JSON.parse(e.data ?? data);
+        data = JSON.parse(e.data);
       } catch (error) {
         console.error(error);
         console.log(e);
