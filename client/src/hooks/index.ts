@@ -1,5 +1,6 @@
 export * from './Messages';
 export * from './Input';
+export * from './Conversations';
 
 export * from './AuthContext';
 export * from './ThemeContext';

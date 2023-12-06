@@ -8,6 +8,10 @@ const Logout = forwardRef(() => {
   const localize = useLocalize();
 
   const handleLogout = () => {
+    localStorage.removeItem('lastConversationSetup');
+    localStorage.removeItem('lastSelectedTools');
+    localStorage.removeItem('lastAssistant');
+    localStorage.removeItem('autoScroll');
     logout();
   };
 

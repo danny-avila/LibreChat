@@ -2,11 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Outlet, useLocation } from 'react-router-dom';
-import {
-  useGetModelsQuery,
-  useGetPresetsQuery,
-  useGetSearchEnabledQuery,
-} from 'librechat-data-provider';
+import { useGetModelsQuery, useGetSearchEnabledQuery } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import { Nav, MobileNav } from '~/components/Nav';
 import { useAuthContext, useServerStream, useConversation } from '~/hooks';
@@ -15,7 +11,7 @@ import store from '~/store';
 export default function Root() {
   const location = useLocation();
   const { newConversation } = useConversation();
-  const { user, isAuthenticated } = useAuthContext();
+  const { isAuthenticated } = useAuthContext();
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : false;
@@ -24,13 +20,11 @@ export default function Root() {
   const submission = useRecoilValue(store.submission);
   useServerStream(submission ?? null);
 
-  const setPresets = useSetRecoilState(store.presets);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setModelsConfig = useSetRecoilState(store.modelsConfig);
 
   const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
   const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated });
-  const presetsQuery = useGetPresetsQuery({ enabled: !!user });
 
   useEffect(() => {
     localStorage.setItem('navVisible', JSON.stringify(navVisible));
@@ -47,14 +41,6 @@ export default function Root() {
       console.error('Failed to get models', modelsQuery.error);
     }
   }, [modelsQuery.data, modelsQuery.isError]);
-
-  useEffect(() => {
-    if (presetsQuery.data) {
-      setPresets(presetsQuery.data);
-    } else if (presetsQuery.isError) {
-      console.error('Failed to get presets', presetsQuery.error);
-    }
-  }, [presetsQuery.data, presetsQuery.isError]);
 
   useEffect(() => {
     if (searchEnabledQuery.data) {
