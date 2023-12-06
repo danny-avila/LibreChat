@@ -1,6 +1,6 @@
 const { getLogStores } = require('~/cache');
 const { CacheKeys } = require('~/common/enums');
-const { loadDefaultConfig } = require('~/server/services/Endpoints');
+const { loadDefaultEndpointsConfig } = require('~/server/services/Config');
 
 async function endpointController(req, res) {
   const cache = getLogStores(CacheKeys.CONFIG);
@@ -9,7 +9,7 @@ async function endpointController(req, res) {
     res.send(config);
     return;
   }
-  const defaultConfig = await loadDefaultConfig();
+  const defaultConfig = await loadDefaultEndpointsConfig();
   await cache.set(CacheKeys.DEFAULT_CONFIG, defaultConfig);
   res.send(JSON.stringify(defaultConfig));
 }

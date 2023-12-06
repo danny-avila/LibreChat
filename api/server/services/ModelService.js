@@ -5,7 +5,7 @@ const { isEnabled } = require('~/server/utils');
 const { extractBaseURL } = require('~/utils');
 const keyvRedis = require('~/cache/keyvRedis');
 // const { getAzureCredentials, genAzureChatCompletion } = require('~/utils/');
-const { openAIApiKey, userProvidedOpenAI } = require('./Endpoints/EndpointService').config;
+const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
 
 const modelsCache = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
