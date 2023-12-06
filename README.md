@@ -101,6 +101,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)
   * [Token Usage](docs/features/token_usage.md)
+  * [Firebase (CDN)](docs/features/firebase.md)
 </details>
 
 <details>
