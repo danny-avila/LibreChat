@@ -17,7 +17,12 @@ const pending_req = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: 'pending_req' });
 
+const config = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: 'config' });
+
 const namespaces = {
+  config,
   pending_req,
   ban: new Keyv({ store: keyvMongo, namespace: 'bans', ttl: duration }),
   general: new Keyv({ store: logFile, namespace: 'violations' }),
