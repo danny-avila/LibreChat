@@ -13,7 +13,7 @@ const {
   bingAI,
   chatGPTBrowser,
   anthropic,
-} = require('~/server/services/EndpointService').config;
+} = require('~/server/services/Endpoints/EndpointService').config;
 
 let i = 0;
 async function endpointController(req, res) {

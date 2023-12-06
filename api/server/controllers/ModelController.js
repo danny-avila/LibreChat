@@ -1,11 +1,11 @@
-const { EModelEndpoint } = require('../routes/endpoints/schemas');
+const { EModelEndpoint } = require('~/server/routes/endpoints/schemas');
 const {
   getOpenAIModels,
   getChatGPTBrowserModels,
   getAnthropicModels,
-} = require('../services/ModelService');
+} = require('~/server/services/ModelService');
 
-const { useAzurePlugins } = require('../services/EndpointService').config;
+const { useAzurePlugins } = require('~/server/services/Endpoints/EndpointService').config;
 
 const fitlerAssistantModels = (str) => {
   return /gpt-4|gpt-3\\.5/i.test(str) && !/vision|instruct/i.test(str);
