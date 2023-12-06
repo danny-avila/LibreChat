@@ -1,18 +1,22 @@
-import type { FC } from 'react';
 import { Trash2 } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import { Close } from '@radix-ui/react-popover';
+import { Flipper, Flipped } from 'react-flip-toolkit';
+import type { FC } from 'react';
 import type { TPreset } from 'librechat-data-provider';
 import FileUpload from '~/components/Input/EndpointMenu/FileUpload';
+import { PinIcon, EditIcon, TrashIcon } from '~/components/svg';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { Dialog, DialogTrigger } from '~/components/ui/';
-import { EditIcon, TrashIcon } from '~/components/svg';
 import { MenuSeparator, MenuItem } from '../UI';
 import { icons } from '../Endpoints/Icons';
 import { getPresetTitle } from '~/utils';
 import { useLocalize } from '~/hooks';
+import store from '~/store';
 
 const PresetItems: FC<{
   presets: TPreset[];
+  onSetDefaultPreset: (preset: TPreset, remove?: boolean) => void;
   onSelectPreset: (preset: TPreset) => void;
   onChangePreset: (preset: TPreset) => void;
   onDeletePreset: (preset: TPreset) => void;
@@ -20,12 +24,14 @@ const PresetItems: FC<{
   onFileSelected: (jsonData: Record<string, unknown>) => void;
 }> = ({
   presets,
+  onSetDefaultPreset,
   onSelectPreset,
   onChangePreset,
   onDeletePreset,
   clearAllPresets,
   onFileSelected,
 }) => {
+  const defaultPreset = useRecoilValue(store.defaultPreset);
   const localize = useLocalize();
   return (
     <>
@@ -35,11 +41,19 @@ const PresetItems: FC<{
         tabIndex={-1}
       >
         <div className="flex h-full grow items-center justify-end gap-2">
+          <label
+            htmlFor="default-preset"
+            className="w-40 truncate rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors dark:bg-transparent dark:text-gray-300 sm:w-72"
+          >
+            {defaultPreset
+              ? `${localize('com_endpoint_preset_default_item')} ${defaultPreset.title}`
+              : localize('com_endpoint_preset_default_none')}
+          </label>
           <Dialog>
             <DialogTrigger asChild>
               <label
                 htmlFor="file-upload"
-                className="mr-1 flex h-[32px] h-auto cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
+                className="mr-1 flex h-[32px] cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
               >
                 <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
                 {localize('com_ui_clear')} {localize('com_ui_all')}
@@ -71,56 +85,70 @@ const PresetItems: FC<{
           </div>
         </div>
       )}
-      {presets &&
-        presets.length > 0 &&
-        presets.map((preset, i) => {
-          if (!preset) {
-            return null;
-          }
+      <Flipper flipKey={presets.map(({ presetId }) => presetId).join('.')}>
+        {presets &&
+          presets.length > 0 &&
+          presets.map((preset, i) => {
+            if (!preset || !preset.presetId) {
+              return null;
+            }
 
-          return (
-            <Close asChild key={`preset-${preset.presetId}`}>
-              <div key={`preset-${preset.presetId}`}>
-                <MenuItem
-                  key={`preset-item-${preset.presetId}`}
-                  textClassName="text-xs max-w-[200px] truncate md:max-w-full "
-                  title={getPresetTitle(preset)}
-                  disableHover={true}
-                  onClick={() => onSelectPreset(preset)}
-                  icon={icons[preset.endpoint ?? 'unknown']({ className: 'icon-md mr-1 ' })}
-                  // value={preset.presetId}
-                  selected={false}
-                  data-testid={`preset-item-${preset}`}
-                  // description="With DALL·E, browsing and analysis"
-                >
-                  <div className="flex h-full items-center justify-end gap-1">
-                    <button
-                      className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onChangePreset(preset);
-                      }}
+            return (
+              <Close asChild key={`preset-${preset.presetId}`}>
+                <div key={`preset-${preset.presetId}`}>
+                  <Flipped flipId={preset.presetId}>
+                    <MenuItem
+                      key={`preset-item-${preset.presetId}`}
+                      textClassName="text-xs max-w-[150px] sm:max-w-[200px] truncate md:max-w-full "
+                      title={getPresetTitle(preset)}
+                      disableHover={true}
+                      onClick={() => onSelectPreset(preset)}
+                      icon={icons[preset.endpoint ?? 'unknown']({
+                        className: 'icon-md mr-1 dark:text-white',
+                      })}
+                      selected={false}
+                      data-testid={`preset-item-${preset}`}
                     >
-                      <EditIcon />
-                    </button>
-                    <button
-                      className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onDeletePreset(preset);
-                      }}
-                    >
-                      <TrashIcon />
-                    </button>
-                  </div>
-                </MenuItem>
-                {i !== presets.length - 1 && <MenuSeparator />}
-              </div>
-            </Close>
-          );
-        })}
+                      <div className="flex h-full items-center justify-end gap-1">
+                        <button
+                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onSetDefaultPreset(preset, defaultPreset?.presetId === preset.presetId);
+                          }}
+                        >
+                          <PinIcon unpin={defaultPreset?.presetId === preset.presetId} />
+                        </button>
+                        <button
+                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onChangePreset(preset);
+                          }}
+                        >
+                          <EditIcon />
+                        </button>
+                        <button
+                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onDeletePreset(preset);
+                          }}
+                        >
+                          <TrashIcon />
+                        </button>
+                      </div>
+                    </MenuItem>
+                  </Flipped>
+                  {i !== presets.length - 1 && <MenuSeparator />}
+                </div>
+              </Close>
+            );
+          })}
+      </Flipper>
     </>
   );
 };

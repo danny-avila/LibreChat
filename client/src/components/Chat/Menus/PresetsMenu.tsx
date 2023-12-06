@@ -1,96 +1,25 @@
 import type { FC } from 'react';
-import { useState } from 'react';
-import { useRecoilState } from 'recoil';
 import { BookCopy } from 'lucide-react';
-import {
-  modularEndpoints,
-  useDeletePresetMutation,
-  useCreatePresetMutation,
-} from 'librechat-data-provider';
-import type { TPreset } from 'librechat-data-provider';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
-import { useLocalize, useDefaultConvo, useNavigateToConvo } from '~/hooks';
-import { useChatContext, useToastContext } from '~/Providers';
 import { EditPresetDialog, PresetItems } from './Presets';
-import { cleanupPreset, cn } from '~/utils';
-import store from '~/store';
+import { useLocalize, usePresets } from '~/hooks';
+import { cn } from '~/utils';
 
 const PresetsMenu: FC = () => {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
-  const { conversation, newConversation, setPreset } = useChatContext();
-  const { navigateToConvo } = useNavigateToConvo();
-  const getDefaultConversation = useDefaultConvo();
+  const {
+    presetsQuery,
+    onSetDefaultPreset,
+    onFileSelected,
+    onSelectPreset,
+    onChangePreset,
+    clearAllPresets,
+    onDeletePreset,
+    submitPreset,
+    exportPreset,
+  } = usePresets();
 
-  const [presetModalVisible, setPresetModalVisible] = useState(false);
-  // TODO: rely on react query for presets data
-  const [presets, setPresets] = useRecoilState(store.presets);
-
-  const deletePresetsMutation = useDeletePresetMutation();
-  const createPresetMutation = useCreatePresetMutation();
-
-  const { endpoint } = conversation ?? {};
-
-  const importPreset = (jsonPreset: TPreset) => {
-    createPresetMutation.mutate(
-      { ...jsonPreset },
-      {
-        onSuccess: (data) => {
-          setPresets(data);
-        },
-        onError: (error) => {
-          console.error('Error uploading the preset:', error);
-        },
-      },
-    );
-  };
-  const onFileSelected = (jsonData: Record<string, unknown>) => {
-    const jsonPreset = { ...cleanupPreset({ preset: jsonData }), presetId: null };
-    importPreset(jsonPreset);
-  };
-  const onSelectPreset = (newPreset: TPreset) => {
-    if (!newPreset) {
-      return;
-    }
-
-    showToast({
-      message: localize('com_endpoint_preset_selected'),
-      showIcon: false,
-      duration: 750,
-    });
-
-    if (
-      modularEndpoints.has(endpoint ?? '') &&
-      modularEndpoints.has(newPreset?.endpoint ?? '') &&
-      endpoint === newPreset?.endpoint
-    ) {
-      const currentConvo = getDefaultConversation({
-        conversation: conversation ?? {},
-        preset: newPreset,
-      });
-
-      /* We don't reset the latest message, only when changing settings mid-converstion */
-      navigateToConvo(currentConvo, false);
-      return;
-    }
-
-    console.log('preset', newPreset, endpoint);
-    newConversation({ preset: newPreset });
-  };
-
-  const onChangePreset = (preset: TPreset) => {
-    setPreset(preset);
-    setPresetModalVisible(true);
-  };
-
-  const clearAllPresets = () => {
-    deletePresetsMutation.mutate({ arg: {} });
-  };
-
-  const onDeletePreset = (preset: TPreset) => {
-    deletePresetsMutation.mutate({ arg: preset });
-  };
-
+  const presets = presetsQuery.data || [];
   return (
     <Root>
       <Trigger asChild>
@@ -125,6 +54,7 @@ const PresetsMenu: FC = () => {
           >
             <PresetItems
               presets={presets}
+              onSetDefaultPreset={onSetDefaultPreset}
               onSelectPreset={onSelectPreset}
               onChangePreset={onChangePreset}
               onDeletePreset={onDeletePreset}
@@ -134,7 +64,7 @@ const PresetsMenu: FC = () => {
           </Content>
         </div>
       </Portal>
-      <EditPresetDialog open={presetModalVisible} onOpenChange={setPresetModalVisible} />
+      <EditPresetDialog submitPreset={submitPreset} exportPreset={exportPreset} />
     </Root>
   );
 };

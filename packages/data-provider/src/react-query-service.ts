@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query';
 import * as t from './types';
 import * as s from './schemas';
+import * as p from './types/presets';
 import * as dataService from './data-service';
 import request from './request';
 import { QueryKeys } from './keys';
@@ -276,7 +277,7 @@ export const useGetModelsQuery = (
 };
 
 export const useCreatePresetMutation = (): UseMutationResult<
-  s.TPreset[],
+  s.TPreset,
   unknown,
   s.TPreset,
   unknown
@@ -290,7 +291,7 @@ export const useCreatePresetMutation = (): UseMutationResult<
 };
 
 export const useUpdatePresetMutation = (): UseMutationResult<
-  s.TPreset[],
+  s.TPreset,
   unknown,
   s.TPreset,
   unknown
@@ -315,13 +316,13 @@ export const useGetPresetsQuery = (
 };
 
 export const useDeletePresetMutation = (): UseMutationResult<
-  s.TPreset[],
+  p.PresetDeleteResponse,
   unknown,
-  s.TPreset | object,
+  s.TPreset | undefined,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation((payload: s.TPreset | object) => dataService.deletePreset(payload), {
+  return useMutation((payload: s.TPreset | undefined) => dataService.deletePreset(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
     },
@@ -369,6 +370,9 @@ export const useLoginUserMutation = (): UseMutationResult<
   return useMutation((payload: t.TLoginUser) => dataService.login(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.user]);
+      queryClient.invalidateQueries([QueryKeys.presets]);
+      queryClient.invalidateQueries([QueryKeys.conversation]);
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
     },
     onMutate: () => {
       queryClient.invalidateQueries([QueryKeys.models]);
