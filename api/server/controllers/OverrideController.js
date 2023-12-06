@@ -8,6 +8,9 @@ async function overrideController(req, res) {
   if (overrideConfig) {
     res.send(overrideConfig);
     return;
+  } else if (overrideConfig === false) {
+    res.send(false);
+    return;
   }
   overrideConfig = await loadOverrideConfig();
   await cache.set(CacheKeys.OVERRIDE_CONFIG, overrideConfig);
