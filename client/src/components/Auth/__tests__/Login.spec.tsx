@@ -39,6 +39,7 @@ const setup = ({
       githubLoginEnabled: true,
       discordLoginEnabled: true,
       registrationEnabled: true,
+      emailLoginEnabled: true,
       socialLoginEnabled: true,
       serverDomain: 'mock-server',
     },
