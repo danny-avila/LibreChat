@@ -57,7 +57,7 @@ services:
     command: mongod --noauth
   meilisearch:
     container_name: chat-meilisearch
-    image: getmeili/meilisearch:v1.0
+    image: getmeili/meilisearch:v1.5
     restart: always
     # ports: # Uncomment this to access meilisearch from outside docker
     #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
@@ -69,4 +69,4 @@ services:
       - MEILI_HTTP_ADDR=meilisearch:7700
       - MEILI_NO_ANALYTICS=true
     volumes:
-      - ./meili_data:/meili_data
+      - ./meili_data_v1.5:/meili_data

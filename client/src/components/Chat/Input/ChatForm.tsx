@@ -1,6 +1,7 @@
 import { useRecoilState } from 'recoil';
 import type { ChangeEvent } from 'react';
 import { useChatContext } from '~/Providers';
+import { useRequiresKey } from '~/hooks';
 import AttachFile from './Files/AttachFile';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -28,6 +29,8 @@ export default function ChatForm({ index = 0 }) {
     setText('');
   };
 
+  const { requiresKey } = useRequiresKey();
+
   return (
     <form
       onSubmit={(e) => {
@@ -42,16 +45,17 @@ export default function ChatForm({ index = 0 }) {
             <Images files={files} setFiles={setFiles} setFilesLoading={setFilesLoading} />
             <Textarea
               value={text}
+              disabled={requiresKey}
               onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
               setText={setText}
               submitMessage={submitMessage}
               endpoint={conversation?.endpoint}
             />
-            <AttachFile endpoint={conversation?.endpoint ?? ''} />
+            <AttachFile endpoint={conversation?.endpoint ?? ''} disabled={requiresKey} />
             {isSubmitting && showStopButton ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
-              <SendButton text={text} disabled={filesLoading || isSubmitting} />
+              <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
             )}
           </div>
         </div>

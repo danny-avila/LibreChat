@@ -105,7 +105,7 @@ process.on('uncaughtException', (err) => {
     return;
   }
 
-  if (err.message.includes('OpenAIError')) {
+  if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
     console.error(
       '\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.',
     );

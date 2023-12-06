@@ -15,10 +15,10 @@ export default function MobileNav({
   const { title = 'New Chat' } = conversation || {};
 
   return (
-    <div className="text-token-primary border-token-border-medium bg-token-surface-primary dark:bg-token-surface-secondary sticky top-0 z-10 flex min-h-[40px] items-center border-b pl-1 dark:text-white md:hidden">
+    <div className="text-token-primary border-token-border-medium bg-token-surface-primary dark:bg-token-surface-secondary sticky top-0 z-10 flex min-h-[40px] items-center border-b dark:text-white md:hidden">
       <button
         type="button"
-        className="absolute -ml-0.5 -mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-md hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white active:opacity-50 dark:hover:text-white"
+        className="inline-flex h-10 w-10 items-center justify-center rounded-md hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white active:opacity-50 dark:hover:text-white"
         onClick={() => setNavVisible((prev) => !prev)}
       >
         <span className="sr-only">{localize('com_nav_open_sidebar')}</span>
@@ -41,7 +41,7 @@ export default function MobileNav({
       <h1 className="flex-1 text-center text-base font-normal">
         {title || localize('com_ui_new_chat')}
       </h1>
-      <button type="button" className="px-3" onClick={() => newConversation()}>
+      <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-md hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white active:opacity-50 dark:hover:text-white" onClick={() => newConversation()}>
         <svg
           width="24"
           height="24"

@@ -83,11 +83,6 @@ const latestMessageFamily = atomFamily<TMessage | null, string | number | null>(
   default: null,
 });
 
-const textareaHeightFamily = atomFamily<number, string | number>({
-  key: 'textareaHeightByIndex',
-  default: 56,
-});
-
 function useCreateConversationAtom(key: string | number) {
   const [keys, setKeys] = useRecoilState(conversationKeysAtom);
   const setConversation = useSetRecoilState(conversationByIndex(key));
@@ -115,7 +110,6 @@ export default {
   showBingToneSettingFamily,
   showPopoverFamily,
   latestMessageFamily,
-  textareaHeightFamily,
   allConversationsSelector,
   useCreateConversationAtom,
 };

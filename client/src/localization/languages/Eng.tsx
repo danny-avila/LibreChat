@@ -118,6 +118,8 @@ export default {
   com_endpoint_bing_system_message_placeholder:
     'WARNING: Misuse of this feature can get you BANNED from using Bing! Click on \'System Message\' for full instructions and the default message if omitted, which is the \'Sydney\' preset that is considered safe.',
   com_endpoint_system_message: 'System Message',
+  com_endpoint_message: 'Message',
+  com_endpoint_message_not_appendable: 'Edit your message or Regenerate.',
   com_endpoint_default_blank: 'default: blank',
   com_endpoint_default_false: 'default: false',
   com_endpoint_default_creative: 'default: creative',
@@ -205,6 +207,7 @@ export default {
   com_endpoint_skip_hover:
     'Enable skipping the completion step, which reviews the final answer and generated steps',
   com_endpoint_config_key: 'Set API Key',
+  com_endpoint_config_placeholder: 'Set your Key in the Header menu to chat.',
   com_endpoint_config_key_for: 'Set API Key for',
   com_endpoint_config_key_name: 'Key',
   com_endpoint_config_value: 'Enter value for',
