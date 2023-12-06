@@ -312,7 +312,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     events.onerror = function (e: MessageEvent) {
       console.log('error in opening conn.');
-      console.log(e);
       startupConfig?.checkBalance && balanceQuery.refetch();
       events.close();
 
