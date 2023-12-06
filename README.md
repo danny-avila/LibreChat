@@ -107,11 +107,13 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
   
   * [Automated Moderation](docs/features/mod_system.md)
+  * [Token Usage](docs/features/token_usage.md)
+  * [Manage Your Database](docs/features/manage_your_database.md)
+  * [PandoraNext Deployment Guide](docs/features/pandoranext.md)
   * [Third-Party Tools](docs/features/third_party.md)
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)
-  * [Token Usage](docs/features/token_usage.md)
-  * [Manage Your Database](docs/features/manage_your_database.md)
+
 </details>
 
 <details>

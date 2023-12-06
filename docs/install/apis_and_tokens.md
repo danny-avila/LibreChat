@@ -13,7 +13,10 @@ To get your OpenAI API key, you need to:
 
 ## ChatGPT Free Access token
 
-To get your Access token for ChatGPT 'Free Version', you need to:
+> Note that this is disabled by default and requires additional configuration to work. 
+> See: [ChatGPT Reverse Proxy](../features/pandoranext.md)
+
+To get your Access token for ChatGPT 'Web Version', you need to:
 
 - Go to [https://chat.openai.com](https://chat.openai.com)
 - Create an account or log in with your existing one
