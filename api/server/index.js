@@ -71,9 +71,8 @@ const startServer = async () => {
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', routes.files);
 
-  // Static files
-  app.get('/*', function (req, res) {
-    res.sendFile(path.join(projectPath, 'dist', 'index.html'));
+  app.use((req, res) => {
+    res.status(404).sendFile(path.join(projectPath, 'dist', 'index.html'));
   });
 
   app.listen(port, host, () => {
