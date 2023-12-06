@@ -114,14 +114,14 @@ function NavLinks() {
                   />
                 </Menu.Item>
                 <div className="my-1 h-px bg-white/20" role="none" />
-                <Menu.Item as="div">
+                {/* <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <LinkIcon />}
                     text={localize('com_nav_help_faq')}
                     clickHandler={() => window.open('https://docs.librechat.ai/', '_blank')}
                   />
-                </Menu.Item>
+                </Menu.Item> */}
                 <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
