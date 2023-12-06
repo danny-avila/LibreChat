@@ -12,14 +12,7 @@ export default function Footer() {
         config.customFooter
       ) : (
         <>
-          <a
-            href="https://github.com/danny-avila/LibreChat"
-            target="_blank"
-            rel="noreferrer"
-            className="underline"
-          >
-            {config?.appTitle || 'LibreChat'} v0.6.1
-          </a>
+          {config?.appTitle || 'LibreChat'}
           {' - '}. {localize('com_ui_pay_per_call')}
         </>
       )}
