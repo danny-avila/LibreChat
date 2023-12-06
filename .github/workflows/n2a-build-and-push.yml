@@ -14,7 +14,7 @@ on:
 
 jobs:
     build_and_push:
-        runs-on: ubuntu-latest
+        runs-on: [self-hosted, nonprod]
         steps:
             - uses: actions/checkout@v3
 
