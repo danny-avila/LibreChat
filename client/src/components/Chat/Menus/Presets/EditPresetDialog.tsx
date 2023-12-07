@@ -1,10 +1,6 @@
-import axios from 'axios';
-import filenamify from 'filenamify';
-import { useSetRecoilState } from 'recoil';
-import exportFromJSON from 'export-from-json';
+import { useRecoilState } from 'recoil';
 import { useGetEndpointsQuery } from 'librechat-data-provider';
-import type { TEditPresetProps } from '~/common';
-import { cn, defaultTextProps, removeFocusOutlines, cleanupPreset, mapEndpoints } from '~/utils';
+import { cn, defaultTextProps, removeFocusOutlines, mapEndpoints } from '~/utils';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import PopoverButtons from '~/components/Endpoints/PopoverButtons';
 import DialogTemplate from '~/components/ui/DialogTemplate';
@@ -13,42 +9,21 @@ import { EndpointSettings } from '~/components/Endpoints';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
 
-const EditPresetDialog = ({ open, onOpenChange, title }: Omit<TEditPresetProps, 'preset'>) => {
+const EditPresetDialog = ({
+  exportPreset,
+  submitPreset,
+}: {
+  exportPreset: () => void;
+  submitPreset: () => void;
+}) => {
+  const localize = useLocalize();
   const { preset } = useChatContext();
+  const { setOption } = useSetIndexOptions(preset);
+  const [presetModalVisible, setPresetModalVisible] = useRecoilState(store.presetModalVisible);
 
-  // TODO: use React Query for presets data
-  const setPresets = useSetRecoilState(store.presets);
   const { data: availableEndpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
-  const { setOption } = useSetIndexOptions(preset);
-  const localize = useLocalize();
-
-  const submitPreset = () => {
-    if (!preset) {
-      return;
-    }
-    axios({
-      method: 'post',
-      url: '/api/presets',
-      data: cleanupPreset({ preset }),
-      withCredentials: true,
-    }).then((res) => {
-      setPresets(res?.data);
-    });
-  };
-
-  const exportPreset = () => {
-    if (!preset) {
-      return;
-    }
-    const fileName = filenamify(preset?.title || 'preset');
-    exportFromJSON({
-      data: cleanupPreset({ preset }),
-      fileName,
-      exportType: exportFromJSON.types.json,
-    });
-  };
 
   const { endpoint } = preset || {};
   if (!endpoint) {
@@ -56,9 +31,9 @@ const EditPresetDialog = ({ open, onOpenChange, title }: Omit<TEditPresetProps, 
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={presetModalVisible} onOpenChange={setPresetModalVisible}>
       <DialogTemplate
-        title={`${title || localize('com_ui_edit') + ' ' + localize('com_endpoint_preset')} - ${
+        title={`${localize('com_ui_edit') + ' ' + localize('com_endpoint_preset')} - ${
           preset?.title
         }`}
         className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] md:overflow-y-hidden lg:w-[950px] xl:h-[720px]"

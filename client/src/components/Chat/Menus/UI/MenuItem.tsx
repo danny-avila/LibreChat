@@ -15,7 +15,7 @@ type MenuItemProps = {
   textClassName?: string;
   disableHover?: boolean;
   // hoverContent?: string;
-};
+} & Record<string, unknown>;
 
 const MenuItem: FC<MenuItemProps> = ({
   title,
@@ -30,6 +30,7 @@ const MenuItem: FC<MenuItemProps> = ({
   disableHover = false,
   children,
   onClick,
+  ...rest
 }) => {
   return (
     <div
@@ -40,6 +41,7 @@ const MenuItem: FC<MenuItemProps> = ({
       )}
       tabIndex={-1}
       onClick={onClick}
+      {...rest}
     >
       <div className="flex grow items-center justify-between gap-2">
         <div>

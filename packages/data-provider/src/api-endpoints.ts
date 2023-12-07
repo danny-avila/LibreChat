@@ -38,6 +38,8 @@ export const deletePreset = () => '/api/presets/delete';
 
 export const aiEndpoints = () => '/api/endpoints';
 
+export const endpointsConfigOverride = () => '/api/endpoints/config/override';
+
 export const models = () => '/api/models';
 
 export const tokenizer = () => '/api/tokenizer';
