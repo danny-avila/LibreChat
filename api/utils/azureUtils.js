@@ -26,7 +26,8 @@ const sanitizeModelName = (modelName) => {
  * @returns {string} The complete endpoint URL for the Azure OpenAI API.
  */
 const genAzureEndpoint = ({ azureOpenAIApiInstanceName, azureOpenAIApiDeploymentName }) => {
-  return `https://${azureOpenAIApiInstanceName}/${azureOpenAIApiDeploymentName}`;
+  console.log(`https://${azureOpenAIApiInstanceName}/openai/deployments/${azureOpenAIApiDeploymentName}`);
+  return `https://${azureOpenAIApiInstanceName}/openai/deployments/${azureOpenAIApiDeploymentName}`;
 };
 
 /**
@@ -54,8 +55,9 @@ const genAzureChatCompletion = (
   } else {
     throw new Error('Either a model name or a deployment name must be provided.');
   }
-
-  return `https://${azureOpenAIApiInstanceName}/${deploymentSegment}/chat/completions?api-version=${azureOpenAIApiVersion}`;
+  console.log('genAzureChatCompletion');
+  console.log(`https://${azureOpenAIApiInstanceName}/openai/deployments/${deploymentSegment}/chat/completions?api-version=${azureOpenAIApiVersion}`);
+  return `https://${azureOpenAIApiInstanceName}/openai/deployments/${deploymentSegment}/chat/completions?api-version=${azureOpenAIApiVersion}`;
 };
 
 /**
