@@ -15,6 +15,7 @@ export enum QueryKeys {
   startupConfig = 'startupConfig',
   assistants = 'assistants',
   assistant = 'assistant',
+  endpointsConfigOverride = 'endpointsConfigOverride',
 }
 
 export enum MutationKeys {

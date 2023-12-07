@@ -25,6 +25,12 @@ const modelsConfig = atom<TModelsConfig>({
   },
 });
 
+const modelsQueryEnabled = atom<boolean>({
+  key: 'modelsQueryEnabled',
+  default: true,
+});
+
 export default {
   modelsConfig,
+  modelsQueryEnabled,
 };
