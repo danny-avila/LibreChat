@@ -166,19 +166,6 @@
     ]
   },
   {
-    "name": "Code Interpreter",
-    "pluginKey": "codeinterpreter",
-    "description": "[Experimental] Analyze files and run code online with ease. Requires dockerized python server in /pyserver/",
-    "icon": "/assets/code.png",
-    "authConfig": [
-      {
-        "authField": "OPENAI_API_KEY",
-        "label": "OpenAI API Key",
-        "description": "Gets Code from Open AI API"
-      }
-    ]
-  },
-  {
     "name": "CodeBrew",
     "pluginKey": "CodeBrew",
     "description": "Use 'CodeBrew' to virtually interpret Python, Node, C, C++, Java, C#, PHP, MySQL, Rust or Go code.",
