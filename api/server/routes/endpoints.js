@@ -4,6 +4,6 @@ const endpointController = require('~/server/controllers/EndpointController');
 const overrideController = require('~/server/controllers/OverrideController');
 
 router.get('/', endpointController);
-router.get('/override', overrideController);
+router.get('/config/override', overrideController);
 
 module.exports = router;
