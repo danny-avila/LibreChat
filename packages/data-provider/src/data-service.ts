@@ -105,14 +105,6 @@ export const searchConversations = async (
   return request.get(endpoints.search(q, pageNumber));
 };
 
-export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
-  return request.get(endpoints.aiEndpoints());
-};
-
-export const getModels = async (): Promise<t.TModelsConfig> => {
-  return request.get(endpoints.models());
-};
-
 export const updateTokenCount = (text: string) => {
   return request.post(endpoints.tokenizer(), { arg: text });
 };
@@ -154,8 +146,22 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
   return request.post(endpoints.userPlugins(), payload);
 };
 
+/* Config */
+
 export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
+};
+
+export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
+  return request.get(endpoints.aiEndpoints());
+};
+
+export const getModels = async (): Promise<t.TModelsConfig> => {
+  return request.get(endpoints.models());
+};
+
+export const getEndpointsConfigOverride = (): Promise<unknown | boolean> => {
+  return request.get(endpoints.endpointsConfigOverride());
 };
 
 /* Assistants */

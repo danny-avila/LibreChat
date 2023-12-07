@@ -20,11 +20,12 @@ export default function Root() {
   const submission = useRecoilValue(store.submission);
   useServerStream(submission ?? null);
 
+  const modelsQueryEnabled = useRecoilValue(store.modelsQueryEnabled);
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setModelsConfig = useSetRecoilState(store.modelsConfig);
 
   const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
-  const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated });
+  const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated && modelsQueryEnabled });
 
   useEffect(() => {
     localStorage.setItem('navVisible', JSON.stringify(navVisible));
