@@ -7,7 +7,6 @@ const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
 const {
   availableTools,
-  CodeInterpreter,
   AIPluginTool,
   GoogleSearchAPI,
   WolframAlphaAPI,
@@ -96,7 +95,6 @@ const loadTools = async ({
 }) => {
   const toolConstructors = {
     calculator: Calculator,
-    codeinterpreter: CodeInterpreter,
     google: GoogleSearchAPI,
     wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
     'dall-e': OpenAICreateImage,
