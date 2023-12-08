@@ -65,20 +65,23 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 ## Facebook Authentication
 ### (It only works with a domain, not with localhost)
 
-1. Go to [Facebook Developer Portal](https://developers.facebook.com/)
-2. Create a new Application and select "Authenticate and request data from users with Facebook Login"
-3. Then select "No, I'm not creating a game" and give it a name
-4. In the Dashboard tab select "Use cases", then tap on "Customize" in "Authentication and account creation" and click on "add" under email's permission.
-5. In the settings section, click on "go to settings", make sure "Client OAuth login", "Web OAuth login" and "Enforce HTTPS" are **enabled**
-5. In the Valid OAuth Redirect URIs add `your-domain/oauth/facebook/callback` (example: https://example.com/oauth/facebook/callback)
-6. Save changes and in the "App settings" tab, and finally click on "show" in the Client Secret
-7. Put the Client ID and Client Secret in the .env file: (App ID=Client ID & App secret= Client Secret)
+1. Go to the [Facebook Developer Portal](https://developers.facebook.com/).
+2. Create a new application and select "Authenticate and request data from users with Facebook Login."
+3. Choose "No, I'm not creating a game" and provide a name for your application.
+4. In the Dashboard tab, go to "Use cases" and click "Customize" under "Authentication and account creation." Add the email permission by clicking "add" under email's permission.
+5. In the settings section, click "go to settings." Ensure that "Client OAuth login," "Web OAuth login," and "Enforce HTTPS" are **enabled**.
+6. Add `your-domain/oauth/facebook/callback` to the Valid OAuth Redirect URIs (e.g., https://example.com/oauth/facebook/callback).
+7. Save changes. In the "App settings" tab, click "show" next to the App secret.
+8. Copy the Client ID and Client Secret and paste them into the .env file as follows: (App ID= Client ID & App secret=Client Secret)
+
 ```bash
 FACEBOOK_CLIENT_ID=your_client_id
 FACEBOOK_CLIENT_SECRET=your_client_secret
 FACEBOOK_CALLBACK_URL=/oauth/facebook/callback # this should be the same for everyone
 ```
-8. Save the .env file
+9. Save the .env file.
+
+Make sure to replace "your_client_id" and "your_client_secret" with the actual values from your Facebook Developer Portal
 
 ---
 
