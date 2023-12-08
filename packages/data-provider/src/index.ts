@@ -2,6 +2,7 @@
 export * from './types';
 export * from './types/assistants';
 export * from './types/files';
+export * from './types/presets';
 /*
  * react query
  * TODO: move to client, or move schemas/types to their own package

@@ -25,6 +25,7 @@ export { default as SendIcon } from './SendIcon';
 export { default as LinkIcon } from './LinkIcon';
 export { default as DotsIcon } from './DotsIcon';
 export { default as GearIcon } from './GearIcon';
+export { default as PinIcon } from './PinIcon';
 export { default as TrashIcon } from './TrashIcon';
 export { default as MinimalPlugin } from './MinimalPlugin';
 export { default as AzureMinimalIcon } from './AzureMinimalIcon';

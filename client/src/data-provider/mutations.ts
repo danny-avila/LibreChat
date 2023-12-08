@@ -7,6 +7,10 @@ import type {
   DeleteFilesResponse,
   DeleteFilesBody,
   DeleteMutationOptions,
+  UpdatePresetOptions,
+  DeletePresetOptions,
+  PresetDeleteResponse,
+  TPreset,
 } from 'librechat-data-provider';
 import { dataService, MutationKeys } from 'librechat-data-provider';
 
@@ -34,6 +38,34 @@ export const useDeleteFilesMutation = (
 > => {
   return useMutation([MutationKeys.fileDelete], {
     mutationFn: (body: DeleteFilesBody) => dataService.deleteFiles(body.files),
+    ...(options || {}),
+  });
+};
+
+export const useUpdatePresetMutation = (
+  options?: UpdatePresetOptions,
+): UseMutationResult<
+  TPreset, // response data
+  unknown,
+  TPreset,
+  unknown
+> => {
+  return useMutation([MutationKeys.updatePreset], {
+    mutationFn: (preset: TPreset) => dataService.updatePreset(preset),
+    ...(options || {}),
+  });
+};
+
+export const useDeletePresetMutation = (
+  options?: DeletePresetOptions,
+): UseMutationResult<
+  PresetDeleteResponse, // response data
+  unknown,
+  TPreset | undefined,
+  unknown
+> => {
+  return useMutation([MutationKeys.deletePreset], {
+    mutationFn: (preset: TPreset | undefined) => dataService.deletePreset(preset),
     ...(options || {}),
   });
 };

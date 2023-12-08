@@ -148,21 +148,22 @@ BINGAI_HOST=
 ### ChatGPT
 see: [ChatGPT Free Access token](./apis_and_tokens.md#chatgpt-free-access-token)
 
-> **Warning**: The default reverse proxy (based on [PandoraNext](https://github.com/pandora-next/deploy)) needs to be updated and is not working anymore. To use this endpoint you'll have to set up your own.
-> For more information: [https://github.com/waylaidwanderer/node-chatgpt-api#using-a-reverse-proxy](https://github.com/waylaidwanderer/node-chatgpt-api#using-a-reverse-proxy)
+> **Warning**: To use this endpoint you'll have to set up your own reverse proxy. Here is the installation guide to deploy your own (based on [PandoraNext](https://github.com/pandora-next/deploy)): **[PandoraNext Deployment Guide](../features/pandoranext.md)**
 
 ```bash
 CHATGPT_REVERSE_PROXY=<YOUR-REVERSE-PROXY>
 ```
 
-> Note: If you're a GPT plus user you can add gpt-4-plugins, gpt-4-code-interpreter, and gpt-4-browsing to the list above and use the models for these features; however, the view/display portion of these features are not supported, but you can use the underlying models, which have higher token context
+> ~~Note: If you're a GPT plus user you can add gpt-4, gpt-4-plugins, gpt-4-code-interpreter, and gpt-4-browsing to the list above and use the models for these features; however, the view/display portion of these features are not supported, but you can use the underlying models, which have higher token context~~
+> **Note:** The current method only works with `text-davinci-002-render-sha`
 
 - Leave `CHATGPT_TOKEN=` blank to disable this endpoint
 - Set `CHATGPT_TOKEN=` to "user_provided" to allow users to provide their own API key from the WebUI
+    - It is not recommended to provide your token in the `.env` file since it expires often and sharing it could get you banned.
 
 ```bash
 CHATGPT_TOKEN=
-CHATGPT_MODELS=text-davinci-002-render-sha,gpt-4
+CHATGPT_MODELS=text-davinci-002-render-sha
 ```
 
 ### OpenAI
@@ -297,10 +298,10 @@ AZURE_AI_SEARCH_SEARCH_OPTION_SELECT=
 ```
 
 #### DALL-E 3:
-- OpenAI API key for DALL-E / DALL-E-3. Set to user_provided to have the user provide their own key when installing the plugin.
+- OpenAI API key for DALL-E / DALL-E-3. Leave commented out to have the user provide their own key when installing the plugin. If you want to provide your own key for all users you can uncomment this line and add your OpenAI API key here.
 
 ```bash
-DALLE_API_KEY=user_provided
+# DALLE_API_KEY=
 ```
 
 - For customization of the DALL-E-3 System prompt, uncomment the following, and provide your own prompt. **(Advanced)** 
@@ -506,7 +507,10 @@ CHECK_BALANCE=false
 ### Registration and Login
 see: [User/Auth System](../install/user_auth_system.md)
 
+![image](https://github.com/danny-avila/LibreChat/assets/81851188/52a37d1d-7392-4a9a-a79f-90ed2da7f841)
+
 - General Settings: 
+    - `ALLOW_EMAIL_LOGIN`: Email login. Set to `true` or `false` to enable or disable ONLY email login.
     - `ALLOW_REGISTRATION`: Email registration of new users. Set to `true` or `false` to enable or disable Email registration.
     - `ALLOW_SOCIAL_LOGIN`: Allow users to connect to LibreChat with various social networks, see below. Set to `true` or `false` to enable or disable.
     - `ALLOW_SOCIAL_REGISTRATION`: Enable or disable registration of new user using various social network. Set to `true` or `false` to enable or disable.

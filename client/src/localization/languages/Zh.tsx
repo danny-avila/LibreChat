@@ -218,8 +218,6 @@ export default {
   com_nav_plugin_store: '插件商店',
   com_nav_plugin_search: '搜索插件',
   com_nav_plugin_auth_error: '尝试验证此插件时出错。请重试。',
-  com_nav_close_menu: '关闭菜单',
-  com_nav_open_menu: '打开菜单',
   com_nav_export_filename: '文件名',
   com_nav_export_filename_placeholder: '设置文件名',
   com_nav_export_type: '类型',

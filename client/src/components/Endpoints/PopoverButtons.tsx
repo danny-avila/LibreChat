@@ -43,7 +43,7 @@ export default function PopoverButtons({
         label: localize('com_endpoint_show_what_settings', showAgentSettings ? localize('com_endpoint_completion') : localize('com_endpoint_agent')),
         buttonClass: '',
         handler: () => setShowAgentSettings((prev) => !prev),
-        icon: <GPTIcon className={cn('mr-1 mt-[2px] w-[14px]', iconClass)} size={14} />,
+        icon: <GPTIcon className={cn('mr-1 w-[14px]', iconClass)} size={24} />,
       },
     ],
   };
