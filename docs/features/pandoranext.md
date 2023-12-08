@@ -2,7 +2,7 @@
 
 If you're looking to use the `ChatGPT` Endpoint in LibreChat, setting up a reverse proxy is a essential. PandoraNext offers a robust solution for this purpose. This guide will walk you through deploying PandoraNext to enable the `CHATGPT_REVERSE_PROXY` for use with LibreChat.
 
-> Using this method you will only be able to use `text-davinci-002-render-sha` with PandoraNext in LibreChat. Other models offer with the `plus` subscription do not work.
+> Using this method you will only be able to use `text-davinci-002-render-sha` with PandoraNext in LibreChat. Other models offered with the `plus` subscription do not work.
 
 You can use it locally in docker or deploy it onthe web for remote access.
 
@@ -155,4 +155,5 @@ For local deployment using Docker, the steps are as follows:
 ## Final Notes
 
 - The `proxy_api_prefix` should be sufficiently random and unique to prevent errors.
+- The default `token.json` doesn't need to be modified to use with LibreChat
 - Ensure you have obtained a license ID from the [PandoraNext Dashboard](https://dash.pandoranext.com/).
