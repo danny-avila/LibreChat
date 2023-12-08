@@ -282,7 +282,8 @@ export default {
   com_endpoint_config_key_google_service_account: 'Create a Service Account',
   com_endpoint_config_key_google_vertex_api_role:
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
-  com_nav_welcome_message: 'How can I help you today?',
+  com_nav_welcome_message:
+    '[New!] Support GPT-4-1106、GPT-4-Vision, Improved UI and Prompt Presets',
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
   com_nav_plugin_store: 'Plugin store',
   com_nav_plugin_search: 'Search plugins',
