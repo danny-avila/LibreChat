@@ -251,8 +251,6 @@ export default {
   com_nav_plugin_search: 'Search plugins',
   com_nav_plugin_auth_error:
     'There was an error attempting to authenticate this plugin. Please try again.',
-  com_nav_close_menu: 'Close sidebar',
-  com_nav_open_menu: 'Open sidebar',
   com_nav_export_filename: 'Filename',
   com_nav_export_filename_placeholder: 'Set the filename',
   com_nav_export_type: 'Type',

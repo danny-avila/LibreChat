@@ -6,7 +6,13 @@ import {
 } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useAuthContext, useMediaQuery, useConversation, useConversations } from '~/hooks';
+import {
+  useAuthContext,
+  useMediaQuery,
+  useConversation,
+  useConversations,
+  useLocalStorage,
+} from '~/hooks';
 import { TooltipProvider, Tooltip } from '~/components/ui';
 import { Conversations, Pages } from '../Conversations';
 import { Spinner } from '~/components';
@@ -25,6 +31,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollPositionRef = useRef<number | null>(null);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const [newUser, setNewUser] = useLocalStorage('newUser', true);
 
   useEffect(() => {
     if (isSmallScreen) {
@@ -142,6 +149,9 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const toggleNavVisible = () => {
     setNavVisible((prev: boolean) => !prev);
+    if (newUser) {
+      setNewUser(false);
+    }
   };
 
   const itemToggleNav = () => {
