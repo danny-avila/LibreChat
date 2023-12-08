@@ -1,6 +1,12 @@
 import { useCallback } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider';
-import { useSetRecoilState, useResetRecoilState, useRecoilCallback, useRecoilState } from 'recoil';
+import {
+  useSetRecoilState,
+  useResetRecoilState,
+  useRecoilCallback,
+  useRecoilState,
+  useRecoilValue,
+} from 'recoil';
 import type { TConversation, TSubmission, TPreset, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
 import { useDeleteFilesMutation } from '~/data-provider';
@@ -11,6 +17,7 @@ import store from '~/store';
 const useNewConvo = (index = 0) => {
   const setStorage = useSetStorage();
   const navigate = useOriginNavigate();
+  const defaultPreset = useRecoilValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
@@ -36,17 +43,29 @@ const useNewConvo = (index = 0) => {
       ) => {
         const modelsConfig = modelsData ?? snapshot.getLoadable(store.modelsConfig).contents;
         const { endpoint = null } = conversation;
+        const buildDefaultConversation = endpoint === null || buildDefault;
+        const activePreset =
+          // use default preset only when it's defined,
+          // preset is not provided,
+          // endpoint matches or is null (to allow endpoint change),
+          // and buildDefaultConversation is true
+          defaultPreset &&
+          !preset &&
+          (defaultPreset.endpoint === endpoint || !endpoint) &&
+          buildDefaultConversation
+            ? defaultPreset
+            : preset;
 
-        if (endpoint === null || buildDefault) {
+        if (buildDefaultConversation) {
           const defaultEndpoint = getDefaultEndpoint({
-            convoSetup: preset ?? conversation,
+            convoSetup: activePreset ?? conversation,
             endpointsConfig,
           });
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];
           conversation = buildDefaultConvo({
             conversation,
-            lastConversationSetup: preset as TConversation,
+            lastConversationSetup: activePreset as TConversation,
             endpoint: defaultEndpoint,
             models,
           });
@@ -61,7 +80,7 @@ const useNewConvo = (index = 0) => {
           navigate('new');
         }
       },
-    [endpointsConfig],
+    [endpointsConfig, defaultPreset],
   );
 
   const newConversation = useCallback(

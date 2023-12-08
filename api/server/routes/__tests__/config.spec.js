@@ -62,6 +62,7 @@ describe.skip('GET /', () => {
       githubLoginEnabled: true,
       discordLoginEnabled: true,
       serverDomain: 'http://test-server.com',
+      emailLoginEnabled: 'true',
       registrationEnabled: 'true',
       socialLoginEnabled: 'true',
     });

@@ -14,24 +14,53 @@ module.exports = {
   getPreset,
   getPresets: async (user, filter) => {
     try {
-      return await Preset.find({ ...filter, user }).lean();
+      const presets = await Preset.find({ ...filter, user }).lean();
+      const defaultValue = 10000;
+
+      presets.sort((a, b) => {
+        let orderA = a.order !== undefined ? a.order : defaultValue;
+        let orderB = b.order !== undefined ? b.order : defaultValue;
+
+        if (orderA !== orderB) {
+          return orderA - orderB;
+        }
+
+        return b.updatedAt - a.updatedAt;
+      });
+
+      return presets;
     } catch (error) {
       console.log(error);
       return { message: 'Error retrieving presets' };
     }
   },
-  savePreset: async (user, { presetId, newPresetId, ...preset }) => {
+  savePreset: async (user, { presetId, newPresetId, defaultPreset, ...preset }) => {
     try {
+      const setter = { $set: {} };
       const update = { presetId, ...preset };
       if (newPresetId) {
         update.presetId = newPresetId;
       }
 
-      return await Preset.findOneAndUpdate(
-        { presetId, user },
-        { $set: update },
-        { new: true, upsert: true },
-      );
+      if (defaultPreset) {
+        update.defaultPreset = defaultPreset;
+        update.order = 0;
+
+        const currentDefault = await Preset.findOne({ defaultPreset: true, user });
+
+        if (currentDefault && currentDefault.presetId !== presetId) {
+          await Preset.findByIdAndUpdate(currentDefault._id, {
+            $unset: { defaultPreset: '', order: '' },
+          });
+        }
+      } else if (defaultPreset === false) {
+        update.defaultPreset = undefined;
+        update.order = undefined;
+        setter['$unset'] = { defaultPreset: '', order: '' };
+      }
+
+      setter.$set = update;
+      return await Preset.findOneAndUpdate({ presetId, user }, setter, { new: true, upsert: true });
     } catch (error) {
       console.log(error);
       return { message: 'Error saving preset' };

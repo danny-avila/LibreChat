@@ -225,6 +225,8 @@ export const tPresetSchema = tConversationSchema
       conversationId: z.string().optional(),
       presetId: z.string().nullable().optional(),
       title: z.string().nullable().optional(),
+      defaultPreset: z.boolean().optional(),
+      order: z.number().optional(),
     }),
   );
 
