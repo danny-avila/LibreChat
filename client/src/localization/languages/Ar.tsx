@@ -234,8 +234,6 @@ export default {
   com_nav_plugin_search: 'ابحث عن الإضافات',
   com_nav_plugin_auth_error:
     'حدث خطأ أثناء محاولة المصادقة على هذا البرنامج المساعد. يرجى المحاولة مرة أخرى.',
-  com_nav_close_menu: 'إغلاق القائمة الجانبية',
-  com_nav_open_menu: 'افتح القائمة الجانبية',
   com_nav_export_filename: 'اسم الملف',
   com_nav_export_filename_placeholder: 'قم بتعيين اسم الملف',
   com_nav_export_type: 'النوع',
