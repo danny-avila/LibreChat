@@ -20,7 +20,7 @@
     <img
       src="https://img.shields.io/badge/DOCS-blue.svg?style=for-the-badge&logo=read-the-docs&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
-  <a aria-label="Sponsors" href="#sponsors">
+  <a aria-label="Sponsors" href="https://github.com/sponsors/danny-avila">
     <img
       src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&logo=github-sponsors&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
@@ -146,7 +146,6 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Project Roadmap](https://github.com/users/danny-avila/projects/2)
 </details>
 
-
 ---
 
 ## Star History
@@ -157,17 +156,9 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
 ---
 
-## Sponsors
-
-  Sponsored by <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>, <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a> 
-  
----
-
 ## Contributors
 Contributions and suggestions bug reports and fixes are welcome!
 Please read the documentation before you do!
-
----
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR. 
 
