@@ -72,7 +72,7 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 5. In the settings section, click "go to settings." Ensure that "Client OAuth login," "Web OAuth login," and "Enforce HTTPS" are **enabled**.
 6. Add `your-domain/oauth/facebook/callback` to the Valid OAuth Redirect URIs (e.g., https://example.com/oauth/facebook/callback).
 7. Save changes. In the "App settings" tab, click "show" next to the App secret.
-8. Copy the Client ID and Client Secret and paste them into the .env file as follows: (App ID= Client ID & App secret=Client Secret)
+8. Copy the Client ID and Client Secret and paste them into the .env file as follows: (`App ID=Client ID`  &  `App secret=Client Secret`)
 
 ```bash
 FACEBOOK_CLIENT_ID=your_client_id
