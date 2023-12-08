@@ -54,8 +54,8 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 4. Click on "Save and continue" and then "Back to dashboard".
 5. Click on "Create Credentials" and then "OAuth client ID".
 6. Select "Web application" as the application type and give it a name.
-7. Add `http://yourdomain`, `http://localhost:3080` and `http://localhost:3090` to the authorized JavaScript origins.
-8. Add `http://your-domain/oauth/google/callback` to the authorized redirect URIs. (if you use localhost then use this `http://localhost:3080/oauth/google/callback`)
+7. Add `https://yourdomain`, `http://localhost:3080` and `http://localhost:3090` to the authorized JavaScript origins.
+8. Add `https://your-domain/oauth/google/callback` to the authorized redirect URIs. (if you use localhost then use this `http://localhost:3080/oauth/google/callback`)
 9. Click on "Create" and copy your client ID and client secret.
 10. Paste them into your `/.env` file.
 11. Enable the feature in the `/.env` file
@@ -66,11 +66,13 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 ### (It only works with a domain, not with localhost)
 
 1. Go to [Facebook Developer Portal](https://developers.facebook.com/)
-2. Create a new Application and give it a name
-4. In the Dashboard tab select product and select "Facebook login", then tap on "Configure" and "Settings". Male sure "OAuth client access", "Web OAuth access", "Apply HTTPS" and "Use limited mode for redirect URIs" are **enabled**
-5. In the Valid OAuth Redirect URIs add "your-domain/oauth/facebook/callback" (example: http://example.com/oauth/facebook/callback)
-6. Save changes and in the "settings" tab, reset the Client Secret
-7. Put the Client ID and Client Secret in the .env file:
+2. Create a new Application and select "Authenticate and request data from users with Facebook Login"
+3. Then select "No, I'm not creating a game" and give it a name
+4. In the Dashboard tab select "Use cases", then tap on "Customize" in "Authentication and account creation" and click on "add" under email's permission.
+5. In the settings section, click on "go to settings", make sure "Client OAuth login", "Web OAuth login" and "Enforce HTTPS" are **enabled**
+5. In the Valid OAuth Redirect URIs add `your-domain/oauth/facebook/callback` (example: https://example.com/oauth/facebook/callback)
+6. Save changes and in the "App settings" tab, and finally click on "show" in the Client Secret
+7. Put the Client ID and Client Secret in the .env file: (App ID=Client ID & App secret= Client Secret)
 ```bash
 FACEBOOK_CLIENT_ID=your_client_id
 FACEBOOK_CLIENT_SECRET=your_client_secret
