@@ -233,8 +233,6 @@ export default {
   com_nav_plugin_store: 'Cửa hàng Plugin',
   com_nav_plugin_search: 'Tìm kiếm plugin',
   com_nav_plugin_auth_error: 'Đã xảy ra lỗi khi xác thực plugin này. Vui lòng thử lại.',
-  com_nav_close_menu: 'Đóng thanh bên',
-  com_nav_open_menu: 'Mở thanh bên',
   com_nav_export_filename: 'Tên tệp',
   com_nav_export_filename_placeholder: 'Đặt tên cho tệp',
   com_nav_export_type: 'Loại',

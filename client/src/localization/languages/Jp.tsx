@@ -54,10 +54,9 @@ export default {
     '入力された情報ではログインできませんでした。認証情報を確認した上で再度お試しください。',
   com_auth_error_login_rl:
     'お使いのIPアドレスから短時間に多数のログイン試行がありました。しばらくしてから再度お試しください。',
-  com_auth_error_login_ban:
-      '本サービスの利用規約違反のため、一時的にアカウントを停止しました。',
+  com_auth_error_login_ban: '本サービスの利用規約違反のため、一時的にアカウントを停止しました。',
   com_auth_error_login_server:
-      'サーバーエラーが発生しています。。しばらくしてから再度お試しください。',
+    'サーバーエラーが発生しています。。しばらくしてから再度お試しください。',
   com_auth_no_account: 'アカウントをお持ちでない場合はこちら',
   com_auth_sign_up: '新規登録',
   com_auth_sign_in: 'ログイン',
@@ -135,7 +134,8 @@ export default {
   com_endpoint_google_maxoutputtokens:
     ' 	生成されるレスポンスの最大トークン数。短いレスポンスには低い値を、長いレスポンスには高い値を指定します。',
   com_endpoint_google_custom_name_placeholder: 'PaLM2のカスタム名を設定する',
-  com_endpoint_prompt_prefix_placeholder: 'custom instructions か context を設定する。空の場合は無視されます。',
+  com_endpoint_prompt_prefix_placeholder:
+    'custom instructions か context を設定する。空の場合は無視されます。',
   com_endpoint_custom_name: 'プリセット名',
   com_endpoint_prompt_prefix: 'プロンプトの先頭',
   com_endpoint_temperature: 'Temperature',
@@ -144,7 +144,7 @@ export default {
   com_endpoint_top_k: 'Top K',
   com_endpoint_max_output_tokens: '最大出力トークン数',
   com_endpoint_openai_temp:
-      '大きい値 = ランダム性が増します。低い値 = より決定論的になります。この値を変更するか、Top P の変更をおすすめしますが、両方を変更はおすすめしません。',
+    '大きい値 = ランダム性が増します。低い値 = より決定論的になります。この値を変更するか、Top P の変更をおすすめしますが、両方を変更はおすすめしません。',
   com_endpoint_openai_max:
     '生成されるトークンの最大値。入力トークンと出力トークンの長さの合計は、モデルのコンテキスト長によって制限されます。',
   com_endpoint_openai_topp:
@@ -225,15 +225,18 @@ export default {
   com_endpoint_config_key_encryption: '鍵は暗号化されます。削除予定日:',
   com_endpoint_config_key_expiry: 'すでに有効期限切れです',
   com_endpoint_config_key_import_json_key: 'Service Account JSON Key をインポートする。',
-  com_endpoint_config_key_import_json_key_success: 'Service Account JSON Keyのインポートに成功しました。',
+  com_endpoint_config_key_import_json_key_success:
+    'Service Account JSON Keyのインポートに成功しました。',
   com_endpoint_config_key_import_json_key_invalid:
     '無効なService Account JSON Keyです。正しいファイルかどうか確認してください。',
-  com_endpoint_config_key_get_edge_key: 'Bing用のアクセストークンを取得するためにログインをしてください: ',
+  com_endpoint_config_key_get_edge_key:
+    'Bing用のアクセストークンを取得するためにログインをしてください: ',
   com_endpoint_config_key_get_edge_key_dev_tool:
     'サイトにログインした状態で、開発ツールまたは拡張機能を使用して、_U クッキーの内容をコピーします。もし失敗する場合は次の手順に従ってください。',
   com_endpoint_config_key_edge_instructions: '手順',
   com_endpoint_config_key_edge_full_key_string: 'to provide the full cookie strings.',
-  com_endpoint_config_key_chatgpt: 'ChatGPTの「無料版」のアクセストークンを入手するためにへログインをしてください:',
+  com_endpoint_config_key_chatgpt:
+    'ChatGPTの「無料版」のアクセストークンを入手するためにへログインをしてください:',
   com_endpoint_config_key_chatgpt_then_visit: 'つぎに、ここへアクセスしてください:',
   com_endpoint_config_key_chatgpt_copy_token: 'トークンをコピーしてください。',
   com_endpoint_config_key_google_need_to: 'こちらを有効化する必要があります:',
@@ -248,8 +251,6 @@ export default {
   com_nav_plugin_search: 'プラグイン検索',
   com_nav_plugin_auth_error:
     'このプラグインの認証中にエラーが発生しました。もう一度お試しください。',
-  com_nav_close_menu: 'サイドバーを閉じる',
-  com_nav_open_menu: 'サイドバーを開く',
   com_nav_export_filename: 'ファイル名',
   com_nav_export_filename_placeholder: 'ファイル名を入力してください',
   com_nav_export_type: '形式',

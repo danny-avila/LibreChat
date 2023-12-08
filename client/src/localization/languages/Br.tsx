@@ -4,7 +4,8 @@ export default {
   com_ui_examples: 'Exemplos',
   com_ui_new_chat: 'Novo Chat',
   com_ui_example_quantum_computing: 'Explique a computação quântica em termos simples',
-  com_ui_example_10_year_old_b_day: 'Tem alguma ideia criativa para o aniversário de uma criança de 10 anos?',
+  com_ui_example_10_year_old_b_day:
+    'Tem alguma ideia criativa para o aniversário de uma criança de 10 anos?',
   com_ui_example_http_in_js: 'Como fazer uma requisição HTTP em Javascript?',
   com_ui_capabilities: 'Capacidades',
   com_ui_capability_remember: 'Lembra do que o usuário disse anteriormente na conversa',
@@ -54,8 +55,7 @@ export default {
     'Não foi possível fazer login com as informações fornecidas. Por favor, verifique suas credenciais e tente novamente.',
   com_auth_error_login_rl:
     'Muitas tentativas de login em um curto espaço de tempo. Por favor, tente novamente mais tarde.',
-  com_auth_error_login_ban:
-    'Sua conta foi temporariamente banida por violações do nosso serviço.',
+  com_auth_error_login_ban: 'Sua conta foi temporariamente banida por violações do nosso serviço.',
   com_auth_error_login_server:
     'Houve um erro interno do servidor. Por favor, espere alguns momentos e tente novamente.',
   com_auth_no_account: 'Não tem uma conta?',
@@ -80,8 +80,7 @@ export default {
   com_auth_password_not_match: 'Senhas não coincidem',
   com_auth_continue: 'Continuar',
   com_auth_create_account: 'Crie sua conta',
-  com_auth_error_create:
-    'Houve um erro ao tentar registrar sua conta. Por favor, tente novamente.',
+  com_auth_error_create: 'Houve um erro ao tentar registrar sua conta. Por favor, tente novamente.',
   com_auth_full_name: 'Nome completo',
   com_auth_name_required: 'Nome é obrigatório',
   com_auth_name_min_length: 'Nome deve ter pelo menos 3 caracteres',
@@ -135,7 +134,8 @@ export default {
   com_endpoint_google_maxoutputtokens:
     'Número máximo de tokens que podem ser gerados na resposta. Especifique um valor menor para respostas mais curtas e um valor maior para respostas mais longas.',
   com_endpoint_google_custom_name_placeholder: 'Defina um nome personalizado para o PaLM2',
-  com_endpoint_prompt_prefix_placeholder: 'Defina instruções ou contexto personalizados. Ignorado se vazio.',
+  com_endpoint_prompt_prefix_placeholder:
+    'Defina instruções ou contexto personalizados. Ignorado se vazio.',
   com_endpoint_custom_name: 'Nome Personalizado',
   com_endpoint_prompt_prefix: 'Prefixo do Prompt',
   com_endpoint_temperature: 'Temperatura',
@@ -174,7 +174,8 @@ export default {
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Defina instruções personalizadas para incluir na Mensagem do Sistema. Padrão: nenhum',
   com_endpoint_import: 'Importar',
-  com_endpoint_set_custom_name: 'Defina um nome personalizado, caso você possa encontrar este preset',
+  com_endpoint_set_custom_name:
+    'Defina um nome personalizado, caso você possa encontrar este preset',
   com_endpoint_preset: 'preset',
   com_endpoint_presets: 'presets',
   com_endpoint_preset_name: 'Nome do Preset',
@@ -210,7 +211,8 @@ export default {
   com_endpoint_config_key_encryption: 'Sua chave será criptografada e excluída em',
   com_endpoint_config_key_expiry: 'o tempo de expiração',
   com_endpoint_config_key_import_json_key: 'Importar Chave JSON da Conta de Serviço.',
-  com_endpoint_config_key_import_json_key_success: 'Chave JSON da Conta de Serviço Importada com Sucesso',
+  com_endpoint_config_key_import_json_key_success:
+    'Chave JSON da Conta de Serviço Importada com Sucesso',
   com_endpoint_config_key_import_json_key_invalid:
     'Chave JSON da Conta de Serviço Inválida, Você importou o arquivo correto?',
   com_endpoint_config_key_get_edge_key: 'Para obter seu token de acesso para o Bing, faça login em',
@@ -218,7 +220,8 @@ export default {
     'Use as ferramentas de desenvolvimento ou uma extensão enquanto estiver logado no site para copiar o conteúdo do cookie _U. Se isso falhar, siga estas',
   com_endpoint_config_key_edge_instructions: 'instruções',
   com_endpoint_config_key_edge_full_key_string: 'para fornecer as strings completas dos cookies.',
-  com_endpoint_config_key_chatgpt: 'Para obter seu token de acesso para o ChatGPT "Versão Gratuita", faça login em',
+  com_endpoint_config_key_chatgpt:
+    'Para obter seu token de acesso para o ChatGPT "Versão Gratuita", faça login em',
   com_endpoint_config_key_chatgpt_then_visit: 'depois visite',
   com_endpoint_config_key_chatgpt_copy_token: 'Copie o token de acesso.',
   com_endpoint_config_key_google_need_to: 'Você precisa',
@@ -232,8 +235,6 @@ export default {
   com_nav_plugin_search: 'Pesquisar plugins',
   com_nav_plugin_auth_error:
     'Houve um erro ao tentar autenticar este plugin. Por favor, tente novamente.',
-  com_nav_close_menu: 'Fechar barra lateral',
-  com_nav_open_menu: 'Abrir barra lateral',
   com_nav_export_filename: 'Nome do arquivo',
   com_nav_export_filename_placeholder: 'Defina o nome do arquivo',
   com_nav_export_type: 'Tipo',

@@ -28,8 +28,7 @@ export default {
   com_ui_showing: 'Gösteriliyor',
   com_ui_of: 'of',
   com_ui_entries: 'Girişler',
-  com_ui_pay_per_call:
-    'Tüm yapay zekalar bir yerde. Ayda bir değil, çağrı başına ödeme yapın',
+  com_ui_pay_per_call: 'Tüm yapay zekalar bir yerde. Ayda bir değil, çağrı başına ödeme yapın',
   com_ui_enter: 'Gir',
   com_ui_submit: 'Gönder',
   com_ui_upload_success: 'Dosya başarıyla yüklendi',
@@ -237,8 +236,6 @@ export default {
   com_nav_plugin_search: 'Eklentileri Ara',
   com_nav_plugin_auth_error:
     'Bu eklentiyi kimlik doğrulama girişiminde bir hata oluştu. Lütfen tekrar deneyin.',
-  com_nav_close_menu: 'Kenar çubuğunu kapat',
-  com_nav_open_menu: 'Kenar çubuğunu aç',
   com_nav_export_filename: 'Dosya adı',
   com_nav_export_filename_placeholder: 'Dosya adını belirleyin',
   com_nav_export_type: 'Tür',

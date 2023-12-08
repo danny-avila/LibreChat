@@ -219,8 +219,6 @@ export default {
   com_nav_plugin_store: '外掛商店',
   com_nav_plugin_search: '搜尋外掛',
   com_nav_plugin_auth_error: '嘗試驗證此外掛時發生錯誤。請重試。',
-  com_nav_close_menu: '關閉側邊選單',
-  com_nav_open_menu: '開啟側邊選單',
   com_nav_export_filename: '檔名',
   com_nav_export_filename_placeholder: '設定檔案名稱',
   com_nav_export_type: '類型',

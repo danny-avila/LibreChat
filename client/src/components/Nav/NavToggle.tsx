@@ -1,5 +1,5 @@
 import { TooltipTrigger, TooltipContent } from '~/components/ui';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useLocalStorage } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function NavToggle({ onToggle, navVisible, isHovering, setIsHovering }) {
@@ -7,6 +7,8 @@ export default function NavToggle({ onToggle, navVisible, isHovering, setIsHover
   const transition = {
     transition: 'transform 0.3s ease, opacity 0.2s ease',
   };
+  const [newUser, setNewUser] = useLocalStorage('newUser', true);
+
   return (
     <div
       className={cn(
@@ -44,8 +46,8 @@ export default function NavToggle({ onToggle, navVisible, isHovering, setIsHover
                 />
               </div>
             </div>
-            <TooltipContent side="right" sideOffset={4}>
-              {navVisible ? localize('com_nav_close_menu') : localize('com_nav_open_menu')}
+            <TooltipContent forceMount={newUser ? true : undefined} side="right" sideOffset={4}>
+              {navVisible ? localize('com_nav_close_sidebar') : localize('com_nav_open_sidebar')}
             </TooltipContent>
           </span>
         </button>

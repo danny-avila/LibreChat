@@ -239,8 +239,6 @@ export default {
   com_nav_plugin_search: 'Plugins zoeken',
   com_nav_plugin_auth_error:
     'Er trad een fout op bij het authenticeren van deze plugin. Probeer het opnieuw.',
-  com_nav_close_menu: 'Zijbalk sluiten',
-  com_nav_open_menu: 'Zijbalk openen',
   com_nav_export_filename: 'Bestandsnaam',
   com_nav_export_filename_placeholder: 'Stel de bestandsnaam in',
   com_nav_export_type: 'Type',

@@ -240,8 +240,6 @@ export default {
   com_nav_plugin_search: 'Cerca plugin',
   com_nav_plugin_auth_error:
     'Si è verificato un errore durante il tentativo di autenticare questo plugin. Per favore, riprova.',
-  com_nav_close_menu: 'Apri la barra laterale',
-  com_nav_open_menu: 'Chiudi la barra laterale',
   com_nav_export_filename: 'Nome del file',
   com_nav_export_filename_placeholder: 'Imposta il nome del file',
   com_nav_export_type: 'Tipo',
