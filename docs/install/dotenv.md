@@ -298,10 +298,10 @@ AZURE_AI_SEARCH_SEARCH_OPTION_SELECT=
 ```
 
 #### DALL-E 3:
-- OpenAI API key for DALL-E / DALL-E-3. Set to user_provided to have the user provide their own key when installing the plugin.
+- OpenAI API key for DALL-E / DALL-E-3. Leave commented out to have the user provide their own key when installing the plugin. If you want to provide your own key for all users you can uncomment this line and add your OpenAI API key here.
 
 ```bash
-DALLE_API_KEY=user_provided
+# DALLE_API_KEY=
 ```
 
 - For customization of the DALL-E-3 System prompt, uncomment the following, and provide your own prompt. **(Advanced)** 
