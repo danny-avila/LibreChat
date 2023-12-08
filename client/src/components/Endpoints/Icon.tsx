@@ -1,5 +1,5 @@
 import { EModelEndpoint } from 'librechat-data-provider';
-import { Plugin, GPTIcon, AnthropicIcon, AzureMinimalIcon } from '~/components/svg';
+import { Plugin, GPTIcon, AnthropicIcon, AzureMinimalIcon, PaLMIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
@@ -52,7 +52,7 @@ const Icon: React.FC<IconProps> = (props) => {
         name: 'Plugins',
       },
       [EModelEndpoint.google]: {
-        icon: <img src="/assets/google-palm.svg" alt="Palm Icon" />,
+        icon: <PaLMIcon size={size * 0.7} />,
         name: 'PaLM2',
       },
       [EModelEndpoint.anthropic]: {
