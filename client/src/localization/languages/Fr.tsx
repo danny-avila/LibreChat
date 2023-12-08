@@ -243,8 +243,6 @@ export default {
   com_nav_plugin_search: 'Rechercher des plugins',
   com_nav_plugin_auth_error:
     'Une erreur s\'est produite lors de la tentative d\'authentification de ce plugin. Veuillez réessayer.',
-  com_nav_close_menu: 'Fermer la barre latérale',
-  com_nav_open_menu: 'Ouvrir la barre latérale',
   com_nav_export_filename: 'Nom du fichier',
   com_nav_export_filename_placeholder: 'Définir le nom du fichier',
   com_nav_export_type: 'Type',
