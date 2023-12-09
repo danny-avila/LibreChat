@@ -46,9 +46,9 @@ To get your Bing Access Token, you have a few options:
 - Go to [https://console.anthropic.com/account/keys](https://console.anthropic.com/account/keys) and get your api key
 - add it to `ANTHROPIC_API_KEY=` in the `.env` file
 
-## Google's PaLM 2
+## Google LLMs
 
-To setup PaLM 2 (via Google Cloud Vertex AI API), you need to:
+To setup Google LLMs (via Google Cloud Vertex AI), you need to:
 
 ### Enable the Vertex AI API on Google Cloud:
   - Go to [https://console.cloud.google.com/vertex-ai](https://console.cloud.google.com/vertex-ai)
@@ -56,7 +56,7 @@ To setup PaLM 2 (via Google Cloud Vertex AI API), you need to:
 ### Create a Service Account:
   - Go to [https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1](https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1)
   - Select or create a project
-  - Enter a service account name and description
+  - Enter a service account ID (required), name and description are optional
   - Click on "Create and Continue" to give at least the "Vertex AI User" role
   - Click on "Done"
 ### Create a JSON key, rename as 'auth.json' and save it in /api/data/:
@@ -66,7 +66,7 @@ To setup PaLM 2 (via Google Cloud Vertex AI API), you need to:
   - Click on "Add Key" and then "Create new key"
   - Choose JSON as the key type and click on "Create"
   - Download the key file and rename it as 'auth.json'
-  - Save it in `/api/data/`
+  - Save it within the project directory, in `/api/data/`
 
 ## Azure OpenAI
 
