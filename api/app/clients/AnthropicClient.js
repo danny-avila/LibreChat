@@ -46,7 +46,8 @@ class AnthropicClient extends BaseClient {
       stop: modelOptions.stop, // no stop method for now
     };
 
-    this.maxContextTokens = getModelMaxTokens(this.modelOptions.model) ?? 100000;
+    this.maxContextTokens =
+      getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ?? 100000;
     this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1500;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
