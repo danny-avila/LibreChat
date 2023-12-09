@@ -3,7 +3,7 @@ const {
   getChatGPTBrowserModels,
   getAnthropicModels,
 } = require('~/server/services/ModelService');
-const { EModelEndpoint } = require('~/server/services/Endpoints/schemas');
+const { EModelEndpoint } = require('~/server/services/Endpoints');
 const { useAzurePlugins } = require('~/server/services/Config/EndpointService').config;
 
 const fitlerAssistantModels = (str) => {

@@ -1,8 +1,8 @@
+const { processFiles } = require('~/server/services/Files');
 const openAI = require('~/server/services/Endpoints/openAI');
 const anthropic = require('~/server/services/Endpoints/anthropic');
 const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
-const { parseConvo, EModelEndpoint } = require('~/server/services/Endpoints/schemas');
-const { processFiles } = require('~/server/services/Files');
+const { parseConvo, EModelEndpoint } = require('~/server/services/Endpoints');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,

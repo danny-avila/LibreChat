@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getResponseSender } = require('~/server/services/Endpoints/schemas');
+const { getResponseSender } = require('~/server/services/Endpoints');
 const { validateTools } = require('~/app');
 const { addTitle } = require('~/server/services/Endpoints/openAI');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');

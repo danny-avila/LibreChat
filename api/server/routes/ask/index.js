@@ -15,7 +15,7 @@ const {
   messageUserLimiter,
 } = require('~/server/middleware');
 const { isEnabled } = require('~/server/utils');
-const { EModelEndpoint } = require('~/server/services/Endpoints/schemas');
+const { EModelEndpoint } = require('~/server/services/Endpoints');
 
 const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 

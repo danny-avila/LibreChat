@@ -1,4 +1,4 @@
-const { EModelEndpoint } = require('~/server/services/Endpoints/schemas');
+const { EModelEndpoint } = require('~/server/services/Endpoints');
 
 const {
   OPENAI_API_KEY: openAIApiKey,

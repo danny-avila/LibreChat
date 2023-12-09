@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getResponseSender } = require('~/server/services/Endpoints/schemas');
+const { getResponseSender } = require('~/server/services/Endpoints');
 const { initializeClient } = require('~/server/services/Endpoints/anthropic');
 const {
   handleAbort,

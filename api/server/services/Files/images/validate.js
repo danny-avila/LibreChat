@@ -1,4 +1,4 @@
-const { visionModels } = require('~/server/services/Endpoints/schemas');
+const { visionModels } = require('~/server/services/Endpoints');
 
 function validateVisionModel(model) {
   if (!model) {

@@ -1,4 +1,4 @@
-const { EModelEndpoint } = require('~/server/services/Endpoints/schemas');
+const { EModelEndpoint } = require('~/server/services/Endpoints');
 const loadAsyncEndpoints = require('./loadAsyncEndpoints');
 const { config } = require('./EndpointService');
 
