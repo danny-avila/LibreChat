@@ -35,5 +35,7 @@ export { default as PluginMinimalIcon } from './PluginMinimalIcon';
 export { default as BingAIMinimalIcon } from './BingAIMinimalIcon';
 export { default as PaLMinimalIcon } from './PaLMinimalIcon';
 export { default as PaLMIcon } from './PaLMIcon';
+export { default as CodeyIcon } from './CodeyIcon';
+export { default as GoogleMinimalIcon } from './GoogleMinimalIcon';
 export { default as AnthropicMinimalIcon } from './AnthropicMinimalIcon';
 export { default as SendMessageIcon } from './SendMessageIcon';

@@ -387,7 +387,13 @@ const getResponseSender = (endpointOption) => {
   }
 
   if (endpoint === EModelEndpoint.google) {
-    return modelLabel ?? 'PaLM2';
+    if (modelLabel) {
+      return modelLabel;
+    } else if (model && model.includes('code')) {
+      return 'Codey';
+    }
+
+    return 'PaLM2';
   }
 
   return '';
