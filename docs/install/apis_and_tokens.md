@@ -55,7 +55,7 @@ You can usually get $300 starting credit, which makes this option free for 90 da
 ### Once signed up, Enable the Vertex AI API on Google Cloud:
   - Go to [Vertex AI page on Google Cloud console](https://console.cloud.google.com/vertex-ai)
   - Click on "Enable API" if prompted
-### Create a Service Account:
+### Create a Service Account with Vertex AI role:
   - **[Click here to create a Service Account](https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1)**
   - **Select or create a project**
   - ### Enter a service account ID (required), name and description are optional
@@ -63,7 +63,7 @@ You can usually get $300 starting credit, which makes this option free for 90 da
   - ### Click on "Create and Continue" to give at least the "Vertex AI User" role
       - ![image](https://github.com/danny-avila/LibreChat/assets/110412045/22d3a080-e71e-446e-8485-bcc5bf558dbb)
   - **Click on "Continue/Done"**
-### Create a JSON key, rename as 'auth.json' and save it in /api/data/:
+### Create a JSON key to Save in Project Directory:
   - **Go back to [the Service Accounts page](https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts)**
   - **Select your service account**
   - ### Click on "Keys"
