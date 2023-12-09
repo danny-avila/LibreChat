@@ -1,14 +1,16 @@
 const { processFiles } = require('~/server/services/Files');
 const openAI = require('~/server/services/Endpoints/openAI');
+const google = require('~/server/services/Endpoints/google');
 const anthropic = require('~/server/services/Endpoints/anthropic');
 const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
 const { parseConvo, EModelEndpoint } = require('~/server/services/Endpoints');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
+  [EModelEndpoint.google]: google.buildOptions,
   [EModelEndpoint.azureOpenAI]: openAI.buildOptions,
-  [EModelEndpoint.gptPlugins]: gptPlugins.buildOptions,
   [EModelEndpoint.anthropic]: anthropic.buildOptions,
+  [EModelEndpoint.gptPlugins]: gptPlugins.buildOptions,
 };
 
 function buildEndpointOption(req, res, next) {
