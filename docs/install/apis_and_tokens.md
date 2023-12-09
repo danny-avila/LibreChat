@@ -53,7 +53,7 @@ To setup Google LLMs (via Google Cloud Vertex AI), first, signup for Google Clou
 You can usually get $300 starting credit, which makes this option free for 90 days. 
 
 ### Once signed up, Enable the Vertex AI API on Google Cloud:
-  - Go to [Vertexx AI page on Google Cloud console](https://console.cloud.google.com/vertex-ai)
+  - Go to [Vertex AI page on Google Cloud console](https://console.cloud.google.com/vertex-ai)
   - Click on "Enable API" if prompted
 ### Create a Service Account:
   - **[Click here to create a Service Account](https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1)**
