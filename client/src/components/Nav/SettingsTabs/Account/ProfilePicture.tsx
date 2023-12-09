@@ -52,7 +52,6 @@ function ProfilePictureUpload() {
       }
       const formData = new FormData();
       formData.append('userId', userId);
-
       formData.append('input', input, input.name);
       const response = await fetch('/api/profilePicture', {
         method: 'POST',

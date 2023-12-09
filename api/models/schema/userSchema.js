@@ -40,6 +40,11 @@ const userSchema = mongoose.Schema(
       type: String,
       required: false,
     },
+    avatarUploaded: {
+      type: Boolean,
+      required: false,
+      default: false,
+    },
     provider: {
       type: String,
       required: true,

@@ -16,13 +16,12 @@ const githubLogin = async (accessToken, refreshToken, profile, cb) => {
     const avatarUrl = profile.photos[0].value;
 
     if (oldUser) {
-      oldUser.avatar = avatarUrl;
-      await oldUser.save();
-
-      if (useFirebase) {
+      if (!oldUser.avatarUploaded && !useFirebase) {
+        oldUser.avatar = avatarUrl;
+        await oldUser.save();
+      } else if (useFirebase && !oldUser.avatarUploaded) {
         const userId = oldUser._id;
         const avatarURL = await uploadProfilePicture(userId, profile.photos[0].value);
-        console.log('avatarURL', avatarURL);
 
         oldUser.avatar = avatarURL;
         await oldUser.save();

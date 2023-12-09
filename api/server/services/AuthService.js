@@ -85,6 +85,7 @@ const registerUser = async (user) => {
       username,
       name,
       avatar: null,
+      avatarUploaded: false,
       role: isFirstRegisteredUser ? 'ADMIN' : 'USER',
     });
 
