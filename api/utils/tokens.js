@@ -55,7 +55,19 @@ const maxTokensMap = {
     'gpt-3.5-turbo-1106': 16380, // -5 from max
     'gpt-4-1106': 127995, // -5 from max
   },
-  [EModelEndpoint.google]: {},
+  [EModelEndpoint.google]: {
+    /* Max I/O is 32k combined, so -1000 to leave room for response */
+    'text-bison-32k': 31000,
+    'chat-bison-32k': 31000,
+    'code-bison-32k': 31000,
+    'codechat-bison-32k': 31000,
+    /* Codey, -5 from max: 6144 */
+    'code-': 6139,
+    'codechat-': 6139,
+    /* PaLM2, -5 from max: 8192 */
+    'text-': 8187,
+    'chat-': 8187,
+  },
   [EModelEndpoint.anthropic]: {
     'claude-2.1': 200000,
     'claude-': 100000,

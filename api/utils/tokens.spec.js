@@ -98,6 +98,29 @@ describe('getModelMaxTokens', () => {
       expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toEqual(expectedTokens);
     });
   });
+
+  // Tests for Google models
+  test('should return correct tokens for exact match - Google models', () => {
+    expect(getModelMaxTokens('text-bison-32k', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['text-bison-32k'],
+    );
+    expect(getModelMaxTokens('codechat-bison-32k', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['codechat-bison-32k'],
+    );
+  });
+
+  test('should return undefined for no match - Google models', () => {
+    expect(getModelMaxTokens('unknown-google-model', EModelEndpoint.google)).toBeUndefined();
+  });
+
+  test('should return correct tokens for partial match - Google models', () => {
+    expect(getModelMaxTokens('code-', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['code-'],
+    );
+    expect(getModelMaxTokens('chat-', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['chat-'],
+    );
+  });
 });
 
 describe('matchModelName', () => {
@@ -138,5 +161,22 @@ describe('matchModelName', () => {
     expect(matchModelName('something/gpt-4-1106')).toBe('gpt-4-1106');
     expect(matchModelName('gpt-4-1106-preview')).toBe('gpt-4-1106');
     expect(matchModelName('gpt-4-1106-vision-preview')).toBe('gpt-4-1106');
+  });
+
+  // Tests for Google models
+  it('should return the exact model name if it exists in maxTokensMap - Google models', () => {
+    expect(matchModelName('text-bison-32k', EModelEndpoint.google)).toBe('text-bison-32k');
+    expect(matchModelName('codechat-bison-32k', EModelEndpoint.google)).toBe('codechat-bison-32k');
+  });
+
+  it('should return the input model name if no match is found - Google models', () => {
+    expect(matchModelName('unknown-google-model', EModelEndpoint.google)).toBe(
+      'unknown-google-model',
+    );
+  });
+
+  it('should return the closest matching key for partial matches - Google models', () => {
+    expect(matchModelName('code-', EModelEndpoint.google)).toBe('code-');
+    expect(matchModelName('chat-', EModelEndpoint.google)).toBe('chat-');
   });
 });
