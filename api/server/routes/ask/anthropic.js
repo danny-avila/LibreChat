@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { getResponseSender } = require('../endpoints/schemas');
-const { initializeClient } = require('../endpoints/anthropic');
+const { getResponseSender } = require('~/server/services/Endpoints/schemas');
+const { initializeClient } = require('~/server/services/Endpoints/anthropic');
 const {
   handleAbort,
   createAbortController,
