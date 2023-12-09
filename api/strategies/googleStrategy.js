@@ -3,7 +3,7 @@ const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
 const uploadProfilePicture = require('~/server/services/ProfilePictureCreate');
-const { useFirebase } = require('../server/services/firebase');
+const { useFirebase } = require('~/server/services/firebase');
 
 const googleLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -12,49 +12,55 @@ const googleLogin = async (accessToken, refreshToken, profile, cb) => {
     const oldUser = await User.findOne({ email });
     const ALLOW_SOCIAL_REGISTRATION =
       process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
-
-    const avatarURL = profile.photos[0].value;
+    const avatarUrl = profile.photos[0].value;
 
     if (oldUser) {
-      oldUser.avatar = avatarURL;
-      await oldUser.save();
-
-      if (useFirebase) {
-        const userId = oldUser._id;
-        const avatarURL = await uploadProfilePicture(userId, profile.photos[0].value);
-        console.log('avatarURL', avatarURL);
-        oldUser.avatar = avatarURL;
-        await oldUser.save();
-      }
-
+      await handleExistingUser(oldUser, avatarUrl, useFirebase, profile.photos[0].value);
       return cb(null, oldUser);
-    } else if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await new User({
-        provider: 'google',
-        googleId,
-        username: profile.name.givenName,
-        email,
-        emailVerified: profile.emails[0].verified,
-        name: `${profile.name.givenName} ${profile.name.familyName}`,
-        avatar: avatarURL,
-      }).save();
-
-      if (useFirebase) {
-        const userId = newUser._id;
-        const avatarURL = await uploadProfilePicture(userId, profile.photos[0].value);
-        console.log('avatarURL', avatarURL);
-        newUser.avatar = avatarURL;
-        await newUser.save();
-      }
-
-      return cb(null, newUser);
     }
 
-    return cb(null, false, { message: 'User not found.' });
+    if (ALLOW_SOCIAL_REGISTRATION) {
+      const newUser = await createNewUser(profile, googleId, email, avatarUrl, useFirebase);
+      return cb(null, newUser);
+    }
   } catch (err) {
     console.error(err);
     return cb(err);
   }
+};
+
+const handleExistingUser = async (oldUser, avatarUrl, useFirebase) => {
+  if (!oldUser.avatarUploaded && !useFirebase) {
+    oldUser.avatar = avatarUrl;
+    await oldUser.save();
+  } else if (useFirebase && !oldUser.avatarUploaded) {
+    const userId = oldUser._id;
+    const avatarURL = await uploadProfilePicture(userId, avatarUrl);
+    oldUser.avatar = avatarURL;
+    await oldUser.save();
+  }
+};
+
+const createNewUser = async (profile, googleId, email, avatarUrl, useFirebase) => {
+  const newUser = await new User({
+    provider: 'google',
+    googleId,
+    username: profile.name.givenName,
+    email,
+    emailVerified: profile.emails[0].verified,
+    name: `${profile.name.givenName} ${profile.name.familyName}`,
+    avatar: avatarUrl,
+  }).save();
+
+  if (useFirebase) {
+    const userId = newUser._id;
+    const avatarURL = await uploadProfilePicture(userId, avatarUrl);
+    console.log('avatarURL', avatarURL);
+    newUser.avatar = avatarURL;
+    await newUser.save();
+  }
+
+  return newUser;
 };
 
 module.exports = () =>

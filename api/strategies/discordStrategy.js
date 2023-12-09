@@ -3,15 +3,13 @@ const User = require('../models/User');
 const config = require('../../config/loader');
 const domains = config.domains;
 const uploadProfilePicture = require('~/server/services/ProfilePictureCreate');
-const { useFirebase } = require('../server/services/firebase');
+const { useFirebase } = require('~/server/services/firebase');
 
 const discordLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
     const email = profile.email;
     const discordId = profile.id;
-    const oldUser = await User.findOne({
-      email,
-    });
+    const oldUser = await User.findOne({ email });
     const ALLOW_SOCIAL_REGISTRATION =
       process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
     let avatarURL;
@@ -25,46 +23,51 @@ const discordLogin = async (accessToken, refreshToken, profile, cb) => {
     }
 
     if (oldUser) {
-      oldUser.avatar = avatarURL;
-      await oldUser.save();
-
-      if (useFirebase) {
-        const userId = oldUser._id;
-        const avatarURL = await uploadProfilePicture(userId, profile.photos[0].value);
-        console.log('avatarURL', avatarURL);
-        oldUser.avatar = avatarURL;
-        await oldUser.save();
-      }
-
+      await handleExistingUser(oldUser, avatarURL, useFirebase);
       return cb(null, oldUser);
-    } else if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await new User({
-        provider: 'discord',
-        discordId,
-        username: profile.username,
-        email,
-        name: profile.global_name,
-        avatar: avatarURL,
-      }).save();
-
-      if (useFirebase) {
-        const userId = newUser._id;
-        const avatarURL = await uploadProfilePicture(userId, profile.photos[0].value);
-        console.log('avatarURL', avatarURL);
-        newUser.avatar = avatarURL;
-        await newUser.save();
-      }
-
-      return cb(null, newUser);
     }
 
-    return cb(null, false, {
-      message: 'User not found.',
-    });
+    if (ALLOW_SOCIAL_REGISTRATION) {
+      const newUser = await createNewUser(profile, discordId, email, avatarURL, useFirebase);
+      return cb(null, newUser);
+    }
   } catch (err) {
     console.error(err);
     return cb(err);
   }
+};
+
+const handleExistingUser = async (oldUser, avatarURL, useFirebase) => {
+  if (!oldUser.avatarUploaded && !useFirebase) {
+    oldUser.avatar = avatarURL;
+    await oldUser.save();
+  } else if (useFirebase && !oldUser.avatarUploaded) {
+    const userId = oldUser._id;
+    const newAvatarURL = await uploadProfilePicture(userId, avatarURL);
+    oldUser.avatar = newAvatarURL;
+    await oldUser.save();
+  }
+};
+
+const createNewUser = async (profile, discordId, email, avatarURL, useFirebase) => {
+  const newUser = await new User({
+    provider: 'discord',
+    discordId,
+    username: profile.username,
+    email,
+    name: profile.global_name,
+    avatar: avatarURL,
+  }).save();
+
+  if (useFirebase) {
+    const userId = newUser._id;
+    const newAvatarURL = await uploadProfilePicture(userId, avatarURL);
+    console.log('newAvatarURL', newAvatarURL);
+    newUser.avatar = newAvatarURL;
+    await newUser.save();
+  }
+
+  return newUser;
 };
 
 module.exports = () =>
