@@ -133,7 +133,7 @@ export default {
     'Top-k يغير كيفية اختيار النموذج للرموز للإخراج. top-k من 1 يعني أن الرمز المحدد هو الأكثر احتمالية بين جميع   الرموز في مفردات النموذج (يسمى أيضًا الترميز الجشعي)، بينما top-k من 3 يعني أن الرمز التالي يتم اختياره من بين الرموز الثلاثة الأكثر احتمالية (باستخدام الحرارة).',
   com_endpoint_google_maxoutputtokens:
     'الحد الأقصى لعدد الرموز التي يمكن إنشاؤها في الرد. حدد قيمة أقل للردود الأقصر وقيمة أعلى للردود الأطول.',
-  com_endpoint_google_custom_name_placeholder: 'قم بتعيين اسم مخصص لـ PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'قم بتعيين اسم مخصص لـ Google',
   com_endpoint_prompt_prefix_placeholder:
     'قم بتعيين تعليمات مخصصة أو سياق. يتم تجاهله إذا كان فارغًا.',
   com_endpoint_custom_name: 'اسم مخصص',

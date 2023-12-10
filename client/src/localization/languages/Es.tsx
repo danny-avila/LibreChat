@@ -138,7 +138,7 @@ export default {
     'Establece instrucciones o contexto personalizado. Ignorado si está vacío.',
   com_endpoint_google_maxoutputtokens:
     'Número máximo de tokens que se pueden generar en la respuesta. Especifica un valor menor para respuestas más cortas y un valor mayor para respuestas más largas.',
-  com_endpoint_google_custom_name_placeholder: 'Establece un nombre personalizado para PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'Establece un nombre personalizado para Google',
   com_endpoint_prompt_prefix_placeholder:
     'Establece instrucciones o contexto personalizados. Se ignora si está vacío.',
   com_endpoint_custom_name: 'Nombre personalizado',

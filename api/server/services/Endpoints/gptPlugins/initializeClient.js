@@ -1,7 +1,7 @@
-const { PluginsClient } = require('../../../../app');
-const { isEnabled } = require('../../../utils');
-const { getAzureCredentials } = require('../../../../utils');
-const { getUserKey, checkUserKeyExpiry } = require('../../../services/UserService');
+const { PluginsClient } = require('~/app');
+const { isEnabled } = require('~/server/utils');
+const { getAzureCredentials } = require('~/utils');
+const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 
 const initializeClient = async ({ req, res, endpointOption }) => {
   const {

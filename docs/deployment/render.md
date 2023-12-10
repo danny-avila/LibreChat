@@ -53,7 +53,7 @@ Also:
 | JWT_REFRESH_SECRET | secret |
 | JWT_SECRET | secret |
 | OPENAI_API_KEY | user_provided |
-| PALM_KEY | user_provided |
+| GOOGLE_KEY | user_provided |
 | PORT | 3080 |
 | SESSION_EXPIRY | (1000 * 60 * 60 * 24) * 7 |
 

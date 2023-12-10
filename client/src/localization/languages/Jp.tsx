@@ -133,7 +133,7 @@ export default {
     'Top-k はモデルがトークンをどのように選択して出力するかを変更します。top-kが1の場合はモデルの語彙に含まれるすべてのトークンの中で最も確率が高い1つが選択されます(greedy decodingと呼ばれている)。top-kが3の場合は上位3つのトークンの中から選択されます。(temperatureを使用)',
   com_endpoint_google_maxoutputtokens:
     ' 	生成されるレスポンスの最大トークン数。短いレスポンスには低い値を、長いレスポンスには高い値を指定します。',
-  com_endpoint_google_custom_name_placeholder: 'PaLM2のカスタム名を設定する',
+  com_endpoint_google_custom_name_placeholder: 'Googleのカスタム名を設定する',
   com_endpoint_prompt_prefix_placeholder:
     'custom instructions か context を設定する。空の場合は無視されます。',
   com_endpoint_custom_name: 'プリセット名',
