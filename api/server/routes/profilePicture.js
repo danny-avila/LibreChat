@@ -30,7 +30,6 @@ router.post('/', upload.single('input'), async (req, res) => {
 
     const url = await uploadProfilePicture(userId, input);
     res.json({ url });
-    console.log('GODO');
   } catch (error) {
     console.error('Error:', error.message);
     res.status(500).json({ message: 'An error occurred while uploading the profile picture' });

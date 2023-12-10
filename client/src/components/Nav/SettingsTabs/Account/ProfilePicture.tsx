@@ -81,7 +81,7 @@ function ProfilePictureUpload() {
         <label
           htmlFor={'file-upload-profile-picture'}
           className={cn(
-            'flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:bg-slate-200 hover:text-green-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500',
+            'flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:bg-slate-200 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-800 dark:hover:text-green-500',
             statusColor,
           )}
         >
@@ -131,7 +131,7 @@ function ProfilePictureUpload() {
             )}
             {showUploadButton && (
               <button
-                className="mt-4 rounded bg-green-500 px-4 py-2 text-white"
+                className="mt-4 rounded bg-green-500 px-4 py-2 text-white hover:bg-green-600 hover:text-gray-200"
                 onClick={handleUpload}
               >
                 {localize('com_ui_upload')}
