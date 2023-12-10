@@ -134,7 +134,7 @@ export default {
     'Top-k thay đổi cách mô hình chọn mã thông báo để xuất. Top-k là 1 có nghĩa là mã thông báo được chọn là phổ biến nhất trong tất cả các mã thông báo trong bảng từ vựng của mô hình (còn được gọi là giải mã tham lam), trong khi top-k là 3 có nghĩa là mã thông báo tiếp theo được chọn từ giữa 3 mã thông báo phổ biến nhất (sử dụng nhiệt độ).',
   com_endpoint_google_maxoutputtokens:
     'Số mã thông báo tối đa có thể được tạo ra trong phản hồi. Chỉ định một giá trị thấp hơn cho các phản hồi ngắn hơn và một giá trị cao hơn cho các phản hồi dài hơn.',
-  com_endpoint_google_custom_name_placeholder: 'Đặt tên tùy chỉnh cho PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'Đặt tên tùy chỉnh cho Google',
   com_endpoint_prompt_prefix_placeholder:
     'Đặt hướng dẫn hoặc ngữ cảnh tùy chỉnh. Bỏ qua nếu trống.',
   com_endpoint_custom_name: 'Tên tùy chỉnh',

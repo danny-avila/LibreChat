@@ -3,11 +3,12 @@ const { CallbackManager } = require('langchain/callbacks');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
 const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
-const checkBalance = require('../../models/checkBalance');
+const { EModelEndpoint } = require('~/server/services/Endpoints');
 const { formatLangChainMessages } = require('./prompts');
-const { isEnabled } = require('../../server/utils');
-const { extractBaseURL } = require('../../utils');
+const checkBalance = require('~/models/checkBalance');
 const { SelfReflectionTool } = require('./tools');
+const { isEnabled } = require('~/server/utils');
+const { extractBaseURL } = require('~/utils');
 const { loadTools } = require('./tools/util');
 
 class PluginsClient extends OpenAIClient {
@@ -304,6 +305,7 @@ class PluginsClient extends OpenAIClient {
           amount: promptTokens,
           debug: this.options.debug,
           model: this.modelOptions.model,
+          endpoint: EModelEndpoint.openAI,
         },
       });
     }

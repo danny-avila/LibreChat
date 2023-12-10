@@ -1,6 +1,6 @@
 const { availableTools } = require('~/app/clients/tools');
 const { addOpenAPISpecs } = require('~/app/clients/tools/util/addOpenAPISpecs');
-const { openAIApiKey, azureOpenAIApiKey, useAzurePlugins, userProvidedOpenAI, palmKey } =
+const { openAIApiKey, azureOpenAIApiKey, useAzurePlugins, userProvidedOpenAI, googleKey } =
   require('./EndpointService').config;
 
 /**
@@ -8,7 +8,7 @@ const { openAIApiKey, azureOpenAIApiKey, useAzurePlugins, userProvidedOpenAI, pa
  */
 async function loadAsyncEndpoints() {
   let i = 0;
-  let key, palmUser;
+  let key, googleUserProvides;
   try {
     key = require('~/data/auth.json');
   } catch (e) {
@@ -17,8 +17,8 @@ async function loadAsyncEndpoints() {
     }
   }
 
-  if (palmKey === 'user_provided') {
-    palmUser = true;
+  if (googleKey === 'user_provided') {
+    googleUserProvides = true;
     if (i <= 1) {
       i++;
     }
@@ -33,7 +33,7 @@ async function loadAsyncEndpoints() {
   }
   const plugins = transformToolsToMap(tools);
 
-  const google = key || palmUser ? { userProvide: palmUser } : false;
+  const google = key || googleUserProvides ? { userProvide: googleUserProvides } : false;
 
   const gptPlugins =
     openAIApiKey || azureOpenAIApiKey
