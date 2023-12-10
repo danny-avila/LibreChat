@@ -2,8 +2,13 @@ const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
 const { GoogleVertexAI } = require('langchain/llms/googlevertexai');
 const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
-const { getResponseSender, EModelEndpoint } = require('~/server/services/Endpoints');
+const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
+const {
+  getResponseSender,
+  EModelEndpoint,
+  endpointSettings,
+} = require('~/server/services/Endpoints');
 const { getModelMaxTokens } = require('~/utils');
 const { formatMessage } = require('./prompts');
 const BaseClient = require('./BaseClient');
@@ -13,6 +18,8 @@ const publisher = 'google';
 const endpointPrefix = `https://${loc}-aiplatform.googleapis.com`;
 // const apiEndpoint = loc + '-aiplatform.googleapis.com';
 const tokenizersCache = {};
+
+const settings = endpointSettings[EModelEndpoint.google];
 
 class GoogleClient extends BaseClient {
   constructor(credentials, options = {}) {
@@ -92,22 +99,25 @@ class GoogleClient extends BaseClient {
     this.modelOptions = {
       ...modelOptions,
       // set some good defaults (check for undefined in some cases because they may be 0)
-      model: modelOptions.model || 'chat-bison',
-      temperature: typeof modelOptions.temperature === 'undefined' ? 0.2 : modelOptions.temperature, // 0 - 1, 0.2 is recommended
-      topP: typeof modelOptions.topP === 'undefined' ? 0.95 : modelOptions.topP, // 0 - 1, default: 0.95
-      topK: typeof modelOptions.topK === 'undefined' ? 40 : modelOptions.topK, // 1-40, default: 40
+      model: modelOptions.model || settings.model.default,
+      temperature:
+        typeof modelOptions.temperature === 'undefined'
+          ? settings.temperature.default
+          : modelOptions.temperature,
+      topP: typeof modelOptions.topP === 'undefined' ? settings.topP.default : modelOptions.topP,
+      topK: typeof modelOptions.topK === 'undefined' ? settings.topK.default : modelOptions.topK,
       // stop: modelOptions.stop // no stop method for now
     };
 
     this.isChatModel = this.modelOptions.model.includes('chat');
     const { isChatModel } = this;
-    this.isTextModel = this.modelOptions.model.includes('text');
+    this.isTextModel = !isChatModel && /code|text/.test(this.modelOptions.model);
     const { isTextModel } = this;
 
     this.maxContextTokens = getModelMaxTokens(this.modelOptions.model, EModelEndpoint.google);
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
     // Earlier messages will be dropped until the prompt is within the limit.
-    this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1024;
+    this.maxResponseTokens = this.modelOptions.maxOutputTokens || settings.maxOutputTokens.default;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
@@ -123,8 +133,8 @@ class GoogleClient extends BaseClient {
       this.options.sender ??
       getResponseSender({
         model: this.modelOptions.model,
-        endpoint: EModelEndpoint.openAI,
-        chatGptLabel: this.options.chatGptLabel,
+        endpoint: EModelEndpoint.google,
+        modelLabel: this.options.modelLabel,
       });
 
     this.userLabel = this.options.userLabel || 'User';
@@ -185,7 +195,7 @@ class GoogleClient extends BaseClient {
   }
 
   buildMessages(messages = [], parentMessageId) {
-    if (this.modelOptions.model.includes('text')) {
+    if (this.isTextModel) {
       return this.buildMessagesPrompt(messages, parentMessageId);
     }
     const formattedMessages = messages.map(this.formatMessages());
@@ -398,7 +408,9 @@ class GoogleClient extends BaseClient {
   async getCompletion(_payload, options = {}) {
     const { onProgress, abortController } = options;
     const { parameters, instances } = _payload;
-    const { messages: _messages, ...rest } = instances?.[0] ?? {};
+    const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
+
+    let examples;
 
     let clientOptions = {
       authOptions: {
@@ -408,11 +420,27 @@ class GoogleClient extends BaseClient {
         projectId: this.project_id,
       },
       ...parameters,
-      ...rest,
     };
 
     if (!parameters) {
       clientOptions = { ...clientOptions, ...this.modelOptions };
+    }
+
+    if (_examples && _examples.length) {
+      examples = _examples
+        .map((ex) => {
+          const { input, output } = ex;
+          if (!input || !output) {
+            return undefined;
+          }
+          return {
+            input: new HumanMessage(input.content),
+            output: new AIMessage(output.content),
+          };
+        })
+        .filter((ex) => ex);
+
+      clientOptions.examples = examples;
     }
 
     const model = this.isTextModel
@@ -425,6 +453,10 @@ class GoogleClient extends BaseClient {
       : _messages
         .map((msg) => ({ ...msg, role: msg.author === 'User' ? 'user' : 'assistant' }))
         .map((message) => formatMessage({ message, langChain: true }));
+
+    if (context && messages?.length > 0) {
+      messages.unshift(new SystemMessage(context));
+    }
 
     const stream = await model.stream(messages, {
       signal: abortController.signal,
@@ -461,6 +493,7 @@ class GoogleClient extends BaseClient {
       }
     } catch (err) {
       console.error('Error: failed to send completion to Google');
+      console.error(err);
       console.error(err.message);
     }
     return reply.trim();

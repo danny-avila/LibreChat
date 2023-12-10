@@ -16,7 +16,7 @@ export default function GoogleView({ conversation, models, isPreset = false }) {
   const { showExamples, isCodeChat } = optionSettings;
   return showExamples && !isCodeChat ? (
     <Examples
-      examples={examples ?? []}
+      examples={examples ?? [{ input: { content: '' }, output: { content: '' } }]}
       setExample={setExample}
       addExample={addExample}
       removeExample={removeExample}
