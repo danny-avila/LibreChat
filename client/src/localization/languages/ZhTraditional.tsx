@@ -127,7 +127,7 @@ export default {
     'Top-k 調整模型如何選取輸出的 token。當 Top-k 設為 1 時，模型會選取在其詞彙庫中機率最高的 token 進行輸出（這也被稱為貪婪解碼）。相對地，當 Top-k 設為 3 時，模型會從機率最高的三個 token 中選取下一個輸出 token（這會涉及到所謂的「溫度」調整）',
   com_endpoint_google_maxoutputtokens:
     '設定回應中可生成的最大 token 數。若希望回應簡短，請設定較低的數值；若需較長的回應，則設定較高的數值。',
-  com_endpoint_google_custom_name_placeholder: '為 PaLM2 設定自定義名稱',
+  com_endpoint_google_custom_name_placeholder: '為 Google 設定自定義名稱',
   com_endpoint_prompt_prefix_placeholder: '設定自定義提示或前後文。如果為空則忽略。',
   com_endpoint_custom_name: '自定義名稱',
   com_endpoint_prompt_prefix: '提示起始字串',

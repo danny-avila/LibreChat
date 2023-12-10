@@ -106,7 +106,7 @@ export default {
     'Top-k wpływa na sposób, w jaki model wybiera tokeny do wygenerowania odpowiedzi. Top-k 1 oznacza, że wybrany token jest najbardziej prawdopodobny spośród wszystkich tokenów w słowniku modelu (nazywane też dekodowaniem zachłannym), podczas gdy top-k 3 oznacza, że następny token jest wybierany spośród 3 najbardziej prawdopodobnych tokenów (z uwzględnieniem temperatury).',
   com_endpoint_google_maxoutputtokens:
     'Maksymalna liczba tokenów, które mogą być wygenerowane w odpowiedzi. Wybierz niższą wartość dla krótszych odpowiedzi i wyższą wartość dla dłuższych odpowiedzi.',
-  com_endpoint_google_custom_name_placeholder: 'Ustaw niestandardową nazwę dla PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'Ustaw niestandardową nazwę dla Google',
   com_endpoint_google_prompt_prefix_placeholder:
     'Ustaw niestandardowe instrukcje lub kontekst. Jeśli puste, zostanie zignorowane.',
   com_endpoint_custom_name: 'Niestandardowa nazwa',

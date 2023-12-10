@@ -445,6 +445,7 @@ class BaseClient {
           amount: promptTokens,
           debug: this.options.debug,
           model: this.modelOptions.model,
+          endpoint: this.options.endpoint,
         },
       });
     }

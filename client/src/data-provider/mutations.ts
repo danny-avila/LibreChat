@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type {
   FileUploadResponse,
@@ -10,9 +10,13 @@ import type {
   UpdatePresetOptions,
   DeletePresetOptions,
   PresetDeleteResponse,
+  LogoutOptions,
   TPreset,
 } from 'librechat-data-provider';
+
 import { dataService, MutationKeys } from 'librechat-data-provider';
+import { useSetRecoilState } from 'recoil';
+import store from '~/store';
 
 export const useUploadImageMutation = (
   options?: UploadMutationOptions,
@@ -67,5 +71,31 @@ export const useDeletePresetMutation = (
   return useMutation([MutationKeys.deletePreset], {
     mutationFn: (preset: TPreset | undefined) => dataService.deletePreset(preset),
     ...(options || {}),
+  });
+};
+
+/* login/logout */
+export const useLogoutUserMutation = (
+  options?: LogoutOptions,
+): UseMutationResult<unknown, unknown, undefined, unknown> => {
+  const queryClient = useQueryClient();
+  const setDefaultPreset = useSetRecoilState(store.defaultPreset);
+  return useMutation([MutationKeys.logoutUser], {
+    mutationFn: () => dataService.logout(),
+
+    ...(options || {}),
+    onSuccess: (...args) => {
+      options?.onSuccess?.(...args);
+    },
+    onMutate: (...args) => {
+      setDefaultPreset(null);
+      queryClient.removeQueries();
+      localStorage.removeItem('lastConversationSetup');
+      localStorage.removeItem('lastSelectedModel');
+      localStorage.removeItem('lastSelectedTools');
+      localStorage.removeItem('filesToDelete');
+      localStorage.removeItem('lastAssistant');
+      options?.onMutate?.(...args);
+    },
   });
 };

@@ -20,3 +20,9 @@ export type DeletePresetOptions = {
   onMutate?: (variables: TPreset | undefined) => void | Promise<unknown>;
   onError?: (error: unknown, variables: TPreset | undefined, context?: unknown) => void;
 };
+
+export type LogoutOptions = {
+  onSuccess?: (data: unknown, variables: undefined, context?: unknown) => void;
+  onMutate?: (variables: undefined) => void | Promise<unknown>;
+  onError?: (error: unknown, variables: undefined, context?: unknown) => void;
+};

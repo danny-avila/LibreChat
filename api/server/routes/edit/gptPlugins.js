@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { getResponseSender } = require('../endpoints/schemas');
-const { validateTools } = require('../../../app');
-const { initializeClient } = require('../endpoints/gptPlugins');
-const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
-const { sendMessage, createOnProgress, formatSteps, formatAction } = require('../../utils');
+const { validateTools } = require('~/app');
+const { saveMessage, getConvoTitle, getConvo } = require('~/models');
+const { getResponseSender } = require('~/server/services/Endpoints');
+const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
+const { sendMessage, createOnProgress, formatSteps, formatAction } = require('~/server/utils');
 const {
   handleAbort,
   createAbortController,
@@ -12,7 +12,7 @@ const {
   setHeaders,
   validateEndpoint,
   buildEndpointOption,
-} = require('../../middleware');
+} = require('~/server/middleware');
 
 router.post('/abort', handleAbort());
 

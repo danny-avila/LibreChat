@@ -1,7 +1,8 @@
 const { promptTokensEstimate } = require('openai-chat-tokens');
-const checkBalance = require('../../../models/checkBalance');
-const { isEnabled } = require('../../../server/utils');
-const { formatFromLangChain } = require('../prompts');
+const { EModelEndpoint } = require('~/server/services/Endpoints');
+const { formatFromLangChain } = require('~/app/clients/prompts');
+const checkBalance = require('~/models/checkBalance');
+const { isEnabled } = require('~/server/utils');
 
 const createStartHandler = ({
   context,
@@ -55,6 +56,7 @@ const createStartHandler = ({
             debug: manager.debug,
             generations,
             model,
+            endpoint: EModelEndpoint.openAI,
           },
         });
       }
