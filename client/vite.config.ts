@@ -42,7 +42,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '~': path.join(__dirname, 'src/'),
-      $fonts: resolve('fonts'),
+      $fonts: resolve('/fonts'),
     },
   },
 });
