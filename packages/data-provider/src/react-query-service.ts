@@ -390,9 +390,10 @@ export const useRefreshTokenMutation = (): UseMutationResult<
     onMutate: () => {
       queryClient.removeQueries();
       localStorage.removeItem('lastConversationSetup');
+      localStorage.removeItem('lastSelectedModel');
       localStorage.removeItem('lastSelectedTools');
+      localStorage.removeItem('filesToDelete');
       localStorage.removeItem('lastAssistant');
-      localStorage.removeItem('autoScroll');
     },
   });
 };
