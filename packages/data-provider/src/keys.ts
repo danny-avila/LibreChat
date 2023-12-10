@@ -23,4 +23,5 @@ export enum MutationKeys {
   fileDelete = 'fileDelete',
   updatePreset = 'updatePreset',
   deletePreset = 'deletePreset',
+  logoutUser = 'logoutUser',
 }
