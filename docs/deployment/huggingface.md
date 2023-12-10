@@ -36,7 +36,7 @@ You will need to fill these values:
 | BINGAI_TOKEN | `user_provided` | 
 | CHATGPT_TOKEN | `user_provided` |
 | ANTHROPIC_API_KEY | `user_provided` |
-| PALM_KEY | `user_provided` |
+| GOOGLE_KEY | `user_provided` |
 | CREDS_KEY | * see bellow |
 | CREDS_IV | * see bellow |
 | JWT_SECRET | * see bellow |

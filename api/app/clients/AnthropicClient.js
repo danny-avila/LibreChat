@@ -1,6 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
-const { getResponseSender, EModelEndpoint } = require('~/server/routes/endpoints/schemas');
+const { getResponseSender, EModelEndpoint } = require('~/server/services/Endpoints');
 const { getModelMaxTokens } = require('~/utils');
 const BaseClient = require('./BaseClient');
 
@@ -46,7 +46,8 @@ class AnthropicClient extends BaseClient {
       stop: modelOptions.stop, // no stop method for now
     };
 
-    this.maxContextTokens = getModelMaxTokens(this.modelOptions.model) ?? 100000;
+    this.maxContextTokens =
+      getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ?? 100000;
     this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1500;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;

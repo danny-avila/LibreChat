@@ -135,7 +135,7 @@ export default {
     'Top-k cambia come il modello seleziona i token per l\'output. Un top-k di 1 significa che il token selezionato è il più probabile tra tutti i token nel vocabolario del modello (anche chiamato decodifica greedy), mentre un top-k di 3 significa che il token successivo è selezionato tra i 3 token più probabili (usando temperature).',
   com_endpoint_google_maxoutputtokens:
     'Numero massimo di token che possono essere generati nella risposta. Specifica un valore più basso per risposte più corte e un valore più alto per risposte più lunghe.',
-  com_endpoint_google_custom_name_placeholder: 'Imposta un nome personalizzato per PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'Imposta un nome personalizzato per Google',
   com_endpoint_prompt_prefix_placeholder:
     'Imposta istruzioni o contesto personalizzati. Ignorato se vuoto.',
   com_endpoint_custom_name: 'Nome personalizzato',

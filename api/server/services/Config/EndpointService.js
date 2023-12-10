@@ -1,4 +1,4 @@
-const { EModelEndpoint } = require('~/server/routes/endpoints/schemas');
+const { EModelEndpoint } = require('~/server/services/Endpoints');
 
 const {
   OPENAI_API_KEY: openAIApiKey,
@@ -7,7 +7,7 @@ const {
   CHATGPT_TOKEN: chatGPTToken,
   BINGAI_TOKEN: bingToken,
   PLUGINS_USE_AZURE,
-  PALM_KEY: palmKey,
+  GOOGLE_KEY: googleKey,
 } = process.env ?? {};
 
 const useAzurePlugins = !!PLUGINS_USE_AZURE;
@@ -26,7 +26,7 @@ module.exports = {
     azureOpenAIApiKey,
     useAzurePlugins,
     userProvidedOpenAI,
-    palmKey,
+    googleKey,
     [EModelEndpoint.openAI]: isUserProvided(openAIApiKey),
     [EModelEndpoint.assistant]: isUserProvided(openAIApiKey),
     [EModelEndpoint.azureOpenAI]: isUserProvided(azureOpenAIApiKey),

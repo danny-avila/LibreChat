@@ -126,7 +126,7 @@ export default {
     'Top-k 会改变模型选择输出词的方式。top-k为1意味着所选词是模型词汇中概率最大的（也称为贪心解码），而top-k为3意味着下一个词是从3个概率最大的词中选出的（使用随机性）。',
   com_endpoint_google_maxoutputtokens:
     ' 	响应生成中可以使用的最大词元数。指定较低的值会得到更短的响应，而指定较高的值则会得到更长的响应。',
-  com_endpoint_google_custom_name_placeholder: '为PaLM2设置一个名称',
+  com_endpoint_google_custom_name_placeholder: '为Google设置一个名称',
   com_endpoint_prompt_prefix_placeholder: '自定义提示词和上下文，默认为空',
   com_endpoint_custom_name: '自定义名称',
   com_endpoint_prompt_prefix: '对话前缀',
