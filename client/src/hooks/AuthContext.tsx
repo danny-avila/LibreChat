@@ -12,13 +12,13 @@ import {
   TLoginResponse,
   setTokenHeader,
   useLoginUserMutation,
-  useLogoutUserMutation,
   useGetUserQuery,
   useRefreshTokenMutation,
   TLoginUser,
 } from 'librechat-data-provider';
-import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import { useNavigate } from 'react-router-dom';
+import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
+import { useLogoutUserMutation } from '~/data-provider';
 import useTimeout from './useTimeout';
 
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
@@ -30,20 +30,11 @@ const AuthContextProvider = ({
   authConfig?: TAuthConfig;
   children: ReactNode;
 }) => {
+  const navigate = useNavigate();
   const [user, setUser] = useState<TUser | undefined>(undefined);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-
-  const navigate = useNavigate();
-
-  const loginUser = useLoginUserMutation();
-  const logoutUser = useLogoutUserMutation();
-  const userQuery = useGetUserQuery({ enabled: !!token });
-  const refreshToken = useRefreshTokenMutation();
-
-  const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
-
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
       const { token, isAuthenticated, user, redirect } = userContext;
@@ -60,6 +51,32 @@ const AuthContextProvider = ({
     },
     [navigate],
   );
+  const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
+
+  const loginUser = useLoginUserMutation();
+  const logoutUser = useLogoutUserMutation({
+    onSuccess: () => {
+      setUserContext({
+        token: undefined,
+        isAuthenticated: false,
+        user: undefined,
+        redirect: '/login',
+      });
+    },
+    onError: (error) => {
+      doSetError((error as Error).message);
+      setUserContext({
+        token: undefined,
+        isAuthenticated: false,
+        user: undefined,
+        redirect: '/login',
+      });
+    },
+  });
+
+  const logout = useCallback(() => logoutUser.mutate(undefined), [logoutUser]);
+  const userQuery = useGetUserQuery({ enabled: !!token });
+  const refreshToken = useRefreshTokenMutation();
 
   const login = (data: TLoginUser) => {
     loginUser.mutate(data, {
@@ -74,28 +91,6 @@ const AuthContextProvider = ({
       },
     });
   };
-
-  const logout = useCallback(() => {
-    logoutUser.mutate(undefined, {
-      onSuccess: () => {
-        setUserContext({
-          token: undefined,
-          isAuthenticated: false,
-          user: undefined,
-          redirect: '/login',
-        });
-      },
-      onError: (error) => {
-        doSetError((error as Error).message);
-        setUserContext({
-          token: undefined,
-          isAuthenticated: false,
-          user: undefined,
-          redirect: '/login',
-        });
-      },
-    });
-  }, [setUserContext, doSetError, logoutUser]);
 
   const silentRefresh = useCallback(() => {
     if (authConfig?.test) {

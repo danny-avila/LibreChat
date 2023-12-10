@@ -1,16 +1,15 @@
-import {
-  QueryKeys,
-  modularEndpoints,
-  useGetPresetsQuery,
-  useCreatePresetMutation,
-} from 'librechat-data-provider';
+import { QueryKeys, modularEndpoints, useCreatePresetMutation } from 'librechat-data-provider';
 import filenamify from 'filenamify';
 import { useCallback, useEffect, useRef } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 import exportFromJSON from 'export-from-json';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TPreset } from 'librechat-data-provider';
-import { useUpdatePresetMutation, useDeletePresetMutation } from '~/data-provider';
+import {
+  useUpdatePresetMutation,
+  useDeletePresetMutation,
+  useGetPresetsQuery,
+} from '~/data-provider';
 import { useChatContext, useToastContext } from '~/Providers';
 import useNavigateToConvo from '~/hooks/useNavigateToConvo';
 import useDefaultConvo from '~/hooks/useDefaultConvo';
@@ -22,22 +21,28 @@ import store from '~/store';
 
 export default function usePresets() {
   const localize = useLocalize();
-  const { user } = useAuthContext();
+  const hasLoaded = useRef(false);
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
-  const hasLoaded = useRef(false);
+  const { user, isAuthenticated } = useAuthContext();
 
   const [_defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
   const setPresetModalVisible = useSetRecoilState(store.presetModalVisible);
   const { preset, conversation, newConversation, setPreset } = useChatContext();
-  const presetsQuery = useGetPresetsQuery({ enabled: !!user });
+  const presetsQuery = useGetPresetsQuery({ enabled: !!user && isAuthenticated });
 
   useEffect(() => {
-    if (_defaultPreset || !presetsQuery.data || hasLoaded.current) {
+    const { data: presets } = presetsQuery;
+    if (_defaultPreset || !presets || hasLoaded.current) {
       return;
     }
 
-    const defaultPreset = presetsQuery.data.find((p) => p.defaultPreset);
+    if (presets && presets.length > 0 && user && presets[0].user !== user?.id) {
+      presetsQuery.refetch();
+      return;
+    }
+
+    const defaultPreset = presets.find((p) => p.defaultPreset);
     if (!defaultPreset) {
       hasLoaded.current = true;
       return;
@@ -49,7 +54,7 @@ export default function usePresets() {
     hasLoaded.current = true;
     // dependencies are stable and only needed once
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetsQuery.data]);
+  }, [presetsQuery.data, user]);
 
   const setPresets = useCallback(
     (presets: TPreset[]) => {
