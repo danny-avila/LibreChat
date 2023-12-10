@@ -35,7 +35,7 @@ class GoogleClient extends BaseClient {
     this.setOptions(options);
   }
 
-  /* Google/PaLM2 specific methods */
+  /* Google specific methods */
   constructUrl() {
     return `${endpointPrefix}/v1/projects/${this.project_id}/locations/${loc}/publishers/${publisher}/models/${this.modelOptions.model}:serverStreamingPredict`;
   }
