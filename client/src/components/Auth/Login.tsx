@@ -1,11 +1,11 @@
-import React, { useEffect } from 'react';
-import LoginForm from './LoginForm';
-import { useAuthContext } from '~/hooks/AuthContext';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useLocalize } from '~/hooks';
-import { useGetStartupConfig } from 'librechat-data-provider';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
+import { useAuthContext } from '~/hooks/AuthContext';
 import { getLoginError } from '~/utils';
+import { useLocalize } from '~/hooks';
+import LoginForm from './LoginForm';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();

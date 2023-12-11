@@ -1,6 +1,6 @@
 // import { useState } from 'react';
 import { Plus } from 'lucide-react';
-import { useListAssistantsQuery } from 'librechat-data-provider';
+import { useListAssistantsQuery } from 'librechat-data-provider/react-query';
 import type { Assistant } from 'librechat-data-provider';
 import type { UseFormReset, UseFormSetValue } from 'react-hook-form';
 import type { CreationForm, Actions, Option } from '~/common';

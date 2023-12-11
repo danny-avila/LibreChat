@@ -7,15 +7,12 @@ import {
   createContext,
   useContext,
 } from 'react';
+import { TUser, TLoginResponse, setTokenHeader, TLoginUser } from 'librechat-data-provider';
 import {
-  TUser,
-  TLoginResponse,
-  setTokenHeader,
-  useLoginUserMutation,
   useGetUserQuery,
+  useLoginUserMutation,
   useRefreshTokenMutation,
-  TLoginUser,
-} from 'librechat-data-provider';
+} from 'librechat-data-provider/react-query';
 import { useNavigate } from 'react-router-dom';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import { useLogoutUserMutation } from '~/data-provider';

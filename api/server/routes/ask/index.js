@@ -6,7 +6,7 @@ const anthropic = require('./anthropic');
 const gptPlugins = require('./gptPlugins');
 const askChatGPTBrowser = require('./askChatGPTBrowser');
 const { isEnabled } = require('~/server/utils');
-const { EModelEndpoint } = require('~/server/services/Endpoints');
+const { EModelEndpoint } = require('librechat-data-provider');
 const {
   uaParser,
   checkBan,

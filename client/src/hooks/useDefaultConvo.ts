@@ -1,5 +1,5 @@
 import { useRecoilValue } from 'recoil';
-import { useGetEndpointsQuery } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TConversation, TPreset } from 'librechat-data-provider';
 import { getDefaultEndpoint, buildDefaultConvo } from '~/utils';
 import store from '~/store';

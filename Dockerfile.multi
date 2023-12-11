@@ -1,36 +1,33 @@
 # Build API, Client and Data Provider
-FROM node:19-alpine AS base
+FROM node:20-alpine AS base
 
-# WORKDIR /app
-# COPY config/loader.js ./config/
-# RUN touch .env
-# RUN npm install dotenv
-
-WORKDIR /app/api
-COPY api/package*.json ./
-COPY api/ ./
-RUN touch .env
-RUN npm install
-
-# React client build
-FROM base AS client-build
-WORKDIR /app/client
-COPY ./client/ ./
-
+# Build data-provider
+FROM base AS data-provider-build
 WORKDIR /app/packages/data-provider
 COPY ./packages/data-provider ./
 RUN npm install
 RUN npm run build
+
+# React client build
+FROM data-provider-build AS client-build
+WORKDIR /app/client
+COPY ./client/ ./
+# Copy data-provider to client's node_modules
 RUN mkdir -p /app/client/node_modules/librechat-data-provider/
 RUN cp -R /app/packages/data-provider/* /app/client/node_modules/librechat-data-provider/
-
-WORKDIR /app/client
 RUN npm install
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
 
 # Node API setup
-FROM base AS api-build
+FROM data-provider-build AS api-build
+WORKDIR /app/api
+COPY api/package*.json ./
+COPY api/ ./
+# Copy data-provider to API's node_modules
+RUN mkdir -p /app/api/node_modules/librechat-data-provider/
+RUN cp -R /app/packages/data-provider/* /app/api/node_modules/librechat-data-provider/
+RUN npm install
 COPY --from=client-build /app/client/dist /app/client/dist
 EXPOSE 3080
 ENV HOST=0.0.0.0

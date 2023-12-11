@@ -1,6 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
-const { getResponseSender, EModelEndpoint } = require('~/server/services/Endpoints');
+const { getResponseSender, EModelEndpoint } = require('librechat-data-provider');
 const { getModelMaxTokens } = require('~/utils');
 const BaseClient = require('./BaseClient');
 

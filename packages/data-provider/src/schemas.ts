@@ -107,6 +107,8 @@ export const openAIModels = [
   'gpt-4-0314',
 ];
 
+export const visionModels = ['gpt-4-vision', 'llava-13b'];
+
 export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
 export const tPluginAuthConfigSchema = z.object({

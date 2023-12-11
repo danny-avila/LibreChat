@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useResetPasswordMutation, TResetPassword } from 'librechat-data-provider';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
+import { useResetPasswordMutation } from 'librechat-data-provider/react-query';
+import type { TResetPassword } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 
 function ResetPassword() {
@@ -177,7 +176,8 @@ function ResetPassword() {
                 disabled={!!errors.password || !!errors.confirm_password}
                 type="submit"
                 aria-label={localize('com_auth_submit_registration')}
-                className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none">
+                className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none"
+              >
                 {localize('com_auth_continue')}
               </button>
             </div>

@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { useLocalize } from '~/hooks';
+import { useState, useEffect } from 'react';
 import {
-  useRequestPasswordResetMutation,
   useGetStartupConfig,
-  TRequestPasswordReset,
-  TRequestPasswordResetResponse,
-} from 'librechat-data-provider';
+  useRequestPasswordResetMutation,
+} from 'librechat-data-provider/react-query';
+import type { TRequestPasswordReset, TRequestPasswordResetResponse } from 'librechat-data-provider';
+import { useLocalize } from '~/hooks';
 
 function RequestPasswordReset() {
   const localize = useLocalize();
@@ -116,7 +115,8 @@ function RequestPasswordReset() {
                 ></input>
                 <label
                   htmlFor="email"
-                  className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500">
+                  className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
+                >
                   {localize('com_auth_email_address')}
                 </label>
               </div>
@@ -131,7 +131,8 @@ function RequestPasswordReset() {
               <button
                 type="submit"
                 disabled={!!errors.email}
-                className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none">
+                className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none"
+              >
                 {localize('com_auth_continue')}
               </button>
             </div>
