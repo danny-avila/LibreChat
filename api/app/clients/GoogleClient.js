@@ -4,11 +4,7 @@ const { GoogleVertexAI } = require('langchain/llms/googlevertexai');
 const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
 const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
-const {
-  getResponseSender,
-  EModelEndpoint,
-  endpointSettings,
-} = require('~/server/services/Endpoints');
+const { getResponseSender, EModelEndpoint, endpointSettings } = require('librechat-data-provider');
 const { getModelMaxTokens } = require('~/utils');
 const { formatMessage } = require('./prompts');
 const BaseClient = require('./BaseClient');

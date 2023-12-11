@@ -1,7 +1,8 @@
 import { Controller, useWatch } from 'react-hook-form';
-import type { Tool } from 'librechat-data-provider';
+import { Tools, EModelEndpoint } from 'librechat-data-provider';
+import { useCreateAssistantMutation } from 'librechat-data-provider/react-query';
 import type { CreationForm, Actions } from '~/common';
-import { useCreateAssistantMutation, Tools, EModelEndpoint } from 'librechat-data-provider';
+import type { Tool } from 'librechat-data-provider';
 import { Separator } from '~/components/ui/Separator';
 import { useAssistantsContext } from '~/Providers';
 import { Switch } from '~/components/ui/Switch';

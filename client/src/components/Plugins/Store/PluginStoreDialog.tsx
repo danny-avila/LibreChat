@@ -1,21 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Dialog } from '@headlessui/react';
 import { useRecoilState } from 'recoil';
 import { Search, X } from 'lucide-react';
-import store from '~/store';
-import PluginStoreItem from './PluginStoreItem';
-import PluginPagination from './PluginPagination';
-import PluginAuthForm from './PluginAuthForm';
+import { Dialog } from '@headlessui/react';
+import { useState, useEffect, useCallback } from 'react';
+import { tConversationSchema } from 'librechat-data-provider';
 import {
   useAvailablePluginsQuery,
   useUpdateUserPluginsMutation,
-  TPlugin,
-  TPluginAction,
-  tConversationSchema,
-  TError,
-} from 'librechat-data-provider';
+} from 'librechat-data-provider/react-query';
+import type { TError, TPlugin, TPluginAction } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import PluginPagination from './PluginPagination';
+import PluginStoreItem from './PluginStoreItem';
+import PluginAuthForm from './PluginAuthForm';
 import { useLocalize } from '~/hooks';
+import store from '~/store';
 
 type TPluginStoreDialogProps = {
   isOpen: boolean;

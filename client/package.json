@@ -2,6 +2,7 @@
   "name": "@librechat/frontend",
   "version": "0.6.1",
   "description": "",
+  "type": "module",
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
     "build": "cross-env NODE_ENV=production vite build",
@@ -95,7 +96,7 @@
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.11",
     "@types/react-dom": "^18.2.4",
-    "@vitejs/plugin-react": "^4.0.4",
+    "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.13",
     "babel-plugin-replace-ts-export-assignment": "^0.0.2",
     "babel-plugin-root-import": "^6.6.0",
@@ -114,7 +115,8 @@
     "tailwindcss": "^3.2.6",
     "ts-jest": "^29.1.0",
     "typescript": "^5.0.4",
-    "vite": "^4.4.9",
-    "vite-plugin-html": "^3.2.0"
+    "vite": "^5.0.7",
+    "vite-plugin-html": "^3.2.0",
+    "vite-plugin-node-polyfills": "^0.17.0"
   }
 }

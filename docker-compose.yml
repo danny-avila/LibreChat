@@ -38,12 +38,10 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
     volumes:
-      - /app/client/node_modules
       - ./api:/app/api
       - ./.env:/app/.env
       - ./.env.development:/app/.env.development
       - ./.env.production:/app/.env.production
-      - /app/api/node_modules
       - ./images:/app/client/public/images
   mongodb:
     container_name: chat-mongodb

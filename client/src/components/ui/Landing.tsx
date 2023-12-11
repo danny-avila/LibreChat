@@ -1,12 +1,12 @@
 import React from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import LightningIcon from '~/components/svg/LightningIcon';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
-import SunIcon from '../svg/SunIcon';
-import LightningIcon from '../svg/LightningIcon';
-import CautionIcon from '../svg/CautionIcon';
-import store from '~/store';
+import CautionIcon from '~/components/svg/CautionIcon';
+import SunIcon from '~/components/svg/SunIcon';
 import { useLocalize } from '~/hooks';
-import { useGetStartupConfig } from 'librechat-data-provider';
+import store from '~/store';
 
 export default function Landing() {
   const { data: config } = useGetStartupConfig();

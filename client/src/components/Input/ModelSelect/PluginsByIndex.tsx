@@ -1,7 +1,8 @@
 import { useRecoilState } from 'recoil';
 import { useState, useEffect } from 'react';
 import { ChevronDownIcon } from 'lucide-react';
-import { useAvailablePluginsQuery, TPlugin } from 'librechat-data-provider';
+import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
+import type { TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import {
   SelectDropDown,
