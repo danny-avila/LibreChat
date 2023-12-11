@@ -5,7 +5,7 @@ import {
   AnthropicIcon,
   AzureMinimalIcon,
   BingAIMinimalIcon,
-  PaLMinimalIcon,
+  GoogleMinimalIcon,
   LightningIcon,
 } from '~/components/svg';
 import { cn } from '~/utils';
@@ -16,7 +16,7 @@ export const icons = {
   [EModelEndpoint.gptPlugins]: MinimalPlugin,
   [EModelEndpoint.anthropic]: AnthropicIcon,
   [EModelEndpoint.chatGPTBrowser]: LightningIcon,
-  [EModelEndpoint.google]: PaLMinimalIcon,
+  [EModelEndpoint.google]: GoogleMinimalIcon,
   [EModelEndpoint.bingAI]: BingAIMinimalIcon,
   [EModelEndpoint.assistant]: ({ className = '' }) => (
     <svg

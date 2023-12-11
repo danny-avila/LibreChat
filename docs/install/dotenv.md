@@ -249,7 +249,7 @@ OPENROUTER_API_KEY=
 Follow these instruction to setup: [Google PaLM 2](./apis_and_tokens.md#googles-palm-2)
 
 ```bash
-PALM_KEY=user_provided
+GOOGLE_KEY=user_provided
 GOOGLE_REVERSE_PROXY=
 ```
 

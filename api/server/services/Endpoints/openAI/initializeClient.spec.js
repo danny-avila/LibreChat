@@ -1,11 +1,11 @@
+const { OpenAIClient } = require('~/app');
 const initializeClient = require('./initializeClient');
-const { OpenAIClient } = require('../../../../app');
-const { getUserKey } = require('../../../services/UserService');
+const { getUserKey } = require('~/server/services/UserService');
 
 // Mock getUserKey since it's the only function we want to mock
-jest.mock('../../../services/UserService', () => ({
+jest.mock('~/server/services/UserService', () => ({
   getUserKey: jest.fn(),
-  checkUserKeyExpiry: jest.requireActual('../../../services/UserService').checkUserKeyExpiry,
+  checkUserKeyExpiry: jest.requireActual('~/server/services/UserService').checkUserKeyExpiry,
 }));
 
 describe('initializeClient', () => {

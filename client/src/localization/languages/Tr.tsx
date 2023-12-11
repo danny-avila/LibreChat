@@ -136,7 +136,7 @@ export default {
     'Top-k, modelin çıkış için token seçme şeklini değiştirir. 1 top-k, seçilen tokenın modelin kelime dağarcığındaki tüm tokenlar arasında en olası olduğu anlamına gelir (ayrıca aç gözlü kod çözme denir), 3 top-k ise bir sonraki tokenın 3 en olası token arasından seçildiği anlamına gelir (sıcaklık kullanılarak).',
   com_endpoint_google_maxoutputtokens:
     'Yanıtta üretilebilecek maksimum token sayısı. Daha kısa yanıtlar için daha düşük bir değer belirtin ve daha uzun yanıtlar için daha yüksek bir değer belirtin.',
-  com_endpoint_google_custom_name_placeholder: 'PaLM2 için özel bir ad belirleyin',
+  com_endpoint_google_custom_name_placeholder: 'Google için özel bir ad belirleyin',
   com_endpoint_prompt_prefix_placeholder:
     'Özel talimatları veya bağlamı ayarlayın. Boşsa göz ardı edilir.',
   com_endpoint_custom_name: 'Özel Ad',
@@ -175,15 +175,18 @@ export default {
   com_endpoint_disabled_with_tools: 'araçlarla devre dışı bırakıldı',
   com_endpoint_disabled_with_tools_placeholder: 'Araçlar Seçiliyken Devre Dışı Bırakıldı',
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
-    'Sistem Mesajı\'na dahil edilecek özel talimatları ayarlayın. Varsayılan: hiçbiri',    
+    'Sistem Mesajı\'na dahil edilecek özel talimatları ayarlayın. Varsayılan: hiçbiri',
   com_endpoint_import: 'İçe Aktar',
   com_endpoint_set_custom_name: 'Bu ön ayarı bulabilmeniz için özel bir ad belirleyin',
   com_endpoint_preset_delete_confirm: 'Bu ön ayarı silmek istediğinizden emin misiniz?',
   com_endpoint_preset_clear_all_confirm: 'Tüm ön ayarlarınızı silmek istediğinizden emin misiniz?',
   com_endpoint_preset_import: 'Ön Ayar İçe Aktarıldı!',
-  com_endpoint_preset_import_error: 'Ön ayarınız içe aktarılırken bir hata oluştu. Lütfen tekrar deneyin.',
-  com_endpoint_preset_save_error: 'Ön ayarınız kaydedilirken bir hata oluştu. Lütfen tekrar deneyin.',
-  com_endpoint_preset_delete_error: 'Ön ayarınız silinirken bir hata oluştu. Lütfen tekrar deneyin.',
+  com_endpoint_preset_import_error:
+    'Ön ayarınız içe aktarılırken bir hata oluştu. Lütfen tekrar deneyin.',
+  com_endpoint_preset_save_error:
+    'Ön ayarınız kaydedilirken bir hata oluştu. Lütfen tekrar deneyin.',
+  com_endpoint_preset_delete_error:
+    'Ön ayarınız silinirken bir hata oluştu. Lütfen tekrar deneyin.',
   com_endpoint_preset_default_removed: 'artık varsayılan ön ayar değildir.',
   com_endpoint_preset_default_item: 'Varsayılan:',
   com_endpoint_preset_default_none: 'Varsayılan ön ayar etkin değil.',

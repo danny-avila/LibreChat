@@ -1,11 +1,18 @@
 import { EModelEndpoint } from 'librechat-data-provider';
-import { Plugin, GPTIcon, AnthropicIcon, AzureMinimalIcon } from '~/components/svg';
+import {
+  Plugin,
+  GPTIcon,
+  AnthropicIcon,
+  AzureMinimalIcon,
+  PaLMIcon,
+  CodeyIcon,
+} from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
 const Icon: React.FC<IconProps> = (props) => {
-  const { size = 30, isCreatedByUser, button, model = true, endpoint, error, jailbreak } = props;
+  const { size = 30, isCreatedByUser, button, model = '', endpoint, error, jailbreak } = props;
 
   const { user } = useAuthContext();
 
@@ -52,8 +59,12 @@ const Icon: React.FC<IconProps> = (props) => {
         name: 'Plugins',
       },
       [EModelEndpoint.google]: {
-        icon: <img src="/assets/google-palm.svg" alt="Palm Icon" />,
-        name: 'PaLM2',
+        icon: model?.includes('code') ? (
+          <CodeyIcon size={size * 0.75} />
+        ) : (
+          <PaLMIcon size={size * 0.7} />
+        ),
+        name: model?.includes('code') ? 'Codey' : 'PaLM2',
       },
       [EModelEndpoint.anthropic]: {
         icon: <AnthropicIcon size={size * 0.5555555555555556} />,
