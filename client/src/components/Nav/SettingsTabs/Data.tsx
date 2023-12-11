@@ -1,7 +1,7 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import { useRevokeAllUserKeysMutation, useRevokeUserKeyMutation } from 'librechat-data-provider';
 import React, { useState, useCallback, useRef } from 'react';
-import { useOnClickOutside } from '~/hooks';
+import { useLocalize, useOnClickOutside } from '~/hooks';
 import DangerButton from './DangerButton';
 
 export const RevokeKeysButton = ({
@@ -15,6 +15,7 @@ export const RevokeKeysButton = ({
   all?: boolean;
   disabled?: boolean;
 }) => {
+  const localize = useLocalize();
   const [confirmClear, setConfirmClear] = useState(false);
   const revokeKeyMutation = useRevokeUserKeyMutation(endpoint);
   const revokeKeysMutation = useRevokeAllUserKeysMutation();
@@ -23,6 +24,9 @@ export const RevokeKeysButton = ({
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
 
   const revokeAllUserKeys = useCallback(() => {
+    if (!confirm(localize('com_ui_revoke_info'))) {
+      return;
+    }
     if (confirmClear) {
       revokeKeysMutation.mutate({});
       setConfirmClear(false);
@@ -40,7 +44,7 @@ export const RevokeKeysButton = ({
     } else {
       setConfirmClear(true);
     }
-  }, [confirmClear, revokeKeyMutation, endpoint]);
+  }, [endpoint, confirmClear, revokeKeyMutation, localize]);
 
   const onClick = all ? revokeAllUserKeys : revokeUserKey;
 

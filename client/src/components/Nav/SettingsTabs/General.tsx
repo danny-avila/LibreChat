@@ -112,6 +112,7 @@ export const LangSelector = ({
 };
 
 function General() {
+  const localize = useLocalize();
   const { theme, setTheme } = useContext(ThemeContext);
   const clearConvosMutation = useClearConversationsMutation();
   const [confirmClear, setConfirmClear] = useState(false);
@@ -137,6 +138,9 @@ function General() {
         },
       );
     } else {
+      if (!confirm(localize('com_nav_clear_conversation_confirm_message'))) {
+        return;
+      }
       setConfirmClear(true);
     }
   };
