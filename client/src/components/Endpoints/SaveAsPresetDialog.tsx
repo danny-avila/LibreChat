@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useCreatePresetMutation } from 'librechat-data-provider';
+import { useCreatePresetMutation } from 'librechat-data-provider/react-query';
 import type { TEditPresetProps } from '~/common';
 import { cn, defaultTextPropsLabel, removeFocusOutlines, cleanupPreset } from '~/utils/';
 import DialogTemplate from '~/components/ui/DialogTemplate';

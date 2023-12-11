@@ -2,10 +2,10 @@
 import { useEffect, useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Outlet, useLocation } from 'react-router-dom';
-import { useGetModelsQuery, useGetSearchEnabledQuery } from 'librechat-data-provider';
+import { useGetModelsQuery, useGetSearchEnabledQuery } from 'librechat-data-provider/react-query';
 import type { ContextType } from '~/common';
-import { Nav, MobileNav } from '~/components/Nav';
 import { useAuthContext, useServerStream, useConversation } from '~/hooks';
+import { Nav, MobileNav } from '~/components/Nav';
 import store from '~/store';
 
 export default function Root() {

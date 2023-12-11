@@ -1,6 +1,6 @@
 import { Disclosure } from '@headlessui/react';
 import { useCallback, memo, ReactNode } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TResPlugin, TInput } from 'librechat-data-provider';
 import { ChevronDownIcon, LucideProps } from 'lucide-react';
 import { cn, formatJSON } from '~/utils';

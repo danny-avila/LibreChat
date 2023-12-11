@@ -1,12 +1,9 @@
 import OpenAI from 'openai';
-import type { UseMutationResult } from '@tanstack/react-query';
 import type { TResPlugin, TMessage, TConversation, TEndpointOption } from './schemas';
 
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
 export type TOpenAIFunctionCall = OpenAI.Chat.ChatCompletionCreateParams.FunctionCallOption;
-
-export type TMutation = UseMutationResult<unknown>;
 
 export * from './schemas';
 
@@ -127,7 +124,7 @@ export type TConfig = {
 
 export type TModelsConfig = Record<string, string[]>;
 
-export type TEndpointsConfig = Record<string, TConfig>;
+export type TEndpointsConfig = Record<string, TConfig | null>;
 
 export type TUpdateTokenCountResponse = {
   count: number;
