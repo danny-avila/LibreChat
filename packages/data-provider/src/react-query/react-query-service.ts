@@ -6,12 +6,12 @@ import {
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
-import * as t from './types';
-import * as s from './schemas';
-import * as m from './types/mutations';
-import * as dataService from './data-service';
-import request from './request';
-import { QueryKeys } from './keys';
+import * as t from '../types';
+import * as s from '../schemas';
+import * as m from '../types/mutations';
+import * as dataService from '../data-service';
+import request from '../request';
+import { QueryKeys } from '../keys';
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
   void,
@@ -286,20 +286,6 @@ export const useCreatePresetMutation = (): UseMutationResult<
 > => {
   const queryClient = useQueryClient();
   return useMutation((payload: s.TPreset) => dataService.createPreset(payload), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.presets]);
-    },
-  });
-};
-
-export const useUpdatePresetMutation = (): UseMutationResult<
-  s.TPreset,
-  unknown,
-  s.TPreset,
-  unknown
-> => {
-  const queryClient = useQueryClient();
-  return useMutation((payload: s.TPreset) => dataService.updatePreset(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
     },
