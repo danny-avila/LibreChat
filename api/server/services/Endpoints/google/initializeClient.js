@@ -1,5 +1,5 @@
 const { GoogleClient } = require('~/app');
-const { EModelEndpoint } = require('~/server/services/Endpoints');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 
 const initializeClient = async ({ req, res, endpointOption }) => {

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getResponseSender } = require('~/server/services/Endpoints');
+const { getResponseSender } = require('librechat-data-provider');
 const { validateTools } = require('~/app');
 const { addTitle } = require('~/server/services/Endpoints/openAI');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');

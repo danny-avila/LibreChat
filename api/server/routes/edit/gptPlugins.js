@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { validateTools } = require('~/app');
 const { saveMessage, getConvoTitle, getConvo } = require('~/models');
-const { getResponseSender } = require('~/server/services/Endpoints');
+const { getResponseSender } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
 const { sendMessage, createOnProgress, formatSteps, formatAction } = require('~/server/utils');
 const {

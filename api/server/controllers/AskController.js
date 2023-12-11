@@ -1,6 +1,6 @@
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage, getConvoTitle, getConvo } = require('~/models');
-const { getResponseSender } = require('~/server/services/Endpoints');
+const { getResponseSender } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 
 const AskController = async (req, res, next, initializeClient) => {
