@@ -1,17 +1,9 @@
-version: '3.4'
+version: "3.8"
 
 services:
   app:
-    # container_name: LibreChat_dev
     image: node:19-bullseye
-    # Using a Dockerfile is optional, but included for completeness.
-    # build: 
-    #   context: .
-    #   dockerfile: Dockerfile
-    #   # [Optional] You can use build args to set options. e.g. 'VARIANT' below affects the image in the Dockerfile
-    #   args: 
-    #     VARIANT: buster
-    # network_mode: "host"
+    # restart: always
     links:
       - mongodb
       - meilisearch
@@ -21,17 +13,16 @@ services:
     - "host.docker.internal:host-gateway"
 
     volumes:
-    #   # This is where VS Code should expect to find your project's source code and the value of "workspaceFolder" in .devcontainer/devcontainer.json
-      - ..:/workspace:cached
-    #   # - /app/client/node_modules
-    #   # - ./api:/app/api
-    #   # - ./.env:/app/.env
-    #   # - ./.env.development:/app/.env.development
-    #   # - ./.env.production:/app/.env.production
-    #   # - /app/api/node_modules
-
-    #   # Uncomment the next line to use Docker from inside the container. See https://aka.ms/vscode-remote/samples/docker-from-docker-compose for details.
-    #   # - /var/run/docker.sock:/var/run/docker.sock 
+      # This is where VS Code should expect to find your project's source code and the value of "workspaceFolder" in .devcontainer/devcontainer.json
+      - ..:/workspaces:cached
+      # Uncomment the next line to use Docker from inside the container. See https://aka.ms/vscode-remote/samples/docker-from-docker-compose for details.
+      # - /var/run/docker.sock:/var/run/docker.sock 
+    environment:
+      - HOST=0.0.0.0
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      # - CHATGPT_REVERSE_PROXY=http://host.docker.internal:8080/api/conversation # if you are hosting your own chatgpt reverse proxy with docker
+      # - OPENAI_REVERSE_PROXY=http://host.docker.internal:8070/v1/chat/completions # if you are hosting your own chatgpt reverse proxy with docker
+      - MEILI_HOST=http://meilisearch:7700
 
     # Runs app on the same network as the service container, allows "forwardPorts" in devcontainer.json function.
     # network_mode: service:another-service
@@ -42,42 +33,32 @@ services:
     # Uncomment the next line to use a non-root user for all processes - See https://aka.ms/vscode-remote/containers/non-root for details.
     # user: vscode
 
-    # Uncomment the next four lines if you will use a ptrace-based debugger like C++, Go, and Rust.
-    # cap_add:
-    #   - SYS_PTRACE
-    # security_opt:
-    #   - seccomp:unconfined
-
     # Overrides default command so things don't shut down after the process ends.
     command: /bin/sh -c "while sleep 1000; do :; done"  
 
   mongodb:
     container_name: chat-mongodb
-    # network_mode: "host"
     expose:
       - 27017
     # ports:
     #   - 27018:27017
     image: mongo
-  #   restart: always
+    # restart: always
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
   meilisearch:
     container_name: chat-meilisearch
-    image: getmeili/meilisearch:v1.0
-    # network_mode: "host"
+    image: getmeili/meilisearch:v1.5
+    # restart: always
     expose:
       - 7700
-    # ports:
-    #   - 7700:7700
-    # env_file:
-    #   - .env
+    # Uncomment this to access meilisearch from outside docker
+    # ports: 
+    #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
     environment:
-      - SEARCH=false
-      - MEILI_HOST=http://0.0.0.0:7700
-      - MEILI_HTTP_ADDR=0.0.0.0:7700
+      - MEILI_HTTP_ADDR=meilisearch:7700
+      - MEILI_NO_ANALYTICS=true
       - MEILI_MASTER_KEY=5c71cf56d672d009e36070b5bc5e47b743535ae55c818ae3b735bb6ebfb4ba63
     volumes:
-      - ./meili_data:/meili_data
-  
+      - ./meili_data_v1.5:/meili_data

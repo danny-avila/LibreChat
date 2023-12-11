@@ -134,7 +134,7 @@ export default {
     'Top-k verandert hoe het model tokens selecteert voor uitvoer. Een top-k van 1 betekent dat het geselecteerde token het meest waarschijnlijk is van alle tokens in de vocabulaire van het model (ook wel \'greedy decoding\' genoemd), terwijl een top-k van 3 betekent dat het volgende token wordt geselecteerd uit de 3 meest waarschijnlijke tokens (met behulp van temperatuur).',
   com_endpoint_google_maxoutputtokens:
     '	Maximum aantal tokens dat kan worden gegenereerd in de reactie. Geef een lagere waarde op voor kortere reacties en een hogere waarde voor langere reacties.',
-  com_endpoint_google_custom_name_placeholder: 'Stel een aangepaste naam in voor PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'Stel een aangepaste naam in voor Google',
   com_endpoint_prompt_prefix_placeholder:
     'Stel aangepaste instructies of context in. Wordt genegeerd indien leeg.',
   com_endpoint_custom_name: 'Aangepaste naam',
@@ -239,8 +239,6 @@ export default {
   com_nav_plugin_search: 'Plugins zoeken',
   com_nav_plugin_auth_error:
     'Er trad een fout op bij het authenticeren van deze plugin. Probeer het opnieuw.',
-  com_nav_close_menu: 'Zijbalk sluiten',
-  com_nav_open_menu: 'Zijbalk openen',
   com_nav_export_filename: 'Bestandsnaam',
   com_nav_export_filename_placeholder: 'Stel de bestandsnaam in',
   com_nav_export_type: 'Type',

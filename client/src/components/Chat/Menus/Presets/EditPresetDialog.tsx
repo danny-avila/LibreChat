@@ -2,7 +2,7 @@ import { useRecoilState } from 'recoil';
 import { useGetEndpointsQuery } from 'librechat-data-provider';
 import { cn, defaultTextProps, removeFocusOutlines, mapEndpoints } from '~/utils';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
-import PopoverButtons from '~/components/Endpoints/PopoverButtons';
+import PopoverButtons from '~/components/Chat/Input/PopoverButtons';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { EndpointSettings } from '~/components/Endpoints';
@@ -90,6 +90,7 @@ const EditPresetDialog = ({
                 conversation={preset}
                 setOption={setOption}
                 isPreset={true}
+                isMultiChat={true}
                 className="h-full md:mb-4 md:h-[440px]"
               />
             </div>

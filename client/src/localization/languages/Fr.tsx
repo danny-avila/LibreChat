@@ -140,7 +140,7 @@ export default {
     'Top-k change la façon dont le modèle sélectionne les jetons pour la sortie. Un top-k de 1 signifie que le jeton sélectionné est le plus probable parmi tous les jetons du vocabulaire du modèle (également appelé décodage glouton), tandis qu\'un top-k de 3 signifie que le jeton suivant est sélectionné parmi les 3 jetons les plus probables (en utilisant la température).',
   com_endpoint_google_maxoutputtokens:
     'Nombre maximum de jetons qui peuvent être générés dans la réponse. Spécifiez une valeur plus faible pour des réponses plus courtes et une valeur plus élevée pour des réponses plus longues.',
-  com_endpoint_google_custom_name_placeholder: 'Définir un nom personnalisé pour PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'Définir un nom personnalisé pour Google',
   com_endpoint_google_prompt_prefix_placeholder:
     'Définir des instructions ou un contexte personnalisés. Ignoré si vide.',
   com_endpoint_custom_name: 'Nom personnalisé',
@@ -243,8 +243,6 @@ export default {
   com_nav_plugin_search: 'Rechercher des plugins',
   com_nav_plugin_auth_error:
     'Une erreur s\'est produite lors de la tentative d\'authentification de ce plugin. Veuillez réessayer.',
-  com_nav_close_menu: 'Fermer la barre latérale',
-  com_nav_open_menu: 'Ouvrir la barre latérale',
   com_nav_export_filename: 'Nom du fichier',
   com_nav_export_filename_placeholder: 'Définir le nom du fichier',
   com_nav_export_type: 'Type',

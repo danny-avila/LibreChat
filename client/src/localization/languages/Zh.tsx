@@ -126,7 +126,7 @@ export default {
     'Top-k 会改变模型选择输出词的方式。top-k为1意味着所选词是模型词汇中概率最大的（也称为贪心解码），而top-k为3意味着下一个词是从3个概率最大的词中选出的（使用随机性）。',
   com_endpoint_google_maxoutputtokens:
     ' 	响应生成中可以使用的最大词元数。指定较低的值会得到更短的响应，而指定较高的值则会得到更长的响应。',
-  com_endpoint_google_custom_name_placeholder: '为PaLM2设置一个名称',
+  com_endpoint_google_custom_name_placeholder: '为Google设置一个名称',
   com_endpoint_prompt_prefix_placeholder: '自定义提示词和上下文，默认为空',
   com_endpoint_custom_name: '自定义名称',
   com_endpoint_prompt_prefix: '对话前缀',
@@ -218,8 +218,6 @@ export default {
   com_nav_plugin_store: '插件商店',
   com_nav_plugin_search: '搜索插件',
   com_nav_plugin_auth_error: '尝试验证此插件时出错。请重试。',
-  com_nav_close_menu: '关闭菜单',
-  com_nav_open_menu: '打开菜单',
   com_nav_export_filename: '文件名',
   com_nav_export_filename_placeholder: '设置文件名',
   com_nav_export_type: '类型',

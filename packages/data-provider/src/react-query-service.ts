@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-query';
 import * as t from './types';
 import * as s from './schemas';
-import * as p from './types/presets';
+import * as m from './types/mutations';
 import * as dataService from './data-service';
 import request from './request';
 import { QueryKeys } from './keys';
@@ -306,19 +306,8 @@ export const useUpdatePresetMutation = (): UseMutationResult<
   });
 };
 
-export const useGetPresetsQuery = (
-  config?: UseQueryOptions<s.TPreset[]>,
-): QueryObserverResult<s.TPreset[], unknown> => {
-  return useQuery<s.TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    ...config,
-  });
-};
-
 export const useDeletePresetMutation = (): UseMutationResult<
-  p.PresetDeleteResponse,
+  m.PresetDeleteResponse,
   unknown,
   s.TPreset | undefined,
   unknown
@@ -370,14 +359,8 @@ export const useLoginUserMutation = (): UseMutationResult<
 > => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TLoginUser) => dataService.login(payload), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.user]);
-      queryClient.invalidateQueries([QueryKeys.presets]);
-      queryClient.invalidateQueries([QueryKeys.conversation]);
-      queryClient.invalidateQueries([QueryKeys.allConversations]);
-    },
     onMutate: () => {
-      queryClient.invalidateQueries([QueryKeys.models]);
+      queryClient.removeQueries();
     },
   });
 };
@@ -396,15 +379,6 @@ export const useRegisterUserMutation = (): UseMutationResult<
   });
 };
 
-export const useLogoutUserMutation = (): UseMutationResult<unknown> => {
-  const queryClient = useQueryClient();
-  return useMutation(() => dataService.logout(), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.user]);
-    },
-  });
-};
-
 export const useRefreshTokenMutation = (): UseMutationResult<
   t.TRefreshTokenResponse,
   unknown,
@@ -414,7 +388,12 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation(() => request.refreshToken(), {
     onMutate: () => {
-      queryClient.invalidateQueries([QueryKeys.models]);
+      queryClient.removeQueries();
+      localStorage.removeItem('lastConversationSetup');
+      localStorage.removeItem('lastSelectedModel');
+      localStorage.removeItem('lastSelectedTools');
+      localStorage.removeItem('filesToDelete');
+      localStorage.removeItem('lastAssistant');
     },
   });
 };

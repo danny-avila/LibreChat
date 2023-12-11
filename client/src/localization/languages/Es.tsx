@@ -138,7 +138,7 @@ export default {
     'Establece instrucciones o contexto personalizado. Ignorado si está vacío.',
   com_endpoint_google_maxoutputtokens:
     'Número máximo de tokens que se pueden generar en la respuesta. Especifica un valor menor para respuestas más cortas y un valor mayor para respuestas más largas.',
-  com_endpoint_google_custom_name_placeholder: 'Establece un nombre personalizado para PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'Establece un nombre personalizado para Google',
   com_endpoint_prompt_prefix_placeholder:
     'Establece instrucciones o contexto personalizados. Se ignora si está vacío.',
   com_endpoint_custom_name: 'Nombre personalizado',
@@ -243,8 +243,6 @@ export default {
   com_nav_plugin_search: 'Buscar plugins',
   com_nav_plugin_auth_error:
     'Hubo un error al intentar autenticar este plugin. Por favor, inténtalo de nuevo.',
-  com_nav_close_menu: 'Cerrar barra lateral',
-  com_nav_open_menu: 'Abrir barra lateral',
   com_nav_export_filename: 'Nombre de archivo',
   com_nav_export_filename_placeholder: 'Establece el nombre de archivo',
   com_nav_export_type: 'Tipo',

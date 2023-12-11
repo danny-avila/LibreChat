@@ -18,9 +18,43 @@ const alternateName = {
   [EModelEndpoint.bingAI]: 'Bing',
   [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
   [EModelEndpoint.gptPlugins]: 'Plugins',
-  [EModelEndpoint.google]: 'PaLM',
+  [EModelEndpoint.google]: 'Google',
   [EModelEndpoint.anthropic]: 'Anthropic',
 };
+
+const endpointSettings = {
+  [EModelEndpoint.google]: {
+    model: {
+      default: 'chat-bison',
+    },
+    maxOutputTokens: {
+      min: 1,
+      max: 2048,
+      step: 1,
+      default: 1024,
+    },
+    temperature: {
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.2,
+    },
+    topP: {
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.8,
+    },
+    topK: {
+      min: 1,
+      max: 40,
+      step: 0.01,
+      default: 40,
+    },
+  },
+};
+
+const google = endpointSettings[EModelEndpoint.google];
 
 const supportsFiles = {
   [EModelEndpoint.openAI]: true,
@@ -158,22 +192,24 @@ const googleSchema = tConversationSchema
   })
   .transform((obj) => ({
     ...obj,
-    model: obj.model ?? 'chat-bison',
+    model: obj.model ?? google.model.default,
     modelLabel: obj.modelLabel ?? null,
     promptPrefix: obj.promptPrefix ?? null,
-    temperature: obj.temperature ?? 0.2,
-    maxOutputTokens: obj.maxOutputTokens ?? 1024,
-    topP: obj.topP ?? 0.95,
-    topK: obj.topK ?? 40,
+    examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
+    temperature: obj.temperature ?? google.temperature.default,
+    maxOutputTokens: obj.maxOutputTokens ?? google.maxOutputTokens.default,
+    topP: obj.topP ?? google.topP.default,
+    topK: obj.topK ?? google.topK.default,
   }))
   .catch(() => ({
-    model: 'chat-bison',
+    model: google.model.default,
     modelLabel: null,
     promptPrefix: null,
-    temperature: 0.2,
-    maxOutputTokens: 1024,
-    topP: 0.95,
-    topK: 40,
+    examples: [{ input: { content: '' }, output: { content: '' } }],
+    temperature: google.temperature.default,
+    maxOutputTokens: google.maxOutputTokens.default,
+    topP: google.topP.default,
+    topK: google.topK.default,
   }));
 
 const bingAISchema = tConversationSchema
@@ -385,7 +421,13 @@ const getResponseSender = (endpointOption) => {
   }
 
   if (endpoint === EModelEndpoint.google) {
-    return modelLabel ?? 'PaLM2';
+    if (modelLabel) {
+      return modelLabel;
+    } else if (model && model.includes('code')) {
+      return 'Codey';
+    }
+
+    return 'PaLM2';
   }
 
   return '';
@@ -399,4 +441,5 @@ module.exports = {
   openAIModels,
   visionModels,
   alternateName,
+  endpointSettings,
 };
