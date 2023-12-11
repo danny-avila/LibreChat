@@ -1,5 +1,5 @@
 import { useRecoilState } from 'recoil';
-import { useGetEndpointsQuery } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { cn, defaultTextProps, removeFocusOutlines, mapEndpoints } from '~/utils';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import PopoverButtons from '~/components/Chat/Input/PopoverButtons';

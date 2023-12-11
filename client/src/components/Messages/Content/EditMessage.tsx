@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { useUpdateMessageMutation } from 'librechat-data-provider';
+import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
 import store from '~/store';
 import Container from './Container';

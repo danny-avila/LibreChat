@@ -4,13 +4,12 @@ import {
   /* @ts-ignore */
   SSE,
   createPayload,
-  useGetUserBalance,
   tMessageSchema,
   tConversationSchema,
-  useGetStartupConfig,
   EModelEndpoint,
   removeNullishValues,
 } from 'librechat-data-provider';
+import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import { useAuthContext } from './AuthContext';
 import useChatHelpers from './useChatHelpers';

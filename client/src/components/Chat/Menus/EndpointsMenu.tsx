@@ -1,5 +1,6 @@
 import { Content, Portal, Root } from '@radix-ui/react-popover';
-import { useGetEndpointsQuery, alternateName } from 'librechat-data-provider';
+import { alternateName } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import EndpointItems from './Endpoints/MenuItems';
 import { useChatContext } from '~/Providers';

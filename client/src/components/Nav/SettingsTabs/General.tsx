@@ -1,7 +1,7 @@
 import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import React, { useState, useContext, useCallback, useRef } from 'react';
-import { useClearConversationsMutation } from 'librechat-data-provider';
+import { useClearConversationsMutation } from 'librechat-data-provider/react-query';
 import {
   ThemeContext,
   useLocalize,
