@@ -116,6 +116,7 @@
     "ts-jest": "^29.1.0",
     "typescript": "^5.0.4",
     "vite": "^5.0.7",
-    "vite-plugin-html": "^3.2.0"
+    "vite-plugin-html": "^3.2.0",
+    "vite-plugin-node-polyfills": "^0.17.0"
   }
 }
