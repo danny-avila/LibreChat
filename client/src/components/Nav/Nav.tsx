@@ -6,19 +6,25 @@ import {
 } from 'librechat-data-provider';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-import NewChat from './NewChat';
-import SearchBar from './SearchBar';
-import NavLinks from './NavLinks';
-import { Panel, Spinner } from '~/components';
-import { useAuthContext, useMediaQuery, useConversation, useConversations } from '~/hooks';
+import {
+  useAuthContext,
+  useMediaQuery,
+  useConversation,
+  useConversations,
+  useLocalStorage,
+} from '~/hooks';
+import { TooltipProvider, Tooltip } from '~/components/ui';
 import { Conversations, Pages } from '../Conversations';
+import { Spinner } from '~/components';
+import SearchBar from './SearchBar';
 import NavToggle from './NavToggle';
+import NavLinks from './NavLinks';
+import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
 import NavLink from './NavLink';
 import CheckMark from '../svg/CheckMark';
 
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
 import Clipboard from '../svg/Clipboard';
 import LeaderboardIcon from '../svg/LeaderboardIcon';
 import NotebookIcon from '../svg/NotebookIcon';
@@ -38,6 +44,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const scrollPositionRef = useRef<number | null>(null);
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const [newUser, setNewUser] = useLocalStorage('newUser', true);
 
   useEffect(() => {
     if (isSmallScreen) {
@@ -162,6 +169,9 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const toggleNavVisible = () => {
     setNavVisible((prev: boolean) => !prev);
+    if (newUser) {
+      setNewUser(false);
+    }
   };
 
   const copyLinkHandler = () => {

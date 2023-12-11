@@ -1,7 +1,8 @@
 const Keyv = require('keyv');
 const keyvMongo = require('./keyvMongo');
 const keyvRedis = require('./keyvRedis');
-const { math, isEnabled } = require('../server/utils');
+const { CacheKeys } = require('~/common/enums');
+const { math, isEnabled } = require('~/server/utils');
 const { logFile, violationFile } = require('./keyvFiles');
 const { BAN_DURATION, USE_REDIS } = process.env ?? {};
 
@@ -17,7 +18,12 @@ const pending_req = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: 'pending_req' });
 
+const config = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: CacheKeys.CONFIG });
+
 const namespaces = {
+  config,
   pending_req,
   ban: new Keyv({ store: keyvMongo, namespace: 'bans', ttl: duration }),
   general: new Keyv({ store: logFile, namespace: 'violations' }),

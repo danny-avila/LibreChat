@@ -20,7 +20,7 @@
     <img
       src="https://img.shields.io/badge/DOCS-blue.svg?style=for-the-badge&logo=read-the-docs&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
-  <a aria-label="Sponsors" href="#sponsors">
+  <a aria-label="Sponsors" href="https://github.com/sponsors/danny-avila">
     <img
       src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&logo=github-sponsors&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
@@ -31,7 +31,10 @@
  - 💬 Multimodal Chat:
      - Upload and analyze images with GPT-4-Vision 📸 
      - More filetypes and Assistants API integration in Active Development 🚧 
- - 🤖 AI model selection: OpenAI API, Azure, BingAI, ChatGPT Browser, PaLM2, Anthropic (Claude), Plugins
+ - 🌎 Multilingual UI:
+     - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro, Русский
+     - 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands
+ - 🤖 AI model selection: OpenAI API, Azure, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins
  - 💾 Create, Save, & Share Custom Presets
  - 🔄 Edit, Resubmit, and Continue messages with conversation branching
  - 📤 Export conversations as screenshots, markdown, text, json.
@@ -107,11 +110,13 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
   
   * [Automated Moderation](docs/features/mod_system.md)
+  * [Token Usage](docs/features/token_usage.md)
+  * [Manage Your Database](docs/features/manage_your_database.md)
+  * [PandoraNext Deployment Guide](docs/features/pandoranext.md)
   * [Third-Party Tools](docs/features/third_party.md)
   * [Proxy](docs/features/proxy.md)
   * [Bing Jailbreak](docs/features/bing_jailbreak.md)
-  * [Token Usage](docs/features/token_usage.md)
-  * [Manage Your Database](docs/features/manage_your_database.md)
+
 </details>
 
 <details>
@@ -141,7 +146,6 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
   * [Project Roadmap](https://github.com/users/danny-avila/projects/2)
 </details>
 
-
 ---
 
 ## Star History
@@ -152,17 +156,9 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
 ---
 
-## Sponsors
-
-  Sponsored by <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>, <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a> 
-  
----
-
 ## Contributors
 Contributions and suggestions bug reports and fixes are welcome!
 Please read the documentation before you do!
-
----
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR. 
 

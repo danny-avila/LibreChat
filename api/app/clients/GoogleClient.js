@@ -1,23 +1,43 @@
-const BaseClient = require('./BaseClient');
 const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
+const { GoogleVertexAI } = require('langchain/llms/googlevertexai');
+const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
+const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
+const {
+  getResponseSender,
+  EModelEndpoint,
+  endpointSettings,
+} = require('~/server/services/Endpoints');
+const { getModelMaxTokens } = require('~/utils');
+const { formatMessage } = require('./prompts');
+const BaseClient = require('./BaseClient');
 
+const loc = 'us-central1';
+const publisher = 'google';
+const endpointPrefix = `https://${loc}-aiplatform.googleapis.com`;
+// const apiEndpoint = loc + '-aiplatform.googleapis.com';
 const tokenizersCache = {};
+
+const settings = endpointSettings[EModelEndpoint.google];
 
 class GoogleClient extends BaseClient {
   constructor(credentials, options = {}) {
     super('apiKey', options);
+    this.credentials = credentials;
     this.client_email = credentials.client_email;
     this.project_id = credentials.project_id;
     this.private_key = credentials.private_key;
-    this.sender = 'PaLM2';
+    this.access_token = null;
+    if (options.skipSetOptions) {
+      return;
+    }
     this.setOptions(options);
   }
 
-  /* Google/PaLM2 specific methods */
+  /* Google specific methods */
   constructUrl() {
-    return `https://us-central1-aiplatform.googleapis.com/v1/projects/${this.project_id}/locations/us-central1/publishers/google/models/${this.modelOptions.model}:predict`;
+    return `${endpointPrefix}/v1/projects/${this.project_id}/locations/${loc}/publishers/${publisher}/models/${this.modelOptions.model}:serverStreamingPredict`;
   }
 
   async getClient() {
@@ -33,6 +53,24 @@ class GoogleClient extends BaseClient {
     });
 
     return jwtClient;
+  }
+
+  async getAccessToken() {
+    const scopes = ['https://www.googleapis.com/auth/cloud-platform'];
+    const jwtClient = new google.auth.JWT(this.client_email, null, this.private_key, scopes);
+
+    return new Promise((resolve, reject) => {
+      jwtClient.authorize((err, tokens) => {
+        if (err) {
+          console.error('Error: jwtClient failed to authorize');
+          console.error(err.message);
+          reject(err);
+        } else {
+          console.log('Access Token:', tokens.access_token);
+          resolve(tokens.access_token);
+        }
+      });
+    });
   }
 
   /* Required Client methods */
@@ -53,30 +91,33 @@ class GoogleClient extends BaseClient {
       this.options = options;
     }
 
-    this.options.examples = this.options.examples.filter(
-      (obj) => obj.input.content !== '' && obj.output.content !== '',
-    );
+    this.options.examples = this.options.examples
+      .filter((ex) => ex)
+      .filter((obj) => obj.input.content !== '' && obj.output.content !== '');
 
     const modelOptions = this.options.modelOptions || {};
     this.modelOptions = {
       ...modelOptions,
       // set some good defaults (check for undefined in some cases because they may be 0)
-      model: modelOptions.model || 'chat-bison',
-      temperature: typeof modelOptions.temperature === 'undefined' ? 0.2 : modelOptions.temperature, // 0 - 1, 0.2 is recommended
-      topP: typeof modelOptions.topP === 'undefined' ? 0.95 : modelOptions.topP, // 0 - 1, default: 0.95
-      topK: typeof modelOptions.topK === 'undefined' ? 40 : modelOptions.topK, // 1-40, default: 40
+      model: modelOptions.model || settings.model.default,
+      temperature:
+        typeof modelOptions.temperature === 'undefined'
+          ? settings.temperature.default
+          : modelOptions.temperature,
+      topP: typeof modelOptions.topP === 'undefined' ? settings.topP.default : modelOptions.topP,
+      topK: typeof modelOptions.topK === 'undefined' ? settings.topK.default : modelOptions.topK,
       // stop: modelOptions.stop // no stop method for now
     };
 
-    this.isChatModel = this.modelOptions.model.startsWith('chat-');
+    this.isChatModel = this.modelOptions.model.includes('chat');
     const { isChatModel } = this;
-    this.isTextModel = this.modelOptions.model.startsWith('text-');
+    this.isTextModel = !isChatModel && /code|text/.test(this.modelOptions.model);
     const { isTextModel } = this;
 
-    this.maxContextTokens = this.options.maxContextTokens || (isTextModel ? 8000 : 4096);
+    this.maxContextTokens = getModelMaxTokens(this.modelOptions.model, EModelEndpoint.google);
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
     // Earlier messages will be dropped until the prompt is within the limit.
-    this.maxResponseTokens = this.modelOptions.maxOutputTokens || 1024;
+    this.maxResponseTokens = this.modelOptions.maxOutputTokens || settings.maxOutputTokens.default;
     this.maxPromptTokens =
       this.options.maxPromptTokens || this.maxContextTokens - this.maxResponseTokens;
 
@@ -87,6 +128,14 @@ class GoogleClient extends BaseClient {
         }) must be less than or equal to maxContextTokens (${this.maxContextTokens})`,
       );
     }
+
+    this.sender =
+      this.options.sender ??
+      getResponseSender({
+        model: this.modelOptions.model,
+        endpoint: EModelEndpoint.google,
+        modelLabel: this.options.modelLabel,
+      });
 
     this.userLabel = this.options.userLabel || 'User';
     this.modelLabel = this.options.modelLabel || 'Assistant';
@@ -99,8 +148,8 @@ class GoogleClient extends BaseClient {
       this.endToken = '';
       this.gptEncoder = this.constructor.getTokenizer('cl100k_base');
     } else if (isTextModel) {
-      this.startToken = '<|im_start|>';
-      this.endToken = '<|im_end|>';
+      this.startToken = '||>';
+      this.endToken = '';
       this.gptEncoder = this.constructor.getTokenizer('text-davinci-003', true, {
         '<|im_start|>': 100264,
         '<|im_end|>': 100265,
@@ -138,15 +187,18 @@ class GoogleClient extends BaseClient {
     return this;
   }
 
-  getMessageMapMethod() {
+  formatMessages() {
     return ((message) => ({
       author: message?.author ?? (message.isCreatedByUser ? this.userLabel : this.modelLabel),
       content: message?.content ?? message.text,
     })).bind(this);
   }
 
-  buildMessages(messages = []) {
-    const formattedMessages = messages.map(this.getMessageMapMethod());
+  buildMessages(messages = [], parentMessageId) {
+    if (this.isTextModel) {
+      return this.buildMessagesPrompt(messages, parentMessageId);
+    }
+    const formattedMessages = messages.map(this.formatMessages());
     let payload = {
       instances: [
         {
@@ -164,15 +216,6 @@ class GoogleClient extends BaseClient {
       payload.instances[0].examples = this.options.examples;
     }
 
-    /* TO-DO: text model needs more context since it can't process an array of messages */
-    if (this.isTextModel) {
-      payload.instances = [
-        {
-          prompt: messages[messages.length - 1].content,
-        },
-      ];
-    }
-
     if (this.options.debug) {
       console.debug('GoogleClient buildMessages');
       console.dir(payload, { depth: null });
@@ -181,7 +224,157 @@ class GoogleClient extends BaseClient {
     return { prompt: payload };
   }
 
-  async getCompletion(payload, abortController = null) {
+  async buildMessagesPrompt(messages, parentMessageId) {
+    const orderedMessages = this.constructor.getMessagesForConversation({
+      messages,
+      parentMessageId,
+    });
+    if (this.options.debug) {
+      console.debug('GoogleClient: orderedMessages', orderedMessages, parentMessageId);
+    }
+
+    const formattedMessages = orderedMessages.map((message) => ({
+      author: message.isCreatedByUser ? this.userLabel : this.modelLabel,
+      content: message?.content ?? message.text,
+    }));
+
+    let lastAuthor = '';
+    let groupedMessages = [];
+
+    for (let message of formattedMessages) {
+      // If last author is not same as current author, add to new group
+      if (lastAuthor !== message.author) {
+        groupedMessages.push({
+          author: message.author,
+          content: [message.content],
+        });
+        lastAuthor = message.author;
+        // If same author, append content to the last group
+      } else {
+        groupedMessages[groupedMessages.length - 1].content.push(message.content);
+      }
+    }
+
+    let identityPrefix = '';
+    if (this.options.userLabel) {
+      identityPrefix = `\nHuman's name: ${this.options.userLabel}`;
+    }
+
+    if (this.options.modelLabel) {
+      identityPrefix = `${identityPrefix}\nYou are ${this.options.modelLabel}`;
+    }
+
+    let promptPrefix = (this.options.promptPrefix || '').trim();
+    if (promptPrefix) {
+      // If the prompt prefix doesn't end with the end token, add it.
+      if (!promptPrefix.endsWith(`${this.endToken}`)) {
+        promptPrefix = `${promptPrefix.trim()}${this.endToken}\n\n`;
+      }
+      promptPrefix = `\nContext:\n${promptPrefix}`;
+    }
+
+    if (identityPrefix) {
+      promptPrefix = `${identityPrefix}${promptPrefix}`;
+    }
+
+    // Prompt AI to respond, empty if last message was from AI
+    let isEdited = lastAuthor === this.modelLabel;
+    const promptSuffix = isEdited ? '' : `${promptPrefix}\n\n${this.modelLabel}:\n`;
+    let currentTokenCount = isEdited
+      ? this.getTokenCount(promptPrefix)
+      : this.getTokenCount(promptSuffix);
+
+    let promptBody = '';
+    const maxTokenCount = this.maxPromptTokens;
+
+    const context = [];
+
+    // Iterate backwards through the messages, adding them to the prompt until we reach the max token count.
+    // Do this within a recursive async function so that it doesn't block the event loop for too long.
+    // Also, remove the next message when the message that puts us over the token limit is created by the user.
+    // Otherwise, remove only the exceeding message. This is due to Anthropic's strict payload rule to start with "Human:".
+    const nextMessage = {
+      remove: false,
+      tokenCount: 0,
+      messageString: '',
+    };
+
+    const buildPromptBody = async () => {
+      if (currentTokenCount < maxTokenCount && groupedMessages.length > 0) {
+        const message = groupedMessages.pop();
+        const isCreatedByUser = message.author === this.userLabel;
+        // Use promptPrefix if message is edited assistant'
+        const messagePrefix =
+          isCreatedByUser || !isEdited
+            ? `\n\n${message.author}:`
+            : `${promptPrefix}\n\n${message.author}:`;
+        const messageString = `${messagePrefix}\n${message.content}${this.endToken}\n`;
+        let newPromptBody = `${messageString}${promptBody}`;
+
+        context.unshift(message);
+
+        const tokenCountForMessage = this.getTokenCount(messageString);
+        const newTokenCount = currentTokenCount + tokenCountForMessage;
+
+        if (!isCreatedByUser) {
+          nextMessage.messageString = messageString;
+          nextMessage.tokenCount = tokenCountForMessage;
+        }
+
+        if (newTokenCount > maxTokenCount) {
+          if (!promptBody) {
+            // This is the first message, so we can't add it. Just throw an error.
+            throw new Error(
+              `Prompt is too long. Max token count is ${maxTokenCount}, but prompt is ${newTokenCount} tokens long.`,
+            );
+          }
+
+          // Otherwise, ths message would put us over the token limit, so don't add it.
+          // if created by user, remove next message, otherwise remove only this message
+          if (isCreatedByUser) {
+            nextMessage.remove = true;
+          }
+
+          return false;
+        }
+        promptBody = newPromptBody;
+        currentTokenCount = newTokenCount;
+
+        // Switch off isEdited after using it for the first time
+        if (isEdited) {
+          isEdited = false;
+        }
+
+        // wait for next tick to avoid blocking the event loop
+        await new Promise((resolve) => setImmediate(resolve));
+        return buildPromptBody();
+      }
+      return true;
+    };
+
+    await buildPromptBody();
+
+    if (nextMessage.remove) {
+      promptBody = promptBody.replace(nextMessage.messageString, '');
+      currentTokenCount -= nextMessage.tokenCount;
+      context.shift();
+    }
+
+    let prompt = `${promptBody}${promptSuffix}`;
+
+    // Add 2 tokens for metadata after all messages have been counted.
+    currentTokenCount += 2;
+
+    // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
+    this.modelOptions.maxOutputTokens = Math.min(
+      this.maxContextTokens - currentTokenCount,
+      this.maxResponseTokens,
+    );
+
+    return { prompt, context };
+  }
+
+  async _getCompletion(payload, abortController = null) {
     if (!abortController) {
       abortController = new AbortController();
     }
@@ -212,6 +405,72 @@ class GoogleClient extends BaseClient {
     return res.data;
   }
 
+  async getCompletion(_payload, options = {}) {
+    const { onProgress, abortController } = options;
+    const { parameters, instances } = _payload;
+    const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
+
+    let examples;
+
+    let clientOptions = {
+      authOptions: {
+        credentials: {
+          ...this.credentials,
+        },
+        projectId: this.project_id,
+      },
+      ...parameters,
+    };
+
+    if (!parameters) {
+      clientOptions = { ...clientOptions, ...this.modelOptions };
+    }
+
+    if (_examples && _examples.length) {
+      examples = _examples
+        .map((ex) => {
+          const { input, output } = ex;
+          if (!input || !output) {
+            return undefined;
+          }
+          return {
+            input: new HumanMessage(input.content),
+            output: new AIMessage(output.content),
+          };
+        })
+        .filter((ex) => ex);
+
+      clientOptions.examples = examples;
+    }
+
+    const model = this.isTextModel
+      ? new GoogleVertexAI(clientOptions)
+      : new ChatGoogleVertexAI(clientOptions);
+
+    let reply = '';
+    const messages = this.isTextModel
+      ? _payload.trim()
+      : _messages
+        .map((msg) => ({ ...msg, role: msg.author === 'User' ? 'user' : 'assistant' }))
+        .map((message) => formatMessage({ message, langChain: true }));
+
+    if (context && messages?.length > 0) {
+      messages.unshift(new SystemMessage(context));
+    }
+
+    const stream = await model.stream(messages, {
+      signal: abortController.signal,
+      timeout: 7000,
+    });
+
+    for await (const chunk of stream) {
+      await this.generateTextStream(chunk?.content ?? chunk, onProgress, { delay: 7 });
+      reply += chunk?.content ?? chunk;
+    }
+
+    return reply;
+  }
+
   getSaveOptions() {
     return {
       promptPrefix: this.options.promptPrefix,
@@ -225,34 +484,18 @@ class GoogleClient extends BaseClient {
   }
 
   async sendCompletion(payload, opts = {}) {
-    console.log('GoogleClient: sendcompletion', payload, opts);
     let reply = '';
-    let blocked = false;
     try {
-      const result = await this.getCompletion(payload, opts.abortController);
-      blocked = result?.predictions?.[0]?.safetyAttributes?.blocked;
-      reply =
-        result?.predictions?.[0]?.candidates?.[0]?.content ||
-        result?.predictions?.[0]?.content ||
-        '';
-      if (blocked === true) {
-        reply = `Google blocked a proper response to your message:\n${JSON.stringify(
-          result.predictions[0].safetyAttributes,
-        )}${reply.length > 0 ? `\nAI Response:\n${reply}` : ''}`;
-      }
+      reply = await this.getCompletion(payload, opts);
       if (this.options.debug) {
         console.debug('result');
-        console.debug(result);
+        console.debug(reply);
       }
     } catch (err) {
       console.error('Error: failed to send completion to Google');
+      console.error(err);
       console.error(err.message);
     }
-
-    if (!blocked) {
-      await this.generateTextStream(reply, opts.onProgress, { delay: 0.5 });
-    }
-
     return reply.trim();
   }
 

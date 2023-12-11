@@ -4,6 +4,11 @@
 **If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
 Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
 
+## v0.6.x
+
+- **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data` may be present in your root directory. This folder is no longer required and can be **safely deleted** to free up space.
+- **New Indexing Data Location**: The indexing data has been relocated. It will now be stored in a new folder named `meili_data_v1.x`, where `1.x` represents the version of Meilisearch. For instance, with the current Meilisearch version `1.5`, the folder will be `meili_data_v1.5`.
+
 ## v0.5.9
 
 - It's now required to set a **JWT_REFRESH_SECRET** in your .env file as of [#927](https://github.com/danny-avila/LibreChat/pull/927)

@@ -17,6 +17,11 @@ const endpointsConfig = atom<TEndpointsConfig>({
   default: defaultConfig,
 });
 
+const endpointsQueryEnabled = atom<boolean>({
+  key: 'endpointsQueryEnabled',
+  default: true,
+});
+
 const plugins = selector({
   key: 'plugins',
   get: ({ get }) => {
@@ -62,4 +67,5 @@ export default {
   endpointsFilter,
   availableEndpoints,
   defaultConfig,
+  endpointsQueryEnabled,
 };

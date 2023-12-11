@@ -120,7 +120,7 @@ export default {
     'Top K изменяет то, как модель выбирает токены для вывода. Top K равное 1 означает, что выбирается наиболее вероятный токен из всего словаря модели (так называемое жадное декодирование), а Top K равное 3 означает, что следующий токен выбирается из трех наиболее вероятных токенов (с использованием температуры).',
   com_endpoint_google_maxoutputtokens:
     'Максимальное количество токенов, которые могут быть сгенерированы в ответе. Укажите меньшее значение для более коротких ответов и большее значение для более длинных ответов.',
-  com_endpoint_google_custom_name_placeholder: 'Установите пользовательское имя для PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'Установите пользовательское имя для Google',
   com_endpoint_google_prompt_prefix_placeholder:
     'Установите пользовательские инструкции или контекст. Игнорируется, если пусто.',
   com_endpoint_custom_name: 'Пользовательское имя',
@@ -170,7 +170,8 @@ export default {
   com_endpoint_agent: 'Агент',
   com_endpoint_show_what_settings: 'Показать настройки {0}',
   com_endpoint_save: 'Сохранить',
-  com_endpoint_export: 'Экспорт',
+  com_endpoint_export: 'Экспортировать',
+  com_endpoint_import: 'Импортировать',
   com_endpoint_save_as_preset: 'Сохранить как предустановку',
   com_endpoint_not_implemented: 'Не реализовано',
   com_endpoint_no_presets: 'Пока нет предустановок',

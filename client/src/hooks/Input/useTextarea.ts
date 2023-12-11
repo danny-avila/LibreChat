@@ -1,27 +1,24 @@
 import { useEffect, useRef } from 'react';
+import debounce from 'lodash/debounce';
 import { TEndpointOption, getResponseSender } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import { useChatContext } from '~/Providers/ChatContext';
-import useFileHandling from './useFileHandling';
+import useFileHandling from '~/hooks/useFileHandling';
+import useLocalize from '~/hooks/useLocalize';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
-export default function useTextarea({ setText, submitMessage }) {
-  const {
-    conversation,
-    isSubmitting,
-    latestMessage,
-    setShowBingToneSetting,
-    textareaHeight,
-    setTextareaHeight,
-    setFilesLoading,
-  } = useChatContext();
+export default function useTextarea({ setText, submitMessage, disabled = false }) {
+  const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
+    useChatContext();
   const isComposing = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const { handleFiles } = useFileHandling();
+  const localize = useLocalize();
 
-  const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
+  const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
+  // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
@@ -48,6 +45,44 @@ export default function useTextarea({ setText, submitMessage }) {
 
     return () => clearTimeout(timeoutId);
   }, [isSubmitting]);
+
+  useEffect(() => {
+    if (inputRef.current?.value) {
+      return;
+    }
+
+    const getPlaceholderText = () => {
+      if (disabled) {
+        return localize('com_endpoint_config_placeholder');
+      }
+      if (isNotAppendable) {
+        return localize('com_endpoint_message_not_appendable');
+      }
+
+      const sender = getResponseSender(conversation as TEndpointOption);
+
+      return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
+    };
+
+    const placeholder = getPlaceholderText();
+
+    if (inputRef.current?.getAttribute('placeholder') === placeholder) {
+      return;
+    }
+
+    const setPlaceholder = () => {
+      const placeholder = getPlaceholderText();
+
+      if (inputRef.current?.getAttribute('placeholder') !== placeholder) {
+        inputRef.current?.setAttribute('placeholder', placeholder);
+      }
+    };
+
+    const debouncedSetPlaceholder = debounce(setPlaceholder, 80);
+    debouncedSetPlaceholder();
+
+    return () => debouncedSetPlaceholder.cancel();
+  }, [conversation, disabled, latestMessage, isNotAppendable, localize]);
 
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Enter' && isSubmitting) {
@@ -87,26 +122,6 @@ export default function useTextarea({ setText, submitMessage }) {
     isComposing.current = false;
   };
 
-  const getPlaceholderText = () => {
-    if (isNotAppendable) {
-      return 'Edit your message or Regenerate.';
-    }
-
-    const sender = getResponseSender(conversation as TEndpointOption);
-
-    return `Message ${sender ? sender : 'ChatGPT'}…`;
-  };
-
-  const onHeightChange = (height: number) => {
-    if (height > 208 && textareaHeight < 208) {
-      setTextareaHeight(Math.min(height, 208));
-    } else if (height > 208) {
-      return;
-    } else {
-      setTextareaHeight(height);
-    }
-  };
-
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (e.clipboardData && e.clipboardData.files.length > 0) {
       e.preventDefault();
@@ -122,7 +137,5 @@ export default function useTextarea({ setText, submitMessage }) {
     handlePaste,
     handleCompositionStart,
     handleCompositionEnd,
-    placeholder: getPlaceholderText(),
-    onHeightChange,
   };
 }

@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { isEnabled } = require('../utils');
+const emailLoginEnabled =
+  process.env.ALLOW_EMAIL_LOGIN === undefined || isEnabled(process.env.ALLOW_EMAIL_LOGIN);
 
 router.get('/', async function (req, res) {
   try {
@@ -19,6 +21,7 @@ router.get('/', async function (req, res) {
       githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
+      emailLoginEnabled,
       registrationEnabled: isEnabled(process.env.ALLOW_REGISTRATION),
       socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
       emailEnabled:

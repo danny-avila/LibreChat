@@ -20,9 +20,13 @@ export enum QueryKeys {
   numOfReferrals = 'numOfReferrals',
   likedConversations = 'likedConversations',
   publicConversatons = 'publicConversatons',
+  endpointsConfigOverride = 'endpointsConfigOverride',
 }
 
 export enum MutationKeys {
   imageUpload = 'imageUpload',
   fileDelete = 'fileDelete',
+  updatePreset = 'updatePreset',
+  deletePreset = 'deletePreset',
+  logoutUser = 'logoutUser',
 }

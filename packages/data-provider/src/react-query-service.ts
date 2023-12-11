@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query';
 import * as t from './types';
 import * as s from './schemas';
+import * as m from './types/mutations';
 import * as dataService from './data-service';
 
 // export enum QueryKeys {
@@ -288,6 +289,7 @@ export const useGetEndpointsQuery = <TData = t.TEndpointsConfig>(
     [QueryKeys.endpoints],
     () => dataService.getAIEndpoints(),
     {
+      staleTime: Infinity,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
@@ -300,6 +302,7 @@ export const useGetModelsQuery = (
   config?: UseQueryOptions<t.TModelsConfig>,
 ): QueryObserverResult<t.TModelsConfig> => {
   return useQuery<t.TModelsConfig>([QueryKeys.models], () => dataService.getModels(), {
+    staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -308,7 +311,7 @@ export const useGetModelsQuery = (
 };
 
 export const useCreatePresetMutation = (): UseMutationResult<
-  s.TPreset[],
+  s.TPreset,
   unknown,
   s.TPreset,
   unknown
@@ -322,7 +325,7 @@ export const useCreatePresetMutation = (): UseMutationResult<
 };
 
 export const useUpdatePresetMutation = (): UseMutationResult<
-  s.TPreset[],
+  s.TPreset,
   unknown,
   s.TPreset,
   unknown
@@ -335,25 +338,14 @@ export const useUpdatePresetMutation = (): UseMutationResult<
   });
 };
 
-export const useGetPresetsQuery = (
-  config?: UseQueryOptions<s.TPreset[]>,
-): QueryObserverResult<s.TPreset[], unknown> => {
-  return useQuery<s.TPreset[]>([QueryKeys.presets], () => dataService.getPresets(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    ...config,
-  });
-};
-
 export const useDeletePresetMutation = (): UseMutationResult<
-  s.TPreset[],
+  m.PresetDeleteResponse,
   unknown,
-  s.TPreset | object,
+  s.TPreset | undefined,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation((payload: s.TPreset | object) => dataService.deletePreset(payload), {
+  return useMutation((payload: s.TPreset | undefined) => dataService.deletePreset(payload), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.presets]);
     },
@@ -399,11 +391,8 @@ export const useLoginUserMutation = (): UseMutationResult<
 > => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TLoginUser) => dataService.login(payload), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.user]);
-    },
     onMutate: () => {
-      queryClient.invalidateQueries([QueryKeys.models]);
+      queryClient.removeQueries();
     },
   });
 };
@@ -422,15 +411,6 @@ export const useRegisterUserMutation = (): UseMutationResult<
   });
 };
 
-export const useLogoutUserMutation = (): UseMutationResult<unknown> => {
-  const queryClient = useQueryClient();
-  return useMutation(() => dataService.logout(), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.user]);
-    },
-  });
-};
-
 export const useRefreshTokenMutation = (): UseMutationResult<
   t.TRefreshTokenResponse,
   unknown,
@@ -440,7 +420,12 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   const queryClient = useQueryClient();
   return useMutation(() => request.refreshToken(), {
     onMutate: () => {
-      queryClient.invalidateQueries([QueryKeys.models]);
+      queryClient.removeQueries();
+      localStorage.removeItem('lastConversationSetup');
+      localStorage.removeItem('lastSelectedModel');
+      localStorage.removeItem('lastSelectedTools');
+      localStorage.removeItem('filesToDelete');
+      localStorage.removeItem('lastAssistant');
     },
   });
 };

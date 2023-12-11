@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { getResponseSender } = require('../endpoints/schemas');
-const { sendMessage, createOnProgress } = require('../../utils');
-const { addTitle, initializeClient } = require('../endpoints/openAI');
-const { saveMessage, getConvoTitle, getConvo, getMessagesCount } = require('../../../models');
+const { sendMessage, createOnProgress } = require('~/server/utils');
+const { saveMessage, getConvoTitle, getConvo, getMessagesCount } = require('~/models');
+const { getResponseSender } = require('~/server/services/Endpoints');
+const { addTitle, initializeClient } = require('~/server/services/Endpoints/openAI');
 const {
   handleAbort,
   createAbortController,

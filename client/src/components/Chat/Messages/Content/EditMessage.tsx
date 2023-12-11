@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useUpdateMessageMutation } from 'librechat-data-provider';
+import { useUpdateMessageMutation, EModelEndpoint } from 'librechat-data-provider';
 import Container from '~/components/Messages/Content/Container';
 import { useChatContext } from '~/Providers';
 import type { TEditProps } from '~/common';
@@ -18,6 +18,7 @@ const EditMessage = ({
 
   const textEditor = useRef<HTMLDivElement | null>(null);
   const { conversationId, parentMessageId, messageId } = message;
+  const { endpoint } = conversation ?? { endpoint: null };
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
@@ -94,7 +95,9 @@ const EditMessage = ({
       <div className="mt-2 flex w-full justify-center text-center">
         <button
           className="btn btn-primary relative mr-2"
-          disabled={isSubmitting}
+          disabled={
+            isSubmitting || (endpoint === EModelEndpoint.google && !message.isCreatedByUser)
+          }
           onClick={resubmitMessage}
         >
           {localize('com_ui_save')} {'&'} {localize('com_ui_submit')}

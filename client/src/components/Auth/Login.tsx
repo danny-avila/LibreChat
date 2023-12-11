@@ -34,7 +34,7 @@ function Login() {
             {localize(getLoginError(error))}
           </div>
         )}
-        <LoginForm onSubmit={login} />
+        {startupConfig?.emailLoginEnabled && <LoginForm onSubmit={login} />}
         {startupConfig?.registrationEnabled && (
           <p className="my-4 text-center text-sm font-light text-gray-700">
             {' '}
@@ -44,7 +44,7 @@ function Login() {
             </a>
           </p>
         )}
-        {startupConfig?.socialLoginEnabled && (
+        {startupConfig?.socialLoginEnabled && startupConfig?.emailLoginEnabled && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
               <div className="absolute bg-white px-3 text-xs">Or</div>

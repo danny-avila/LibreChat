@@ -186,6 +186,7 @@ export type TStartupConfig = {
   openidImageUrl: string;
   discordLoginEnabled: boolean;
   serverDomain: string;
+  emailLoginEnabled: boolean;
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
   emailEnabled: boolean;
