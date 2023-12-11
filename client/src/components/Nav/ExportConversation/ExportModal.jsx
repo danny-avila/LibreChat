@@ -4,7 +4,7 @@ import { useRecoilCallback } from 'recoil';
 import { useEffect, useState } from 'react';
 import exportFromJSON from 'export-from-json';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { useGetMessagesByConvoId } from 'librechat-data-provider';
+import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import { Dialog, DialogButton, Input, Label, Checkbox, Dropdown } from '~/components/ui/';
 import { cn, defaultTextProps, removeFocusOutlines, cleanupPreset } from '~/utils/';
 import { useScreenshot, useLocalize } from '~/hooks';

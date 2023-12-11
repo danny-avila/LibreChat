@@ -3,7 +3,7 @@ const {
   getChatGPTBrowserModels,
   getAnthropicModels,
 } = require('~/server/services/ModelService');
-const { EModelEndpoint } = require('~/server/services/Endpoints');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { useAzurePlugins } = require('~/server/services/Config/EndpointService').config;
 
 const fitlerAssistantModels = (str) => {

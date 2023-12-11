@@ -1,12 +1,12 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Trash2 } from 'lucide-react';
-import { useState, useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import { useState, useEffect } from 'react';
 import {
   useDeletePresetMutation,
   useCreatePresetMutation,
   useGetEndpointsQuery,
-} from 'librechat-data-provider';
+} from 'librechat-data-provider/react-query';
 import { Icon, EditPresetDialog } from '~/components/Endpoints';
 import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';

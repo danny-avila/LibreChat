@@ -1,5 +1,6 @@
 import { useRef } from 'react';
-import { useUpdateMessageMutation, EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
+import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import Container from '~/components/Messages/Content/Container';
 import { useChatContext } from '~/Providers';
 import type { TEditProps } from '~/common';

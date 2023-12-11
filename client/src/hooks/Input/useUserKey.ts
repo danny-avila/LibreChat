@@ -1,9 +1,9 @@
 import { useMemo, useCallback } from 'react';
 import {
-  useUpdateUserKeysMutation,
   useUserKeyQuery,
   useGetEndpointsQuery,
-} from 'librechat-data-provider';
+  useUpdateUserKeysMutation,
+} from 'librechat-data-provider/react-query';
 
 const useUserKey = (endpoint: string) => {
   const { data: endpointsConfig } = useGetEndpointsQuery();
