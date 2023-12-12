@@ -53,6 +53,7 @@ export default {
   com_ui_delete_conversation_confirm: 'This will delete',
   com_ui_preview: 'Preview',
   com_ui_upload: 'Upload',
+  com_ui_connect: 'Connect',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:

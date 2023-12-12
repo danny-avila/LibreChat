@@ -44,15 +44,19 @@ function ProfilePictureUpload() {
   const handleUpload = async () => {
     try {
       const userId = user?.id;
+
       if (!userId) {
         throw new Error('User ID is undefined');
       }
       if (!input) {
         throw new Error('Nessun file selezionato');
       }
+
       const formData = new FormData();
       formData.append('userId', userId);
       formData.append('input', input, input.name);
+      formData.append('manual', 'true');
+
       const response = await fetch('/api/profilePicture', {
         method: 'POST',
         body: formData,
@@ -60,11 +64,9 @@ function ProfilePictureUpload() {
       if (!response.ok) {
         throw new Error('Failed to upload profile picture');
       }
-      const { url } = await response.json();
 
       setStatus('success');
       setStatusColor('text-green-500 dark:text-green-500');
-      console.log('Profile picture uploaded successfully:', url);
     } catch (error) {
       console.error('Error:', error);
     } finally {

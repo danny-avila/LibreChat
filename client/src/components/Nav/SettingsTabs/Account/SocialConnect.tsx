@@ -16,6 +16,7 @@ type SocialConnectProps = {
 
 const SocialConnect: React.FC<SocialConnectProps> = ({ enabledProviders }) => {
   const { data: startupConfig } = useGetStartupConfig();
+  const localize = useLocalize();
 
   const socialProviders = [
     { id: 'google', icon: <GoogleIcon />, label: 'Google', enabled: enabledProviders.google },
@@ -51,7 +52,7 @@ const SocialConnect: React.FC<SocialConnectProps> = ({ enabledProviders }) => {
                 )}
                 onClick={() => handleConnect(provider.id)}
               >
-                Connect
+                {localize('com_ui_connect')}
               </button>
             </div>
           ),

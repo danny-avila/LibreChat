@@ -12,15 +12,15 @@ const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
     const oldUser = await User.findOne({ email });
     const ALLOW_SOCIAL_REGISTRATION =
       process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
-    const avatarURL = profile.photos[0]?.value;
+    const avatarUrl = profile.photos[0]?.value;
 
     if (oldUser) {
-      await handleExistingUser(oldUser, avatarURL, useFirebase);
+      await handleExistingUser(oldUser, avatarUrl, useFirebase);
       return cb(null, oldUser);
     }
 
     if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await createNewUser(profile, facebookId, email, avatarURL, useFirebase);
+      const newUser = await createNewUser(profile, facebookId, email, avatarUrl, useFirebase);
       return cb(null, newUser);
     }
   } catch (err) {
@@ -29,33 +29,33 @@ const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
   }
 };
 
-const handleExistingUser = async (oldUser, avatarURL, useFirebase) => {
-  if (!oldUser.avatarUploaded && !useFirebase) {
-    oldUser.avatar = avatarURL;
+const handleExistingUser = async (oldUser, avatarUrl, useFirebase) => {
+  if (!useFirebase && !oldUser.avatar.endsWith('?manual=true')) {
+    oldUser.avatar = avatarUrl;
     await oldUser.save();
-  } else if (useFirebase && !oldUser.avatarUploaded) {
+  } else if (useFirebase && !oldUser.avatar.endsWith('?manual=true')) {
     const userId = oldUser._id;
-    const newAvatarURL = await uploadProfilePicture(userId, avatarURL);
-    oldUser.avatar = newAvatarURL;
+    const newavatarUrl = await uploadProfilePicture(userId, avatarUrl);
+    oldUser.avatar = newavatarUrl;
     await oldUser.save();
   }
 };
 
-const createNewUser = async (profile, facebookId, email, avatarURL, useFirebase) => {
+const createNewUser = async (profile, facebookId, email, avatarUrl, useFirebase) => {
   const newUser = await new User({
     provider: 'facebook',
     facebookId,
     username: profile.displayName,
     email,
     name: profile.name?.givenName + ' ' + profile.name?.familyName,
-    avatar: avatarURL,
+    avatar: avatarUrl,
   }).save();
 
   if (useFirebase) {
     const userId = newUser._id;
-    const newAvatarURL = await uploadProfilePicture(userId, avatarURL);
-    console.log('newAvatarURL', newAvatarURL);
-    newUser.avatar = newAvatarURL;
+    const newavatarUrl = await uploadProfilePicture(userId, avatarUrl);
+    console.log('newavatarUrl', newavatarUrl);
+    newUser.avatar = newavatarUrl;
     await newUser.save();
   }
 

@@ -52,6 +52,7 @@ export default {
   com_ui_delete_conversation_confirm: 'Questo eliminerà',
   com_ui_preview: 'Anteprima',
   com_ui_upload: 'Carica',
+  com_ui_connect: 'Connetti',
   com_auth_error_login:
     'Impossibile accedere con le informazioni fornite. Controlla le tue credenziali e riprova.',
   com_auth_error_login_rl:

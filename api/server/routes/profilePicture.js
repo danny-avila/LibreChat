@@ -13,7 +13,7 @@ router.get('/', requireJwtAuth, getUserController);
 
 router.post('/', upload.single('input'), async (req, res) => {
   try {
-    const { userId } = req.body;
+    const { userId, manual } = req.body;
     const input = req.file.buffer;
     if (!userId) {
       throw new Error('User ID is undefined');
@@ -25,10 +25,7 @@ router.post('/', upload.single('input'), async (req, res) => {
       throw new Error('User not found');
     }
 
-    user.avatarUploaded = true;
-    await user.save();
-
-    const url = await uploadProfilePicture(userId, input);
+    const url = await uploadProfilePicture(userId, input, manual);
     res.json({ url });
   } catch (error) {
     console.error('Error:', error.message);

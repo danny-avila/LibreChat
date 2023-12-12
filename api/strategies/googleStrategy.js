@@ -30,10 +30,10 @@ const googleLogin = async (accessToken, refreshToken, profile, cb) => {
 };
 
 const handleExistingUser = async (oldUser, avatarUrl, useFirebase) => {
-  if (!oldUser.avatarUploaded && !useFirebase) {
+  if (!useFirebase && !oldUser.avatar.endsWith('?manual=true')) {
     oldUser.avatar = avatarUrl;
     await oldUser.save();
-  } else if (useFirebase && !oldUser.avatarUploaded) {
+  } else if (useFirebase && !oldUser.avatar.endsWith('?manual=true')) {
     const userId = oldUser._id;
     const avatarURL = await uploadProfilePicture(userId, avatarUrl);
     oldUser.avatar = avatarURL;

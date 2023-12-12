@@ -13,7 +13,6 @@ userSchema.methods.toJSON = function () {
     name: this.name,
     username: this.username,
     avatar: this.avatar,
-    avatarUploaded: this.avatarUploaded,
     role: this.role,
     emailVerified: this.emailVerified,
     plugins: this.plugins,
