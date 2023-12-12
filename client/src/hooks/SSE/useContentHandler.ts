@@ -12,7 +12,7 @@ type TContentHandler = {
 export default function useContentHandler({ setMessages, setConversation }: TUseContentHandler) {
   const messageMap = new Map<string, TMessage>();
   return ({ data, submission }: TContentHandler) => {
-    const { type, messageId } = data;
+    const { type, messageId, index } = data;
     const {
       messages,
       message: userMessage,
@@ -34,7 +34,7 @@ export default function useContentHandler({ setMessages, setConversation }: TUse
 
     const part = data[type];
     response.content = response.content || [];
-    response.content[part.index] = part;
+    response.content[index] = part;
     response.content = response.content.filter((p) => p !== undefined);
 
     setMessages([...messages, userMessage, response]);

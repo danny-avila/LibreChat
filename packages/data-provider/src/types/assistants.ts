@@ -154,21 +154,57 @@ export type FilePathDetails = {
 };
 
 export type Text = {
-  annotations: Array<FileCitation | FilePath>;
+  annotations?: Array<FileCitation | FilePath>;
   value: string;
 };
 
 export enum ContentTypes {
-  TOOL_CALL = 'toolCall',
-  IMAGE_FILE = 'imageFile',
   TEXT = 'text',
+  TOOL_CALL = 'tool_call',
+  IMAGE_FILE = 'image_file',
+}
+
+export enum StepTypes {
+  TOOL_CALLS = 'tool_calls',
+  MESSAGE_CREATION = 'message_creation',
+}
+
+export enum ToolCallTypes {
+  FUNCTION = 'function',
+  RETRIEVAL = 'retrieval',
+  CODE_INTERPRETER = 'code_interpreter',
+}
+
+export enum StepStatus {
+  IN_PROGRESS = 'in_progress',
+  CANCELLED = 'cancelled',
+  FAILED = 'failed',
+  COMPLETED = 'completed',
+  EXPIRED = 'expired',
+}
+
+export enum MessageContentTypes {
+  TEXT = 'text',
+  IMAGE_FILE = 'image_file',
+}
+
+//enum for RunStatus
+// The status of the run: queued, in_progress, requires_action, cancelling, cancelled, failed, completed, or expired.
+export enum RunStatus {
+  QUEUED = 'queued',
+  IN_PROGRESS = 'in_progress',
+  REQUIRES_ACTION = 'requires_action',
+  CANCELLING = 'cancelling',
+  CANCELLED = 'cancelled',
+  FAILED = 'failed',
+  COMPLETED = 'completed',
+  EXPIRED = 'expired',
 }
 
 export type PartMetadata = {
   progress?: number;
   asset_pointer?: string;
   status: string;
-  index: number;
 };
 
 export type ContentPart = (CodeToolCall | RetrievalToolCall | FunctionToolCall | ImageFile | Text) &
@@ -178,4 +214,5 @@ export type TContentData = Record<ContentTypes, ContentPart> & {
   type: ContentTypes;
   messageId: string;
   index: number;
+  stream?: boolean;
 };

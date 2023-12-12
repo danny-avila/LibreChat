@@ -97,6 +97,18 @@
  */
 
 /**
+ * @exports StepTypes
+ * @typedef {import('librechat-data-provider').StepTypes} StepTypes
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TContentData
+ * @typedef {import('librechat-data-provider').TContentData} TContentData
+ * @memberof typedefs
+ */
+
+/**
  * @exports PartMetadata
  * @typedef {import('librechat-data-provider').PartMetadata} PartMetadata
  * @memberof typedefs
@@ -207,7 +219,7 @@
 
 /**
  * @exports RunManager
- * @typedef {import('./server/services/Runs/RunMananger.js').RunManager} RunManager
+ * @typedef {import('./server/services/Runs/RunManager.js').RunManager} RunManager
  * @memberof typedefs
  */
 
@@ -215,7 +227,7 @@
  * @exports Thread
  * @typedef {Object} Thread
  * @property {string} id - The identifier of the thread.
- * @property {string} object - The object type, always 'thread'.
+ * @property {'thread'} object - The object type, always 'thread'.
  * @property {number} created_at - The Unix timestamp (in seconds) for when the thread was created.
  * @property {Object} [metadata] - Optional metadata associated with the thread.
  * @property {Message[]} [messages] - An array of messages associated with the thread.
@@ -226,12 +238,12 @@
  * @exports Message
  * @typedef {Object} Message
  * @property {string} id - The identifier of the message.
- * @property {string} object - The object type, always 'thread.message'.
+ * @property {'thread.message'} object - The object type, always 'thread.message'.
  * @property {number} created_at - The Unix timestamp (in seconds) for when the message was created.
  * @property {string} thread_id - The thread ID that this message belongs to.
- * @property {string} role - The entity that produced the message. One of 'user' or 'assistant'.
+ * @property {'user'|'assistant'} role - The entity that produced the message. One of 'user' or 'assistant'.
  * @property {Object[]} content - The content of the message in an array of text and/or images.
- * @property {string} content[].type - The type of content, either 'text' or 'image_file'.
+ * @property {'text'|'image_file'} content[].type - The type of content, either 'text' or 'image_file'.
  * @property {Object} [content[].text] - The text content, present if type is 'text'.
  * @property {string} content[].text.value - The data that makes up the text.
  * @property {Object[]} [content[].text.annotations] - Annotations for the text content.
@@ -273,7 +285,7 @@
 /**
  * @exports FunctionTool
  * @typedef {Object} FunctionTool
- * @property {string} type - The type of tool, 'function'.
+ * @property {'function'} type - The type of tool, 'function'.
  * @property {Object} function - The function definition.
  * @property {string} function.description - A description of what the function does.
  * @property {string} function.name - The name of the function to be called.
@@ -284,7 +296,7 @@
 /**
  * @exports Tool
  * @typedef {Object} Tool
- * @property {string} type - The type of tool, can be 'code_interpreter', 'retrieval', or 'function'.
+ * @property {'code_interpreter'|'retrieval'|'function'} type - The type of tool, can be 'code_interpreter', 'retrieval', or 'function'.
  * @property {FunctionTool} [function] - The function tool, present if type is 'function'.
  * @memberof typedefs
  */
@@ -297,7 +309,7 @@
  * @property {number} created_at - The Unix timestamp (in seconds) for when the run was created.
  * @property {string} thread_id - The ID of the thread that was executed on as a part of this run.
  * @property {string} assistant_id - The ID of the assistant used for execution of this run.
- * @property {string} status - The status of the run (e.g., 'queued', 'completed').
+ * @property {'queued'|'in_progress'|'requires_action'|'cancelling'|'cancelled'|'failed'|'completed'|'expired'} status - The status of the run: queued, in_progress, requires_action, cancelling, cancelled, failed, completed, or expired.
  * @property {Object} [required_action] - Details on the action required to continue the run.
  * @property {string} required_action.type - The type of required action, always 'submit_tool_outputs'.
  * @property {Object} required_action.submit_tool_outputs - Details on the tool outputs needed for the run to continue.
@@ -356,8 +368,8 @@
  * @property {string} assistant_id - The ID of the assistant associated with the run step.
  * @property {string} thread_id - The ID of the thread that was run.
  * @property {string} run_id - The ID of the run that this run step is a part of.
- * @property {string} type - The type of run step, either 'message_creation' or 'tool_calls'.
- * @property {string} status - The status of the run step, can be 'in_progress', 'cancelled', 'failed', 'completed', or 'expired'.
+ * @property {'message_creation'|'tool_calls'} type - The type of run step, either 'message_creation' or 'tool_calls'.
+ * @property {'in_progress'|'cancelled'|'failed'|'completed'|'expired'} status - The status of the run step, can be 'in_progress', 'cancelled', 'failed', 'completed', or 'expired'.
  * @property {Object} step_details - The details of the run step.
  * @property {Object} [last_error] - The last error associated with this run step.
  * @property {string} last_error.code - One of 'server_error' or 'rate_limit_exceeded'.
@@ -552,125 +564,27 @@
  */
 
 /**
+ * @exports ResponseMessage
+ * @typedef {Object} ResponseMessage
+ * @property {string} messageId - The ID of the message.
+ * @property {string} conversationId - The ID of the conversation.
+ * @property {string} parentMessageId - The ID of the parent message.
+ * @property {'assistant'} role - The role of the sender. Always 'assistant'.
+ * @property {ContentPart[]} content - The content of the message.
+ */
+
+/**
  * @typedef {OpenAI & {
  * req: Express.Request,
  * res: Express.Response
- * completeToolCallSteps: Set<string>,
- * mappedOrder: Map<string, number>,
- * seenToolCalls: Map<string, StepToolCall>,
- * seenCompletedMessages: Set<string>,
- * processedFileIds: Set<string>,
  * getPartialText: () => string,
+ * processedFileIds: Set<string>,
+ * mappedOrder: Map<string, number>,
+ * completeToolCallSteps: Set<string>,
+ * seenCompletedMessages: Set<string>,
+ * seenToolCalls: Map<string, StepToolCall>,
  * progressCallback: (options: Object) => void,
+ * addContentData: (data: TContentData) => void,
+ * responseMessage: ResponseMessage,
  * }} OpenAIClient
- */
-
-/**
- * @typedef {Object} Message
- * @property {string} id - The identifier of the message.
- * @property {string} object - The object type, always 'thread.message'.
- * @property {number} created_at - The Unix timestamp (in seconds) for when the message was created.
- * @property {string} thread_id - The thread ID that this message belongs to.
- * @property {string} role - The entity that produced the message. One of 'user' or 'assistant'.
- * @property {Object[]} content - The content of the message in an array of text and/or images.
- * @property {'text'|'image_file'} content[].type - The type of content, either 'text' or 'image_file'.
- * @property {Object} [content[].text] - The text content, present if type is 'text'.
- * @property {string} content[].text.value - The data that makes up the text.
- * @property {Object[]} [content[].text.annotations] - Annotations for the text content.
- * @property {Object} [content[].image_file] - The image file content, present if type is 'image_file'.
- * @property {string} content[].image_file.file_id - The File ID of the image in the message content.
- * @property {string[]} [file_ids] - Optional list of File IDs for the message.
- * @property {string|null} [assistant_id] - If applicable, the ID of the assistant that authored this message.
- * @property {string|null} [run_id] - If applicable, the ID of the run associated with the authoring of this message.
- * @property {Object} [metadata] - Optional metadata for the message, a map of key-value pairs.
- */
-
-/**
- * @typedef {Object} FunctionTool
- * @property {string} type - The type of tool, 'function'.
- * @property {Object} function - The function definition.
- * @property {string} function.description - A description of what the function does.
- * @property {string} function.name - The name of the function to be called.
- * @property {Object} function.parameters - The parameters the function accepts, described as a JSON Schema object.
- */
-
-/**
- * @typedef {Object} Tool
- * @property {string} type - The type of tool, can be 'code_interpreter', 'retrieval', or 'function'.
- * @property {FunctionTool} [function] - The function tool, present if type is 'function'.
- */
-
-/**
- * @typedef {Object} Run
- * @property {string} id - The identifier of the run.
- * @property {string} object - The object type, always 'thread.run'.
- * @property {number} created_at - The Unix timestamp (in seconds) for when the run was created.
- * @property {string} thread_id - The ID of the thread that was executed on as a part of this run.
- * @property {string} assistant_id - The ID of the assistant used for execution of this run.
- * @property {string} status - The status of the run (e.g., 'queued', 'completed').
- * @property {Object} [required_action] - Details on the action required to continue the run.
- * @property {string} required_action.type - The type of required action, always 'submit_tool_outputs'.
- * @property {Object} required_action.submit_tool_outputs - Details on the tool outputs needed for the run to continue.
- * @property {Object[]} required_action.submit_tool_outputs.tool_calls - A list of the relevant tool calls.
- * @property {string} required_action.submit_tool_outputs.tool_calls[].id - The ID of the tool call.
- * @property {string} required_action.submit_tool_outputs.tool_calls[].type - The type of tool call the output is required for, always 'function'.
- * @property {Object} required_action.submit_tool_outputs.tool_calls[].function - The function definition.
- * @property {string} required_action.submit_tool_outputs.tool_calls[].function.name - The name of the function.
- * @property {string} required_action.submit_tool_outputs.tool_calls[].function.arguments - The arguments that the model expects you to pass to the function.
- * @property {Object} [last_error] - The last error associated with this run.
- * @property {string} last_error.code - One of 'server_error' or 'rate_limit_exceeded'.
- * @property {string} last_error.message - A human-readable description of the error.
- * @property {number} [expires_at] - The Unix timestamp (in seconds) for when the run will expire.
- * @property {number} [started_at] - The Unix timestamp (in seconds) for when the run was started.
- * @property {number} [cancelled_at] - The Unix timestamp (in seconds) for when the run was cancelled.
- * @property {number} [failed_at] - The Unix timestamp (in seconds) for when the run failed.
- * @property {number} [completed_at] - The Unix timestamp (in seconds) for when the run was completed.
- * @property {string} [model] - The model that the assistant used for this run.
- * @property {string} [instructions] - The instructions that the assistant used for this run.
- * @property {Tool[]} [tools] - The list of tools used for this run.
- * @property {string[]} [file_ids] - The list of File IDs used for this run.
- * @property {Object} [metadata] - Metadata associated with this run.
- */
-
-/**
- * @typedef {Object} RunStep
- * @property {string} id - The identifier of the run step.
- * @property {string} object - The object type, always 'thread.run.step'.
- * @property {number} created_at - The Unix timestamp (in seconds) for when the run step was created.
- * @property {string} assistant_id - The ID of the assistant associated with the run step.
- * @property {string} thread_id - The ID of the thread that was run.
- * @property {string} run_id - The ID of the run that this run step is a part of.
- * @property {string} type - The type of run step, either 'message_creation' or 'tool_calls'.
- * @property {string} status - The status of the run step, can be 'in_progress', 'cancelled', 'failed', 'completed', or 'expired'.
- * @property {Object} step_details - The details of the run step.
- * @property {Object} [last_error] - The last error associated with this run step.
- * @property {string} last_error.code - One of 'server_error' or 'rate_limit_exceeded'.
- * @property {string} last_error.message - A human-readable description of the error.
- * @property {number} [expired_at] - The Unix timestamp (in seconds) for when the run step expired.
- * @property {number} [cancelled_at] - The Unix timestamp (in seconds) for when the run step was cancelled.
- * @property {number} [failed_at] - The Unix timestamp (in seconds) for when the run step failed.
- * @property {number} [completed_at] - The Unix timestamp (in seconds) for when the run step completed.
- * @property {Object} [metadata] - Metadata associated with this run step, a map of up to 16 key-value pairs.
- */
-
-/**
- * @typedef {Object} StepMessage
- * @property {Message} message - The complete message object created by the step.
- * @property {string} id - The identifier of the run step.
- * @property {string} object - The object type, always 'thread.run.step'.
- * @property {number} created_at - The Unix timestamp (in seconds) for when the run step was created.
- * @property {string} assistant_id - The ID of the assistant associated with the run step.
- * @property {string} thread_id - The ID of the thread that was run.
- * @property {string} run_id - The ID of the run that this run step is a part of.
- * @property {string} type - The type of run step, either 'message_creation' or 'tool_calls'.
- * @property {string} status - The status of the run step, can be 'in_progress', 'cancelled', 'failed', 'completed', or 'expired'.
- * @property {Object} step_details - The details of the run step.
- * @property {Object} [last_error] - The last error associated with this run step.
- * @property {string} last_error.code - One of 'server_error' or 'rate_limit_exceeded'.
- * @property {string} last_error.message - A human-readable description of the error.
- * @property {number} [expired_at] - The Unix timestamp (in seconds) for when the run step expired.
- * @property {number} [cancelled_at] - The Unix timestamp (in seconds) for when the run step was cancelled.
- * @property {number} [failed_at] - The Unix timestamp (in seconds) for when the run step failed.
- * @property {number} [completed_at] - The Unix timestamp (in seconds) for when the run step completed.
- * @property {Object} [metadata] - Metadata associated with this run step, a map of up to 16 key-value pairs.
  */
