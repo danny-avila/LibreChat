@@ -1,5 +1,6 @@
 import { atom, selector } from 'recoil';
-import { TEndpointsConfig, EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 
 const defaultConfig: TEndpointsConfig = {
   [EModelEndpoint.azureOpenAI]: null,

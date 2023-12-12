@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import {
+  useGetStartupConfig,
   useGetMessagesByConvoId,
   useGetConversationByIdMutation,
-  useGetStartupConfig,
-} from 'librechat-data-provider';
+} from 'librechat-data-provider/react-query';
 
 import Landing from '~/components/ui/Landing';
 import Messages from '~/components/Messages/Messages';

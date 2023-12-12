@@ -2,12 +2,8 @@ import { v4 } from 'uuid';
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import {
-  QueryKeys,
-  parseCompactConvo,
-  getResponseSender,
-  useGetMessagesByConvoId,
-} from 'librechat-data-provider';
+import { QueryKeys, parseCompactConvo, getResponseSender } from 'librechat-data-provider';
+import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import type {
   TMessage,
   TSubmission,

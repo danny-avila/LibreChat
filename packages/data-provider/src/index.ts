@@ -3,13 +3,7 @@ export * from './types';
 export * from './types/assistants';
 export * from './types/files';
 export * from './types/mutations';
-/*
- * react query
- * TODO: move to client, or move schemas/types to their own package
- */
-export * from './react-query-service';
 export * from './keys';
-export * from './assistants';
 /* api call helpers */
 export * from './headers-helpers';
 export { default as request } from './request';

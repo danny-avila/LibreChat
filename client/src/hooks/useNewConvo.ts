@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import {
   useSetRecoilState,
   useResetRecoilState,
