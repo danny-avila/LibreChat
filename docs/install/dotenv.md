@@ -15,6 +15,14 @@ APP_TITLE=LibreChat
 CUSTOM_FOOTER="My custom footer"
 ```
 
+### Logging
+
+LibreChat has central logging built into it. Debug logging, enabled by default, is essential for developer work. If you encounter any issues running LibreChat, you should enable this variable, reproduce your issue, and [report the issue](https://github.com/danny-avila/LibreChat/issues) with your logs found in `./api/logs/debug-%DATE%.log`.
+
+```bash
+DEBUG_LOGGING=TRUE
+```
+
 ### Port
 
 - The server will listen to localhost:3080 by default. You can change the target IP as you want. If you want to make this server available externally, for example to share the server with others or expose this from a Docker container, set host to 0.0.0.0 or your external IP interface. 
