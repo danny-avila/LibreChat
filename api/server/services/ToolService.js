@@ -1,3 +1,4 @@
+const { ContentTypes } = require('librechat-data-provider');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { loadTools } = require('~/app/clients/tools/util');
 const { sendMessage } = require('~/server/utils');
@@ -74,7 +75,8 @@ async function processActions(openai, actions) {
           toolCall,
           // result: tool.result, // we can append tool properties to message stream
           index: openai.mappedOrder.get(action.toolCallId),
-          id: toolCall.id,
+          messageId: action.thread_id,
+          type: ContentTypes.TOOL_CALL,
         });
         return {
           tool_call_id: action.toolCallId,

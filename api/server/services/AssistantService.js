@@ -1,5 +1,6 @@
 const path = require('path');
 const mime = require('mime/lite');
+const { ContentTypes } = require('librechat-data-provider');
 const { createFile } = require('~/models');
 const { TextStream } = require('~/app/clients');
 const RunManager = require('./Runs/RunMananger');
@@ -7,7 +8,7 @@ const { processActions } = require('~/server/services/ToolService');
 const { convertToWebP } = require('~/server/services/Files/images');
 const { isEnabled, createOnProgress, sendMessage } = require('~/server/utils');
 
-const { GPTS_DOWNLOAD_IMAGES = 'false' } = process.env;
+const { GPTS_DOWNLOAD_IMAGES = 'true' } = process.env;
 const imageRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
 
 /**
@@ -339,29 +340,35 @@ function createInProgressHandler(openai, thread_id, messages) {
     if (step.type === 'tool_calls') {
       const { tool_calls } = step.step_details;
 
-      tool_calls.forEach((toolCall) => {
-        const previousCall = openai.seenToolCalls.get(toolCall.id);
+      tool_calls.forEach(
+        /**
+         * @param {CodeToolCall | RetrievalToolCall | FunctionToolCall} toolCall
+         */
+        (toolCall) => {
+          const previousCall = openai.seenToolCalls.get(toolCall.id);
 
-        // If the tool call is new or has changed
-        if (!previousCall || hasToolCallChanged(previousCall, toolCall)) {
-          let toolCallIndex = openai.mappedOrder.get(toolCall.id);
-          if (toolCallIndex === undefined) {
-            // New tool call
-            toolCallIndex = openai.index;
-            openai.mappedOrder.set(toolCall.id, openai.index);
-            openai.index++;
+          // If the tool call is new or has changed
+          if (!previousCall || hasToolCallChanged(previousCall, toolCall)) {
+            let toolCallIndex = openai.mappedOrder.get(toolCall.id);
+            if (toolCallIndex === undefined) {
+              // New tool call
+              toolCallIndex = openai.index;
+              openai.mappedOrder.set(toolCall.id, openai.index);
+              openai.index++;
+            }
+
+            sendMessage(openai.res, {
+              toolCall,
+              index: toolCallIndex,
+              messageId: thread_id,
+              type: ContentTypes.TOOL_CALL,
+            });
+
+            // Update the stored tool call
+            openai.seenToolCalls.set(toolCall.id, toolCall);
           }
-
-          sendMessage(openai.res, {
-            toolCall,
-            index: toolCallIndex,
-            id: toolCall.id,
-          });
-
-          // Update the stored tool call
-          openai.seenToolCalls.set(toolCall.id, toolCall);
-        }
-      });
+        },
+      );
     } else if (step.type === 'message_creation' && step.status === 'completed') {
       const { message_id } = step.step_details.message_creation;
       if (openai.seenCompletedMessages.has(message_id)) {
@@ -499,7 +506,7 @@ async function handleRun({
  * while steps without message creation will be returned as is.
  *
  * @param {RunStep[]} steps - An array of steps from the run.
- * @param {ThreadMessage[]} messages - An array of message objects.
+ * @param {Message[]} messages - An array of message objects.
  * @returns {(StepMessage | RunStep)[]} An array where each element is either a step with its corresponding message (StepMessage) or a step without a message (RunStep).
  */
 function mapMessagesToSteps(steps, messages) {

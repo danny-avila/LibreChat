@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ContentPart } from './types/assistants';
 
 export enum EModelEndpoint {
   azureOpenAI = 'azureOpenAI',
@@ -159,6 +160,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
   plugin?: TResPlugin | null;
   plugins?: TResPlugin[];
+  content?: ContentPart[];
   files?: {
     file_id: string;
     type?: string;
