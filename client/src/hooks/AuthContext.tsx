@@ -115,7 +115,7 @@ const AuthContextProvider = ({
         navigate('/login');
       },
     });
-  }, []);
+  }, [authConfig?.test, navigate, refreshToken, setUserContext]);
 
   useEffect(() => {
     if (userQuery.data) {
@@ -139,6 +139,8 @@ const AuthContextProvider = ({
     error,
     navigate,
     setUserContext,
+    doSetError,
+    silentRefresh,
   ]);
 
   useEffect(() => {

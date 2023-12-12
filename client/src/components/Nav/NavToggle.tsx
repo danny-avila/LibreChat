@@ -7,7 +7,7 @@ export default function NavToggle({ onToggle, navVisible, isHovering, setIsHover
   const transition = {
     transition: 'transform 0.3s ease, opacity 0.2s ease',
   };
-  const [newUser, setNewUser] = useLocalStorage('newUser', true);
+  const [newUser] = useLocalStorage('newUser', true);
 
   return (
     <div

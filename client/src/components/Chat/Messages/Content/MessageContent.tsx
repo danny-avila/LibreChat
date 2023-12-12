@@ -35,7 +35,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
   return (
     <Container>
       {imageFiles &&
-        imageFiles.map((file, i) => (
+        imageFiles.map((file) => (
           <Image
             key={file.file_id}
             imagePath={file.preview ?? file.filepath ?? ''}
