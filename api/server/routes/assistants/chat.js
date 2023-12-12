@@ -17,7 +17,7 @@ const {
   // validateEndpoint,
   // buildEndpointOption,
   // createAbortController,
-} = require('../../middleware');
+} = require('~/server/middleware');
 
 const defaultModel = 'gpt-3.5-turbo-1106';
 /**
