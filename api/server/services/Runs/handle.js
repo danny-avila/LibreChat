@@ -20,20 +20,6 @@ async function createRun({ openai, thread_id, body }) {
   return run;
 }
 
-// /**
-//  * Retrieves all steps of a run.
-//  *
-//  * @param {Object} params - The parameters for the retrieveRunSteps function.
-//  * @param {OpenAIClient} params.openai - The OpenAI client instance.
-//  * @param {string} params.thread_id - The ID of the thread associated with the run.
-//  * @param {string} params.run_id - The ID of the run to retrieve steps for.
-//  * @return {Promise<RunStep[]>} A promise that resolves to an array of RunStep objects.
-//  */
-// async function retrieveRunSteps({ openai, thread_id, run_id }) {
-//   const runSteps = await openai.beta.threads.runs.steps.list(thread_id, run_id);
-//   return runSteps;
-// }
-
 /**
  * Delays the execution for a specified number of milliseconds.
  *
@@ -96,6 +82,21 @@ async function waitForRun({
   }
 
   return run;
+}
+
+/**
+ * Retrieves all steps of a run.
+ *
+ * @deprecated: Steps are handled with runAssistant now.
+ * @param {Object} params - The parameters for the retrieveRunSteps function.
+ * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {string} params.thread_id - The ID of the thread associated with the run.
+ * @param {string} params.run_id - The ID of the run to retrieve steps for.
+ * @return {Promise<RunStep[]>} A promise that resolves to an array of RunStep objects.
+ */
+async function _retrieveRunSteps({ openai, thread_id, run_id }) {
+  const runSteps = await openai.beta.threads.runs.steps.list(thread_id, run_id);
+  return runSteps;
 }
 
 /**
@@ -178,6 +179,6 @@ module.exports = {
   sleep,
   createRun,
   waitForRun,
-  _handleRun,
+  // _handleRun,
   // retrieveRunSteps,
 };
