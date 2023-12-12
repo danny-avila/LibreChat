@@ -103,6 +103,10 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
   let basename = _basename;
   const downloadImages = isEnabled(GPTS_DOWNLOAD_IMAGES);
 
+  /**
+   * @param {string} file_id - The ID of the file to retrieve.
+   * @param {boolean} [save] - Whether to save the file metadata to the database.
+   */
   const retrieveFile = async (file_id, save = false) => {
     const _file = await openai.files.retrieve(file_id);
     const filepath = `/api/files/download/${file_id}`;
@@ -130,12 +134,17 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
   const data = await response.arrayBuffer();
   const dataBuffer = Buffer.from(data);
 
+  /** @param {Buffer} dataBuffer */
   const determineFileType = async (dataBuffer) => {
     const fileType = await import('file-type');
     const type = await fileType.fromBuffer(dataBuffer);
     return type ? type.ext : null; // Returns extension if found, else null
   };
 
+  /**
+   * @param {Buffer} dataBuffer
+   * @param {string} fileExt
+   */
   const processAsImage = async (dataBuffer, fileExt) => {
     // Logic to process image files, convert to webp, etc.
     const _file = await convertToWebP(openai.req, dataBuffer, 'high', `${file_id}${fileExt}`);
@@ -149,6 +158,7 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
     return file;
   };
 
+  /** @param {Buffer} dataBuffer */
   const processOtherFileTypes = async (dataBuffer) => {
     // Logic to handle other file types
     // Placeholder: You should implement this based on your specific requirements
