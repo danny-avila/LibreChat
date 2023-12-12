@@ -29,9 +29,6 @@ const defaultModel = 'gpt-3.5-turbo-1106';
 router.post('/', setHeaders, async (req, res) => {
   try {
     logger.debug('[/assistants/chat/] req.body', req.body);
-    // test message:
-    // How many polls of 500 ms intervals are there in 18 seconds?
-
     const { assistant_id, messages, text: userMessage, messageId } = req.body;
     const conversationId = req.body.conversationId || crypto.randomUUID();
     // let thread_id = req.body.thread_id ?? 'thread_nZoiCbPauU60LqY1Q0ME1elg'; // for testing
