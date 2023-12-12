@@ -1,4 +1,12 @@
-const { updateFileUsage, createFile } = require('~/models');
+const path = require('path');
+const mime = require('mime/lite');
+const { isEnabled } = require('~/server/utils');
+const { createFile, updateFileUsage } = require('~/models');
+const { convertToWebP } = require('~/server/services/Files/images');
+
+const imageRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
+
+const { GPTS_DOWNLOAD_IMAGES = 'true' } = process.env;
 const { getStrategyFunctions } = require('./strategies');
 const { logger } = require('~/config');
 
@@ -81,8 +89,96 @@ const processImageUpload = async ({ req, res, file, metadata }) => {
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
 };
 
+/**
+ * Retrieves and processes a file based on its type.
+ *
+ * @param {Object} params - The params passed to the function.
+ * @param {OpenAIClient} params.openai - The params passed to the function.
+ * @param {string} params.file_id - The ID of the file to retrieve.
+ * @param {string} params.basename - The basename of the file (if image); e.g., 'image.jpg'.
+ * @param {boolean} [params.unknownType] - Whether the file type is unknown.
+ * @returns {Promise<{filepath: string, bytes: number, width?: number, height?: number}>} The path, size, and dimensions (if image) of the processed file.
+ */
+async function retrieveAndProcessFile({ openai, file_id, basename: _basename, unknownType }) {
+  let basename = _basename;
+  const downloadImages = isEnabled(GPTS_DOWNLOAD_IMAGES);
+
+  const retrieveFile = async (file_id, save = false) => {
+    const _file = await openai.files.retrieve(file_id);
+    const filepath = `/api/files/download/${file_id}`;
+    const file = {
+      ..._file,
+      type: mime.getType(_file.filename),
+      filepath,
+      usage: 1,
+      file_id,
+    };
+
+    if (save) {
+      createFile(file, true); // Assuming createFile is a function you have defined
+    }
+
+    return file;
+  };
+
+  // If image downloads are not enabled or no basename provided, return only the file metadata
+  if (!downloadImages || (!basename && !downloadImages)) {
+    return await retrieveFile(file_id, true);
+  }
+
+  const response = await openai.files.content(file_id);
+  const data = await response.arrayBuffer();
+  const dataBuffer = Buffer.from(data);
+
+  const determineFileType = async (dataBuffer) => {
+    const fileType = await import('file-type');
+    const type = await fileType.fromBuffer(dataBuffer);
+    return type ? type.ext : null; // Returns extension if found, else null
+  };
+
+  const processAsImage = async (dataBuffer, fileExt) => {
+    // Logic to process image files, convert to webp, etc.
+    const _file = await convertToWebP(openai.req, dataBuffer, 'high', `${file_id}${fileExt}`);
+    const file = {
+      ..._file,
+      type: 'image/webp',
+      usage: 1,
+      file_id,
+    };
+    createFile(file, true); // Assuming createFile is a function you have defined
+    return file;
+  };
+
+  const processOtherFileTypes = async (dataBuffer) => {
+    // Logic to handle other file types
+    // Placeholder: You should implement this based on your specific requirements
+    console.log('Non-image file type detected');
+    return { filepath: `/api/files/download/${file_id}`, bytes: dataBuffer.length };
+  };
+
+  // If the filetype is unknown, inspect the file
+  if (unknownType || !path.extname(basename)) {
+    const detectedExt = await determineFileType(dataBuffer);
+    if (detectedExt && imageRegex.test('.' + detectedExt)) {
+      return await processAsImage(dataBuffer, detectedExt);
+    } else {
+      return await processOtherFileTypes(dataBuffer);
+    }
+  }
+
+  // Existing logic for processing known image types
+  if (downloadImages && basename && path.extname(basename) && imageRegex.test(basename)) {
+    return await processAsImage(dataBuffer, path.extname(basename));
+  } else {
+    console.log('Not an image or invalid extension: ', basename);
+    return await processOtherFileTypes(dataBuffer);
+  }
+}
+
 module.exports = {
   processImageUpload,
+  imageRegex,
   processFiles,
   processFileURL,
+  retrieveAndProcessFile,
 };
