@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, Label } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { loadStripe } from '@stripe/stripe-js';
-import { Elements } from '@stripe/react-stripe-js';
 import { useAuthContext } from '../../../hooks/AuthContext.tsx';
 import { Spinner } from '~/components';
 import { SiVisa, SiMastercard, SiWechat, SiAlipay, SiBitcoin } from 'react-icons/si';
@@ -14,7 +13,9 @@ const stripePromise = loadStripe(
 
 export default function ErrorDialog({ open, onOpenChange, message }) {
   const { user } = useAuthContext();
+  console.log('user', user);
   const userId = user?.id;
+  const email = user?.email;
   const [processingTokenAmount, setProcessingTokenAmount] = useState(null);
   const [tokenBalance, setTokenBalance] = useState(null);
   const [selectedTokens, setSelectedTokens] = useState(null);
@@ -36,28 +37,29 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
 
   const handlePurchase = async () => {
     if (selectedTokens === null) {
-      return;
-    } // Ensure a package is selected
+      return; // Ensure a package is selected
+    }
 
-    setProcessingTokenAmount(selectedTokens);
-    let amount;
+    let priceId;
     switch (selectedTokens) {
       case 100000:
-        amount = 10;
+        priceId = 'price_1OHu6tHKD0byXXClTk4XV5Wl'; // 10 RMB
         break;
       case 500000:
-        amount = 35;
+        priceId = 'price_1OHZGOHKD0byXXClIHXIdDiW'; // 35 RMB
         break;
       case 1000000:
-        amount = 50;
+        priceId = 'price_1OHZGrHKD0byXXCleN1BiRBb'; // 50 RMB
         break;
       case 10000000:
-        amount = 250;
+        priceId = 'price_1OHZH6HKD0byXXClEWQPDQVB'; // 250 RMB
         break;
       default:
-        console.error('Invalid token amount');
+        console.error('Invalid token selection');
         return;
     }
+
+    const domain = window.location.hostname;
 
     try {
       const res = await fetch('/api/payment/create-checkout-session', {
@@ -65,7 +67,12 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ amount, userId: userId }),
+        body: JSON.stringify({
+          priceId,
+          userId,
+          domain,
+          email,
+        }),
       });
       const data = await res.json();
       const stripe = await stripePromise;
@@ -73,19 +80,10 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
         sessionId: data.sessionId,
       });
       if (error) {
-        console.error(error);
-      } else {
-        await fetchTokenBalance();
-
-        // Google Ads Conversion Tracking
-        window.gtag('event', 'conversion', {
-          send_to: 'AW-11258294301/WxYWCKGGhvkYEJ3gr_gp',
-          value: amount,
-          currency: 'CNY',
-        });
+        console.error('Stripe Checkout Error:', error);
       }
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error creating Stripe checkout session:', error);
     } finally {
       setProcessingTokenAmount(null);
     }

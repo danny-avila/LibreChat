@@ -1,48 +1,71 @@
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const addTokensByUserId = require('../../../config/addTokens'); // Adjust the import path
+const addTokensByUserId = require('../../../config/addTokens');
 
 exports.createPaymentIntent = async (req, res) => {
   try {
-    let { amount, userId } = req.body;
-    amount = parseInt(amount, 10) * 100; // Convert RMB to cents for Stripe
+    console.log('req.body:', req.body);
+    const { priceId, userId, domain, email } = req.body;
 
-    if (isNaN(amount) || amount <= 0) {
-      res.status(400).json({ error: `Invalid amount: ${amount}` });
+    if (
+      ![
+        'price_1OHu6tHKD0byXXClTk4XV5Wl',
+        'price_1OHZH6HKD0byXXClEWQPDQVB',
+        'price_1OHZGrHKD0byXXCleN1BiRBb',
+        'price_1OHZGOHKD0byXXClIHXIdDiW',
+      ].includes(priceId)
+    ) {
+      res.status(400).json({ error: 'Invalid price ID' });
       return;
     }
+
+    // // Determine the currency based on the domain
+    // let currency;
+    // switch(domain) {
+    //   case 'gptchina.io':
+    //     currency = `CNY`;
+    //     break;
+    //   case 'gptglobal.io':
+    //     currency = `CNY`;
+    //     break;
+    //   case '8124-204-16-39-70.ngrok-free.app':
+    //     currency = `CNY`;
+    //     break;
+    //   // Add cases for other domains
+    //   default:
+    //     res.status(400).json({ error: 'Invalid domain' });
+    //     return;
+    // }
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card', 'wechat_pay', 'alipay'],
       line_items: [
         {
-          price_data: {
-            currency: 'cny', // Changed to Chinese Yuan
-            product_data: {
-              name: 'Tokens',
-            },
-            unit_amount: amount,
-          },
+          price: priceId,
           quantity: 1,
         },
       ],
       payment_intent_data: {
         metadata: {
           userId: userId.toString(),
+          email: email,
+          priceId: priceId,
+          domain: domain,
         },
       },
+      customer_email: email,
       payment_method_options: {
         wechat_pay: {
           client: 'web',
         },
       },
       mode: 'payment',
-      success_url: 'https://gptchina.io',
-      cancel_url: 'https://gptchina.io',
+      success_url: `${process.env.DOMAIN_CLIENT}`,
+      cancel_url: `${process.env.DOMAIN_CLIENT}`,
     });
 
     res.status(200).json({ sessionId: session.id });
   } catch (error) {
-    console.error(error); // Log the error to the console
+    console.error(error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -57,47 +80,55 @@ exports.handleWebhook = async (req, res) => {
       sigHeader,
       process.env.STRIPE_WEBHOOK_SECRET,
     );
-    console.log('Webhook Event:', event);
   } catch (err) {
+    console.error(`Webhook Error: ${err.message}`);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   if (event['type'] === 'payment_intent.succeeded') {
-    console.log('Payment Intent Succeeded:', event);
     const paymentIntent = event.data.object;
-    const { metadata } = paymentIntent;
-    const userId = metadata.userId;
-    const amountInRMB = paymentIntent.amount_received / 100;
+    const userId = paymentIntent.metadata.userId;
+    const priceId = paymentIntent.metadata.priceId; // Retrieve priceId from metadata
 
-    console.log('Metadata:', event.data.object.metadata);
+    if (!priceId) {
+      console.error('Price ID not found in payment intent metadata');
+      res.status(400).send({ error: 'Price ID not found' });
+      return;
+    }
 
+    console.log('Price ID:', priceId);
+
+    // Determine the number of tokens based on the price ID
     let tokens;
-    switch (amountInRMB) {
-      case 10: // Updated amount
-        tokens = 100000;
-        break;
-      case 35: // Updated amount
-        tokens = 500000;
-        break;
-      case 50: // Updated amount
-        tokens = 1000000;
-        break;
-      case 250: // Updated amount
+    switch (priceId) {
+      case 'price_1OHZH6HKD0byXXClEWQPDQVB':
         tokens = 10000000;
         break;
+      case 'price_1OHZGrHKD0byXXCleN1BiRBb':
+        tokens = 1000000;
+        break;
+      case 'price_1OHZGOHKD0byXXClIHXIdDiW':
+        tokens = 500000;
+        break;
+      case 'price_1OHu6tHKD0byXXClTk4XV5Wl':
+        tokens = 100000;
+        break;
       default:
-        console.error('Invalid amount:', amountInRMB);
-        res.status(400).send({ error: `Invalid amount: ${amountInRMB}` });
+        console.error('Invalid price ID:', priceId);
+        res.status(400).send({ error: 'Invalid price ID' });
         return;
     }
 
+    // Add tokens to user's account
     try {
-      const newBalance = await addTokensByUserId(userId, tokens); // Pass tokens instead of amount
+      const newBalance = await addTokensByUserId(userId, tokens);
       res.status(200).send(`Success! New balance is ${newBalance}`);
     } catch (error) {
+      console.error(`Error updating balance: ${error.message}`);
       res.status(500).send({ error: `Error updating balance: ${error.message}` });
     }
   } else {
+    console.log('Unhandled event type:', event.type);
     res.status(200).send();
   }
 };
