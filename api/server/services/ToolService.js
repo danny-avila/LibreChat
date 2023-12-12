@@ -69,6 +69,7 @@ async function processActions(openai, actions) {
           },
           id: action.toolCallId,
           type: 'function',
+          progress: 1,
         };
         openai.seenToolCalls.set(toolCall.id, toolCall);
         sendMessage(openai.res, {
