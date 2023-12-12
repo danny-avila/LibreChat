@@ -32,8 +32,8 @@
      - Upload and analyze images with GPT-4-Vision 📸 
      - More filetypes and Assistants API integration in Active Development 🚧 
  - 🌎 Multilingual UI:
-     - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro, Русский
-     - 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands
+     - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro,
+     - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands
  - 🤖 AI model selection: OpenAI API, Azure, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins
  - 💾 Create, Save, & Share Custom Presets
  - 🔄 Edit, Resubmit, and Continue messages with conversation branching

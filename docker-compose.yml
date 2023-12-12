@@ -38,6 +38,8 @@ services:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
     volumes:
+      - /app/client/node_modules # node_modules mapping necessary for module persistence
+      - /app/api/node_modules
       - ./api:/app/api
       - ./.env:/app/.env
       - ./.env.development:/app/.env.development
