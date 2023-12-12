@@ -1,7 +1,6 @@
 const { ContentTypes } = require('librechat-data-provider');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { loadTools } = require('~/app/clients/tools/util');
-const { sendMessage } = require('~/server/utils');
 
 /**
  * Formats a `StructuredTool` instance into a format that is compatible
@@ -72,12 +71,12 @@ async function processActions(openai, actions) {
           progress: 1,
         };
         openai.seenToolCalls.set(toolCall.id, toolCall);
-        sendMessage(openai.res, {
-          toolCall,
-          // result: tool.result, // we can append tool properties to message stream
+        openai.addContentData({
+          [ContentTypes.TOOL_CALL]: toolCall,
           index: openai.mappedOrder.get(action.toolCallId),
-          messageId: action.thread_id,
           type: ContentTypes.TOOL_CALL,
+          // TODO: to append tool properties to stream, pass metadata rest to addContentData
+          // result: tool.result,
         });
         return {
           tool_call_id: action.toolCallId,

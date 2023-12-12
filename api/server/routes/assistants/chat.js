@@ -1,14 +1,12 @@
 const crypto = require('crypto');
 const OpenAI = require('openai');
 const { logger } = require('~/config');
-const { sendMessage } = require('~/server/utils');
-const {
-  initThread,
-  createRun,
-  handleRun,
-  createOnTextProgress,
-} = require('~/server/services/AssistantService');
 const express = require('express');
+const { sendMessage } = require('~/server/utils');
+const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
+const { createRun } = require('~/server/services/Runs');
+const { initThread } = require('~/server/services/Threads');
+
 const router = express.Router();
 const {
   setHeaders,
@@ -79,7 +77,7 @@ router.post('/', setHeaders, async (req, res) => {
     });
 
     // todo: retry logic
-    const response = await handleRun({ openai, thread_id, run_id: run.id });
+    const response = await runAssistant({ openai, thread_id, run_id: run.id });
 
     // TODO: parse responses, save to db, send to user
 
