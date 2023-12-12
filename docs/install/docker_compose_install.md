@@ -64,8 +64,8 @@ git pull origin main
 docker rmi librechat:latest
 # Remove all unused dangling Docker images
 docker image prune -f
-# Building a new LibreChat image
-docker-compose build
+# Building a new LibreChat image without cache
+docker-compose build --no-cache
 
 # Start LibreChat
 docker-compose up
