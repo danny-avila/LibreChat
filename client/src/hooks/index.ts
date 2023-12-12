@@ -3,12 +3,12 @@ export * from './Config';
 export * from './Input';
 export * from './Conversations';
 export * from './Nav';
+export * from './SSE';
 
 export * from './AuthContext';
 export * from './ThemeContext';
 export * from './ScreenshotContext';
 export * from './ApiErrorBoundaryContext';
-export { default as useSSE } from './useSSE';
 export { default as useToast } from './useToast';
 export { default as useTimeout } from './useTimeout';
 export { default as useNewConvo } from './useNewConvo';
