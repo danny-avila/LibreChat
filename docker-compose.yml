@@ -55,6 +55,16 @@ services:
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
+  mongo-express:
+    image: mongo-express
+    restart: always
+    container_name: mongo_ui
+    ports:
+      - 8081:8081
+    environment:
+      ME_CONFIG_MONGODB_SERVER: chat-mongodb
+      ME_CONFIG_BASICAUTH_USERNAME: username
+      ME_CONFIG_BASICAUTH_PASSWORD: password
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.5
