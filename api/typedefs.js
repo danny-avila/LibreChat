@@ -91,6 +91,18 @@
  */
 
 /**
+ * @exports ContentPart
+ * @typedef {import('librechat-data-provider').ContentPart} ContentPart
+ * @memberof typedefs
+ */
+
+/**
+ * @exports PartMetadata
+ * @typedef {import('librechat-data-provider').PartMetadata} PartMetadata
+ * @memberof typedefs
+ */
+
+/**
  * @exports ThreadMessage
  * @typedef {import('openai').OpenAI.Beta.Threads.ThreadMessage} ThreadMessage
  * @memberof typedefs
@@ -108,6 +120,21 @@
  */
 
 /**
+ * Represents a text log output from the Code Interpreter tool call.
+ * @typedef {Object} CodeLogOutput
+ * @property {'logs'} type - Always 'logs'.
+ * @property {string} logs - The text output from the Code Interpreter tool call.
+ */
+
+/**
+ * Represents an image output from the Code Interpreter tool call.
+ * @typedef {Object} CodeImageOutput
+ * @property {'image'} type - Always 'image'.
+ * @property {Object} image - The image object.
+ * @property {string} image.file_id - The file ID of the image.
+ */
+
+/**
  * Details of the Code Interpreter tool call the run step was involved in.
  * Includes the tool call ID, the code interpreter definition, and the type of tool call.
  *
@@ -115,7 +142,7 @@
  * @property {string} id - The ID of the tool call.
  * @property {Object} code_interpreter - The Code Interpreter tool call definition.
  * @property {string} code_interpreter.input - The input to the Code Interpreter tool call.
- * @property {Array<Object>} code_interpreter.outputs - The outputs from the Code Interpreter tool call.
+ * @property {Array<(CodeLogOutput | CodeImageOutput)>} code_interpreter.outputs - The outputs from the Code Interpreter tool call.
  * @property {'code_interpreter'} type - The type of tool call, always 'code_interpreter'.
  * @memberof typedefs
  */
@@ -152,6 +179,15 @@
  * @typedef {Object} ToolCallsStepDetails
  * @property {Array<CodeToolCall | RetrievalToolCall | FunctionToolCall>} tool_calls - An array of tool calls the run step was involved in.
  * @property {'tool_calls'} type - Always 'tool_calls'.
+ * @memberof typedefs
+ */
+
+/**
+ * Details of the tool calls involved in a run step.
+ * Can be associated with one of three types of tools: `code_interpreter`, `retrieval`, or `function`.
+ *
+ * @exports StepToolCall
+ * @typedef {(CodeToolCall | RetrievalToolCall | FunctionToolCall) & PartMetadata} StepToolCall
  * @memberof typedefs
  */
 
@@ -519,9 +555,11 @@
  * @typedef {OpenAI & {
  * req: Express.Request,
  * res: Express.Response
+ * completeToolCallSteps: Set<string>,
  * mappedOrder: Map<string, number>,
- * seenToolCalls: Map<string, RequiredActionFunctionToolCall>,
+ * seenToolCalls: Map<string, StepToolCall>,
  * seenCompletedMessages: Set<string>,
+ * processedFileIds: Set<string>,
  * getPartialText: () => string,
  * progressCallback: (options: Object) => void,
  * }} OpenAIClient
