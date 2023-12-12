@@ -249,8 +249,8 @@ function createInProgressHandler(openai, thread_id, messages) {
       const result = await processMessages(openai, [message]);
       openai.addContentData({
         [ContentTypes.TEXT]: { value: result.text },
+        type: ContentTypes.TEXT,
         index: messageIndex,
-        id: step.id,
       });
       // Create the Process handler to stream the message
       const onProgress = openai.progressCallback.call(openai, {
