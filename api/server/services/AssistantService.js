@@ -34,13 +34,14 @@ async function createOnTextProgress(openai) {
     content: [],
   };
   openai.addContentData = (data) => {
-    const { type } = data;
+    const { type, index } = data;
     const part = data[type];
-    openai.responseMessage.content[data.index] = part;
+    openai.responseMessage.content[index] = part;
     if (type === ContentTypes.TEXT) {
       return;
     }
     sendMessage(openai.res, {
+      index,
       type: type,
       [type]: part,
       messageId: openai.responseMessage.messageId,
@@ -213,8 +214,30 @@ function createInProgressHandler(openai, thread_id, messages) {
               file_id,
               basename: `${file_id}.png`,
             });
-            toolCall.asset_pointer = file.filepath;
+            // toolCall.asset_pointer = file.filepath;
+            const prelimImage = {
+              file_id,
+              filename: path.basename(file.filepath),
+              filepath: file.filepath,
+              height: file.height,
+              width: file.width,
+            };
+            // check if every key has a value before adding to content
+            const prelimImageKeys = Object.keys(prelimImage);
+            const validImageFile = prelimImageKeys.every((key) => prelimImage[key]);
+
+            if (!validImageFile) {
+              continue;
+            }
+
+            const image_file = {
+              [ContentTypes.IMAGE_FILE]: prelimImage,
+              type: ContentTypes.IMAGE_FILE,
+              index: openai.index,
+            };
+            openai.addContentData(image_file);
             openai.processedFileIds.add(file_id);
+            openai.index++;
           }
         }
 
