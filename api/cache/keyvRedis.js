@@ -9,7 +9,7 @@ if (REDIS_URI) {
   keyvRedis = new KeyvRedis(REDIS_URI, { useRedisSets: false });
   keyvRedis.on('error', (err) => logger.error('KeyvRedis connection error:', err));
 } else {
-  logger.debug('REDIS_URI not provided. Redis module will not be initialized.');
+  logger.info('REDIS_URI not provided. Redis module will not be initialized.');
 }
 
 module.exports = keyvRedis;
