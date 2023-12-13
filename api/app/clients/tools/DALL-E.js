@@ -103,7 +103,7 @@ Guidelines:
 
     if (match) {
       imageName = match[0];
-      logger.debug('[DALL-E] imageName', imageName); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
+      logger.debug('[DALL-E]', { imageName }); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
     } else {
       logger.debug('[DALL-E] No image name found in the string.', {
         theImageUrl,

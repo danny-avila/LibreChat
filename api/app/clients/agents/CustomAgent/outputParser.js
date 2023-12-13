@@ -66,8 +66,8 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
 
     if (!match) {
       logger.debug(
-        '\n\n<----------------------[CustomOutputParser] HIT NO MATCH PARSING ERROR---------------------->\n\n',
-        match,
+        '\n\n<----------------------[CustomOutputParser] HIT NO MATCH PARSING ERROR---------------------->\n\n' +
+          match,
       );
       const thoughts = text.replace(/[tT]hought:/, '').split('\n');
       // return {
@@ -86,8 +86,8 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
 
     if (match && selectedTool === 'n/a') {
       logger.debug(
-        '\n\n<----------------------[CustomOutputParser] HIT N/A PARSING ERROR---------------------->\n\n',
-        match,
+        '\n\n<----------------------[CustomOutputParser] HIT N/A PARSING ERROR---------------------->\n\n' +
+          match,
       );
       return {
         tool: 'self-reflection',
@@ -99,24 +99,24 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     let toolIsValid = this.checkIfValidTool(selectedTool);
     if (match && !toolIsValid) {
       logger.debug(
-        '\n\n<----------------[CustomOutputParser] Tool invalid: Re-assigning Selected Tool---------------->\n\n',
-        match,
+        '\n\n<----------------[CustomOutputParser] Tool invalid: Re-assigning Selected Tool---------------->\n\n' +
+          match,
       );
       selectedTool = this.getValidTool(selectedTool);
     }
 
     if (match && !selectedTool) {
       logger.debug(
-        '\n\n<----------------------[CustomOutputParser] HIT INVALID TOOL PARSING ERROR---------------------->\n\n',
-        match,
+        '\n\n<----------------------[CustomOutputParser] HIT INVALID TOOL PARSING ERROR---------------------->\n\n' +
+          match,
       );
       selectedTool = 'self-reflection';
     }
 
     if (match && !match[2]) {
       logger.debug(
-        '\n\n<----------------------[CustomOutputParser] HIT NO ACTION INPUT PARSING ERROR---------------------->\n\n',
-        match,
+        '\n\n<----------------------[CustomOutputParser] HIT NO ACTION INPUT PARSING ERROR---------------------->\n\n' +
+          match,
       );
 
       // In case there is no action input, let's double-check if there is an action input in 'text' variable
@@ -160,8 +160,8 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       const actionInputMatch = this.actionInputRegex.exec(text);
       if (action && actionInputMatch) {
         logger.debug(
-          '\n\n<------[CustomOutputParser] Matched Action Input in Long Parsing Error------>\n\n',
-          actionInputMatch,
+          '\n\n<------[CustomOutputParser] Matched Action Input in Long Parsing Error------>\n\n' +
+            actionInputMatch,
         );
         return {
           tool: action,

@@ -246,7 +246,7 @@ class PluginsClient extends OpenAIClient {
       this.setOptions(opts);
       return super.sendMessage(message, opts);
     }
-    logger.debug('[PluginsClient] sendMessage', message, opts);
+    logger.debug('[PluginsClient] sendMessage', { message, opts });
     const {
       user,
       isEdited,
@@ -373,7 +373,7 @@ class PluginsClient extends OpenAIClient {
       functionsAgent: this.functionsAgent,
     });
 
-    logger.debug('[PluginsClient] promptPrefix', promptPrefix);
+    logger.debug('[PluginsClient]', { promptPrefix });
 
     payload = await this.buildCompletionPrompt({
       messages: this.currentMessages,

@@ -14,7 +14,7 @@ async function abortMessage(req, res) {
 
   const { abortController } = abortControllers.get(abortKey);
   const ret = await abortController.abortCompletion();
-  logger.debug('[abortMessage] Aborted request', abortKey);
+  logger.debug('[abortMessage] Aborted request', { abortKey });
   abortControllers.delete(abortKey);
   res.send(JSON.stringify(ret));
 }

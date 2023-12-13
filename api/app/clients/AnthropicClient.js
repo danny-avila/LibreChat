@@ -105,7 +105,7 @@ class AnthropicClient extends BaseClient {
       parentMessageId,
     });
 
-    logger.debug('[AnthropicClient] orderedMessages', orderedMessages, parentMessageId);
+    logger.debug('[AnthropicClient] orderedMessages', { orderedMessages, parentMessageId });
 
     const formattedMessages = orderedMessages.map((message) => ({
       author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,

@@ -124,7 +124,7 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.options.debug) {
-      logger.debug('OpenAIClient: maxContextTokens', this.maxContextTokens);
+      logger.debug('[OpenAIClient] maxContextTokens', this.maxContextTokens);
     }
 
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
@@ -255,7 +255,7 @@ class OpenAIClient extends BaseClient {
       // Reset count
       tokenizerCallsCount = 1;
     } catch (error) {
-      logger.error('OpenAIClient: Free and reset encoders error', error);
+      logger.error('[OpenAIClient] Free and reset encoders error', error);
     }
   }
 
@@ -263,7 +263,7 @@ class OpenAIClient extends BaseClient {
   resetTokenizersIfNecessary() {
     if (tokenizerCallsCount >= 25) {
       if (this.options.debug) {
-        logger.debug('OpenAIClient: freeAndResetAllEncoders: reached 25 encodings, resetting...');
+        logger.debug('[OpenAIClient] freeAndResetAllEncoders: reached 25 encodings, resetting...');
       }
       this.constructor.freeAndResetAllEncoders();
     }
@@ -445,7 +445,7 @@ class OpenAIClient extends BaseClient {
         opts.abortController || new AbortController(),
       );
 
-      logger.debug('OpenAIClient: sendCompletion: result', result);
+      logger.debug('[OpenAIClient] sendCompletion: result', result);
 
       if (this.isChatCompletion) {
         reply = result.choices[0].message.content;
@@ -550,11 +550,11 @@ class OpenAIClient extends BaseClient {
       title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
     } catch (e) {
       if (e?.message?.toLowerCase()?.includes('abort')) {
-        logger.debug('OpenAIClient: Aborted title generation');
+        logger.debug('[OpenAIClient] Aborted title generation');
         return;
       }
       logger.error(
-        'OpenAIClient: There was an issue generating title with LangChain, trying the old method...',
+        '[OpenAIClient] There was an issue generating title with LangChain, trying the old method...',
         e,
       );
       modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
@@ -577,16 +577,16 @@ ${convo}
       try {
         title = (await this.sendPayload(instructionsPayload, { modelOptions })).replaceAll('"', '');
       } catch (e) {
-        logger.error('OpenAIClient: There was another issue generating the title', e);
+        logger.error('[OpenAIClient] There was another issue generating the title', e);
       }
     }
 
-    logger.debug('OpenAIClient: CONVERSATION TITLE', title);
+    logger.debug('[OpenAIClient] Convo Title: ' + title);
     return title;
   }
 
   async summarizeMessages({ messagesToRefine, remainingContextTokens }) {
-    logger.debug('OpenAIClient: Summarizing messages...');
+    logger.debug('[OpenAIClient] Summarizing messages...');
     let context = messagesToRefine;
     let prompt;
 
@@ -610,7 +610,7 @@ ${convo}
 
     if (context.length === 0) {
       logger.debug(
-        'OpenAIClient: Summary context is empty, using latest message within token limit',
+        '[OpenAIClient] Summary context is empty, using latest message within token limit',
       );
 
       promptBuffer = 32;
@@ -638,7 +638,7 @@ ${convo}
     // by recreating the summary prompt (single message) to avoid LangChain handling
 
     const initialPromptTokens = this.maxContextTokens - remainingContextTokens;
-    logger.debug('OpenAIClient: initialPromptTokens', initialPromptTokens);
+    logger.debug('[OpenAIClient] initialPromptTokens', initialPromptTokens);
 
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,
@@ -664,9 +664,9 @@ ${convo}
       const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
 
       if (this.options.debug) {
-        logger.debug('OpenAIClient: summaryTokenCount', summaryTokenCount);
+        logger.debug('[OpenAIClient] summaryTokenCount', summaryTokenCount);
         logger.debug(
-          `OpenAIClient: Summarization complete: remainingContextTokens: ${remainingContextTokens}, after refining: ${
+          `[OpenAIClient] Summarization complete: remainingContextTokens: ${remainingContextTokens}, after refining: ${
             remainingContextTokens - summaryTokenCount
           }`,
         );
@@ -675,7 +675,7 @@ ${convo}
       return { summaryMessage, summaryTokenCount };
     } catch (e) {
       if (e?.message?.toLowerCase()?.includes('abort')) {
-        logger.debug('OpenAIClient: Aborted summarization');
+        logger.debug('[OpenAIClient] Aborted summarization');
         const { run, runId } = this.runManager.getRunByConversationId(this.conversationId);
         if (run && run.error) {
           const { error } = run;
@@ -683,14 +683,13 @@ ${convo}
           throw new Error(error);
         }
       }
-      logger.error('OpenAIClient: Error summarizing messages', e);
+      logger.error('[OpenAIClient] Error summarizing messages', e);
       return {};
     }
   }
 
   async recordTokenUsage({ promptTokens, completionTokens }) {
-    logger.debug('OpenAIClient: promptTokens', promptTokens);
-    logger.debug('OpenAIClient: completionTokens', completionTokens);
+    logger.debug('[OpenAIClient]', { promptTokens, completionTokens });
     await spendTokens(
       {
         user: this.user,
@@ -738,7 +737,7 @@ ${convo}
       //     return { ...rest, content: truncateText(content) };
       //   });
       // }
-      logger.debug('OpenAIClient: chatCompletion', { baseURL, modelOptions });
+      logger.debug('[OpenAIClient] chatCompletion', { baseURL, modelOptions });
       const opts = {
         baseURL,
       };

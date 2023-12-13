@@ -31,7 +31,7 @@ const spendTokens = async (txData, tokenUsage) => {
     }
 
     if (!completionTokens) {
-      logger.debug('[spendTokens]', { prompt, completion }, { depth: null });
+      logger.debug('[spendTokens] !completionTokens', { prompt, completion });
       return;
     }
 
@@ -41,7 +41,7 @@ const spendTokens = async (txData, tokenUsage) => {
       rawAmount: -completionTokens,
     });
 
-    logger.debug('[spendTokens]', { prompt, completion }, { depth: null });
+    logger.debug('[spendTokens] post-transaction', { prompt, completion });
   } catch (err) {
     logger.error('[spendTokens]', err);
   }

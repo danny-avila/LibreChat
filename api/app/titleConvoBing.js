@@ -34,7 +34,7 @@ const titleConvo = async ({ text, response }) => {
     logger.error('There was an issue generating title with BingAI', e);
   }
 
-  logger.debug('CONVERSATION TITLE', title);
+  logger.debug('[/ask/bingAI] CONVERSATION TITLE: ' + title);
   return title;
 };
 

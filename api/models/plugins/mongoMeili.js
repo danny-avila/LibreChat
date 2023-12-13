@@ -66,8 +66,7 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
           offset += batchSize;
         }
 
-        logger.debug('[syncWithMeili] indexMap size', indexMap.size);
-        logger.debug('[syncWithMeili] mongoMap size', mongoMap.size);
+        logger.debug('[syncWithMeili]', { indexMap: indexMap.size, mongoMap: mongoMap.size });
 
         const updateOps = [];
 

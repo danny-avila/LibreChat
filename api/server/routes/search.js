@@ -33,7 +33,7 @@ router.get('/', async function (req, res) {
     const key = `${user}:search:${q}`;
     const cached = await cache.get(key);
     if (cached) {
-      logger.debug('cache hit', key);
+      logger.debug('[/search] cache hit: ' + key);
       const { pages, pageSize, messages } = cached;
       res
         .status(200)
@@ -118,7 +118,6 @@ router.get('/enable', async function (req, res) {
     result = status === 'available' && !!process.env.SEARCH;
     return res.send(result);
   } catch (error) {
-    logger.error('[/search/enable] Error enabling search', error);
     return res.send(false);
   }
 });

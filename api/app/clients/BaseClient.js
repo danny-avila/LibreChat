@@ -278,14 +278,14 @@ class BaseClient {
     if (instructions) {
       ({ tokenCount, ..._instructions } = instructions);
     }
-    _instructions && logger.debug('[BaseClient] instructions tokenCount', tokenCount);
+    _instructions && logger.debug('[BaseClient] instructions tokenCount: ' + tokenCount);
     let payload = this.addInstructions(formattedMessages, _instructions);
     let orderedWithInstructions = this.addInstructions(orderedMessages, instructions);
 
     let { context, remainingContextTokens, messagesToRefine, summaryIndex } =
       await this.getMessagesWithinTokenLimit(orderedWithInstructions);
 
-    logger.debug('[BaseClient] remainingContextTokens, this.maxContextTokens (1/2)', {
+    logger.debug('[BaseClient] Context Count (1/2)', {
       remainingContextTokens,
       maxContextTokens: this.maxContextTokens,
     });
@@ -335,7 +335,7 @@ class BaseClient {
     // Make sure to only continue summarization logic if the summary message was generated
     shouldSummarize = summaryMessage && shouldSummarize;
 
-    logger.debug('[BaseClient] remainingContextTokens, this.maxContextTokens (2/2)', {
+    logger.debug('[BaseClient] Context Count (2/2)', {
       remainingContextTokens,
       maxContextTokens: this.maxContextTokens,
     });
@@ -356,13 +356,14 @@ class BaseClient {
 
     const promptTokens = this.maxContextTokens - remainingContextTokens;
 
-    logger.debug('[BaseClient] PAYLOAD/TOKEN COUNT MAP', {
-      payload,
-      tokenCountMap,
+    logger.debug('[BaseClient] Payload size:', payload.length);
+    logger.debug('[BaseClient] tokenCountMap:', tokenCountMap);
+    logger.debug('[BaseClient]', {
       promptTokens,
       remainingContextTokens,
       maxContextTokens: this.maxContextTokens,
     });
+
     return { payload, tokenCountMap, promptTokens, messages: orderedWithInstructions };
   }
 
@@ -470,7 +471,7 @@ class BaseClient {
   }
 
   async loadHistory(conversationId, parentMessageId = null) {
-    logger.debug('[BaseClient] Loading history for conversation', conversationId, parentMessageId);
+    logger.debug('[BaseClient] Loading history:', { conversationId, parentMessageId });
 
     const messages = (await getMessages({ conversationId })) ?? [];
 
