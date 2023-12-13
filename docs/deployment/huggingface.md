@@ -17,7 +17,7 @@ Follow the instructions in this document: [Online MongoDB Database](../install/m
 
 **1.** Login or Create an account on [Hugging Face](https://huggingface.co/)
 
-**2.** Visit [https://huggingface.co/spaces/LibreChat/LibreChat](https://huggingface.co/spaces/LibreChat/LibreChat) and click on `Duplicate this Space` to copy LibreChat into your profile
+**2.** Visit [[https://huggingface.co/spaces/LibreChat/template](https://huggingface.co/spaces/LibreChat/template)]and click on `Duplicate this Space` to copy the LibreChat template into your profile
 
   ![image](https://github.com/fuegovic/LibreChat/assets/32828263/fd684254-cbe0-4039-ba4a-7c492b16a453)
 
