@@ -166,6 +166,14 @@ CHATGPT_TOKEN=
 CHATGPT_MODELS=text-davinci-002-render-sha
 ```
 
+### Google
+Follow these instruction to setup: [Google LLMs](./apis_and_tokens.md#google-llms)
+
+```bash
+GOOGLE_KEY=user_provided
+GOOGLE_REVERSE_PROXY=
+```
+
 ### OpenAI
 
 - To get your OpenAI API key, you need to:
@@ -243,14 +251,6 @@ See [OpenRouter](./free_ai_apis.md#openrouter-preferred) for more info.
 
 ```bash
 OPENROUTER_API_KEY=
-```
-
-### PaLM
-Follow these instruction to setup: [Google PaLM 2](./apis_and_tokens.md#googles-palm-2)
-
-```bash
-GOOGLE_KEY=user_provided
-GOOGLE_REVERSE_PROXY=
 ```
 
 ### Plugins
