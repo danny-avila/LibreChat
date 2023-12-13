@@ -1,5 +1,51 @@
 const util = require('util');
 const winston = require('winston');
+const traverse = require('traverse');
+const { klona } = require('klona/full');
+
+const sensitiveKeys = [/^sk-\w+$/];
+
+/**
+ * Determines if a given key string is sensitive.
+ *
+ * @param {string} keyStr - The key string to check.
+ * @returns {boolean} True if the key string matches known sensitive key patterns.
+ */
+function isSensitiveKey(keyStr) {
+  if (keyStr) {
+    return sensitiveKeys.some((regex) => regex.test(keyStr));
+  }
+  return false;
+}
+
+/**
+ * Recursively redacts sensitive information from an object.
+ *
+ * @param {object} obj - The object to traverse and redact.
+ */
+function redactObject(obj) {
+  traverse(obj).forEach(function redactor() {
+    if (isSensitiveKey(this.key)) {
+      this.update('[REDACTED]');
+    }
+  });
+}
+
+/**
+ * Deep copies and redacts sensitive information from an object.
+ *
+ * @param {object} obj - The object to copy and redact.
+ * @returns {object} The redacted copy of the original object.
+ */
+function redact(obj) {
+  const copy = klona(obj); // Making a deep copy to prevent side effects
+  redactObject(copy);
+
+  const splat = copy[Symbol.for('splat')];
+  redactObject(splat); // Specifically redact splat Symbol
+
+  return copy;
+}
 
 /**
  * Truncates long strings, especially base64 image data, within log messages.
@@ -77,5 +123,6 @@ const deepObjectFormat = winston.format.printf(({ level, message, timestamp, ...
 });
 
 module.exports = {
+  redact,
   deepObjectFormat,
 };

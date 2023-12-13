@@ -1,8 +1,12 @@
 const path = require('path');
 const winston = require('winston');
 require('winston-daily-rotate-file');
-const { deepObjectFormat } = require('./parsers');
+const { redact, deepObjectFormat } = require('./parsers');
+const { isEnabled } = require('~/server/utils/handleText');
+
 const logDir = path.join(__dirname, '..', 'logs');
+
+const { NODE_ENV, DEBUG_LOGGING = true, DEBUG_CONSOLE = false } = process.env;
 
 const levels = {
   error: 0,
@@ -15,17 +19,24 @@ const levels = {
   silly: 7,
 };
 
+winston.addColors({
+  info: 'green', // fontStyle color
+  warn: 'italic yellow',
+  error: 'red',
+  debug: 'blue',
+});
+
 const level = () => {
-  const env = process.env.NODE_ENV || 'development';
+  const env = NODE_ENV || 'development';
   const isDevelopment = env === 'development';
   return isDevelopment ? 'debug' : 'warn';
 };
 
-const format = winston.format.combine(
+const fileFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
-  winston.format.json(),
+  winston.format((info) => redact(info))(),
 );
 
 const transports = [
@@ -36,6 +47,7 @@ const transports = [
     zippedArchive: true,
     maxSize: '20m',
     maxFiles: '14d',
+    format: fileFormat,
   }),
   // new winston.transports.DailyRotateFile({
   //   level: 'info',
@@ -47,7 +59,7 @@ const transports = [
   // }),
 ];
 
-if (process.env.NODE_ENV !== 'production') {
+if (NODE_ENV !== 'production') {
   transports.push(
     new winston.transports.Console({
       format: winston.format.combine(winston.format.colorize(), winston.format.simple()),
@@ -55,7 +67,7 @@ if (process.env.NODE_ENV !== 'production') {
   );
 }
 
-if (process.env.DEBUG_LOGGING === 'true') {
+if (isEnabled && isEnabled(DEBUG_LOGGING)) {
   transports.push(
     new winston.transports.DailyRotateFile({
       level: 'debug',
@@ -64,12 +76,30 @@ if (process.env.DEBUG_LOGGING === 'true') {
       zippedArchive: true,
       maxSize: '20m',
       maxFiles: '14d',
-      format: winston.format.combine(
-        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-        winston.format.errors({ stack: true }),
-        winston.format.splat(),
-        deepObjectFormat,
-      ),
+      format: winston.format.combine(fileFormat, deepObjectFormat),
+    }),
+  );
+}
+
+const consoleFormat = winston.format.combine(
+  winston.format.colorize({ all: true }),
+  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  winston.format((info) => redact(info))(),
+  winston.format.printf((info) => `${info.timestamp} ${info.level}: ${info.message}`),
+);
+
+if (isEnabled && isEnabled(DEBUG_CONSOLE)) {
+  transports.push(
+    new winston.transports.Console({
+      level: 'debug',
+      format: winston.format.combine(consoleFormat, deepObjectFormat),
+    }),
+  );
+} else {
+  transports.push(
+    new winston.transports.Console({
+      level: 'info',
+      format: consoleFormat,
     }),
   );
 }
@@ -77,7 +107,6 @@ if (process.env.DEBUG_LOGGING === 'true') {
 const logger = winston.createLogger({
   level: level(),
   levels,
-  format,
   transports,
 });
 
