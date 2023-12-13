@@ -139,8 +139,6 @@ const AuthContextProvider = ({
     error,
     navigate,
     setUserContext,
-    doSetError,
-    silentRefresh,
   ]);
 
   useEffect(() => {
