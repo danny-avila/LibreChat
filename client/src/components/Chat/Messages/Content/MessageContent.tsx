@@ -11,7 +11,7 @@ import Markdown from './Markdown';
 import { cn } from '~/utils';
 import Image from './Image';
 
-const ErrorMessage = ({ text }: TText) => {
+export const ErrorMessage = ({ text }: TText) => {
   const { logout } = useAuthContext();
 
   if (text.includes('ban')) {
@@ -63,8 +63,8 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 };
 
 // Unfinished Message Component
-const UnfinishedMessage = () => (
-  <ErrorMessage text="The response is incomplete; it's either still processing, was cancelled, or censored. Refresh or try a different prompt." />
+export const UnfinishedMessage = () => (
+  <ErrorMessage text="The response is incomplete; it's either still processing, was cancelled, or censoreded. Refresh or try a different prompt." />
 );
 
 // Content Component

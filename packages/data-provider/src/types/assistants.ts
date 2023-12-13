@@ -123,8 +123,10 @@ export type ImageFile = {
    * in the message content.
    */
   file_id: string;
-  width: number;
+  filename: string;
+  filepath: string;
   height: number;
+  width: number;
 };
 
 // FileCitation.ts

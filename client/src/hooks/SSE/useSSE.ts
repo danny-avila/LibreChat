@@ -24,6 +24,7 @@ import type {
 } from 'librechat-data-provider';
 import { addConversation, deleteConversation, updateConversation } from '~/utils';
 import { useGenTitleMutation } from '~/data-provider';
+import useContentHandler from './useContentHandler';
 import { useAuthContext } from '../AuthContext';
 import useChatHelpers from '../useChatHelpers';
 import useSetStorage from '../useSetStorage';
@@ -48,6 +49,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const [completed, setCompleted] = useState(new Set());
   const { setMessages, setConversation, setIsSubmitting, newConversation, resetLatestMessage } =
     useChatHelpers(index, paramId);
+  const contentHandler = useContentHandler({ setMessages, setConversation });
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -418,13 +420,17 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           overrideParentMessageId: message?.overrideParentMessageId,
         };
         createdHandler(data, { ...submission, message });
-      } else {
-        if (!data.text) {
+      } else if (data.type) {
+        const { text, index } = data;
+        if (!text) {
           console.log(data);
-        } else if (data.index !== textIndex) {
-          textIndex = data.index;
+        } else if (index !== textIndex) {
+          textIndex = index;
           console.log('message index', textIndex);
         }
+
+        contentHandler({ data, submission });
+      } else {
         const text = data.text || data.response;
         const { plugin, plugins } = data;
 

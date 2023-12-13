@@ -1,8 +1,15 @@
 import type { SetterOrUpdater } from 'recoil';
-import type { TSubmission, TMessage, TConversation, TContentData } from 'librechat-data-provider';
+import type {
+  TSubmission,
+  TMessage,
+  TConversation,
+  TContentData,
+  Text,
+  ContentPart,
+} from 'librechat-data-provider';
 type TUseContentHandler = {
   setMessages: (messages: TMessage[]) => void;
-  setConversation: SetterOrUpdater<TConversation>;
+  setConversation: SetterOrUpdater<TConversation | null>;
 };
 type TContentHandler = {
   data: TContentData;
@@ -12,7 +19,8 @@ type TContentHandler = {
 export default function useContentHandler({ setMessages, setConversation }: TUseContentHandler) {
   const messageMap = new Map<string, TMessage>();
   return ({ data, submission }: TContentHandler) => {
-    const { type, messageId, index } = data;
+    const { type, messageId, index, stream } = data;
+
     const {
       messages,
       message: userMessage,
@@ -32,7 +40,9 @@ export default function useContentHandler({ setMessages, setConversation }: TUse
       messageMap.set(messageId, response);
     }
 
-    const part = data[type];
+    // TODO: handle streaming for non-text
+    const part =
+      stream && data.text ? ({ value: data.text as unknown as string } as ContentPart) : data[type];
     response.content = response.content || [];
     response.content[index] = part;
     response.content = response.content.filter((p) => p !== undefined);
