@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useSetRecoilState, useResetRecoilState, useRecoilCallback } from 'recoil';
-import { useGetEndpointsQuery } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type {
   TConversation,
   TMessagesAtom,

@@ -3,7 +3,7 @@ const openAI = require('~/server/services/Endpoints/openAI');
 const google = require('~/server/services/Endpoints/google');
 const anthropic = require('~/server/services/Endpoints/anthropic');
 const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
-const { parseConvo, EModelEndpoint } = require('~/server/services/Endpoints');
+const { parseConvo, EModelEndpoint } = require('librechat-data-provider');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,

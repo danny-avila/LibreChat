@@ -1,11 +1,5 @@
-import type {
-  TConversation,
-  TMessage,
-  TPreset,
-  TMutation,
-  TLoginUser,
-  TUser,
-} from 'librechat-data-provider';
+import type { TConversation, TMessage, TPreset, TLoginUser, TUser } from 'librechat-data-provider';
+import type { UseMutationResult } from '@tanstack/react-query';
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
 export type TSetExample = (
@@ -155,7 +149,7 @@ export type TDangerButtonProps = {
   className?: string;
   disabled?: boolean;
   showText?: boolean;
-  mutation?: TMutation;
+  mutation?: UseMutationResult<unknown>;
   onClick: () => void;
   infoTextCode: string;
   actionTextCode: string;

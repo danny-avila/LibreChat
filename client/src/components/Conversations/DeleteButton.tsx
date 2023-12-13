@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { useDeleteConversationMutation } from 'librechat-data-provider';
+import { useDeleteConversationMutation } from 'librechat-data-provider/react-query';
 import { useLocalize, useConversations, useConversation } from '~/hooks';
 import { Dialog, DialogTrigger, Label } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';

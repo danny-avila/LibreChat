@@ -1,4 +1,4 @@
-const { visionModels } = require('~/server/services/Endpoints');
+const { visionModels } = require('librechat-data-provider');
 
 function validateVisionModel(model) {
   if (!model) {

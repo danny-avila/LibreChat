@@ -1,5 +1,8 @@
 import * as Tabs from '@radix-ui/react-tabs';
-import { useRevokeAllUserKeysMutation, useRevokeUserKeyMutation } from 'librechat-data-provider';
+import {
+  useRevokeAllUserKeysMutation,
+  useRevokeUserKeyMutation,
+} from 'librechat-data-provider/react-query';
 import React, { useState, useCallback, useRef } from 'react';
 import { useOnClickOutside } from '~/hooks';
 import DangerButton from './DangerButton';

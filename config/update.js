@@ -97,7 +97,7 @@ async function validateDockerRunning() {
     console.purple('Building new LibreChat image...');
     const buildCommand = `${sudo}docker-compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
-    }build`;
+    }build --no-cache`;
     console.orange(buildCommand);
     execSync(buildCommand, { stdio: 'inherit' });
   } else {

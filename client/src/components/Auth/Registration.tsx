@@ -1,13 +1,10 @@
+import { useForm } from 'react-hook-form';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { useLocalize } from '~/hooks';
-import {
-  useRegisterUserMutation,
-  TRegisterUser,
-  useGetStartupConfig,
-} from 'librechat-data-provider';
+import { useRegisterUserMutation, useGetStartupConfig } from 'librechat-data-provider/react-query';
+import type { TRegisterUser } from 'librechat-data-provider';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
+import { useLocalize } from '~/hooks';
 
 function Registration() {
   const navigate = useNavigate();
@@ -281,7 +278,8 @@ function Registration() {
           <a
             href="/login"
             aria-label="Login"
-            className="p-1 font-medium text-green-500 hover:underline">
+            className="p-1 font-medium text-green-500 hover:underline"
+          >
             {localize('com_auth_login')}
           </a>
         </p>
