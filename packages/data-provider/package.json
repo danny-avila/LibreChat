@@ -1,20 +1,20 @@
 {
   "name": "librechat-data-provider",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "data services for librechat apps",
   "main": "dist/index.js",
   "module": "dist/index.es.js",
-  "types": "./types/index.d.ts",
+  "types": "./dist/types/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.es.js",
       "require": "./dist/index.js",
-      "types": "./types/index.d.ts"
+      "types": "./dist/types/index.d.ts"
     },
     "./react-query": {
       "import": "./dist/react-query/index.es.js",
       "require": "./dist/react-query/index.js",
-      "types": "./types/react-query/index.d.ts"
+      "types": "./dist/types/react-query/index.d.ts"
     }
   },
   "scripts": {
