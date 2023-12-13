@@ -1,5 +1,6 @@
-const { createStartHandler } = require('../callbacks');
-const spendTokens = require('../../../models/spendTokens');
+const { createStartHandler } = require('~/app/clients/callbacks');
+const spendTokens = require('~/models/spendTokens');
+const { logger } = require('~/config');
 
 class RunManager {
   constructor(fields) {
@@ -35,7 +36,7 @@ class RunManager {
     if (this.runs.has(runId)) {
       this.runs.delete(runId);
     } else {
-      console.error(`Run with ID ${runId} does not exist.`);
+      logger.error(`[api/app/clients/llm/RunManager] Run with ID ${runId} does not exist.`);
     }
   }
 
@@ -57,10 +58,11 @@ class RunManager {
       {
         handleChatModelStart: createStartHandler({ ...metadata, manager: this }),
         handleLLMEnd: async (output, runId, _parentRunId) => {
-          if (this.debug) {
-            console.log(`handleLLMEnd: ${JSON.stringify(metadata)}`);
-            console.dir({ output, runId, _parentRunId }, { depth: null });
-          }
+          logger.debug(`[RunManager] handleLLMEnd: ${JSON.stringify(metadata)}`, {
+            output,
+            runId,
+            _parentRunId,
+          });
           const { tokenUsage } = output.llmOutput;
           const run = this.getRunById(runId);
           this.removeRun(runId);
@@ -74,8 +76,7 @@ class RunManager {
           await spendTokens(txData, tokenUsage);
         },
         handleLLMError: async (err) => {
-          this.debug && console.log(`handleLLMError: ${JSON.stringify(metadata)}`);
-          this.debug && console.error(err);
+          logger.error(`[RunManager] handleLLMError: ${JSON.stringify(metadata)}`, err);
           if (metadata.context === 'title') {
             return;
           } else if (metadata.context === 'plugins') {
