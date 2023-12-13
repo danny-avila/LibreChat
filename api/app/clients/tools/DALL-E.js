@@ -103,9 +103,12 @@ Guidelines:
 
     if (match) {
       imageName = match[0];
-      console.log(imageName); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
+      logger.debug('[DALL-E] imageName', imageName); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
     } else {
-      console.log('No image name found in the string.');
+      logger.debug('[DALL-E] No image name found in the string.', {
+        theImageUrl,
+        data: resp.data[0],
+      });
     }
 
     this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', 'client', 'public', 'images');

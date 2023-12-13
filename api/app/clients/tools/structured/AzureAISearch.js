@@ -1,6 +1,7 @@
-const { StructuredTool } = require('langchain/tools');
 const { z } = require('zod');
+const { StructuredTool } = require('langchain/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
+const { logger } = require('~/config');
 
 class AzureAISearch extends StructuredTool {
   // Constants for default values
@@ -94,7 +95,7 @@ class AzureAISearch extends StructuredTool {
       }
       return JSON.stringify(resultDocuments);
     } catch (error) {
-      console.error(`Azure AI Search request failed: ${error.message}`);
+      logger.error('Azure AI Search request failed', error);
       return 'There was an error with Azure AI Search.';
     }
   }
