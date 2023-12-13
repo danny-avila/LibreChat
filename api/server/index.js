@@ -21,7 +21,7 @@ const { jwtLogin, passportLogin } = require('~/strategies');
 
 const startServer = async () => {
   await connectDb();
-  console.log('Connected to MongoDB');
+  logger.info('Connected to MongoDB');
   await indexSync();
 
   const app = express();
