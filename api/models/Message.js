@@ -1,6 +1,6 @@
 const { z } = require('zod');
 const Message = require('./schema/messageSchema');
-const { logger } = require('~/config');
+const logger = require('~/config/winston');
 
 const idSchema = z.string().uuid();
 

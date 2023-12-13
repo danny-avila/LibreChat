@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
 const handlebars = require('handlebars');
-const { logger } = require('~/config');
+const logger = require('~/config/winston');
 
 const sendEmail = async (email, subject, payload, template) => {
   try {

@@ -2,7 +2,7 @@ const { load } = require('tiktoken/load');
 const { Tiktoken } = require('tiktoken/lite');
 const registry = require('tiktoken/registry.json');
 const models = require('tiktoken/model_to_encoding.json');
-const { logger } = require('~/config');
+const logger = require('~/config/winston');
 
 const countTokens = async (text = '', modelName = 'gpt-3.5-turbo') => {
   let encoder = null;
