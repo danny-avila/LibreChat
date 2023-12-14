@@ -1,5 +1,6 @@
-const PluginAuth = require('../../models/schema/pluginAuthSchema');
-const { encrypt, decrypt } = require('../utils/');
+const PluginAuth = require('~/models/schema/pluginAuthSchema');
+const { encrypt, decrypt } = require('~/server/utils/');
+const { logger } = require('~/config');
 
 const getUserPluginAuthValue = async (user, authField) => {
   try {
@@ -11,7 +12,7 @@ const getUserPluginAuthValue = async (user, authField) => {
     const decryptedValue = decrypt(pluginAuth.value);
     return decryptedValue;
   } catch (err) {
-    console.log(err);
+    logger.error('[getUserPluginAuthValue]', err);
     return err;
   }
 };
@@ -36,7 +37,7 @@ const getUserPluginAuthValue = async (user, authField) => {
 
 //     return pluginAuth;
 //   } catch (err) {
-//     console.log(err);
+//     logger.error('[getUserPluginAuthValue]', err);
 //     return err;
 //   }
 // };
@@ -62,7 +63,7 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
       return newPluginAuth;
     }
   } catch (err) {
-    console.log(err);
+    logger.error('[updateUserPluginAuth]', err);
     return err;
   }
 };
@@ -72,7 +73,7 @@ const deleteUserPluginAuth = async (userId, authField) => {
     const response = await PluginAuth.deleteOne({ userId, authField });
     return response;
   } catch (err) {
-    console.log(err);
+    logger.error('[deleteUserPluginAuth]', err);
     return err;
   }
 };

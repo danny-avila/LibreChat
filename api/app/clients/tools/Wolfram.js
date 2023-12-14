@@ -1,6 +1,7 @@
 /* eslint-disable no-useless-escape */
 const axios = require('axios');
 const { Tool } = require('langchain/tools');
+const { logger } = require('~/config');
 
 class WolframAlphaAPI extends Tool {
   constructor(fields) {
@@ -38,7 +39,7 @@ General guidelines:
       const response = await axios.get(url, { responseType: 'text' });
       return response.data;
     } catch (error) {
-      console.error(`Error fetching raw text: ${error}`);
+      logger.error('[WolframAlphaAPI] Error fetching raw text:', error);
       throw error;
     }
   }
@@ -68,11 +69,10 @@ General guidelines:
       return response;
     } catch (error) {
       if (error.response && error.response.data) {
-        console.log('Error data:', error.response.data);
+        logger.error('[WolframAlphaAPI] Error data:', error);
         return error.response.data;
       } else {
-        console.log('Error querying Wolfram Alpha', error.message);
-        // throw error;
+        logger.error('[WolframAlphaAPI] Error querying Wolfram Alpha', error);
         return 'There was an error querying Wolfram Alpha.';
       }
     }

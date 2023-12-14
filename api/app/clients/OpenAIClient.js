@@ -14,6 +14,7 @@ const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
+const { logger } = require('~/config');
 
 // Cache to store Tiktoken instances
 const tokenizersCache = {};
@@ -123,7 +124,7 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.options.debug) {
-      console.debug('maxContextTokens', this.maxContextTokens);
+      logger.debug('[OpenAIClient] maxContextTokens', this.maxContextTokens);
     }
 
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
@@ -175,7 +176,7 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.azureEndpoint && this.options.debug) {
-      console.debug('Using Azure endpoint');
+      logger.debug('Using Azure endpoint');
     }
 
     if (this.useOpenRouter) {
@@ -254,8 +255,7 @@ class OpenAIClient extends BaseClient {
       // Reset count
       tokenizerCallsCount = 1;
     } catch (error) {
-      console.log('Free and reset encoders error');
-      console.error(error);
+      logger.error('[OpenAIClient] Free and reset encoders error', error);
     }
   }
 
@@ -263,7 +263,7 @@ class OpenAIClient extends BaseClient {
   resetTokenizersIfNecessary() {
     if (tokenizerCallsCount >= 25) {
       if (this.options.debug) {
-        console.debug('freeAndResetAllEncoders: reached 25 encodings, resetting...');
+        logger.debug('[OpenAIClient] freeAndResetAllEncoders: reached 25 encodings, resetting...');
       }
       this.constructor.freeAndResetAllEncoders();
     }
@@ -403,11 +403,6 @@ class OpenAIClient extends BaseClient {
             return;
           }
 
-          if (this.options.debug) {
-            // console.debug('progressMessage');
-            // console.dir(progressMessage, { depth: null });
-          }
-
           if (progressMessage.choices) {
             streamResult = progressMessage;
           }
@@ -427,9 +422,7 @@ class OpenAIClient extends BaseClient {
           if (!token) {
             return;
           }
-          if (this.options.debug) {
-            // console.debug(token);
-          }
+
           if (token === this.endToken) {
             return;
           }
@@ -451,9 +444,9 @@ class OpenAIClient extends BaseClient {
         null,
         opts.abortController || new AbortController(),
       );
-      if (this.options.debug) {
-        console.debug(JSON.stringify(result));
-      }
+
+      logger.debug('[OpenAIClient] sendCompletion: result', result);
+
       if (this.isChatCompletion) {
         reply = result.choices[0].message.content;
       } else {
@@ -557,11 +550,13 @@ class OpenAIClient extends BaseClient {
       title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
     } catch (e) {
       if (e?.message?.toLowerCase()?.includes('abort')) {
-        this.options.debug && console.debug('Aborted title generation');
+        logger.debug('[OpenAIClient] Aborted title generation');
         return;
       }
-      console.log('There was an issue generating title with LangChain, trying the old method...');
-      this.options.debug && console.error(e.message, e);
+      logger.error(
+        '[OpenAIClient] There was an issue generating title with LangChain, trying the old method...',
+        e,
+      );
       modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
       if (this.azure) {
         modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL ?? modelOptions.model;
@@ -582,17 +577,16 @@ ${convo}
       try {
         title = (await this.sendPayload(instructionsPayload, { modelOptions })).replaceAll('"', '');
       } catch (e) {
-        console.error(e);
-        console.log('There was another issue generating the title, see error above.');
+        logger.error('[OpenAIClient] There was another issue generating the title', e);
       }
     }
 
-    console.log('CONVERSATION TITLE', title);
+    logger.debug('[OpenAIClient] Convo Title: ' + title);
     return title;
   }
 
   async summarizeMessages({ messagesToRefine, remainingContextTokens }) {
-    this.options.debug && console.debug('Summarizing messages...');
+    logger.debug('[OpenAIClient] Summarizing messages...');
     let context = messagesToRefine;
     let prompt;
 
@@ -615,8 +609,9 @@ ${convo}
     }
 
     if (context.length === 0) {
-      this.options.debug &&
-        console.debug('Summary context is empty, using latest message within token limit');
+      logger.debug(
+        '[OpenAIClient] Summary context is empty, using latest message within token limit',
+      );
 
       promptBuffer = 32;
       const { text, ...latestMessage } = messagesToRefine[messagesToRefine.length - 1];
@@ -643,7 +638,7 @@ ${convo}
     // by recreating the summary prompt (single message) to avoid LangChain handling
 
     const initialPromptTokens = this.maxContextTokens - remainingContextTokens;
-    this.options.debug && console.debug(`initialPromptTokens: ${initialPromptTokens}`);
+    logger.debug('[OpenAIClient] initialPromptTokens', initialPromptTokens);
 
     const llm = this.initializeLLM({
       model: OPENAI_SUMMARY_MODEL,
@@ -669,9 +664,9 @@ ${convo}
       const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
 
       if (this.options.debug) {
-        console.debug('summaryMessage:', summaryMessage);
-        console.debug(
-          `remainingContextTokens: ${remainingContextTokens}, after refining: ${
+        logger.debug('[OpenAIClient] summaryTokenCount', summaryTokenCount);
+        logger.debug(
+          `[OpenAIClient] Summarization complete: remainingContextTokens: ${remainingContextTokens}, after refining: ${
             remainingContextTokens - summaryTokenCount
           }`,
         );
@@ -680,7 +675,7 @@ ${convo}
       return { summaryMessage, summaryTokenCount };
     } catch (e) {
       if (e?.message?.toLowerCase()?.includes('abort')) {
-        this.options.debug && console.debug('Aborted summarization');
+        logger.debug('[OpenAIClient] Aborted summarization');
         const { run, runId } = this.runManager.getRunByConversationId(this.conversationId);
         if (run && run.error) {
           const { error } = run;
@@ -688,17 +683,13 @@ ${convo}
           throw new Error(error);
         }
       }
-      console.error('Error summarizing messages');
-      this.options.debug && console.error(e);
+      logger.error('[OpenAIClient] Error summarizing messages', e);
       return {};
     }
   }
 
   async recordTokenUsage({ promptTokens, completionTokens }) {
-    if (this.options.debug) {
-      console.debug('promptTokens', promptTokens);
-      console.debug('completionTokens', completionTokens);
-    }
+    logger.debug('[OpenAIClient]', { promptTokens, completionTokens });
     await spendTokens(
       {
         user: this.user,
@@ -736,14 +727,19 @@ ${convo}
         modelOptions.prompt = payload;
       }
 
-      const { debug } = this.options;
-      const url = extractBaseURL(this.completionsUrl);
-      if (debug) {
-        console.debug('baseURL', url);
-        console.debug('modelOptions', modelOptions);
-      }
+      const baseURL = extractBaseURL(this.completionsUrl);
+      // let { messages: _msgsToLog, ...modelOptionsToLog } = modelOptions;
+      // if (modelOptionsToLog.messages) {
+      //   _msgsToLog = modelOptionsToLog.messages.map((msg) => {
+      //     let { content, ...rest } = msg;
+
+      //     if (content)
+      //     return { ...rest, content: truncateText(content) };
+      //   });
+      // }
+      logger.debug('[OpenAIClient] chatCompletion', { baseURL, modelOptions });
       const opts = {
-        baseURL: url,
+        baseURL,
       };
 
       if (this.useOpenRouter) {
@@ -820,7 +816,7 @@ ${convo}
 
       if (!chatCompletion && UnexpectedRoleError) {
         throw new Error(
-          'OpenAIError: Invalid final message: OpenAI expects final message to include role=assistant',
+          'OpenAI error: Invalid final message: OpenAI expects final message to include role=assistant',
         );
       } else if (!chatCompletion && error) {
         throw new Error(error);
@@ -843,27 +839,23 @@ ${convo}
       }
       if (
         err?.message?.includes(
-          'OpenAIError: Invalid final message: OpenAI expects final message to include role=assistant',
+          'OpenAI error: Invalid final message: OpenAI expects final message to include role=assistant',
         ) ||
         err?.message?.includes('The server had an error processing your request') ||
         err?.message?.includes('missing finish_reason') ||
         (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason'))
       ) {
-        console.error(err);
+        logger.error('[OpenAIClient] Known OpenAI error:', err);
         await abortController.abortCompletion();
         return intermediateReply;
       } else if (err instanceof OpenAI.APIError) {
-        console.log(err.name);
-        console.log(err.status);
-        console.log(err.headers);
         if (intermediateReply) {
           return intermediateReply;
         } else {
           throw err;
         }
       } else {
-        console.warn('[OpenAIClient.chatCompletion] Unhandled error type');
-        console.error(err);
+        logger.error('[OpenAIClient.chatCompletion] Unhandled error type', err);
         throw err;
       }
     }

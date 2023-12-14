@@ -8,6 +8,7 @@ const { getResponseSender, EModelEndpoint, endpointSettings } = require('librech
 const { getModelMaxTokens } = require('~/utils');
 const { formatMessage } = require('./prompts');
 const BaseClient = require('./BaseClient');
+const { logger } = require('~/config');
 
 const loc = 'us-central1';
 const publisher = 'google';
@@ -42,8 +43,7 @@ class GoogleClient extends BaseClient {
 
     jwtClient.authorize((err) => {
       if (err) {
-        console.error('Error: jwtClient failed to authorize');
-        console.error(err.message);
+        logger.error('jwtClient failed to authorize', err);
         throw err;
       }
     });
@@ -58,11 +58,9 @@ class GoogleClient extends BaseClient {
     return new Promise((resolve, reject) => {
       jwtClient.authorize((err, tokens) => {
         if (err) {
-          console.error('Error: jwtClient failed to authorize');
-          console.error(err.message);
+          logger.error('jwtClient failed to authorize', err);
           reject(err);
         } else {
-          console.log('Access Token:', tokens.access_token);
           resolve(tokens.access_token);
         }
       });
@@ -213,8 +211,7 @@ class GoogleClient extends BaseClient {
     }
 
     if (this.options.debug) {
-      console.debug('GoogleClient buildMessages');
-      console.dir(payload, { depth: null });
+      logger.debug('GoogleClient buildMessages', payload);
     }
 
     return { prompt: payload };
@@ -226,7 +223,10 @@ class GoogleClient extends BaseClient {
       parentMessageId,
     });
     if (this.options.debug) {
-      console.debug('GoogleClient: orderedMessages', orderedMessages, parentMessageId);
+      logger.debug('GoogleClient: orderedMessages, parentMessageId', {
+        orderedMessages,
+        parentMessageId,
+      });
     }
 
     const formattedMessages = orderedMessages.map((message) => ({
@@ -377,10 +377,7 @@ class GoogleClient extends BaseClient {
     const { debug } = this.options;
     const url = this.completionsUrl;
     if (debug) {
-      console.debug();
-      console.debug(url);
-      console.debug(this.modelOptions);
-      console.debug();
+      logger.debug('GoogleClient _getCompletion', { url, payload });
     }
     const opts = {
       method: 'POST',
@@ -397,7 +394,7 @@ class GoogleClient extends BaseClient {
 
     const client = await this.getClient();
     const res = await client.request({ url, method: 'POST', data: payload });
-    console.dir(res.data, { depth: null });
+    logger.debug('GoogleClient _getCompletion', { res });
     return res.data;
   }
 
@@ -476,7 +473,7 @@ class GoogleClient extends BaseClient {
   }
 
   getBuildMessagesOptions() {
-    // console.log('GoogleClient doesn\'t use getBuildMessagesOptions');
+    // logger.debug('GoogleClient doesn\'t use getBuildMessagesOptions');
   }
 
   async sendCompletion(payload, opts = {}) {
@@ -484,13 +481,10 @@ class GoogleClient extends BaseClient {
     try {
       reply = await this.getCompletion(payload, opts);
       if (this.options.debug) {
-        console.debug('result');
-        console.debug(reply);
+        logger.debug('GoogleClient sendCompletion', { reply });
       }
     } catch (err) {
-      console.error('Error: failed to send completion to Google');
-      console.error(err);
-      console.error(err.message);
+      logger.error('failed to send completion to Google', err);
     }
     return reply.trim();
   }

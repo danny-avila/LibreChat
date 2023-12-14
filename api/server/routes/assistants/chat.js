@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const OpenAI = require('openai');
+const { logger } = require('~/config');
 const { sendMessage } = require('../../utils');
 const { initThread, createRun, handleRun } = require('../../services/AssistantService');
 const express = require('express');
@@ -23,7 +24,7 @@ const {
  */
 router.post('/', setHeaders, async (req, res) => {
   try {
-    console.log(req.body);
+    logger.debug('[/assistants/chat/] req.body', req.body);
     // test message:
     // How many polls of 500 ms intervals are there in 18 seconds?
 
@@ -100,7 +101,7 @@ router.post('/', setHeaders, async (req, res) => {
     res.end();
   } catch (error) {
     // res.status(500).json({ error: error.message });
-    console.error(error);
+    logger.error('[/assistants/chat/]', error);
     res.end();
   }
 });

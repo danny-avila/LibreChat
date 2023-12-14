@@ -1,10 +1,11 @@
 const Preset = require('./schema/presetSchema');
+const { logger } = require('~/config');
 
 const getPreset = async (user, presetId) => {
   try {
     return await Preset.findOne({ user, presetId }).lean();
   } catch (error) {
-    console.log(error);
+    logger.error('[getPreset] Error getting single preset', error);
     return { message: 'Error getting single preset' };
   }
 };
@@ -30,7 +31,7 @@ module.exports = {
 
       return presets;
     } catch (error) {
-      console.log(error);
+      logger.error('[getPresets] Error getting presets', error);
       return { message: 'Error retrieving presets' };
     }
   },
@@ -62,7 +63,7 @@ module.exports = {
       setter.$set = update;
       return await Preset.findOneAndUpdate({ presetId, user }, setter, { new: true, upsert: true });
     } catch (error) {
-      console.log(error);
+      logger.error('[savePreset] Error saving preset', error);
       return { message: 'Error saving preset' };
     }
   },

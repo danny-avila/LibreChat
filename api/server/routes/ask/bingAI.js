@@ -1,10 +1,12 @@
 const express = require('express');
 const crypto = require('crypto');
+const { handleError, sendMessage, createOnProgress, handleText } = require('~/server/utils');
+const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('~/models');
+const { setHeaders } = require('~/server/middleware');
+const { titleConvoBing, askBing } = require('~/app');
+const { logger } = require('~/config');
+
 const router = express.Router();
-const { titleConvoBing, askBing } = require('../../../app');
-const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress, handleText } = require('../../utils');
-const { setHeaders } = require('../../middleware');
 
 router.post('/', setHeaders, async (req, res) => {
   const {
@@ -60,7 +62,7 @@ router.post('/', setHeaders, async (req, res) => {
     };
   }
 
-  console.log('ask log', {
+  logger.debug('[/ask/bingAI] ask log', {
     userMessage,
     endpointOption,
     conversationId,
@@ -153,10 +155,10 @@ const ask = async ({
       abortController,
     });
 
-    console.log('BING RESPONSE', response);
+    logger.debug('[/ask/bingAI] BING RESPONSE', response);
 
     if (response.details && response.details.scores) {
-      console.log('SCORES', response.details.scores);
+      logger.debug('[/ask/bingAI] SCORES', response.details.scores);
     }
 
     const newConversationId = endpointOption?.jailbreak
@@ -250,7 +252,7 @@ const ask = async ({
       });
     }
   } catch (error) {
-    console.error(error);
+    logger.error('[/ask/bingAI] Error handling BingAI response', error);
     const partialText = getPartialText();
     if (partialText?.length > 2) {
       const responseMessage = {
@@ -276,7 +278,7 @@ const ask = async ({
         responseMessage: responseMessage,
       };
     } else {
-      console.log(error);
+      logger.error('[/ask/bingAI] Error handling BingAI response', error);
       const errorMessage = {
         messageId: responseMessageId,
         sender: model,

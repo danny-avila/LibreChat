@@ -1,5 +1,6 @@
 const FacebookStrategy = require('passport-facebook').Strategy;
-const User = require('../models/User');
+const { logger } = require('~/config');
+const User = require('~/models/User');
 
 const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -32,7 +33,7 @@ const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
       message: 'User not found.',
     });
   } catch (err) {
-    console.error(err);
+    logger.error('[facebookLogin]', err);
     return cb(err);
   }
 };
