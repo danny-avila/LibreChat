@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { validateTools } = require('~/app');
-const { saveMessage, getConvoTitle, getConvo } = require('~/models');
 const { getResponseSender } = require('librechat-data-provider');
+const { saveMessage, getConvoTitle, getConvo } = require('~/models');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
 const { sendMessage, createOnProgress, formatSteps, formatAction } = require('~/server/utils');
 const {
@@ -13,6 +13,7 @@ const {
   validateEndpoint,
   buildEndpointOption,
 } = require('~/server/middleware');
+const { logger } = require('~/config');
 
 router.post('/abort', handleAbort());
 
@@ -27,8 +28,14 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
-  console.log('edit log');
-  console.dir({ text, generation, isContinued, conversationId, endpointOption }, { depth: null });
+
+  logger.debug('[/edit/gptPlugins]', {
+    text,
+    generation,
+    isContinued,
+    conversationId,
+    ...endpointOption,
+  });
   let metadata;
   let userMessage;
   let promptTokens;
@@ -102,7 +109,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       saveMessage({ ...userMessage, user });
     }
     sendIntermediateMessage(res, { plugin });
-    // console.log('PLUGIN ACTION', formattedAction);
+    // logger.debug('PLUGIN ACTION', formattedAction);
   };
 
   const onChainEnd = (data) => {
@@ -111,7 +118,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     plugin.loading = false;
     saveMessage({ ...userMessage, user });
     sendIntermediateMessage(res, { plugin });
-    // console.log('CHAIN END', plugin.outputs);
+    // logger.debug('CHAIN END', plugin.outputs);
   };
 
   const getAbortData = () => ({
@@ -162,8 +169,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       response = { ...response, ...metadata };
     }
 
-    console.log('CLIENT RESPONSE');
-    console.dir(response, { depth: null });
+    logger.debug('[/edit/gptPlugins] CLIENT RESPONSE', response);
     response.plugin = { ...plugin, loading: false };
     await saveMessage({ ...response, user });
 

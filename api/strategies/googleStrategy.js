@@ -1,5 +1,6 @@
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
-const User = require('../models/User');
+const { logger } = require('~/config');
+const User = require('~/models/User');
 
 const googleLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -29,7 +30,7 @@ const googleLogin = async (accessToken, refreshToken, profile, cb) => {
 
     return cb(null, false, { message: 'User not found.' });
   } catch (err) {
-    console.error(err);
+    logger.error('[googleLogin]', err);
     return cb(err);
   }
 };

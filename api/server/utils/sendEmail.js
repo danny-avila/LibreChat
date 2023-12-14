@@ -1,7 +1,8 @@
-const nodemailer = require('nodemailer');
-const handlebars = require('handlebars');
 const fs = require('fs');
 const path = require('path');
+const nodemailer = require('nodemailer');
+const handlebars = require('handlebars');
+const logger = require('~/config/winston');
 
 const sendEmail = async (email, subject, payload, template) => {
   try {
@@ -58,15 +59,15 @@ const sendEmail = async (email, subject, payload, template) => {
     // Send email
     transporter.sendMail(options(), (error, info) => {
       if (error) {
-        console.log(error);
+        logger.error('[sendEmail]', error);
         return error;
       } else {
-        console.log(info);
+        logger.debug('[sendEmail]', info);
         return info;
       }
     });
   } catch (error) {
-    console.log(error);
+    logger.error('[sendEmail]', error);
     return error;
   }
 };

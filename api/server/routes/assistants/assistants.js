@@ -1,5 +1,7 @@
 const OpenAI = require('openai');
 const express = require('express');
+const { logger } = require('~/config');
+
 const router = express.Router();
 
 /**
@@ -13,7 +15,7 @@ router.post('/', async (req, res) => {
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
     const assistantData = req.body;
     const assistant = await openai.beta.assistants.create(assistantData);
-    console.log(assistant);
+    logger.debug('/assistants/', assistant);
     res.status(201).json(assistant);
   } catch (error) {
     res.status(500).json({ error: error.message });

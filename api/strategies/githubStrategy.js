@@ -1,5 +1,6 @@
 const { Strategy: GitHubStrategy } = require('passport-github2');
-const User = require('../models/User');
+const { logger } = require('~/config');
+const User = require('~/models/User');
 
 const githubLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -29,7 +30,7 @@ const githubLogin = async (accessToken, refreshToken, profile, cb) => {
 
     return cb(null, false, { message: 'User not found.' });
   } catch (err) {
-    console.error(err);
+    logger.error('[githubLogin]', err);
     return cb(err);
   }
 };

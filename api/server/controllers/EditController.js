@@ -1,7 +1,8 @@
+const { getResponseSender } = require('librechat-data-provider');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage, getConvoTitle, getConvo } = require('~/models');
-const { getResponseSender } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
+const { logger } = require('~/config');
 
 const EditController = async (req, res, next, initializeClient) => {
   let {
@@ -14,8 +15,13 @@ const EditController = async (req, res, next, initializeClient) => {
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
-  console.log('edit log');
-  console.dir({ text, generation, isContinued, conversationId, endpointOption }, { depth: null });
+  logger.debug('[EditController]', {
+    text,
+    generation,
+    isContinued,
+    conversationId,
+    ...endpointOption,
+  });
   let metadata;
   let userMessage;
   let promptTokens;
