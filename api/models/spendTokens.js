@@ -1,4 +1,5 @@
 const Transaction = require('./Transaction');
+const { logger } = require('~/config');
 
 /**
  * Creates up to two transactions to record the spending of tokens.
@@ -30,7 +31,7 @@ const spendTokens = async (txData, tokenUsage) => {
     }
 
     if (!completionTokens) {
-      this.debug && console.dir({ prompt, completion }, { depth: null });
+      logger.debug('[spendTokens] !completionTokens', { prompt, completion });
       return;
     }
 
@@ -40,9 +41,9 @@ const spendTokens = async (txData, tokenUsage) => {
       rawAmount: -completionTokens,
     });
 
-    this.debug && console.dir({ prompt, completion }, { depth: null });
+    logger.debug('[spendTokens] post-transaction', { prompt, completion });
   } catch (err) {
-    console.error(err);
+    logger.error('[spendTokens]', err);
   }
 };
 

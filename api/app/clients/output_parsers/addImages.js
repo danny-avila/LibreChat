@@ -1,3 +1,5 @@
+const { logger } = require('~/config');
+
 /**
  * The `addImages` function corrects any erroneous image URLs in the `responseMessage.text`
  * and appends image observations from `intermediateSteps` if they are not already present.
@@ -20,7 +22,7 @@
  *
  * addImages(intermediateSteps, responseMessage);
  *
- * console.log(responseMessage.text);
+ * logger.debug(responseMessage.text);
  * // Outputs: 'Some text with ![desc](/images/test.png)\n![desc](/images/test.png)'
  *
  * @returns {void}
@@ -62,7 +64,7 @@ function addImages(intermediateSteps, responseMessage) {
     if (observedImagePath && !responseMessage.text.includes(observedImagePath[0])) {
       responseMessage.text += '\n' + observation;
       if (process.env.DEBUG_PLUGINS) {
-        console.debug('[addImages] added image from intermediateSteps');
+        logger.debug('[addImages] added image from intermediateSteps:', observation);
       }
     }
   });

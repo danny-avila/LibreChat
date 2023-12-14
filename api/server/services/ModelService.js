@@ -1,10 +1,13 @@
-const HttpsProxyAgent = require('https-proxy-agent');
-const axios = require('axios');
 const Keyv = require('keyv');
+const axios = require('axios');
+const HttpsProxyAgent = require('https-proxy-agent');
 const { isEnabled } = require('~/server/utils');
-const { extractBaseURL } = require('~/utils');
 const keyvRedis = require('~/cache/keyvRedis');
+const { extractBaseURL } = require('~/utils');
+const { logger } = require('~/config');
+
 // const { getAzureCredentials, genAzureChatCompletion } = require('~/utils/');
+
 const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
 
 const modelsCache = isEnabled(process.env.USE_REDIS)
@@ -54,9 +57,9 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
       const res = await axios.get(`${basePath}${opts.azure ? '' : '/models'}`, payload);
 
       models = res.data.data.map((item) => item.id);
-      // console.log(`Fetched ${models.length} models from ${opts.azure ? 'Azure ' : ''}OpenAI API`);
+      // logger.debug(`Fetched ${models.length} models from ${opts.azure ? 'Azure ' : ''}OpenAI API`);
     } catch (err) {
-      console.log(`Failed to fetch models from ${opts.azure ? 'Azure ' : ''}OpenAI API`);
+      logger.error(`Failed to fetch models from ${opts.azure ? 'Azure ' : ''}OpenAI API`, err);
     }
   }
 

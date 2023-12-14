@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { logger } = require('~/config');
 
 /**
  * Saves a file to a specified output path with a new filename.
@@ -24,7 +25,7 @@ async function saveFile(file, outputPath, outputFilename) {
 
     return outputFilePath;
   } catch (error) {
-    console.error('Error while saving the file:', error);
+    logger.error('[saveFile] Error while saving the file:', error);
     throw error;
   }
 }
