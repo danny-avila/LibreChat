@@ -30,7 +30,9 @@ PORT=3080
 
 ### MongoDB Database
 
-- Change this to your MongoDB URI if different. It is recommend to append LibreChat.
+- Change this to your MongoDB URI if different. You should also add `LibreChat` or your own `APP_TITLE` as the database name in the URI. For example:
+  - if you are using docker, the URI format is `mongodb://<ip>:<port>/<database>`. Your `MONGO_URI` should look like this: `mongodb://127.0.0.1:27018/LibreChat`
+  - if you are using an online db, the URI format is `mongodb+srv://<username>:<password>@<host>/<database>?<options>`. Your `MONGO_URI` should look like this: `mongodb+srv://username:password@host.mongodb.net/LibreChat?retryWrites=true` (`retryWrites=true` is the only option you need when using the online db)
 - Instruction on how to create an online MongoDB database (useful for use without docker):
     - [Online MongoDB](./mongodb.md)
 - Securely access your docker MongoDB database:
