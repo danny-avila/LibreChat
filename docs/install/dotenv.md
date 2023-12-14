@@ -17,11 +17,26 @@ CUSTOM_FOOTER="My custom footer"
 
 ### Logging
 
-LibreChat has central logging built into it. Debug logging, enabled by default, is essential for developer work. If you encounter any issues running LibreChat, you should enable this variable, reproduce your issue, and [report the issue](https://github.com/danny-avila/LibreChat/issues) with your logs found in `./api/logs/debug-%DATE%.log`.
+LibreChat has built-in central logging.
+
+- Debug logging is enabled by default and crucial for development.
+- To report issues, reproduce the error and submit logs from `./api/logs/debug-%DATE%.log` at [LibreChat GitHub Issues](https://github.com/danny-avila/LibreChat/issues).
+- Error logs are stored in the same location.
+- Keep debug logs active by default or disable them by setting `DEBUG_LOGGING=FALSE` in the environment variable.
+- For more information about this feature, read our docs: https://docs.librechat.ai/features/logging_system.html
 
 ```bash
 DEBUG_LOGGING=TRUE
 ```
+
+- Enable verbose server output in the console with `DEBUG_CONSOLE=TRUE`, though it's not recommended due to high verbosity.
+
+```bash
+DEBUG_CONSOLE=TRUE
+```
+
+This is not recommend, however, as the outputs can be quite verbose, and so it's disabled by default.
+
 
 ### Port
 
