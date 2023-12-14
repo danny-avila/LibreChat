@@ -1,5 +1,6 @@
 const { Strategy: DiscordStrategy } = require('passport-discord');
-const User = require('../models/User');
+const { logger } = require('~/config');
+const User = require('~/models/User');
 
 const discordLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -40,7 +41,7 @@ const discordLogin = async (accessToken, refreshToken, profile, cb) => {
       message: 'User not found.',
     });
   } catch (err) {
-    console.error(err);
+    logger.error('[discordLogin]', err);
     return cb(err);
   }
 };

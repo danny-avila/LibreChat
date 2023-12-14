@@ -108,6 +108,7 @@ nav:
     - Automated Moderation: 'features/mod_system.md'
     - Token Usage: 'features/token_usage.md'
     - Manage Your Database: 'features/manage_your_database.md'
+    - Logging System: 'features/logging_system.md'
     - PandoraNext Deployment Guide: 'features/pandoranext.md'
     - Third-Party Tools: 'features/third_party.md'
     - Proxy: 'features/proxy.md'
