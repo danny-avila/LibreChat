@@ -80,10 +80,10 @@
 
   ![image](https://github.com/fuegovic/LibreChat/assets/32828263/ccc52648-39fa-4f45-8e2b-96c93ffede4a)
 
-- Make sure to replace `<password>` with the database password you created in the "[database credentials](#database-credentials)" section above. Do not forget to remove the `<` `>` around the password. Also remove `&w=majority` at the end of the connection string.
+- The URI format is `mongodb+srv://<username>:<password>@<host>/<database>?<options>`. Make sure to replace `<password>` with the database password you created in the "[database credentials](#database-credentials)" section above. Do not forget to remove the `<` `>` around the password. Also remove `&w=majority` at the end of the connection string. `retryWrites=true` is the only option you need to keep. You should also add `LibreChat` or your own `APP_TITLE` as the database name in the URI.
 - example:
 ```
-mongodb+srv://fuegovic:1Gr8Banana@render-librechat.fgycwpi.mongo.net/?retryWrites=true
+mongodb+srv://fuegovic:1Gr8Banana@render-librechat.fgycwpi.mongo.net/LibreChat?retryWrites=true
 ```
 
 ---
