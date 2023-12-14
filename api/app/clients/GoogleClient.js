@@ -43,7 +43,7 @@ class GoogleClient extends BaseClient {
 
     jwtClient.authorize((err) => {
       if (err) {
-        logger.error('Error: jwtClient failed to authorize', err);
+        logger.error('jwtClient failed to authorize', err);
         throw err;
       }
     });
@@ -58,7 +58,7 @@ class GoogleClient extends BaseClient {
     return new Promise((resolve, reject) => {
       jwtClient.authorize((err, tokens) => {
         if (err) {
-          logger.error('Error: jwtClient failed to authorize', err);
+          logger.error('jwtClient failed to authorize', err);
           reject(err);
         } else {
           resolve(tokens.access_token);
@@ -484,7 +484,7 @@ class GoogleClient extends BaseClient {
         logger.debug('GoogleClient sendCompletion', { reply });
       }
     } catch (err) {
-      logger.error('Error: failed to send completion to Google', err);
+      logger.error('failed to send completion to Google', err);
     }
     return reply.trim();
   }

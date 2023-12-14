@@ -206,7 +206,7 @@ class PluginsClient extends OpenAIClient {
         logger.error('[PluginsClient] executorCall error:', err);
         if (attempts === maxAttempts) {
           const { run } = this.runManager.getRunByConversationId(this.conversationId);
-          const defaultOutput = `Encountered an error while attempting to respond. Error: ${err.message}`;
+          const defaultOutput = `Encountered an error while attempting to respond: ${err.message}`;
           this.result.output = run && run.error ? run.error : defaultOutput;
           this.result.errorMessage = run && run.error ? run.error : err.message;
           this.result.intermediateSteps = this.actions;

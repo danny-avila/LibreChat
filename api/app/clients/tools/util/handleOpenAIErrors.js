@@ -18,7 +18,7 @@ async function handleOpenAIErrors(err, errorCallback, context = 'stream') {
   if (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason')) {
     logger.warn(`[OpenAIClient.chatCompletion][${context}] Missing finish_reason`);
   } else if (err instanceof OpenAI.APIError) {
-    logger.warn(`[OpenAIClient.chatCompletion][${context}] API Error`);
+    logger.warn(`[OpenAIClient.chatCompletion][${context}] API error`);
   } else {
     logger.warn(`[OpenAIClient.chatCompletion][${context}] Unhandled error type`);
   }

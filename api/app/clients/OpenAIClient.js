@@ -816,7 +816,7 @@ ${convo}
 
       if (!chatCompletion && UnexpectedRoleError) {
         throw new Error(
-          'OpenAIError: Invalid final message: OpenAI expects final message to include role=assistant',
+          'OpenAI error: Invalid final message: OpenAI expects final message to include role=assistant',
         );
       } else if (!chatCompletion && error) {
         throw new Error(error);
@@ -839,13 +839,13 @@ ${convo}
       }
       if (
         err?.message?.includes(
-          'OpenAIError: Invalid final message: OpenAI expects final message to include role=assistant',
+          'OpenAI error: Invalid final message: OpenAI expects final message to include role=assistant',
         ) ||
         err?.message?.includes('The server had an error processing your request') ||
         err?.message?.includes('missing finish_reason') ||
         (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason'))
       ) {
-        logger.error('[OpenAIClient] Known OpenAI Error:', err);
+        logger.error('[OpenAIClient] Known OpenAI error:', err);
         await abortController.abortCompletion();
         return intermediateReply;
       } else if (err instanceof OpenAI.APIError) {
