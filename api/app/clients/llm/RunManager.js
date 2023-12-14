@@ -58,11 +58,19 @@ class RunManager {
       {
         handleChatModelStart: createStartHandler({ ...metadata, manager: this }),
         handleLLMEnd: async (output, runId, _parentRunId) => {
+          const { llmOutput, ..._output } = output;
           logger.debug(`[RunManager] handleLLMEnd: ${JSON.stringify(metadata)}`, {
-            output,
             runId,
             _parentRunId,
+            llmOutput,
           });
+
+          if (metadata.context !== 'title') {
+            logger.debug('[RunManager] handleLLMEnd:', {
+              output: _output,
+            });
+          }
+
           const { tokenUsage } = output.llmOutput;
           const run = this.getRunById(runId);
           this.removeRun(runId);

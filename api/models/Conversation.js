@@ -1,7 +1,6 @@
-// const { Conversation } = require('./plugins');
 const Conversation = require('./schema/convoSchema');
 const { getMessages, deleteMessages } = require('./Message');
-const { logger } = require('~/config');
+const logger = require('~/config/winston');
 
 const getConvo = async (user, conversationId) => {
   try {

@@ -98,7 +98,7 @@ process.on('uncaughtException', (err) => {
 
   if (err.message.includes('fetch failed')) {
     if (messageCount === 0) {
-      logger.error('Meilisearch error, search will be disabled');
+      logger.warn('Meilisearch error, search will be disabled');
       messageCount++;
     }
 

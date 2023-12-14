@@ -1,12 +1,10 @@
 const path = require('path');
 const winston = require('winston');
 require('winston-daily-rotate-file');
-const { redact, deepObjectFormat } = require('./parsers');
-const { isEnabled } = require('~/server/utils/handleText');
 
 const logDir = path.join(__dirname, '..', 'logs');
 
-const { NODE_ENV, DEBUG_LOGGING = true, DEBUG_CONSOLE = false } = process.env;
+const { NODE_ENV } = process.env;
 
 const levels = {
   error: 0,
@@ -36,27 +34,18 @@ const fileFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
-  winston.format((info) => redact(info))(),
 );
 
 const transports = [
   new winston.transports.DailyRotateFile({
-    level: 'error',
-    filename: `${logDir}/error-%DATE%.log`,
+    level: 'debug',
+    filename: `${logDir}/meiliSync-%DATE%.log`,
     datePattern: 'YYYY-MM-DD',
     zippedArchive: true,
     maxSize: '20m',
     maxFiles: '14d',
     format: fileFormat,
   }),
-  // new winston.transports.DailyRotateFile({
-  //   level: 'info',
-  //   filename: `${logDir}/info-%DATE%.log`,
-  //   datePattern: 'YYYY-MM-DD',
-  //   zippedArchive: true,
-  //   maxSize: '20m',
-  //   maxFiles: '14d',
-  // }),
 ];
 
 // if (NODE_ENV !== 'production') {
@@ -67,42 +56,18 @@ const transports = [
 //   );
 // }
 
-if (isEnabled && isEnabled(DEBUG_LOGGING)) {
-  transports.push(
-    new winston.transports.DailyRotateFile({
-      level: 'debug',
-      filename: `${logDir}/debug-%DATE%.log`,
-      datePattern: 'YYYY-MM-DD',
-      zippedArchive: true,
-      maxSize: '20m',
-      maxFiles: '14d',
-      format: winston.format.combine(fileFormat, deepObjectFormat),
-    }),
-  );
-}
-
 const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format((info) => redact(info))(),
   winston.format.printf((info) => `${info.timestamp} ${info.level}: ${info.message}`),
 );
 
-if (isEnabled && isEnabled(DEBUG_CONSOLE)) {
-  transports.push(
-    new winston.transports.Console({
-      level: 'debug',
-      format: winston.format.combine(consoleFormat, deepObjectFormat),
-    }),
-  );
-} else {
-  transports.push(
-    new winston.transports.Console({
-      level: 'info',
-      format: consoleFormat,
-    }),
-  );
-}
+transports.push(
+  new winston.transports.Console({
+    level: 'info',
+    format: consoleFormat,
+  }),
+);
 
 const logger = winston.createLogger({
   level: level(),

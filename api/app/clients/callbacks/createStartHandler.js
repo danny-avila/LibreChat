@@ -19,9 +19,14 @@ const createStartHandler = ({
 
     logger.debug(`[createStartHandler] handleChatModelStart: ${context}`, {
       model,
-      functions,
       function_call,
     });
+
+    if (context !== 'title') {
+      logger.debug(`[createStartHandler] handleChatModelStart: ${context}`, {
+        functions,
+      });
+    }
 
     const payload = { messages };
     let prelimPromptTokens = 1;
