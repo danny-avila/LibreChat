@@ -11,16 +11,16 @@ const useUserKey = (endpoint: string) => {
   const config = endpointsConfig?.[endpoint];
 
   const { azure } = config ?? {};
-  let keyEndpoint = endpoint;
+  let keyName = endpoint;
 
   if (azure) {
-    keyEndpoint = EModelEndpoint.azureOpenAI;
-  } else if (keyEndpoint === EModelEndpoint.gptPlugins) {
-    keyEndpoint = EModelEndpoint.openAI;
+    keyName = EModelEndpoint.azureOpenAI;
+  } else if (keyName === EModelEndpoint.gptPlugins) {
+    keyName = EModelEndpoint.openAI;
   }
 
   const updateKey = useUpdateUserKeysMutation();
-  const checkUserKey = useUserKeyQuery(keyEndpoint);
+  const checkUserKey = useUserKeyQuery(keyName);
   const getExpiry = useCallback(() => {
     if (checkUserKey.data) {
       return checkUserKey.data.expiresAt;
@@ -41,15 +41,15 @@ const useUserKey = (endpoint: string) => {
   }, [getExpiry]);
 
   const saveUserKey = useCallback(
-    (value: string, expiresAt: number) => {
+    (userKey: string, expiresAt: number) => {
       const dateStr = new Date(expiresAt).toISOString();
       updateKey.mutate({
-        name: keyEndpoint,
-        value,
+        name: keyName,
+        value: userKey,
         expiresAt: dateStr,
       });
     },
-    [updateKey, keyEndpoint],
+    [updateKey, keyName],
   );
 
   return useMemo(
