@@ -1,4 +1,5 @@
 import { useMemo, useCallback } from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import {
   useUserKeyQuery,
   useGetEndpointsQuery,
@@ -13,9 +14,9 @@ const useUserKey = (endpoint: string) => {
   let keyEndpoint = endpoint;
 
   if (azure) {
-    keyEndpoint = 'azureOpenAI';
-  } else if (keyEndpoint === 'gptPlugins') {
-    keyEndpoint = 'openAI';
+    keyEndpoint = EModelEndpoint.azureOpenAI;
+  } else if (keyEndpoint === EModelEndpoint.gptPlugins) {
+    keyEndpoint = EModelEndpoint.openAI;
   }
 
   const updateKey = useUpdateUserKeysMutation();
