@@ -12,7 +12,7 @@ const AskController = async (req, res, next, initializeClient) => {
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
-  logger.debug('[AskController]', { text, conversationId, endpointOption });
+  logger.debug('[AskController]', { text, conversationId, ...endpointOption });
   let metadata;
   let userMessage;
   let promptTokens;

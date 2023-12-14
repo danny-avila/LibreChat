@@ -20,7 +20,7 @@ const EditController = async (req, res, next, initializeClient) => {
     generation,
     isContinued,
     conversationId,
-    endpointOption,
+    ...endpointOption,
   });
   let metadata;
   let userMessage;

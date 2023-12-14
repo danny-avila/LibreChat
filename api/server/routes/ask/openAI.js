@@ -25,7 +25,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     overrideParentMessageId = null,
   } = req.body;
 
-  logger.debug('[/ask/openAI]', { text, conversationId, endpointOption });
+  logger.debug('[/ask/openAI]', { text, conversationId, ...endpointOption });
 
   let metadata;
   let userMessage;

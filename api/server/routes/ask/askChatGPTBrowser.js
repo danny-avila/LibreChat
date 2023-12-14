@@ -45,8 +45,8 @@ router.post('/', setHeaders, async (req, res) => {
 
   logger.debug('[/ask/chatGPTBrowser]', {
     userMessage,
-    endpointOption,
     conversationId,
+    ...endpointOption,
   });
 
   if (!overrideParentMessageId) {

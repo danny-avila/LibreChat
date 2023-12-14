@@ -34,7 +34,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     generation,
     isContinued,
     conversationId,
-    endpointOption,
+    ...endpointOption,
   });
   let metadata;
   let userMessage;

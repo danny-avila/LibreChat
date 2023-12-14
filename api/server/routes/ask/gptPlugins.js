@@ -26,7 +26,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
-  logger.debug('[/ask/gptPlugins]', { text, conversationId, endpointOption });
+  logger.debug('[/ask/gptPlugins]', { text, conversationId, ...endpointOption });
   let metadata;
   let userMessage;
   let promptTokens;
