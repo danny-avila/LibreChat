@@ -7,7 +7,6 @@
  */
 
 const { isEnabled } = require('~/server/utils');
-const logger = require('~/config/winston');
 
 /**
  * Sanitizes the model name to be used in the URL by removing or replacing disallowed characters.
@@ -56,9 +55,7 @@ const genAzureChatCompletion = (
     throw new Error('Either a model name or a deployment name must be provided.');
   }
 
-  const completionURL = `https://${azureOpenAIApiInstanceName}.openai.azure.com/openai/deployments/${deploymentSegment}/chat/completions?api-version=${azureOpenAIApiVersion}`;
-  logger.debug(`[genAzureChatCompletion] Azure Completion URL: ${completionURL}`);
-  return completionURL;
+  return `https://${azureOpenAIApiInstanceName}.openai.azure.com/openai/deployments/${deploymentSegment}/chat/completions?api-version=${azureOpenAIApiVersion}`;
 };
 
 /**
