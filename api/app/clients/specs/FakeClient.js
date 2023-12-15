@@ -42,7 +42,6 @@ class FakeClient extends BaseClient {
 
     this.maxContextTokens = getModelMaxTokens(this.modelOptions.model) ?? 4097;
   }
-  getCompletion() {}
   buildMessages() {}
   getTokenCount(str) {
     return str.length;
@@ -84,6 +83,19 @@ const initializeFakeClient = (apiKey, options, fakeMessages) => {
 
   TestClient.sendCompletion = jest.fn(async () => {
     return 'Mock response text';
+  });
+
+  // eslint-disable-next-line no-unused-vars
+  TestClient.getCompletion = jest.fn().mockImplementation(async (..._args) => {
+    return {
+      choices: [
+        {
+          message: {
+            content: 'Mock response text',
+          },
+        },
+      ],
+    };
   });
 
   TestClient.buildMessages = jest.fn(async (messages, parentMessageId) => {

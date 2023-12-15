@@ -3,7 +3,7 @@ const winston = require('winston');
 const traverse = require('traverse');
 const { klona } = require('klona/full');
 
-const sensitiveKeys = [/^sk-\w+$/, /Bearer \w+/];
+const sensitiveKeys = [/^sk-\w+$/, /Bearer \w+/, /api-key: \w+/];
 
 /**
  * Determines if a given key string is sensitive.
