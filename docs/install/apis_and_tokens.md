@@ -72,6 +72,7 @@ Instructions for both are given below.
 
 Setting `GOOGLE_KEY=user_provided` in your .env file will configure both values to be provided from the client (or frontend) like so:
 
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/728cbc04-4180-45a8-848c-ae5de2b02996)
 
 ### Generative Language API (Gemini)
 
