@@ -1,8 +1,9 @@
 const crypto = require('crypto');
-const TextStream = require('./TextStream');
+const { supportsBalanceCheck } = require('librechat-data-provider');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
+const TextStream = require('./TextStream');
 const { logger } = require('~/config');
 
 class BaseClient {
@@ -424,7 +425,7 @@ class BaseClient {
       await this.saveMessageToDatabase(userMessage, saveOptions, user);
     }
 
-    if (isEnabled(process.env.CHECK_BALANCE)) {
+    if (isEnabled(process.env.CHECK_BALANCE) && supportsBalanceCheck[this.options.endpoint]) {
       await checkBalance({
         req: this.options.req,
         res: this.options.res,
