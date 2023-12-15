@@ -31,12 +31,13 @@ class GoogleClient extends BaseClient {
 
     if (typeof credentials === 'string') {
       creds = JSON.parse(credentials);
-    } else {
+    } else if (credentials) {
       creds = credentials;
     }
 
     const serviceKey = creds[AuthKeys.GOOGLE_SERVICE_KEY] ?? {};
-    this.serviceKey = JSON.parse(serviceKey);
+    this.serviceKey =
+      serviceKey && typeof serviceKey === 'string' ? JSON.parse(serviceKey) : serviceKey ?? {};
     this.client_email = this.serviceKey.client_email;
     this.private_key = this.serviceKey.private_key;
     this.project_id = this.serviceKey.project_id;
@@ -103,7 +104,7 @@ class GoogleClient extends BaseClient {
       this.options = options;
     }
 
-    this.options.examples = this.options.examples
+    this.options.examples = (this.options.examples ?? [])
       .filter((ex) => ex)
       .filter((obj) => obj.input.content !== '' && obj.output.content !== '');
 
@@ -216,6 +217,16 @@ class GoogleClient extends BaseClient {
   }
 
   buildMessages(messages = [], parentMessageId) {
+    if (!this.isGenerativeModel && !this.project_id) {
+      throw new Error(
+        '[GoogleClient] a Service Account JSON Key is required for PaLM 2 and Codey models (Vertex AI)',
+      );
+    } else if (this.isGenerativeModel && (!this.apiKey || this.apiKey === 'user_provided')) {
+      throw new Error(
+        '[GoogleClient] an API Key is required for Gemini models (Generative Language API)',
+      );
+    }
+
     if (this.isTextModel) {
       return this.buildMessagesPrompt(messages, parentMessageId);
     }
