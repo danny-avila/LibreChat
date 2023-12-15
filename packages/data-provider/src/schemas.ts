@@ -74,6 +74,11 @@ export const alternateName = {
   [EModelEndpoint.anthropic]: 'Anthropic',
 };
 
+export enum AuthKeys {
+  GOOGLE_SERVICE_KEY = 'GOOGLE_SERVICE_KEY',
+  GOOGLE_API_KEY = 'GOOGLE_API_KEY',
+}
+
 export const endpointSettings = {
   [EModelEndpoint.google]: {
     model: {
@@ -603,6 +608,8 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
   if (endpoint === EModelEndpoint.google) {
     if (modelLabel) {
       return modelLabel;
+    } else if (model && model.includes('gemini')) {
+      return 'Gemini';
     } else if (model && model.includes('code')) {
       return 'Codey';
     }
