@@ -1,4 +1,4 @@
-import React from 'react';
+import { useEffect } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { EModelEndpoint, endpointSettings } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
@@ -18,24 +18,9 @@ import { useLocalize } from '~/hooks';
 
 export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
   const localize = useLocalize();
-  if (!conversation) {
-    return null;
-  }
-  const { model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens } =
-    conversation;
-
-  const setModel = setOption('model');
-  const setModelLabel = setOption('modelLabel');
-  const setPromptPrefix = setOption('promptPrefix');
-  const setTemperature = setOption('temperature');
-  const setTopP = setOption('topP');
-  const setTopK = setOption('topK');
-  const setMaxOutputTokens = setOption('maxOutputTokens');
-
   const google = endpointSettings[EModelEndpoint.google];
-  const isGenerativeModel = model?.toLowerCase()?.includes('gemini');
-  const isChatModel = !isGenerativeModel && model?.toLowerCase()?.includes('chat');
-  const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(model ?? '');
+  const { model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens } =
+    conversation ?? {};
 
   const isGeminiPro = model?.toLowerCase()?.includes('gemini-pro');
 
@@ -45,6 +30,32 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const maxOutputTokensDefault = isGeminiPro
     ? google.maxOutputTokens.defaultGeminiPro
     : google.maxOutputTokens.default;
+
+  useEffect(
+    () => {
+      if (model) {
+        setOption('maxOutputTokens')(Math.min(Number(maxOutputTokens) ?? 0, maxOutputTokensMax));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [model],
+  );
+
+  if (!conversation) {
+    return null;
+  }
+
+  const setModel = setOption('model');
+  const setModelLabel = setOption('modelLabel');
+  const setPromptPrefix = setOption('promptPrefix');
+  const setTemperature = setOption('temperature');
+  const setTopP = setOption('topP');
+  const setTopK = setOption('topK');
+  const setMaxOutputTokens = setOption('maxOutputTokens');
+
+  const isGenerativeModel = model?.toLowerCase()?.includes('gemini');
+  const isChatModel = !isGenerativeModel && model?.toLowerCase()?.includes('chat');
+  const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(model ?? '');
 
   return (
     <div className="grid grid-cols-5 gap-6">

@@ -90,7 +90,7 @@ export const endpointSettings = {
       step: 1,
       default: 1024,
       maxGeminiPro: 8192,
-      defaultGeminiPro: 2048,
+      defaultGeminiPro: 8192,
     },
     temperature: {
       min: 0,
@@ -340,17 +340,31 @@ export const googleSchema = tConversationSchema
     topP: true,
     topK: true,
   })
-  .transform((obj) => ({
-    ...obj,
-    model: obj.model ?? google.model.default,
-    modelLabel: obj.modelLabel ?? null,
-    promptPrefix: obj.promptPrefix ?? null,
-    examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
-    temperature: obj.temperature ?? google.temperature.default,
-    maxOutputTokens: obj.maxOutputTokens ?? google.maxOutputTokens.default,
-    topP: obj.topP ?? google.topP.default,
-    topK: obj.topK ?? google.topK.default,
-  }))
+  .transform((obj) => {
+    const isGeminiPro = obj?.model?.toLowerCase()?.includes('gemini-pro');
+
+    const maxOutputTokensMax = isGeminiPro
+      ? google.maxOutputTokens.maxGeminiPro
+      : google.maxOutputTokens.max;
+    const maxOutputTokensDefault = isGeminiPro
+      ? google.maxOutputTokens.defaultGeminiPro
+      : google.maxOutputTokens.default;
+
+    let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;
+    maxOutputTokens = Math.min(maxOutputTokens, maxOutputTokensMax);
+
+    return {
+      ...obj,
+      model: obj.model ?? google.model.default,
+      modelLabel: obj.modelLabel ?? null,
+      promptPrefix: obj.promptPrefix ?? null,
+      examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
+      temperature: obj.temperature ?? google.temperature.default,
+      maxOutputTokens,
+      topP: obj.topP ?? google.topP.default,
+      topK: obj.topK ?? google.topK.default,
+    };
+  })
   .catch(() => ({
     model: google.model.default,
     modelLabel: null,
