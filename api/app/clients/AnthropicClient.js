@@ -290,7 +290,7 @@ class AnthropicClient extends BaseClient {
       top_p,
       top_k,
     };
-    logger.debug('[AnthropicClient]', { requestOptions });
+    logger.debug('[AnthropicClient]', { ...requestOptions });
     const response = await client.completions.create(requestOptions);
 
     signal.addEventListener('abort', () => {

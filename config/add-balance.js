@@ -1,7 +1,9 @@
-const connectDb = require('../api/lib/db/connectDb');
+const path = require('path');
+require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
-const User = require('../api/models/User');
-const Transaction = require('../api/models/Transaction');
+const Transaction = require('~/models/Transaction');
+const connectDb = require('~/lib/db/connectDb');
+const User = require('~/models/User');
 
 (async () => {
   /**
