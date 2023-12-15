@@ -2,7 +2,6 @@ const path = require('path');
 const winston = require('winston');
 require('winston-daily-rotate-file');
 const { redact, deepObjectFormat } = require('./parsers');
-const { isEnabled } = require('~/server/utils/handleText');
 
 const logDir = path.join(__dirname, '..', 'logs');
 
@@ -67,7 +66,10 @@ const transports = [
 //   );
 // }
 
-if (isEnabled && isEnabled(DEBUG_LOGGING)) {
+if (
+  (typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING?.toLowerCase() === 'true') ||
+  DEBUG_LOGGING === true
+) {
   transports.push(
     new winston.transports.DailyRotateFile({
       level: 'debug',
@@ -88,7 +90,10 @@ const consoleFormat = winston.format.combine(
   winston.format.printf((info) => `${info.timestamp} ${info.level}: ${info.message}`),
 );
 
-if (isEnabled && isEnabled(DEBUG_CONSOLE)) {
+if (
+  (typeof DEBUG_CONSOLE === 'string' && DEBUG_CONSOLE?.toLowerCase() === 'true') ||
+  DEBUG_CONSOLE === true
+) {
   transports.push(
     new winston.transports.Console({
       level: 'debug',
