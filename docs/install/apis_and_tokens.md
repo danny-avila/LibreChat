@@ -75,6 +75,10 @@ Setting `GOOGLE_KEY=user_provided` in your .env file will configure both values 
 
 ### Generative Language API (Gemini)
 
+**60 requests/minute are currently free until early next year when it enters general availability.**
+
+:warning: Google will be using that free input/output to help improve the model, with data de-identified from your Google Account and API key. It “may be accessible to trained reviewers.” :warning:
+
 To use Gemini models, you'll need an API key. If you don't already have one, create a key in Google AI Studio.
 
 <p><a class="button button-primary" href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Get an API key here</a></p>
