@@ -6,7 +6,6 @@ async function saveToFirebase(userId, webPBuffer, oldUser, manual) {
 
     await uploadBytes(profilePicRef, webPBuffer);
 
-    console.log('WebP Image uploaded successfully');
     const urlFirebase = await getDownloadURL(profilePicRef);
 
     if (manual === 'true') {

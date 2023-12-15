@@ -55,7 +55,6 @@ const createNewUser = async (profile, githubId, email, avatarUrl, useFirebase) =
   if (useFirebase) {
     const userId = newUser._id;
     const avatarURL = await uploadProfilePicture(userId, avatarUrl);
-    console.log('avatarURL', avatarURL);
     newUser.avatar = avatarURL;
     await newUser.save();
   }

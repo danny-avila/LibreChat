@@ -62,7 +62,6 @@ const createNewUser = async (profile, discordId, email, avatarUrl, useFirebase) 
   if (useFirebase) {
     const userId = newUser._id;
     const newavatarUrl = await uploadProfilePicture(userId, avatarUrl);
-    console.log('newavatarUrl', newavatarUrl);
     newUser.avatar = newavatarUrl;
     await newUser.save();
   }
