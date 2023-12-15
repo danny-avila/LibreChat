@@ -104,7 +104,7 @@ class OpenAIClient extends BaseClient {
 
     const { model } = this.modelOptions;
 
-    this.isChatCompletion = this.useOpenRouter || !!reverseProxy || model.includes('gpt-');
+    this.isChatCompletion = this.useOpenRouter || !!reverseProxy || model.includes('gpt');
     this.isChatGptModel = this.isChatCompletion;
     if (
       model.includes('text-davinci') ||
