@@ -138,6 +138,12 @@ export const supportsFiles = {
   [EModelEndpoint.assistant]: true,
 };
 
+export const supportsBalanceCheck = {
+  [EModelEndpoint.openAI]: true,
+  [EModelEndpoint.azureOpenAI]: true,
+  [EModelEndpoint.gptPlugins]: true,
+};
+
 export const visionModels = ['gpt-4-vision', 'llava-13b'];
 
 export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
