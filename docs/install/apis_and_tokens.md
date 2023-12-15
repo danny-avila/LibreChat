@@ -2,6 +2,20 @@
 
 This doc explains how to setup various tokens and APIs for the project. You will need some of these tokens and APIs to run the app and use its features. You must set up at least one of these tokens or APIs to run the app.
 
+### Docker notes
+
+**If you use docker, you should rebuild the docker image each time you update your credentials**
+
+Rebuild command:
+```bash
+npm run update:docker
+
+# OR, if you don't have npm
+docker-compose build --no-cache
+```
+
+Alternatively, you can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`. See the [docker docs](https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files) for more info, and you can also view an example of an override file for LibreChat in the ["Manage Your Database" section](https://docs.librechat.ai/features/manage_your_database.html)
+
 ## OpenAI API key
 
 To get your OpenAI API key, you need to:
@@ -46,16 +60,57 @@ To get your Bing Access Token, you have a few options:
 - Go to [https://console.anthropic.com/account/keys](https://console.anthropic.com/account/keys) and get your api key
 - add it to `ANTHROPIC_API_KEY=` in the `.env` file
 
-## Google LLMs
+## Google
+
+For the Google Endpoint, you can either use the **Generative Language API** (for Gemini models), or the **Vertex AI API** (for PaLM2 & Codey models, Gemini support coming soon).
+
+The Generative Language API uses an API key, which you can get from **Google AI Studio**.
+
+For Vertex AI, you need a Service Account JSON key file, with appropriate access configured.
+
+Instructions for both are given below.
+
+Setting `GOOGLE_KEY=user_provided` in your .env file will configure both values to be provided from the client (or frontend) like so:
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/728cbc04-4180-45a8-848c-ae5de2b02996)
+
+### Generative Language API (Gemini)
+
+**60 Gemini requests/minute are currently free until early next year when it enters general availability.**
+
+⚠️ Google will be using that free input/output to help improve the model, with data de-identified from your Google Account and API key.
+⚠️ During this period, your messages “may be accessible to trained reviewers.”
+
+To use Gemini models, you'll need an API key. If you don't already have one, create a key in Google AI Studio.
+
+<p><a class="button button-primary" href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Get an API key here</a></p>
+
+Once you have your key, you can either provide it from the frontend by setting the following:
+
+```bash
+GOOGLE_KEY=user_provided
+```
+
+Or, provide the key in your .env file, which allows all users of your instance to use it.
+
+```bash
+GOOGLE_KEY=mY_SeCreT_w9347w8_kEY
+```
+
+> Notes:
+> - As of 12/15/23, Gemini Pro Vision is not yet supported but is planned.
+> - PaLM2 and Codey models cannot be accessed through the Generative Language API.
+
+### Vertex AI (PaLM 2 & Codey)
 
 To setup Google LLMs (via Google Cloud Vertex AI), first, signup for Google Cloud: https://cloud.google.com/
 
-You can usually get $300 starting credit, which makes this option free for 90 days. 
+You can usually get **$300 starting credit**, which makes this option free for 90 days.
 
-### Once signed up, Enable the Vertex AI API on Google Cloud:
+### 1. Once signed up, Enable the Vertex AI API on Google Cloud:
   - Go to [Vertex AI page on Google Cloud console](https://console.cloud.google.com/vertex-ai)
   - Click on "Enable API" if prompted
-### Create a Service Account with Vertex AI role:
+### 2. Create a Service Account with Vertex AI role:
   - **[Click here to create a Service Account](https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1)**
   - **Select or create a project**
   - ### Enter a service account ID (required), name and description are optional
@@ -63,7 +118,7 @@ You can usually get $300 starting credit, which makes this option free for 90 da
   - ### Click on "Create and Continue" to give at least the "Vertex AI User" role
       - ![image](https://github.com/danny-avila/LibreChat/assets/110412045/22d3a080-e71e-446e-8485-bcc5bf558dbb)
   - **Click on "Continue/Done"**
-### Create a JSON key to Save in Project Directory:
+### 3. Create a JSON key to Save in your Project Directory:
   - **Go back to [the Service Accounts page](https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts)**
   - **Select your service account**
   - ### Click on "Keys"
@@ -75,6 +130,16 @@ You can usually get $300 starting credit, which makes this option free for 90 da
   - **Save it within the project directory, in `/api/data/`**
        - ![image](https://github.com/danny-avila/LibreChat/assets/110412045/f5b8bcb5-1b20-4751-81a1-d3757a4b3f2f)
 
+**Saving your JSON key file in the project directory which allows all users of your LibreChat instance to use it.**
+
+Alternatively, Once you have your JSON key file, you can also provide it from the frontend on a user-basis by setting the following:
+
+```bash
+GOOGLE_KEY=user_provided
+```
+
+> Notes:
+> - As of 12/15/23, Gemini and Gemini Pro Vision are not yet supported through Vertex AI but are planned.
 
 ## Azure OpenAI
 

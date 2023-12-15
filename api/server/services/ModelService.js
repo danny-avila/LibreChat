@@ -1,6 +1,7 @@
 const Keyv = require('keyv');
 const axios = require('axios');
 const HttpsProxyAgent = require('https-proxy-agent');
+const { EModelEndpoint, defaultModels } = require('librechat-data-provider');
 const { isEnabled } = require('~/server/utils');
 const keyvRedis = require('~/cache/keyvRedis');
 const { extractBaseURL } = require('~/utils');
@@ -117,15 +118,7 @@ const getChatGPTBrowserModels = () => {
 };
 
 const getAnthropicModels = () => {
-  let models = [
-    'claude-2.1',
-    'claude-2',
-    'claude-1.2',
-    'claude-1',
-    'claude-1-100k',
-    'claude-instant-1',
-    'claude-instant-1-100k',
-  ];
+  let models = defaultModels[EModelEndpoint.anthropic];
   if (ANTHROPIC_MODELS) {
     models = String(ANTHROPIC_MODELS).split(',');
   }
