@@ -1,8 +1,10 @@
 const sharp = require('sharp');
-const { storage, ref, uploadBytes, getDownloadURL } = require('./firebase');
 const fetch = require('node-fetch');
 const fs = require('fs').promises;
 const User = require('~/models/User');
+const { useFirebase } = require('~/server/services/firebase');
+const { saveToFirebase } = require('./profileImageFirebase');
+const { saveToLocal } = require('./profileImageLocal');
 
 async function convertToWebP(inputBuffer) {
   return sharp(inputBuffer).resize({ width: 150 }).toFormat('webp').toBuffer();
@@ -15,8 +17,6 @@ async function uploadProfilePicture(userId, input, manual) {
     }
     const _id = userId;
     const oldUser = await User.findOne({ _id });
-
-    const profilePicRef = ref(storage, `users/${userId.toString()}/profilePicture`);
     let imageBuffer;
 
     if (typeof input === 'string') {
@@ -46,22 +46,12 @@ async function uploadProfilePicture(userId, input, manual) {
         height: minSize,
       })
       .toBuffer();
-
     const webPBuffer = await convertToWebP(squaredBuffer);
 
-    await uploadBytes(profilePicRef, webPBuffer);
-
-    console.log('WebP Image uploaded successfully');
-
-    const urlFirebase = await getDownloadURL(profilePicRef);
-
-    if (manual === 'true') {
-      const url = `${urlFirebase}?manual=true`;
-      oldUser.avatar = url;
-      await oldUser.save();
+    if (useFirebase) {
+      await saveToFirebase(userId, webPBuffer, oldUser, manual);
     } else {
-      const url = `${urlFirebase}?manual=false`;
-      return url;
+      await saveToLocal(userId, webPBuffer, oldUser, manual);
     }
   } catch (error) {
     console.error('Error uploading profile picture:', error.message);

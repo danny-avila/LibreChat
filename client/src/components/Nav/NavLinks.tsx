@@ -47,6 +47,8 @@ function NavLinks() {
     }
   };
 
+  console.log(user?.avatar);
+
   return (
     <>
       <Menu as="div" className="group relative">
