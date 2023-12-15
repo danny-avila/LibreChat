@@ -347,6 +347,11 @@ export const useLoginUserMutation = (): UseMutationResult<
   return useMutation((payload: t.TLoginUser) => dataService.login(payload), {
     onMutate: () => {
       queryClient.removeQueries();
+      localStorage.removeItem('lastConversationSetup');
+      localStorage.removeItem('lastSelectedModel');
+      localStorage.removeItem('lastSelectedTools');
+      localStorage.removeItem('filesToDelete');
+      localStorage.removeItem('lastAssistant');
     },
   });
 };
@@ -375,11 +380,6 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   return useMutation(() => request.refreshToken(), {
     onMutate: () => {
       queryClient.removeQueries();
-      localStorage.removeItem('lastConversationSetup');
-      localStorage.removeItem('lastSelectedModel');
-      localStorage.removeItem('lastSelectedTools');
-      localStorage.removeItem('filesToDelete');
-      localStorage.removeItem('lastAssistant');
     },
   });
 };
