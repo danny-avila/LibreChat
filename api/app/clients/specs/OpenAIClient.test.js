@@ -1,7 +1,45 @@
 require('dotenv').config();
+const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
+const { genAzureChatCompletion } = require('~/utils/azureUtils');
 const OpenAIClient = require('../OpenAIClient');
-
 jest.mock('meilisearch');
+
+jest.mock('~/lib/db/connectDb');
+jest.mock('~/models', () => ({
+  User: jest.fn(),
+  Key: jest.fn(),
+  Session: jest.fn(),
+  Balance: jest.fn(),
+  Transaction: jest.fn(),
+  getMessages: jest.fn().mockResolvedValue([]),
+  saveMessage: jest.fn(),
+  updateMessage: jest.fn(),
+  deleteMessagesSince: jest.fn(),
+  deleteMessages: jest.fn(),
+  getConvoTitle: jest.fn(),
+  getConvo: jest.fn(),
+  saveConvo: jest.fn(),
+  deleteConvos: jest.fn(),
+  getPreset: jest.fn(),
+  getPresets: jest.fn(),
+  savePreset: jest.fn(),
+  deletePresets: jest.fn(),
+  findFileById: jest.fn(),
+  createFile: jest.fn(),
+  updateFile: jest.fn(),
+  deleteFile: jest.fn(),
+  deleteFiles: jest.fn(),
+  getFiles: jest.fn(),
+  updateFileUsage: jest.fn(),
+}));
+
+jest.mock('langchain/chat_models/openai', () => {
+  return {
+    ChatOpenAI: jest.fn().mockImplementation(() => {
+      return {};
+    }),
+  };
+});
 
 describe('OpenAIClient', () => {
   let client, client2;
@@ -12,6 +50,21 @@ describe('OpenAIClient', () => {
     { role: 'assistant', sender: 'Assistant', text: 'Hi', messageId: '2' },
   ];
 
+  const defaultOptions = {
+    // debug: true,
+    openaiApiKey: 'new-api-key',
+    modelOptions: {
+      model,
+      temperature: 0.7,
+    },
+  };
+
+  const defaultAzureOptions = {
+    azureOpenAIApiInstanceName: 'your-instance-name',
+    azureOpenAIApiDeploymentName: 'your-deployment-name',
+    azureOpenAIApiVersion: '2020-07-01-preview',
+  };
+
   beforeAll(() => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -21,14 +74,7 @@ describe('OpenAIClient', () => {
   });
 
   beforeEach(() => {
-    const options = {
-      // debug: true,
-      openaiApiKey: 'new-api-key',
-      modelOptions: {
-        model,
-        temperature: 0.7,
-      },
-    };
+    const options = { ...defaultOptions };
     client = new OpenAIClient('test-api-key', options);
     client2 = new OpenAIClient('test-api-key', options);
     client.summarizeMessages = jest.fn().mockResolvedValue({
@@ -40,6 +86,7 @@ describe('OpenAIClient', () => {
       .fn()
       .mockResolvedValue({ prompt: messages.map((m) => m.text).join('\n') });
     client.constructor.freeAndResetAllEncoders();
+    client.getMessages = jest.fn().mockResolvedValue([]);
   });
 
   describe('setOptions', () => {
@@ -406,6 +453,48 @@ describe('OpenAIClient', () => {
         }
         expect(totalTokens).toBe(testCase.expected);
       });
+    });
+  });
+
+  describe('sendMessage/getCompletion', () => {
+    afterEach(() => {
+      delete process.env.AZURE_OPENAI_DEFAULT_MODEL;
+      delete process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME;
+    });
+
+    it('[Azure OpenAI] should call getCompletion and fetchEventSource with correct args', async () => {
+      // Set a default model
+      process.env.AZURE_OPENAI_DEFAULT_MODEL = 'gpt4-turbo';
+
+      const onProgress = jest.fn().mockImplementation(() => ({}));
+      client.azure = defaultAzureOptions;
+      const getCompletion = jest.spyOn(client, 'getCompletion');
+      await client.sendMessage('Hi mom!', {
+        replaceOptions: true,
+        ...defaultOptions,
+        onProgress,
+        azure: defaultAzureOptions,
+      });
+
+      expect(getCompletion).toHaveBeenCalled();
+      expect(getCompletion.mock.calls.length).toBe(1);
+      expect(getCompletion.mock.calls[0][0][0].role).toBe('user');
+      expect(getCompletion.mock.calls[0][0][0].content).toBe('Hi mom!');
+
+      expect(fetchEventSource).toHaveBeenCalled();
+      expect(fetchEventSource.mock.calls.length).toBe(1);
+
+      // Check if the first argument (url) is correct
+      const expectedURL = genAzureChatCompletion(defaultAzureOptions);
+      const firstCallArgs = fetchEventSource.mock.calls[0];
+
+      expect(firstCallArgs[0]).toBe(expectedURL);
+      // Should not have model in the deployment name
+      expect(firstCallArgs[0]).not.toContain('gpt4-turbo');
+
+      // Should not include the model in request body
+      const requestBody = JSON.parse(firstCallArgs[1].body);
+      expect(requestBody).not.toHaveProperty('model');
     });
   });
 });
