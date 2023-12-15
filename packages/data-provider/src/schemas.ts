@@ -89,6 +89,8 @@ export const endpointSettings = {
       max: 2048,
       step: 1,
       default: 1024,
+      maxGeminiPro: 8192,
+      defaultGeminiPro: 2048,
     },
     temperature: {
       min: 0,

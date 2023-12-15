@@ -32,8 +32,19 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setTopK = setOption('topK');
   const setMaxOutputTokens = setOption('maxOutputTokens');
 
-  const isTextModel = !model?.includes('chat') && /code|text/.test(model ?? '');
   const google = endpointSettings[EModelEndpoint.google];
+  const isGenerativeModel = model?.toLowerCase()?.includes('gemini');
+  const isChatModel = !isGenerativeModel && model?.toLowerCase()?.includes('chat');
+  const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(model ?? '');
+
+  const isGeminiPro = model?.toLowerCase()?.includes('gemini-pro');
+
+  const maxOutputTokensMax = isGeminiPro
+    ? google.maxOutputTokens.maxGeminiPro
+    : google.maxOutputTokens.max;
+  const maxOutputTokensDefault = isGeminiPro
+    ? google.maxOutputTokens.defaultGeminiPro
+    : google.maxOutputTokens.default;
 
   return (
     <div className="grid grid-cols-5 gap-6">
@@ -216,15 +227,15 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <Label htmlFor="max-tokens-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_max_output_tokens')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', google.maxOutputTokens.default + '')})
+                  ({localize('com_endpoint_default_with_num', maxOutputTokensDefault + '')})
                 </small>
               </Label>
               <InputNumber
                 id="max-tokens-int"
                 disabled={readonly}
                 value={maxOutputTokens}
-                onChange={(value) => setMaxOutputTokens(value ?? google.maxOutputTokens.default)}
-                max={google.maxOutputTokens.max}
+                onChange={(value) => setMaxOutputTokens(value ?? maxOutputTokensDefault)}
+                max={maxOutputTokensMax}
                 min={google.maxOutputTokens.min}
                 step={google.maxOutputTokens.step}
                 controls={false}
@@ -239,10 +250,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[maxOutputTokens ?? google.maxOutputTokens.default]}
+              value={[maxOutputTokens ?? maxOutputTokensDefault]}
               onValueChange={(value) => setMaxOutputTokens(value[0])}
-              doubleClickHandler={() => setMaxOutputTokens(google.maxOutputTokens.default)}
-              max={google.maxOutputTokens.max}
+              doubleClickHandler={() => setMaxOutputTokens(maxOutputTokensDefault)}
+              max={maxOutputTokensMax}
               min={google.maxOutputTokens.min}
               step={google.maxOutputTokens.step}
               className="flex h-4 w-full"
