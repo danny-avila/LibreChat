@@ -114,6 +114,9 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct tokens for partial match - Google models', () => {
+    expect(getModelMaxTokens('gemini-pro', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini'],
+    );
     expect(getModelMaxTokens('code-', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['code-'],
     );

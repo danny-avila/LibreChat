@@ -93,7 +93,7 @@ export default function OptionsBar() {
               visible={showPopover}
               saveAsPreset={saveAsPreset}
               closePopover={() => setShowPopover(false)}
-              PopoverButtons={<PopoverButtons endpoint={endpoint} />}
+              PopoverButtons={<PopoverButtons />}
             >
               <div className="px-4 py-4">
                 <EndpointSettings

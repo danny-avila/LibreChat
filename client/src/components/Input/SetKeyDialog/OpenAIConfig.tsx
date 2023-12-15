@@ -3,20 +3,14 @@ import React, { useEffect, useState } from 'react';
 // TODO: Temporarily remove checkbox until Plugins solution for Azure is figured out
 // import * as Checkbox from '@radix-ui/react-checkbox';
 // import { CheckIcon } from '@radix-ui/react-icons';
+import { useMultipleKeys } from '~/hooks/Input';
 import InputWithLabel from './InputWithLabel';
 import type { TConfigProps } from '~/common';
-
-function isJson(str: string) {
-  try {
-    JSON.parse(str);
-  } catch (e) {
-    return false;
-  }
-  return true;
-}
+import { isJson } from '~/utils/json';
 
 const OpenAIConfig = ({ userKey, setUserKey, endpoint }: TConfigProps) => {
   const [showPanel, setShowPanel] = useState(endpoint === 'azureOpenAI');
+  const { getMultiKey: getAzure, setMultiKey: setAzure } = useMultipleKeys(setUserKey);
 
   useEffect(() => {
     if (isJson(userKey)) {
@@ -31,24 +25,6 @@ const OpenAIConfig = ({ userKey, setUserKey, endpoint }: TConfigProps) => {
     }
   }, [showPanel]);
 
-  function getAzure(name: string) {
-    if (isJson(userKey)) {
-      const newKey = JSON.parse(userKey);
-      return newKey[name];
-    } else {
-      return '';
-    }
-  }
-
-  function setAzure(name: string, value: number | string | boolean) {
-    let newKey = {};
-    if (isJson(userKey)) {
-      newKey = JSON.parse(userKey);
-    }
-    newKey[name] = value;
-
-    setUserKey(JSON.stringify(newKey));
-  }
   return (
     <>
       {!showPanel ? (
@@ -64,36 +40,36 @@ const OpenAIConfig = ({ userKey, setUserKey, endpoint }: TConfigProps) => {
         <>
           <InputWithLabel
             id={'instanceNameLabel'}
-            value={getAzure('azureOpenAIApiInstanceName') ?? ''}
+            value={getAzure('azureOpenAIApiInstanceName', userKey) ?? ''}
             onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiInstanceName', e.target.value ?? '')
+              setAzure('azureOpenAIApiInstanceName', e.target.value ?? '', userKey)
             }
             label={'Azure OpenAI Instance Name'}
           />
 
           <InputWithLabel
             id={'deploymentNameLabel'}
-            value={getAzure('azureOpenAIApiDeploymentName') ?? ''}
+            value={getAzure('azureOpenAIApiDeploymentName', userKey) ?? ''}
             onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiDeploymentName', e.target.value ?? '')
+              setAzure('azureOpenAIApiDeploymentName', e.target.value ?? '', userKey)
             }
             label={'Azure OpenAI Deployment Name'}
           />
 
           <InputWithLabel
             id={'versionLabel'}
-            value={getAzure('azureOpenAIApiVersion') ?? ''}
+            value={getAzure('azureOpenAIApiVersion', userKey) ?? ''}
             onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiVersion', e.target.value ?? '')
+              setAzure('azureOpenAIApiVersion', e.target.value ?? '', userKey)
             }
             label={'Azure OpenAI API Version'}
           />
 
           <InputWithLabel
             id={'apiKeyLabel'}
-            value={getAzure('azureOpenAIApiKey') ?? ''}
+            value={getAzure('azureOpenAIApiKey', userKey) ?? ''}
             onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiKey', e.target.value ?? '')
+              setAzure('azureOpenAIApiKey', e.target.value ?? '', userKey)
             }
             label={'Azure OpenAI API Key'}
           />
