@@ -2,8 +2,6 @@ const initializeClient = require('./initializeClient');
 const { GoogleClient } = require('~/app');
 const { checkUserKeyExpiry, getUserKey } = require('../../UserService');
 
-jest.mock('~/data/auth.json', () => ({}));
-
 jest.mock('../../UserService', () => ({
   checkUserKeyExpiry: jest.fn().mockImplementation((expiresAt, errorMessage) => {
     if (new Date(expiresAt) < new Date()) {
