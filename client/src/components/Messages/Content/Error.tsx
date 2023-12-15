@@ -1,16 +1,7 @@
 import React from 'react';
 import type { TOpenAIMessage } from 'librechat-data-provider';
-import { formatJSON, extractJson } from '~/utils/json';
+import { formatJSON, extractJson, isJson } from '~/utils/json';
 import CodeBlock from './CodeBlock';
-
-const isJson = (str: string) => {
-  try {
-    JSON.parse(str);
-  } catch (e) {
-    return false;
-  }
-  return true;
-};
 
 type TConcurrent = {
   limit: number;

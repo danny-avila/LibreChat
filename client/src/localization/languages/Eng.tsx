@@ -227,6 +227,12 @@ export default {
   com_endpoint_config_key_name_placeholder: 'Set API key first',
   com_endpoint_config_key_encryption: 'Your key will be encrypted and deleted at',
   com_endpoint_config_key_expiry: 'the expiry time',
+  com_endpoint_config_click_here: 'Click Here',
+  com_endpoint_config_google_service_key: 'Google Service Account Key',
+  com_endpoint_config_google_cloud_platform: '(from Google Cloud Platform)',
+  com_endpoint_config_google_api_key: 'Google API Key',
+  com_endpoint_config_google_gemini_api: '(Gemini API)',
+  com_endpoint_config_google_api_info: 'To get your Generative Language API key (for Gemini),',
   com_endpoint_config_key_import_json_key: 'Import Service Account JSON Key.',
   com_endpoint_config_key_import_json_key_success: 'Successfully Imported Service Account JSON Key',
   com_endpoint_config_key_import_json_key_invalid:
