@@ -3,6 +3,7 @@ const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = requ
 const { getResponseSender, EModelEndpoint } = require('librechat-data-provider');
 const { getModelMaxTokens } = require('~/utils');
 const BaseClient = require('./BaseClient');
+const { logger } = require('~/config');
 
 const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
@@ -103,9 +104,8 @@ class AnthropicClient extends BaseClient {
       messages,
       parentMessageId,
     });
-    if (this.options.debug) {
-      console.debug('AnthropicClient: orderedMessages', orderedMessages, parentMessageId);
-    }
+
+    logger.debug('[AnthropicClient] orderedMessages', { orderedMessages, parentMessageId });
 
     const formattedMessages = orderedMessages.map((message) => ({
       author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
@@ -247,7 +247,7 @@ class AnthropicClient extends BaseClient {
   }
 
   getCompletion() {
-    console.log('AnthropicClient doesn\'t use getCompletion (all handled in sendCompletion)');
+    logger.debug('AnthropicClient doesn\'t use getCompletion (all handled in sendCompletion)');
   }
 
   async sendCompletion(payload, { onProgress, abortController }) {
@@ -262,12 +262,7 @@ class AnthropicClient extends BaseClient {
       modelOptions.stream = true;
     }
 
-    const { debug } = this.options;
-    if (debug) {
-      console.debug();
-      console.debug(modelOptions);
-      console.debug();
-    }
+    logger.debug('modelOptions', { modelOptions });
 
     const client = this.getClient();
     const metadata = {
@@ -295,32 +290,23 @@ class AnthropicClient extends BaseClient {
       top_p,
       top_k,
     };
-    if (this.options.debug) {
-      console.log('AnthropicClient: requestOptions');
-      console.dir(requestOptions, { depth: null });
-    }
+    logger.debug('[AnthropicClient]', { requestOptions });
     const response = await client.completions.create(requestOptions);
 
     signal.addEventListener('abort', () => {
-      if (this.options.debug) {
-        console.log('AnthropicClient: message aborted!');
-      }
+      logger.debug('[AnthropicClient] message aborted!');
       response.controller.abort();
     });
 
     for await (const completion of response) {
-      if (this.options.debug) {
-        // Uncomment to debug message stream
-        // console.debug(completion);
-      }
+      // Uncomment to debug message stream
+      // logger.debug(completion);
       text += completion.completion;
       onProgress(completion.completion);
     }
 
     signal.removeEventListener('abort', () => {
-      if (this.options.debug) {
-        console.log('AnthropicClient: message aborted!');
-      }
+      logger.debug('[AnthropicClient] message aborted!');
       response.controller.abort();
     });
 
@@ -336,9 +322,7 @@ class AnthropicClient extends BaseClient {
   }
 
   getBuildMessagesOptions() {
-    if (this.options.debug) {
-      console.log('AnthropicClient doesn\'t use getBuildMessagesOptions');
-    }
+    logger.debug('AnthropicClient doesn\'t use getBuildMessagesOptions');
   }
 
   static getTokenizer(encoding, isModelName = false, extendSpecialTokens = {}) {

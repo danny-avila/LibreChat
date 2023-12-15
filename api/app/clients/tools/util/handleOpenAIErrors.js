@@ -1,4 +1,5 @@
 const OpenAI = require('openai');
+const { logger } = require('~/config');
 
 /**
  * Handles errors that may occur when making requests to OpenAI's API.
@@ -12,14 +13,14 @@ const OpenAI = require('openai');
  */
 async function handleOpenAIErrors(err, errorCallback, context = 'stream') {
   if (err instanceof OpenAI.APIError && err?.message?.includes('abort')) {
-    console.warn(`[OpenAIClient.chatCompletion][${context}] Aborted Message`);
+    logger.warn(`[OpenAIClient.chatCompletion][${context}] Aborted Message`);
   }
   if (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason')) {
-    console.warn(`[OpenAIClient.chatCompletion][${context}] Missing finish_reason`);
+    logger.warn(`[OpenAIClient.chatCompletion][${context}] Missing finish_reason`);
   } else if (err instanceof OpenAI.APIError) {
-    console.warn(`[OpenAIClient.chatCompletion][${context}] API Error`);
+    logger.warn(`[OpenAIClient.chatCompletion][${context}] API error`);
   } else {
-    console.warn(`[OpenAIClient.chatCompletion][${context}] Unhandled error type`);
+    logger.warn(`[OpenAIClient.chatCompletion][${context}] Unhandled error type`);
   }
 
   if (errorCallback) {

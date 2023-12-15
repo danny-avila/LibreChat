@@ -112,6 +112,32 @@
  */
 
 /**
+ * @exports UserMessageContent
+ * @typedef {Object} UserMessageContent
+ * @property {Object[]} content - The content of the message in an array of text and/or images.
+ * @property {string} content[].type - The type of content, either 'text' or 'image_file'.
+ * @property {Object} [content[].text] - The text content, present if type is 'text'.
+ * @property {string} content[].text.value - The data that makes up the text.
+ * @property {Object} [content[].image_url] - The image file content, present if type is 'image_file'.
+ * @property {string} content[].image_url.url - The File ID of the image in the message content.
+ * @property {'auto' | 'low' | 'high'} content[].image_url.detail: 'auto' - the quality to use for the image, either 'auto', 'low', or 'high'.
+ * @memberof typedefs
+ */
+
+/**
+ * Represents a message payload with various potential properties,
+ * including roles, sender information, and content.
+ *
+ * @typedef {Object} PayloadMessage
+ * @property {string} [role] - The role of the message sender (e.g., 'user', 'assistant').
+ * @property {string} [name] - The name associated with the message.
+ * @property {string} [sender] - The sender of the message.
+ * @property {string} [text] - The text content of the message.
+ * @property {(string|Array<UserMessageContent>)} [content] - The content of the message, which could be a string or an array of the 'content' property from the Message type.
+ * @memberof typedefs
+ */
+
+/**
  * @exports FunctionTool
  * @typedef {Object} FunctionTool
  * @property {string} type - The type of tool, 'function'.

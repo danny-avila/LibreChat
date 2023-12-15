@@ -121,3 +121,12 @@
 .hide-scrollbar::-webkit-scrollbar {
   display: none; /* For WebKit browsers */
 }
+
+.gemini-gradient {
+  /* Adjust the colors and positioning as necessary to match the image */
+  background-image: radial-gradient(circle at center, #0000ff, #87cefa, #ffffff);
+  /* More styling for demonstration purposes */
+  border-radius: 50%;
+  height: 100px;
+  width: 100px;
+}

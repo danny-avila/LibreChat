@@ -12,6 +12,7 @@ const {
   validateEndpoint,
   buildEndpointOption,
 } = require('~/server/middleware');
+const { logger } = require('~/config');
 
 router.post('/abort', handleAbort());
 
@@ -26,8 +27,15 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
-  console.log('edit log');
-  console.dir({ text, generation, isContinued, conversationId, endpointOption }, { depth: null });
+
+  logger.debug('[/edit/openAI]', {
+    text,
+    generation,
+    isContinued,
+    conversationId,
+    ...endpointOption,
+  });
+
   let metadata;
   let userMessage;
   let promptTokens;

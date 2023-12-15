@@ -1,8 +1,10 @@
 const express = require('express');
-const router = express.Router();
-const { getPresets, savePreset, deletePresets } = require('../../models');
 const crypto = require('crypto');
-const requireJwtAuth = require('../middleware/requireJwtAuth');
+const { getPresets, savePreset, deletePresets } = require('~/models');
+const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { logger } = require('~/config');
+
+const router = express.Router();
 
 router.get('/', requireJwtAuth, async (req, res) => {
   const presets = (await getPresets(req.user.id)).map((preset) => preset);
@@ -18,7 +20,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
     const preset = await savePreset(req.user.id, update);
     res.status(201).send(preset);
   } catch (error) {
-    console.error(error);
+    logger.error('[/presets] error saving preset', error);
     res.status(500).send(error);
   }
 });
@@ -31,13 +33,13 @@ router.post('/delete', requireJwtAuth, async (req, res) => {
     filter = { presetId };
   }
 
-  console.log('delete preset filter', filter);
+  logger.debug('[/presets/delete] delete preset filter', filter);
 
   try {
     const deleteCount = await deletePresets(req.user.id, filter);
     res.status(201).send(deleteCount);
   } catch (error) {
-    console.error(error);
+    logger.error('[/presets/delete] error deleting presets', error);
     res.status(500).send(error);
   }
 });

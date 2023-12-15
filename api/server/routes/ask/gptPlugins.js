@@ -14,6 +14,7 @@ const {
   validateEndpoint,
   buildEndpointOption,
 } = require('~/server/middleware');
+const { logger } = require('~/config');
 
 router.post('/abort', handleAbort());
 
@@ -25,8 +26,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
-  console.log('ask log');
-  console.dir({ text, conversationId, endpointOption }, { depth: null });
+  logger.debug('[/ask/gptPlugins]', { text, conversationId, ...endpointOption });
   let metadata;
   let userMessage;
   let promptTokens;
@@ -189,8 +189,8 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       response = { ...response, ...metadata };
     }
 
-    console.log('CLIENT RESPONSE');
-    console.dir(response, { depth: null });
+    logger.debug('[/ask/gptPlugins]', response);
+
     response.plugins = plugins.map((p) => ({ ...p, loading: false }));
     await saveMessage({ ...response, user });
 

@@ -1,6 +1,7 @@
-const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
+const { logger } = require('~/config');
 
 async function saveImageFromUrl(url, outputPath, outputFilename) {
   try {
@@ -32,7 +33,7 @@ async function saveImageFromUrl(url, outputPath, outputFilename) {
       writer.on('error', reject);
     });
   } catch (error) {
-    console.error('Error while saving the image:', error);
+    logger.error('[saveImageFromUrl] Error while saving the image:', error);
   }
 }
 

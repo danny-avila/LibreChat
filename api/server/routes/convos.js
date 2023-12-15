@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { getConvo, saveConvo } = require('../../models');
-const { getConvosByPage, deleteConvos } = require('../../models/Conversation');
-const requireJwtAuth = require('../middleware/requireJwtAuth');
+const { getConvosByPage, deleteConvos } = require('~/models/Conversation');
+const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { getConvo, saveConvo } = require('~/models');
+const { logger } = require('~/config');
 
 router.use(requireJwtAuth);
 
@@ -30,7 +31,7 @@ router.post('/clear', async (req, res) => {
   }
 
   // for debugging deletion source
-  // console.log('source:', source);
+  // logger.debug('source:', source);
 
   if (source === 'button' && !conversationId) {
     return res.status(200).send('No conversationId provided');
@@ -40,7 +41,7 @@ router.post('/clear', async (req, res) => {
     const dbResponse = await deleteConvos(req.user.id, filter);
     res.status(201).send(dbResponse);
   } catch (error) {
-    console.error(error);
+    logger.error('Error clearing conversations', error);
     res.status(500).send(error);
   }
 });
@@ -52,7 +53,7 @@ router.post('/update', async (req, res) => {
     const dbResponse = await saveConvo(req.user.id, update);
     res.status(201).send(dbResponse);
   } catch (error) {
-    console.error(error);
+    logger.error('Error updating conversation', error);
     res.status(500).send(error);
   }
 });

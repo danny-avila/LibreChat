@@ -1,7 +1,8 @@
-const { Tiktoken } = require('tiktoken/lite');
 const { load } = require('tiktoken/load');
+const { Tiktoken } = require('tiktoken/lite');
 const registry = require('tiktoken/registry.json');
 const models = require('tiktoken/model_to_encoding.json');
+const logger = require('~/config/winston');
 
 const countTokens = async (text = '', modelName = 'gpt-3.5-turbo') => {
   let encoder = null;
@@ -12,7 +13,7 @@ const countTokens = async (text = '', modelName = 'gpt-3.5-turbo') => {
     encoder.free();
     return tokens.length;
   } catch (e) {
-    console.error(e);
+    logger.error('[countTokens]', e);
     if (encoder) {
       encoder.free();
     }
