@@ -6,6 +6,7 @@ import { useLocalize } from '~/hooks';
 type FileUploadProps = {
   onFileSelected: (jsonData: Record<string, unknown>) => void;
   className?: string;
+  containerClassName?: string;
   successText?: string;
   invalidText?: string;
   validator?: ((data: Record<string, unknown>) => boolean) | null;
@@ -16,6 +17,7 @@ type FileUploadProps = {
 const FileUpload: React.FC<FileUploadProps> = ({
   onFileSelected,
   className = '',
+  containerClassName = '',
   successText = null,
   invalidText = null,
   validator = null,
@@ -66,6 +68,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
       className={cn(
         'mr-1 flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:bg-slate-200 hover:text-green-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500',
         statusColor,
+        containerClassName,
       )}
     >
       <FileUp className="mr-1 flex w-[22px] items-center stroke-1" />

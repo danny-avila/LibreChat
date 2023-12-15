@@ -56,11 +56,12 @@ const maxTokensMap = {
     'gpt-4-1106': 127995, // -5 from max
   },
   [EModelEndpoint.google]: {
-    /* Max I/O is 32k combined, so -1000 to leave room for response */
-    'text-bison-32k': 31000,
-    'chat-bison-32k': 31000,
-    'code-bison-32k': 31000,
-    'codechat-bison-32k': 31000,
+    /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
+    gemini: 32750, // -10 from max
+    'text-bison-32k': 32758, // -10 from max
+    'chat-bison-32k': 32758, // -10 from max
+    'code-bison-32k': 32758, // -10 from max
+    'codechat-bison-32k': 32758,
     /* Codey, -5 from max: 6144 */
     'code-': 6139,
     'codechat-': 6139,

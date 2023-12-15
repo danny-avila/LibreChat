@@ -1,4 +1,4 @@
-### Logging
+### General
 
 LibreChat has central logging built into its backend (api).
 
@@ -12,6 +12,8 @@ Errors logs are also saved in the same location: `./api/logs/error-%DATE%.log`. 
 
 > Note: Logs are rotated on a 14-day basis, so you will generate 1 error log file, 1 debug log file, and 1 meiliSync log file per 14 days.
 > Errors will also be present in debug log files as well, but provide stack traces and more detail in the error log files.
+
+### Setup
 
 Keep debug logs enabled with the following environment variable. Even if you never set this variable, debug logs will be generated, but you have the option to disable them by setting it to `FALSE`.
 
