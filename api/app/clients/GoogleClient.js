@@ -487,7 +487,9 @@ class GoogleClient extends BaseClient {
     });
 
     for await (const chunk of stream) {
-      await this.generateTextStream(chunk?.content ?? chunk, onProgress, { delay: 7 });
+      await this.generateTextStream(chunk?.content ?? chunk, onProgress, {
+        delay: this.isGenerativeModel ? 12 : 8,
+      });
       reply += chunk?.content ?? chunk;
     }
 
