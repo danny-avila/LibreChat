@@ -4,7 +4,7 @@ const { saveMessage, getConvoTitle, getConvo } = require('~/models');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { logger } = require('~/config');
 
-const AskController = async (req, res, next, initializeClient) => {
+const AskController = async (req, res, next, initializeClient, addTitle) => {
   let {
     text,
     endpointOption,
@@ -12,7 +12,9 @@ const AskController = async (req, res, next, initializeClient) => {
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
+
   logger.debug('[AskController]', { text, conversationId, ...endpointOption });
+
   let metadata;
   let userMessage;
   let promptTokens;
@@ -21,7 +23,10 @@ const AskController = async (req, res, next, initializeClient) => {
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
   const sender = getResponseSender({ ...endpointOption, model: endpointOption.modelOptions.model });
+  const newConvo = !conversationId;
   const user = req.user.id;
+
+  const addMetadata = (data) => (metadata = data);
 
   const getReqData = (data = {}) => {
     for (let key in data) {
@@ -50,6 +55,7 @@ const AskController = async (req, res, next, initializeClient) => {
           conversationId,
           parentMessageId: overrideParentMessageId ?? userMessageId,
           text: partialText,
+          model: endpointOption.modelOptions.model,
           unfinished: true,
           cancelled: false,
           error: false,
@@ -62,46 +68,50 @@ const AskController = async (req, res, next, initializeClient) => {
       }
     },
   });
+
+  const getAbortData = () => ({
+    sender,
+    conversationId,
+    messageId: responseMessageId,
+    parentMessageId: overrideParentMessageId ?? userMessageId,
+    text: getPartialText(),
+    userMessage,
+    promptTokens,
+  });
+
+  const { abortController, onStart } = createAbortController(req, res, getAbortData);
+
   try {
-    const addMetadata = (data) => (metadata = data);
-    const getAbortData = () => ({
-      conversationId,
-      messageId: responseMessageId,
-      sender,
-      parentMessageId: overrideParentMessageId ?? userMessageId,
-      text: getPartialText(),
-      userMessage,
-      promptTokens,
-    });
-
-    const { abortController, onStart } = createAbortController(req, res, getAbortData);
-
     const { client } = await initializeClient({ req, res, endpointOption });
-
-    let response = await client.sendMessage(text, {
-      // debug: true,
+    const messageOptions = {
       user,
-      conversationId,
       parentMessageId,
+      conversationId,
       overrideParentMessageId,
-      ...endpointOption,
+      getReqData,
+      onStart,
+      addMetadata,
+      abortController,
       onProgress: progressCallback.call(null, {
         res,
         text,
-        parentMessageId: overrideParentMessageId ?? userMessageId,
+        parentMessageId: overrideParentMessageId || userMessageId,
       }),
-      onStart,
-      getReqData,
-      addMetadata,
-      abortController,
-    });
+    };
+
+    let response = await client.sendMessage(text, messageOptions);
+
+    if (overrideParentMessageId) {
+      response.parentMessageId = overrideParentMessageId;
+    }
 
     if (metadata) {
       response = { ...response, ...metadata };
     }
 
-    if (overrideParentMessageId) {
-      response.parentMessageId = overrideParentMessageId;
+    if (client.options.attachments) {
+      userMessage.files = client.options.attachments;
+      delete userMessage.image_urls;
     }
 
     sendMessage(res, {
@@ -116,7 +126,13 @@ const AskController = async (req, res, next, initializeClient) => {
     await saveMessage({ ...response, user });
     await saveMessage(userMessage);
 
-    // TODO: add title service
+    if (addTitle && parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
+      addTitle(req, {
+        text,
+        response,
+        client,
+      });
+    }
   } catch (error) {
     const partialText = getPartialText();
     handleAbortError(res, req, error, {

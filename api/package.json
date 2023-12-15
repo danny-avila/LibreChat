@@ -30,7 +30,7 @@
     "@anthropic-ai/sdk": "^0.5.4",
     "@azure/search-documents": "^12.0.0",
     "@keyv/mongo": "^2.1.8",
-    "@keyv/redis": "^2.8.0",
+    "@keyv/redis": "^2.8.1",
     "@langchain/google-genai": "^0.0.2",
     "axios": "^1.3.4",
     "bcryptjs": "^2.4.3",
