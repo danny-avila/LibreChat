@@ -493,15 +493,16 @@ class GoogleClient extends BaseClient {
 
     let examples;
 
-    let clientOptions = {
-      authOptions: {
+    let clientOptions = { ...parameters, maxRetries: 2 };
+
+    if (!this.isGenerativeModel) {
+      clientOptions['authOptions'] = {
         credentials: {
           ...this.serviceKey,
         },
         projectId: this.project_id,
-      },
-      ...parameters,
-    };
+      };
+    }
 
     if (!parameters) {
       clientOptions = { ...clientOptions, ...this.modelOptions };
@@ -509,6 +510,7 @@ class GoogleClient extends BaseClient {
 
     if (this.isGenerativeModel) {
       clientOptions.modelName = clientOptions.model;
+      delete clientOptions.model;
     }
 
     if (_examples && _examples.length) {
