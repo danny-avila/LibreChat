@@ -131,6 +131,10 @@ class GoogleClient extends BaseClient {
     this.isGenerativeModel = this.modelOptions.model.includes('gemini');
     this.isVisionModel = validateVisionModel(this.modelOptions.model);
     const { isGenerativeModel } = this;
+    if (this.isVisionModel && !this.options.attachments) {
+      this.modelOptions.model = 'gemini-pro';
+      this.isVisionModel = false;
+    }
     this.isChatModel = !isGenerativeModel && this.modelOptions.model.includes('chat');
     const { isChatModel } = this;
     this.isTextModel =
