@@ -3,19 +3,22 @@ const winston = require('winston');
 const traverse = require('traverse');
 const { klona } = require('klona/full');
 
-const sensitiveKeys = [/^sk-\w+$/, /Bearer \w+/, /api-key: \w+/];
+const MESSAGE_SYMBOL = Symbol.for('message');
+
+const sensitiveKeys = [/^(sk-)[^\s]+/, /(Bearer )[^\s]+/, /(api-key:? )[^\s]+/, /(key=)[^\s]+/];
 
 /**
- * Determines if a given key string is sensitive.
+ * Determines if a given value string is sensitive and returns matching regex patterns.
  *
- * @param {string} keyStr - The key string to check.
- * @returns {boolean} True if the key string matches known sensitive key patterns.
+ * @param {string} valueStr - The value string to check.
+ * @returns {Array<RegExp>} An array of regex patterns that match the value string.
  */
-function isSensitiveKey(keyStr) {
-  if (keyStr) {
-    return sensitiveKeys.some((regex) => regex.test(keyStr));
+function getMatchingSensitivePatterns(valueStr) {
+  if (valueStr) {
+    // Filter and return all regex patterns that match the value string
+    return sensitiveKeys.filter((regex) => regex.test(valueStr));
   }
-  return false;
+  return [];
 }
 
 /**
@@ -24,11 +27,58 @@ function isSensitiveKey(keyStr) {
  * @param {object} obj - The object to traverse and redact.
  */
 function redactObject(obj) {
-  traverse(obj).forEach(function redactor() {
-    if (isSensitiveKey(this.key)) {
-      this.update('[REDACTED]');
+  traverse(obj).forEach((node) => {
+    if (typeof node !== 'object' || Array.isArray(node)) {
+      return;
     }
+
+    if (!node.level) {
+      return;
+    }
+
+    if (node.level !== 'error') {
+      return;
+    }
+
+    const messagePatterns = getMatchingSensitivePatterns(node.message);
+
+    if (node[MESSAGE_SYMBOL]) {
+      const symbolMessagePatterns = getMatchingSensitivePatterns(node[MESSAGE_SYMBOL]);
+      symbolMessagePatterns.forEach((pattern) => {
+        node[MESSAGE_SYMBOL] = node[MESSAGE_SYMBOL].replace(pattern, '$1[REDACTED]');
+      });
+    }
+
+    if (messagePatterns.length === 0) {
+      return;
+    }
+
+    messagePatterns.forEach((pattern) => {
+      node.message = node.message.replace(pattern, '$1[REDACTED]');
+    });
+
+    return;
   });
+}
+
+/**
+ * Redacts sensitive information from a console message.
+ *
+ * @param {string} str - The console message to be redacted.
+ * @returns {string} - The redacted console message.
+ */
+function redactConsoleMessage(str) {
+  const patterns = getMatchingSensitivePatterns(str);
+
+  if (patterns.length === 0) {
+    return str;
+  }
+
+  patterns.forEach((pattern) => {
+    str = str.replace(pattern, '$1[REDACTED]');
+  });
+
+  return str;
 }
 
 /**
@@ -122,7 +172,15 @@ const deepObjectFormat = winston.format.printf(({ level, message, timestamp, ...
   return msg;
 });
 
+const redactErrors = winston.format((info) => {
+  if (info.level === 'error') {
+    return redact(info);
+  }
+  return info;
+});
+
 module.exports = {
-  redact,
+  redactErrors,
+  redactConsoleMessage,
   deepObjectFormat,
 };

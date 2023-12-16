@@ -1,7 +1,7 @@
 const path = require('path');
 const winston = require('winston');
 require('winston-daily-rotate-file');
-const { redact, deepObjectFormat } = require('./parsers');
+const { redactErrors, redactConsoleMessage, deepObjectFormat } = require('./parsers');
 
 const logDir = path.join(__dirname, '..', 'logs');
 
@@ -35,7 +35,7 @@ const fileFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
-  winston.format((info) => redact(info))(),
+  redactErrors(),
 );
 
 const transports = [
@@ -86,8 +86,15 @@ if (
 const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format((info) => redact(info))(),
-  winston.format.printf((info) => `${info.timestamp} ${info.level}: ${info.message}`),
+  redactErrors(),
+  winston.format.printf((info) => {
+    const message = `${info.timestamp} ${info.level}: ${info.message}`;
+    if (info.level.includes('error')) {
+      return redactConsoleMessage(message);
+    }
+
+    return message;
+  }),
 );
 
 if (
