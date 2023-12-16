@@ -1,7 +1,7 @@
-const dotenv = require('dotenv');
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
+const dotenv = require('dotenv');
 
 /**
  * This class is responsible for loading the environment variables
