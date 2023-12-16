@@ -4,6 +4,7 @@ const { GoogleVertexAI } = require('langchain/llms/googlevertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
 const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
+const { encodeAndFormat, validateVisionModel } = require('~/server/services/Files/images');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
   getResponseSender,
@@ -122,8 +123,13 @@ class GoogleClient extends BaseClient {
       // stop: modelOptions.stop // no stop method for now
     };
 
+    if (this.options.attachments) {
+      this.modelOptions.model = 'gemini-pro-vision';
+    }
+
     // TODO: as of 12/14/23, only gemini models are "Generative AI" models provided by Google
     this.isGenerativeModel = this.modelOptions.model.includes('gemini');
+    this.isVisionModel = validateVisionModel(this.modelOptions.model);
     const { isGenerativeModel } = this;
     this.isChatModel = !isGenerativeModel && this.modelOptions.model.includes('chat');
     const { isChatModel } = this;
@@ -216,7 +222,34 @@ class GoogleClient extends BaseClient {
     })).bind(this);
   }
 
-  buildMessages(messages = [], parentMessageId) {
+  async buildVisionMessages(messages = [], parentMessageId) {
+    const { prompt } = await this.buildMessagesPrompt(messages, parentMessageId);
+    const attachments = await this.options.attachments;
+    const { files, image_urls } = await encodeAndFormat(
+      this.options.req,
+      attachments.filter((file) => file.type.includes('image')),
+      EModelEndpoint.google,
+    );
+
+    const latestMessage = { ...messages[messages.length - 1] };
+
+    latestMessage.image_urls = image_urls;
+    this.options.attachments = files;
+
+    latestMessage.text = prompt;
+
+    const payload = {
+      instances: [
+        {
+          messages: [new HumanMessage(formatMessage({ message: latestMessage }))],
+        },
+      ],
+      parameters: this.modelOptions,
+    };
+    return { prompt: payload };
+  }
+
+  async buildMessages(messages = [], parentMessageId) {
     if (!this.isGenerativeModel && !this.project_id) {
       throw new Error(
         '[GoogleClient] a Service Account JSON Key is required for PaLM 2 and Codey models (Vertex AI)',
@@ -227,17 +260,24 @@ class GoogleClient extends BaseClient {
       );
     }
 
+    if (this.options.attachments) {
+      return this.buildVisionMessages(messages, parentMessageId);
+    }
+
     if (this.isTextModel) {
       return this.buildMessagesPrompt(messages, parentMessageId);
     }
-    const formattedMessages = messages.map(this.formatMessages());
+
     let payload = {
       instances: [
         {
-          messages: formattedMessages,
+          messages: messages
+            .map(this.formatMessages())
+            .map((msg) => ({ ...msg, role: msg.author === 'User' ? 'user' : 'assistant' }))
+            .map((message) => formatMessage({ message, langChain: true })),
         },
       ],
-      parameters: this.options.modelOptions,
+      parameters: this.modelOptions,
     };
 
     if (this.options.promptPrefix) {
@@ -394,7 +434,7 @@ class GoogleClient extends BaseClient {
       context.shift();
     }
 
-    let prompt = `${promptBody}${promptSuffix}`;
+    let prompt = `${promptBody}${promptSuffix}`.trim();
 
     // Add 2 tokens for metadata after all messages have been counted.
     currentTokenCount += 2;
@@ -467,6 +507,10 @@ class GoogleClient extends BaseClient {
       clientOptions = { ...clientOptions, ...this.modelOptions };
     }
 
+    if (this.isGenerativeModel) {
+      clientOptions.modelName = clientOptions.model;
+    }
+
     if (_examples && _examples.length) {
       examples = _examples
         .map((ex) => {
@@ -487,13 +531,9 @@ class GoogleClient extends BaseClient {
     const model = this.createLLM(clientOptions);
 
     let reply = '';
-    const messages = this.isTextModel
-      ? _payload.trim()
-      : _messages
-        .map((msg) => ({ ...msg, role: msg.author === 'User' ? 'user' : 'assistant' }))
-        .map((message) => formatMessage({ message, langChain: true }));
+    const messages = this.isTextModel ? _payload.trim() : _messages;
 
-    if (context && messages?.length > 0) {
+    if (!this.isVisionModel && context && messages?.length > 0) {
       messages.unshift(new SystemMessage(context));
     }
 

@@ -24,7 +24,7 @@ const getFiles = async (filter) => {
 
 /**
  * Creates a new file with a TTL of 1 hour.
- * @param {Object} data - The file data to be created, must contain file_id.
+ * @param {MongoFile} data - The file data to be created, must contain file_id.
  * @returns {Promise<MongoFile>} A promise that resolves to the created file document.
  */
 const createFile = async (data) => {
@@ -40,7 +40,7 @@ const createFile = async (data) => {
 
 /**
  * Updates a file identified by file_id with new data and removes the TTL.
- * @param {Object} data - The data to update, must contain file_id.
+ * @param {MongoFile} data - The data to update, must contain file_id.
  * @returns {Promise<MongoFile>} A promise that resolves to the updated file document.
  */
 const updateFile = async (data) => {
@@ -54,7 +54,7 @@ const updateFile = async (data) => {
 
 /**
  * Increments the usage of a file identified by file_id.
- * @param {Object} data - The data to update, must contain file_id and the increment value for usage.
+ * @param {MongoFile} data - The data to update, must contain file_id and the increment value for usage.
  * @returns {Promise<MongoFile>} A promise that resolves to the updated file document.
  */
 const updateFileUsage = async (data) => {
