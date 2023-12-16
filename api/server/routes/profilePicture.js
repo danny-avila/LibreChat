@@ -30,7 +30,6 @@ router.post('/', upload.single('input'), async (req, res) => {
     const url = await uploadProfilePicture(userId, input, manual);
     res.json({ url });
   } catch (error) {
-    console.error('Error:', error.message);
     res.status(500).json({ message: 'An error occurred while uploading the profile picture' });
   }
 });
@@ -41,10 +40,8 @@ router.get('/:userId', (req, res) => {
 
   fs.readdir(dirPath, (err, files) => {
     if (err) {
-      console.error('Error reading directory');
       res.status(500).json({ message: 'Server error' });
     } else if (files.length === 0) {
-      console.error('No files in directory');
       res.status(404).json({ message: 'Image not found' });
     } else {
       const imagePath = path.join(dirPath, files[0]);
