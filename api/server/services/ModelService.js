@@ -15,8 +15,14 @@ const modelsCache = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: 'models' });
 
-const { OPENROUTER_API_KEY, OPENAI_REVERSE_PROXY, CHATGPT_MODELS, ANTHROPIC_MODELS, PROXY } =
-  process.env ?? {};
+const {
+  OPENROUTER_API_KEY,
+  OPENAI_REVERSE_PROXY,
+  CHATGPT_MODELS,
+  ANTHROPIC_MODELS,
+  GOOGLE_MODELS,
+  PROXY,
+} = process.env ?? {};
 
 const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _models = []) => {
   let models = _models.slice() ?? [];
@@ -126,8 +132,18 @@ const getAnthropicModels = () => {
   return models;
 };
 
+const getGoogleModels = () => {
+  let models = defaultModels[EModelEndpoint.google];
+  if (GOOGLE_MODELS) {
+    models = String(GOOGLE_MODELS).split(',');
+  }
+
+  return models;
+};
+
 module.exports = {
   getOpenAIModels,
   getChatGPTBrowserModels,
   getAnthropicModels,
+  getGoogleModels,
 };
