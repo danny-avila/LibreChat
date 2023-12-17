@@ -292,9 +292,7 @@ class GoogleClient extends BaseClient {
       payload.instances[0].examples = this.options.examples;
     }
 
-    if (this.options.debug) {
-      logger.debug('GoogleClient buildMessages', payload);
-    }
+    logger.debug('[GoogleClient] buildMessages', payload);
 
     return { prompt: payload };
   }
@@ -304,12 +302,11 @@ class GoogleClient extends BaseClient {
       messages,
       parentMessageId,
     });
-    if (this.options.debug) {
-      logger.debug('GoogleClient: orderedMessages, parentMessageId', {
-        orderedMessages,
-        parentMessageId,
-      });
-    }
+
+    logger.debug('[GoogleClient]', {
+      orderedMessages,
+      parentMessageId,
+    });
 
     const formattedMessages = orderedMessages.map((message) => ({
       author: message.isCreatedByUser ? this.userLabel : this.modelLabel,
@@ -572,14 +569,7 @@ class GoogleClient extends BaseClient {
 
   async sendCompletion(payload, opts = {}) {
     let reply = '';
-    try {
-      reply = await this.getCompletion(payload, opts);
-      if (this.options.debug) {
-        logger.debug('GoogleClient sendCompletion', { reply });
-      }
-    } catch (err) {
-      logger.error('failed to send completion to Google', err);
-    }
+    reply = await this.getCompletion(payload, opts);
     return reply.trim();
   }
 
