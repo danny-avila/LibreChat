@@ -39,7 +39,7 @@ transactionSchema.statics.create = async function (transactionData) {
     { user: transaction.user },
     { $inc: { tokenCredits: transaction.tokenValue } },
     { upsert: true, new: true },
-  );
+  ).lean();
 };
 
 module.exports = mongoose.model('Transaction', transactionSchema);

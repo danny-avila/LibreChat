@@ -180,7 +180,7 @@ class PluginsClient extends OpenAIClient {
       logger.debug(`[PluginsClient] Attempt ${attempts} of ${maxAttempts}`);
 
       if (errorMessage.length > 0) {
-        logger.debug('[PluginsClient] Caught error, input:', input);
+        logger.debug('[PluginsClient] Caught error, input: ' + JSON.stringify(input));
       }
 
       try {
