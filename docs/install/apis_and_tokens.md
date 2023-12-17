@@ -70,10 +70,6 @@ For Vertex AI, you need a Service Account JSON key file, with appropriate access
 
 Instructions for both are given below.
 
-Setting `GOOGLE_KEY=user_provided` in your .env file will configure both values to be provided from the client (or frontend) like so:
-
-![image](https://github.com/danny-avila/LibreChat/assets/110412045/728cbc04-4180-45a8-848c-ae5de2b02996)
-
 ### Generative Language API (Gemini)
 
 **60 Gemini requests/minute are currently free until early next year when it enters general availability.**
@@ -85,21 +81,22 @@ To use Gemini models, you'll need an API key. If you don't already have one, cre
 
 <p><a class="button button-primary" href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Get an API key here</a></p>
 
-Once you have your key, you can either provide it from the frontend by setting the following:
-
-```bash
-GOOGLE_KEY=user_provided
-```
-
-Or, provide the key in your .env file, which allows all users of your instance to use it.
+Once you have your key, provide the key in your .env file, which allows all users of your instance to use it.
 
 ```bash
 GOOGLE_KEY=mY_SeCreT_w9347w8_kEY
 ```
 
-> Notes:
-> - As of 12/15/23, Gemini Pro Vision is not yet supported but is planned.
-> - PaLM2 and Codey models cannot be accessed through the Generative Language API.
+Or, you can make users provide it from the frontend by setting the following:
+```bash
+GOOGLE_KEY=user_provided
+```
+
+Note: PaLM2 and Codey models cannot be accessed through the Generative Language API, only through Vertex AI.
+
+Setting `GOOGLE_KEY=user_provided` in your .env file will configure both the Vertex AI Service Account JSON key file and the Generative Language API key to be provided from the frontend like so:
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/728cbc04-4180-45a8-848c-ae5de2b02996)
 
 ### Vertex AI (PaLM 2 & Codey)
 
@@ -132,14 +129,15 @@ You can usually get **$300 starting credit**, which makes this option free for 9
 
 **Saving your JSON key file in the project directory which allows all users of your LibreChat instance to use it.**
 
-Alternatively, Once you have your JSON key file, you can also provide it from the frontend on a user-basis by setting the following:
+Alternatively, you can make users provide it from the frontend by setting the following:
 
 ```bash
+# Note: this configures both the Vertex AI Service Account JSON key file
+# and the Generative Language API key to be provided from the frontend.
 GOOGLE_KEY=user_provided
 ```
 
-> Notes:
-> - As of 12/15/23, Gemini and Gemini Pro Vision are not yet supported through Vertex AI but are planned.
+Note: Using Gemini models through Vertex AI is possible but not yet supported.
 
 ## Azure OpenAI
 
