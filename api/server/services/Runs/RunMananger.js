@@ -1,3 +1,5 @@
+const { logger } = require('~/config');
+
 /**
  * @typedef {import('openai').OpenAI} OpenAI
  * @typedef {import('../AssistantService').RunStep} RunStep
@@ -84,8 +86,12 @@ class RunManager {
       return await this.handlers['final']({ step, runStatus, stepsByStatus: this.stepsByStatus });
     }
 
-    console.log(`Default handler for ${step.id} with status \`${runStatus}\``);
-    console.dir({ step, runStatus, final, isLast }, { depth: null });
+    logger.debug(`[RunManager] Default handler for ${step.id} with status \`${runStatus}\``, {
+      step,
+      runStatus,
+      final,
+      isLast,
+    });
     return step;
   }
 }

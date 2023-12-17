@@ -29,7 +29,7 @@
 # Features
  - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
  - 💬 Multimodal Chat:
-     - Upload and analyze images with GPT-4-Vision 📸 
+     - Upload and analyze images with GPT-4 and Gemini Vision 📸
      - More filetypes and Assistants API integration in Active Development 🚧 
  - 🌎 Multilingual UI:
      - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro,

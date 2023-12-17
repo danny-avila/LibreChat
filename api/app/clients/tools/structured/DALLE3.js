@@ -7,7 +7,9 @@ const OpenAI = require('openai');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const saveImageFromUrl = require('../saveImageFromUrl');
-const extractBaseURL = require('../../../../utils/extractBaseURL');
+const extractBaseURL = require('~/utils/extractBaseURL');
+const { logger } = require('~/config');
+
 const { DALLE3_SYSTEM_PROMPT, DALLE_REVERSE_PROXY, PROXY } = process.env;
 class DALLE3 extends Tool {
   constructor(fields = {}) {
@@ -126,9 +128,12 @@ Error Message: ${error.message}`;
 
     if (match) {
       imageName = match[0];
-      console.log(imageName); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
+      logger.debug('[DALL-E-3]', { imageName }); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
     } else {
-      console.log('No image name found in the string.');
+      logger.debug('[DALL-E-3] No image name found in the string.', {
+        theImageUrl,
+        data: resp.data[0],
+      });
     }
 
     this.outputPath = path.resolve(
@@ -154,7 +159,7 @@ Error Message: ${error.message}`;
       await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
       this.result = this.getMarkdownImageUrl(imageName);
     } catch (error) {
-      console.error('Error while saving the image:', error);
+      logger.error('Error while saving the image:', error);
       this.result = theImageUrl;
     }
 

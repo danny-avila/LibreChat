@@ -1,4 +1,5 @@
 const { ZeroShotAgentOutputParser } = require('langchain/agents');
+const { logger } = require('~/config');
 
 class CustomOutputParser extends ZeroShotAgentOutputParser {
   constructor(fields) {
@@ -64,9 +65,9 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     const match = this.actionValues.exec(text); // old v2
 
     if (!match) {
-      console.log(
-        '\n\n<----------------------HIT NO MATCH PARSING ERROR---------------------->\n\n',
-        match,
+      logger.debug(
+        '\n\n<----------------------[CustomOutputParser] HIT NO MATCH PARSING ERROR---------------------->\n\n' +
+          match,
       );
       const thoughts = text.replace(/[tT]hought:/, '').split('\n');
       // return {
@@ -84,9 +85,9 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     let selectedTool = match?.[1].trim().toLowerCase();
 
     if (match && selectedTool === 'n/a') {
-      console.log(
-        '\n\n<----------------------HIT N/A PARSING ERROR---------------------->\n\n',
-        match,
+      logger.debug(
+        '\n\n<----------------------[CustomOutputParser] HIT N/A PARSING ERROR---------------------->\n\n' +
+          match,
       );
       return {
         tool: 'self-reflection',
@@ -97,25 +98,25 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
 
     let toolIsValid = this.checkIfValidTool(selectedTool);
     if (match && !toolIsValid) {
-      console.log(
-        '\n\n<----------------Tool invalid: Re-assigning Selected Tool---------------->\n\n',
-        match,
+      logger.debug(
+        '\n\n<----------------[CustomOutputParser] Tool invalid: Re-assigning Selected Tool---------------->\n\n' +
+          match,
       );
       selectedTool = this.getValidTool(selectedTool);
     }
 
     if (match && !selectedTool) {
-      console.log(
-        '\n\n<----------------------HIT INVALID TOOL PARSING ERROR---------------------->\n\n',
-        match,
+      logger.debug(
+        '\n\n<----------------------[CustomOutputParser] HIT INVALID TOOL PARSING ERROR---------------------->\n\n' +
+          match,
       );
       selectedTool = 'self-reflection';
     }
 
     if (match && !match[2]) {
-      console.log(
-        '\n\n<----------------------HIT NO ACTION INPUT PARSING ERROR---------------------->\n\n',
-        match,
+      logger.debug(
+        '\n\n<----------------------[CustomOutputParser] HIT NO ACTION INPUT PARSING ERROR---------------------->\n\n' +
+          match,
       );
 
       // In case there is no action input, let's double-check if there is an action input in 'text' variable
@@ -139,7 +140,9 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
     }
 
     if (match && selectedTool.length > this.longestToolName.length) {
-      console.log('\n\n<----------------------HIT LONG PARSING ERROR---------------------->\n\n');
+      logger.debug(
+        '\n\n<----------------------[CustomOutputParser] HIT LONG PARSING ERROR---------------------->\n\n',
+      );
 
       let action, input, thought;
       let firstIndex = Infinity;
@@ -156,9 +159,9 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       // In case there is no action input, let's double-check if there is an action input in 'text' variable
       const actionInputMatch = this.actionInputRegex.exec(text);
       if (action && actionInputMatch) {
-        console.log(
-          '\n\n<------Matched Action Input in Long Parsing Error------>\n\n',
-          actionInputMatch,
+        logger.debug(
+          '\n\n<------[CustomOutputParser] Matched Action Input in Long Parsing Error------>\n\n' +
+            actionInputMatch,
         );
         return {
           tool: action,
@@ -185,15 +188,14 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
 
         const inputMatch = this.actionValues.exec(returnValues.log); //new
         if (inputMatch) {
-          console.log('inputMatch');
-          console.dir(inputMatch, { depth: null });
+          logger.debug('[CustomOutputParser] inputMatch', inputMatch);
           returnValues.toolInput = inputMatch[1].replaceAll('"', '').trim();
           returnValues.log = returnValues.log.replace(this.actionValues, '');
         }
 
         return returnValues;
       } else {
-        console.log('No valid tool mentioned.', this.tools, text);
+        logger.debug('[CustomOutputParser] No valid tool mentioned.', this.tools, text);
         return {
           tool: 'self-reflection',
           toolInput: 'Hypothetical actions: \n"' + text + '"\n',
@@ -202,8 +204,8 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
       }
 
       // if (action && input) {
-      //   console.log('Action:', action);
-      //   console.log('Input:', input);
+      //   logger.debug('Action:', action);
+      //   logger.debug('Input:', input);
       // }
     }
 

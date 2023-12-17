@@ -1,18 +1,28 @@
-const HttpsProxyAgent = require('https-proxy-agent');
-const axios = require('axios');
 const Keyv = require('keyv');
+const axios = require('axios');
+const HttpsProxyAgent = require('https-proxy-agent');
+const { EModelEndpoint, defaultModels } = require('librechat-data-provider');
 const { isEnabled } = require('~/server/utils');
-const { extractBaseURL } = require('~/utils');
 const keyvRedis = require('~/cache/keyvRedis');
+const { extractBaseURL } = require('~/utils');
+const { logger } = require('~/config');
+
 // const { getAzureCredentials, genAzureChatCompletion } = require('~/utils/');
+
 const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
 
 const modelsCache = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: 'models' });
 
-const { OPENROUTER_API_KEY, OPENAI_REVERSE_PROXY, CHATGPT_MODELS, ANTHROPIC_MODELS, PROXY } =
-  process.env ?? {};
+const {
+  OPENROUTER_API_KEY,
+  OPENAI_REVERSE_PROXY,
+  CHATGPT_MODELS,
+  ANTHROPIC_MODELS,
+  GOOGLE_MODELS,
+  PROXY,
+} = process.env ?? {};
 
 const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _models = []) => {
   let models = _models.slice() ?? [];
@@ -54,9 +64,9 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
       const res = await axios.get(`${basePath}${opts.azure ? '' : '/models'}`, payload);
 
       models = res.data.data.map((item) => item.id);
-      // console.log(`Fetched ${models.length} models from ${opts.azure ? 'Azure ' : ''}OpenAI API`);
+      // logger.debug(`Fetched ${models.length} models from ${opts.azure ? 'Azure ' : ''}OpenAI API`);
     } catch (err) {
-      console.log(`Failed to fetch models from ${opts.azure ? 'Azure ' : ''}OpenAI API`);
+      logger.error(`Failed to fetch models from ${opts.azure ? 'Azure ' : ''}OpenAI API`, err);
     }
   }
 
@@ -114,17 +124,18 @@ const getChatGPTBrowserModels = () => {
 };
 
 const getAnthropicModels = () => {
-  let models = [
-    'claude-2.1',
-    'claude-2',
-    'claude-1.2',
-    'claude-1',
-    'claude-1-100k',
-    'claude-instant-1',
-    'claude-instant-1-100k',
-  ];
+  let models = defaultModels[EModelEndpoint.anthropic];
   if (ANTHROPIC_MODELS) {
     models = String(ANTHROPIC_MODELS).split(',');
+  }
+
+  return models;
+};
+
+const getGoogleModels = () => {
+  let models = defaultModels[EModelEndpoint.google];
+  if (GOOGLE_MODELS) {
+    models = String(GOOGLE_MODELS).split(',');
   }
 
   return models;
@@ -134,4 +145,5 @@ module.exports = {
   getOpenAIModels,
   getChatGPTBrowserModels,
   getAnthropicModels,
+  getGoogleModels,
 };

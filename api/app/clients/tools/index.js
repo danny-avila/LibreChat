@@ -1,6 +1,4 @@
 const GoogleSearchAPI = require('./GoogleSearch');
-const HttpRequestTool = require('./HttpRequestTool');
-const AIPluginTool = require('./AIPluginTool');
 const OpenAICreateImage = require('./DALL-E');
 const DALLE3 = require('./structured/DALLE3');
 const StructuredSD = require('./structured/StableDiffusion');
@@ -20,8 +18,6 @@ const CodeBrew = require('./CodeBrew');
 module.exports = {
   availableTools,
   GoogleSearchAPI,
-  HttpRequestTool,
-  AIPluginTool,
   OpenAICreateImage,
   DALLE3,
   StableDiffusionAPI,

@@ -1,5 +1,5 @@
-import { Content, Portal, Root } from '@radix-ui/react-popover';
 import { alternateName } from 'librechat-data-provider';
+import { Content, Portal, Root } from '@radix-ui/react-popover';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import EndpointItems from './Endpoints/MenuItems';
@@ -14,9 +14,14 @@ const EndpointsMenu: FC = () => {
 
   const { conversation } = useChatContext();
   const selected = conversation?.endpoint ?? '';
+
+  if (!selected) {
+    console.warn('No endpoint selected');
+    return null;
+  }
   return (
     <Root>
-      <TitleButton primaryText={alternateName[selected] + ' '} />
+      <TitleButton primaryText={(alternateName[selected] ?? '') + ' '} />
       <Portal>
         <div
           style={{
