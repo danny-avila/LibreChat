@@ -172,7 +172,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
   const finalHandler = (data: TResData, submission: TSubmission) => {
     const { requestMessage, responseMessage, conversation } = data;
-    const { messages, isRegenerate = false } = submission;
+    const { messages, conversation: submissionConvo, isRegenerate = false } = submission;
 
     // update the messages
     if (isRegenerate) {
@@ -198,6 +198,11 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         ...prevState,
         ...conversation,
       };
+
+      // Revert to previous model if the model was auto-switched by backend due to message attachments
+      if (conversation.model?.includes('vision') && !submissionConvo.model?.includes('vision')) {
+        update.model = submissionConvo?.model;
+      }
 
       setStorage(update);
       return update;
