@@ -1,7 +1,7 @@
 const path = require('path');
 const winston = require('winston');
 require('winston-daily-rotate-file');
-const { redact, deepObjectFormat } = require('./parsers');
+const { redactFormat, redactMessage, debugTraverse } = require('./parsers');
 
 const logDir = path.join(__dirname, '..', 'logs');
 
@@ -32,10 +32,11 @@ const level = () => {
 };
 
 const fileFormat = winston.format.combine(
+  redactFormat(),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
-  winston.format((info) => redact(info))(),
+  // redactErrors(),
 );
 
 const transports = [
@@ -78,16 +79,24 @@ if (
       zippedArchive: true,
       maxSize: '20m',
       maxFiles: '14d',
-      format: winston.format.combine(fileFormat, deepObjectFormat),
+      format: winston.format.combine(fileFormat, debugTraverse),
     }),
   );
 }
 
 const consoleFormat = winston.format.combine(
+  redactFormat(),
   winston.format.colorize({ all: true }),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format((info) => redact(info))(),
-  winston.format.printf((info) => `${info.timestamp} ${info.level}: ${info.message}`),
+  // redactErrors(),
+  winston.format.printf((info) => {
+    const message = `${info.timestamp} ${info.level}: ${info.message}`;
+    if (info.level.includes('error')) {
+      return redactMessage(message);
+    }
+
+    return message;
+  }),
 );
 
 if (
@@ -97,7 +106,7 @@ if (
   transports.push(
     new winston.transports.Console({
       level: 'debug',
-      format: winston.format.combine(consoleFormat, deepObjectFormat),
+      format: winston.format.combine(consoleFormat, debugTraverse),
     }),
   );
 } else {

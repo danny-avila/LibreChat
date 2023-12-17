@@ -1,7 +1,7 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { getResponseSender, EModelEndpoint } = require('librechat-data-provider');
+const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { encodeAndFormat, validateVisionModel } = require('~/server/services/Files/images');
 const { getModelMaxTokens, genAzureChatCompletion, extractBaseURL } = require('~/utils');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
@@ -76,11 +76,14 @@ class OpenAIClient extends BaseClient {
       };
     }
 
-    if (this.options.attachments && !validateVisionModel(this.modelOptions.model)) {
+    this.isVisionModel = validateVisionModel(this.modelOptions.model);
+
+    if (this.options.attachments && !this.isVisionModel) {
       this.modelOptions.model = 'gpt-4-vision-preview';
+      this.isVisionModel = true;
     }
 
-    if (validateVisionModel(this.modelOptions.model)) {
+    if (this.isVisionModel) {
       delete this.modelOptions.stop;
     }
 
@@ -152,7 +155,7 @@ class OpenAIClient extends BaseClient {
 
     this.setupTokens();
 
-    if (!this.modelOptions.stop && !validateVisionModel(this.modelOptions.model)) {
+    if (!this.modelOptions.stop && !this.isVisionModel) {
       const stopTokens = [this.startToken];
       if (this.endToken && this.endToken !== this.startToken) {
         stopTokens.push(this.endToken);
@@ -689,7 +692,7 @@ ${convo}
   }
 
   async recordTokenUsage({ promptTokens, completionTokens }) {
-    logger.debug('[OpenAIClient]', { promptTokens, completionTokens });
+    logger.debug('[OpenAIClient] recordTokenUsage:', { promptTokens, completionTokens });
     await spendTokens(
       {
         user: this.user,
@@ -757,7 +760,7 @@ ${convo}
         opts.httpAgent = new HttpsProxyAgent(this.options.proxy);
       }
 
-      if (validateVisionModel(modelOptions.model)) {
+      if (this.isVisionModel) {
         modelOptions.max_tokens = 4000;
       }
 
