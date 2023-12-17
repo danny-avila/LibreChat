@@ -357,11 +357,11 @@ class BaseClient {
 
     const promptTokens = this.maxContextTokens - remainingContextTokens;
 
-    logger.debug('[BaseClient] Payload size:', payload.length);
     logger.debug('[BaseClient] tokenCountMap:', tokenCountMap);
     logger.debug('[BaseClient]', {
       promptTokens,
       remainingContextTokens,
+      payloadSize: payload.length,
       maxContextTokens: this.maxContextTokens,
     });
 
@@ -414,7 +414,6 @@ class BaseClient {
       logger.debug('[BaseClient] tokenCountMap', tokenCountMap);
       if (tokenCountMap[userMessage.messageId]) {
         userMessage.tokenCount = tokenCountMap[userMessage.messageId];
-        logger.debug('[BaseClient] userMessage.tokenCount', userMessage.tokenCount);
         logger.debug('[BaseClient] userMessage', userMessage);
       }
 

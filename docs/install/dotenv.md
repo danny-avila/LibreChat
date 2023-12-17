@@ -199,6 +199,15 @@ GOOGLE_KEY=user_provided
 GOOGLE_REVERSE_PROXY=
 ```
 
+- Customize the available models, separated by commas, **without spaces**.
+    - The first will be default.
+    - Leave it blank or commented out to use internal settings (default: all listed below).
+
+```bash
+# all available models as of 12/16/23
+GOOGLE_MODELS=gemini-pro,gemini-pro-vision,chat-bison,chat-bison-32k,codechat-bison,codechat-bison-32k,text-bison,text-bison-32k,text-unicorn,code-gecko,code-bison,code-bison-32k
+```
+
 ### OpenAI
 
 - To get your OpenAI API key, you need to:
