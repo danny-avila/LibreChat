@@ -43,46 +43,51 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     }
   };
 
-  const { onProgress: progressCallback, getPartialText } = createOnProgress({
-    onProgress: ({ text: partialText }) => {
-      const currentTimestamp = Date.now();
-
-      if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-        lastSavedTimestamp = currentTimestamp;
-        saveMessage({
-          messageId: responseMessageId,
-          sender,
-          conversationId,
-          parentMessageId: overrideParentMessageId ?? userMessageId,
-          text: partialText,
-          model: endpointOption.modelOptions.model,
-          unfinished: true,
-          cancelled: false,
-          error: false,
-          user,
-        });
-      }
-
-      if (saveDelay < 500) {
-        saveDelay = 500;
-      }
-    },
-  });
-
-  const getAbortData = () => ({
-    sender,
-    conversationId,
-    messageId: responseMessageId,
-    parentMessageId: overrideParentMessageId ?? userMessageId,
-    text: getPartialText(),
-    userMessage,
-    promptTokens,
-  });
-
-  const { abortController, onStart } = createAbortController(req, res, getAbortData);
+  let getText;
 
   try {
     const { client } = await initializeClient({ req, res, endpointOption });
+
+    const { onProgress: progressCallback, getPartialText } = createOnProgress({
+      onProgress: ({ text: partialText }) => {
+        const currentTimestamp = Date.now();
+
+        if (currentTimestamp - lastSavedTimestamp > saveDelay) {
+          lastSavedTimestamp = currentTimestamp;
+          saveMessage({
+            messageId: responseMessageId,
+            sender,
+            conversationId,
+            parentMessageId: overrideParentMessageId ?? userMessageId,
+            text: partialText,
+            model: client.modelOptions.model,
+            unfinished: true,
+            cancelled: false,
+            error: false,
+            user,
+          });
+        }
+
+        if (saveDelay < 500) {
+          saveDelay = 500;
+        }
+      },
+    });
+
+    getText = getPartialText;
+
+    const getAbortData = () => ({
+      sender,
+      conversationId,
+      messageId: responseMessageId,
+      parentMessageId: overrideParentMessageId ?? userMessageId,
+      text: getPartialText(),
+      userMessage,
+      promptTokens,
+    });
+
+    const { abortController, onStart } = createAbortController(req, res, getAbortData);
+
     const messageOptions = {
       user,
       parentMessageId,
@@ -134,7 +139,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       });
     }
   } catch (error) {
-    const partialText = getPartialText();
+    const partialText = getText && getText();
     handleAbortError(res, req, error, {
       partialText,
       conversationId,

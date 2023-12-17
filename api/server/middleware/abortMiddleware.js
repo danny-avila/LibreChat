@@ -2,6 +2,7 @@ const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/uti
 const { saveMessage, getConvo, getConvoTitle } = require('~/models');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const abortControllers = require('./abortControllers');
+const { redactMessage } = require('~/config/parsers');
 const spendTokens = require('~/models/spendTokens');
 const { logger } = require('~/config');
 
@@ -92,7 +93,7 @@ const handleAbortError = async (res, req, error, data) => {
       messageId,
       conversationId,
       parentMessageId,
-      text: error.message,
+      text: redactMessage(error.message),
       shouldSaveMessage: true,
       user: req.user.id,
     };
