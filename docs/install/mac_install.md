@@ -5,67 +5,67 @@
 
 ## **Manual Installation**
 
-## Install the prerequisites:
-  - Install Homebrew (if not already installed) by following the instructions on https://brew.sh/
-  - Install Node.js and npm by running `brew install node`
-  - Install MongoDB (if not using Docker) by running `brew tap mongodb/brew` and `brew install mongodb-community`
+### Install the prerequisites (Required)
+- Install Homebrew (if not already installed) by following the instructions on https://brew.sh/
+- Install Node.js and npm by running `brew install node`
 
- ## Instructions:
+### Download LibreChat (Required)
+- Open Terminal and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
+- Change into the cloned directory by running `cd LibreChat`
+- Create a .env file in the api directory by running `cp .env.example .env` 
+- Install dependencies by running: `npm ci`
+- Build the client by running: `npm run frontend`
 
-  - Open Terminal and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
-  - Change into the cloned directory by running cd LibreChat
-  - If using MongoDB Atlas, remove &w=majority from the default connection string
-Follow the instructions for setting up proxies, access tokens, and user system:
+> You will only need to add your `MONGO_URI` (next step) for LibreChat to work. Make sure LibreChat works with the basic configuration first, you can always come back to the `.env` later for advanced configurations. See: [.env configuration](dotenv.md)
 
-## [Create a MongoDB database](mongodb.md) (Required)
+### Create a MongoDB database (Required)
+- [Create an online MongoDB database](mongodb.md) **or** Install MongoDB by running `brew tap mongodb/brew` and `brew install mongodb-community`
+- add your `MONGO_URI` in the .env file (use vscode or any text editor)
 
-## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
+> Choose only one option, online or brew. Both have pros and cons
+
+### [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
 - You must set up at least one of these tokens or APIs to run the app.
 
-## [User/Auth System](../install/user_auth_system.md) (Optional)
-- How to set up the user/auth system and Google login.
+### [User/Auth System](../install/user_auth_system.md) (Optional)
+- Set up the user/auth system and various social logins.
 
-## Setup Instruction
-  - Create a .env file in the api directory by running `cp .env.example .env` and edit the file with your preferred text editor, adding the required API keys, access tokens, and MongoDB connection string
-  - Run npm ci from root directory `npm ci`
-  - Build the client by running `npm run frontend`
+### **Download MeiliSearch for macOS (Optional):**
+- This enables the conversation search feature
+- You can download the latest MeiliSearch binary for macOS from their GitHub releases page: https://github.com/meilisearch/MeiliSearch/releases
+  - Look for the file named `meilisearch-macos-amd64` (or the equivalent for your system architecture) and download it.
 
-### **Download MeiliSearch for macOS (optional):**
-  - You can download the latest MeiliSearch binary for macOS from their GitHub releases page: https://github.com/meilisearch/MeiliSearch/releases. Look for the file named meilisearch-macos-amd64 (or the equivalent for your system architecture) and download it.
+- **Make the binary executable:**
+  - Open Terminal and navigate to the directory where you downloaded the MeiliSearch binary. Run the following command to make it executable: `chmod +x meilisearch-macos-amd64`
 
-### **Make the binary executable:**
-  - Open Terminal and navigate to the directory where you downloaded the MeiliSearch binary. Run the following command to make it executable:
+- **Run MeiliSearch:**
+  - Now that the binary is executable, you can start MeiliSearch by running the following command: `./meilisearch-macos-amd64 --master-key your_master_key_goes_here`
+    - Replace `your_master_key_goes_here` with your desired master key!
 
-```
-chmod +x meilisearch-macos-amd64
-```
+- MeiliSearch will start running on the default port, which is 7700. You can now use MeiliSearch in your LibreChat project.
 
-### **Run MeiliSearch:**
-  - Now that the binary is executable, you can start MeiliSearch by running the following command, replacing your_master_key_goes_here with your desired master key:
-
-```
-./meilisearch-macos-amd64 --master-key your_master_key_goes_here
-```
-
-  - MeiliSearch will start running on the default port, which is 7700. You can now use MeiliSearch in your LibreChat project.
-
-  - Remember to include the MeiliSearch URL and Master Key in your .env file in the api directory. Your .env file should include the following lines:
+- Remember to include the MeiliSearch URL and Master Key in your .env file. Your .env file should include the following lines:
 
 ```
 MEILISEARCH_URL=http://127.0.0.1:7700
 MEILISEARCH_KEY=your_master_key_goes_here
 ```
 
-  - With MeiliSearch running and configured, the LibreChat project should now have the Conversation search feature enabled.
+>  **Important:** use the same master key here and in your .env file.
 
-  - In the LibreChat directory, start the application by running `npm run backend`
-Visit http://localhost:3080 (default port) & enjoy
+- With MeiliSearch running and configured, the LibreChat project should now have the Conversation search feature enabled.
 
-## Optional but recommended:
+### Start LibreChat
+- In the LibreChat directory, start the application by running `npm run backend`
+- **Visit: http://localhost:3080 & enjoy**
 
-  - Create a script to automate the starting process by creating a new file named start_chatgpt.sh in the LibreChat directory and pasting the following code:
+---
 
-``` bash title="LibreChat.sh"
+### Optional but recommended:
+
+- Create a script to automate the starting process by creating a new file named `librechat.sh` in the LibreChat directory and pasting the following code:
+
+``` bash title="librechat.sh"
 #!/bin/bash
 # Replace "your_master_key_goes_here" with your MeiliSearch Master Key
 if [ -x "$(command -v ./meilisearch)" ]; then
@@ -74,60 +74,32 @@ fi
 npm run backend
 ```
 
-### **Make the script executable by running**
+- Make the script executable by running: `chmod +x librechat.sh`
 
-```
-  chmod +x start_chatgpt.sh
-```
+- You can now start LibreChat by running: `./librechat.sh`
 
-### **Start LibreChat by running**
-```
-  ./start_chatgpt.sh
-```
+---
 
-
-## **Update**
+### Update LibreChat
 
 - Run `npm run update` from the project directory for a clean installation.
 
-If you're having issues running this command, you can try running what the script does manually:
-
-### Docker
-
-```bash
-# Fetch the latest changes from Github
-git fetch origin
-# Switch to the repo's main branch
-git checkout main
-# Pull the latest changes to the main branch from Github
-git pull origin main
-# Prune all LibreChat Docker images
-docker rmi librechat:latest
-# Remove all unused dangling Docker images
-docker image prune -f
-# Building a new LibreChat image
-docker-compose build
-
-# Start LibreChat
-docker-compose up
-```
-
-### Local (npm)
+**If you're having issues running this command, you can try running what the script does manually:**
 
 ```bash
 # Terminal on macOS, prefix commands with `sudo` as needed
-
 # Step 1: Get the latest changes
-
-# Fetch the latest changes from Github
+# 1a - Fetch the latest changes from Github
 git fetch origin
-# Switch to the repo's main branch
+
+# 1b - Switch to the repo's main branch
 git checkout main
-# Pull the latest changes to the main branch from Github
+
+# 1c - Pull the latest changes to the main branch from Github
 git pull origin main
 
 # Step 2: Delete all node_modules directories
-# Define the list of directories we will delete
+# 2a - Define the list of directories we will delete
 directories=(
     "."
     "./packages/data-provider"
@@ -135,7 +107,7 @@ directories=(
     "./api"
 )
 
-# Loop over each directory and delete the node_modules folder if it exists
+# 2b - Loop over each directory and delete the node_modules folder if it exists
 for dir in "${directories[@]}"; do
     nodeModulesPath="$dir/node_modules"
     if [ -d "$nodeModulesPath" ]; then
