@@ -90,7 +90,7 @@ nav:
     - Configuration:
         - .env Configuration: 'install/dotenv.md'
         - Free AI APIs: 'install/free_ai_apis.md'
-        - APIs and Tokens: 'install/apis_and_tokens.md'
+        - AI Setup: 'install/ai_setup.md'
         - User Auth System: 'install/user_auth_system.md'
         - Online MongoDB Database: 'install/mongodb.md'
         - Languages: 'install/default_language.md'

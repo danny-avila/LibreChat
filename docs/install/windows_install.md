@@ -50,8 +50,8 @@ Have fun!
 
 ### [Create a MongoDB database](mongodb.md) (Required)
     
-### [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
-- You must set up at least one of these tokens or APIs to run the app.
+### [Setup your AI Endpoints](ai_setup.md) (Required)
+- At least one AI endpoint should be setup for use.
 
 ### Download LibreChat (Required)
   - (With Git) Open Terminal (command prompt) and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
