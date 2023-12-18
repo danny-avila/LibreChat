@@ -21,8 +21,6 @@ async function moderateText(req, res, next) {
         },
       );
 
-      console.log('response', response.data);
-
       const results = response.data.results;
       const flagged = results.some((result) => result.flagged);
 
