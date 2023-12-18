@@ -15,10 +15,17 @@ Errors logs are also saved in the same location: `./api/logs/error-%DATE%.log`. 
 
 ### Setup
 
-Keep debug logs enabled with the following environment variable. Even if you never set this variable, debug logs will be generated, but you have the option to disable them by setting it to `FALSE`.
+Toggle debug logs with the following environment variable. By default, even if you never set this variable, debug logs will be generated, but you have the option to disable them by setting it to `FALSE`.
+
+Note: it's recommended to disable debug logs in a production environment.
 
 ```bash
 DEBUG_LOGGING=TRUE
+```
+
+```bash
+# in a production environment
+DEBUG_LOGGING=FALSE
 ```
 
 For verbose server output in the console/terminal, you can also set the following:
