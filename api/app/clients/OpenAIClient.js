@@ -397,7 +397,7 @@ class OpenAIClient extends BaseClient {
     let streamResult = null;
     this.modelOptions.user = this.user;
     const invalidBaseUrl = this.completionsUrl && extractBaseURL(this.completionsUrl) === null;
-    const useOldMethod = !!(this.azure || invalidBaseUrl || !this.isChatCompletion);
+    const useOldMethod = !!(invalidBaseUrl || !this.isChatCompletion);
     if (typeof opts.onProgress === 'function' && useOldMethod) {
       await this.getCompletion(
         payload,
@@ -762,6 +762,15 @@ ${convo}
 
       if (this.isVisionModel) {
         modelOptions.max_tokens = 4000;
+      }
+
+      if (this.azure || this.options.azure) {
+        // Azure does not accept `model` in the body, so we need to remove it.
+        delete modelOptions.model;
+
+        opts.baseURL = this.azureEndpoint.split('/chat')[0];
+        opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
+        opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
       }
 
       let chatCompletion;
