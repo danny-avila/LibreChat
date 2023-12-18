@@ -1,9 +1,10 @@
-const { EModelEndpoint, defaultModels } = require('librechat-data-provider');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { useAzurePlugins } = require('~/server/services/Config/EndpointService').config;
 const {
   getOpenAIModels,
-  getChatGPTBrowserModels,
+  getGoogleModels,
   getAnthropicModels,
+  getChatGPTBrowserModels,
 } = require('~/server/services/ModelService');
 
 const fitlerAssistantModels = (str) => {
@@ -11,6 +12,7 @@ const fitlerAssistantModels = (str) => {
 };
 
 async function loadDefaultModels() {
+  const google = getGoogleModels();
   const openAI = await getOpenAIModels();
   const anthropic = getAnthropicModels();
   const chatGPTBrowser = getChatGPTBrowserModels();
@@ -19,13 +21,13 @@ async function loadDefaultModels() {
 
   return {
     [EModelEndpoint.openAI]: openAI,
+    [EModelEndpoint.google]: google,
+    [EModelEndpoint.anthropic]: anthropic,
+    [EModelEndpoint.gptPlugins]: gptPlugins,
     [EModelEndpoint.azureOpenAI]: azureOpenAI,
-    [EModelEndpoint.assistant]: openAI.filter(fitlerAssistantModels),
-    [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
     [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
-    [EModelEndpoint.gptPlugins]: gptPlugins,
-    [EModelEndpoint.anthropic]: anthropic,
+    [EModelEndpoint.assistant]: openAI.filter(fitlerAssistantModels),
   };
 }
 

@@ -1,128 +1,160 @@
-const util = require('util');
 const winston = require('winston');
 const traverse = require('traverse');
 const { klona } = require('klona/full');
 
-const sensitiveKeys = [/^sk-\w+$/, /Bearer \w+/, /api-key: \w+/];
+const SPLAT_SYMBOL = Symbol.for('splat');
+const MESSAGE_SYMBOL = Symbol.for('message');
+
+const sensitiveKeys = [/^(sk-)[^\s]+/, /(Bearer )[^\s]+/, /(api-key:? )[^\s]+/, /(key=)[^\s]+/];
 
 /**
- * Determines if a given key string is sensitive.
+ * Determines if a given value string is sensitive and returns matching regex patterns.
  *
- * @param {string} keyStr - The key string to check.
- * @returns {boolean} True if the key string matches known sensitive key patterns.
+ * @param {string} valueStr - The value string to check.
+ * @returns {Array<RegExp>} An array of regex patterns that match the value string.
  */
-function isSensitiveKey(keyStr) {
-  if (keyStr) {
-    return sensitiveKeys.some((regex) => regex.test(keyStr));
+function getMatchingSensitivePatterns(valueStr) {
+  if (valueStr) {
+    // Filter and return all regex patterns that match the value string
+    return sensitiveKeys.filter((regex) => regex.test(valueStr));
   }
-  return false;
+  return [];
 }
 
 /**
- * Recursively redacts sensitive information from an object.
+ * Redacts sensitive information from a console message.
  *
- * @param {object} obj - The object to traverse and redact.
+ * @param {string} str - The console message to be redacted.
+ * @returns {string} - The redacted console message.
  */
-function redactObject(obj) {
-  traverse(obj).forEach(function redactor() {
-    if (isSensitiveKey(this.key)) {
-      this.update('[REDACTED]');
-    }
+function redactMessage(str) {
+  const patterns = getMatchingSensitivePatterns(str);
+
+  if (patterns.length === 0) {
+    return str;
+  }
+
+  patterns.forEach((pattern) => {
+    str = str.replace(pattern, '$1[REDACTED]');
   });
+
+  return str;
 }
 
 /**
- * Deep copies and redacts sensitive information from an object.
- *
- * @param {object} obj - The object to copy and redact.
- * @returns {object} The redacted copy of the original object.
+ * Redacts sensitive information from log messages if the log level is 'error'.
+ * Note: Intentionally mutates the object.
+ * @param {Object} info - The log information object.
+ * @returns {Object} - The modified log information object.
  */
-function redact(obj) {
-  const copy = klona(obj); // Making a deep copy to prevent side effects
-  redactObject(copy);
-
-  const splat = copy[Symbol.for('splat')];
-  redactObject(splat); // Specifically redact splat Symbol
-
-  return copy;
-}
+const redactFormat = winston.format((info) => {
+  if (info.level === 'error') {
+    info.message = redactMessage(info.message);
+    if (info[MESSAGE_SYMBOL]) {
+      info[MESSAGE_SYMBOL] = redactMessage(info[MESSAGE_SYMBOL]);
+    }
+  }
+  return info;
+});
 
 /**
  * Truncates long strings, especially base64 image data, within log messages.
  *
  * @param {any} value - The value to be inspected and potentially truncated.
+ * @param {number} [length] - The length at which to truncate the value. Default: 100.
  * @returns {any} - The truncated or original value.
  */
-const truncateLongStrings = (value) => {
+const truncateLongStrings = (value, length = 100) => {
   if (typeof value === 'string') {
-    return value.length > 100 ? value.substring(0, 100) + '... [truncated]' : value;
+    return value.length > length ? value.substring(0, length) + '... [truncated]' : value;
   }
 
   return value;
 };
 
-// /**
-//  * Processes each message in the messages array, specifically looking for and truncating
-//  * base64 image URLs in the content. If a base64 image URL is found, it replaces the URL
-//  * with a truncated message.
-//  *
-//  * @param {PayloadMessage} message - The payload message object to format.
-//  * @returns {PayloadMessage} - The processed message object with base64 image URLs truncated.
-//  */
-// const truncateBase64ImageURLs = (message) => {
-//   // Create a deep copy of the message
-//   const messageCopy = JSON.parse(JSON.stringify(message));
-
-//   if (messageCopy.content && Array.isArray(messageCopy.content)) {
-//     messageCopy.content = messageCopy.content.map(contentItem => {
-//       if (contentItem.type === 'image_url' && contentItem.image_url && isBase64String(contentItem.image_url.url)) {
-//         return { ...contentItem, image_url: { ...contentItem.image_url, url: 'Base64 Image Data... [truncated]' } };
-//       }
-//       return contentItem;
-//     });
-//   }
-//   return messageCopy;
-// };
-
-// /**
-//  * Checks if a string is a base64 image data string.
-//  *
-//  * @param {string} str - The string to be checked.
-//  * @returns {boolean} - True if the string is base64 image data, otherwise false.
-//  */
-// const isBase64String = (str) => /^data:image\/[a-zA-Z]+;base64,/.test(str);
+/**
+ * An array mapping function that truncates long strings (objects converted to JSON strings).
+ * @param {any} item - The item to be condensed.
+ * @returns {any} - The condensed item.
+ */
+const condenseArray = (item) => {
+  if (typeof item === 'string') {
+    return truncateLongStrings(JSON.stringify(item));
+  } else if (typeof item === 'object') {
+    return truncateLongStrings(JSON.stringify(item));
+  }
+  return item;
+};
 
 /**
- * Custom log format for Winston that handles deep object inspection.
- * It specifically truncates long strings and handles nested structures within metadata.
+ * Formats log messages for debugging purposes.
+ * - Truncates long strings within log messages.
+ * - Condenses arrays by truncating long strings and objects as strings within array items.
+ * - Redacts sensitive information from log messages if the log level is 'error'.
+ * - Converts log information object to a formatted string.
  *
- * @param {Object} info - Information about the log entry.
+ * @param {Object} options - The options for formatting log messages.
+ * @param {string} options.level - The log level.
+ * @param {string} options.message - The log message.
+ * @param {string} options.timestamp - The timestamp of the log message.
+ * @param {Object} options.metadata - Additional metadata associated with the log message.
  * @returns {string} - The formatted log message.
  */
-const deepObjectFormat = winston.format.printf(({ level, message, timestamp, ...metadata }) => {
-  let msg = `${timestamp} ${level}: ${message}`;
+const debugTraverse = winston.format.printf(({ level, message, timestamp, ...metadata }) => {
+  let msg = `${timestamp} ${level}: ${truncateLongStrings(message?.trim(), 150)}`;
 
-  if (Object.keys(metadata).length) {
-    Object.entries(metadata).forEach(([key, value]) => {
-      let val = value;
-      if (key === 'modelOptions' && value && Array.isArray(value.messages)) {
-        // Create a shallow copy of the messages array
-        // val = { ...value, messages: value.messages.map(truncateBase64ImageURLs) };
-        val = { ...value, messages: `${value.messages.length} message(s) in payload` };
-      }
-      // Inspects each metadata value; applies special handling for 'messages'
-      const inspectedValue =
-        typeof val === 'string'
-          ? truncateLongStrings(val)
-          : util.inspect(val, { depth: null, colors: false }); // Use 'val' here
-      msg += ` ${key}: ${inspectedValue}`;
-    });
+  if (level !== 'debug') {
+    return msg;
   }
 
+  if (!metadata) {
+    return msg;
+  }
+
+  const debugValue = metadata[SPLAT_SYMBOL]?.[0];
+
+  if (!debugValue) {
+    return msg;
+  }
+
+  if (debugValue && Array.isArray(debugValue)) {
+    msg += `\n${JSON.stringify(debugValue.map(condenseArray))}`;
+    return msg;
+  }
+
+  if (typeof debugValue !== 'object') {
+    return (msg += ` ${debugValue}`);
+  }
+
+  msg += '\n{';
+
+  const copy = klona(metadata);
+  traverse(copy).forEach(function (value) {
+    const parent = this.parent;
+    const parentKey = `${parent && parent.notRoot ? parent.key + '.' : ''}`;
+    const tabs = `${parent && parent.notRoot ? '\t\t' : '\t'}`;
+    if (this.isLeaf && typeof value === 'string') {
+      const truncatedText = truncateLongStrings(value);
+      msg += `\n${tabs}${parentKey}${this.key}: ${JSON.stringify(truncatedText)},`;
+    } else if (this.notLeaf && Array.isArray(value) && value.length > 0) {
+      const currentMessage = `\n${tabs}// ${value.length} ${this.key.replace(/s$/, '')}(s)`;
+      this.update(currentMessage, true);
+      msg += currentMessage;
+      const stringifiedArray = value.map(condenseArray);
+      msg += `\n${tabs}${parentKey}${this.key}: [${stringifiedArray}],`;
+    } else if (this.isLeaf && typeof value === 'function') {
+      msg += `\n${tabs}${parentKey}${this.key}: function,`;
+    } else if (this.isLeaf) {
+      msg += `\n${tabs}${parentKey}${this.key}: ${value},`;
+    }
+  });
+
+  msg += '\n}';
   return msg;
 });
 
 module.exports = {
-  redact,
-  deepObjectFormat,
+  redactFormat,
+  redactMessage,
+  debugTraverse,
 };
