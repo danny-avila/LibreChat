@@ -3,6 +3,20 @@ Welcome to the comprehensive guide for configuring your application's environmen
 
 While the default settings provide a solid foundation for a standard `docker` installation, delving into this guide will unveil the full potential of LibreChat. This guide empowers you to tailor LibreChat to your precise needs. Discover how to adjust language model availability, integrate social logins, manage the automatic moderation system, and much more. It's all about giving you the control to fine-tune LibreChat for an optimal user experience.
 
+**If you use docker, you should rebuild the docker image each time you update your environment variables**
+
+Rebuild command:
+```bash
+npm run update:docker
+
+# OR, if you don't have npm
+docker-compose build --no-cache
+```
+
+Alternatively, you can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`. See the [docker docs](https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files) for more info, and you can also view an example of an override file for LibreChat in the ["Manage Your Database" section](https://docs.librechat.ai/features/manage_your_database.html)
+
+---
+
 ## Server Configuration
 
 ### Customization
@@ -96,7 +110,7 @@ PROXY=
 ```
 
 ### Anthropic
-see: [Anthropic Endpoint](./apis_and_tokens.md#anthropic-endpoint-claude)
+see: [Anthropic Endpoint](./ai_setup.md#anthropic)
 - You can request an access key from https://console.anthropic.com/
 - Leave `ANTHROPIC_API_KEY=` blank to disable this endpoint
 - Set `ANTHROPIC_API_KEY=` to "user_provided" to allow users to provide their own API key from the WebUI
@@ -110,7 +124,7 @@ ANTHROPIC_REVERSE_PROXY=
 ```
 
 ### Azure
-see: [Azure OpenAI](./apis_and_tokens.md#azure-openai)
+**Important:** See [the complete Azure OpenAI setup guide](./ai_setup.md#azure-openai) for thorough instructions on enabling Azure OpenAI
 
 - To use Azure with this project, set the following variables. These will be used to build the API URL.
 
@@ -155,7 +169,7 @@ PLUGINS_USE_AZURE="true"
 ```
 
 ### BingAI
-Bing, also used for Sydney, jailbreak, and Bing Image Creator, see: [Bing Access token](./apis_and_tokens.md#bing-access-token) and [Bing Jailbreak](../features/bing_jailbreak.md)
+Bing, also used for Sydney, jailbreak, and Bing Image Creator, see: [Bing Access token](./ai_setup.md#bingai) and [Bing Jailbreak](../features/bing_jailbreak.md)
 
 - Follow these instructions to get your bing access token (it's best to use the full cookie string for that purpose): [Bing Access Token](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302)  
 - Leave `BINGAI_TOKEN=` blank to disable this endpoint
@@ -171,7 +185,7 @@ BINGAI_HOST=
 ```
 
 ### ChatGPT
-see: [ChatGPT Free Access token](./apis_and_tokens.md#chatgpt-free-access-token)
+see: [ChatGPT Free Access token](./ai_setup.md#chatgptbrowser)
 
 > **Warning**: To use this endpoint you'll have to set up your own reverse proxy. Here is the installation guide to deploy your own (based on [PandoraNext](https://github.com/pandora-next/deploy)): **[PandoraNext Deployment Guide](../features/pandoranext.md)**
 
@@ -192,7 +206,7 @@ CHATGPT_MODELS=text-davinci-002-render-sha
 ```
 
 ### Google
-Follow these instruction to setup: [Google LLMs](./apis_and_tokens.md#google-llms)
+Follow these instructions to setup the [Google Endpoint](./ai_setup.md#google)
 
 ```bash
 GOOGLE_KEY=user_provided

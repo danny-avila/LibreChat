@@ -68,8 +68,8 @@ sudo reboot
 
 ## Tokens/Apis/etc:
 - Make sure you have all the needed variables for the following before moving forward
-### [Get Your API keys and Tokens](../install/apis_and_tokens.md) (Required)
-- You must set up at least one of these tokens or APIs to run the app.
+### [Setup your AI Endpoints](../install/ai_setup.md) (Required)
+- At least one AI endpoint should be setup for use.
 ### [User/Auth System](../install/user_auth_system.md) (Optional)
 - How to set up the user/auth system and Google login.
 ### [Plugins](../features/plugins/introduction.md)

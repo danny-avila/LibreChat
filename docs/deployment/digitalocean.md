@@ -334,7 +334,7 @@ ALLOW_REGISTRATION=false
 ```
 
 **Resources:**
-- [Tokens/Apis/etc](../install/apis_and_tokens.md)
+- [Tokens/Apis/etc](../install/ai_setup.md)
 - [User/Auth System](../install/user_auth_system.md)
 
 ### **3. Start docker, and then run the installation/update script**
