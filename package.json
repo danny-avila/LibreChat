@@ -95,5 +95,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "circular-json-es6": "^2.0.2"
   }
 }
