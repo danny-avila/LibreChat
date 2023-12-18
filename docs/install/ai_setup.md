@@ -209,7 +209,7 @@ Overriding the construction of the API URL will be possible but is not yet imple
 
 ### Model Deployments
 
-*Note: a change will be developed to improve current configuration settings, to allow multiple deployments/model configurations setup with ease: [insert related github issue here]*
+*Note: a change will be developed to improve current configuration settings, to allow multiple deployments/model configurations setup with ease: [#1390](https://github.com/danny-avila/LibreChat/issues/1390)*
 
 As of 2023-12-18, the Azure API allows only one model per deployment.
 
@@ -221,9 +221,10 @@ When you do so, LibreChat will correctly switch the deployment, while associatin
 AZURE_USE_MODEL_AS_DEPLOYMENT_NAME=TRUE
 ```
 
-For example, when you have set `AZURE_USE_MODEL_AS_DEPLOYMENT_NAME=TRUE`, the following deployment configuration works well for LibreChat, including Vision support and tracking the correct max context tokens:
+For example, when you have set `AZURE_USE_MODEL_AS_DEPLOYMENT_NAME=TRUE`, the following deployment configuration provides the most seamless, error-free experience for LibreChat, including Vision support and tracking the correct max context tokens:
 
-[insert image here]
+![Screenshot 2023-12-18 111742](https://github.com/danny-avila/LibreChat/assets/110412045/4aa8a61c-0317-4681-8262-a6382dcaa7b0)
+
 
 Alternatively, you can use custom deployment names and set `AZURE_OPENAI_DEFAULT_MODEL` for expected functionality.
 
@@ -284,9 +285,10 @@ Alternatively, you can set the [required variables](#required-variables) to expl
 
 As of December 18th, 2023, Vision models seem to have degraded performance with Azure OpenAI when compared to [OpenAI](#openai)
 
-[insert image here]
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/7306185f-c32c-4483-9167-af514cc1c2dd)
 
-*Note: a change will be developed to improve current configuration settings, to allow multiple deployments/model configurations setup with ease: [insert related github issue here]*
+
+*Note: a change will be developed to improve current configuration settings, to allow multiple deployments/model configurations setup with ease: [#1390](https://github.com/danny-avila/LibreChat/issues/1390)*
 
 ### Optional Variables
 
