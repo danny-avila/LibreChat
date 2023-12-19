@@ -26,7 +26,7 @@
   </a>
 </p>
 
-# Features
+# 📃 Features
  - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
  - 💬 Multimodal Chat:
      - Upload and analyze images with GPT-4 and Gemini Vision 📸
@@ -46,7 +46,7 @@
 [For a thorough review of our features, see our docs here](https://docs.librechat.ai/features/plugins/introduction.html) 📚
 
 
-## All-In-One AI Conversations with LibreChat
+## 🪶 All-In-One AI Conversations with LibreChat
 LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
@@ -58,23 +58,20 @@ Click on the thumbnail to open the video☝️
 
 ---
 
-## ⚠️ [Breaking Changes](docs/general_info/breaking_changes.md) ⚠️
-
-**Please read this before updating from a previous version**
-
----
-
-## Changelog 
-Keep up with the latest updates by visiting the releases page - [Releases](https://github.com/danny-avila/LibreChat/releases)
-
----
-
-## Documentation
+## 📚 Documentation
 For more information on how to use our advanced features, install and configure our software, and access our guidelines and tutorials, please check out our documentation at [docs.librechat.ai](https://docs.librechat.ai)
 
 ---
 
-## Star History
+## 📝 Changelog 
+Keep up with the latest updates by visiting the releases page - [Releases](https://github.com/danny-avila/LibreChat/releases)
+
+**⚠️ [Breaking Changes](docs/general_info/breaking_changes.md)**
+Please consult the breaking changes before updating.
+
+---
+
+## ⭐ Star History
 
 <a href="https://star-history.com/#danny-avila/LibreChat&Date">
   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
@@ -82,15 +79,14 @@ For more information on how to use our advanced features, install and configure 
 
 ---
 
-## Contributors
-Contributions and suggestions bug reports and fixes are welcome!
-Please read the documentation before you do!
+## ✨ Contributions
+Contributions, suggestions, bug reports and fixes are welcome!
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR. 
 
-- Join the [Discord community](https://discord.gg/uDyZ5Tzhct)
+---
 
-This project exists in its current state thanks to all the people who contribute
+💖 This project exists in its current state thanks to all the people who contribute
 ---
 <a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />
