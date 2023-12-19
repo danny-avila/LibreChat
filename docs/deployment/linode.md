@@ -21,7 +21,7 @@
   sudo apt update
   sudo apt install docker.io && apt install docker-compose
   ```
-## [Install LibreChat](../install/docker_compose_install.md)
+## [Install LibreChat](../install/installation/docker_compose_install.md)
 
 ## Install and Setup NGINX Proxy Manager:
 
