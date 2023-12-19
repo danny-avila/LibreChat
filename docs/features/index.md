@@ -13,6 +13,8 @@ weight: 2
     * 🖌️ [Stable Diffusion](./plugins/stable_diffusion.md)
     * 🤓 [Wolfram](./plugins/wolfram.md)
 ---
+* 🔖 [Presets](./presets.md)
+---
 * 🔨 [Automated Moderation](./mod_system.md)
 * 🪙 [Token Usage](./token_usage.md)
 * 🍃 [Manage Your Database](./manage_your_database.md)
