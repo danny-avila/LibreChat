@@ -9,6 +9,9 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const saveImageFromUrl = require('../saveImageFromUrl');
 const extractBaseURL = require('../../../../utils/extractBaseURL');
 const { DALLE3_SYSTEM_PROMPT, DALLE_REVERSE_PROXY, PROXY } = process.env;
+const { useFirebase } = require('~/server/services/firebase');
+const { saveImageToFirebaseStorage, getFirebaseStorageImageUrl } = require('../saveImageFirebase');
+
 class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
@@ -122,7 +125,7 @@ Error Message: ${error.message}`;
 
     const regex = /img-[\w\d]+.png/;
     const match = theImageUrl.match(regex);
-    let imageName = '1.png';
+    let imageName = `image_${Date.now()}.png`;
 
     if (match) {
       imageName = match[0];
@@ -150,12 +153,22 @@ Error Message: ${error.message}`;
       fs.mkdirSync(this.outputPath, { recursive: true });
     }
 
-    try {
-      await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
-      this.result = this.getMarkdownImageUrl(imageName);
-    } catch (error) {
-      console.error('Error while saving the image:', error);
-      this.result = theImageUrl;
+    if (useFirebase) {
+      try {
+        await saveImageToFirebaseStorage(theImageUrl, imageName);
+        this.result = await getFirebaseStorageImageUrl(imageName);
+      } catch (error) {
+        console.error('Error while saving the image to Firebase Storage:', error);
+        this.result = `Failed to save the image to Firebase Storage. ${error.message}`;
+      }
+    } else {
+      try {
+        await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
+        this.result = this.getMarkdownImageUrl(imageName);
+      } catch (error) {
+        console.error('Error while saving the image locally:', error);
+        this.result = `Failed to save the image locally. ${error.message}`;
+      }
     }
 
     return this.result;
