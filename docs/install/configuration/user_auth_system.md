@@ -1,7 +1,35 @@
+---
+title: User Auth System
+weight: 0
+--- 
+
+<!-- # [Table of Contents](#table-of-contents)
+- [Table of Contents](#table-of-contents)
+- [User/Auth System](#userauth-system)
+  - [**First Time Setup**](#first-time-setup)
+  - [Automated Moderation System (optional)](#automated-moderation-system-optional)
+  - [**OAuth2/Social Login**](#oauth2social-login)
+  - [Before enabling Social Authentication, set ALLOW\_SOCIAL\_LOGIN=true in the .env file](#before-enabling-social-authentication-set-allow_social_logintrue-in-the-env-file)
+  - [Google Authentication](#google-authentication)
+  - [Facebook Authentication](#facebook-authentication)
+    - [(It only works with a domain, not with localhost)](#it-only-works-with-a-domain-not-with-localhost)
+  - [OpenID Authentication with Azure AD](#openid-authentication-with-azure-ad)
+  - [OpenID Authentication with AWS Cognito](#openid-authentication-with-aws-cognito)
+  - [GitHub Authentication](#github-authentication)
+  - [Discord Authentication](#discord-authentication)
+  - [**Email and Password Reset**](#email-and-password-reset)
+    - [General setup](#general-setup)
+    - [Setup with Gmail](#setup-with-gmail)
+    - [Setup with custom mail server](#setup-with-custom-mail-server)
+  - [**Disable User Registration**](#disable-user-registration)
+  - [**Manual User Registration**](#manual-user-registration) -->
+
 # User/Auth System
 
 
 >⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+
+---
 
 ## **First Time Setup**
 
@@ -25,6 +53,8 @@ REFRESH_TOKEN_EXPIRY=(1000 * 60 * 60 * 24) * 7
 DOMAIN_SERVER=http://localhost:3080
 DOMAIN_CLIENT=http://localhost:3080
 ```
+
+---
 
 ## Automated Moderation System (optional)
 
@@ -156,6 +186,7 @@ GITHUB_CLIENT_SECRET=your_client_secret
 GITHUB_CALLBACK_URL=/oauth/github/callback # this should be the same for everyone
 ```
 9. Save the .env file
+
 ---
 
 ## Discord Authentication
@@ -174,6 +205,7 @@ DISCORD_CALLBACK_URL=/oauth/discord/callback # this should be the same for every
 8. Save the .env file
 
 ---
+
 ## **Email and Password Reset**
 
 ### General setup
@@ -241,6 +273,8 @@ EMAIL_FROM=email address for the from field, e.g., noreply@librechat.ai
 EMAIL_FROM_NAME="My LibreChat Server"
 ```
 
+---
+
 ## **Disable User Registration**
 
 To disable or re-enable registration, open up the root `.env` file and set `ALLOW_REGISTRATION=true` or `ALLOW_REGISTRATION=false` depending on if you want registration open or closed.
@@ -248,15 +282,6 @@ To disable or re-enable registration, open up the root `.env` file and set `ALLO
 To disable or re-enable social registration, open up the root `.env` file and set `ALLOW_SOCIAL_REGISTRATION=true` or `ALLOW_SOCIAL_REGISTRATION=false` depending on if you want social registration open or closed.
 
 **NOTE: OpenID does not support the ability to disable only registration.**
-
-### ⚠️***Warning***
-
-If you previously implemented your own user system using the original scaffolding that was provided, you will no longer see conversations and presets by switching to the new user system. This is because of a design flaw in the scaffolding implementation that was problematic for the inclusion of social login.
-
-### For user updating from an older version of the app:
-
-When the first account is registered, the application will automatically migrate any conversations and presets that you created before the user system was implemented to that account.
-if you use login for the first time with a social login account (eg. Google, facebook, etc.), the conversations and presets that you created before the user system was implemented will NOT be migrated to that account.
 
 ## **Manual User Registration**
 You can use `npm run create-user` to create a user. If you can't get npm to work, try `sudo docker exec -ti LibreChat sh` first to "ssh" into the container.

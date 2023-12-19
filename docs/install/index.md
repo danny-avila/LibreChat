@@ -17,7 +17,7 @@ weight: 1
 
   * ⚙️ [.env Configuration](./configuration/dotenv.md) 
   * 🐋 [Docker Override File](./configuration/docker_override.md)
-  * 🗝️ [AI Setup - APIs and Tokens](./configuration/ai_setup.md)
+  * 🗝️ [AI Setup](./configuration/ai_setup.md)
   * 🆓 [Free APIs - Reverse Proxies](./configuration/free_ai_apis.md) 
   * 🛂 [User Auth System](./configuration/user_auth_system.md) 
   * 🍃 [Online MongoDB Database](./configuration/mongodb.md) 

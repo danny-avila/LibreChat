@@ -1,9 +1,9 @@
 ---
-title: AI Setup - APIs and Tokens
+title: AI Setup
 weight: 0
 ---
 
-# Table of Contents
+<!-- # Table of Contents
 
 - [Table of Contents](#table-of-contents)
 - [AI Setup](#ai-setup)
@@ -31,7 +31,7 @@ weight: 0
   - [Unofficial APIs](#unofficial-apis)
     - [ChatGPTBrowser](#chatgptbrowser)
     - [BingAI](#bingai)
-  - [Conclusion](#conclusion)
+  - [Conclusion](#conclusion) -->
 
 ---
 
