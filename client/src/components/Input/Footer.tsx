@@ -1,5 +1,4 @@
-import React from 'react';
-import { useGetStartupConfig } from 'librechat-data-provider';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
 
 export default function Footer() {

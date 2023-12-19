@@ -6,7 +6,7 @@
  * @property {string} azureOpenAIApiVersion - The Azure OpenAI API version.
  */
 
-const { isEnabled } = require('../server/utils');
+const { isEnabled } = require('~/server/utils');
 
 /**
  * Sanitizes the model name to be used in the URL by removing or replacing disallowed characters.

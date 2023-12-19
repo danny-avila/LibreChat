@@ -1,11 +1,7 @@
-import {
-  TConversation,
-  useGetConversationsQuery,
-  useSearchQuery,
-  TSearchResults,
-} from 'librechat-data-provider';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchQuery, useGetConversationsQuery } from 'librechat-data-provider/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { TConversation, TSearchResults } from 'librechat-data-provider';
 import {
   useAuthContext,
   useMediaQuery,

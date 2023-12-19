@@ -1,23 +1,29 @@
 import React, { ChangeEvent, FC } from 'react';
-import { Input, Label } from '~/components';
 import { cn, defaultTextPropsLabel, removeFocusOutlines } from '~/utils/';
+import { Input, Label } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 interface InputWithLabelProps {
   value: string;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   label: string;
+  subLabel?: string;
   id: string;
 }
 
-const InputWithLabel: FC<InputWithLabelProps> = ({ value, onChange, label, id }) => {
+const InputWithLabel: FC<InputWithLabelProps> = ({ value, onChange, label, subLabel, id }) => {
   const localize = useLocalize();
   return (
     <>
-      <Label htmlFor={id} className="text-left text-sm font-medium">
-        {label}
+      <div className="flex flex-row">
+        <Label htmlFor={id} className="text-left text-sm font-medium">
+          {label}
+        </Label>
+        {subLabel && (
+          <div className="mx-1 text-left text-sm text-gray-700 dark:text-gray-400">{subLabel}</div>
+        )}
         <br />
-      </Label>
+      </div>
 
       <Input
         id={id}

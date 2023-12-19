@@ -1,4 +1,5 @@
-import { TConversation, useGetPublicConversationQuery } from 'librechat-data-provider';
+import { TConversation } from 'librechat-data-provider';
+import { useGetPublicConversationQuery } from 'librechat-data-provider/react-query';
 import { useEffect, useState } from 'react';
 import { Spinner } from '../svg';
 import { useNavigate, useParams } from 'react-router-dom';

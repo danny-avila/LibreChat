@@ -1,4 +1,4 @@
-import { useGetUserByIdQuery } from 'librechat-data-provider';
+import { useGetUserByIdQuery } from 'librechat-data-provider/react-query';
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';

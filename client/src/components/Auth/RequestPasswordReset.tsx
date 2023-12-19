@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { useLocalize } from '~/hooks';
+import { useState, useEffect } from 'react';
 import {
-  useRequestPasswordResetMutation,
   useGetStartupConfig,
-  TRequestPasswordReset,
-  TRequestPasswordResetResponse,
-} from 'librechat-data-provider';
+  useRequestPasswordResetMutation,
+} from 'librechat-data-provider/react-query';
+import type { TRequestPasswordReset, TRequestPasswordResetResponse } from 'librechat-data-provider';
+import { useLocalize } from '~/hooks';
 
 function RequestPasswordReset() {
   const localize = useLocalize();

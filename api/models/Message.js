@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const crypto = require('crypto');
 const Message = require('./schema/messageSchema');
+const logger = require('~/config/winston');
 
 const idSchema = z.string().uuid();
 
@@ -70,7 +71,7 @@ module.exports = {
         tokenCount,
       };
     } catch (err) {
-      console.error(`Error saving message: ${err}`);
+      logger.error('Error saving message:', err);
       throw new Error('Failed to save message.');
     }
   },
@@ -95,7 +96,7 @@ module.exports = {
         isEdited: true,
       };
     } catch (err) {
-      console.error(`Error updating message: ${err}`);
+      logger.error('Error updating message:', err);
       throw new Error('Failed to update message.');
     }
   },
@@ -134,7 +135,7 @@ module.exports = {
         });
       }
     } catch (err) {
-      console.error(`Error deleting messages: ${err}`);
+      logger.error('Error deleting messages:', err);
       throw new Error('Failed to delete messages.');
     }
   },
@@ -143,7 +144,7 @@ module.exports = {
     try {
       return await Message.find(filter).sort({ createdAt: 1 }).lean();
     } catch (err) {
-      console.error(`Error getting messages: ${err}`);
+      logger.error('Error getting messages:', err);
       throw new Error('Failed to get messages.');
     }
   },
@@ -152,7 +153,7 @@ module.exports = {
     try {
       return await Message.deleteMany(filter);
     } catch (err) {
-      console.error(`Error deleting messages: ${err}`);
+      logger.error('Error deleting messages:', err);
       throw new Error('Failed to delete messages.');
     }
   },

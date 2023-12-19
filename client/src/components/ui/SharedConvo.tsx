@@ -1,9 +1,5 @@
-import {
-  TConversation,
-  TUser,
-  TMessage,
-  useLikeConversationMutation,
-} from 'librechat-data-provider';
+import { TConversation, TUser, TMessage } from 'librechat-data-provider';
+import { useLikeConversationMutation } from 'librechat-data-provider/react-query';
 import React, { useEffect, useState } from 'react';
 import { CSSTransition } from 'react-transition-group';
 import { useNavigate, useParams } from 'react-router-dom';

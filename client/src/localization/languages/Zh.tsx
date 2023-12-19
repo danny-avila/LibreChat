@@ -152,6 +152,7 @@ export default {
   com_endpoint_bing_system_message_placeholder:
     '警告：滥用此功能可能导致你被禁止使用必应！点击“系统消息”查看完整的使用指南，如果你忽略了默认消息，那么将会使用被视为安全的“Sydney”预设。',
   com_endpoint_system_message: '系统消息',
+  com_endpoint_message: '消息发送给',
   com_endpoint_default_blank: '初始值: 空白',
   com_endpoint_default_false: '初始值: 否',
   com_endpoint_default_creative: '初始值: 创意',
@@ -250,6 +251,7 @@ export default {
   com_endpoint_func_hover: '将插件作为OpenAI函数使用',
   com_endpoint_skip_hover: '跳过补全步骤， 检查最终答案和生成步骤',
   com_endpoint_config_key: '设置API Key',
+  com_endpoint_config_placeholder: '在标题菜单中设置您的API Key键以进行聊天。',
   com_endpoint_config_key_for: '设置API Key：',
   com_endpoint_config_key_name: '密钥',
   com_endpoint_config_value: '输入值：',

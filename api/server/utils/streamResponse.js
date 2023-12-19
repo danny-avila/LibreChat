@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { saveMessage } = require('../../models/Message');
+const { saveMessage } = require('~/models/Message');
 
 /**
  * Sends error data in Server Sent Events format and ends the response.

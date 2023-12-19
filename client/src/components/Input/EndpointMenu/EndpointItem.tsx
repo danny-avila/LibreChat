@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useGetEndpointsQuery, alternateName } from 'librechat-data-provider';
 import { Settings } from 'lucide-react';
+import { alternateName } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { DropdownMenuRadioItem } from '~/components';
-import { Icon } from '~/components/Endpoints';
 import { SetKeyDialog } from '../SetKeyDialog';
+import { Icon } from '~/components/Endpoints';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

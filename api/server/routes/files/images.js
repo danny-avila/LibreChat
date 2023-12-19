@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const express = require('express');
 const upload = require('./multer');
 const { localStrategy } = require('~/server/services/Files');
+const { logger } = require('~/config');
 
 const router = express.Router();
 
@@ -35,11 +36,11 @@ router.post('/', upload.single('file'), async (req, res) => {
     metadata.file_id = req.file_id;
     await localStrategy({ req, res, file, metadata });
   } catch (error) {
-    console.error('Error processing file:', error);
+    logger.error('[/files/images] Error processing file:', error);
     try {
       await fs.unlink(file.path);
     } catch (error) {
-      console.error('Error deleting file:', error);
+      logger.error('[/files/images] Error deleting file:', error);
     }
     res.status(500).json({ message: 'Error processing file' });
   }
@@ -49,7 +50,7 @@ router.post('/', upload.single('file'), async (req, res) => {
   //   try {
   //     // await fs.unlink(file.path);
   //   } catch (error) {
-  //     console.error('Error deleting file:', error);
+  //     logger.error('[/files/images] Error deleting file:', error);
 
   //   }
   // }

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { logger } = require('~/config');
 
 const promptSchema = mongoose.Schema(
   {
@@ -28,7 +29,7 @@ module.exports = {
       });
       return { title, prompt };
     } catch (error) {
-      console.error(error);
+      logger.error('Error saving prompt', error);
       return { prompt: 'Error saving prompt' };
     }
   },
@@ -36,7 +37,7 @@ module.exports = {
     try {
       return await Prompt.find(filter).lean();
     } catch (error) {
-      console.error(error);
+      logger.error('Error getting prompts', error);
       return { prompt: 'Error getting prompts' };
     }
   },
@@ -44,7 +45,7 @@ module.exports = {
     try {
       return await Prompt.deleteMany(filter);
     } catch (error) {
-      console.error(error);
+      logger.error('Error deleting prompts', error);
       return { prompt: 'Error deleting prompts' };
     }
   },

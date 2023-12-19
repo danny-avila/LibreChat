@@ -1,8 +1,9 @@
 const { z } = require('zod');
+const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
 const { deleteFiles } = require('~/models');
-const path = require('path');
+const { logger } = require('~/config');
 
 const router = express.Router();
 
@@ -55,7 +56,7 @@ router.delete('/', async (req, res) => {
     await Promise.all(promises);
     res.status(200).json({ message: 'Files deleted successfully' });
   } catch (error) {
-    console.error('Error deleting files:', error);
+    logger.error('[/files] Error deleting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
   }
 });

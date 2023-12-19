@@ -1,6 +1,6 @@
 const partialRight = require('lodash/partialRight');
-const { getCitations, citeText } = require('./citations');
 const { sendMessage } = require('./streamResponse');
+const { getCitations, citeText } = require('./citations');
 const cursor = '<span className="result-streaming">█</span>';
 const citationRegex = /\[\^\d+?\^]/g;
 
@@ -138,21 +138,31 @@ function formatAction(action) {
 }
 
 /**
- * Checks if the given string value is truthy by comparing it to the string 'true' (case-insensitive).
+ * Checks if the given value is truthy by being either the boolean `true` or a string
+ * that case-insensitively matches 'true'.
  *
  * @function
- * @param {string|null|undefined} value - The string value to check.
- * @returns {boolean} Returns `true` if the value is a case-insensitive match for the string 'true', otherwise returns `false`.
+ * @param {string|boolean|null|undefined} value - The value to check.
+ * @returns {boolean} Returns `true` if the value is the boolean `true` or a case-insensitive
+ *                    match for the string 'true', otherwise returns `false`.
  * @example
  *
  * isEnabled("True");  // returns true
  * isEnabled("TRUE");  // returns true
+ * isEnabled(true);    // returns true
  * isEnabled("false"); // returns false
+ * isEnabled(false);   // returns false
  * isEnabled(null);    // returns false
  * isEnabled();        // returns false
  */
 function isEnabled(value) {
-  return value?.toLowerCase()?.trim() === 'true';
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return value.toLowerCase().trim() === 'true';
+  }
+  return false;
 }
 
 module.exports = {

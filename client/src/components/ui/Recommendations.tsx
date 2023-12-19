@@ -6,12 +6,8 @@ import useDocumentTitle from '~/hooks/useDocumentTitle';
 import MultiMessage from '../Messages/MultiMessage';
 import buildTree from '~/utils/buildTree';
 import { useScreenshot } from '~/hooks/';
-import {
-  TConversation,
-  TMessage,
-  TUser,
-  useLikeConversationMutation,
-} from 'librechat-data-provider';
+import { TConversation, TMessage, TUser } from 'librechat-data-provider';
+import { useLikeConversationMutation } from 'librechat-data-provider/react-query';
 import SwitchPage from './SwitchPage';
 import { useLocalize } from '~/hooks';
 import { useAuthContext } from '~/hooks/AuthContext';

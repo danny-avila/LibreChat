@@ -1,17 +1,14 @@
-const { getUserPluginAuthValue } = require('../../../../server/services/PluginService');
-const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { ZapierToolKit } = require('langchain/agents');
-const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
-const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
+const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
+const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
+const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
-  AIPluginTool,
   GoogleSearchAPI,
   WolframAlphaAPI,
   StructuredWolfram,
-  HttpRequestTool,
   OpenAICreateImage,
   StableDiffusionAPI,
   DALLE3,
@@ -23,8 +20,9 @@ const {
   CodeSherpaTools,
   CodeBrew,
 } = require('../');
-const { loadSpecs } = require('./loadSpecs');
 const { loadToolSuite } = require('./loadToolSuite');
+const { loadSpecs } = require('./loadSpecs');
+const { logger } = require('~/config');
 
 const getOpenAIKey = async (options, user) => {
   let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
@@ -64,7 +62,7 @@ const validateTools = async (user, tools = []) => {
 
     return Array.from(validToolsSet.values());
   } catch (err) {
-    console.log('There was a problem validating tools', err);
+    logger.error('[validateTools] There was a problem validating tools', err);
     throw new Error(err);
   }
 };
@@ -160,15 +158,6 @@ const loadTools = async ({
       }
       const zapier = new ZapierNLAWrapper({ apiKey });
       return ZapierToolKit.fromZapierNLAWrapper(zapier);
-    },
-    plugins: async () => {
-      return [
-        new HttpRequestTool(),
-        await AIPluginTool.fromPluginUrl(
-          'https://www.klarna.com/.well-known/ai-plugin.json',
-          new ChatOpenAI({ openAIApiKey: options.openAIApiKey, temperature: 0 }),
-        ),
-      ];
     },
   };
 

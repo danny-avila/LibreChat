@@ -1,6 +1,5 @@
-import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
-import { useGetMessagesByConvoId } from 'librechat-data-provider';
+import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import ChatView from '~/components/Chat/SingleChatView';
 import useAuthRedirect from './useAuthRedirect';
 import { buildTree } from '~/utils';

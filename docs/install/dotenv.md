@@ -15,6 +15,29 @@ APP_TITLE=LibreChat
 CUSTOM_FOOTER="My custom footer"
 ```
 
+### Logging
+
+LibreChat has built-in central logging.
+
+- Debug logging is enabled by default and crucial for development.
+- To report issues, reproduce the error and submit logs from `./api/logs/debug-%DATE%.log` at [LibreChat GitHub Issues](https://github.com/danny-avila/LibreChat/issues).
+- Error logs are stored in the same location.
+- Keep debug logs active by default or disable them by setting `DEBUG_LOGGING=FALSE` in the environment variable.
+- For more information about this feature, read our docs: https://docs.librechat.ai/features/logging_system.html
+
+```bash
+DEBUG_LOGGING=TRUE
+```
+
+- Enable verbose server output in the console with `DEBUG_CONSOLE=TRUE`, though it's not recommended due to high verbosity.
+
+```bash
+DEBUG_CONSOLE=TRUE
+```
+
+This is not recommend, however, as the outputs can be quite verbose, and so it's disabled by default.
+
+
 ### Port
 
 - The server will listen to localhost:3080 by default. You can change the target IP as you want. If you want to make this server available externally, for example to share the server with others or expose this from a Docker container, set host to 0.0.0.0 or your external IP interface. 
@@ -30,7 +53,9 @@ PORT=3080
 
 ### MongoDB Database
 
-- Change this to your MongoDB URI if different. It is recommend to append LibreChat.
+- Change this to your MongoDB URI if different. You should also add `LibreChat` or your own `APP_TITLE` as the database name in the URI. For example:
+  - if you are using docker, the URI format is `mongodb://<ip>:<port>/<database>`. Your `MONGO_URI` should look like this: `mongodb://127.0.0.1:27018/LibreChat`
+  - if you are using an online db, the URI format is `mongodb+srv://<username>:<password>@<host>/<database>?<options>`. Your `MONGO_URI` should look like this: `mongodb+srv://username:password@host.mongodb.net/LibreChat?retryWrites=true` (`retryWrites=true` is the only option you need when using the online db)
 - Instruction on how to create an online MongoDB database (useful for use without docker):
     - [Online MongoDB](./mongodb.md)
 - Securely access your docker MongoDB database:
@@ -166,6 +191,23 @@ CHATGPT_TOKEN=
 CHATGPT_MODELS=text-davinci-002-render-sha
 ```
 
+### Google
+Follow these instruction to setup: [Google LLMs](./apis_and_tokens.md#google-llms)
+
+```bash
+GOOGLE_KEY=user_provided
+GOOGLE_REVERSE_PROXY=
+```
+
+- Customize the available models, separated by commas, **without spaces**.
+    - The first will be default.
+    - Leave it blank or commented out to use internal settings (default: all listed below).
+
+```bash
+# all available models as of 12/16/23
+GOOGLE_MODELS=gemini-pro,gemini-pro-vision,chat-bison,chat-bison-32k,codechat-bison,codechat-bison-32k,text-bison,text-bison-32k,text-unicorn,code-gecko,code-bison,code-bison-32k
+```
+
 ### OpenAI
 
 - To get your OpenAI API key, you need to:
@@ -243,14 +285,6 @@ See [OpenRouter](./free_ai_apis.md#openrouter-preferred) for more info.
 
 ```bash
 OPENROUTER_API_KEY=
-```
-
-### PaLM
-Follow these instruction to setup: [Google PaLM 2](./apis_and_tokens.md#googles-palm-2)
-
-```bash
-GOOGLE_KEY=user_provided
-GOOGLE_REVERSE_PROXY=
 ```
 
 ### Plugins

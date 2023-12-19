@@ -6,34 +6,12 @@ import {
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
-import * as t from './types';
-import * as s from './schemas';
-import * as m from './types/mutations';
-import * as dataService from './data-service';
-
-// export enum QueryKeys {
-//   messages = 'messages',
-//   allConversations = 'allConversations',
-//   conversation = 'conversation',
-//   searchEnabled = 'searchEnabled',
-//   user = 'user',
-//   name = 'name', // user key name
-//   models = 'models',
-//   balance = 'balance',
-//   userById = 'userById',
-//   endpoints = 'endpoints',
-//   presets = 'presets',
-//   searchResults = 'searchResults',
-//   tokenCount = 'tokenCount',
-//   availablePlugins = 'availablePlugins',
-//   startupConfig = 'startupConfig',
-//   recommendations = 'recommendations',
-//   numOfReferrals = 'numOfReferrals',
-//   likedConversations = 'likedConversations',
-//   publicConversatons = 'publicConversatons',
-// }
-import request from './request';
-import { QueryKeys } from './keys';
+import * as t from '../types';
+import * as s from '../schemas';
+import * as m from '../types/mutations';
+import * as dataService from '../data-service';
+import request from '../request';
+import { QueryKeys } from '../keys';
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
   void,
@@ -324,20 +302,6 @@ export const useCreatePresetMutation = (): UseMutationResult<
   });
 };
 
-export const useUpdatePresetMutation = (): UseMutationResult<
-  s.TPreset,
-  unknown,
-  s.TPreset,
-  unknown
-> => {
-  const queryClient = useQueryClient();
-  return useMutation((payload: s.TPreset) => dataService.updatePreset(payload), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.presets]);
-    },
-  });
-};
-
 export const useDeletePresetMutation = (): UseMutationResult<
   m.PresetDeleteResponse,
   unknown,
@@ -393,6 +357,11 @@ export const useLoginUserMutation = (): UseMutationResult<
   return useMutation((payload: t.TLoginUser) => dataService.login(payload), {
     onMutate: () => {
       queryClient.removeQueries();
+      localStorage.removeItem('lastConversationSetup');
+      localStorage.removeItem('lastSelectedModel');
+      localStorage.removeItem('lastSelectedTools');
+      localStorage.removeItem('filesToDelete');
+      localStorage.removeItem('lastAssistant');
     },
   });
 };
@@ -421,11 +390,6 @@ export const useRefreshTokenMutation = (): UseMutationResult<
   return useMutation(() => request.refreshToken(), {
     onMutate: () => {
       queryClient.removeQueries();
-      localStorage.removeItem('lastConversationSetup');
-      localStorage.removeItem('lastSelectedModel');
-      localStorage.removeItem('lastSelectedTools');
-      localStorage.removeItem('filesToDelete');
-      localStorage.removeItem('lastAssistant');
     },
   });
 };

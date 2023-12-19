@@ -1,7 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { useUpdateConversationMutation } from 'librechat-data-provider';
+import { useUpdateConversationMutation } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useConversations, useNavigateToConvo } from '~/hooks';
 import { MinimalIcon } from '~/components/Endpoints';

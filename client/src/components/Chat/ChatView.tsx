@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
-import { useGetMessagesByConvoId } from 'librechat-data-provider';
+import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import { useChatHelpers, useSSE } from '~/hooks';
 // import GenerationButtons from './Input/GenerationButtons';
 import MessagesView from './Messages/MessagesView';

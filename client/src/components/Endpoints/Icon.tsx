@@ -6,6 +6,7 @@ import {
   AzureMinimalIcon,
   PaLMIcon,
   CodeyIcon,
+  GeminiIcon,
 } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { IconProps } from '~/common';
@@ -59,12 +60,18 @@ const Icon: React.FC<IconProps> = (props) => {
         name: 'Plugins',
       },
       [EModelEndpoint.google]: {
-        icon: model?.includes('code') ? (
+        icon: model?.toLowerCase()?.includes('code') ? (
           <CodeyIcon size={size * 0.75} />
+        ) : model?.toLowerCase()?.includes('gemini') ? (
+          <GeminiIcon size={size * 0.7} />
         ) : (
           <PaLMIcon size={size * 0.7} />
         ),
-        name: model?.includes('code') ? 'Codey' : 'PaLM2',
+        name: model?.toLowerCase()?.includes('code')
+          ? 'Codey'
+          : model?.toLowerCase()?.includes('gemini')
+            ? 'Gemini'
+            : 'PaLM2',
       },
       [EModelEndpoint.anthropic]: {
         icon: <AnthropicIcon size={size * 0.5555555555555556} />,

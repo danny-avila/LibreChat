@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { Fragment, useState, memo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
-import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider';
+import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TConversation } from 'librechat-data-provider';
 import { ExportModal } from './ExportConversation';
 import { LinkIcon, GearIcon } from '~/components';

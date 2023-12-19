@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useGetConversationByIdQuery } from 'librechat-data-provider';
 import { useState, useEffect } from 'react';
+import { useGetConversationByIdQuery } from 'librechat-data-provider/react-query';
 import { useSetRecoilState, useRecoilState, useRecoilValue } from 'recoil';
 import copy from 'copy-to-clipboard';
 import { SubRow, Plugin, MessageContent } from './Content';
