@@ -12,12 +12,13 @@ weight: 2
     * 🔎 [Google](./plugins/google_search.md)
     * 🖌️ [Stable Diffusion](./plugins/stable_diffusion.md)
     * 🤓 [Wolfram](./plugins/wolfram.md)
-###
-* 🔨 [Automated Moderation](mod_system.md)
-* 🪙 [Token Usage](token_usage.md)
-* 🍃 [Manage Your Database](manage_your_database.md)
-* 📦 [PandoraNext Deployment Guide](pandoranext.md)
-* 🔃 [Proxy](proxy.md)
-* 😈 [Bing Jailbreak](bing_jailbreak.md)
-###
-* ✨ [Third-Party Tools and contributions](third_party.md)
+---
+* 🔨 [Automated Moderation](./mod_system.md)
+* 🪙 [Token Usage](./token_usage.md)
+* 🍃 [Manage Your Database](./manage_your_database.md)
+* 🪵 [Logging System](./logging_system.md)
+* 📦 [PandoraNext Deployment Guide](./pandoranext.md)
+* 🔃 [Proxy](./proxy.md)
+* 😈 [Bing Jailbreak](./bing_jailbreak.md)
+---
+* ✨ [Third-Party Tools and contributions](./third_party.md)
