@@ -1,28 +1,36 @@
+---
+title: AI Setup - APIs and Tokens
+weight:
+---
+
 # Table of Contents
 
-1. [AI Setup](#ai-setup)
-    - [General Information](#general)
-        - [Free AI APIs](#free-ai-apis)
-        - [Setting a Default Endpoint](#setting-a-default-endpoint)
-        - [Setting a Default Preset](#setting-a-default-preset)
-    - [OpenAI](#openai)
-    - [Anthropic](#anthropic)
-    - [Google](#google)
-        - [Generative Language API (Gemini)](#generative-language-api-gemini)
-        - [Vertex AI (PaLM 2 & Codey)](#vertex-ai-palm-2--codey)
-    - [Azure OpenAI](#azure-openai)
-        - [Required Variables](#required-variables)
-        - [Model Deployments](#model-deployments)
-        - [Setting a Default Model for Azure](#setting-a-default-model-for-azure)
-        - [Enabling Auto-Generated Titles with Azure](#enabling-auto-generated-titles-with-azure)
-        - [Using GPT-4 Vision with Azure](#using-gpt-4-vision-with-azure)
-        - [Setting Azure OpenAI as the Default Endpoint](#setting-azure-openai-as-the-default-endpoint)
-        - [Optional Variables](#optional-variables)
-        - [Using Plugins with Azure](#using-plugins-with-azure)
-    - [Unofficial APIs](#unofficial-apis)
-        - [ChatGPTBrowser](#chatgptbrowser)
-        - [BingAI](#bingai)
-2. [Conclusion](#conclusion)
+- [Table of Contents](#table-of-contents)
+- [AI Setup](#ai-setup)
+  - [General](#general)
+    - [Free AI APIs](#free-ai-apis)
+    - [Setting a Default Endpoint](#setting-a-default-endpoint)
+    - [Setting a Default Preset](#setting-a-default-preset)
+  - [OpenAI](#openai)
+  - [Anthropic](#anthropic)
+  - [Google](#google)
+    - [Generative Language API (Gemini)](#generative-language-api-gemini)
+    - [Vertex AI (PaLM 2 \& Codey)](#vertex-ai-palm-2--codey)
+    - [1. Once signed up, Enable the Vertex AI API on Google Cloud:](#1-once-signed-up-enable-the-vertex-ai-api-on-google-cloud)
+    - [2. Create a Service Account with Vertex AI role:](#2-create-a-service-account-with-vertex-ai-role)
+    - [3. Create a JSON key to Save in your Project Directory:](#3-create-a-json-key-to-save-in-your-project-directory)
+  - [Azure OpenAI](#azure-openai)
+    - [Required Variables](#required-variables)
+    - [Model Deployments](#model-deployments)
+    - [Setting a Default Model for Azure](#setting-a-default-model-for-azure)
+    - [Enabling Auto-Generated Titles with Azure](#enabling-auto-generated-titles-with-azure)
+    - [Using GPT-4 Vision with Azure](#using-gpt-4-vision-with-azure)
+    - [Optional Variables](#optional-variables)
+    - [Using Plugins with Azure](#using-plugins-with-azure)
+  - [Unofficial APIs](#unofficial-apis)
+    - [ChatGPTBrowser](#chatgptbrowser)
+    - [BingAI](#bingai)
+  - [Conclusion](#conclusion)
 
 ---
 
@@ -322,7 +330,7 @@ This is not to be confused with [OpenAI's Official API](#openai)!
 
 > Note that this is disabled by default and requires additional configuration to work. 
 > Also, using this may have your data exposed to 3rd parties if using a proxy, and OpenAI may flag your account.
-> See: [ChatGPT Reverse Proxy](../features/pandoranext.md)
+> See: [ChatGPT Reverse Proxy](../../features/pandoranext.md)
 
 To get your Access token for ChatGPT Browser Access, you need to:
 

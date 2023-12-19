@@ -30,7 +30,7 @@ DOMAIN_CLIENT=http://localhost:3080
 
 The Automated Moderation System uses a scoring mechanism to track user violations. As users commit actions like excessive logins, registrations, or messaging, they accumulate violation scores. Upon reaching a set threshold, the user and their IP are temporarily banned. This system ensures platform security by monitoring and penalizing rapid or suspicious activities.
 
-To set up the mod system, review [the setup guide](../features/mod_system.md).
+To set up the mod system, review [the setup guide](../../features/mod_system.md).
 
 *Please Note: If you are wanting this to work in development mode, you will need to create a file called `.env.development` in the root directory and set `DOMAIN_CLIENT` to `http://localhost:3090` or whatever port  is provided by vite when runnning `npm run frontend-dev`*
 
