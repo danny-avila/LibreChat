@@ -25,7 +25,8 @@ async function moderateText(req, res, next) {
       const flagged = results.some((result) => result.flagged);
 
       if (flagged) {
-        const errorMessage = 'message is against moderation';
+        const type = 'moderation';
+        const errorMessage = { type };
         return await denyRequest(req, res, errorMessage);
       }
     } catch (error) {
