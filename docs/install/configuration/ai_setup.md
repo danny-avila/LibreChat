@@ -27,6 +27,7 @@ weight: 0
     - [Using GPT-4 Vision with Azure](#using-gpt-4-vision-with-azure)
     - [Optional Variables](#optional-variables)
     - [Using Plugins with Azure](#using-plugins-with-azure)
+  - [OpenRouter](#openrouter)
   - [Unofficial APIs](#unofficial-apis)
     - [ChatGPTBrowser](#chatgptbrowser)
     - [BingAI](#bingai)
@@ -315,6 +316,35 @@ To use Azure with the Plugins endpoint, make sure the following environment vari
 
 * `PLUGINS_USE_AZURE`: If set to "true" or any truthy value, this will enable the program to use Azure with the Plugins endpoint.
 * `AZURE_API_KEY`: Your Azure API key must be set with an environment variable.
+
+---
+
+## [OpenRouter](https://openrouter.ai/)
+
+[OpenRouter](https://openrouter.ai/) is a legitimate proxy service to a multitude of LLMs, both closed and open source, including:
+- OpenAI models (great if you are barred from their API for whatever reason)
+- Anthropic Claude models (same as above)
+- Meta's Llama models
+- pygmalionai/mythalion-13b
+- and many more open source models. Newer integrations are usually discounted, too!
+
+> See their available models and pricing here: [Supported Models](https://openrouter.ai/docs#models)
+
+OpenRouter is so great, I decided to integrate it to the project as a standalone feature.
+
+**Setup:**
+- Signup to [OpenRouter](https://openrouter.ai/) and create a key. You should name it and set a limit as well.
+- Set the environment variable `OPENROUTER_API_KEY` in your .env file to the key you just created.
+- Set something in the `OPENAI_API_KEY`, it can be anyting, but **do not** leave it blank or set to `user_provided`  
+- Restart your LibreChat server and use the OpenAI or Plugins endpoints.
+
+**Notes:** 
+- [TODO] **In the future, you will be able to set up OpenRouter from the frontend as well.**
+- This will override the official OpenAI API or your reverse proxy settings for both Plugins and OpenAI.
+- On initial setup, you may need to refresh your page twice to see all their supported models populate automatically.
+- Plugins: Functions Agent works with OpenRouter when using OpenAI models.
+- Plugins: Turn functions off to try plugins with non-OpenAI models (ChatGPT plugins will not work and others may not work as expected).
+- Plugins: Make sure `PLUGINS_USE_AZURE` is not set in your .env file when wanting to use OpenRouter and you have Azure configured.
 
 ---
 

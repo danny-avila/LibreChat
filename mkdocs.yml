@@ -81,7 +81,7 @@ plugins:
       warning: true # Controls whether to send a Warning when invalid values are detected in markdown metadata
       reverse: false # If true, sort nav by weight from largest to smallest.
       headless_included: false
-# https://github.com/shu307/mkdocs-nav-weight?tab=readme-ov-file
+# for more info: https://github.com/shu307/mkdocs-nav-weight?tab=readme-ov-file
 
 extra:
   social:

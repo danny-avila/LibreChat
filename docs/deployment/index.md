@@ -1,6 +1,6 @@
 ---
 title: Deployment
-weight: -8
+weight: 3
 ---
 
 # Deployment

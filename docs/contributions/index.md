@@ -1,6 +1,6 @@
 ---
 title: Contributing to LibreChat
-weight: 0
+weight: 5
 ---
 # Contributing to LibreChat
 

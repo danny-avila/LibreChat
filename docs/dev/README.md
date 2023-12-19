@@ -1,6 +1,6 @@
 ﻿---
 title: Dev Resources
-weight: 0
+weight: 6
 ---
 # Dev Resources
 This directory: [./docs/dev](https://github.com/danny-avila/LibreChat/tree/main/docs/dev), contains files used for developer work.
