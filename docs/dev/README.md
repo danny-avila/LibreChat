@@ -2,7 +2,10 @@
 title: Dev Resources
 weight: 6
 ---
+
 # Dev Resources
+Please consult: [Contributing to LibreChat](../contributions/index.md) for more information on the subject. 
+
 This directory: [./docs/dev](https://github.com/danny-avila/LibreChat/tree/main/docs/dev), contains files used for developer work.
 
 ### Dockerfile-app: 
