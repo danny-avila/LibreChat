@@ -569,8 +569,15 @@ describe('OpenAIClient', () => {
 
       expect(getCompletion).toHaveBeenCalled();
       expect(getCompletion.mock.calls.length).toBe(1);
+
+      const currentDateString = new Date().toLocaleDateString('en-us', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+
       expect(getCompletion.mock.calls[0][0]).toBe(
-        '||>Instructions:\nYou are ChatGPT, a large language model trained by OpenAI. Respond conversationally.\nCurrent date: December 18, 2023\n\n||>User:\nHi mom!\n||>Assistant:\n',
+        `||>Instructions:\nYou are ChatGPT, a large language model trained by OpenAI. Respond conversationally.\nCurrent date: ${currentDateString}\n\n||>User:\nHi mom!\n||>Assistant:\n`,
       );
 
       expect(fetchEventSource).toHaveBeenCalled();
