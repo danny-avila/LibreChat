@@ -1,6 +1,6 @@
 ---
 title: AI Setup - APIs and Tokens
-weight:
+weight: 0
 ---
 
 # Table of Contents

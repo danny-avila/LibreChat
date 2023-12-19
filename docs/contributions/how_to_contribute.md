@@ -1,6 +1,6 @@
 ---
 title: Beginner's Guide to Contributions
-weight:
+weight: 0
 ---
 # How to Contribute in a Quick and Easy Way
 

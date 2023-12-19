@@ -22,7 +22,7 @@ This document explains how to write and format documentation for LibreChat.
 ```bash
 ---
 title: Document Title
-weight:
+weight: 0
 ---
 ```
 - Setting the weight in the document metadata will influence its position in the table of contents. Lowest weight are placed first. Not setting it will default to alphabetical order.

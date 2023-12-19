@@ -1,6 +1,6 @@
 ---
 title: Docker Compose Override File
-weight:
+weight: 0
 ---
 
 # How to Use the Docker Compose Override File
