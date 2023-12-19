@@ -24,8 +24,8 @@
 
 > Choose only one option, online or brew. Both have pros and cons
 
-### [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
-- You must set up at least one of these tokens or APIs to run the app.
+### [Setup your AI Endpoints](ai_setup.md) (Required)
+- At least one AI endpoint should be setup for use.
 
 ### [User/Auth System](../install/user_auth_system.md) (Optional)
 - Set up the user/auth system and various social logins.
