@@ -81,7 +81,7 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
     * [Windows Install💙](docs/install/windows_install.md)
   * Configuration
     * [.env Configuration](./docs/install/dotenv.md)
-    * [APIs and Tokens](docs/install/apis_and_tokens.md)
+    * [AI Setup](docs/install/ai_setup.md)
     * [User Auth System](docs/install/user_auth_system.md)
     * [Online MongoDB Database](docs/install/mongodb.md)
     * [Default Language](docs/install/default_language.md)

@@ -138,6 +138,7 @@ export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
   [EModelEndpoint.google]: true,
   [EModelEndpoint.assistant]: true,
+  [EModelEndpoint.azureOpenAI]: true,
 };
 
 export const supportsBalanceCheck = {
