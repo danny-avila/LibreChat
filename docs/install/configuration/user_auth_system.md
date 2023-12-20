@@ -170,61 +170,116 @@ EMAIL_FROM_NAME="My LibreChat Server"
 
 #### Create a new Discord Application
 
-1. Go to **[Discord Developer Portal](https://discord.com/developers)**
+- Go to **[Discord Developer Portal](https://discord.com/developers)**
 
-2. Create a new Application and give it a name
+- Create a new Application and give it a name
 
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/7e7cdfa0-d1d6-4b6b-a8a9-905aaa40d135)
 
 #### Discord Application Configuration
 
-1. In the OAuth2 general settings add a redirect URL and set it as `https://your-domain/oauth/discord/callback`
-    - Example: `http://localhost:3080/oauth/discord/callback`
+- In the OAuth2 general settings add a valid redirect URL:
+    - Example for localhost: `http://localhost:3080/oauth/discord/callback` 
+    - Example for a domain: `https://example.com/oauth/discord/callback`
 
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/6c56fb92-f4ab-43b9-981b-f98babeeb19d)
 
-2. In `Default Authorization Link`, select `In-app Authorization` and set the scopes to `applications.commands`
+- In `Default Authorization Link`, select `In-app Authorization` and set the scopes to `applications.commands`
 
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/2ce94670-9422-48d2-97e9-ec40bd331573)
 
-3. Save changes and reset the Client Secret
+- Save changes and reset the Client Secret
 
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/3af164fc-66ed-4e5e-9f5a-9bcab3df37b4)
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/2ece3935-68e6-4f2e-8656-9721cba5388a)
 
 #### .env Configuration
 
-1. Paste your `Client ID` and `Client Secret` in the `.env` file:
+- Paste your `Client ID` and `Client Secret` in the `.env` file:
 
 ```bash
 DISCORD_CLIENT_ID=your_client_id
 DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_CALLBACK_URL=/oauth/discord/callback
 ```
-2. Save the `.env` file
 
+- Save the `.env` file
+- Run `docker-compose up -d` to apply the .env configuration changes
 ---
 
-### Facebook
-> Note: It only works with a domain, not with localhost
+### Facebook - WIP
 
-1. Go to the [Facebook Developer Portal](https://developers.facebook.com/).
-2. Create a new application and select "Authenticate and request data from users with Facebook Login."
-3. Choose "No, I'm not creating a game" and provide a name for your application.
-4. In the Dashboard tab, go to "Use cases" and click "Customize" under "Authentication and account creation." Add the email permission by clicking "add" under email's permission.
-5. In the settings section, click "go to settings." Ensure that "Client OAuth login," "Web OAuth login," and "Enforce HTTPS" are **enabled**.
-6. Add `your-domain/oauth/facebook/callback` to the Valid OAuth Redirect URIs (e.g., https://example.com/oauth/facebook/callback).
-7. Save changes. In the "App settings" tab, click "show" next to the App secret.
-8. Copy the Client ID and Client Secret and paste them into the .env file as follows: (`App ID=Client ID`  &  `App secret=Client Secret`)
+> Note: Facebook Authentication will not work from `localhost`
+
+#### Create a Facebook Application
+
+- Go to the **[Facebook Developer Portal](https://developers.facebook.com/)**
+
+- Click on "My Apps" in the header menu
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/b75ccb8b-d56b-41b7-8b0d-a32c2e762962)
+
+- Create a new application
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/706f050d-5423-44cc-80f0-120913695d8f)
+
+- Select "Authenticate and request data from users with Facebook Login"
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/2ebbb571-afe8-429e-ab39-be6e83d12c01)
+
+- Choose "No, I'm not creating a game" 
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/88b5160a-9c72-414a-bbcc-7717b81106f3)
+
+- Provide an `app name` and `App contact email` and click `Create app`
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/e1282c9e-4e7d-4cbe-82c9-cc76967f83e1)
+
+#### Facebook Application Configuration
+
+- In the side menu, select "Use cases" and click "Customize" under "Authentication and account creation."
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/39f4bb70-d9dc-4d1c-8443-2666fe56499b)
+
+-  Add the `email permission`
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/dfa20879-2cb8-4daf-883d-3790854afca0)
+
+- Now click `Go to settings`
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/512213a2-bd8b-4fd3-96c7-0de6d3222ddd)
+
+- Ensure that `Client OAuth login`, `Web OAuth login` and `Enforce HTTPS` are **enabled**.
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/3a7d935b-97bf-493b-b909-39ecf9b3432b)
+
+- Add a `Valid OAuth Redirect URIs` and "Save changes"
+    - Example for localhost: `http://localhost:3080/oauth/facebook/callback` 
+    - Example for a domain: `https://example.com/oauth/facebook/callback`
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/ef8e54ee-a766-4871-9719-d4eff7a770b6)
+
+- Click `Go back` and select `Basic` in the `App settings` tab
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/0d14f702-5183-422e-a12c-5d1b6031581b)
+
+- Click "Show" next to the App secret.
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/9a009e37-2bb6-4da6-b5c7-9139c3db6185)
+
+#### .env Configuration
+
+- Copy the `App ID` and `App Secret` and paste them into the `.env` file as follows:
 
 ```bash
-FACEBOOK_CLIENT_ID=your_client_id
-FACEBOOK_CLIENT_SECRET=your_client_secret
-FACEBOOK_CALLBACK_URL=/oauth/facebook/callback # this should be the same for everyone
+FACEBOOK_CLIENT_ID=your_app_id
+FACEBOOK_CLIENT_SECRET=your_app_secret
+FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
 ```
-9. Save the .env file.
 
-Make sure to replace "your_client_id" and "your_client_secret" with the actual values from your Facebook Developer Portal
+- Save the `.env` file.
+
+- Run `docker-compose up -d` to apply the .env configuration changes
 
 ---
 
