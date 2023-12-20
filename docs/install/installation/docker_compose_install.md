@@ -2,7 +2,8 @@
 
 Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
 
-See the video guide for [Windows](./windows_install.md#recommended) or [Ubuntu 22.04 LTS](./linux_install.md#recommended)
+If you prefer to watch a video, we have video guides for [Windows](./windows_install.md#recommended) and [Ubuntu 22.04 LTS](./linux_install.md#recommended)
+
 ## Installation and Configuration
 
 ### Preparation

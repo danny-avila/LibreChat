@@ -4,8 +4,9 @@ weight: 5
 ---
 # Contributing to LibreChat
 
+  * 🙌 [How to Contribute](./how_to_contribute.md)
   * 🚸 [Contributor Guidelines](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md) 
-  * 📚 [Documentation Guidelines](documentation_guidelines.md) 
+  * 📝 [Documentation Guidelines](documentation_guidelines.md) 
   * 🌍 [Contribute a Translation](translation_contribution.md) 
   * 🧑‍💻 [Code Standards and Conventions](coding_conventions.md) 
   * 🧪 [Testing](testing.md) 

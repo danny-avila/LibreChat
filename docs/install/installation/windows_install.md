@@ -38,6 +38,8 @@ Have fun!
 
 > Note: See the [Docker Compose Install Guide](./docker_compose_install.md) for more details 
 
+- 👆 Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
+
 ---
 ## **Manual Installation**
 

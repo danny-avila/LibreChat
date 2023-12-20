@@ -9,5 +9,5 @@ weight: 0
 * 🧑‍💼 [Using official ChatGPT Plugins](./chatgpt_plugins_openapi.md)
 * 🔎 [Google](./google_search.md)
 * 🖌️ [Stable Diffusion](./stable_diffusion.md)
-* 🤓 [Wolfram](./wolfram.md)
+* 🧠 [Wolfram](./wolfram.md)
 * ⚡ [Azure AI Search](./azure_ai_search.md)

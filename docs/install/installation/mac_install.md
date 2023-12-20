@@ -1,5 +1,6 @@
 # Mac Installation Guide
 ## **Recommended : [Docker Install](docker_compose_install.md)**
+- 👆 Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
 
 ---
 
@@ -12,7 +13,7 @@
 ### Download LibreChat (Required)
 - Open Terminal and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
 - Change into the cloned directory by running `cd LibreChat`
-- Create a .env file in the api directory by running `cp .env.example .env` 
+- Create a .env file by running `cp .env.example .env`
 - Install dependencies by running: `npm ci`
 - Build the client by running: `npm run frontend`
 
