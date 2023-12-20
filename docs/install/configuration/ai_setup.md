@@ -374,19 +374,20 @@ Warning: There may be a chance of your account being banned if you deploy the ap
 ---
 
 ### BingAI
+I recommend using Microsoft Edge for this:
 
-To get your Bing Access Token, you have a few options:
+- Navigate to **[Bing Chat](https://www.bing.com/chat)**
+- **Login** if you haven't already
+- Initiate a conversation with Bing
+- Open `Dev Tools`, usually with `F12` or `Ctrl + Shift + C`
+- Navigate to the `Network` tab
+- Look for `lsp.asx` (if it's not there look into the other entries for one with a **very long** cookie) 
+- Copy the whole cookie value. (Yes it's very long 😉)
+- Use this for your "BingAI Token"
 
-- You can try leaving it blank and see if it works (fingers crossed 🤞)
-
-- You can follow these [new instructions](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302) (thanks @danny-avila for sharing 🙌)
-
-- You can use MS Edge, navigate to bing.com, and do the following:
-  - Make sure you are logged in
-  - Open the DevTools by pressing F12 on your keyboard
-  - Click on the tab "Application" (On the left of the DevTools)
-  - Expand the "Cookies" (Under "Storage")
-  - Copy the value of the "\_U" cookie and save it in ./.env as BING_ACCESS_TOKEN
+<p align="left">
+    <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d4dfd370-eddc-4694-ab16-076f913ff430" width="50%">
+</p>
 
 ---
 

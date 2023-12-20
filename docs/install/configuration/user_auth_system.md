@@ -245,7 +245,7 @@ To enable Google login, you must create an application in the [Google Cloud Cons
 
 ### OpenID with AWS Cognito
 
-#### Create a new User Pool in Cognito:
+#### Create a new User Pool in Cognito
 
 - Visit: **[https://console.aws.amazon.com/cognito/](https://console.aws.amazon.com/cognito/)**
 - Sign in as Root User
