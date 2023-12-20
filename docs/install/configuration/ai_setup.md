@@ -383,7 +383,7 @@ I recommend using Microsoft Edge for this:
 - Navigate to the `Network` tab
 - Look for `lsp.asx` (if it's not there look into the other entries for one with a **very long** cookie) 
 - Copy the whole cookie value. (Yes it's very long 😉)
-- Use this for your "BingAI Token"
+- Use this **"full cookie string"** for your "BingAI Token"
 
 <p align="left">
     <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d4dfd370-eddc-4694-ab16-076f913ff430" width="50%">
