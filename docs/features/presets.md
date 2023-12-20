@@ -7,7 +7,8 @@ The "presets" feature in our app is a powerful tool that allows users to save an
 ## Create a Preset:
 
 - Go in the model settings
-![image](https://github.com/danny-avila/LibreChat/assets/32828263/069a42d3-dfd1-4a61-b051-e15b43cb3a5a)
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/2fc883e9-f4a3-47ac-b375-502e82234194)
 
 - Choose the model, give it a name, some custom instructions, and adjust the parameters if needed
 
@@ -64,16 +65,22 @@ You can easily import or export presets as JSON files by clicking on either 'Imp
 
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/b9ef56e2-393e-45eb-b72b-8d568a13a015)
 
-To export a preset, first go in the preset menu, then click on the button to edit the selected preset, then in the bottom of the preset settings you'll have the option to export it.
+To export a preset, first go in the preset menu, then click on the button to edit the selected preset
 
-![image](https://github.com/danny-avila/LibreChat/assets/32828263/c48b8808-cf7a-414b-8ec5-c631848e6488)
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/3fb065e6-977b-49b4-9fc6-de55b9839031)
+
+Then in the bottom of the preset settings you'll have the option to export it.
+
+<p align="left">
+    <img src="https://github.com/danny-avila/LibreChat/assets/32828263/a624345f-e3e6-4192-8384-293ba6ce54cc" width="50%">
+</p>
 
 ## Setting Default Preset
 
 Choose a preset as default so it loads automatically whenever you start a new conversation. This saves time if you often use specific settings.
 
-![image](https://github.com/danny-avila/LibreChat/assets/32828263/f0f289e6-f6dc-423d-aa00-d9854a8cf004)
-![image](https://github.com/danny-avila/LibreChat/assets/32828263/dd5bebad-d96d-4356-83a3-11ee6f101a90)
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/5912650d-49b6-40d3-b9ad-ff2ff7fbe3e7)
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/dcfb5e27-f60b-419e-b387-25db85fa6a63)
 
 ## Sharing on Discord
 
