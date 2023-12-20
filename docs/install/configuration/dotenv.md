@@ -576,6 +576,7 @@ see: [User/Auth System](../configuration/user_auth_system.md)
 > **Quick Tip:** Even with registration disabled, add users directly to the database using `npm run create-user`.
 
 ```bash
+ALLOW_EMAIL_LOGIN=true
 ALLOW_REGISTRATION=true       
 ALLOW_SOCIAL_LOGIN=false
 ALLOW_SOCIAL_REGISTRATION=false
