@@ -204,12 +204,15 @@ DISCORD_CALLBACK_URL=/oauth/discord/callback
 ```
 
 - Save the `.env` file
-- Run `docker-compose up -d` to apply the .env configuration changes
+
+> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+
 ---
 
 ### Facebook - WIP
 
-> ⚠️ Warning: Work in progress, not currently functional
+> ⚠️ **Warning: Work in progress, not currently functional**
+
 > ❗ Note: Facebook Authentication will not work from `localhost`
 
 #### Create a Facebook Application
@@ -279,33 +282,66 @@ FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
 
 - Save the `.env` file.
 
-- Run `docker-compose up -d` to apply the .env configuration changes
-
-#### Error
-
-![image](https://github.com/danny-avila/LibreChat/assets/32828263/f194a5ee-f785-4142-851b-668ea7f90cf9)
-![image](https://github.com/danny-avila/LibreChat/assets/32828263/1c93cb36-2a1a-435c-bc3e-d1754d75564b)
-![image](https://github.com/danny-avila/LibreChat/assets/32828263/c6f53a30-5d47-49d5-b67a-b5946693296e)
-![image](https://github.com/danny-avila/LibreChat/assets/32828263/28533ed7-5fa9-4b11-91ee-a6fda82a3405)
+> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
 
 ---
 
 ### GitHub
 
-1. Go to your **[Github Developer settings](https://github.com/settings/apps)**
-2. Create a new Github app
-3. Give it a GitHub App name and set in the Homepage URL "your-domain")    (example: http://localhost:3080)
-4. Add a callback URL and set it as "your-domain/oauth/github/callback" (example: http://localhost:3080/oauth/github/callback)
-5. Remove the Active checkbox in the Webhook section
-6. Save changes and generate a Client Secret
-7. In the Permissions & events tab select, open the Account Permissions and set Email addresses to Read-only
-8. Put the Client ID and Client Secret in the .env file:
-```
+#### Create a GitHub Application
+
+- Go to your **[Github Developer settings](https://github.com/settings/apps)**
+- Create a new Github app
+
+![image](https://github.com/danny-avila/LibreChat/assets/138638445/3a8b88e7-78f8-426e-bfc2-c5e3f8b21ccb)
+
+#### GitHub Application Configuration
+
+-  Give it a `GitHub App name` and set your `Homepage URL`
+    - Example for localhost: `http://localhost:3080` 
+    - Example for a domain: `https://example.com`
+
+![image](https://github.com/danny-avila/LibreChat/assets/138638445/f10d497d-460b-410f-9504-08735662648b)
+
+- Add a valid `Callback URL`:
+    - Example for localhost: `http://localhost:3080/oauth/github/callback` 
+    - Example for a domain: `https://example.com/oauth/github/callback`
+
+![image](https://github.com/danny-avila/LibreChat/assets/138638445/4e7e6dba-0afb-4ed8-94bf-4c61b0f29240)
+
+- Uncheck the box labeled `Active` in the `Webhook` section
+
+![image](https://github.com/danny-avila/LibreChat/assets/138638445/aaeb3ecb-2e76-4ea5-8264-edfbdd53de1a)
+
+- Scroll down to `Account permissions` and set `Email addresses` to `Access: Read-only`
+
+![image](https://github.com/danny-avila/LibreChat/assets/138638445/3e561aa4-1f9e-4cb7-ace8-dbba8f0c0d55)
+
+![image](https://github.com/danny-avila/LibreChat/assets/138638445/7b5f99af-7bde-43ee-9b43-6d3ce79ee00a)
+
+- Click on `Create GitHub App`
+
+![image](https://github.com/danny-avila/LibreChat/assets/138638445/4cc48550-eac3-4970-939b-81a23fa9c7cf)
+
+#### .env Configuration
+
+- Click `Generate a new client secret`
+
+![image](https://github.com/danny-avila/LibreChat/assets/138638445/484c7851-71dd-4167-a59e-9a56c4e08c36)
+
+- Copy the `Client ID` and `Client Secret` in the `.env` file 
+
+![image](https://github.com/danny-avila/LibreChat/assets/138638445/aaf78840-48a9-44e1-9625-4109ed91d965)
+
+```bash
 GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
-GITHUB_CALLBACK_URL=/oauth/github/callback # this should be the same for everyone
+GITHUB_CALLBACK_URL=/oauth/github/callback
 ```
-9. Save the .env file
+
+- Save the `.env` file
+
+> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
 
 ---
 
@@ -419,9 +455,9 @@ You can now make last minute changes, click on `Create user pool` when you're do
 
 > The `OPENID_SCOPE` and `OPENID_CALLBACK_URL` are pre-configured with the correct values
 
-6. Open the .env file at the root of your LibreChat folder and add the following variables with the values you copied:
+6. Open the `.env` file at the root of your LibreChat folder and add the following variables with the values you copied:
 
-```
+```bash
 OPENID_CLIENT_ID=Your client ID
 OPENID_CLIENT_SECRET=Your client secret
 OPENID_ISSUER=https://cognito-idp.[AWS REGION].amazonaws.com/[USER POOL ID]/.well-known/openid-configuration
@@ -429,7 +465,10 @@ OPENID_SESSION_SECRET=Any random string
 OPENID_SCOPE=openid profile email
 OPENID_CALLBACK_URL=/oauth/openid/callback
 ```
-7. Save the .env file and you're done! You have successfully set up OpenID authentication with Cognito for your app.
+7. Save the .env file
+
+> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+
 
 ---
 
@@ -446,7 +485,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 9. You will see a Value column with your secret. Copy it and save it somewhere. Don't share it with anyone!
 10. Open the .env file in your project folder and add the following variables with the values you copied:
 
-```
+```bash
 OPENID_CLIENT_ID=Your Application (client) ID
 OPENID_CLIENT_SECRET=Your client secret
 OPENID_ISSUER=https://login.microsoftonline.com/Your Directory (tenant ID)/v2.0/
@@ -454,6 +493,9 @@ OPENID_SESSION_SECRET=Any random string
 OPENID_SCOPE=openid profile email #DO NOT CHANGE THIS
 OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyone
 ```
-11. Save the .env file and you're done! You have successfully set up OpenID authentication with Azure AD for your app.
+11. Save the .env file
+
+> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+
 
 ---
