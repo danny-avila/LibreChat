@@ -209,7 +209,8 @@ DISCORD_CALLBACK_URL=/oauth/discord/callback
 
 ### Facebook - WIP
 
-> Note: Facebook Authentication will not work from `localhost`
+> ⚠️ Warning: Work in progress, not currently functional
+> ❗ Note: Facebook Authentication will not work from `localhost`
 
 #### Create a Facebook Application
 
@@ -254,7 +255,6 @@ DISCORD_CALLBACK_URL=/oauth/discord/callback
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/3a7d935b-97bf-493b-b909-39ecf9b3432b)
 
 - Add a `Valid OAuth Redirect URIs` and "Save changes"
-    - Example for localhost: `http://localhost:3080/oauth/facebook/callback` 
     - Example for a domain: `https://example.com/oauth/facebook/callback`
 
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/ef8e54ee-a766-4871-9719-d4eff7a770b6)
@@ -281,11 +281,18 @@ FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
 
 - Run `docker-compose up -d` to apply the .env configuration changes
 
+#### Error
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/f194a5ee-f785-4142-851b-668ea7f90cf9)
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/1c93cb36-2a1a-435c-bc3e-d1754d75564b)
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/c6f53a30-5d47-49d5-b67a-b5946693296e)
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/28533ed7-5fa9-4b11-91ee-a6fda82a3405)
+
 ---
 
 ### GitHub
 
-1. Go to your [Github Developer settings](https://github.com/settings/apps)
+1. Go to your **[Github Developer settings](https://github.com/settings/apps)**
 2. Create a new Github app
 3. Give it a GitHub App name and set in the Homepage URL "your-domain")    (example: http://localhost:3080)
 4. Add a callback URL and set it as "your-domain/oauth/github/callback" (example: http://localhost:3080/oauth/github/callback)
@@ -407,6 +414,10 @@ You can now make last minute changes, click on `Create user pool` when you're do
 - Use the `Client ID` for `OPENID_CLIENT_ID`
 
 - Use the `Client secret` for `OPENID_CLIENT_SECRET`
+
+- Generate a random string for the `OPENID_SESSION_SECRET` 
+
+> The `OPENID_SCOPE` and `OPENID_CALLBACK_URL` are pre-configured with the correct values
 
 6. Open the .env file at the root of your LibreChat folder and add the following variables with the values you copied:
 
