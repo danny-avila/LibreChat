@@ -1,3 +1,7 @@
+---
+title: 🌊 DigitalOcean ✨(Recommended)
+weight: -10
+---
 # Digital Ocean (Ubuntu/Docker) Setup
 
 >These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server. You can skip to any point that is useful for you. There are probably more efficient/scalable ways, but this guide works really great for my personal use case.

@@ -1,3 +1,7 @@
+---
+title: 🤗 HuggingFace
+weight: -9
+---
 # Hugging Face Deployment 🤗
 
 >#### ⚠️ Note - Some features are not supported by HuggingFace:

@@ -1,6 +1,6 @@
 ---
 title: 🍎 Mac
-weight: 
+weight: 0
 ---
 
 # Mac Installation Guide

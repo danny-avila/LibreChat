@@ -5,7 +5,7 @@ weight: 3
 
 # Deployment
 
-  * 🌊 [DigitalOcean (preferred)](digitalocean.md) 
+  * 🌊 [DigitalOcean (✨Recommended)](digitalocean.md) 
   * 🤗 [HuggingFace](huggingface.md) 
   * 🐧 [Linode](linode.md)
   * ☁️ [Cloudflare](cloudflare.md) 

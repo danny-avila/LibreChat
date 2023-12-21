@@ -1,3 +1,7 @@
+---
+title: 🏗️ Hetzner
+weight: -2
+---
 # Hetzner Ubuntu Setup
 
 *These instructions are designed for someone starting from scratch for a Ubuntu Installation. You can skip to any point that is useful for you.*

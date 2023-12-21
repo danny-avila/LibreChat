@@ -1,3 +1,7 @@
+---
+title: 🐧 Linode
+weight: -8
+---
 <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d6e430db-518a-4779-83d3-a2d177907df1" width="250">
 
 # Linode

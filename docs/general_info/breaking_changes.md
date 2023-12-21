@@ -1,4 +1,8 @@
-# ⚠️ Breaking Changes ⚠️
+---
+title: ⚠️ Breaking Changes
+weight: -10
+---
+# ⚠️ Breaking Changes
 
 > **Note:**
 **If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
