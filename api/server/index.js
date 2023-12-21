@@ -28,7 +28,7 @@ const startServer = async () => {
   app.locals.config = paths;
 
   app.use((req, res, next) => {
-    if (process.env.DISALLOW_SEARCH_INDEXING === 'true') {
+    if (process.env.NO_INDEX === 'true') {
       res.setHeader('X-Robots-Tag', 'noindex');
     }
     next();
