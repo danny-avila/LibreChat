@@ -28,7 +28,8 @@
   </a>
 </p>
 
-## 🪶 [Features](./features/index.md)
+
+## 🪶 Features
  - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
  - 💬 Multimodal Chat:
      - Upload and analyze images with GPT-4 and Gemini Vision 📸 

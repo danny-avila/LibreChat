@@ -18,7 +18,8 @@ npm run update:docker
 docker-compose build --no-cache
 ```
 
-Alternatively, you can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`.
+Alternatively, you can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`, or modify the default configuration provided by the main `docker-compose.yml`, without the need to directly edit or duplicate the whole file.
+
 For more info see: 
 
 - Our quick guide: 
@@ -45,29 +46,6 @@ For more info see:
 APP_TITLE=LibreChat
 CUSTOM_FOOTER="My custom footer"
 ```
-
-### Logging
-
-LibreChat has built-in central logging.
-
-- Debug logging is enabled by default and crucial for development.
-- To report issues, reproduce the error and submit logs from `./api/logs/debug-%DATE%.log` at [LibreChat GitHub Issues](https://github.com/danny-avila/LibreChat/issues).
-- Error logs are stored in the same location.
-- Keep debug logs active by default or disable them by setting `DEBUG_LOGGING=FALSE` in the environment variable.
-- For more information about this feature, read our docs: https://docs.librechat.ai/features/logging_system.html
-
-```bash
-DEBUG_LOGGING=TRUE
-```
-
-- Enable verbose server output in the console with `DEBUG_CONSOLE=TRUE`, though it's not recommended due to high verbosity.
-
-```bash
-DEBUG_CONSOLE=TRUE
-```
-
-This is not recommend, however, as the outputs can be quite verbose, and so it's disabled by default.
-
 
 ### Port
 
@@ -114,6 +92,28 @@ NO_INDEX=true
 ```
 
 > ❗**Note:** This method is not guaranteed to work for all search engines, and some search engines may still index your website or web page for other purposes, such as caching or archiving. Therefore, you should not rely solely on this method to protect sensitive or confidential information on your website or web page.
+
+### Logging
+
+LibreChat has built-in central logging, see [Logging System](../../features/logging_system.md) for more info.
+
+- Debug logging is enabled by default and crucial for development.
+- To report issues, reproduce the error and submit logs from `./api/logs/debug-%DATE%.log` at [LibreChat GitHub Issues](https://github.com/danny-avila/LibreChat/issues).
+- Error logs are stored in the same location.
+- Keep debug logs active by default or disable them by setting `DEBUG_LOGGING=false` in the environment variable.
+- For more information about this feature, read our docs: https://docs.librechat.ai/features/logging_system.html
+
+```bash
+DEBUG_LOGGING=true
+```
+
+- Enable verbose server output in the console with `DEBUG_CONSOLE=TRUE`, though it's not recommended due to high verbosity.
+
+```bash
+DEBUG_CONSOLE=false
+```
+
+This is not recommend, however, as the outputs can be quite verbose, and so it's disabled by default.
 
 ### Permission
 > UID and GID are numbers assigned by Linux to each user and group on the system. If you have permission problems, set here the UID and GID of the user running the docker compose command. The applications in the container will run with these uid/gid.
