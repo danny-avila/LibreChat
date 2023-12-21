@@ -27,6 +27,13 @@ const startServer = async () => {
   const app = express();
   app.locals.config = paths;
 
+  app.use((req, res, next) => {
+    if (process.env.DISALLOW_SEARCH_INDEXING === 'true') {
+      res.setHeader('X-Robots-Tag', 'noindex');
+    }
+    next();
+  });
+
   // Middleware
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
