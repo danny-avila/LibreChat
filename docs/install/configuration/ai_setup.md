@@ -1,6 +1,6 @@
 ---
-title: AI Setup
-weight: 0
+title: 🤖 AI Setup
+weight: -8
 ---
 
 <!-- # Table of Contents

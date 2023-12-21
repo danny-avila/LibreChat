@@ -1,3 +1,8 @@
+---
+title: 💸 Free AI APIs
+weight: -6
+---
+
 # Free AI APIs
 
 There are APIs offering free/free-trial access to AI APIs via reverse proxy.

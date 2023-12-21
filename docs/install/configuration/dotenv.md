@@ -1,3 +1,8 @@
+---
+title: ⚙️ Environment Variables
+weight: -10
+---
+
 # .env File Configuration
 Welcome to the comprehensive guide for configuring your application's environment with the `.env` file. This document is your one-stop resource for understanding and customizing the environment variables that will shape your application's behavior in different contexts.
 

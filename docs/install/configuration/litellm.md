@@ -1,3 +1,8 @@
+---
+title: 🚅 LiteLLM
+weight: -7
+---
+
 # Using LibreChat with LiteLLM Proxy 
 Use [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) for: 
 * Calling 100+ LLMs Huggingface/Bedrock/TogetherAI/etc. in the OpenAI ChatCompletions & Completions format

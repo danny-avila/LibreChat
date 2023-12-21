@@ -1,3 +1,8 @@
+---
+title: 🌍 Default Language
+weight: -3
+---
+
 # Default Language 🌍
 
 ## How to change the default language

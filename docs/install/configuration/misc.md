@@ -1,5 +1,6 @@
 ---
-title: Miscellaneous
+title: 🌀 Miscellaneous
+weight: -2
 author: danny-avila and jerkstorecaller
 ---
 
