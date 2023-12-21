@@ -1,6 +1,6 @@
 ---
-title: Beginner's Guide to Contributions
-weight: 0
+title: 🙌 Beginner's Guide to Contributions
+weight: -10
 ---
 # How to Contribute in a Quick and Easy Way
 

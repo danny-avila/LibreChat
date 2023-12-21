@@ -1,3 +1,8 @@
+---
+title: 🧪 Testing During Development
+weight: -6
+---
+
 # Locally test the app during development
 
 ## WIP

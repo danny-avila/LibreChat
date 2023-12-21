@@ -1,3 +1,7 @@
+---
+title: 📝 Documentation Guidelines
+weight: -9
+---
 # Documentation Guidelines
 
 This document explains how to write and format documentation for LibreChat.
@@ -25,7 +29,7 @@ title: Document Title
 weight: 0
 ---
 ```
-- Setting the weight in the document metadata will influence its position in the table of contents. Lowest weight are placed first. Not setting it will default to alphabetical order.
+- Setting the weight in the document metadata will influence its position in the table of contents. Lowest weight are placed first. Not setting it will default to `0`. When multiple docs have the same weight it sorts in alphabetical order.
 
 ## Important Notes
 - **⚠️Keep it organized and structured⚠️** 
