@@ -3,7 +3,7 @@ title: User Auth System
 weight: 0
 --- 
 
-# User/Auth System
+# User Authentication System
 
 LibreChat has a user authentication system that allows users to sign up and log in securely and easily. The system is scalable and can handle a large number of concurrent users without compromising performance or security.
 
