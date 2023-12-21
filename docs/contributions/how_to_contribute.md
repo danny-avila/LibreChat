@@ -15,10 +15,10 @@ weight: -10
 This will be a somewhat raw text, but I'll try to be as clear as possible.
 
 I recommend installing the following extensions in VS Code:
-- Prettier
-- ESLint
-- Prettier Code Formatter
-- GitLens
+
+- [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
+- [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint)
+- [GitLens](https://marketplace.visualstudio.com/items?itemName=eamodio.gitlens)
 
 ### Example of a Pull Request (PR)
 

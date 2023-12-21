@@ -18,7 +18,19 @@ npm run update:docker
 docker-compose build --no-cache
 ```
 
-Alternatively, you can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`. See the [docker docs](https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files) for more info, and you can also view an example of an override file for LibreChat in the ["Manage Your Database" section](https://docs.librechat.ai/features/manage_your_database.html)
+Alternatively, you can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`.
+For more info see: 
+
+- Our quick guide: 
+    - **[Docker Override](../configuration/docker_override.md)**
+
+- The official docker documentation: 
+    - **[docker docs - understanding-multiple-compose-files](https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files)**
+    - **[docker docs - merge-compose-files](https://docs.docker.com/compose/multiple-compose-files/merge/#merge-compose-files)**
+    - **[docker docs - specifying-multiple-compose-files](https://docs.docker.com/compose/reference/#specifying-multiple-compose-files)**
+
+- You can also view an example of an override file for LibreChat in your LibreChat folder and on GitHub: 
+    - **[docker-compose.override.example](https://github.com/danny-avila/LibreChat/blob/main/docker-compose.override.yaml.example)**
 
 ---
 
@@ -93,6 +105,15 @@ MONGO_URI=mongodb://127.0.0.1:27018/LibreChat
 DOMAIN_CLIENT=http://localhost:3080
 DOMAIN_SERVER=http://localhost:3080
 ```
+
+### Prevent Public Search Engines Indexing
+By default, your website will not be indexed by public search engines (e.g. Google, Bing, …). This means that people will not be able to find your website through these search engines. If you want to make your website more visible and searchable, you can change the following setting to `false`
+
+```bash
+NO_INDEX=true
+```
+
+> ❗**Note:** This method is not guaranteed to work for all search engines, and some search engines may still index your website or web page for other purposes, such as caching or archiving. Therefore, you should not rely solely on this method to protect sensitive or confidential information on your website or web page.
 
 ### Permission
 > UID and GID are numbers assigned by Linux to each user and group on the system. If you have permission problems, set here the UID and GID of the user running the docker compose command. The applications in the container will run with these uid/gid.

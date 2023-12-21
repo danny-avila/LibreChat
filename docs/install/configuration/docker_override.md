@@ -11,6 +11,12 @@ Here's a quick guide on how to use the `docker-compose.override.yml`:
 
 > Note: Please consult the `docker-compose.override.yml.example` for more examples 
 
+See the the official docker documentation for more info:
+
+- **[docker docs - understanding-multiple-compose-files](https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files)**
+- **[docker docs - merge-compose-files](https://docs.docker.com/compose/multiple-compose-files/merge/#merge-compose-files)**
+- **[docker docs - specifying-multiple-compose-files](https://docs.docker.com/compose/reference/#specifying-multiple-compose-files)**
+
 ## Step 1: Create a `docker-compose.override.yml` file
 
 If you don't already have a `docker-compose.override.yml` file, you can create one by copying the example override content:
@@ -24,7 +30,6 @@ This file will be picked up by Docker Compose automatically when you run docker-
 ## Step 2: Edit the override file
 
 Open your `docker-compose.override.yml` file with vscode or any text editor.
-
 
 Make your desired changes by uncommenting the relevant sections and customizing them as needed.
 
