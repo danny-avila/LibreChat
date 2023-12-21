@@ -1,3 +1,8 @@
+---
+title: 🪵 Logging System
+weight: -5
+---
+
 ### General
 
 LibreChat has central logging built into its backend (api).

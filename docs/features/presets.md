@@ -1,3 +1,7 @@
+---
+title: 🔖 Presets
+weight: -9
+---
 # Guide to Using the "Presets" Feature
 
 The "presets" feature in our app is a powerful tool that allows users to save and load predefined settings for their conversations. Users can import and export these presets as JSON files, set a default preset, and share them with others on Discord.

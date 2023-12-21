@@ -1,3 +1,8 @@
+---
+title: 📦 PandoraNext
+weight: -4
+---
+
 # PandoraNext Deployment Guide
 
 If you're looking to use the `ChatGPT` Endpoint in LibreChat, setting up a reverse proxy is a essential. PandoraNext offers a robust solution for this purpose. This guide will walk you through deploying PandoraNext to enable the `CHATGPT_REVERSE_PROXY` for use with LibreChat.

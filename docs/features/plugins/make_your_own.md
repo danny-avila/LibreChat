@@ -1,3 +1,7 @@
+---
+title: 🛠️ Make Your Own
+weight: -9
+---
 # Making your own Plugin
 
 Creating custom plugins for this project involves extending the `Tool` class from the `langchain/tools` module. 
