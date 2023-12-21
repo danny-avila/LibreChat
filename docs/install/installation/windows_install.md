@@ -1,3 +1,8 @@
+---
+title: 🪟 Windows
+weight: 0
+---
+
 # Windows Installation Guide
 
 ## **Recommended:**

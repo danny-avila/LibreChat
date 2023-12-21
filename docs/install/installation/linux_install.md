@@ -1,3 +1,7 @@
+---
+title: 🐧 Linux
+weight: 0
+---
 # Linux Installation Guide
 ## **Recommended:**
 

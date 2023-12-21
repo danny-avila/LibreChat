@@ -1,3 +1,8 @@
+---
+title: 🍎 Mac
+weight: 
+---
+
 # Mac Installation Guide
 ## **Recommended : [Docker Install](docker_compose_install.md)**
 - 👆 Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.

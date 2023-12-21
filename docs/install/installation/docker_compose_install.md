@@ -1,3 +1,8 @@
+---
+title: 🐳 Docker Compose ✨(Recommended)
+weight: -10
+---
+
 # Docker Compose Installation Guide
 
 Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
