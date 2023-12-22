@@ -3,9 +3,10 @@ import React, { useState } from 'react';
 const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  // Nuovo stato per tenere traccia del bottone attualmente premuto
+  // New state to keep track of the currently pressed button
   const [activeButton, setActiveButton] = useState(null);
 
   if (!enabled) {
@@ -22,19 +23,39 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => 
 
   const handleMouseDown = () => {
     setIsPressed(true);
-    setActiveButton(id); // Imposta questo bottone come attivo
+    setActiveButton(id); // Set this button as active
   };
 
   const handleMouseUp = () => {
     setIsPressed(false);
-    setIsRedirecting(true); // Puoi impostare questo a true quando inizi a reindirizzare l'utente
+    setIsRedirecting(true); // You can set this to true when you start redirecting the user
   };
 
-  const buttonStyles = {
-    backgroundColor:
-      isPressed && activeButton === id ? '#B9DAE9' : isHovered ? '#E5E5E5' : 'transparent',
-    border: isPressed ? '2px solid #B9DAE9' : '1px solid #CCCCCC',
-    // Altri stili se necessario
+  const getButtonStyles = () => {
+    const baseStyles = {
+      border: '1px solid #CCCCCC',
+      transition: 'background-color 0.3s ease, border 0.3s ease',
+    };
+
+    if (isPressed && activeButton === id) {
+      return {
+        ...baseStyles,
+        backgroundColor: '#B9DAE9',
+        border: '2px solid #B9DAE9',
+      };
+    }
+
+    if (isHovered) {
+      return {
+        ...baseStyles,
+        backgroundColor: '#E5E5E5',
+      };
+    }
+
+    return {
+      ...baseStyles,
+      backgroundColor: 'transparent',
+    };
   };
 
   return (
@@ -43,10 +64,7 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => 
         aria-label={`Login with ${label}`}
         className="justify-left flex w-full items-center space-x-3 rounded-md border px-5 py-3 transition-colors"
         href={`${serverDomain}/oauth/${oauthPath}`}
-        style={{
-          ...buttonStyles,
-          transition: 'background-color 0.3s ease, border 0.3s ease',
-        }}
+        style={getButtonStyles()}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         onMouseDown={handleMouseDown}

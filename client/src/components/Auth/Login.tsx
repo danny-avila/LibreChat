@@ -65,6 +65,7 @@ function Login() {
                 oauthPath="google"
                 Icon={GoogleIcon}
                 label={localize('com_auth_google_login')}
+                id={undefined}
               />
               <SocialButton
                 enabled={startupConfig.facebookLoginEnabled}
@@ -72,6 +73,7 @@ function Login() {
                 oauthPath="facebook"
                 Icon={FacebookIcon}
                 label={localize('com_auth_facebook_login')}
+                id={undefined}
               />
               <SocialButton
                 enabled={startupConfig.openidLoginEnabled}
@@ -85,6 +87,7 @@ function Login() {
                   )
                 }
                 label={startupConfig.openidLabel}
+                id={undefined}
               />
               <SocialButton
                 enabled={startupConfig.githubLoginEnabled}
@@ -92,6 +95,7 @@ function Login() {
                 oauthPath="github"
                 Icon={GithubIcon}
                 label={localize('com_auth_github_login')}
+                id={undefined}
               />
               <SocialButton
                 enabled={startupConfig.discordLoginEnabled}
@@ -99,6 +103,7 @@ function Login() {
                 oauthPath="discord"
                 Icon={DiscordIcon}
                 label={localize('com_auth_discord_login')}
+                id={undefined}
               />
             </div>
           </>

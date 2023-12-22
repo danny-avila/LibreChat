@@ -61,7 +61,7 @@ const Registration: React.FC = () => {
             validation,
           )}
           aria-invalid={!!errors[id]}
-          className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+          className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
           placeholder=" "
           data-testid={id}
         ></input>
@@ -189,6 +189,7 @@ const Registration: React.FC = () => {
                 oauthPath="google"
                 Icon={GoogleIcon}
                 label={localize('com_auth_google_login')}
+                id={undefined}
               />
               <SocialButton
                 enabled={startupConfig.facebookLoginEnabled}
@@ -196,6 +197,7 @@ const Registration: React.FC = () => {
                 oauthPath="facebook"
                 Icon={FacebookIcon}
                 label={localize('com_auth_facebook_login')}
+                id={undefined}
               />
               <SocialButton
                 enabled={startupConfig.openidLoginEnabled}
@@ -209,6 +211,7 @@ const Registration: React.FC = () => {
                   )
                 }
                 label={startupConfig.openidLabel}
+                id={undefined}
               />
               <SocialButton
                 enabled={startupConfig.githubLoginEnabled}
@@ -216,6 +219,7 @@ const Registration: React.FC = () => {
                 oauthPath="github"
                 Icon={GithubIcon}
                 label={localize('com_auth_github_login')}
+                id={undefined}
               />
               <SocialButton
                 enabled={startupConfig.discordLoginEnabled}
@@ -223,6 +227,7 @@ const Registration: React.FC = () => {
                 oauthPath="discord"
                 Icon={DiscordIcon}
                 label={localize('com_auth_discord_login')}
+                id={undefined}
               />
             </div>
           </>
