@@ -56,10 +56,14 @@ const Registration: React.FC = () => {
           type={type}
           autoComplete={id}
           aria-label={localize(label)}
-          {...register(id, validation)}
+          {...register(
+            id as 'name' | 'email' | 'username' | 'password' | 'confirm_password',
+            validation,
+          )}
           aria-invalid={!!errors[id]}
           className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
           placeholder=" "
+          data-testid={id}
         ></input>
         <label
           htmlFor={id}
@@ -70,7 +74,7 @@ const Registration: React.FC = () => {
       </div>
       {errors[id] && (
         <span role="alert" className="mt-1 text-sm text-black">
-          {errors[id].message}
+          {String(errors[id]?.message) ?? ''}
         </span>
       )}
     </div>
