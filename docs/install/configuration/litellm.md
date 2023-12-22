@@ -1,8 +1,15 @@
+---
+title: 🚅 LiteLLM
+weight: -7
+---
+
 # Using LibreChat with LiteLLM Proxy 
-Use LiteLLM Proxy for: 
+Use [LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy) for: 
 * Calling 100+ LLMs Huggingface/Bedrock/TogetherAI/etc. in the OpenAI ChatCompletions & Completions format
 * Load balancing - between Multiple Models + Deployments of the same model LiteLLM proxy can handle 1k+ requests/second during load tests
 * Authentication & Spend Tracking Virtual Keys
+
+https://docs.litellm.ai/docs/simple_proxy
 
 ## Start LiteLLM Proxy Server 
 ### Pip install litellm 

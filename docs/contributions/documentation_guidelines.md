@@ -1,28 +1,40 @@
+---
+title: 📝 Documentation Guidelines
+weight: -9
+---
 # Documentation Guidelines
 
 This document explains how to write and format documentation for LibreChat.
 
 ## New Documents
 - Use lowercase letters and underscores to name new documents (e.g. `documentation_guidelines.md`).
-- For new features, create new documentation and place it in the relevant folder/sub-folder under [docs](../docs/).
-  - If the feature adds new functionality, add it to the feature section of the main [README.md](../../README.md).
-- When you create a new document, **add it to both table of contents:**
-  - [README.md](../../README.md)
-  - [mkdocs.yml](../../mkdocs.yml) 
+- For new features, create new documentation and place it in the relevant folder/sub-folder under `../docs`.
+  - If the feature adds new functionality, add it to the feature section of the main `README.md` as well as in `../docs/index.md`.
+- When you create a new document, **you need to add it to two table of contents:**
+  - in `README.md`
+  - and in the `index.md` file in the folder where your doc is located
 
-## Formatting
+## Markdown Formatting
 - Use `#`, `##`, and `###` for headings and subheadings.
 - Use `#` for the title of the document.
 - Use `##` for the main sections of the document.
 - Use `###` for the sub-sections within a section.
-- Use `**` to make text bold to highlight important information (not in place of a heading).
+- Use `**` to make text **bold** to highlight important information (do not use in place of a heading).
 - Use relative paths for links to other documents.
 - You can use HTML to add more features to a document.
+- By default the title indexed by mkdocs will be the first heading. You can override this by adding metadata at the top of your document:
+```bash
+---
+title: Document Title
+weight: 0
+---
+```
+- Setting the weight in the document metadata will influence its position in the table of contents. Lowest weight are placed first. Not setting it will default to `0`. When multiple docs have the same weight it sorts in alphabetical order.
 
 ## Important Notes
 - **⚠️Keep it organized and structured⚠️** 
 - Do not add unrelated information to an existing document. Create a new one if needed.
-- All assets should be uploaded in the document from GitHub's webui:
+- All assets should be uploaded in the document from GitHub's webui
 - **Before submitting a PR, double-check on GitHub that everything is properly displayed and that all links work correctly.**
 
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/4f138ab4-31a5-4fae-a459-5335e5ff25a8)

@@ -1,3 +1,7 @@
+---
+title: 🌍 Contribute a Translation
+weight: -8
+---
 # How to add a new language to LibreChat 🌍
 
 ## Minimum Requirements:

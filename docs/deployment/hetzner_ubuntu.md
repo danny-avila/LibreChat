@@ -1,3 +1,7 @@
+---
+title: 🏗️ Hetzner
+weight: -2
+---
 # Hetzner Ubuntu Setup
 
 *These instructions are designed for someone starting from scratch for a Ubuntu Installation. You can skip to any point that is useful for you.*
@@ -68,9 +72,11 @@ sudo reboot
 
 ## Tokens/Apis/etc:
 - Make sure you have all the needed variables for the following before moving forward
-### [Setup your AI Endpoints](../install/ai_setup.md) (Required)
+
+### [Setup your AI Endpoints](../install/configuration/ai_setup.md) (Required)
 - At least one AI endpoint should be setup for use.
-### [User/Auth System](../install/user_auth_system.md) (Optional)
+### [User/Auth System](../install/configuration/user_auth_system.md) (Optional)
+
 - How to set up the user/auth system and Google login.
 ### [Plugins](../features/plugins/introduction.md)
 - Optional plugins available to enhance the application.
@@ -79,7 +85,7 @@ sudo reboot
 
 ## Using Docker to Install the Service
 
-### 1. **Recommended: [Docker Install](../install/docker_compose_install.md)**
+### 1. **Recommended: [Docker Install](../install/installation/docker_compose_install.md)**
 From the *server* commandline (as your user, not root):
 
 ```

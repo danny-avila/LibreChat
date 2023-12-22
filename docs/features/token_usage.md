@@ -1,3 +1,7 @@
+---
+title: 🪙 Token Usage
+weight: -7
+---
 # Token Usage
 
 As of v6.0.0, LibreChat accurately tracks token usage for the OpenAI/Plugins endpoints.

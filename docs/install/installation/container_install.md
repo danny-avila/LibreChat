@@ -1,12 +1,15 @@
+---
+title: 🦦 Container (podman)
+weight: 0
+---
 
-# Container installation guide
+# Container Installation Guide (podman)
 
 If you don't like docker compose, don't want a bare-metal installation, but still want to leverage the benefits from the isolation and modularity of containers - this is the guide you should use.
 
 > Likewise, If you are actively developing LibreChat, aren't using the service productively (i.e production environments), you should avoid this guide and look to something easier to work with such as docker compose.
 
-**Important:** `docker` and `podman` commands are for the most part, interoperable and interchangeable. Since podman should be the better "Libre" choice, code instructions below will use (and heavily favor) `podman` - and some commands will need to be tweaked to compensate for this.
-
+**Important:** `docker` and `podman` commands are for the most part, interoperable and interchangeable. The code instructions below will use (and heavily favor) `podman`.
 
 ##  Creating the base image
 
@@ -45,7 +48,7 @@ cp ./LibreChat/.env.example .env
 
 This will add the env file to the top level directory that we will create the containers, allowing us to pass it easily as via the `--env-file` command argument.
 
-Follow [this guide](https://docs.librechat.ai/install/free_ai_apis.html) to populate the containers with the correct env values for various apis. There are other env values of interest that might be worth changing, documented within the env itself. Afterwords, edit the following lines in the `.env` file.
+Follow [this guide](../configuration/ai_setup.md) to populate the containers with the correct env values for various apis. There are other env values of interest that might be worth changing, documented within the env itself. Afterwords, edit the following lines in the `.env` file.
 
 ```
 HOST=0.0.0.0
