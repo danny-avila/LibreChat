@@ -286,7 +286,4 @@ export default {
   com_nav_search_placeholder: 'Поиск сообщений',
   com_nav_setting_general: 'Общие',
   com_nav_setting_data: 'Управление данными',
-  com_nav_language: 'Язык',
-  com_nav_lang_auto: 'Автоматически',
-  com_nav_lang_russian: 'Русский',
 };
