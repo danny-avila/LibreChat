@@ -15,11 +15,14 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
     formState: { errors },
   } = useForm<TLoginUser>();
 
-  const renderError = (fieldName: string) => (
-    <span role="alert" className="mt-1 text-sm text-black">
-      {String(errors[fieldName]?.message)}
-    </span>
-  );
+  const renderError = (fieldName: string) => {
+    const errorMessage = errors[fieldName]?.message;
+    return errorMessage ? (
+      <span role="alert" className="mt-1 text-sm text-black">
+        {String(errorMessage)}
+      </span>
+    ) : null;
+  };
 
   return (
     <form
