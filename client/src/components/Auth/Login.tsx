@@ -6,12 +6,12 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
+import SocialButton from './SocialButton';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
-
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -19,6 +19,10 @@ function Login() {
       navigate('/c/new', { replace: true });
     }
   }, [isAuthenticated, navigate]);
+
+  if (!startupConfig) {
+    return null;
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
@@ -34,8 +38,8 @@ function Login() {
             {localize(getLoginError(error))}
           </div>
         )}
-        {startupConfig?.emailLoginEnabled && <LoginForm onSubmit={login} />}
-        {startupConfig?.registrationEnabled && (
+        {startupConfig.emailLoginEnabled && <LoginForm onSubmit={login} />}
+        {startupConfig.registrationEnabled && (
           <p className="my-4 text-center text-sm font-light text-gray-700">
             {' '}
             {localize('com_auth_no_account')}{' '}
@@ -44,85 +48,58 @@ function Login() {
             </a>
           </p>
         )}
-        {startupConfig?.socialLoginEnabled && startupConfig?.emailLoginEnabled && (
+        {startupConfig.socialLoginEnabled && (
           <>
-            <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-              <div className="absolute bg-white px-3 text-xs">Or</div>
-            </div>
-            <div className="mt-8" />
-          </>
-        )}
-        {startupConfig?.googleLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with Google"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/google`}
-              >
-                <GoogleIcon />
-                <p>{localize('com_auth_google_login')}</p>
-              </a>
-            </div>
-          </>
-        )}
-        {startupConfig?.facebookLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with Facebook"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/facebook`}
-              >
-                <FacebookIcon />
-                <p>{localize('com_auth_facebook_login')}</p>
-              </a>
-            </div>
-          </>
-        )}
-        {startupConfig?.openidLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with OpenID"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/openid`}
-              >
-                {startupConfig.openidImageUrl ? (
-                  <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
-                ) : (
-                  <OpenIDIcon />
-                )}
-                <p>{startupConfig.openidLabel}</p>
-              </a>
-            </div>
-          </>
-        )}
-        {startupConfig?.githubLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with GitHub"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/github`}
-              >
-                <GithubIcon />
-                <p>{localize('com_auth_github_login')}</p>
-              </a>
-            </div>
-          </>
-        )}
-        {startupConfig?.discordLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with Discord"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/discord`}
-              >
-                <DiscordIcon />
-                <p>{localize('com_auth_discord_login')}</p>
-              </a>
+            {startupConfig.emailLoginEnabled && (
+              <>
+                <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+                  <div className="absolute bg-white px-3 text-xs">Or</div>
+                </div>
+                <div className="mt-8" />
+              </>
+            )}
+            <div className="mt-2">
+              <SocialButton
+                enabled={startupConfig.googleLoginEnabled}
+                serverDomain={startupConfig.serverDomain}
+                oauthPath="google"
+                Icon={GoogleIcon}
+                label={localize('com_auth_google_login')}
+              />
+              <SocialButton
+                enabled={startupConfig.facebookLoginEnabled}
+                serverDomain={startupConfig.serverDomain}
+                oauthPath="facebook"
+                Icon={FacebookIcon}
+                label={localize('com_auth_facebook_login')}
+              />
+              <SocialButton
+                enabled={startupConfig.openidLoginEnabled}
+                serverDomain={startupConfig.serverDomain}
+                oauthPath="openid"
+                Icon={() =>
+                  startupConfig.openidImageUrl ? (
+                    <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
+                  ) : (
+                    <OpenIDIcon />
+                  )
+                }
+                label={startupConfig.openidLabel}
+              />
+              <SocialButton
+                enabled={startupConfig.githubLoginEnabled}
+                serverDomain={startupConfig.serverDomain}
+                oauthPath="github"
+                Icon={GithubIcon}
+                label={localize('com_auth_github_login')}
+              />
+              <SocialButton
+                enabled={startupConfig.discordLoginEnabled}
+                serverDomain={startupConfig.serverDomain}
+                oauthPath="discord"
+                Icon={DiscordIcon}
+                label={localize('com_auth_discord_login')}
+              />
             </div>
           </>
         )}
