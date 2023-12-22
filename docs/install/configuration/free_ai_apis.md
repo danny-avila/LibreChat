@@ -1,34 +1,15 @@
+---
+title: 💸 Free AI APIs
+weight: -6
+---
+
 # Free AI APIs
 
 There are APIs offering free/free-trial access to AI APIs via reverse proxy.
 
 Here is a well-maintained public list of [Free AI APIs](https://github.com/zukixa/cool-ai-stuff) that may or may not be compatible with LibreChat
 
-### [OpenRouter](https://openrouter.ai/) ⇆ (preferred)
-
-While not completely free, you get free trial credits when you [sign up to OpenRouter](https://openrouter.ai/), a legitimate proxy service to a multitude of LLMs, both closed and open source, including:
-- OpenAI models (great if you are barred from their API for whatever reason)
-- Anthropic Claude models (same as above)
-- Meta's Llama models
-- pygmalionai/mythalion-13b
-- and many more open source models. Newer integrations are usually discounted, too!
-
-OpenRouter is so great, I decided to integrate it to the project as a standalone feature.
-
-**Setup:**
-- Signup to [OpenRouter](https://openrouter.ai/) and create a key. You should name it and set a limit as well.
-- Set the environment variable `OPENROUTER_API_KEY` in your .env file to the key you just created.
-- Restart your LibreChat server and use the OpenAI or Plugins endpoints.
-
-**Notes:** 
-- [TODO] **In the future, you will be able to set up OpenRouter from the frontend as well.**
-- This will override the official OpenAI API or your reverse proxy settings for both Plugins and OpenAI.
-- On initial setup, you may need to refresh your page twice to see all their supported models populate automatically.
-- Plugins: Functions Agent works with OpenRouter when using OpenAI models.
-- Plugins: Turn functions off to try plugins with non-OpenAI models (ChatGPT plugins will not work and others may not work as expected).
-- Plugins: Make sure `PLUGINS_USE_AZURE` is not set in your .env file when wanting to use OpenRouter and you have Azure configured.
-
-> ⚠️ OpenRouter is in a category of its own, and is highly recommended over the "free" services below. NagaAI and other 'free' API proxies tend to have intermittent issues, data leaks, and/or problems with the guidelines of the platforms they advertise on. Use the below at your own risk.
+> ⚠️ [OpenRouter](./ai_setup.md#openrouter) is in a category of its own, and is highly recommended over the "free" services below. NagaAI and other 'free' API proxies tend to have intermittent issues, data leaks, and/or problems with the guidelines of the platforms they advertise on. Use the below at your own risk.
 
 ### NagaAI
 

@@ -1,3 +1,8 @@
+---
+title: 🌍 Default Language
+weight: -3
+---
+
 # Default Language 🌍
 
 ## How to change the default language
@@ -33,4 +38,4 @@ export default { lang };
 ```
 ---
  
-> **❗If you wish to contribute your own translation to LibreChat, please refer to this document for instructions: [Contribute a Translation](../contributions/translation_contribution.md)**
+> **❗If you wish to contribute your own translation to LibreChat, please refer to this document for instructions: [Contribute a Translation](../../contributions/translation_contribution.md)**

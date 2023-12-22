@@ -1,3 +1,7 @@
+---
+title: ⚡ Azure AI Search
+weight: -4
+---
 # Azure AI Search Plugin
 Through the plugins endpoint, you can use Azure AI Search for answers to your questions with assistance from GPT.
 

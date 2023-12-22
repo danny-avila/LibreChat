@@ -1,3 +1,7 @@
+---
+title: 🌊 DigitalOcean ✨(Recommended)
+weight: -10
+---
 # Digital Ocean (Ubuntu/Docker) Setup
 
 >These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server. You can skip to any point that is useful for you. There are probably more efficient/scalable ways, but this guide works really great for my personal use case.
@@ -334,8 +338,8 @@ ALLOW_REGISTRATION=false
 ```
 
 **Resources:**
-- [Tokens/Apis/etc](../install/ai_setup.md)
-- [User/Auth System](../install/user_auth_system.md)
+- [Tokens/Apis/etc](../install/configuration/ai_setup.md)
+- [User/Auth System](../install/configuration/user_auth_system.md)
 
 ### **3. Start docker, and then run the installation/update script**
 
