@@ -10,6 +10,7 @@
   "scripts": {
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
+    "list-balances": "node config/list-balances.js",
     "rebuild:package-lock": "node config/packages",
     "reinstall": "node config/update.js -l -g",
     "b:reinstall": "bun config/update.js -b -l -g",
@@ -25,6 +26,7 @@
     "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
     "ban-user": "node config/ban-user.js",
+    "delete-user": "node config/delete-user.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:stop": "node config/stop-backend.js",
@@ -53,7 +55,8 @@
     "b:client:dev": "cd client && bun run b:dev",
     "b:test:client": "cd client && bun run b:test",
     "b:test:api": "cd api && bun run b:test",
-    "b:balance": "bun config/add-balance.js"
+    "b:balance": "bun config/add-balance.js",
+    "b:list-balances": "bun config/list-balances.js"
   },
   "repository": {
     "type": "git",
