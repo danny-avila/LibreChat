@@ -1,3 +1,8 @@
+---
+title: 🪟 Windows
+weight: 0
+---
+
 # Windows Installation Guide
 
 ## **Recommended:**
@@ -31,10 +36,14 @@ In this video we're going to install LibreChat on Windows 11 using Docker and Gi
   - `docker-compose up`
 - Visit http://localhost:3080/ to access LibreChat. Create an account and start chatting.
 
-- [Manage Your MongoDB Database  (optional)](../features/manage_your_database.md)
+- [Manage Your MongoDB Database  (optional)](../../features/manage_your_database.md)
 Safely access and manage your MongoDB database using Mongo Express
 
 Have fun!
+
+> Note: See the [Docker Compose Install Guide](./docker_compose_install.md) for more details 
+
+- 👆 Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
 
 ---
 ## **Manual Installation**
@@ -42,15 +51,15 @@ Have fun!
 - Install the prerequisites on your machine 👇
 
 ### Download and Install Node.js (Required)
-    
+
   - Navigate to https://nodejs.org/en/download and to download the latest Node.js version for your OS (The Node.js installer includes the NPM package manager.)
 
 ### Download and Install Git (Recommended)
 - Git: https://git-scm.com/download/win
 
-### [Create a MongoDB database](mongodb.md) (Required)
-    
-### [Setup your AI Endpoints](ai_setup.md) (Required)
+### [Create a MongoDB database](../configuration/mongodb.md) (Required)
+
+### [Setup your AI Endpoints](../configuration/ai_setup.md) (Required)
 - At least one AI endpoint should be setup for use.
 
 ### Download LibreChat (Required)
@@ -61,15 +70,14 @@ Have fun!
   - **IMPORTANT : If you install the files somewhere else modify the instructions accordingly**
   
 ### Enable the Conversation search feature: (optional)
-		
+
   - Download MeiliSearch latest release from : https://github.com/meilisearch/meilisearch/releases
   - Copy it to "C:/LibreChat/"
   - Rename the file to "meilisearch.exe"
   - Open it by double clicking on it
   - Copy the generated Master Key and save it somewhere (You will need it later)
-    
 
-### [User/Auth System](../install/user_auth_system.md) (Optional)
+### [User/Auth System](../configuration/user_auth_system.md) (Optional)
 - How to set up the user/auth system and Google login.
 
 ## Setup and Run LibreChat
@@ -108,28 +116,6 @@ Using the command line (in the root directory)
 - Run `npm run update` from the project directory for a clean installation.
 
 If you're having issues running this command, you can try running what the script does manually:
-
-### Docker
-
-```bash
-# Fetch the latest changes from Github
-git fetch origin
-# Switch to the repo's main branch
-git checkout main
-# Pull the latest changes to the main branch from Github
-git pull origin main
-# Prune all LibreChat Docker images
-docker rmi librechat:latest
-# Remove all unused dangling Docker images
-docker image prune -f
-# Building a new LibreChat image
-docker-compose build
-
-# Start LibreChat
-docker-compose up
-```
-
-### Local (npm)
 
 ```powershell
 # Windows PowerShell terminal 

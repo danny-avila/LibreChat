@@ -1,3 +1,7 @@
+---
+title: ⚡ Azure
+weight: -6
+---
 # Azure deployment
 
 There are different ways of how a deployment can be done in Azure. 

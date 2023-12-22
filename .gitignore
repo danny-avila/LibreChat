@@ -71,6 +71,10 @@ config.local.ts
 **/storageState.json
 junit.xml
 
+# docker override file
+docker-compose.override.yaml
+docker-compose.override.yml
+
 # meilisearch
 meilisearch
 meilisearch.exe

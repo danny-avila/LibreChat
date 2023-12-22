@@ -28,7 +28,8 @@
   </a>
 </p>
 
-# Features
+
+## 🪶 Features
  - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
  - 💬 Multimodal Chat:
      - Upload and analyze images with GPT-4 and Gemini Vision 📸 
@@ -45,9 +46,7 @@
  - 👥 Multi-User, Secure Authentication with Moderation and Token spend tools
  - ⚙️ Configure Proxy, Reverse Proxy, Docker, many Deployment options, and completely Open-Source
 
-[For a thorough review of our features, see our docs here](https://docs.librechat.ai/features/plugins/introduction.html) 📚
-
-## All-In-One AI Conversations with LibreChat ##
+## 📃 All-In-One AI Conversations with LibreChat
 LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
@@ -64,13 +63,9 @@ With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use f
   </iframe>
 </p>
 
-## ⚠️ [Breaking Changes](general_info/breaking_changes.md) ⚠️
-
-**Please read this before updating from a previous version**
-
 ---
 
-## Star History
+## ⭐ Star History
 
 <a href="https://star-history.com/#danny-avila/LibreChat&Date">
   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
@@ -78,7 +73,7 @@ With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use f
 
 ---
 
-## Contributors
+## ✨ Contributors
 Contributions and suggestions bug reports and fixes are welcome!
 Please read the documentation before you do!
 
@@ -86,7 +81,7 @@ For new features, components, or extensions, please open an issue and discuss be
 
 - Join the [Discord community](https://discord.gg/uDyZ5Tzhct)
 
-This project exists in its current state thanks to all the people who contribute
+## 💖 This project exists in its current state thanks to all the people who contribute
 ---
 <a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />

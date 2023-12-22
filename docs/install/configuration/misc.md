@@ -1,3 +1,9 @@
+---
+title: 🌀 Miscellaneous
+weight: -2
+author: danny-avila and jerkstorecaller
+---
+
 As LibreChat has varying use cases and environment possibilities, this page will host niche setup/configurations, as contributed by the community, that are not better delegated to any of the other guides.
 
 # Using LibreChat behind a reverse proxy with Basic Authentication

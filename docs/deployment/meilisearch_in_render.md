@@ -1,3 +1,7 @@
+---
+title: 🔎 Meilisearch in Render
+weight: -3
+---
 # Utilize Meilisearch by running LibreChat on Render
 
 ## Create a new account or a new project on Render
