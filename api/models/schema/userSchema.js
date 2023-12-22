@@ -107,7 +107,7 @@ const userSchema = mongoose.Schema(
     },
     proMemberExpiredAt: {
       type: Date,
-      default: '',
+      default: new Date(),
     },
   },
   { timestamps: true },

@@ -68,7 +68,7 @@ export type TUser = {
   biography: string;
   followers: object;
   following: object;
-  proMemberExpiredAt: string;
+  proMemberExpiredAt: Date;
 };
 
 export type TGetConversationsResponse = {
