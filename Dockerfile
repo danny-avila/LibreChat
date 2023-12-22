@@ -1,16 +1,12 @@
 # Base node image
-FROM node:19-alpine AS node
+FROM node:20-alpine AS node
 
 COPY . /app
 WORKDIR /app
 
 # Install call deps - Install curl for health check
 RUN apk --no-cache add curl && \
-    # We want to inherit env from the container, not the file
-    # This will preserve any existing env file if it's already in source
-    # otherwise it will create a new one
-    touch .env && \
-    # Build deps in seperate 
+    # Build deps in seperate
     npm ci
 
 # React client build

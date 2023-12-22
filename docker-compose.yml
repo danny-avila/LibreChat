@@ -24,15 +24,7 @@ services:
       - HOST=0.0.0.0
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       - MEILI_HOST=http://meilisearch:7700
-    volumes:
-      - /app/client/node_modules
-      - /app/api/node_modules
-      - ./api:/app/api
-      - ./.env:/app/.env
-      - ./.env.development:/app/.env.development
-      - ./.env.production:/app/.env.production
-      - ./images:/app/client/public/images
-      - ./librechat.yaml:/app/librechat.yaml
+      - MEILI_HTTP_ADDR=meilisearch:7700
   mongodb:
     container_name: chat-mongodb
     image: mongo
