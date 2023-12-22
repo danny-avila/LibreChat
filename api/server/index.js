@@ -8,6 +8,7 @@ const errorController = require('./controllers/ErrorController');
 const configureSocialLogins = require('./socialLogins');
 const { connectDb, indexSync } = require('~/lib/db');
 const { logger } = require('~/config');
+const noIndex = require('./middleware/noIndex');
 
 const paths = require('~/config/paths');
 const routes = require('./routes');
@@ -27,14 +28,8 @@ const startServer = async () => {
   const app = express();
   app.locals.config = paths;
 
-  app.use((req, res, next) => {
-    if (process.env.NO_INDEX === 'true') {
-      res.setHeader('X-Robots-Tag', 'noindex');
-    }
-    next();
-  });
-
   // Middleware
+  app.use(noIndex);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(mongoSanitize());
