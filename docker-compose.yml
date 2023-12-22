@@ -18,13 +18,13 @@ services:
     user: "${UID}:${GID}"
     extra_hosts:
     - "host.docker.internal:host-gateway"
-    env_file:
-      - .env
     environment:
       - HOST=0.0.0.0
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
+    volumes:
+      - ./.env:/app/.env
   mongodb:
     container_name: chat-mongodb
     image: mongo
@@ -37,8 +37,6 @@ services:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.5
     restart: always
-    env_file:
-      - .env
     user: "${UID}:${GID}"
     environment:
       - MEILI_HOST=http://meilisearch:7700
