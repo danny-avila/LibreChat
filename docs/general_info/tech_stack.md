@@ -1,9 +1,36 @@
+---
+title: 🧑‍💻 Tech Stack
+weight: -8
+---
 # Tech Stack
 
 ## This project uses:
 
-- [node-chatgpt-api](https://github.com/waylaidwanderer/node-chatgpt-api)
-- No React boilerplate/toolchain/clone tutorials, created from scratch with react@latest
-- Use of Tailwind CSS and [shadcn/ui](https://github.com/shadcn/ui) components
-- Docker, useSWR, Redux, Express, MongoDB, [Keyv](https://www.npmjs.com/package/keyv)
+- JavaScript/TypeScript: The project was initially developed entirely in JavaScript (JS). The frontend is in the process of transitioning from JS to TypeScript (TS). The backend is currently in JS, and there are considerations for transitioning it to TS in the future. 
+
+- React: The frontend UI is built using React. 
+
+- Express.js: The backend server is built using Express.js.
+
+- OpenAI API: The project uses the official ChatGPT API from OpenAI.
+
+- Docker: Docker is used for containerization of the application.
+
+- MongoDB: MongoDB is used as the database for the application.
+
+- npm: npm is used as the package manager.
+
+- Git: Git is used for version control, following a GitFlow workflow.
+
+- ESLint: ESLint is used for linting the codebase.
+
+- Husky: Husky is used for pre-commit checks.
+
+- Playwright: Playwright is used for running integration tests.
+
+- GitHub: GitHub is used for hosting the codebase and managing contributions.
+
+- Discord: Discord is used for community engagement and discussions.
+
+- Various Cloud Deployment Options: The project supports deployment on multiple cloud platforms including DigitalOcean, Azure, Linode, Cloudflare, Ngrok, HuggingFace, and Render.
 

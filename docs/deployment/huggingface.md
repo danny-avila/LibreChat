@@ -1,3 +1,7 @@
+---
+title: 🤗 HuggingFace
+weight: -9
+---
 # Hugging Face Deployment 🤗
 
 >#### ⚠️ Note - Some features are not supported by HuggingFace:
@@ -11,7 +15,7 @@
 
 The first thing you need is to create a MongoDB Atlas Database and get your connection string.
 
-Follow the instructions in this document: [Online MongoDB Database](../install/mongodb.md)
+Follow the instructions in this document: [Online MongoDB Database](../install/configuration/mongodb.md)
 
 ## Getting Started
 

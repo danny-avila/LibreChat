@@ -1,8 +1,14 @@
+---
+title: 🐳 Docker Compose ✨(Recommended)
+weight: -10
+---
+
 # Docker Compose Installation Guide
 
 Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
 
-See the video guide for [Windows](windows_install.md#recommended) or [Ubuntu 22.04 LTS](linux_install.md#recommended)
+If you prefer to watch a video, we have video guides for [Windows](./windows_install.md#recommended) and [Ubuntu 22.04 LTS](./linux_install.md#recommended)
+
 ## Installation and Configuration
 
 ### Preparation
@@ -23,13 +29,13 @@ Before running LibreChat with Docker, you need to configure some settings:
 - Provide all necessary credentials in the `.env` file before the next step.
    - Docker will read this env file. See the `.env.example` file for reference.
 
-#### [AI Setup](ai_setup.md) (Required)
+#### [AI Setup](../configuration/ai_setup.md) (Required)
 At least one AI endpoint should be setup for use.
 
-#### [Manage Your MongoDB Database](../features/manage_your_database.md) (Optional)
+#### [Manage Your MongoDB Database](../../features/manage_your_database.md) (Optional)
 Safely access and manage your MongoDB database using Mongo Express
 
-#### [User Authentication System Setup](../install/user_auth_system.md) (Optional)
+#### [User Authentication System Setup](../configuration/user_auth_system.md) (Optional)
 How to set up the user/auth system and Google login.
 
 ### Running LibreChat
@@ -75,7 +81,23 @@ docker-compose up
 
 ### Config notes for docker-compose.yml file
 
+Modification to the `docker-compose.yml` should be made with `docker-compose.override.yml` whenever possible to prevent conflicts when updating. You can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`, or modify the default configuration provided by the main `docker-compose.yml`, without the need to directly edit or duplicate the whole file.
+
+For more info see: 
+
+- Our quick guide: 
+    - **[Docker Override](../configuration/docker_override.md)**
+
+- The official docker documentation: 
+    - **[docker docs - understanding-multiple-compose-files](https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files)**
+    - **[docker docs - merge-compose-files](https://docs.docker.com/compose/multiple-compose-files/merge/#merge-compose-files)**
+    - **[docker docs - specifying-multiple-compose-files](https://docs.docker.com/compose/reference/#specifying-multiple-compose-files)**
+
+- You can also view an example of an override file for LibreChat in your LibreChat folder and on GitHub: 
+    - **[docker-compose.override.example](https://github.com/danny-avila/LibreChat/blob/main/docker-compose.override.yaml.example)**
+
 - Any environment variables set in your compose file will override variables with the same name in your .env file. Note that the following variables are necessary to include in the compose file so they work in the docker environment, so they are included for you.
+
 ```yaml
     env_file:
       - .env
@@ -91,55 +113,27 @@ docker-compose up
     environment:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_HTTP_ADDR=meilisearch:7700
- ```
-- If you'd like to change the app title, edit the following lines (the ones in your .env file are not read during building)
-```yaml
-      args:
-        APP_TITLE: LibreChat # default, change to your desired app name
 ```
 
 - If for some reason you're not able to build the app image, you can pull the latest image from **Dockerhub**.
-- Comment out the following lines (CTRL+/ on most IDEs, or put a `#` in front each line)
-
-
-```yaml
-    image: node                # Comment this & uncomment below to build from docker hub image
-    build:
-      context: .
-      target: node
-      args:
-        APP_TITLE: LibreChat # default, change to your desired app name
-```
-
-- Comment this line in (remove the `#` key)
-
+- Create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` with this content:
 
 ```yaml
-     # image: ghcr.io/danny-avila/librechat:latest # Uncomment this & comment above to build from docker hub image
-```
-- **Note:** The latest Dockerhub image is only updated with new release tags, so it may not have the latest changes to the main branch
-- You also can't edit the title or toggle google login off as shown above, as these variables are set during build time.
-- If you are running APIs in other docker containers that you need access to, you will need to uncomment the following lines
+version: '3.4'
 
-```yaml
-    # extra_hosts: # if you are running APIs on docker you need access to, you will need to uncomment this line and next
-    # - "host.docker.internal:host-gateway"
+services:
+  api:
+    image: ghcr.io/danny-avila/librechat-dev:latest
 ```
 
-  - Usually, these are reverse proxies, which you can set as shown below under `environment:`
+- Then use `docker-compose build` as you would normally
 
+- **Note:** There are different Dockerhub images. the `librechat:latest` image is only updated with new release tags, so it may not have the latest changes to the main branch. To get the latest changes you can use `librechat-dev:latest` instead
 
-```yaml
-      environment:
-      - HOST=0.0.0.0
-      - MONGO_URI=mongodb://mongodb:27017/LibreChat
-      - CHATGPT_REVERSE_PROXY=http://host.docker.internal:8080/api/conversation # if you are hosting your own chatgpt reverse proxy with docker
-      - OPENAI_REVERSE_PROXY=http://host.docker.internal:8070/v1/chat/completions # if you are hosting your own chatgpt reverse proxy with docker
-```
 
 ### **[LibreChat on Docker Hub](https://hub.docker.com/r/chatgptclone/app/tags)**
 
-### **[Create a MongoDB database](mongodb.md)** (Not required if you'd like to use the local database installed by Docker)
+### **[Create a MongoDB database](../configuration/mongodb.md)** (Not required if you'd like to use the local database installed by Docker)
 
 ---
 

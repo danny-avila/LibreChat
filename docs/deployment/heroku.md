@@ -1,3 +1,7 @@
+---
+title: 🌈 Heroku
+weight: -1
+---
 # Heroku Deployment
 
 *To run LibreChat on a server, you can use cloud hosting platforms like Heroku, DigitalOcean, or AWS. In this response, I'll provide instructions for deploying the project on Heroku. Other platforms will have slightly different deployment processes.*
