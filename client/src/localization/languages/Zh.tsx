@@ -24,6 +24,8 @@ export default {
   com_ui_follow: '关注',
   com_ui_followers: '粉丝',
   com_ui_following: '关注',
+  com_ui_pro_member_expired_at: 'Pro用户. 过期日期',
+  com_ui_free_member: '免费用户',
   com_ui_about_yourself: '关于自己',
   com_ui_profession: '职业',
   com_ui_share_profile: '分享主页',
