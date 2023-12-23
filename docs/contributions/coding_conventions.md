@@ -67,7 +67,7 @@ Defines Mongoose models to represent data entities and their relationships.
 
 ### 4. Database Access (MongoDB and Mongoose)
 
-- Use Mongoose (https://mongoosejs.com) as the MongoDB ODM.
+- Use Mongoose ([https://mongoosejs.com](https://mongoosejs.com)) as the MongoDB ODM.
 - Create separate model files for each entity and ensure clear separation of concerns.
 - Use Mongoose schema validation to enforce data integrity.
 - Handle database connections efficiently and avoid connection leaks.

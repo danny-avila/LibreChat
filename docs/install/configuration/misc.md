@@ -8,8 +8,6 @@ As LibreChat has varying use cases and environment possibilities, this page will
 
 # Using LibreChat behind a reverse proxy with Basic Authentication
 
-Written by [@danny-avila](https://github.com/danny-avila) and [@jerkstorecaller](https://github.com/jerkstorecaller)
-
 ### Basic Authentication (Basic Auth)
 
 Basic Authentication is a simple authentication scheme built into the HTTP protocol. When a client sends a request to a server, the server can respond with a `401 Unauthorized` status code, prompting the client to provide a username and password. This username and password are then sent with subsequent requests in the HTTP header, encoded in Base64 format. 

@@ -31,6 +31,6 @@ using internet slang often. Answer using the same language as the user."
 ## References
 For more info on the Bing Jailbreak and general jailbreaking guidelines: 
 
-https://github.com/waylaidwanderer/node-chatgpt-api
+[https://github.com/waylaidwanderer/node-chatgpt-api](https://github.com/waylaidwanderer/node-chatgpt-api)
 
-https://www.make-safe-ai.com/is-bing-chat-safe/
+[https://www.make-safe-ai.com/is-bing-chat-safe/](https://www.make-safe-ai.com/is-bing-chat-safe/)

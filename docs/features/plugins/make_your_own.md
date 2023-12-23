@@ -8,11 +8,11 @@ Creating custom plugins for this project involves extending the `Tool` class fro
 
 **Note:** I will use the word plugin interchangeably with tool, as the latter is specific to LangChain, and we are mainly conforming to the library.
 
-You are essentially creating DynamicTools in LangChain speak. See the [LangChainJS docs](https://js.langchain.com/docs/modules/agents/tools/dynamic) for more info.
+You are essentially creating DynamicTools in LangChain speak. See the **[LangChainJS docs](https://js.langchain.com/docs/modules/agents/tools/dynamic)** for more info.
 
 This guide will walk you through the process of creating your own custom plugins, using the `StableDiffusionAPI` and `WolframAlphaAPI` tools as examples.
 
-When using the Functions Agent (the default mode for plugins), tools are converted to [OpenAI functions](https://openai.com/blog/function-calling-and-other-api-updates); in any case, plugins/tools are invoked conditionally based on the LLM generating a specific format that we parse. 
+When using the Functions Agent (the default mode for plugins), tools are converted to **[OpenAI functions](https://openai.com/blog/function-calling-and-other-api-updates)**; in any case, plugins/tools are invoked conditionally based on the LLM generating a specific format that we parse. 
 
 The most common implementation of a plugin is to make an API call based on the natural language input from the AI, but there is virtually no limit in programmatic use case.
 
@@ -47,7 +47,7 @@ Remember, the key to creating a custom plugin is to extend the `Tool` class and 
 
 **Multi-Input Plugins**
 
-If you would like to make a plugin that would benefit from multiple inputs from the LLM, instead of a singular input string as we will review, you need to make a LangChain [StructuredTool](https://blog.langchain.dev/structured-tools/) instead. A detailed guide for this is in progress, but for now, you can look at how I've made StructuredTools in this directory: `api\app\clients\tools\structured\`. This guide is foundational to understanding StructuredTools, and it's recommended you continue reading to better understand LangChain tools first. The blog linked above is also helpful once you've read through this guide.
+If you would like to make a plugin that would benefit from multiple inputs from the LLM, instead of a singular input string as we will review, you need to make a LangChain **[StructuredTool](https://blog.langchain.dev/structured-tools/)** instead. A detailed guide for this is in progress, but for now, you can look at how I've made StructuredTools in this directory: `api\app\clients\tools\structured\`. This guide is foundational to understanding StructuredTools, and it's recommended you continue reading to better understand LangChain tools first. The blog linked above is also helpful once you've read through this guide.
 
 ---
 
@@ -131,7 +131,7 @@ class StableDiffusionAPI extends Tool {
 
 The `_call` method is where the main functionality of your plugin is implemented. This method is called when the language model decides to use your plugin. It should take an `input` parameter and return a result.
 
-> In a basic Tool, the LLM will generate one string value as an input. If your plugin requires multiple inputs from the LLM, read the [StructuredTools](#StructuredTools) section.
+> In a basic Tool, the LLM will generate one string value as an input. If your plugin requires multiple inputs from the LLM, read the **[StructuredTools](#StructuredTools)** section.
 
 ```javascript
 class StableDiffusionAPI extends Tool {

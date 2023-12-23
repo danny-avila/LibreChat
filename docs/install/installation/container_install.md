@@ -181,7 +181,7 @@ podman volume export librechat-meilisearch-data --output "librechat-meilisearch-
 podman volume export librechat-mongodb-data --output "librechat-mongodb-backup-$(date +"%d-%m-%Y").tar"
 ```
 
-These will leave archive files that you can do what you wish with, including reverting volumes to a previous state if needed. Refer to [podman documentation](https://docs.podman.io/en/latest/markdown/podman-volume-import.1.html) for how to do this.
+These will leave archive files that you can do what you wish with, including reverting volumes to a previous state if needed. Refer to the **[official podman documentation](https://docs.podman.io/en/latest/markdown/podman-volume-import.1.html)** for how to do this.
 
 ## Updating LibreChat
 

@@ -16,6 +16,7 @@ theme:
   favicon: assets/favicon_package/favicon-32x32.png
 
   palette:
+
     # Palette toggle for dark mode
     - scheme: slate
       primary: cyan
@@ -32,12 +33,10 @@ theme:
         icon: material/brightness-7
         name: Switch to dark mode
 
-
   icon:
     repo: fontawesome/brands/github
     edit: material/pencil
     view: material/eye
-
 
   features:
     - header.autohide
@@ -49,13 +48,9 @@ theme:
     - navigation.instant.progress
     - navigation.tracking
     - navigation.expand
+    #- navigation.prune
     - navigation.indexes
     - navigation.top
-
-
-# For more Styling options (not in use)
-extra_css:
-  - stylesheets/extra.css
 
 markdown_extensions:
   - pymdownx.highlight:
@@ -71,12 +66,11 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.superfences
   - pymdownx.mark
-  - attr_listS
+  - attr_list
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
           class: mermaid
-
 
 plugins:
   - search
@@ -105,7 +99,6 @@ plugins:
         - '.*\.(tmp|bin|tar)$'
     # https://github.com/apenwarr/mkdocs-exclude
 
-
 extra:
   social:
     - icon: fontawesome/brands/discord
@@ -126,7 +119,6 @@ extra:
     - icon: fontawesome/solid/face-grin-beam
       link: https://hf.librechat.ai
       name: Hugging Face
-
 
 copyright:
   © 2023 <a href="https://github.com/danny-avila/LibreChat" target="_blank" rel="noopener">LibreChat</a>
