@@ -16,7 +16,6 @@ theme:
   favicon: assets/favicon_package/favicon-32x32.png
 
   palette:
-
     # Palette toggle for dark mode
     - scheme: slate
       primary: cyan
@@ -33,10 +32,12 @@ theme:
         icon: material/brightness-7
         name: Switch to dark mode
 
+
   icon:
     repo: fontawesome/brands/github
     edit: material/pencil
     view: material/eye
+
 
   features:
     - header.autohide
@@ -48,7 +49,6 @@ theme:
     - navigation.instant.progress
     - navigation.tracking
     - navigation.expand
-    - navigation.prune
     - navigation.indexes
     - navigation.top
 
@@ -71,7 +71,7 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.superfences
   - pymdownx.mark
-  - attr_list
+  - attr_listS
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -80,13 +80,31 @@ markdown_extensions:
 
 plugins:
   - search
+  # - pub-debugger # <- General purpose mkdocs debugger
   - mkdocs-nav-weight:
       section_renamed: true # If true, section name will use the title of its index instead of the folder name.
       index_weight: -10
       warning: true # Controls whether to send a Warning when invalid values are detected in markdown metadata
       reverse: false # If true, sort nav by weight from largest to smallest.
       headless_included: false
-# for more info: https://github.com/shu307/mkdocs-nav-weight?tab=readme-ov-file
+    # for more info: https://github.com/shu307/mkdocs-nav-weight?tab=readme-ov-file
+  - pub-social:
+      og:
+        enabled: true
+        locale: en_us
+      twitter:
+        enabled: true
+    # for more info: https://github.com/mkusz/mkdocs-publisher
+  - exclude:
+      glob:
+        - dev/* # <- exclude the docs/dev folder from the docs
+        - "*.tmp"
+        - "*.pdf"
+        - "*.gz"
+      regex:
+        - '.*\.(tmp|bin|tar)$'
+    # https://github.com/apenwarr/mkdocs-exclude
+
 
 extra:
   social:
@@ -108,6 +126,7 @@ extra:
     - icon: fontawesome/solid/face-grin-beam
       link: https://hf.librechat.ai
       name: Hugging Face
+
 
 copyright:
   © 2023 <a href="https://github.com/danny-avila/LibreChat" target="_blank" rel="noopener">LibreChat</a>
