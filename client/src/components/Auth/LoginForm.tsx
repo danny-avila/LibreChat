@@ -82,7 +82,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
         </div>
         {renderError('password')}
       </div>
-      <a href="/forgot-password" className="text-sm font-medium text-green-500 hover:underline">
+      <a href="/forgot-password" className="text-sm font-medium text-green-500">
         {localize('com_auth_password_forgot')}
       </a>
       <div className="mt-6">
@@ -90,7 +90,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
           aria-label="Sign in"
           data-testid="login-button"
           type="submit"
-          className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none"
+          className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-all duration-300 hover:bg-green-550 focus:bg-green-550 focus:outline-none"
         >
           {localize('com_auth_continue')}
         </button>
