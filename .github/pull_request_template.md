@@ -1,7 +1,7 @@
 # Pull Request Template
 
 
-### ⚠️ Before Submitting a PR, read the [Contributing Docs](./CONTRIBUTING.md) in full!
+### ⚠️ Before Submitting a PR, read the [Contributing Docs](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md) in full!
 
 ## Summary
 

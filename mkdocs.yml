@@ -45,9 +45,13 @@ theme:
     - content.action.edit
     - content.code.copy
     - navigation.instant
+    - navigation.instant.progress
     - navigation.tracking
     - navigation.expand
-    # - navigation.sections
+    - navigation.prune
+    - navigation.indexes
+    - navigation.top
+
 
 # For more Styling options (not in use)
 extra_css:
@@ -68,76 +72,42 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.mark
   - attr_list
-  - pymdownx.emoji:
-      emoji_index: !!python/name:materialx.emoji.twemoji
-      emoji_generator: !!python/name:materialx.emoji.to_svg
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
 
-# Page tree
-nav:
-  - Home:
-    - 'index.md'
-    - v0.5.0 Breaking Changes: 'general_info/breaking_changes.md'
-    - Project Origin: 'general_info/project_origin.md'
-    - Tech Stack: 'general_info/tech_stack.md'
-    - Multilingual Information: 'general_info/multilingual_information.md'
-  - Installation Guides:
-    - Installation:
-        - Docker (Compose) Install: 'install/docker_compose_install.md'
-        - Container Install: 'install/container_install.md'
-        - Linux Install: 'install/linux_install.md'
-        - Mac Install: 'install/mac_install.md'
-        - Windows Install: 'install/windows_install.md'
-    - Configuration:
-        - .env Configuration: 'install/dotenv.md'
-        - Free AI APIs: 'install/free_ai_apis.md'
-        - AI Setup: 'install/ai_setup.md'
-        - User Auth System: 'install/user_auth_system.md'
-        - Online MongoDB Database: 'install/mongodb.md'
-        - Languages: 'install/default_language.md'
-        - LiteLLM Proxy: 'install/litellm.md'
-        - Miscellaneous: 'install/misc.md'
-  - Features:
-    - Plugins:
-      - Introduction: 'features/plugins/introduction.md'
-      - Google: 'features/plugins/google_search.md'
-      - Stable Diffusion: 'features/plugins/stable_diffusion.md'
-      - Wolfram: 'features/plugins/wolfram.md'
-      - Azure AI Search: 'features/plugins/azure_ai_search.md'
-      - Make Your Own Plugin: 'features/plugins/make_your_own.md'
-      - Using official ChatGPT Plugins: 'features/plugins/chatgpt_plugins_openapi.md'
-    - Automated Moderation: 'features/mod_system.md'
-    - Token Usage: 'features/token_usage.md'
-    - Manage Your Database: 'features/manage_your_database.md'
-    - Logging System: 'features/logging_system.md'
-    - PandoraNext Deployment Guide: 'features/pandoranext.md'
-    - Third-Party Tools: 'features/third_party.md'
-    - Proxy: 'features/proxy.md'
-    - Bing Jailbreak: 'features/bing_jailbreak.md'
-  - Cloud Deployment:
-    - DigitalOcean (preferred): 'deployment/digitalocean.md'
-    - Cloudflare: 'deployment/cloudflare.md'
-    - Hetzner: 'deployment/hetzner_ubuntu.md'
-    - Heroku: 'deployment/heroku.md'
-    - Linode: 'deployment/linode.md'
-    - Ngrok: 'deployment/ngrok.md'
-    - Render: 'deployment/render.md'
-    - Meilisearch on Render: 'deployment/meilisearch_in_render.md'
-    - Azure (Terraform): 'deployment/azure-terraform.md'
-    - HuggingFace: 'deployment/huggingface.md'
-  - Contributions:
-    - Documentation Guidelines: 'contributions/documentation_guidelines.md'
-    - Contribute a Translation: 'contributions/translation_contribution.md'
-    - Code Standards and Conventions: 'contributions/coding_conventions.md'
-    - Testing: 'contributions/testing.md'
+
+plugins:
+  - search
+  - mkdocs-nav-weight:
+      section_renamed: true # If true, section name will use the title of its index instead of the folder name.
+      index_weight: -10
+      warning: true # Controls whether to send a Warning when invalid values are detected in markdown metadata
+      reverse: false # If true, sort nav by weight from largest to smallest.
+      headless_included: false
+# for more info: https://github.com/shu307/mkdocs-nav-weight?tab=readme-ov-file
 
 extra:
   social:
     - icon: fontawesome/brands/discord
-      link: https://discord.gg/CEe6vDg9Ky
+      link: https://discord.librechat.ai
+      name: Discord
     - icon: fontawesome/brands/github
-      link: https://github.com/danny-avila/LibreChat
+      link: https://librechat.ai
+      name: GitHub
     - icon: fontawesome/brands/youtube
-      link: https://www.youtube.com/@LibreChat
+      link: https://yt.librechat.ai
+      name: YouTube
+    - icon: fontawesome/brands/linkedin
+      link: https://linkedin.librechat.ai
+      name: LinkedIn
+    - icon: fontawesome/solid/feather
+      link: https://demo.librechat.cfd
+      name: Demo
+    - icon: fontawesome/solid/face-grin-beam
+      link: https://hf.librechat.ai
+      name: Hugging Face
 
 copyright:
   © 2023 <a href="https://github.com/danny-avila/LibreChat" target="_blank" rel="noopener">LibreChat</a>

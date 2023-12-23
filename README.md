@@ -26,7 +26,7 @@
   </a>
 </p>
 
-# Features
+# 📃 Features
  - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
  - 💬 Multimodal Chat:
      - Upload and analyze images with GPT-4 and Gemini Vision 📸
@@ -46,7 +46,7 @@
 [For a thorough review of our features, see our docs here](https://docs.librechat.ai/features/plugins/introduction.html) 📚
 
 
-## All-In-One AI Conversations with LibreChat
+## 🪶 All-In-One AI Conversations with LibreChat
 LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
@@ -58,97 +58,20 @@ Click on the thumbnail to open the video☝️
 
 ---
 
-## ⚠️ [Breaking Changes](docs/general_info/breaking_changes.md) ⚠️
-
-**Please read this before updating from a previous version**
+## 📚 Documentation
+For more information on how to use our advanced features, install and configure our software, and access our guidelines and tutorials, please check out our documentation at [docs.librechat.ai](https://docs.librechat.ai)
 
 ---
 
-## Changelog 
+## 📝 Changelog 
 Keep up with the latest updates by visiting the releases page - [Releases](https://github.com/danny-avila/LibreChat/releases)
 
----
-
-<h1>Table of Contents</h1>
-
-<details open>
-  <summary><strong>Getting Started</strong></summary>
-
-  * Installation
-    * [Docker Compose Install🐳](docs/install/docker_compose_install.md)
-    * [Linux Install🐧](docs/install/linux_install.md)
-    * [Mac Install🍎](docs/install/mac_install.md)
-    * [Windows Install💙](docs/install/windows_install.md)
-  * Configuration
-    * [.env Configuration](./docs/install/dotenv.md)
-    * [AI Setup](docs/install/ai_setup.md)
-    * [User Auth System](docs/install/user_auth_system.md)
-    * [Online MongoDB Database](docs/install/mongodb.md)
-    * [Default Language](docs/install/default_language.md)
-    * [LiteLLM Proxy: Load Balance LLMs + Spend Tracking](docs/install/litellm.md)
-</details>
-
-<details>
-  <summary><strong>General Information</strong></summary>
-
-  * [Code of Conduct](.github/CODE_OF_CONDUCT.md)
-  * [Project Origin](docs/general_info/project_origin.md)
-  * [Multilingual Information](docs/general_info/multilingual_information.md)
-  * [Tech Stack](docs/general_info/tech_stack.md)   
-</details>
-
-<details>
-  <summary><strong>Features</strong></summary>
-
-  * **Plugins**
-    * [Introduction](docs/features/plugins/introduction.md)
-    * [Google](docs/features/plugins/google_search.md)
-    * [Stable Diffusion](docs/features/plugins/stable_diffusion.md)
-    * [Wolfram](docs/features/plugins/wolfram.md)
-    * [Make Your Own Plugin](docs/features/plugins/make_your_own.md)
-    * [Using official ChatGPT Plugins](docs/features/plugins/chatgpt_plugins_openapi.md)
-
-  
-  * [Automated Moderation](docs/features/mod_system.md)
-  * [Token Usage](docs/features/token_usage.md)
-  * [Manage Your Database](docs/features/manage_your_database.md)
-  * [PandoraNext Deployment Guide](docs/features/pandoranext.md)
-  * [Third-Party Tools](docs/features/third_party.md)
-  * [Proxy](docs/features/proxy.md)
-  * [Bing Jailbreak](docs/features/bing_jailbreak.md)
-
-</details>
-
-<details>
-  <summary><strong>Cloud Deployment</strong></summary>
-
-  * [DigitalOcean](docs/deployment/digitalocean.md)
-  * [Azure](docs/deployment/azure-terraform.md)
-  * [Linode](docs/deployment/linode.md)
-  * [Cloudflare](docs/deployment/cloudflare.md)
-  * [Ngrok](docs/deployment/ngrok.md)
-  * [HuggingFace](docs/deployment/huggingface.md)
-  * [Render](docs/deployment/render.md)
-  * [Meilisearch in Render](docs/deployment/meilisearch_in_render.md)
-  * [Hetzner](docs/deployment/hetzner_ubuntu.md)
-  * [Heroku](docs/deployment/heroku.md)
-</details>
-
-<details>
-  <summary><strong>Contributions</strong></summary>
-  
-  * [Contributor Guidelines](.github/CONTRIBUTING.md)
-  * [Documentation Guidelines](docs/contributions/documentation_guidelines.md)
-  * [Contribute a Translation](docs/contributions/translation_contribution.md)
-  * [Code Standards and Conventions](docs/contributions/coding_conventions.md)
-  * [Testing](docs/contributions/testing.md)
-  * [Security](.github/SECURITY.md)
-  * [Project Roadmap](https://github.com/users/danny-avila/projects/2)
-</details>
+**⚠️ [Breaking Changes](docs/general_info/breaking_changes.md)**
+Please consult the breaking changes before updating.
 
 ---
 
-## Star History
+## ⭐ Star History
 
 <a href="https://star-history.com/#danny-avila/LibreChat&Date">
   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
@@ -156,15 +79,14 @@ Keep up with the latest updates by visiting the releases page - [Releases](https
 
 ---
 
-## Contributors
-Contributions and suggestions bug reports and fixes are welcome!
-Please read the documentation before you do!
+## ✨ Contributions
+Contributions, suggestions, bug reports and fixes are welcome!
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR. 
 
-- Join the [Discord community](https://discord.gg/uDyZ5Tzhct)
+---
 
-This project exists in its current state thanks to all the people who contribute
+💖 This project exists in its current state thanks to all the people who contribute
 ---
 <a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />

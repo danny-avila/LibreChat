@@ -1,3 +1,7 @@
+---
+title: 🪨 Ngrok
+weight: -5
+---
 # Ngrok Installation
 
 To use Ngrok for tunneling your local server to the internet, follow these steps:

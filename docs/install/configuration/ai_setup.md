@@ -1,28 +1,37 @@
-# Table of Contents
+---
+title: 🤖 AI Setup
+weight: -8
+---
 
-1. [AI Setup](#ai-setup)
-    - [General Information](#general)
-        - [Free AI APIs](#free-ai-apis)
-        - [Setting a Default Endpoint](#setting-a-default-endpoint)
-        - [Setting a Default Preset](#setting-a-default-preset)
-    - [OpenAI](#openai)
-    - [Anthropic](#anthropic)
-    - [Google](#google)
-        - [Generative Language API (Gemini)](#generative-language-api-gemini)
-        - [Vertex AI (PaLM 2 & Codey)](#vertex-ai-palm-2--codey)
-    - [Azure OpenAI](#azure-openai)
-        - [Required Variables](#required-variables)
-        - [Model Deployments](#model-deployments)
-        - [Setting a Default Model for Azure](#setting-a-default-model-for-azure)
-        - [Enabling Auto-Generated Titles with Azure](#enabling-auto-generated-titles-with-azure)
-        - [Using GPT-4 Vision with Azure](#using-gpt-4-vision-with-azure)
-        - [Setting Azure OpenAI as the Default Endpoint](#setting-azure-openai-as-the-default-endpoint)
-        - [Optional Variables](#optional-variables)
-        - [Using Plugins with Azure](#using-plugins-with-azure)
-    - [Unofficial APIs](#unofficial-apis)
-        - [ChatGPTBrowser](#chatgptbrowser)
-        - [BingAI](#bingai)
-2. [Conclusion](#conclusion)
+<!-- # Table of Contents
+
+- [Table of Contents](#table-of-contents)
+- [AI Setup](#ai-setup)
+  - [General](#general)
+    - [Free AI APIs](#free-ai-apis)
+    - [Setting a Default Endpoint](#setting-a-default-endpoint)
+    - [Setting a Default Preset](#setting-a-default-preset)
+  - [OpenAI](#openai)
+  - [Anthropic](#anthropic)
+  - [Google](#google)
+    - [Generative Language API (Gemini)](#generative-language-api-gemini)
+    - [Vertex AI (PaLM 2 \& Codey)](#vertex-ai-palm-2--codey)
+    - [1. Once signed up, Enable the Vertex AI API on Google Cloud:](#1-once-signed-up-enable-the-vertex-ai-api-on-google-cloud)
+    - [2. Create a Service Account with Vertex AI role:](#2-create-a-service-account-with-vertex-ai-role)
+    - [3. Create a JSON key to Save in your Project Directory:](#3-create-a-json-key-to-save-in-your-project-directory)
+  - [Azure OpenAI](#azure-openai)
+    - [Required Variables](#required-variables)
+    - [Model Deployments](#model-deployments)
+    - [Setting a Default Model for Azure](#setting-a-default-model-for-azure)
+    - [Enabling Auto-Generated Titles with Azure](#enabling-auto-generated-titles-with-azure)
+    - [Using GPT-4 Vision with Azure](#using-gpt-4-vision-with-azure)
+    - [Optional Variables](#optional-variables)
+    - [Using Plugins with Azure](#using-plugins-with-azure)
+  - [OpenRouter](#openrouter)
+  - [Unofficial APIs](#unofficial-apis)
+    - [ChatGPTBrowser](#chatgptbrowser)
+    - [BingAI](#bingai)
+  - [Conclusion](#conclusion) -->
 
 ---
 
@@ -310,6 +319,35 @@ To use Azure with the Plugins endpoint, make sure the following environment vari
 
 ---
 
+## [OpenRouter](https://openrouter.ai/)
+
+[OpenRouter](https://openrouter.ai/) is a legitimate proxy service to a multitude of LLMs, both closed and open source, including:
+- OpenAI models (great if you are barred from their API for whatever reason)
+- Anthropic Claude models (same as above)
+- Meta's Llama models
+- pygmalionai/mythalion-13b
+- and many more open source models. Newer integrations are usually discounted, too!
+
+> See their available models and pricing here: [Supported Models](https://openrouter.ai/docs#models)
+
+OpenRouter is so great, I decided to integrate it to the project as a standalone feature.
+
+**Setup:**
+- Signup to [OpenRouter](https://openrouter.ai/) and create a key. You should name it and set a limit as well.
+- Set the environment variable `OPENROUTER_API_KEY` in your .env file to the key you just created.
+- Set something in the `OPENAI_API_KEY`, it can be anyting, but **do not** leave it blank or set to `user_provided`  
+- Restart your LibreChat server and use the OpenAI or Plugins endpoints.
+
+**Notes:** 
+- [TODO] **In the future, you will be able to set up OpenRouter from the frontend as well.**
+- This will override the official OpenAI API or your reverse proxy settings for both Plugins and OpenAI.
+- On initial setup, you may need to refresh your page twice to see all their supported models populate automatically.
+- Plugins: Functions Agent works with OpenRouter when using OpenAI models.
+- Plugins: Turn functions off to try plugins with non-OpenAI models (ChatGPT plugins will not work and others may not work as expected).
+- Plugins: Make sure `PLUGINS_USE_AZURE` is not set in your .env file when wanting to use OpenRouter and you have Azure configured.
+
+---
+
 ## Unofficial APIs
 
 **Important:** Stability for Unofficial APIs are not guaranteed. Access methods to these APIs are hacky, prone to errors, and patching, and are marked lowest in priority in LibreChat's development.
@@ -322,7 +360,7 @@ This is not to be confused with [OpenAI's Official API](#openai)!
 
 > Note that this is disabled by default and requires additional configuration to work. 
 > Also, using this may have your data exposed to 3rd parties if using a proxy, and OpenAI may flag your account.
-> See: [ChatGPT Reverse Proxy](../features/pandoranext.md)
+> See: [ChatGPT Reverse Proxy](../../features/pandoranext.md)
 
 To get your Access token for ChatGPT Browser Access, you need to:
 
@@ -336,19 +374,20 @@ Warning: There may be a chance of your account being banned if you deploy the ap
 ---
 
 ### BingAI
+I recommend using Microsoft Edge for this:
 
-To get your Bing Access Token, you have a few options:
+- Navigate to **[Bing Chat](https://www.bing.com/chat)**
+- **Login** if you haven't already
+- Initiate a conversation with Bing
+- Open `Dev Tools`, usually with `F12` or `Ctrl + Shift + C`
+- Navigate to the `Network` tab
+- Look for `lsp.asx` (if it's not there look into the other entries for one with a **very long** cookie) 
+- Copy the whole cookie value. (Yes it's very long 😉)
+- Use this **"full cookie string"** for your "BingAI Token"
 
-- You can try leaving it blank and see if it works (fingers crossed 🤞)
-
-- You can follow these [new instructions](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302) (thanks @danny-avila for sharing 🙌)
-
-- You can use MS Edge, navigate to bing.com, and do the following:
-  - Make sure you are logged in
-  - Open the DevTools by pressing F12 on your keyboard
-  - Click on the tab "Application" (On the left of the DevTools)
-  - Expand the "Cookies" (Under "Storage")
-  - Copy the value of the "\_U" cookie and save it in ./.env as BING_ACCESS_TOKEN
+<p align="left">
+    <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d4dfd370-eddc-4694-ab16-076f913ff430" width="50%">
+</p>
 
 ---
 
