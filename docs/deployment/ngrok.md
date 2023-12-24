@@ -1,5 +1,6 @@
 ---
 title: 🪨 Ngrok
+description: Use Ngrok to tunnel your local server to the internet.
 weight: -5
 ---
 # Ngrok Installation

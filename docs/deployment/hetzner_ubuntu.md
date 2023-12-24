@@ -1,5 +1,6 @@
 ---
 title: 🏗️ Hetzner
+description: LibreChat Ubuntu installation from scratch on Hetzner.
 weight: -2
 ---
 # Hetzner Ubuntu Setup

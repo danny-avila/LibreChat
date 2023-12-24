@@ -1,5 +1,6 @@
 ---
 title: 🙌 Beginner's Guide to Contributions
+description: Learn how to use GitHub Desktop, VS Code extensions, and Git rebase to contribute in a quick and easy way.
 weight: -10
 ---
 # How to Contribute in a Quick and Easy Way

@@ -1,5 +1,6 @@
 ---
 title: 🌊 DigitalOcean ✨(Recommended)
+description: These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server using one of the cheapest tiers (6 USD/mo) 
 weight: -10
 ---
 # Digital Ocean (Ubuntu/Docker) Setup

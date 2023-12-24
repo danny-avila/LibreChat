@@ -1,5 +1,6 @@
 ---
 title: 🌈 Heroku
+description: Instructions for deploying LibreChat on Heroku
 weight: -1
 ---
 # Heroku Deployment

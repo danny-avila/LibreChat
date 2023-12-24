@@ -1,5 +1,6 @@
 ---
 title: 🧑‍💻 Code Standards and Conventions
+description: This guide covers the best practices for JavaScript coding, such as following the Airbnb Style Guide, using CommonJS modules, structuring the API using Express, Mongoose, and services, and testing and documenting the code using Jest, Supertest, Playwright, JSDoc, and TypeScript.
 weight: -7
 ---
 # Coding Conventions

@@ -1,5 +1,6 @@
 ---
 title: ☁️ Cloudflare
+description: How to setup a domain with Cloudflare and use Cloudflare Tunnels to securely expose your local web servers or services to the internet.
 weight: -7
 ---
 <img src="https://github.com/danny-avila/LibreChat/assets/32828263/cfbc7ca5-b51e-4f1d-aa89-b9b4cb13eead" width="350">
