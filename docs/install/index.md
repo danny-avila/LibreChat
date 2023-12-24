@@ -1,5 +1,6 @@
 ---
 title: Installation and Configuration
+description: 💻 In-depth guides about installation and configuration
 weight: 1
 ---
 

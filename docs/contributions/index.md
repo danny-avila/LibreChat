@@ -1,6 +1,6 @@
 ---
 title: Contributing to LibreChat
-description: "How to contribute to LibreChat: Get started, Documentation and code standards, Translate the app into different languages, Test the app during development, Ensure the security of the app, Stay updated with the project roadmap"
+description: "🙌 How to contribute to LibreChat: Get started, Documentation and code standards, Translate the app into different languages, Test the app during development, Ensure the security of the app, Stay updated with the project roadmap"
 weight: 5
 ---
 # Contributing to LibreChat

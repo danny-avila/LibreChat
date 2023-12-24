@@ -1,5 +1,6 @@
 ---
 title: General Information
+description: 📜 General information
 weight: 4
 ---
 

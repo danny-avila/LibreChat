@@ -1,6 +1,6 @@
 ---
 title: Deployment
-description: This section provides you with step-by-step guides on how to deploy LibreChat on different cloud platforms.
+description: 🌐 Step-by-step guides on how to deploy LibreChat on various cloud platforms.
 weight: 3
 ---
 
