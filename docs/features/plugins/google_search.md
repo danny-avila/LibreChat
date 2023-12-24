@@ -1,5 +1,6 @@
 ---
 title: 🔎 Google Search
+description: How to set up and use the Google Search Plugin, which allows you to query Google with GPT's help.
 weight: -7
 ---
 

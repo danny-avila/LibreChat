@@ -1,5 +1,6 @@
 ---
 title: ⚡ Azure AI Search
+description: How to configure Azure AI Search for answers to your questions with assistance from GPT.
 weight: -4
 ---
 # Azure AI Search Plugin

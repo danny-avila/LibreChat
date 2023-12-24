@@ -1,5 +1,6 @@
 ---
 title: 📦 PandoraNext
+description: How to deploy PandoraNext to enable the `CHATGPT_REVERSE_PROXY` for use with LibreChat.
 weight: -4
 ---
 

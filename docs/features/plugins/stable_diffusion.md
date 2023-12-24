@@ -1,5 +1,6 @@
 ---
 title: 🖌️ Stable Diffusion
+description: How to set up and configure the Stable Diffusion plugin
 weight: -6
 ---
 

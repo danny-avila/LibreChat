@@ -1,5 +1,6 @@
 ---
 title: 🔌 Introduction
+description: This doc introduces the plugins endpoint, which enables you to use different LLMs and tools with more flexibility and control. You can change your settings and plugins on the fly, and use plugins to access various sources of information and assistance.
 weight: -10
 ---
 # Plugins Endpoint

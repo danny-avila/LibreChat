@@ -1,5 +1,6 @@
 ---
 title: 🛠️ Make Your Own
+description: This doc shows you how to create custom plugins for LibreChat by extending the LangChain `Tool` class. You will learn how to use different APIs and functions with your plugins, and how to integrate them with the LangChain framework.
 weight: -9
 ---
 # Making your own Plugin

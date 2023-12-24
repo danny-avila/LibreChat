@@ -1,5 +1,6 @@
 ---
 title: 🧑‍💼 Official ChatGPT Plugins
+description: How to add official OpenAI Plugins to LibreChat
 weight: -8
 ---
 # Using official ChatGPT Plugins / OpenAPI specs

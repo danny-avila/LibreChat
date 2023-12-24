@@ -1,5 +1,6 @@
 ---
 title: 🧠 Wolfram|Alpha
+description: How to set up and configure the Wolfram Alpha plugin
 weight: -5
 ---
 
