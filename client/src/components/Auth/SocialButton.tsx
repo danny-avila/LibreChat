@@ -3,8 +3,6 @@ import React, { useState } from 'react';
 const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [isRedirecting, setIsRedirecting] = useState(false);
 
   // New state to keep track of the currently pressed button
   const [activeButton, setActiveButton] = useState(null);
@@ -23,12 +21,11 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => 
 
   const handleMouseDown = () => {
     setIsPressed(true);
-    setActiveButton(id); // Set this button as active
+    setActiveButton(id);
   };
 
   const handleMouseUp = () => {
     setIsPressed(false);
-    setIsRedirecting(true); // You can set this to true when you start redirecting the user
   };
 
   const getButtonStyles = () => {
@@ -61,9 +58,10 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => 
   return (
     <div className="mt-2 flex gap-x-2">
       <a
-        aria-label={`Login with ${label}`}
+        aria-label={`${label}`}
         className="justify-left flex w-full items-center space-x-3 rounded-md border px-5 py-3 transition-colors"
         href={`${serverDomain}/oauth/${oauthPath}`}
+        data-testid={id}
         style={getButtonStyles()}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
