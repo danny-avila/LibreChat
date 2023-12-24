@@ -1,5 +1,6 @@
 ---
 title: 🍎 Mac
+description: Mac Installation Guides
 weight: 0
 ---
 

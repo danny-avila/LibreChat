@@ -1,5 +1,6 @@
 ---
 title: 🐧 Linux
+deescription: Linux Installation Guides
 weight: 0
 ---
 # Linux Installation Guide

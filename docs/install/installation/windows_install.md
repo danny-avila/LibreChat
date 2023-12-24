@@ -1,5 +1,6 @@
 ---
 title: 🪟 Windows
+description: Windows Installation Guides
 weight: 0
 ---
 

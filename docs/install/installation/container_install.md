@@ -1,9 +1,10 @@
 ---
-title: 🦦 Container (podman)
+title: 🦦 Container (Podman)
+description: Install LibreChat using Podman. If you don't like docker compose, don't want a bare-metal installation, but still want to leverage the benefits from the isolation and modularity of containers...
 weight: 0
 ---
 
-# Container Installation Guide (podman)
+# Container Installation Guide (Podman)
 
 If you don't like docker compose, don't want a bare-metal installation, but still want to leverage the benefits from the isolation and modularity of containers - this is the guide you should use.
 
