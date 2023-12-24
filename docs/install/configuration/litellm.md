@@ -1,5 +1,6 @@
 ---
 title: 🚅 LiteLLM
+description: Using LibreChat with LiteLLM Proxy 
 weight: -7
 ---
 

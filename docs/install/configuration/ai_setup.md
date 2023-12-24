@@ -1,5 +1,6 @@
 ---
 title: 🤖 AI Setup
+description: This doc explains how to setup your AI providers, their APIs and credentials.
 weight: -8
 ---
 

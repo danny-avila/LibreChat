@@ -1,5 +1,6 @@
 ---
 title: 💸 Free AI APIs
+description: There are APIs offering free/free-trial access to AI APIs via reverse proxy... 
 weight: -6
 ---
 

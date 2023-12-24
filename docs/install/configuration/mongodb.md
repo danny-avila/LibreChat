@@ -1,5 +1,6 @@
 ---
 title: 🍃 Online MongoDB
+description: This guide teaches you how to set up an online MongoDB database for LibreChat using MongoDB Atlas, a cloud-based service. You will learn how to create an account, a project, and a cluster, as well as how to configure your database credentials, network access, and connection string.
 weight: -4
 ---
 

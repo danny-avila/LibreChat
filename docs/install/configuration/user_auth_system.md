@@ -1,5 +1,6 @@
 ---
 title: 🛂 Authentication System
+description: This guide explains how to use the user authentication system of LibreChat, which offers secure and easy email and social logins. You will learn how to set up sign up, log in, password reset, and more.
 weight: -5
 --- 
 
