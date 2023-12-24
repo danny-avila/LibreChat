@@ -1,6 +1,6 @@
 ---
 title: 🌀 Miscellaneous
-edscription: As LibreChat has varying use cases and environment possibilities, this page will host niche setup/configurations, as contributed by the community, that are not better delegated to any of the other guides.
+description: As LibreChat has varying use cases and environment possibilities, this page will host niche setup/configurations, as contributed by the community, that are not better delegated to any of the other guides.
 weight: -2
 author: danny-avila and jerkstorecaller
 ---
