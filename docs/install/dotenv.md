@@ -562,13 +562,16 @@ see: [User/Auth System](../install/user_auth_system.md)
     - `ALLOW_REGISTRATION`: Email registration of new users. Set to `true` or `false` to enable or disable Email registration.
     - `ALLOW_SOCIAL_LOGIN`: Allow users to connect to LibreChat with various social networks, see below. Set to `true` or `false` to enable or disable.
     - `ALLOW_SOCIAL_REGISTRATION`: Enable or disable registration of new user using various social network. Set to `true` or `false` to enable or disable.
+    - `SOCIAL_LOGIN_ORDER`: Decide a custom order for the social logins on the login/registration page, from top to bottom. Write the order keeping the words and commas attached, without spaces
 
 > **Quick Tip:** Even with registration disabled, add users directly to the database using `npm run create-user`.
 
 ```bash
+ALLOW_EMAIL_LOGIN=true
 ALLOW_REGISTRATION=true       
 ALLOW_SOCIAL_LOGIN=false
 ALLOW_SOCIAL_REGISTRATION=false
+SOCIAL_LOGIN_ORDER=google,facebook,openid,github,discord
 ```
 
 - Default values: session expiry: 15 minutes, refresh token expiry: 7 days
