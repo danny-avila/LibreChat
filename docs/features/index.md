@@ -21,11 +21,11 @@ weight: 2
 
 * 🔨 [Automated Moderation](./mod_system.md)
 * 🪙 [Token Usage](./token_usage.md)
+* 🔥 [Firebase CDN](./firebase.md)
 * 🍃 [Manage Your Database](./manage_your_database.md)
 * 🪵 [Logging System](./logging_system.md)
 * 📦 [PandoraNext](./pandoranext.md)
 * 😈 [Bing Jailbreak](./bing_jailbreak.md)
-* 🔥 [Firebase CDN](./firebase.md)
 
 ---
 

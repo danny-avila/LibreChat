@@ -1,6 +1,6 @@
 ---
 title: 😈 Bing Jailbreak
-weight: -3
+weight: -2
 ---
 
 # Bing Jailbreak

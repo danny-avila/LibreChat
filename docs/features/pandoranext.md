@@ -1,6 +1,6 @@
 ---
 title: 📦 PandoraNext
-weight: -4
+weight: -3
 ---
 
 # PandoraNext Deployment Guide

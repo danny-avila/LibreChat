@@ -1,7 +1,7 @@
 ---
 title: 🔥 Firebase CDN Setup
 description: This document provides instructions for setting up Firebase CDN for LibreChat
-weight: -2
+weight: -6
 ---
 
 # Firebase CDN Setup
