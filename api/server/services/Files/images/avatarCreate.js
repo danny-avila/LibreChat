@@ -2,7 +2,7 @@ const sharp = require('sharp');
 const fetch = require('node-fetch');
 const fs = require('fs').promises;
 const User = require('~/models/User');
-const { useFirebase } = require('~/server/services/firebase');
+const { useFirebase } = require('./firebase');
 const { saveToFirebase } = require('./avatarFirebase');
 const { saveToLocal } = require('./avatarLocal');
 

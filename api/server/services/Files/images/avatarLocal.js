@@ -1,10 +1,8 @@
 const fs = require('fs').promises;
-const config = require('../../../config/loader');
-const domains = config.domains;
 
 async function saveToLocal(userId, webPBuffer, oldUser, manual) {
   const urlLocal = `./images/${userId}/profilePicture.png`;
-  const urlRoute = `${domains.server}/api/files/images/profile/${userId}/`;
+  const urlRoute = `${process.env.DOMAIN_SERVER}/api/files/images/profile/${userId}/`;
 
   await fs.mkdir(`./images/${userId}`, { recursive: true });
   await fs.writeFile(urlLocal, webPBuffer);

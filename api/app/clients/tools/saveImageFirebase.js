@@ -1,4 +1,4 @@
-const { storage, ref, uploadBytes, getDownloadURL } = require('../../../server/services/firebase');
+const { storage, ref, uploadBytes, getDownloadURL } = require('~/server/services/Files/images');
 const fetch = require('node-fetch');
 
 async function saveImageToFirebaseStorage(imageUrl, imageName) {
