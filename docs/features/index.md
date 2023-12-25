@@ -25,6 +25,7 @@ weight: 2
 * 🪵 [Logging System](./logging_system.md)
 * 📦 [PandoraNext](./pandoranext.md)
 * 😈 [Bing Jailbreak](./bing_jailbreak.md)
+* 🔥 [Firebase CDN](./firebase.md)
 
 ---
 
