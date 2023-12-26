@@ -8,10 +8,10 @@ exports.createPaymentIntent = async (req, res) => {
 
     if (
       ![
-        'price_1OHu6tHKD0byXXClTk4XV5Wl',
-        'price_1OHZH6HKD0byXXClEWQPDQVB',
-        'price_1OHZGrHKD0byXXCleN1BiRBb',
-        'price_1OHZGOHKD0byXXClIHXIdDiW',
+        'price_1ON4OHHKD0byXXClGXwZdXcF',
+        'price_1ON4NnHKD0byXXCltClsMqXU',
+        'price_1ON4NKHKD0byXXClix1RHceQ',
+        'price_1ON4MsHKD0byXXCl4OjsiIcN',
       ].includes(priceId)
     ) {
       res.status(400).json({ error: 'Invalid price ID' });
@@ -101,16 +101,16 @@ exports.handleWebhook = async (req, res) => {
     // Determine the number of tokens based on the price ID
     let tokens;
     switch (priceId) {
-      case 'price_1OHZH6HKD0byXXClEWQPDQVB':
+      case 'price_1ON4OHHKD0byXXClGXwZdXcF':
         tokens = 10000000;
         break;
-      case 'price_1OHZGrHKD0byXXCleN1BiRBb':
+      case 'price_1ON4NnHKD0byXXCltClsMqXU':
         tokens = 1000000;
         break;
-      case 'price_1OHZGOHKD0byXXClIHXIdDiW':
+      case 'price_1ON4NKHKD0byXXClix1RHceQ':
         tokens = 500000;
         break;
-      case 'price_1OHu6tHKD0byXXClTk4XV5Wl':
+      case 'price_1ON4MsHKD0byXXCl4OjsiIcN':
         tokens = 100000;
         break;
       default:

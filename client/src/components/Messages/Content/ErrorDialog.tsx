@@ -62,16 +62,16 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
     let priceId;
     switch (selectedTokens) {
       case 100000:
-        priceId = 'price_1OHu6tHKD0byXXClTk4XV5Wl'; // 10 RMB
+        priceId = 'price_1ON4MsHKD0byXXCl4OjsiIcN'; // 10 RMB
         break;
       case 500000:
-        priceId = 'price_1OHZGOHKD0byXXClIHXIdDiW'; // 35 RMB
+        priceId = 'price_1ON4NKHKD0byXXClix1RHceQ'; // 35 RMB
         break;
       case 1000000:
-        priceId = 'price_1OHZGrHKD0byXXCleN1BiRBb'; // 50 RMB
+        priceId = 'price_1ON4NnHKD0byXXCltClsMqXU'; // 50 RMB
         break;
       case 10000000:
-        priceId = 'price_1OHZH6HKD0byXXClEWQPDQVB'; // 250 RMB
+        priceId = 'price_1ON4OHHKD0byXXClGXwZdXcF'; // 250 RMB
         break;
       default:
         console.error('Invalid token selection');
