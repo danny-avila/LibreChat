@@ -11,6 +11,7 @@ const extractBaseURL = require('~/utils/extractBaseURL');
 const { logger } = require('~/config');
 const { useFirebase } = require('~/server/services/Files/images');
 const { saveImageToFirebaseStorage, getFirebaseStorageImageUrl } = require('../saveImageFirebase');
+const { v4: uuidv4 } = require('uuid');
 
 const { DALLE3_SYSTEM_PROMPT, DALLE_REVERSE_PROXY, PROXY } = process.env;
 class DALLE3 extends Tool {
@@ -126,7 +127,7 @@ Error Message: ${error.message}`;
 
     const regex = /img-[\w\d]+.png/;
     const match = theImageUrl.match(regex);
-    let imageName = `image_${Date.now()}.png`;
+    let imageName = `image_${uuidv4()}.png`;
 
     if (match) {
       imageName = match[0];
