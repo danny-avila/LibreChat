@@ -4,6 +4,8 @@ description: Learn how to use GitHub Desktop, VS Code extensions, and Git rebase
 weight: -10
 ---
 # How to Contribute in a Quick and Easy Way
+> **❗Note:** If you are not familiar with the concept of repo, PR (pull request), fork and branch, start by looking at the official GitHub documentation on the subject:
+[https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/getting-started/about-collaborative-development-models](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/getting-started/about-collaborative-development-models)
 
 ## Installation of Tools
 
