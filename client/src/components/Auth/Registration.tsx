@@ -13,6 +13,9 @@ function Registration() {
   const navigate = useNavigate();
   const { data: startupConfig } = useGetStartupConfig();
 
+  const [logoSrc, setLogoSrc] = useState('');
+  const [altText, setAltText] = useState('');
+
   const localize = useLocalize();
 
   const {
@@ -45,6 +48,37 @@ function Registration() {
   };
 
   useEffect(() => {
+    const host = window.location.hostname;
+    let logoPath = '';
+    let alt = '';
+
+    switch (host) {
+      case 'gptglobal.io':
+        logoPath = '/assets/logo-global.png';
+        alt = 'GPT Global Logo';
+        break;
+      case 'gptchina.io':
+        logoPath = '/assets/logo-china.png';
+        alt = 'GPT China';
+        break;
+      case 'gptusa.io':
+        logoPath = '/assets/logo-usa.png';
+        alt = 'GPT USA';
+        break;
+      case 'gptrussia.io':
+        logoPath = '/assets/logo-russia.png';
+        alt = 'GPT Russia';
+        break;
+      default:
+        logoPath = '/assets/logo-china.png';
+        alt = 'GPT Global';
+    }
+
+    setLogoSrc(logoPath);
+    setAltText(alt);
+  }, []);
+
+  useEffect(() => {
     if (startupConfig?.registrationEnabled === false) {
       navigate('/login');
     }
@@ -52,7 +86,7 @@ function Registration() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
-      <img src="/assets/logo-no-background.png" alt="GPTChina.io" className="mb-6 h-16 w-auto" />
+      <img src={logoSrc} alt={altText} className="mb-6 h-16 w-auto" />
       <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
         <h1 className="mb-4 text-center text-3xl font-semibold">
           {localize('com_auth_create_account')}

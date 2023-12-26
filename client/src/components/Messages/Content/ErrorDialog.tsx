@@ -21,6 +21,25 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
   const [selectedTokens, setSelectedTokens] = useState(null);
   const title = 'Purchase Tokens';
 
+  // Determine the domain
+  const domain = window.location.hostname;
+
+  // Define token options with different price strings for each domain
+  const tokenOptions =
+    domain === 'gptchina.io'
+      ? [
+        { tokens: 100000, label: '100k', price: '10 RMB' },
+        { tokens: 500000, label: '500k', price: '35 RMB' },
+        { tokens: 1000000, label: '1 Million', price: '50 RMB' },
+        { tokens: 10000000, label: '10 Million', price: '250 RMB' },
+      ]
+      : [
+        { tokens: 100000, label: '100k', price: '15 USD' }, // Example alternative prices
+        { tokens: 500000, label: '500k', price: '40 USD' },
+        { tokens: 1000000, label: '1 Million', price: '60 USD' },
+        { tokens: 10000000, label: '10 Million', price: '300 USD' },
+      ];
+
   const fetchTokenBalance = async () => {
     try {
       const response = await fetch('/api/balance');
@@ -107,12 +126,7 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
                 Please Note! WeChat and Alipay valid only with a Chinese National ID-linked account
               </div>
               <div className="grid w-full grid-cols-2 gap-5 p-3">
-                {[
-                  { tokens: 100000, label: '100k', price: '10 RMB' },
-                  { tokens: 500000, label: '500k', price: '35 RMB' },
-                  { tokens: 1000000, label: '1 Million', price: '50 RMB' },
-                  { tokens: 10000000, label: '10 Million', price: '250 RMB' },
-                ].map(({ tokens, label, price }) => (
+                {tokenOptions.map(({ tokens, label, price }) => (
                   <button
                     key={tokens}
                     onClick={() => handleSelect(tokens)}
