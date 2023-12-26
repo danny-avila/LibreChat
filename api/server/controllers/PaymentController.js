@@ -101,16 +101,16 @@ exports.handleWebhook = async (req, res) => {
     // Determine the number of tokens based on the price ID
     let tokens;
     switch (priceId) {
-      case 'price_1ON4OHHKD0byXXClGXwZdXcF':
+      case 'price_1ORgzMHKD0byXXClDCm5PkwO':
         tokens = 10000000;
         break;
-      case 'price_1ON4NnHKD0byXXCltClsMqXU':
+      case 'price_1ORgyiHKD0byXXClHetdaI3W':
         tokens = 1000000;
         break;
-      case 'price_1ON4NKHKD0byXXClix1RHceQ':
+      case 'price_1ORgyJHKD0byXXClfvOyCbp7':
         tokens = 500000;
         break;
-      case 'price_1ON4MsHKD0byXXCl4OjsiIcN':
+      case 'price_1ORgxoHKD0byXXClx3u1yLa0':
         tokens = 100000;
         break;
       default:
