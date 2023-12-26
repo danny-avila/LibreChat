@@ -2,7 +2,7 @@ const { storage, ref, uploadBytes, getDownloadURL } = require('./firebase');
 
 async function saveToFirebase(userId, webPBuffer, oldUser, manual) {
   try {
-    const avatarRef = ref(storage, `users/${userId.toString()}/avatar`);
+    const avatarRef = ref(storage, `images/${userId.toString()}/avatar`);
 
     await uploadBytes(avatarRef, webPBuffer);
 

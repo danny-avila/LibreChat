@@ -12,12 +12,13 @@ const { logger } = require('~/config');
 const { useFirebase } = require('../../../server/services/Files/images');
 const { saveImageToFirebaseStorage, getFirebaseStorageImageUrl } = require('./saveImageFirebase');
 const { v4: uuidv4 } = require('uuid');
+const user = require('~/models/User');
+const userId = user._id;
 
 const { DALLE_REVERSE_PROXY, PROXY } = process.env;
 class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
-
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
     const config = { apiKey };
     if (DALLE_REVERSE_PROXY) {
@@ -27,7 +28,6 @@ class OpenAICreateImage extends Tool {
     if (PROXY) {
       config.httpAgent = new HttpsProxyAgent(PROXY);
     }
-
     // let azureKey = fields.AZURE_API_KEY || process.env.AZURE_API_KEY;
 
     // if (azureKey) {
@@ -99,7 +99,6 @@ Guidelines:
     if (!theImageUrl) {
       throw new Error('No image URL returned from OpenAI API.');
     }
-
     const regex = /img-[\w\d]+.png/;
     const match = theImageUrl.match(regex);
     // Generating a unique image name
@@ -115,7 +114,17 @@ Guidelines:
       });
     }
 
-    this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', 'client', 'public', 'images');
+    this.outputPath = path.resolve(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      '..',
+      'client',
+      'public',
+      'images',
+      userId.toString(),
+    );
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
 
@@ -126,8 +135,9 @@ Guidelines:
 
     if (useFirebase) {
       try {
-        await saveImageToFirebaseStorage(theImageUrl, imageName);
+        await saveImageToFirebaseStorage(userId, theImageUrl, imageName);
         this.result = await getFirebaseStorageImageUrl(imageName);
+        console.log('this.result', this.result);
       } catch (error) {
         console.error('Error while saving the image to Firebase Storage:', error);
         this.result = `Failed to save the image to Firebase Storage. ${error.message}`;
