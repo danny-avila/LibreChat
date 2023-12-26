@@ -8,10 +8,10 @@ exports.createPaymentIntent = async (req, res) => {
 
     if (
       ![
-        'price_1ON4OHHKD0byXXClGXwZdXcF',
-        'price_1ON4NnHKD0byXXCltClsMqXU',
-        'price_1ON4NKHKD0byXXClix1RHceQ',
-        'price_1ON4MsHKD0byXXCl4OjsiIcN',
+        'price_1ORgxoHKD0byXXClx3u1yLa0',
+        'price_1ORgyJHKD0byXXClfvOyCbp7',
+        'price_1ORgyiHKD0byXXClHetdaI3W',
+        'price_1ORgzMHKD0byXXClDCm5PkwO',
       ].includes(priceId)
     ) {
       res.status(400).json({ error: 'Invalid price ID' });
