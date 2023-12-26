@@ -11,6 +11,7 @@ const saveImageFromUrl = require('./saveImageFromUrl');
 const { logger } = require('~/config');
 const { useFirebase } = require('../../../server/services/Files/images');
 const { saveImageToFirebaseStorage, getFirebaseStorageImageUrl } = require('./saveImageFirebase');
+const { v4: uuidv4 } = require('uuid');
 
 const { DALLE_REVERSE_PROXY, PROXY } = process.env;
 class OpenAICreateImage extends Tool {
@@ -102,7 +103,7 @@ Guidelines:
     const regex = /img-[\w\d]+.png/;
     const match = theImageUrl.match(regex);
     // Generating a unique image name
-    let imageName = `image_${Date.now()}.png`;
+    let imageName = `image_${uuidv4()}.png`;
 
     if (match) {
       imageName = match[0];

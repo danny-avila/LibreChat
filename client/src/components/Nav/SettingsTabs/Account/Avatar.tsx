@@ -7,9 +7,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/u
 
 type StatusType = 'success' | 'invalid' | null;
 
-function ProfilePictureUpload() {
+function Avatar() {
   const [input, setinput] = useState<File | null>(null);
-  const { user } = useAuthContext();
+  const { user, token } = useAuthContext();
   const localize = useLocalize();
   const [statusColor, setStatusColor] = useState<string>('text-gray-600');
   const [status, setStatus] = useState<StatusType>(null);
@@ -59,10 +59,13 @@ function ProfilePictureUpload() {
 
       const response = await fetch('/api/files/images/avatar', {
         method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+        },
         body: formData,
       });
       if (!response.ok) {
-        throw new Error('Failed to upload profile picture');
+        throw new Error('Failed to upload avatar');
       }
 
       setStatus('success');
@@ -81,7 +84,7 @@ function ProfilePictureUpload() {
       <div className="flex items-center justify-between">
         <span>{localize('com_nav_profile_picture')}</span>
         <label
-          htmlFor={'file-upload-profile-picture'}
+          htmlFor={'file-upload-avatar'}
           className={cn(
             'flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:bg-slate-200 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-800 dark:hover:text-green-500',
             statusColor,
@@ -96,7 +99,7 @@ function ProfilePictureUpload() {
                 : localize('com_nav_change_picture')}
           </span>
           <input
-            id={'file-upload-profile-picture'}
+            id={'file-upload-avatar'}
             value=""
             type="file"
             className={cn('hidden')}
@@ -146,4 +149,4 @@ function ProfilePictureUpload() {
   );
 }
 
-export default ProfilePictureUpload;
+export default Avatar;

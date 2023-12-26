@@ -18,14 +18,12 @@ async function uploadAvatar(userId, input, manual) {
     const _id = userId;
     const oldUser = await User.findOne({ _id });
     let imageBuffer;
-
     if (typeof input === 'string') {
       const response = await fetch(input);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch image from URL. Status: ${response.status}`);
       }
-
       imageBuffer = await response.buffer();
     } else if (input instanceof Buffer) {
       imageBuffer = input;
@@ -35,7 +33,6 @@ async function uploadAvatar(userId, input, manual) {
     } else {
       throw new Error('Invalid input type. Expected URL, Buffer, or File.');
     }
-
     const { width, height } = await sharp(imageBuffer).metadata();
     const minSize = Math.min(width, height);
     const squaredBuffer = await sharp(imageBuffer)
@@ -47,11 +44,12 @@ async function uploadAvatar(userId, input, manual) {
       })
       .toBuffer();
     const webPBuffer = await convertToWebP(squaredBuffer);
-
     if (useFirebase) {
-      await saveToFirebase(userId, webPBuffer, oldUser, manual);
+      const url = await saveToFirebase(userId, webPBuffer, oldUser, manual);
+      return url;
     } else {
-      await saveToLocal(userId, webPBuffer, oldUser, manual);
+      const url = await saveToLocal(userId, webPBuffer, oldUser, manual);
+      return url;
     }
   } catch (error) {
     console.error('Error uploading the avatar:', error.message);

@@ -5,7 +5,7 @@ const User = require('~/models/User');
 const path = require('path');
 const fs = require('fs');
 
-const uploadAvatar = require('./avatarCreate');
+const uploadAvatar = require('~/server/services/Files/images/avatar/avatarCreate.js');
 const { requireJwtAuth } = require('~/server/middleware/');
 const { getUserController } = require('~/server/controllers/AuthController');
 
@@ -26,8 +26,8 @@ router.post('/', upload.single('input'), async (req, res) => {
     if (!user) {
       throw new Error('User not found');
     }
-
     const url = await uploadAvatar(userId, input, manual);
+
     res.json({ url });
   } catch (error) {
     res.status(500).json({ message: 'An error occurred while uploading the profile picture' });

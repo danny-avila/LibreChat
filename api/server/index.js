@@ -72,7 +72,6 @@ const startServer = async () => {
   app.use('/api/config', routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', routes.files);
-  app.use('/api/files/images/avatar', routes.avatar);
 
   app.use((req, res) => {
     res.status(404).sendFile(path.join(projectPath, 'dist', 'index.html'));

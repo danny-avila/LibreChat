@@ -69,5 +69,3 @@ export const assistants = (id?: string) => `/api/assistants${id ? `/${id}` : ''}
 export const files = () => '/api/files';
 
 export const images = () => `${files()}/images`;
-
-export const profilePicture = () => '/api/files/images/profilePicture';
