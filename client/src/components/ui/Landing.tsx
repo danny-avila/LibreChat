@@ -20,7 +20,7 @@ export default function Landing() {
     switch (host) {
       case 'gptglobal.io':
         logoPath = '/assets/logo-global.png';
-        alt = 'GPT Global Logo';
+        alt = 'GPT Global';
         break;
       case 'gptchina.io':
         logoPath = '/assets/logo-china.png';
