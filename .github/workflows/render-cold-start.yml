@@ -1,0 +1,14 @@
+name: render-cold-start
+on:
+  schedule:
+    - cron: '1/5 * * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Run script
+        run: |
+          curl ${{secrets.HOST}}
