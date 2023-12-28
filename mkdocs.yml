@@ -48,14 +48,9 @@ theme:
     - navigation.instant.progress
     - navigation.tracking
     - navigation.expand
-    - navigation.prune
+    #- navigation.prune
     - navigation.indexes
     - navigation.top
-
-
-# For more Styling options (not in use)
-extra_css:
-  - stylesheets/extra.css
 
 markdown_extensions:
   - pymdownx.highlight:
@@ -77,16 +72,32 @@ markdown_extensions:
         - name: mermaid
           class: mermaid
 
-
 plugins:
   - search
+  # - pub-debugger # <- General purpose mkdocs debugger
   - mkdocs-nav-weight:
       section_renamed: true # If true, section name will use the title of its index instead of the folder name.
       index_weight: -10
       warning: true # Controls whether to send a Warning when invalid values are detected in markdown metadata
       reverse: false # If true, sort nav by weight from largest to smallest.
       headless_included: false
-# for more info: https://github.com/shu307/mkdocs-nav-weight?tab=readme-ov-file
+    # for more info: https://github.com/shu307/mkdocs-nav-weight?tab=readme-ov-file
+  - pub-social:
+      og:
+        enabled: true
+        locale: en_us
+      twitter:
+        enabled: true
+    # for more info: https://github.com/mkusz/mkdocs-publisher
+  - exclude:
+      glob:
+        - dev/* # <- exclude the docs/dev folder from the docs
+        - "*.tmp"
+        - "*.pdf"
+        - "*.gz"
+      regex:
+        - '.*\.(tmp|bin|tar)$'
+    # https://github.com/apenwarr/mkdocs-exclude
 
 extra:
   social:

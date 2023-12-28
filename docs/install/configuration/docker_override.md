@@ -1,5 +1,6 @@
 ---
 title: 🐋 Docker Compose Override
+description: "How to Use the Docker Compose Override File: In Docker Compose, an override file is a powerful feature that allows you to modify the default configuration provided by the main `docker-compose.yml` without the need to directly edit or duplicate the whole file."
 weight: -9
 ---
 

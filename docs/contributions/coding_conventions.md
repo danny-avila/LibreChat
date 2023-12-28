@@ -1,5 +1,6 @@
 ---
 title: 🧑‍💻 Code Standards and Conventions
+description: This guide covers the best practices for JavaScript coding, such as following the Airbnb Style Guide, using CommonJS modules, structuring the API using Express, Mongoose, and services, and testing and documenting the code using Jest, Supertest, Playwright, JSDoc, and TypeScript.
 weight: -7
 ---
 # Coding Conventions
@@ -67,7 +68,7 @@ Defines Mongoose models to represent data entities and their relationships.
 
 ### 4. Database Access (MongoDB and Mongoose)
 
-- Use Mongoose (https://mongoosejs.com) as the MongoDB ODM.
+- Use Mongoose ([https://mongoosejs.com](https://mongoosejs.com)) as the MongoDB ODM.
 - Create separate model files for each entity and ensure clear separation of concerns.
 - Use Mongoose schema validation to enforce data integrity.
 - Handle database connections efficiently and avoid connection leaks.

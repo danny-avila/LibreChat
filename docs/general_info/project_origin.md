@@ -1,5 +1,6 @@
 ---
 title: 🧭 Origin
+description: How it all started...
 weight: -8
 ---
 # Origin

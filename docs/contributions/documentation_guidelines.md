@@ -1,5 +1,6 @@
 ---
 title: 📝 Documentation Guidelines
+description: Learn how to write and format documentation for LibreChat.
 weight: -9
 ---
 # Documentation Guidelines
@@ -26,6 +27,7 @@ This document explains how to write and format documentation for LibreChat.
 ```bash
 ---
 title: Document Title
+description: This description will be used in social cards
 weight: 0
 ---
 ```

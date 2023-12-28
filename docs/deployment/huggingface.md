@@ -1,27 +1,23 @@
 ---
 title: 🤗 HuggingFace
+description: Easily deploy LibreChat on Hugging Face Spaces
 weight: -9
 ---
 # Hugging Face Deployment 🤗
-
->#### ⚠️ Note - Some features are not supported by HuggingFace:
->- Meilisearch
->- Social Logins
-
-> #### ❗Also:
->- You will have to create an online MongoDB Atlas Database to be able to properly deploy
 
 ## Create and Configure your Database (Required)
 
 The first thing you need is to create a MongoDB Atlas Database and get your connection string.
 
-Follow the instructions in this document: [Online MongoDB Database](../install/configuration/mongodb.md)
+Follow the instructions in this document: **[Online MongoDB Database](../install/configuration/mongodb.md)**
 
 ## Getting Started
 
-**1.** Login or Create an account on [Hugging Face](https://huggingface.co/)
+**1.** Login or Create an account on **[Hugging Face](https://huggingface.co/)**
 
-**2.** Visit [[https://huggingface.co/spaces/LibreChat/template](https://huggingface.co/spaces/LibreChat/template)]and click on `Duplicate this Space` to copy the LibreChat template into your profile
+**2.** Visit **[https://huggingface.co/spaces/LibreChat/template](https://huggingface.co/spaces/LibreChat/template)** and click on `Duplicate this Space` to copy the LibreChat template into your profile. 
+
+> Note: It is normal for this template to have a runtime error, you will have to configure it using the following guide to make it functional.
 
   ![image](https://github.com/fuegovic/LibreChat/assets/32828263/fd684254-cbe0-4039-ba4a-7c492b16a453)
 
@@ -46,12 +42,12 @@ You will need to fill these values:
 | JWT_SECRET | * see bellow |
 | JWT_REFRESH_SECRET | * see bellow |
 
-> ⬆️ **Leave the value field blank for any endpoints that you wish to disable.**
+> ⬆️ **Leave the value field blank for any endpoints that you wish to disable.** 
 
->⚠️ setting the API keys and token to `user_provided` allows you to provide them safely from the webUI
+> ⚠️ setting the API keys and token to `user_provided` allows you to provide them safely from the webUI
 
->* For `CREDS_KEY`, `CREDS_IV` and `JWT_SECRET` use this tool: [https://replit.com/@daavila/crypto#index.js](https://replit.com/@daavila/crypto#index.js).
->* Run the tool a second time and use the new `JWT_SECRET` value for the `JWT_REFRESH_SECRET`
+> * For `CREDS_KEY`, `CREDS_IV` and `JWT_SECRET` use this tool: **[https://replit.com/@daavila/crypto#index.js](https://replit.com/@daavila/crypto#index.js)**
+> * Run the tool a second time and use the new `JWT_SECRET` value for the `JWT_REFRESH_SECRET`
 
 | Variables | Values |
 | --- | --- |

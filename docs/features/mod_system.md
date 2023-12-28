@@ -1,5 +1,6 @@
 ---
 title: 🔨 Automated Moderation
+description: The Automated Moderation System uses a scoring mechanism to track user violations. As users commit actions like excessive logins, registrations, or messaging, they accumulate violation scores. Upon reaching a set threshold, the user and their IP are temporarily banned. This system ensures platform security by monitoring and penalizing rapid or suspicious activities.
 weight: -8
 ---
 ## Automated Moderation System (optional)
@@ -33,7 +34,7 @@ The project's current rate limiters are as follows (see below under setup for de
 
 ### Setup
 
-The following are all of the related env variables to make use of and configure the mod system. Note this is also found in the [/.env.example](/.env.example) file, to be set in your own `.env` file.
+The following are all of the related env variables to make use of and configure the mod system. Note this is also found in the [/.env.example](https://github.com/danny-avila/LibreChat/blob/main/.env.example) file, to be set in your own `.env` file.
 
 ```bash
 BAN_VIOLATIONS=true # Whether or not to enable banning users for violations (they will still be logged)

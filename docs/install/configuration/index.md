@@ -1,5 +1,6 @@
 ---
 title: Configuration
+description: ⚙️ This section provides detailed guides on how to configure LibreChat to suit your needs and preferences. You will learn how to set up various environment variables, customize your Docker settings, choose your AI models and APIs, enable user authentication, connect to online MongoDB, change the default language, and more.
 weight: 2
 ---
 

@@ -1,5 +1,6 @@
 ---
 title: 🏗️ Hetzner
+description: LibreChat Ubuntu installation from scratch on Hetzner.
 weight: -2
 ---
 # Hetzner Ubuntu Setup
@@ -8,24 +9,24 @@ weight: -2
 
 ## Starting from Zero:
 
-### 1. Login to Hetzner Cloud Console (https://console.hetzner.cloud/projects) and Create a new Ubuntu 20 Project with 4GB Ram. Do not worry about SSH keys *yet*.
+1. Login to Hetzner Cloud Console (**[https://console.hetzner.cloud/projects](https://console.hetzner.cloud/projects)**) and Create a new Ubuntu 20 Project with 4GB Ram. Do not worry about SSH keys *yet*.
 
 Hetzner will email you the root password.
 
-### 2. Once you have that, you can login with any SSH terminal with:
+2. Once you have that, you can login with any SSH terminal with:
 
 ```
 ssh root@<yourserverip>
 ```
 
-### 3. Once you have logged in, immediately create a new, non-root user:
+3. Once you have logged in, immediately create a new, non-root user:
 
 ```
 adduser <yourusername>
 usermod -aG sudo <yourusername>
 ```
 
-### 4. Make sure you have done this correctly by double-checking you have sudo permissions:
+4. Make sure you have done this correctly by double-checking you have sudo permissions:
 
 ```
 getent group sudo | cut -d: -f4
@@ -33,7 +34,7 @@ getent group sudo | cut -d: -f4
 
 Now, quit the terminal connection.
 
-### 5. Create a local ssh key:
+5. Create a local ssh key:
 
 ```
 ssh-keygen -t ed25519
@@ -51,13 +52,13 @@ ssh <yourusername>@<yourserverip>
 
 When you login, now and going forward, it will ask you for the password for your ssh key now, not your user password. Sudo commands will always want your user password.
 
-### 6. Add SSH to the universal server firewall and activate it.
+6. Add SSH to the universal server firewall and activate it.
 
 - Run `sudo ufw allow OpenSSH`
 - Run `sudo ufw enable`
 
 
-### 7. Then, we need to install docker, update the system packages, and reboot the server:
+7. Then, we need to install docker, update the system packages, and reboot the server:
 ```
 sudo apt install docker
 sudo apt install docker-compose
@@ -132,7 +133,7 @@ MEILI_HTTP_ADDR=meilisearch
 
 **NOTE: You may need to run these commands with sudo permissions.**
 
-## Once the app is running, you can access it at http://yourserverip:3080
+## Once the app is running, you can access it at `http://yourserverip:3080`
 
 It is safe to close the terminal -- the docker app will continue to run.
 

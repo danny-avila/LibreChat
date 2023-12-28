@@ -22,4 +22,6 @@ jobs:
             mkdocs-material-
       - run: pip install mkdocs-material 
       - run: pip install mkdocs-nav-weight
+      - run: pip install mkdocs-publisher
+      - run: pip install mkdocs-exclude
       - run: mkdocs gh-deploy --force

@@ -1,5 +1,6 @@
 ---
 title: ⚡ Azure
+description: How to deploy LibreChat in Azure using Terraform. 
 weight: -6
 ---
 # Azure deployment

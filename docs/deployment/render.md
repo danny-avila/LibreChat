@@ -1,5 +1,6 @@
 ---
 title: ⏹️ Render
+description: How to deploy LibreChat on Render
 weight: -4
 ---
 # Render Deployment
