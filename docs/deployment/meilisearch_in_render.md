@@ -1,12 +1,13 @@
 ---
 title: 🔎 Meilisearch in Render
+description: Setup Meilisearch on Render (for use with the Render deployment guide)
 weight: -3
 ---
 # Utilize Meilisearch by running LibreChat on Render
 
 ## Create a new account or a new project on Render
 
-**1.** Visit [https://render.com/](https://render.com/) and click on `Start Free` to create an account and sign in
+**1.** Visit **[https://render.com/](https://render.com/)** and click on `Start Free` to create an account and sign in
 
 **2.** Access your control panel
 

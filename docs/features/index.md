@@ -1,5 +1,6 @@
 ---
 title: Features
+description: "✨ In-depth guides about various LibreChat features: plugins, presets, automated moderation, logging..."
 weight: 2
 ---
 

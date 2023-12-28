@@ -1,3 +1,9 @@
+---
+title: Home
+description: 🪶 Introducing LibreChat
+weight: -10
+---
+
 <p align="center">
   <a href="https://discord.gg/NGaa9RPCft">
     <img src="assets/LibreChat.svg" style="margin-left: 40px; height: 256px; width: 256px;>

@@ -4,9 +4,9 @@ weight: 6
 ---
 
 # Dev Resources
-Please consult: [Contributing to LibreChat](../contributions/index.md) for more information on the subject. 
+Please consult: **[Contributing to LibreChat](../contributions/index.md)** for more information on the subject. 
 
-This directory: [./docs/dev](https://github.com/danny-avila/LibreChat/tree/main/docs/dev), contains files used for developer work.
+This directory: **[./docs/dev](https://github.com/danny-avila/LibreChat/tree/main/docs/dev)**, contains files used for developer work.
 
 #### `Dockerfile-app` 
   - used to build the DockerHub image
@@ -28,7 +28,7 @@ This directory: [./docs/dev](https://github.com/danny-avila/LibreChat/tree/main/
 
 #### `deploy-compose.yml` 
 - Similar to above, but with basic configuration for deployment to a cloud provider where multi-container compose works
-  - Tested and working on a $6 droplet on DigitalOcean, just by visiting the http://server-ip/9000.
+  - Tested and working on a $6 droplet on DigitalOcean, just by visiting the `http://server-ip/9000`.
   - Not a scalable solution, but ideal for quickly hosting on a remote linux server.
   - You should adjust `server_name localhost;` to match your domain name, replacing localhost, as needed.
 - From root dir of the project, run `docker-compose -f ./docs/dev/deploy-compose.yml up --build`

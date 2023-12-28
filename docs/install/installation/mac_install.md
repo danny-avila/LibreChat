@@ -1,5 +1,6 @@
 ---
 title: 🍎 Mac
+description: Mac Installation Guides
 weight: 0
 ---
 
@@ -12,7 +13,7 @@ weight: 0
 ## **Manual Installation**
 
 ### Install the prerequisites (Required)
-- Install Homebrew (if not already installed) by following the instructions on https://brew.sh/
+- Install Homebrew (if not already installed) by following the instructions on **[brew.sh](https://brew.sh/)**
 - Install Node.js and npm by running `brew install node`
 
 ### Download LibreChat (Required)
@@ -38,7 +39,7 @@ weight: 0
 
 ### **Download MeiliSearch for macOS (Optional):**
 - This enables the conversation search feature
-- You can download the latest MeiliSearch binary for macOS from their GitHub releases page: https://github.com/meilisearch/MeiliSearch/releases
+- You can download the latest MeiliSearch binary for macOS from their GitHub releases page: **[github.com/meilisearch](https://github.com/meilisearch/meilisearch/releases)**
   - Look for the file named `meilisearch-macos-amd64` (or the equivalent for your system architecture) and download it.
 
 - **Make the binary executable:**

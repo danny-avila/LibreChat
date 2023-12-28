@@ -1,5 +1,6 @@
 ---
 title: 🐧 Linux
+description: Linux Installation Guides
 weight: 0
 ---
 # Linux Installation Guide
@@ -73,17 +74,17 @@ Note: The above command extracts the files to "/usr/local/LibreChat". If you wan
 
 ## Enable the Conversation search feature: (optional)
 
-- Download MeiliSearch latest release from: https://github.com/meilisearch/meilisearch/releases
-- Copy it to "/usr/local/LibreChat/"
-- Rename the file to "meilisearch"
-- Open a terminal and navigate to "/usr/local/LibreChat/"
+- Download MeiliSearch latest release from: **[github.com/meilisearch](https://github.com/meilisearch/meilisearch/releases)**
+- Copy it to `/usr/local/LibreChat/`
+- Rename the file to `meilisearch`
+- Open a terminal and navigate to `/usr/local/LibreChat/`
 - Run the following command:
 
 ```bash
 ./meilisearch --master-key=YOUR_MASTER_KEY
 ```
 
-Note: Replace "YOUR_MASTER_KEY" with the generated master key, which you saved earlier.
+Note: Replace `YOUR_MASTER_KEY` with the generated master key, which you saved earlier.
 
 ## Install Node.js:
 

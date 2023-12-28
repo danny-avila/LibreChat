@@ -1,5 +1,6 @@
 ---
 title: ⚙️ Environment Variables
+description: Comprehensive guide for configuring your application's environment with the `.env` file. This document is your one-stop resource for understanding and customizing the environment variables that will shape your application's behavior in different contexts.
 weight: -10
 ---
 
@@ -98,10 +99,10 @@ NO_INDEX=true
 LibreChat has built-in central logging, see [Logging System](../../features/logging_system.md) for more info.
 
 - Debug logging is enabled by default and crucial for development.
-- To report issues, reproduce the error and submit logs from `./api/logs/debug-%DATE%.log` at [LibreChat GitHub Issues](https://github.com/danny-avila/LibreChat/issues).
+- To report issues, reproduce the error and submit logs from `./api/logs/debug-%DATE%.log` at: **[LibreChat GitHub Issues](https://github.com/danny-avila/LibreChat/issues)**
 - Error logs are stored in the same location.
 - Keep debug logs active by default or disable them by setting `DEBUG_LOGGING=false` in the environment variable.
-- For more information about this feature, read our docs: https://docs.librechat.ai/features/logging_system.html
+- For more information about this feature, read our docs: **[Logging System](../../features/logging_system.md)**
 
 ```bash
 DEBUG_LOGGING=true
@@ -197,13 +198,13 @@ PLUGINS_USE_AZURE="true"
 ### BingAI
 Bing, also used for Sydney, jailbreak, and Bing Image Creator, see: [Bing Access token](./ai_setup.md#bingai) and [Bing Jailbreak](../../features/bing_jailbreak.md)
 
-- Follow these instructions to get your bing access token (it's best to use the full cookie string for that purpose): [Bing Access Token](https://github.com/danny-avila/LibreChat/issues/370#issuecomment-1560382302)  
+- Follow these instructions to get your bing access token (it's best to use the full cookie string for that purpose): **[Bing Access Token](../configuration/ai_setup.md#bingai)**  
 - Leave `BINGAI_TOKEN=` blank to disable this endpoint
 - Set `BINGAI_TOKEN=` to "user_provided" to allow users to provide their own API key from the WebUI
 
 > Note: It is recommended to leave it as "user_provided" and provide the token from the WebUI.
 
-- `BINGAI_HOST` can be necessary for some people in different countries, e.g. China (https://cn.bing.com). Leave it blank or commented out to use default server.
+- `BINGAI_HOST` can be necessary for some people in different countries, e.g. China (`https://cn.bing.com`). Leave it blank or commented out to use default server.
 
 ```bash
 BINGAI_TOKEN=user_provided
@@ -211,7 +212,7 @@ BINGAI_HOST=
 ```
 
 ### ChatGPT
-see: [ChatGPT Free Access token](./ai_setup.md#chatgptbrowser)
+see: [ChatGPT Free Access token](../configuration/ai_setup.md#chatgptbrowser)
 
 > **Warning**: To use this endpoint you'll have to set up your own reverse proxy. Here is the installation guide to deploy your own (based on [PandoraNext](https://github.com/pandora-next/deploy)): **[PandoraNext Deployment Guide](../../features/pandoranext.md)**
 
@@ -219,8 +220,9 @@ see: [ChatGPT Free Access token](./ai_setup.md#chatgptbrowser)
 CHATGPT_REVERSE_PROXY=<YOUR-REVERSE-PROXY>
 ```
 
-> ~~Note: If you're a GPT plus user you can add gpt-4, gpt-4-plugins, gpt-4-code-interpreter, and gpt-4-browsing to the list above and use the models for these features; however, the view/display portion of these features are not supported, but you can use the underlying models, which have higher token context~~
-> **Note:** The current method only works with `text-davinci-002-render-sha`
+> **Note:** If you're a GPT plus user you can try adding `gpt-4`, `gpt-4-plugins`, `gpt-4-code-interpreter`, and `gpt-4-browsing` to the list above and use the models for these features; **however, the view/display portion of these features are not supported**, but you can use the underlying models, which have higher token context
+
+> This method **might only works** with `text-davinci-002-render-sha` and **might stop working** at any moment.
 
 - Leave `CHATGPT_TOKEN=` blank to disable this endpoint
 - Set `CHATGPT_TOKEN=` to "user_provided" to allow users to provide their own API key from the WebUI
@@ -348,7 +350,7 @@ DEBUG_PLUGINS=true
 ```
 
 - For securely storing credentials, you need a fixed key and IV. You can set them here for prod and dev environments.
-    - You need a 32-byte key (64 characters in hex) and 16-byte IV (32 characters in hex) You can use this replit to generate some quickly: [Key Generator](https://replit.com/@daavila/crypto#index.js)
+    - You need a 32-byte key (64 characters in hex) and 16-byte IV (32 characters in hex) You can use this replit to generate some quickly: **[Key Generator](https://replit.com/@daavila/crypto#index.js)**
 
 > Warning: If you don't set them, the app will crash on startup.
 
@@ -379,7 +381,7 @@ AZURE_AI_SEARCH_SEARCH_OPTION_SELECT=
 ```
 
 - For customization of the DALL-E-3 System prompt, uncomment the following, and provide your own prompt. **(Advanced)** 
-    - See official prompt for reference: [DALL-E System Prompt](https://github.com/spdustin/ChatGPT-AutoExpert/blob/main/_system-prompts/dall-e.md)
+    - See official prompt for reference: **[DALL-E System Prompt](https://github.com/spdustin/ChatGPT-AutoExpert/blob/main/_system-prompts/dall-e.md)**
 
 ```bash
 DALLE3_SYSTEM_PROMPT="Your System Prompt here"
@@ -418,23 +420,23 @@ SERPAPI_API_KEY=
 ```
 
 #### Stable Diffusion (Automatic1111)
-See detailed instructions here: [Stable Diffusion](../../features/plugins/stable_diffusion.md)
+See detailed instructions here: **[Stable Diffusion](../../features/plugins/stable_diffusion.md)**
 
-- Use "http://127.0.0.1:7860" with local install and "http://host.docker.internal:7860" for docker
+- Use `http://127.0.0.1:7860` with local install and `http://host.docker.internal:7860` for docker
 
 ```bash
 SD_WEBUI_URL=http://host.docker.internal:7860
 ```
 
 #### WolframAlpha
-See detailed instructions here: [Wolfram Alpha](../../features/plugins/wolfram.md)
+See detailed instructions here: **[Wolfram Alpha](../../features/plugins/wolfram.md)**
 
 ```bash
 WOLFRAM_APP_ID=
 ```
 
 #### Zapier
-- You need a Zapier account. Get your API key from here: [Zapier](https://nla.zapier.com/credentials/)
+- You need a Zapier account. Get your API key from here: **[Zapier](https://nla.zapier.com/credentials/)**
 - Create allowed actions - Follow step 3 in this getting start guide from Zapier
 
 > Note: zapier is known to be finicky with certain actions. Writing email drafts is probably the best use of it.
@@ -488,7 +490,7 @@ This section contains the configuration for:
 ### Moderation
 The Automated Moderation System uses a scoring mechanism to track user violations. As users commit actions like excessive logins, registrations, or messaging, they accumulate violation scores. Upon reaching a set threshold, the user and their IP are temporarily banned. This system ensures platform security by monitoring and penalizing rapid or suspicious activities.
 
-see: [Automated Moderation](../../features/mod_system.md)
+see: **[Automated Moderation](../../features/mod_system.md)**
 
 #### Basic Moderation Settings
 
@@ -575,7 +577,7 @@ MESSAGE_USER_WINDOW=1
 ### Balance
 The following enables user balances for the OpenAI/Plugins endpoints, which you can add manually or you will need to build out a balance accruing system for users.
 
-see: [Token Usage](../../features/token_usage.md)
+see: **[Token Usage](../../features/token_usage.md)**
 
 - To manually add balances, run the following command:`npm run add-balance`
   - You can also specify the email and token credit amount to add, e.g.:`npm run add-balance example@example.com 1000`
@@ -589,7 +591,7 @@ CHECK_BALANCE=false
 ```
 
 ### Registration and Login
-see: [User/Auth System](../configuration/user_auth_system.md)
+see: **[User/Auth System](../configuration/user_auth_system.md)**
 
 ![image](https://github.com/danny-avila/LibreChat/assets/81851188/52a37d1d-7392-4a9a-a79f-90ed2da7f841)
 
@@ -609,7 +611,7 @@ ALLOW_SOCIAL_REGISTRATION=false
 ```
 
 - Default values: session expiry: 15 minutes, refresh token expiry: 7 days
-  - For more information: [Refresh Token](https://github.com/danny-avila/LibreChat/pull/927)
+  - For more information: **[Refresh Token](https://github.com/danny-avila/LibreChat/pull/927)**
 
 ```bash
 SESSION_EXPIRY=1000 * 60 * 15
@@ -617,7 +619,7 @@ REFRESH_TOKEN_EXPIRY=(1000 * 60 * 60 * 24) * 7
 ```
 
 - You should use new secure values. The examples given are 32-byte keys (64 characters in hex). 
-  - Use this replit to generate some quickly: [JWT Keys](https://replit.com/@daavila/crypto#index.js)
+  - Use this replit to generate some quickly: **[JWT Keys](https://replit.com/@daavila/crypto#index.js)**
 
 ```bash
 JWT_SECRET=16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
@@ -626,9 +628,9 @@ JWT_REFRESH_SECRET=eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8
 
 ### Social Logins
 
-#### [Discord](../configuration/user_auth_system.md#discord-authentication)
+#### [Discord Authentication](../configuration/user_auth_system.md#discord)
 
-for more information: [Discord](../configuration/user_auth_system.md#discord-authentication)
+for more information: **[Discord](../configuration/user_auth_system.md#discord)**
 
 ```bash
 # Discord
@@ -637,9 +639,9 @@ DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_CALLBACK_URL=/oauth/discord/callback
 ```
 
-#### [Facebook](../configuration/user_auth_system.md#facebook-authentication)
+#### [Facebook Authentication](../configuration/user_auth_system.md#facebook)
 
-for more information: [Facebook](../configuration/user_auth_system.md#facebook-authentication)
+for more information: **[Facebook Authentication](../configuration/user_auth_system.md#facebook)**
 
 ```bash
 # Facebook
@@ -648,9 +650,9 @@ FACEBOOK_CLIENT_SECRET=
 FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
 
 ```
-#### [GitHub](../configuration/user_auth_system.md#github-authentication)
+#### [GitHub Authentication](../configuration/user_auth_system.md#github)
 
-for more information: [GitHub](../configuration/user_auth_system.md#github-authentication)
+for more information: **[GitHub Authentication](../configuration/user_auth_system.md#github)**
 
 ```bash
 # GitHub
@@ -659,9 +661,9 @@ GITHUB_CLIENT_SECRET=your_client_secret
 GITHUB_CALLBACK_URL=/oauth/github/callback
 ```
 
-#### [Google](../configuration/user_auth_system.md#google-authentication)
+#### [Google Authentication](../configuration/user_auth_system.md#google)
 
-for more information: [Google](../configuration/user_auth_system.md#google-authentication)
+for more information: **[Google Authentication](../configuration/user_auth_system.md#google)**
 
 ```bash
 # Google
@@ -670,9 +672,9 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_CALLBACK_URL=/oauth/google/callback
 ```
 
-#### [OpenID](../configuration/user_auth_system.md#openid-authentication-with-azure-ad)
+#### [OpenID Authentication](../configuration/user_auth_system.md#openid-with-aws-cognito)
 
-for more information: [Azure OpenID](../configuration/user_auth_system.md#openid-authentication-with-azure-ad) or [AWS Cognito OpenID](../configuration/user_auth_system.md#openid-authentication-with-aws-cognito)
+for more information: **[Azure OpenID Authentication](../configuration/user_auth_system.md#openid-with-azure-ad)** or **[AWS Cognito OpenID Authentication](../configuration/user_auth_system.md#openid-with-aws-cognito)**
 
 ```bash
 # OpenID
@@ -688,7 +690,7 @@ OPENID_IMAGE_URL=
 ```
 
 ### Email Password Reset
-Email is used for password reset. See: [Email Password Reset](../configuration/user_auth_system.md#email-and-password-reset)
+Email is used for password reset. See: **[Email Password Reset](../configuration/user_auth_system.md#email-and-password-reset)**
 
 - Note that all either service or host, username and password and the From address must be set for email to work.
 
@@ -698,7 +700,7 @@ Email is used for password reset. See: [Email Password Reset](../configuration/u
 > 
 > Failing to set valid values here will result in LibreChat using the unsecured password reset!
 
-See: [nodemailer well-known-services](https://community.nodemailer.com/2-0-0-beta/setup-smtp/well-known-services/)
+See: **[nodemailer well-known-services](https://community.nodemailer.com/2-0-0-beta/setup-smtp/well-known-services/)**
 
 ```bash
 EMAIL_SERVICE=

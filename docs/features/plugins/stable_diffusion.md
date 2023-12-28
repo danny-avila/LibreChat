@@ -1,17 +1,18 @@
 ---
 title: 🖌️ Stable Diffusion
+description: How to set up and configure the Stable Diffusion plugin
 weight: -6
 ---
 
 # Stable Diffusion Plugin
 
-To use Stable Diffusion with this project, you will either need to download and install [stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui) or, for a dockerized deployment, you can also use [stable-diffusion-webui-docker](https://github.com/AbdBarho/stable-diffusion-webui-docker)
+To use Stable Diffusion with this project, you will either need to download and install **[AUTOMATIC1111 - Stable Diffusion WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui)** or, for a dockerized deployment, you can also use **[stable-diffusion-webui-docker](https://github.com/AbdBarho/stable-diffusion-webui-docker)**
 
 With the docker deployment you can skip step 2 and step 3, use the setup instructions from their repository instead.
 
 - Note: you need a compatible GPU ("CPU-only" is possible but very slow). Nvidia is recommended, but there is no clear resource on incompatible GPUs. Any decent GPU should work.
 
-## 1. Follow download and installation instructions from [stable-diffusion-webui readme](https://github.com/AUTOMATIC1111/stable-diffusion-webui)
+## 1. Follow download and installation instructions from **[stable-diffusion-webui readme](https://github.com/AUTOMATIC1111/stable-diffusion-webui)**
 
 ## 2. Edit your run script settings
 

@@ -1,5 +1,6 @@
 ---
 title: 🐧 Linode
+description: How to deploy LibreChat on Linode.
 weight: -8
 ---
 <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d6e430db-518a-4779-83d3-a2d177907df1" width="250">
@@ -9,7 +10,7 @@ weight: -8
 ⚠️**Note: Payment is required**
 
 ## Create a Linode Account and a Linode Server
-- Go to the Linode website (https://www.linode.com/) and click on the "Sign Up" or "Get Started" button.
+- Go to the Linode website (**[https://www.linode.com/](https://www.linode.com/)**) and click on the "Sign Up" or "Get Started" button.
 - Follow the instructions to create a new account by providing your personal details and payment information.
 - Once your account is created, you will have access to the Linode Cloud Manager.
 - Click on the "Create" button to create a new Linode server.

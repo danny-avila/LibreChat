@@ -246,5 +246,4 @@ export default {
   com_nav_search_placeholder: '搜索对话及对话内容',
   com_nav_setting_general: '通用',
   com_nav_setting_data: '数据管理',
-  com_nav_language: '语言',
 };
