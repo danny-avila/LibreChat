@@ -1,5 +1,6 @@
 ---
 title: 🧪 Testing During Development
+description: How to locally test the app during development.
 weight: -6
 ---
 

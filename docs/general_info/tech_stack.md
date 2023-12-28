@@ -1,5 +1,6 @@
 ---
 title: 🧑‍💻 Tech Stack
+description: This doc describes the technologies and frameworks that LibreChat uses.
 weight: -8
 ---
 # Tech Stack

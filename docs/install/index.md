@@ -1,5 +1,6 @@
 ---
 title: Installation and Configuration
+description: 💻 In-depth guides about installation and configuration
 weight: 1
 ---
 
@@ -8,7 +9,7 @@ weight: 1
 ## **[Installation](./installation/index.md)**
 
   * 🐳 [Docker Compose (✨ Recommended)](./installation/docker_compose_install.md)
-  * 🦦 [Container (podman)](./installation/container_install.md)
+  * 🦦 [Container (Podman)](./installation/container_install.md)
   * 🐧 [Linux](./installation/linux_install.md) 
   * 🍎 [Mac](./installation/mac_install.md) 
   * 🪟 [Windows](./installation/windows_install.md) 

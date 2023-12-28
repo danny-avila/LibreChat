@@ -1,5 +1,6 @@
 ---
 title: 🛂 Authentication System
+description: This guide explains how to use the user authentication system of LibreChat, which offers secure and easy email and social logins. You will learn how to set up sign up, log in, password reset, and more.
 weight: -5
 --- 
 
@@ -42,7 +43,7 @@ ALLOW_SOCIAL_REGISTRATION=false
 ### Session Expiry and Refresh Token
 
 - Default values: session expiry: 15 minutes, refresh token expiry: 7 days
-  - For more information: [Refresh Token](https://github.com/danny-avila/LibreChat/pull/927)
+  - For more information: **[GitHub PR #927 - Refresh Token](https://github.com/danny-avila/LibreChat/pull/927)**
 
 ```bash
 SESSION_EXPIRY=1000 * 60 * 15
@@ -76,7 +77,7 @@ sequenceDiagram
 ### JWT Secret and Refresh Secret
 
 - You should use new secure values. The examples given are 32-byte keys (64 characters in hex). 
-  - Use this replit to generate some quickly: [JWT Keys](https://replit.com/@daavila/crypto#index.js)
+  - Use this replit to generate some quickly: **[JWT Keys](https://replit.com/@daavila/crypto#index.js)**
 
 ```bash
 JWT_SECRET=16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
@@ -129,12 +130,12 @@ EMAIL\_ENCRYPTION defines if encryption is required at the start (`tls`) or star
 EMAIL\_ENCRYPTION\_HOSTNAME allows specification of a hostname against which the certificate is validated. Use this if the mail server does have a valid certificate, but you are connecting with an IP or a different name for some reason.
 EMAIL\_ALLOW\_SELFSIGNED defines whether self-signed certificates can be accepted from the server. As the mails being sent contain sensitive information, ONLY use this for testing.
 
-NOTE: ⚠️ **Failing to perform either of the below setups will result in LibreChat using the unsecured password reset! This allows anyone to reset any password on your server immediately, without mail being sent at all!** The variable EMAIL\_FROM does not support all email providers **but is still required**. To stay updated, check the bug fixes [here](https://github.com/danny-avila/LibreChat/tags).
+NOTE: ⚠️ **Failing to perform either of the below setups will result in LibreChat using the unsecured password reset! This allows anyone to reset any password on your server immediately, without mail being sent at all!** The variable EMAIL\_FROM does not support all email providers **but is still required**. To stay updated, check the bug fixes: **[here](https://github.com/danny-avila/LibreChat/tags)**
 
 ### Setup with Gmail
 
 1. Create a Google Account and enable 2-step verification.
-2. In the [Google Account settings](https://myaccount.google.com/), click on the "Security" tab and open "2-step verification."
+2. In the **[Google Account settings](https://myaccount.google.com/)**, click on the "Security" tab and open "2-step verification."
 3. Scroll down and open "App passwords." Choose "Mail" for the app and select "Other" for the device, then give it a random name.
 4. Click on "Generate" to create a password, and copy the generated password.
 5. In the .env file, modify the variables as follows:

@@ -1,5 +1,6 @@
 ---
 title: 🌊 DigitalOcean ✨(Recommended)
+description: These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server using one of the cheapest tiers (6 USD/mo) 
 weight: -10
 ---
 # Digital Ocean (Ubuntu/Docker) Setup
@@ -366,7 +367,7 @@ It's safe to close the terminal if you wish -- the docker app will continue to r
 
 >If you are setting up a domain to be used with LibreChat, this compose file is using the nginx file located in client/nginx.conf. Instructions on this below in part V.
 
-### **4. Once the app is running, you can access it at http://yourserverip**
+### **4. Once the app is running, you can access it at `http://yourserverip`**
 
 ### Go back to the DigitalOcean droplet page to get your server ip, copy it, and paste it into your browser!
 

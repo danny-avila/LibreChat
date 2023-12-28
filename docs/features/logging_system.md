@@ -1,5 +1,6 @@
 ---
 title: 🪵 Logging System
+description: This doc explains how to use the logging feature of LibreChat, which saves error and debug logs in the `/api/logs` folder. You can use these logs to troubleshoot issues, monitor your server, and report bugs. You can also disable debug logs if you want to save space.
 weight: -5
 ---
 
@@ -9,9 +10,9 @@ LibreChat has central logging built into its backend (api).
 
 Log files are saved in `/api/logs`. Error logs are saved by default. Debug logs are enabled by default but can be turned off if not desired.
 
-This allows you to monitor your server through external tools that inspect log files, such as [the ELK stack](https://aws.amazon.com/what-is/elk-stack/).
+This allows you to monitor your server through external tools that inspect log files, such as **[the ELK stack](https://aws.amazon.com/what-is/elk-stack/)**.
 
-Debug logs are essential for developer work and fixing issues. If you encounter any problems running LibreChat, reproduce as close as possible, and [report the issue](https://github.com/danny-avila/LibreChat/issues) with your logs found in `./api/logs/debug-%DATE%.log`. 
+Debug logs are essential for developer work and fixing issues. If you encounter any problems running LibreChat, reproduce as close as possible, and **[report the issue](https://github.com/danny-avila/LibreChat/issues)** with your logs found in `./api/logs/debug-%DATE%.log`. 
 
 Errors logs are also saved in the same location: `./api/logs/error-%DATE%.log`. If you have meilisearch configured, there is a separate log file for this as well.
 

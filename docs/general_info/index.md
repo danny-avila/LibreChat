@@ -1,5 +1,6 @@
 ---
 title: General Information
+description: 📜 This section contains information about LibreChat, such as its history, purpose, and values. You will also find the details of the tech stack, the code of conduct, and the breaking changes that affect the project.
 weight: 4
 ---
 

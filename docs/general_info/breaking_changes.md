@@ -1,5 +1,6 @@
 ---
 title: ⚠️ Breaking Changes
+description: This doc lists the breaking changes that affect the functionality and compatibility of LibreChat. You should read this doc before updating to a new version of LibreChat, and follow the instructions to resolve any issues.
 weight: -10
 ---
 # ⚠️ Breaking Changes
