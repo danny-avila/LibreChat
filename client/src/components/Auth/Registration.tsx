@@ -26,6 +26,9 @@ function Registration() {
   const password = watch('password');
 
   const onRegisterUserFormSubmit = (data: TRegisterUser) => {
+    // 自分以外登録させない
+    alert('Haha, you wish!\n笑止千万！\n哈哈，你不是我！\nJajaja, ¡no eres yo!\nMdr t’es pas moi!');
+    return;
     registerUser.mutate(data, {
       onSuccess: () => {
         navigate('/c/new');

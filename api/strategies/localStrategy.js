@@ -46,6 +46,13 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: 'Incorrect password.' });
     }
 
+    // 環境変数で定めたユーザーのみログインを許可
+    // FIXME: Basic認証導入するまでの仮実装
+    if (email !== process.env.MY_USER) {
+      logError('No Admin User!! - ', { email });
+      return done(null, false, { message: 'Incorrect User!!' });
+    }
+
     logger.info(`[Login] [Login successful] [Username: ${email}] [Request-IP: ${req.ip}]`);
     return done(null, user);
   } catch (err) {
