@@ -1,5 +1,6 @@
 ---
 title: ⚡ Azure AI Search
+description: How to configure Azure AI Search for answers to your questions with assistance from GPT.
 weight: -4
 ---
 # Azure AI Search Plugin
@@ -34,7 +35,7 @@ This is the authentication key to use when utilizing the search endpoint. Please
 
 ## Create or log in to your account on Azure Portal
 
-**1.** Visit [https://azure.microsoft.com/en-us/](https://azure.microsoft.com/en-us/) and click on `Get started` or `Try Azure for Free` to create an account and sign in.
+**1.** Visit **[https://azure.microsoft.com/en-us/](https://azure.microsoft.com/en-us/)** and click on `Get started` or `Try Azure for Free` to create an account and sign in.
 
 **2.** Choose pay per use or Azure Free with $200.
 
@@ -76,7 +77,7 @@ Now select the free option or select your preferred option (may incur charges).
 
 ![image](https://github.com/itzraiss/images/blob/main/Captura%20de%20tela%202023-11-26%20152107.png)
 
-**2.** Follow the Microsoft tutorial.[https://learn.microsoft.com/en-us/azure/search/search-get-started-portal](https://learn.microsoft.com/en-us/azure/search/search-get-started-portal), after finishing, save the name given to the index somewhere.
+**2.** Follow the Microsoft tutorial: **[https://learn.microsoft.com/en-us/azure/search/search-get-started-portal](https://learn.microsoft.com/en-us/azure/search/search-get-started-portal)**, after finishing, save the name given to the index somewhere.
 
 **3.** Now you have your `AZURE_AI_SEARCH_INDEX_NAME`, copy and save it in a local safe place.
 
@@ -117,7 +118,7 @@ The following are configuration values that are not required but can be specifie
 If there are concerns that the search result data may be too large and exceed the prompt size, consider reducing the size of the search result data by using AZURE_AI_SEARCH_SEARCH_OPTION_TOP and AZURE_AI_SEARCH_SEARCH_OPTION_SELECT.
 
 For details on each parameter, please refer to the following document:
-https://learn.microsoft.com/en-us/rest/api/searchservice/search-documents
+**[https://learn.microsoft.com/en-us/rest/api/searchservice/search-documents](https://learn.microsoft.com/en-us/rest/api/searchservice/search-documents)**
 
 ```env
 AZURE_AI_SEARCH_API_VERSION=2023-10-01-Preview

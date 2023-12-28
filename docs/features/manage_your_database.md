@@ -1,5 +1,6 @@
 ---
 title: 🍃 Manage Your Database
+description: How to install and configure Mongo Express to securely access and manage your MongoDB database in Docker.
 weight: -6
 ---
 

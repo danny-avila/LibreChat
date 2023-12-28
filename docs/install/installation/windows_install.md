@@ -1,5 +1,6 @@
 ---
 title: 🪟 Windows
+description: Windows Installation Guides
 weight: 0
 ---
 
@@ -26,8 +27,8 @@ In this video we're going to install LibreChat on Windows 11 using Docker and Gi
 
 #### Instructions
 - To install LibreChat, you need Docker desktop and Git. Download them from these links:
-  - Docker desktop: https://www.docker.com/products/docke...
-  - Git: https://git-scm.com/download/win
+  - Docker desktop: **[https://docs.docker.com/desktop/install/windows-install/](https://docs.docker.com/desktop/install/windows-install/)**
+  - Git: **[https://git-scm.com/download/win](https://git-scm.com/download/win)**
 - Follow the steps in the video to install and run Docker desktop and Git.
 - Open a terminal in the root of the C drive and enter these commands:
   - `git clone https://github.com/danny-avila/LibreChat`
@@ -52,7 +53,7 @@ Have fun!
 
 ### Download and Install Node.js (Required)
 
-  - Navigate to https://nodejs.org/en/download and to download the latest Node.js version for your OS (The Node.js installer includes the NPM package manager.)
+  - Navigate to **[https://nodejs.org/en/download](https://nodejs.org/en/download)** and to download the latest Node.js version for your OS (The Node.js installer includes the NPM package manager.)
 
 ### Download and Install Git (Recommended)
 - Git: https://git-scm.com/download/win
@@ -63,15 +64,12 @@ Have fun!
 - At least one AI endpoint should be setup for use.
 
 ### Download LibreChat (Required)
-  - (With Git) Open Terminal (command prompt) and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
-  - Or download the latest release here: https://github.com/danny-avila/LibreChat/releases/
-  - Or by clicking on the green code button in the top of the page and selecting "Download ZIP"
-  - If you downloaded a zip file, extract the content in "C:/LibreChat/" 
+  - Open Terminal (command prompt) and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
   - **IMPORTANT : If you install the files somewhere else modify the instructions accordingly**
   
 ### Enable the Conversation search feature: (optional)
 
-  - Download MeiliSearch latest release from : https://github.com/meilisearch/meilisearch/releases
+  - Download MeiliSearch latest release from : **[github.com/meilisearch](https://github.com/meilisearch/meilisearch/releases)**
   - Copy it to "C:/LibreChat/"
   - Rename the file to "meilisearch.exe"
   - Open it by double clicking on it
@@ -89,7 +87,7 @@ Using the command line (in the root directory)
 ### To use the app:
 1. Run `npm run backend`
 2. Run `meilisearch --master-key <meilisearch_Master_Key>` (Only if SEARCH=TRUE)
-3. Visit http://localhost:3080 (default port) & enjoy
+3. Visit `http://localhost:3080` (default port) & enjoy
 
 ### Using a batch file
 
@@ -98,7 +96,7 @@ Using the command line (in the root directory)
   - Paste the following code in a new document
   - The meilisearch executable needs to be at the root of the LibreChat directory
   - Put your MeiliSearch master key instead of "`<meilisearch_Master_Key>`"
-  - Save the file as "C:/LibreChat/LibreChat.bat"
+  - Save the file as `C:/LibreChat/LibreChat.bat`
   - you can make a shortcut of this batch file and put it anywhere
 
   ```bat title="LibreChat.bat"

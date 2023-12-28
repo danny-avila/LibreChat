@@ -1,5 +1,6 @@
 ---
 title: 🌈 Heroku
+description: Instructions for deploying LibreChat on Heroku
 weight: -1
 ---
 # Heroku Deployment
@@ -10,8 +11,8 @@ Heroku only supports running a single process within a Docker container. The Doc
 
 If you want to deploy both these services to Heroku, you will need to create two separate Dockerfiles: one for the API and one for the client. The heroku.yml should be configured separately for each app, and then you need to create and deploy two different Heroku apps.
 
-  - Sign up for a Heroku account: If you don't already have a Heroku account, sign up at https://signup.heroku.com/.
-  - Install the Heroku CLI: Download and install the Heroku CLI from https://devcenter.heroku.com/articles/heroku-cli.
+  - Sign up for a Heroku account: If you don't already have a Heroku account, sign up at: **[https://signup.heroku.com](https://signup.heroku.com)**
+  - Install the Heroku CLI: Download and install the Heroku CLI from: **[https://devcenter.heroku.com/articles/heroku-cli](https://devcenter.heroku.com/articles/heroku-cli)**
 
 Here are the steps to deploy on Heroku:
 
@@ -126,7 +127,7 @@ Remember to replace `your-api-app-name` and `your-client-app-name` with the actu
 
 ---
 
- ⚠️ If you have issues, see this discussion first: https://github.com/danny-avila/LibreChat/discussions/339
+ ⚠️ If you have issues, see this discussion first: **[https://github.com/danny-avila/LibreChat/discussions/339](https://github.com/danny-avila/LibreChat/discussions/339)**
  
 
 ## Using Heroku Dashboard:
@@ -136,7 +137,7 @@ Remember to replace `your-api-app-name` and `your-client-app-name` with the actu
 
 ## Setting up MongoDB Atlas:
 
-Sign up for a MongoDB Atlas account: If you don't have an account, sign up at https://www.mongodb.com/cloud/atlas/signup.
+Sign up for a MongoDB Atlas account: If you don't have an account, sign up at: **[https://www.mongodb.com/cloud/atlas/signup](https://www.mongodb.com/cloud/atlas/signup)**
 
 Create a new cluster: After signing in, create a new cluster by following the on-screen instructions. For a free tier cluster, select the "Shared" option and choose the "M0 Sandbox" tier.
 
@@ -148,7 +149,7 @@ Get the connection string: Once the cluster is created, click the "Connect" butt
 
 ## Deploying MeiliSearch on Heroku:
 
-Install the Heroku CLI: If you haven't already, download and install the Heroku CLI from https://devcenter.heroku.com/articles/heroku-cli.
+Install the Heroku CLI: If you haven't already, download and install the Heroku CLI from: **[https://devcenter.heroku.com/articles/heroku-cli](https://devcenter.heroku.com/articles/heroku-cli)**
 Login to Heroku: Open Terminal and run heroku login. Follow the instructions to log in to your Heroku account.
 
 ## Create a new Heroku app for MeiliSearch:

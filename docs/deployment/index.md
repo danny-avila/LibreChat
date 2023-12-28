@@ -1,5 +1,6 @@
 ---
 title: Deployment
+description: 🌐 Step-by-step guides on how to deploy LibreChat on various cloud platforms.
 weight: 3
 ---
 

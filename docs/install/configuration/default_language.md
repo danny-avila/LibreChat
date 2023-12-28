@@ -1,5 +1,6 @@
 ---
 title: 🌍 Default Language
+description: How to change LibreChat's default language
 weight: -3
 ---
 
