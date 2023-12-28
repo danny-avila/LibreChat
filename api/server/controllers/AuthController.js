@@ -84,6 +84,13 @@ const refreshController = async (req, res) => {
       return res.status(401).redirect('/login');
     }
 
+    // 環境変数で定めたユーザーのみログインを許可
+    // FIXME: Basic認証導入するまでの仮実装
+    if (user.email !== process.env.MY_USER) {
+      logger.error(`[refreshController] No admin user!! - ${user.email}`);
+      return res.status(401).redirect('/login');
+    }
+
     if (process.env.NODE_ENV === 'CI') {
       const token = await setAuthTokens(userId, res);
       const userObj = user.toJSON();
