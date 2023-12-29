@@ -1,5 +1,6 @@
 ---
 title: Plugins
+description: 🔌 All about plugins, how to make them, how use the official ChatGPT plugins, and how to configure custom plugins. 
 weight: -10
 ---
 

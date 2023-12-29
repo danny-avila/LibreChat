@@ -201,5 +201,4 @@ export default {
   com_nav_settings: 'Einstellungen',
   com_nav_search_placeholder: 'Durchsuche Nachrichten',
   com_nav_setting_general: 'Generell',
-  com_nav_lang_german: 'Deutsch',
 };

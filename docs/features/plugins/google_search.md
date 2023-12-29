@@ -1,5 +1,6 @@
 ---
 title: 🔎 Google Search
+description: How to set up and use the Google Search Plugin, which allows you to query Google with GPT's help.
 weight: -7
 ---
 
@@ -10,9 +11,9 @@ GOOGLE_API_KEY="...."
 GOOGLE_CSE_ID="...."  
 ```  
   
-You first need to create a programmable search engine and get the search engine ID: https://developers.google.com/custom-search/docs/tutorial/creatingcse  
+You first need to create a programmable search engine and get the search engine ID: **[https://developers.google.com/custom-search/docs/tutorial/creatingcse](https://developers.google.com/custom-search/docs/tutorial/creatingcse)**  
   
-Then you can get the API key, click the "Get a key" button on this page: https://developers.google.com/custom-search/v1/introduction  
+Then you can get the API key, click the "Get a key" button on this page: **[https://developers.google.com/custom-search/v1/introduction](https://developers.google.com/custom-search/v1/introduction)**  
 
 <!-- You can limit the max price that is charged for a single search request by setting `MAX_SEARCH_PRICE` in your `.env` file. -->
 

@@ -1,5 +1,6 @@
 ---
 title: 🐳 Docker Compose ✨(Recommended)
+description: "Docker Compose Installation Guide: Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started."
 weight: -10
 ---
 
@@ -19,7 +20,7 @@ Start by cloning the repository or downloading it to your desired location:
 ```
 
 ### Docker Installation
-Install Docker on your system. [Docker Desktop](https://www.docker.com/products/docker-desktop/) is recommended for managing your Docker containers.
+Install Docker on your system. **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** is recommended for managing your Docker containers.
 
 ### LibreChat Configuration
 Before running LibreChat with Docker, you need to configure some settings:
@@ -27,7 +28,7 @@ Before running LibreChat with Docker, you need to configure some settings:
 - Edit the credentials you see in `docker-compose.yml` under the API service as needed.
    - See my notes below for specific instructions on some of the configuration
 - Provide all necessary credentials in the `.env` file before the next step.
-   - Docker will read this env file. See the `.env.example` file for reference.
+   - Docker will read this env file. See the **[/.env.example](https://github.com/danny-avila/LibreChat/blob/main/.env.example)** file for reference.
 
 #### [AI Setup](../configuration/ai_setup.md) (Required)
 At least one AI endpoint should be setup for use.

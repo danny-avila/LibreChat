@@ -262,5 +262,4 @@ export default {
   com_nav_search_placeholder: 'بحث في الرسائل',
   com_nav_setting_general: 'عام',
   com_nav_setting_data: 'تحكم في البيانات',
-  com_nav_language: 'اللغة',
 };

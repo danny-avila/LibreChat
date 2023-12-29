@@ -1,5 +1,6 @@
 ---
 title: 🌍 Multilingual Information
+description: To set up the project, please follow the instructions in the documentation. The documentation is in English only, so you may need to use a translation tool or an AI assistant (e.g. ChatGPT) if you have difficulty understanding it.
 weight: -9
 ---
 # Multilingual Information
