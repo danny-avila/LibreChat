@@ -17,6 +17,7 @@ async function uploadAvatar(userId, input, manual) {
       throw new Error('User ID is undefined');
     }
     const _id = userId;
+    // TODO: remove direct use of Model, `User`
     const oldUser = await User.findOne({ _id });
     let imageBuffer;
     if (typeof input === 'string') {
