@@ -2,18 +2,16 @@ const express = require('express');
 const multer = require('multer');
 
 const uploadAvatar = require('~/server/services/Files/images/avatar/uploadAvatar');
-const { getUserController } = require('~/server/controllers/AuthController');
 const { requireJwtAuth } = require('~/server/middleware/');
 const User = require('~/models/User');
 
 const upload = multer();
 const router = express.Router();
 
-router.get('/', requireJwtAuth, getUserController);
-
-router.post('/', upload.single('input'), async (req, res) => {
+router.post('/', requireJwtAuth, upload.single('input'), async (req, res) => {
   try {
-    const { userId, manual } = req.body;
+    const userId = req.user.id;
+    const { manual } = req.body;
     const input = req.file.buffer;
     if (!userId) {
       throw new Error('User ID is undefined');
