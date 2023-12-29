@@ -142,9 +142,9 @@ Guidelines:
       try {
         await saveImageToFirebaseStorage(userId, theImageUrl, imageName);
         this.result = await getFirebaseStorageImageUrl(imageName);
-        console.log('this.result', this.result);
+        logger.debug('[DALL-E] result: ' + this.result);
       } catch (error) {
-        console.error('Error while saving the image to Firebase Storage:', error);
+        logger.error('Error while saving the image to Firebase Storage:', error);
         this.result = `Failed to save the image to Firebase Storage. ${error.message}`;
       }
     } else {
@@ -152,7 +152,7 @@ Guidelines:
         await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
         this.result = this.getMarkdownImageUrl(imageName);
       } catch (error) {
-        console.error('Error while saving the image locally:', error);
+        logger.error('Error while saving the image locally:', error);
         this.result = `Failed to save the image locally. ${error.message}`;
       }
     }
