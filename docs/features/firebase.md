@@ -50,7 +50,7 @@ weight: -6
 
 ![Project Overview](https://github.com/danny-avila/LibreChat/assets/81851188/c425f4bb-a494-42f2-9fdc-ff2c8ce005e1)
 
-- Click on "Web."
+- Click on "+ Add app" under your project name, then click on "Web."
 
 ![Web](https://github.com/danny-avila/LibreChat/assets/81851188/22dab877-93cb-4828-9436-10e14374e57e)
 
@@ -63,3 +63,12 @@ weight: -6
 ![Save Information](https://github.com/danny-avila/LibreChat/assets/81851188/056754ad-9d36-4662-888e-f189ddb38fd3)
 
 - Fill all the `firebaseConfig` variables in the `.env` file.
+
+```bash
+FIREBASE_API_KEY=api_key #apiKey
+FIREBASE_AUTH_DOMAIN=auth_domain #authDomain
+FIREBASE_PROJECT_ID=project_id #projectId
+FIREBASE_STORAGE_BUCKET=storage_bucket #storageBucket
+FIREBASE_MESSAGING_SENDER_ID=messaging_sender_id #messagingSenderId
+FIREBASE_APP_ID=1:your_app_id #appId
+```
