@@ -67,19 +67,19 @@ const validateTools = async (user, tools = []) => {
   }
 };
 
-const loadToolWithAuth = async (user, authFields, ToolConstructor, options = {}) => {
+const loadToolWithAuth = async (userId, authFields, ToolConstructor, options = {}) => {
   return async function () {
     let authValues = {};
 
     for (const authField of authFields) {
       let authValue = process.env[authField];
       if (!authValue) {
-        authValue = await getUserPluginAuthValue(user, authField);
+        authValue = await getUserPluginAuthValue(userId, authField);
       }
       authValues[authField] = authValue;
     }
 
-    return new ToolConstructor({ ...options, ...authValues });
+    return new ToolConstructor({ ...options, ...authValues, userId });
   };
 };
 
