@@ -2,12 +2,14 @@ const firebase = require('firebase/app');
 const { getStorage } = require('firebase/storage');
 const { logger } = require('~/config');
 
+let i = 0;
 let firebaseApp = null;
 
 const initializeFirebase = () => {
+  // Return existing instance if already initialized
   if (firebaseApp) {
     return firebaseApp;
-  } // Return existing instance if already initialized
+  }
 
   const firebaseConfig = {
     apiKey: process.env.FIREBASE_API_KEY,
@@ -19,9 +21,11 @@ const initializeFirebase = () => {
   };
 
   if (Object.values(firebaseConfig).some((value) => !value)) {
-    logger.warn(
-      'Firebase configuration is not provided or incomplete. Firebase will not be initialized.',
-    );
+    i === 0 &&
+      logger.info(
+        '[Optional] Firebase configuration missing or incomplete. Firebase will not be initialized.',
+      );
+    i++;
     return null;
   }
 

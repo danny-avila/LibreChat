@@ -50,10 +50,10 @@ async function uploadAvatar(userId, input, manual) {
     if (storage) {
       const url = await firebaseStrategy(userId, webPBuffer, oldUser, manual);
       return url;
-    } else {
-      const url = await localStrategy(userId, webPBuffer, oldUser, manual);
-      return url;
     }
+
+    const url = await localStrategy(userId, webPBuffer, oldUser, manual);
+    return url;
   } catch (error) {
     logger.error('Error uploading the avatar:', error);
     throw error;
