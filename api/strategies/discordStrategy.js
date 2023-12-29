@@ -36,10 +36,10 @@ const discordLogin = async (accessToken, refreshToken, profile, cb) => {
 };
 
 const handleExistingUser = async (oldUser, avatarUrl, useFirebase) => {
-  if (!useFirebase && !oldUser.avatar.endsWith('?manual=true')) {
+  if (!useFirebase && !oldUser.avatar.includes('?manual=true')) {
     oldUser.avatar = avatarUrl;
     await oldUser.save();
-  } else if (useFirebase && !oldUser.avatar.endsWith('?manual=true')) {
+  } else if (useFirebase && !oldUser.avatar.includes('?manual=true')) {
     const userId = oldUser._id;
     const newavatarUrl = await uploadAvatar(userId, avatarUrl);
     oldUser.avatar = newavatarUrl;

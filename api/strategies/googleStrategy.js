@@ -28,10 +28,10 @@ const googleLogin = async (accessToken, refreshToken, profile, cb) => {
 };
 
 const handleExistingUser = async (oldUser, avatarUrl, useFirebase) => {
-  if ((!useFirebase && !oldUser.avatar.endsWith('?manual=true')) || oldUser.avatar === null) {
+  if ((!useFirebase && !oldUser.avatar.includes('?manual=true')) || oldUser.avatar === null) {
     oldUser.avatar = avatarUrl;
     await oldUser.save();
-  } else if (useFirebase && !oldUser.avatar.endsWith('?manual=true')) {
+  } else if (useFirebase && !oldUser.avatar.includes('?manual=true')) {
     const userId = oldUser._id;
     const avatarURL = await uploadAvatar(userId, avatarUrl);
     oldUser.avatar = avatarURL;
