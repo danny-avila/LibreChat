@@ -12,6 +12,7 @@ const {
   getFirebaseStorageImageUrl,
   getFirebaseStorage,
 } = require('~/server/services/Files/Firebase');
+const { getImageBasename } = require('~/server/services/Files/images');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const saveImageFromUrl = require('../saveImageFromUrl');
 const { logger } = require('~/config');
@@ -21,6 +22,7 @@ class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
 
+    this.userId = fields.userId;
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
     const config = { apiKey };
     if (DALLE_REVERSE_PROXY) {
@@ -128,12 +130,11 @@ Error Message: ${error.message}`;
       return 'No image URL returned from OpenAI API. There may be a problem with the API or your configuration.';
     }
 
-    const regex = /img-[\w\d]+.png/;
-    const match = theImageUrl.match(regex);
+    const imageBasename = getImageBasename(theImageUrl);
     let imageName = `image_${uuidv4()}.png`;
 
-    if (match) {
-      imageName = match[0];
+    if (imageBasename) {
+      imageName = imageBasename;
       logger.debug('[DALL-E-3]', { imageName }); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
     } else {
       logger.debug('[DALL-E-3] No image name found in the string.', {
@@ -152,6 +153,7 @@ Error Message: ${error.message}`;
       'client',
       'public',
       'images',
+      this.userId,
     );
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
@@ -163,8 +165,8 @@ Error Message: ${error.message}`;
     const storage = getFirebaseStorage();
     if (storage) {
       try {
-        await saveImageToFirebaseStorage(theImageUrl, imageName);
-        this.result = await getFirebaseStorageImageUrl(imageName);
+        await saveImageToFirebaseStorage(this.userId, theImageUrl, imageName);
+        this.result = await getFirebaseStorageImageUrl(`${this.userId}/${imageName}`);
         logger.debug('[DALL-E-3] result: ' + this.result);
       } catch (error) {
         logger.error('Error while saving the image to Firebase Storage:', error);

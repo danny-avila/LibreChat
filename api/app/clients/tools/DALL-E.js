@@ -12,18 +12,19 @@ const {
   getFirebaseStorageImageUrl,
   getFirebaseStorage,
 } = require('~/server/services/Files/Firebase');
+const { getImageBasename } = require('~/server/services/Files/images');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const saveImageFromUrl = require('./saveImageFromUrl');
 const { logger } = require('~/config');
-const user = require('~/models/User');
-
-const userId = user._id;
 
 const { DALLE_REVERSE_PROXY, PROXY } = process.env;
 class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
+
+    this.userId = fields.userId;
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
+
     const config = { apiKey };
     if (DALLE_REVERSE_PROXY) {
       config.baseURL = extractBaseURL(DALLE_REVERSE_PROXY);
@@ -103,13 +104,12 @@ Guidelines:
     if (!theImageUrl) {
       throw new Error('No image URL returned from OpenAI API.');
     }
-    const regex = /img-[\w\d]+.png/;
-    const match = theImageUrl.match(regex);
-    // Generating a unique image name
+
+    const imageBasename = getImageBasename(theImageUrl);
     let imageName = `image_${uuidv4()}.png`;
 
-    if (match) {
-      imageName = match[0];
+    if (imageBasename) {
+      imageName = imageBasename;
       logger.debug('[DALL-E]', { imageName }); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
     } else {
       logger.debug('[DALL-E] No image name found in the string.', {
@@ -127,8 +127,9 @@ Guidelines:
       'client',
       'public',
       'images',
-      userId.toString(),
+      this.userId,
     );
+
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
 
@@ -140,8 +141,8 @@ Guidelines:
     const storage = getFirebaseStorage();
     if (storage) {
       try {
-        await saveImageToFirebaseStorage(userId, theImageUrl, imageName);
-        this.result = await getFirebaseStorageImageUrl(imageName);
+        await saveImageToFirebaseStorage(this.userId, theImageUrl, imageName);
+        this.result = await getFirebaseStorageImageUrl(`${this.userId}/${imageName}`);
         logger.debug('[DALL-E] result: ' + this.result);
       } catch (error) {
         logger.error('Error while saving the image to Firebase Storage:', error);
