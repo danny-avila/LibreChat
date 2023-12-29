@@ -60,7 +60,7 @@ function addImages(intermediateSteps, responseMessage) {
     if (!observation || !observation.includes('![')) {
       return;
     }
-    const observedImagePath = observation.match(/!\[generated image\]\([^)]*\)/g);
+    const observedImagePath = observation.match(/!\[.*\]\([^)]*\)/g);
     if (observedImagePath && !responseMessage.text.includes(observedImagePath[0])) {
       responseMessage.text += '\n' + observation;
       logger.debug('[addImages] added image from intermediateSteps:', observation);
