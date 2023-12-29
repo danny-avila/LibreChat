@@ -4,14 +4,17 @@ const fs = require('fs');
 const path = require('path');
 const { z } = require('zod');
 const OpenAI = require('openai');
+const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const saveImageFromUrl = require('../saveImageFromUrl');
+const {
+  saveImageToFirebaseStorage,
+  getFirebaseStorageImageUrl,
+  getFirebaseStorage,
+} = require('~/server/services/Files/Firebase');
 const extractBaseURL = require('~/utils/extractBaseURL');
+const saveImageFromUrl = require('../saveImageFromUrl');
 const { logger } = require('~/config');
-const { useFirebase } = require('~/server/services/Files/images');
-const { saveImageToFirebaseStorage, getFirebaseStorageImageUrl } = require('../saveImageFirebase');
-const { v4: uuidv4 } = require('uuid');
 
 const { DALLE3_SYSTEM_PROMPT, DALLE_REVERSE_PROXY, PROXY } = process.env;
 class DALLE3 extends Tool {
@@ -157,7 +160,8 @@ Error Message: ${error.message}`;
     if (!fs.existsSync(this.outputPath)) {
       fs.mkdirSync(this.outputPath, { recursive: true });
     }
-    if (useFirebase) {
+    const storage = getFirebaseStorage();
+    if (storage) {
       try {
         await saveImageToFirebaseStorage(theImageUrl, imageName);
         this.result = await getFirebaseStorageImageUrl(imageName);

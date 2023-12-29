@@ -1,13 +1,13 @@
 const express = require('express');
-const router = express.Router();
 const multer = require('multer');
+
+const uploadAvatar = require('~/server/services/Files/images/avatar/uploadAvatar');
+const { getUserController } = require('~/server/controllers/AuthController');
+const { requireJwtAuth } = require('~/server/middleware/');
 const User = require('~/models/User');
 
-const uploadAvatar = require('~/server/services/Files/images/avatar/avatarCreate.js');
-const { requireJwtAuth } = require('~/server/middleware/');
-const { getUserController } = require('~/server/controllers/AuthController');
-
 const upload = multer();
+const router = express.Router();
 
 router.get('/', requireJwtAuth, getUserController);
 
@@ -19,7 +19,8 @@ router.post('/', upload.single('input'), async (req, res) => {
       throw new Error('User ID is undefined');
     }
 
-    const user = await User.findById(userId);
+    // TODO: do not use Model directly, instead use a service method that uses the model
+    const user = await User.findById(userId).lean();
 
     if (!user) {
       throw new Error('User not found');

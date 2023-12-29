@@ -4,15 +4,19 @@ const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
 // const { genAzureEndpoint } = require('~/utils/genAzureEndpoints');
+const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const {
+  saveImageToFirebaseStorage,
+  getFirebaseStorageImageUrl,
+  getFirebaseStorage,
+} = require('~/server/services/Files/Firebase');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const saveImageFromUrl = require('./saveImageFromUrl');
 const { logger } = require('~/config');
-const { useFirebase } = require('../../../server/services/Files/images');
-const { saveImageToFirebaseStorage, getFirebaseStorageImageUrl } = require('./saveImageFirebase');
-const { v4: uuidv4 } = require('uuid');
 const user = require('~/models/User');
+
 const userId = user._id;
 
 const { DALLE_REVERSE_PROXY, PROXY } = process.env;
@@ -133,7 +137,8 @@ Guidelines:
       fs.mkdirSync(this.outputPath, { recursive: true });
     }
 
-    if (useFirebase) {
+    const storage = getFirebaseStorage();
+    if (storage) {
       try {
         await saveImageToFirebaseStorage(userId, theImageUrl, imageName);
         this.result = await getFirebaseStorageImageUrl(imageName);

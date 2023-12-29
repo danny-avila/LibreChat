@@ -1,6 +1,6 @@
 const fs = require('fs').promises;
 
-async function saveToLocal(userId, webPBuffer, oldUser) {
+async function localStrategy(userId, webPBuffer, oldUser) {
   const url = `./client/public/images/${userId}/avatar.png`;
   // Adjust the urlRoute to match the desired format
   const urlRoute = `/images/${userId}/avatar.png`;
@@ -13,4 +13,4 @@ async function saveToLocal(userId, webPBuffer, oldUser) {
   return urlRoute;
 }
 
-module.exports = { saveToLocal };
+module.exports = localStrategy;

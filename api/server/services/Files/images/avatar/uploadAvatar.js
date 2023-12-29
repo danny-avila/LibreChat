@@ -2,9 +2,10 @@ const sharp = require('sharp');
 const fetch = require('node-fetch');
 const fs = require('fs').promises;
 const User = require('~/models/User');
-const { useFirebase } = require('./firebase');
-const { saveToFirebase } = require('./avatarFirebase');
-const { saveToLocal } = require('./avatarLocal');
+const { getFirebaseStorage } = require('~/server/services/Files/Firebase/initialize');
+const firebaseStrategy = require('./firebaseStrategy');
+const localStrategy = require('./localStrategy');
+const { logger } = require('~/config');
 
 async function convertToWebP(inputBuffer) {
   return sharp(inputBuffer).resize({ width: 150 }).toFormat('webp').toBuffer();
@@ -44,15 +45,16 @@ async function uploadAvatar(userId, input, manual) {
       })
       .toBuffer();
     const webPBuffer = await convertToWebP(squaredBuffer);
-    if (useFirebase) {
-      const url = await saveToFirebase(userId, webPBuffer, oldUser, manual);
+    const storage = getFirebaseStorage();
+    if (storage) {
+      const url = await firebaseStrategy(userId, webPBuffer, oldUser, manual);
       return url;
     } else {
-      const url = await saveToLocal(userId, webPBuffer, oldUser, manual);
+      const url = await localStrategy(userId, webPBuffer, oldUser, manual);
       return url;
     }
   } catch (error) {
-    console.error('Error uploading the avatar:', error.message);
+    logger.error('Error uploading the avatar:', error);
     throw error;
   }
 }
