@@ -116,12 +116,12 @@ class DALLE3 extends Tool {
         n: 1,
       });
     } catch (error) {
-      return `Something went wrong when trying to generate the image. The DALL-E API may unavailable:
+      return `Something went wrong when trying to generate the image. The DALL-E API may be unavailable:
 Error Message: ${error.message}`;
     }
 
     if (!resp) {
-      return 'Something went wrong when trying to generate the image. The DALL-E API may unavailable';
+      return 'Something went wrong when trying to generate the image. The DALL-E API may be unavailable';
     }
 
     const theImageUrl = resp.data[0].url;
