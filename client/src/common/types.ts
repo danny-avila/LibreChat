@@ -27,6 +27,7 @@ export type TShowToast = {
   severity?: NotificationSeverity;
   showIcon?: boolean;
   duration?: number;
+  status?: 'error' | 'success' | 'warning' | 'info';
 };
 
 export type TBaseSettingsProps = {
