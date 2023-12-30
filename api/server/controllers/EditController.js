@@ -61,7 +61,6 @@ const EditController = async (req, res, next, initializeClient) => {
           text: partialText,
           model: endpointOption.modelOptions.model,
           unfinished: true,
-          cancelled: false,
           isEdited: true,
           error: false,
           user,

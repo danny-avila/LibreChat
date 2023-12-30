@@ -68,10 +68,6 @@ const messageSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    cancelled: {
-      type: Boolean,
-      default: false,
-    },
     error: {
       type: Boolean,
       default: false,

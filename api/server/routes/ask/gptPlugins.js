@@ -116,18 +116,20 @@ router.post(
       sendIntermediateMessage(res, { plugins });
     };
 
-    const onToolStart = async (tool, input, runId, parentRunId) => {
-      const pluginName = pluginMap.get(parentRunId);
-      const latestPlugin = {
-        runId,
-        loading: true,
-        inputs: [input],
-        latest: pluginName,
-        outputs: null,
-      };
-
-      if (streaming) {
-        await streaming;
+      if (currentTimestamp - lastSavedTimestamp > saveDelay) {
+        lastSavedTimestamp = currentTimestamp;
+        saveMessage({
+          messageId: responseMessageId,
+          sender,
+          conversationId,
+          parentMessageId: overrideParentMessageId || userMessageId,
+          text: partialText,
+          model: endpointOption.modelOptions.model,
+          unfinished: true,
+          error: false,
+          plugins,
+          user,
+        });
       }
       const extraTokens = ':::plugin:::\n';
       plugins.push(latestPlugin);
