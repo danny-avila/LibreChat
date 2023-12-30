@@ -15,16 +15,16 @@ module.exports = {
     parentMessageId,
     sender,
     text,
-    isCreatedByUser = false,
+    isCreatedByUser,
     error,
     unfinished,
     files,
     isEdited,
     finish_reason,
     tokenCount,
-    plugin = null,
-    plugins = null,
-    model = null,
+    plugin,
+    plugins,
+    model,
   }) {
     try {
       const validConvoId = idSchema.safeParse(conversationId);
