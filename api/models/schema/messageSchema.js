@@ -21,6 +21,7 @@ const messageSchema = mongoose.Schema(
     },
     model: {
       type: String,
+      default: null,
     },
     conversationSignature: {
       type: String,

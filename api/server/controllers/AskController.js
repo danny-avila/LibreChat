@@ -118,16 +118,19 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       delete userMessage.image_urls;
     }
 
-    sendMessage(res, {
-      title: await getConvoTitle(user, conversationId),
-      final: true,
-      conversation: await getConvo(user, conversationId),
-      requestMessage: userMessage,
-      responseMessage: response,
-    });
-    res.end();
+    if (!abortController.signal.aborted) {
+      sendMessage(res, {
+        title: await getConvoTitle(user, conversationId),
+        final: true,
+        conversation: await getConvo(user, conversationId),
+        requestMessage: userMessage,
+        responseMessage: response,
+      });
+      res.end();
 
-    await saveMessage({ ...response, user });
+      await saveMessage({ ...response, user });
+    }
+
     await saveMessage(userMessage);
 
     if (addTitle && parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
