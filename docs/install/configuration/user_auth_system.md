@@ -30,6 +30,7 @@ Here's an overview of the general configuration, located in the `.env` file at t
 > **Note:** OpenID does not support the ability to disable only registration.
 
 >> **Quick Tip:** Even with registration disabled, add users directly to the database using `npm run create-user`. If you can't get npm to work, try `sudo docker exec -ti LibreChat sh` first to "ssh" into the container.
+>> **Quick Tip:** To delete a user, you can run `docker-compose exec api npm run delete-user email@domain.com` 
 
 ![image](https://github.com/danny-avila/LibreChat/assets/81851188/52a37d1d-7392-4a9a-a79f-90ed2da7f841)
 

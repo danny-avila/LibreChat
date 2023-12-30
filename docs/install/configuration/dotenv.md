@@ -581,6 +581,7 @@ see: **[Token Usage](../../features/token_usage.md)**
 
 - To manually add balances, run the following command:`npm run add-balance`
   - You can also specify the email and token credit amount to add, e.g.:`npm run add-balance example@example.com 1000`
+  - To list the balance of every user: `npm run list-balances`
 
 > **Note:** 1000 credits = $0.001 (1 mill USD)
 
@@ -602,6 +603,7 @@ see: **[User/Auth System](../configuration/user_auth_system.md)**
     - `ALLOW_SOCIAL_REGISTRATION`: Enable or disable registration of new user using various social network. Set to `true` or `false` to enable or disable.
 
 > **Quick Tip:** Even with registration disabled, add users directly to the database using `npm run create-user`.
+> **Quick Tip:** With registration disabled, you can delete a user with `npm run delete-user email@domain.com`.
 
 ```bash
 ALLOW_EMAIL_LOGIN=true

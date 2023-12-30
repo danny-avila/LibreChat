@@ -53,6 +53,9 @@ export default {
   com_ui_delete: 'Elimina',
   com_ui_delete_conversation: 'Eliminare la chat?',
   com_ui_delete_conversation_confirm: 'Questo eliminerà',
+  com_ui_preview: 'Anteprima',
+  com_ui_upload: 'Carica',
+  com_ui_connect: 'Connetti',
   com_auth_error_login:
     'Impossibile accedere con le informazioni fornite. Per favore controlla le tue credenziali e riprova.',
   com_auth_error_login_rl:
@@ -263,7 +266,9 @@ export default {
     'Assicurati di fare clic su "Crea e continua" per dare almeno il ruolo "Vertex AI User". Infine, crea una chiave JSON da importare qui.',
   com_nav_welcome_message: 'Come posso aiutarti oggi?',
   com_nav_auto_scroll: 'Scorri automaticamente al Più recente all\'apertura',
-  com_nav_plugin_store: 'Negozio plugin',
+  com_nav_profile_picture: 'Immagine del profilo',
+  com_nav_change_picture: 'Cambia immagine',
+  com_nav_plugin_store: 'Negozio dei plugin',
   com_nav_plugin_search: 'Cerca plugin',
   com_nav_plugin_auth_error:
     'Si è verificato un errore durante il tentativo di autenticare questo plugin. Per favore riprova.',

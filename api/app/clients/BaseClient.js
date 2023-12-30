@@ -516,7 +516,7 @@ class BaseClient {
   }
 
   async saveMessageToDatabase(message, endpointOptions, user = null) {
-    await saveMessage({ ...message, user, unfinished: false, cancelled: false });
+    await saveMessage({ ...message, user, unfinished: false });
     await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,

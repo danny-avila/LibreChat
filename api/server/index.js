@@ -4,10 +4,12 @@ const cors = require('cors');
 const express = require('express');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
+const { initializeFirebase } = require('~/server/services/Files/Firebase/initialize');
 const errorController = require('./controllers/ErrorController');
 const configureSocialLogins = require('./socialLogins');
 const { connectDb, indexSync } = require('~/lib/db');
 const { logger } = require('~/config');
+const noIndex = require('./middleware/noIndex');
 
 const paths = require('~/config/paths');
 const routes = require('./routes');
@@ -22,12 +24,14 @@ const { jwtLogin, passportLogin } = require('~/strategies');
 const startServer = async () => {
   await connectDb();
   logger.info('Connected to MongoDB');
+  initializeFirebase();
   await indexSync();
 
   const app = express();
   app.locals.config = paths;
 
   // Middleware
+  app.use(noIndex);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(mongoSanitize());
