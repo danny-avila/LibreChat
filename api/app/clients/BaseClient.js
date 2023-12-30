@@ -5,6 +5,7 @@ const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
+const { setTimeout } = require('timers/promises');
 
 class BaseClient {
   constructor(apiKey, options = {}) {
@@ -366,6 +367,44 @@ class BaseClient {
     });
 
     return { payload, tokenCountMap, promptTokens, messages: orderedWithInstructions };
+  }
+
+  async sendDummyMessage(res, message, opts = {}) {
+    const { user, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
+      await this.handleStartMethods(message, opts);
+
+    logger.warn(`[BaseClient] user: ${user}`);
+    logger.warn(`[BaseClient] message: ${message}`);
+
+    const completion =
+      'Hahaha, you are not me!\n笑止千万！\n哈哈，你不是我！\nJajaja, ¡no eres yo!\nMdr t’es pas moi!';
+    let text = '';
+    for (let i = 0; i < completion.length; i++) {
+      text = text + completion[i];
+      const message = {
+        text,
+        message: true,
+        initial: false,
+        parentMessageId: undefined,
+      };
+      res.write(`event: message\ndata: ${JSON.stringify(message)}\n\n`);
+      await setTimeout(10);
+    }
+
+    const { generation = '' } = opts;
+    await this.saveMessageToDatabase(userMessage, saveOptions, user);
+    const responseMessage = {
+      messageId: responseMessageId,
+      conversationId,
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      isEdited,
+      model: this.modelOptions.model,
+      sender: this.sender,
+      text: addSpaceIfNeeded(generation) + completion,
+      promptTokens: 8,
+    };
+    return responseMessage;
   }
 
   async sendMessage(message, opts = {}) {

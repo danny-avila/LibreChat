@@ -2,6 +2,7 @@ const { Strategy: PassportLocalStrategy } = require('passport-local');
 const User = require('../models/User');
 const { loginSchema, errorsToString } = require('./validators');
 const logger = require('../utils/logger');
+const { isMyUser } = require('../utils/user');
 
 async function validateLoginRequest(req) {
   const { error } = loginSchema.safeParse(req.body);
@@ -46,10 +47,8 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: 'Incorrect password.' });
     }
 
-    // 環境変数で定めたユーザーのみログインを許可
-    // FIXME: Basic認証導入するまでの仮実装
-    if (email !== process.env.MY_USER) {
-      logError('No Admin User!! - ', { email });
+    if (!isMyUser(email)) {
+      logError('Passport Local Strategy - No My User!!', { email });
       return done(null, false, { message: 'Incorrect User!!' });
     }
 

@@ -3,6 +3,7 @@ const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage, getConvoTitle, getConvo } = require('~/models');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { logger } = require('~/config');
+const { isMyUser, isDummyMode } = require('~/utils/user');
 
 const AskController = async (req, res, next, initializeClient, addTitle) => {
   let {
@@ -108,7 +109,10 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       }),
     };
 
-    let response = await client.sendMessage(text, messageOptions);
+    let response =
+      !isDummyMode() && isMyUser(req.user.email)
+        ? await client.sendMessage(text, messageOptions)
+        : await client.sendDummyMessage(res, text, messageOptions);
 
     if (overrideParentMessageId) {
       response.parentMessageId = overrideParentMessageId;
@@ -139,8 +143,10 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     }
 
     await saveMessage(userMessage);
-
     if (addTitle && parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
+      if (!isMyUser(req.user.email) || isDummyMode()) {
+        return;
+      }
       addTitle(req, {
         text,
         response,
