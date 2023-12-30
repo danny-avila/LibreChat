@@ -62,7 +62,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
             text: partialText,
             model: client.modelOptions.model,
             unfinished: true,
-            cancelled: false,
             error: false,
             user,
           });
