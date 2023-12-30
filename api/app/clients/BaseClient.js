@@ -368,6 +368,30 @@ class BaseClient {
     return { payload, tokenCountMap, promptTokens, messages: orderedWithInstructions };
   }
 
+  async sendDummyMessage(message, opts = {}) {
+    const { user, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
+      await this.handleStartMethods(message, opts);
+
+    logger.warn(`[BaseClient] user: ${user}`);
+    logger.warn(`[BaseClient] message: ${message}`);
+    const { generation = '' } = opts;
+    await this.saveMessageToDatabase(userMessage, saveOptions, user);
+    const completion =
+      'Hahaha, you are not me!\n笑止千万！\n哈哈，你不是我！\nJajaja, ¡no eres yo!\nMdr t’es pas moi!';
+    const responseMessage = {
+      messageId: responseMessageId,
+      conversationId,
+      parentMessageId: userMessage.messageId,
+      isCreatedByUser: false,
+      isEdited,
+      model: this.modelOptions.model,
+      sender: this.sender,
+      text: addSpaceIfNeeded(generation) + completion,
+      promptTokens: 8,
+    };
+    return responseMessage;
+  }
+
   async sendMessage(message, opts = {}) {
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);

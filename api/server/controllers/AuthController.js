@@ -9,6 +9,7 @@ const {
   requestPasswordReset,
 } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
+const { isMyUser } = require('~/utils/user');
 
 const registrationController = async (req, res) => {
   try {
@@ -86,8 +87,8 @@ const refreshController = async (req, res) => {
 
     // 環境変数で定めたユーザーのみログインを許可
     // FIXME: Basic認証導入するまでの仮実装
-    if (user.email !== process.env.MY_USER) {
-      logger.error(`[refreshController] No admin user!! - ${user.email}`);
+    if (!isMyUser(user.email)) {
+      logger.error(`[refreshController] No my user!! - ${user.email}`);
       return res.status(401).redirect('/login');
     }
 
