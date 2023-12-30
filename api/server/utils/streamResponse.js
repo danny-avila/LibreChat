@@ -49,7 +49,6 @@ const sendError = async (res, options, callback) => {
     conversationId,
     parentMessageId,
     unfinished: false,
-    cancelled: false,
     error: true,
     final: true,
     text,

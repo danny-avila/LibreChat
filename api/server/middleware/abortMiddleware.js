@@ -67,7 +67,6 @@ const createAbortController = (req, res, getAbortData) => {
       finish_reason: 'incomplete',
       model: endpointOption.modelOptions.model,
       unfinished: false,
-      cancelled: true,
       error: false,
       isCreatedByUser: false,
       tokenCount: completionTokens,
@@ -118,7 +117,6 @@ const handleAbortError = async (res, req, error, data) => {
     if (partialText) {
       options.overrideProps = {
         error: false,
-        cancelled: false,
         unfinished: true,
         text: partialText,
         errorText: redactedErrorMessage,
