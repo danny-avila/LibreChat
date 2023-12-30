@@ -238,6 +238,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const abortConversation = (conversationId = '', submission: TSubmission) => {
     console.log(submission);
     const { endpoint } = submission?.conversation || {};
+    let res: Response;
 
     fetch(`/api/ask/${endpoint}/abort`, {
       method: 'POST',
@@ -249,9 +250,15 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         abortKey: conversationId,
       }),
     })
-      .then((response) => response.json())
+      .then((response) => {
+        res = response;
+        return response.json();
+      })
       .then((data) => {
         console.log('aborted', data);
+        if (res.status === 404) {
+          return setIsSubmitting(false);
+        }
         cancelHandler(data, submission);
       })
       .catch((error) => {
