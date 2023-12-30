@@ -30,6 +30,14 @@ npm run add-balance danny@librechat.ai 1000
 
 This works well to track your own usage for personal use; 1000 credits = $0.001 (1 mill USD)
 
+## Listing of balances
+
+To see the balances of your users, you can run:
+
+```bash
+npm run list-balances
+```
+
 ## Notes
 
 - With summarization enabled, you will be blocked from making an API request if the cost of the content that you need to summarize + your messages payload exceeds the current balance
