@@ -8,6 +8,7 @@ const errorController = require('./controllers/ErrorController');
 const configureSocialLogins = require('./socialLogins');
 const { connectDb, indexSync } = require('~/lib/db');
 const { logger } = require('~/config');
+const noIndex = require('./middleware/noIndex');
 
 const paths = require('~/config/paths');
 const routes = require('./routes');
@@ -28,6 +29,7 @@ const startServer = async () => {
   app.locals.config = paths;
 
   // Middleware
+  app.use(noIndex);
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(mongoSanitize());
