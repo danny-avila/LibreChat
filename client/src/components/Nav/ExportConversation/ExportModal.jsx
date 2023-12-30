@@ -173,10 +173,6 @@ export default function ExportModal({ open, onOpenChange, conversation }) {
           fieldValues: entries.find((e) => e.fieldName == 'unfinished').fieldValues,
         },
         {
-          fieldName: 'cancelled',
-          fieldValues: entries.find((e) => e.fieldName == 'cancelled').fieldValues,
-        },
-        {
           fieldName: 'messageId',
           fieldValues: entries.find((e) => e.fieldName == 'messageId').fieldValues,
         },
@@ -226,9 +222,6 @@ export default function ExportModal({ open, onOpenChange, conversation }) {
       if (message.unfinished) {
         data += '*(This is an unfinished message)*\n';
       }
-      if (message.cancelled) {
-        data += '*(This is a cancelled message)*\n';
-      }
       data += '\n\n';
     }
 
@@ -274,9 +267,6 @@ export default function ExportModal({ open, onOpenChange, conversation }) {
       }
       if (message.unfinished) {
         data += '(This is an unfinished message)\n';
-      }
-      if (message.cancelled) {
-        data += '(This is a cancelled message)\n';
       }
       data += '\n\n';
     }
