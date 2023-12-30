@@ -34,7 +34,7 @@ const App = () => {
                   <RouterProvider router={router} />
                   <ReactQueryDevtools initialIsOpen={false} position="top-right" />
                   <Toast />
-                  <RadixToast.Viewport className="pointer-events-none fixed inset-0 z-[60] mx-auto my-2 flex max-w-[560px] flex-col items-stretch justify-start md:pb-5" />
+                  <RadixToast.Viewport className="pointer-events-none fixed inset-0 z-[1000] mx-auto my-2 flex max-w-[560px] flex-col items-stretch justify-start md:pb-5" />
                 </DndProvider>
               </AssistantsProvider>
             </ToastProvider>

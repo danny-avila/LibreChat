@@ -83,3 +83,5 @@ auth.json
 
 /packages/ux-shared/
 /images
+
+!client/src/components/Nav/SettingsTabs/Data/
