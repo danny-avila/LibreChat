@@ -95,8 +95,6 @@ const handleAbortError = async (res, req, error, data) => {
   logger.error('[handleAbortError] AI response error; aborting request:', error);
   const { sender, conversationId, messageId, parentMessageId, partialText } = data;
 
-  const redactedErrorMessage = redactMessage(error.message);
-
   if (error.stack && error.stack.includes('google')) {
     logger.warn(
       `AI Response error for conversation ${conversationId} likely caused by Google censor/filter`,
@@ -109,7 +107,7 @@ const handleAbortError = async (res, req, error, data) => {
       messageId,
       conversationId,
       parentMessageId,
-      text: redactedErrorMessage,
+      text: redactMessage(error.message),
       shouldSaveMessage: true,
       user: req.user.id,
     };
@@ -119,7 +117,6 @@ const handleAbortError = async (res, req, error, data) => {
         error: false,
         unfinished: true,
         text: partialText,
-        errorText: redactedErrorMessage,
       };
     }
 
