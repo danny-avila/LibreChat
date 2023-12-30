@@ -91,7 +91,6 @@ router.post(
             text: partialText,
             model: endpointOption.modelOptions.model,
             unfinished: true,
-            cancelled: false,
             error: false,
             plugins,
             user,
@@ -116,20 +115,18 @@ router.post(
       sendIntermediateMessage(res, { plugins });
     };
 
-      if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-        lastSavedTimestamp = currentTimestamp;
-        saveMessage({
-          messageId: responseMessageId,
-          sender,
-          conversationId,
-          parentMessageId: overrideParentMessageId || userMessageId,
-          text: partialText,
-          model: endpointOption.modelOptions.model,
-          unfinished: true,
-          error: false,
-          plugins,
-          user,
-        });
+    const onToolStart = async (tool, input, runId, parentRunId) => {
+      const pluginName = pluginMap.get(parentRunId);
+      const latestPlugin = {
+        runId,
+        loading: true,
+        inputs: [input],
+        latest: pluginName,
+        outputs: null,
+      };
+
+      if (streaming) {
+        await streaming;
       }
       const extraTokens = ':::plugin:::\n';
       plugins.push(latestPlugin);
