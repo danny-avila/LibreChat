@@ -4,8 +4,15 @@ const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
 // const { genAzureEndpoint } = require('~/utils/genAzureEndpoints');
+const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const {
+  saveImageToFirebaseStorage,
+  getFirebaseStorageImageUrl,
+  getFirebaseStorage,
+} = require('~/server/services/Files/Firebase');
+const { getImageBasename } = require('~/server/services/Files/images');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const saveImageFromUrl = require('./saveImageFromUrl');
 const { logger } = require('~/config');
@@ -15,7 +22,9 @@ class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
 
+    this.userId = fields.userId;
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
+
     const config = { apiKey };
     if (DALLE_REVERSE_PROXY) {
       config.baseURL = extractBaseURL(DALLE_REVERSE_PROXY);
@@ -24,7 +33,6 @@ class OpenAICreateImage extends Tool {
     if (PROXY) {
       config.httpAgent = new HttpsProxyAgent(PROXY);
     }
-
     // let azureKey = fields.AZURE_API_KEY || process.env.AZURE_API_KEY;
 
     // if (azureKey) {
@@ -97,12 +105,11 @@ Guidelines:
       throw new Error('No image URL returned from OpenAI API.');
     }
 
-    const regex = /img-[\w\d]+.png/;
-    const match = theImageUrl.match(regex);
-    let imageName = '1.png';
+    const imageBasename = getImageBasename(theImageUrl);
+    let imageName = `image_${uuidv4()}.png`;
 
-    if (match) {
-      imageName = match[0];
+    if (imageBasename) {
+      imageName = imageBasename;
       logger.debug('[DALL-E]', { imageName }); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
     } else {
       logger.debug('[DALL-E] No image name found in the string.', {
@@ -111,7 +118,18 @@ Guidelines:
       });
     }
 
-    this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', 'client', 'public', 'images');
+    this.outputPath = path.resolve(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      '..',
+      'client',
+      'public',
+      'images',
+      this.userId,
+    );
+
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
 
@@ -120,14 +138,25 @@ Guidelines:
       fs.mkdirSync(this.outputPath, { recursive: true });
     }
 
-    try {
-      await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
-      this.result = this.getMarkdownImageUrl(imageName);
-    } catch (error) {
-      logger.error('Error while saving the DALL-E image:', error);
-      this.result = theImageUrl;
+    const storage = getFirebaseStorage();
+    if (storage) {
+      try {
+        await saveImageToFirebaseStorage(this.userId, theImageUrl, imageName);
+        this.result = await getFirebaseStorageImageUrl(`${this.userId}/${imageName}`);
+        logger.debug('[DALL-E] result: ' + this.result);
+      } catch (error) {
+        logger.error('Error while saving the image to Firebase Storage:', error);
+        this.result = `Failed to save the image to Firebase Storage. ${error.message}`;
+      }
+    } else {
+      try {
+        await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
+        this.result = this.getMarkdownImageUrl(imageName);
+      } catch (error) {
+        logger.error('Error while saving the image locally:', error);
+        this.result = `Failed to save the image locally. ${error.message}`;
+      }
     }
-
     return this.result;
   }
 }

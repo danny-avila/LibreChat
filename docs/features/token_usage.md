@@ -1,3 +1,8 @@
+---
+title: 🪙 Token Usage
+description: This doc covers how to track and control your token usage for the OpenAI/Plugins endpoints in LibreChat. You will learn how to view your transactions, enable user balances, and add credits to your account.
+weight: -7
+---
 # Token Usage
 
 As of v6.0.0, LibreChat accurately tracks token usage for the OpenAI/Plugins endpoints.

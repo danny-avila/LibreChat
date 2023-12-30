@@ -1,3 +1,9 @@
+---
+title: 🪟 Windows
+description: Windows Installation Guides
+weight: 0
+---
+
 # Windows Installation Guide
 
 ## **Recommended:**
@@ -21,8 +27,8 @@ In this video we're going to install LibreChat on Windows 11 using Docker and Gi
 
 #### Instructions
 - To install LibreChat, you need Docker desktop and Git. Download them from these links:
-  - Docker desktop: https://www.docker.com/products/docke...
-  - Git: https://git-scm.com/download/win
+  - Docker desktop: **[https://docs.docker.com/desktop/install/windows-install/](https://docs.docker.com/desktop/install/windows-install/)**
+  - Git: **[https://git-scm.com/download/win](https://git-scm.com/download/win)**
 - Follow the steps in the video to install and run Docker desktop and Git.
 - Open a terminal in the root of the C drive and enter these commands:
   - `git clone https://github.com/danny-avila/LibreChat`
@@ -31,10 +37,14 @@ In this video we're going to install LibreChat on Windows 11 using Docker and Gi
   - `docker-compose up`
 - Visit http://localhost:3080/ to access LibreChat. Create an account and start chatting.
 
-- [Manage Your MongoDB Database  (optional)](../features/manage_your_database.md)
+- [Manage Your MongoDB Database  (optional)](../../features/manage_your_database.md)
 Safely access and manage your MongoDB database using Mongo Express
 
 Have fun!
+
+> Note: See the [Docker Compose Install Guide](./docker_compose_install.md) for more details 
+
+- 👆 Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
 
 ---
 ## **Manual Installation**
@@ -42,34 +52,30 @@ Have fun!
 - Install the prerequisites on your machine 👇
 
 ### Download and Install Node.js (Required)
-    
-  - Navigate to https://nodejs.org/en/download and to download the latest Node.js version for your OS (The Node.js installer includes the NPM package manager.)
+
+  - Navigate to **[https://nodejs.org/en/download](https://nodejs.org/en/download)** and to download the latest Node.js version for your OS (The Node.js installer includes the NPM package manager.)
 
 ### Download and Install Git (Recommended)
 - Git: https://git-scm.com/download/win
 
-### [Create a MongoDB database](mongodb.md) (Required)
-    
-### [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
-- You must set up at least one of these tokens or APIs to run the app.
+### [Create a MongoDB database](../configuration/mongodb.md) (Required)
+
+### [Setup your AI Endpoints](../configuration/ai_setup.md) (Required)
+- At least one AI endpoint should be setup for use.
 
 ### Download LibreChat (Required)
-  - (With Git) Open Terminal (command prompt) and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
-  - Or download the latest release here: https://github.com/danny-avila/LibreChat/releases/
-  - Or by clicking on the green code button in the top of the page and selecting "Download ZIP"
-  - If you downloaded a zip file, extract the content in "C:/LibreChat/" 
+  - Open Terminal (command prompt) and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
   - **IMPORTANT : If you install the files somewhere else modify the instructions accordingly**
   
 ### Enable the Conversation search feature: (optional)
-		
-  - Download MeiliSearch latest release from : https://github.com/meilisearch/meilisearch/releases
+
+  - Download MeiliSearch latest release from : **[github.com/meilisearch](https://github.com/meilisearch/meilisearch/releases)**
   - Copy it to "C:/LibreChat/"
   - Rename the file to "meilisearch.exe"
   - Open it by double clicking on it
   - Copy the generated Master Key and save it somewhere (You will need it later)
-    
 
-### [User/Auth System](../install/user_auth_system.md) (Optional)
+### [User/Auth System](../configuration/user_auth_system.md) (Optional)
 - How to set up the user/auth system and Google login.
 
 ## Setup and Run LibreChat
@@ -81,7 +87,7 @@ Using the command line (in the root directory)
 ### To use the app:
 1. Run `npm run backend`
 2. Run `meilisearch --master-key <meilisearch_Master_Key>` (Only if SEARCH=TRUE)
-3. Visit http://localhost:3080 (default port) & enjoy
+3. Visit `http://localhost:3080` (default port) & enjoy
 
 ### Using a batch file
 
@@ -90,7 +96,7 @@ Using the command line (in the root directory)
   - Paste the following code in a new document
   - The meilisearch executable needs to be at the root of the LibreChat directory
   - Put your MeiliSearch master key instead of "`<meilisearch_Master_Key>`"
-  - Save the file as "C:/LibreChat/LibreChat.bat"
+  - Save the file as `C:/LibreChat/LibreChat.bat`
   - you can make a shortcut of this batch file and put it anywhere
 
   ```bat title="LibreChat.bat"
@@ -108,28 +114,6 @@ Using the command line (in the root directory)
 - Run `npm run update` from the project directory for a clean installation.
 
 If you're having issues running this command, you can try running what the script does manually:
-
-### Docker
-
-```bash
-# Fetch the latest changes from Github
-git fetch origin
-# Switch to the repo's main branch
-git checkout main
-# Pull the latest changes to the main branch from Github
-git pull origin main
-# Prune all LibreChat Docker images
-docker rmi librechat:latest
-# Remove all unused dangling Docker images
-docker image prune -f
-# Building a new LibreChat image
-docker-compose build
-
-# Start LibreChat
-docker-compose up
-```
-
-### Local (npm)
 
 ```powershell
 # Windows PowerShell terminal 

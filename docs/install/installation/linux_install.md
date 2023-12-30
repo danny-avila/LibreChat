@@ -1,3 +1,8 @@
+---
+title: 🐧 Linux
+description: Linux Installation Guides
+weight: 0
+---
 # Linux Installation Guide
 ## **Recommended:**
 
@@ -32,13 +37,14 @@ Here are the steps to follow:
 
 Note: If you run the command on the same computer and want to access it, navigate to `localhost:3080`. You should see a login page where you can create or sign in to your account. Then you can choose an AI model and start chatting.
 
-- [Manage Your MongoDB Database (optional)](../features/manage_your_database.md)
+- [Manage Your MongoDB Database (optional)](../../features/manage_your_database.md)
 Safely access and manage your MongoDB database using Mongo Express
 
 Have fun!
 
----
-## **[Docker Install](docker_compose_install.md)** (General documentation)
+> Note: See the [Docker Compose Install Guide](./docker_compose_install.md) for more details 
+- 👆 Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
+
 ---
 
 ## **Manual Installation:**
@@ -68,17 +74,17 @@ Note: The above command extracts the files to "/usr/local/LibreChat". If you wan
 
 ## Enable the Conversation search feature: (optional)
 
-- Download MeiliSearch latest release from: https://github.com/meilisearch/meilisearch/releases
-- Copy it to "/usr/local/LibreChat/"
-- Rename the file to "meilisearch"
-- Open a terminal and navigate to "/usr/local/LibreChat/"
+- Download MeiliSearch latest release from: **[github.com/meilisearch](https://github.com/meilisearch/meilisearch/releases)**
+- Copy it to `/usr/local/LibreChat/`
+- Rename the file to `meilisearch`
+- Open a terminal and navigate to `/usr/local/LibreChat/`
 - Run the following command:
 
 ```bash
 ./meilisearch --master-key=YOUR_MASTER_KEY
 ```
 
-Note: Replace "YOUR_MASTER_KEY" with the generated master key, which you saved earlier.
+Note: Replace `YOUR_MASTER_KEY` with the generated master key, which you saved earlier.
 
 ## Install Node.js:
 
@@ -89,12 +95,12 @@ curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt-get install -y nodejs
 ```
 
-## [Create a MongoDB database](mongodb.md) (Required)
+## [Create a MongoDB database](../configuration/mongodb.md) (Required)
 
-## [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
-- You must set up at least one of these tokens or APIs to run the app.
+## [Setup your AI Endpoints](../configuration/ai_setup.md) (Required)
+- At least one AI endpoint should be setup for use.
 
-## [User/Auth System](../install/user_auth_system.md) (Optional)
+## [User/Auth System](../configuration/user_auth_system.md) (Optional)
 - How to set up the user/auth system and Google login.
 
 ## Run the project
@@ -136,28 +142,6 @@ gnome-terminal --tab --title="LibreChat" --working-directory=/home/user/LibreCha
 If you're having issues running this command, you can try running what the script does manually:
 
 Prefix commands with `sudo` according to your environment permissions.
-
-### Docker
-
-```bash
-# Fetch the latest changes from Github
-git fetch origin
-# Switch to the repo's main branch
-git checkout main
-# Pull the latest changes to the main branch from Github
-git pull origin main
-# Prune all LibreChat Docker images
-docker rmi librechat:latest
-# Remove all unused dangling Docker images
-docker image prune -f
-# Building a new LibreChat image
-docker-compose build
-
-# Start LibreChat
-docker-compose up
-```
-
-### Local (npm)
 
 ```bash
 # Bash Terminal

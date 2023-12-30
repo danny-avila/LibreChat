@@ -1,38 +1,45 @@
+---
+title: 🍎 Mac
+description: Mac Installation Guides
+weight: 0
+---
+
 # Mac Installation Guide
 ## **Recommended : [Docker Install](docker_compose_install.md)**
+- 👆 Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
 
 ---
 
 ## **Manual Installation**
 
 ### Install the prerequisites (Required)
-- Install Homebrew (if not already installed) by following the instructions on https://brew.sh/
+- Install Homebrew (if not already installed) by following the instructions on **[brew.sh](https://brew.sh/)**
 - Install Node.js and npm by running `brew install node`
 
 ### Download LibreChat (Required)
 - Open Terminal and clone the repository by running `git clone https://github.com/danny-avila/LibreChat.git`
 - Change into the cloned directory by running `cd LibreChat`
-- Create a .env file in the api directory by running `cp .env.example .env` 
+- Create a .env file by running `cp .env.example .env`
 - Install dependencies by running: `npm ci`
 - Build the client by running: `npm run frontend`
 
-> You will only need to add your `MONGO_URI` (next step) for LibreChat to work. Make sure LibreChat works with the basic configuration first, you can always come back to the `.env` later for advanced configurations. See: [.env configuration](dotenv.md)
+> You will only need to add your `MONGO_URI` (next step) for LibreChat to work. Make sure LibreChat works with the basic configuration first, you can always come back to the `.env` later for advanced configurations. See: [.env configuration](../configuration/dotenv.md)
 
 ### Create a MongoDB database (Required)
-- [Create an online MongoDB database](mongodb.md) **or** Install MongoDB by running `brew tap mongodb/brew` and `brew install mongodb-community`
+- [Create an online MongoDB database](../configuration/mongodb.md) **or** Install MongoDB by running `brew tap mongodb/brew` and `brew install mongodb-community`
 - add your `MONGO_URI` in the .env file (use vscode or any text editor)
 
 > Choose only one option, online or brew. Both have pros and cons
 
-### [Get Your API keys and Tokens](apis_and_tokens.md) (Required)
-- You must set up at least one of these tokens or APIs to run the app.
+### [Setup your AI Endpoints](../configuration/ai_setup.md) (Required)
+- At least one AI endpoint should be setup for use.
 
-### [User/Auth System](../install/user_auth_system.md) (Optional)
+### [User/Auth System](../configuration/user_auth_system.md) (Optional)
 - Set up the user/auth system and various social logins.
 
 ### **Download MeiliSearch for macOS (Optional):**
 - This enables the conversation search feature
-- You can download the latest MeiliSearch binary for macOS from their GitHub releases page: https://github.com/meilisearch/MeiliSearch/releases
+- You can download the latest MeiliSearch binary for macOS from their GitHub releases page: **[github.com/meilisearch](https://github.com/meilisearch/meilisearch/releases)**
   - Look for the file named `meilisearch-macos-amd64` (or the equivalent for your system architecture) and download it.
 
 - **Make the binary executable:**
