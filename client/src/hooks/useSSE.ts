@@ -64,7 +64,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           messageId: message?.overrideParentMessageId + '_',
           plugin: plugin ?? null,
           plugins: plugins ?? [],
-          submitting: true,
           // unfinished: true
         },
       ]);
@@ -79,7 +78,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           messageId: message?.messageId + '_',
           plugin: plugin ?? null,
           plugins: plugins ?? [],
-          submitting: true,
           // unfinished: true
         },
       ]);
@@ -136,7 +134,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           ...initialResponse,
           parentMessageId: message?.overrideParentMessageId ?? null,
           messageId: message?.overrideParentMessageId + '_',
-          submitting: true,
         },
       ]);
     } else {
@@ -147,7 +144,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           ...initialResponse,
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
-          submitting: true,
         },
       ]);
     }
