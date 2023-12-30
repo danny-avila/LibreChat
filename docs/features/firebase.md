@@ -72,3 +72,32 @@ FIREBASE_STORAGE_BUCKET=storage_bucket #storageBucket
 FIREBASE_MESSAGING_SENDER_ID=messaging_sender_id #messagingSenderId
 FIREBASE_APP_ID=1:your_app_id #appId
 ```
+
+- Return one last time to the Project Overview.
+
+![Project Overview](https://github.com/danny-avila/LibreChat/assets/81851188/c425f4bb-a494-42f2-9fdc-ff2c8ce005e1)
+
+- Select `Storage`
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/16a0f850-cdd4-4875-8342-ab67bfb59804)
+
+- Select `Rules` and delete `: if false;` on this line: `allow read, write: if false;`
+
+    - your updated rules should look like this:
+
+    ```bash
+    rules_version = '2';
+    service firebase.storage {
+      match /b/{bucket}/o {
+        match /{allPaths=**} {
+          allow read, write 
+        }
+      }
+    }
+    ```
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/c190011f-c1a6-47c7-986e-8d309b5f8704)
+
+- Publish your updated rules
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/5e6a17c3-5aba-419a-a18f-be910b1f25d5)
