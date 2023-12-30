@@ -1,7 +1,7 @@
 ---
 title: 🪵 Logging System
+weight: -4
 description: This doc explains how to use the logging feature of LibreChat, which saves error and debug logs in the `/api/logs` folder. You can use these logs to troubleshoot issues, monitor your server, and report bugs. You can also disable debug logs if you want to save space.
-weight: -5
 ---
 
 ### General

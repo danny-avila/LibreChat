@@ -44,6 +44,7 @@
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^6.9.0",
     "express-session": "^1.17.3",
+    "firebase": "^10.6.0",
     "googleapis": "^126.0.1",
     "handlebars": "^4.7.7",
     "html": "^1.0.0",

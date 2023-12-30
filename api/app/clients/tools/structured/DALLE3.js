@@ -4,10 +4,17 @@ const fs = require('fs');
 const path = require('path');
 const { z } = require('zod');
 const OpenAI = require('openai');
+const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const saveImageFromUrl = require('../saveImageFromUrl');
+const {
+  saveImageToFirebaseStorage,
+  getFirebaseStorageImageUrl,
+  getFirebaseStorage,
+} = require('~/server/services/Files/Firebase');
+const { getImageBasename } = require('~/server/services/Files/images');
 const extractBaseURL = require('~/utils/extractBaseURL');
+const saveImageFromUrl = require('../saveImageFromUrl');
 const { logger } = require('~/config');
 
 const { DALLE3_SYSTEM_PROMPT, DALLE_REVERSE_PROXY, PROXY } = process.env;
@@ -15,6 +22,7 @@ class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
 
+    this.userId = fields.userId;
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
     const config = { apiKey };
     if (DALLE_REVERSE_PROXY) {
@@ -108,12 +116,12 @@ class DALLE3 extends Tool {
         n: 1,
       });
     } catch (error) {
-      return `Something went wrong when trying to generate the image. The DALL-E API may unavailable:
+      return `Something went wrong when trying to generate the image. The DALL-E API may be unavailable:
 Error Message: ${error.message}`;
     }
 
     if (!resp) {
-      return 'Something went wrong when trying to generate the image. The DALL-E API may unavailable';
+      return 'Something went wrong when trying to generate the image. The DALL-E API may be unavailable';
     }
 
     const theImageUrl = resp.data[0].url;
@@ -122,12 +130,11 @@ Error Message: ${error.message}`;
       return 'No image URL returned from OpenAI API. There may be a problem with the API or your configuration.';
     }
 
-    const regex = /img-[\w\d]+.png/;
-    const match = theImageUrl.match(regex);
-    let imageName = '1.png';
+    const imageBasename = getImageBasename(theImageUrl);
+    let imageName = `image_${uuidv4()}.png`;
 
-    if (match) {
-      imageName = match[0];
+    if (imageBasename) {
+      imageName = imageBasename;
       logger.debug('[DALL-E-3]', { imageName }); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
     } else {
       logger.debug('[DALL-E-3] No image name found in the string.', {
@@ -146,6 +153,7 @@ Error Message: ${error.message}`;
       'client',
       'public',
       'images',
+      this.userId,
     );
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
@@ -154,13 +162,24 @@ Error Message: ${error.message}`;
     if (!fs.existsSync(this.outputPath)) {
       fs.mkdirSync(this.outputPath, { recursive: true });
     }
-
-    try {
-      await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
-      this.result = this.getMarkdownImageUrl(imageName);
-    } catch (error) {
-      logger.error('Error while saving the image:', error);
-      this.result = theImageUrl;
+    const storage = getFirebaseStorage();
+    if (storage) {
+      try {
+        await saveImageToFirebaseStorage(this.userId, theImageUrl, imageName);
+        this.result = await getFirebaseStorageImageUrl(`${this.userId}/${imageName}`);
+        logger.debug('[DALL-E-3] result: ' + this.result);
+      } catch (error) {
+        logger.error('Error while saving the image to Firebase Storage:', error);
+        this.result = `Failed to save the image to Firebase Storage. ${error.message}`;
+      }
+    } else {
+      try {
+        await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
+        this.result = this.getMarkdownImageUrl(imageName);
+      } catch (error) {
+        logger.error('Error while saving the image locally:', error);
+        this.result = `Failed to save the image locally. ${error.message}`;
+      }
     }
 
     return this.result;
