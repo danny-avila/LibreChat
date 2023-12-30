@@ -1,6 +1,6 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { getResponseSender, EModelEndpoint } = require('librechat-data-provider');
+const { getResponseSender } = require('librechat-data-provider');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { encodeAndFormat, validateVisionModel } = require('~/server/services/Files/images');
 const { getModelMaxTokens, genAzureChatCompletion, extractBaseURL } = require('~/utils');
@@ -146,7 +146,7 @@ class OpenAIClient extends BaseClient {
       this.options.sender ??
       getResponseSender({
         model: this.modelOptions.model,
-        endpoint: EModelEndpoint.openAI,
+        endpoint: this.options.endpoint,
         chatGptLabel: this.options.chatGptLabel,
       });
 

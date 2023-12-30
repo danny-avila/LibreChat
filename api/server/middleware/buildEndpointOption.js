@@ -8,6 +8,7 @@ const { parseConvo, EModelEndpoint } = require('librechat-data-provider');
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
   [EModelEndpoint.google]: google.buildOptions,
+  [EModelEndpoint.custom]: openAI.buildOptions,
   [EModelEndpoint.azureOpenAI]: openAI.buildOptions,
   [EModelEndpoint.anthropic]: anthropic.buildOptions,
   [EModelEndpoint.gptPlugins]: gptPlugins.buildOptions,

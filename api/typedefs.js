@@ -280,8 +280,8 @@
  * @property {boolean|{userProvide: boolean}} [chatGPTBrowser] - Flag to indicate if ChatGPT Browser endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [anthropic] - Flag to indicate if Anthropic endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [bingAI] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
- * @property {boolean|{userProvide: boolean}} [bingAI] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
- * @property {boolean|{userProvide: boolean}} [bingAI] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
+ * @property {boolean|{userProvide: boolean}} [google] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
+ * @property {boolean|{userProvide: boolean}} [custom] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
  * @memberof typedefs
  */
 
@@ -313,6 +313,7 @@
  * @property {boolean|{userProvide: boolean}} [anthropic] - Flag to indicate if Anthropic endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [bingAI] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [google] - Flag to indicate if Google endpoint is user provided, or its configuration.
+ * @property {boolean|{userProvide: boolean}} [custom] - Flag to indicate if Google endpoint is user provided, or its configuration.
  * @property {boolean|GptPlugins} [gptPlugins] - Configuration for GPT plugins.
  * @memberof typedefs
  */

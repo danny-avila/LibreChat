@@ -95,7 +95,6 @@ const agentOptions = {
     // default: null,
     required: false,
   },
-  // for google only
   modelLabel: {
     type: String,
     // default: null,

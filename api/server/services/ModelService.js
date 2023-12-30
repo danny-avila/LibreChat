@@ -21,6 +21,7 @@ const {
   CHATGPT_MODELS,
   ANTHROPIC_MODELS,
   GOOGLE_MODELS,
+  CUSTOM_MODELS,
   PROXY,
 } = process.env ?? {};
 
@@ -141,9 +142,19 @@ const getGoogleModels = () => {
   return models;
 };
 
+const getCustomModels = () => {
+  let models = defaultModels[EModelEndpoint.custom];
+  if (CUSTOM_MODELS) {
+    models = String(CUSTOM_MODELS).split(',');
+  }
+
+  return models;
+};
+
 module.exports = {
   getOpenAIModels,
   getChatGPTBrowserModels,
   getAnthropicModels,
   getGoogleModels,
+  getCustomModels,
 };

@@ -9,7 +9,7 @@ const { config } = require('./EndpointService');
  */
 async function loadDefaultEndpointsConfig() {
   const { google, gptPlugins } = await loadAsyncEndpoints();
-  const { openAI, bingAI, anthropic, azureOpenAI, chatGPTBrowser } = config;
+  const { openAI, bingAI, anthropic, azureOpenAI, chatGPTBrowser, custom } = config;
 
   let enabledEndpoints = [
     EModelEndpoint.openAI,
@@ -19,6 +19,7 @@ async function loadDefaultEndpointsConfig() {
     EModelEndpoint.chatGPTBrowser,
     EModelEndpoint.gptPlugins,
     EModelEndpoint.anthropic,
+    EModelEndpoint.custom,
   ];
 
   const endpointsEnv = process.env.ENDPOINTS || '';
@@ -37,6 +38,7 @@ async function loadDefaultEndpointsConfig() {
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
     [EModelEndpoint.gptPlugins]: gptPlugins,
     [EModelEndpoint.anthropic]: anthropic,
+    [EModelEndpoint.custom]: custom,
   };
 
   const orderedAndFilteredEndpoints = enabledEndpoints.reduce((config, key, index) => {
