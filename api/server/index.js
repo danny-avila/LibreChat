@@ -4,6 +4,7 @@ const cors = require('cors');
 const express = require('express');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
+const { initializeFirebase } = require('~/server/services/Files/Firebase/initialize');
 const errorController = require('./controllers/ErrorController');
 const configureSocialLogins = require('./socialLogins');
 const { connectDb, indexSync } = require('~/lib/db');
@@ -23,6 +24,7 @@ const { jwtLogin, passportLogin } = require('~/strategies');
 const startServer = async () => {
   await connectDb();
   logger.info('Connected to MongoDB');
+  initializeFirebase();
   await indexSync();
 
   const app = express();
