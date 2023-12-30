@@ -6,6 +6,7 @@ import {
   PluginMinimalIcon,
   BingAIMinimalIcon,
   GoogleMinimalIcon,
+  CustomMinimalIcon,
   AnthropicIcon,
 } from '~/components/svg';
 import { cn } from '~/utils';
@@ -31,6 +32,10 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.anthropic]: {
       icon: <AnthropicIcon className="icon-md shrink-0 dark:text-white" />,
       name: props.modelLabel || 'Claude',
+    },
+    [EModelEndpoint.custom]: {
+      icon: <CustomMinimalIcon />,
+      name: 'Custom',
     },
     [EModelEndpoint.bingAI]: { icon: <BingAIMinimalIcon />, name: 'BingAI' },
     [EModelEndpoint.chatGPTBrowser]: { icon: <LightningIcon />, name: 'ChatGPT' },

@@ -4,6 +4,7 @@ import {
   GPTIcon,
   AnthropicIcon,
   AzureMinimalIcon,
+  CustomMinimalIcon,
   PaLMIcon,
   CodeyIcon,
   GeminiIcon,
@@ -93,6 +94,10 @@ const Icon: React.FC<IconProps> = (props) => {
             ? '#AB68FF'
             : `rgba(0, 163, 255, ${button ? 0.75 : 1})`,
         name: 'ChatGPT',
+      },
+      [EModelEndpoint.custom]: {
+        icon: <CustomMinimalIcon size={size * 0.7} />,
+        name: 'Custom',
       },
       null: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'N/A' },
       default: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'UNKNOWN' },
