@@ -112,16 +112,18 @@ const EditController = async (req, res, next, initializeClient) => {
       response = { ...response, ...metadata };
     }
 
-    await saveMessage({ ...response, user });
+    if (!abortController.signal.aborted) {
+      sendMessage(res, {
+        title: await getConvoTitle(user, conversationId),
+        final: true,
+        conversation: await getConvo(user, conversationId),
+        requestMessage: userMessage,
+        responseMessage: response,
+      });
+      res.end();
 
-    sendMessage(res, {
-      title: await getConvoTitle(user, conversationId),
-      final: true,
-      conversation: await getConvo(user, conversationId),
-      requestMessage: userMessage,
-      responseMessage: response,
-    });
-    res.end();
+      await saveMessage({ ...response, user });
+    }
   } catch (error) {
     const partialText = getPartialText();
     handleAbortError(res, req, error, {
