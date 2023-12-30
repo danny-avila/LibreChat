@@ -6,7 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { execSync } = require('child_process');
-const { connectDb } = require('@librechat/backend/lib/db');
+require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const connectDb = require('~/lib/db/connectDb');
 
 const askQuestion = (query) => {
   const rl = readline.createInterface({
