@@ -4,11 +4,12 @@ const { getLogStores } = require('~/cache');
 
 async function endpointController(req, res) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  const endpointConfig = await cache.get(CacheKeys.ENDPOINT_CONFIG);
-  if (endpointConfig) {
-    res.send(endpointConfig);
+  const cachedEndpointsConfig = await cache.get(CacheKeys.ENDPOINT_CONFIG);
+  if (cachedEndpointsConfig) {
+    res.send(cachedEndpointsConfig);
     return;
   }
+
   const endpointsConfig = await loadDefaultEndpointsConfig();
   await cache.set(CacheKeys.ENDPOINT_CONFIG, endpointsConfig);
   res.send(JSON.stringify(endpointsConfig));
