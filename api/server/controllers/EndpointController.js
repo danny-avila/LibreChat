@@ -1,5 +1,5 @@
 const { CacheKeys } = require('librechat-data-provider');
-const { loadDefaultEndpointsConfig } = require('~/server/services/Config');
+const { loadDefaultEndpointsConfig, loadConfigEndpoints } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
 async function endpointController(req, res) {
@@ -10,7 +10,11 @@ async function endpointController(req, res) {
     return;
   }
 
-  const endpointsConfig = await loadDefaultEndpointsConfig();
+  const defaultEndpointsConfig = await loadDefaultEndpointsConfig();
+  const customConfigEndpoints = await loadConfigEndpoints();
+
+  const endpointsConfig = { ...defaultEndpointsConfig, ...customConfigEndpoints };
+
   await cache.set(CacheKeys.ENDPOINT_CONFIG, endpointsConfig);
   res.send(JSON.stringify(endpointsConfig));
 }
