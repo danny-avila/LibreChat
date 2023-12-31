@@ -7,20 +7,25 @@ const apiRoot = path.resolve(__dirname, '..', '..', '..');
 const configPath = path.resolve(apiRoot, 'data', 'custom-config.yaml');
 
 /**
- * Load custom endpoints and caches the configuration object
- * @function loadCustomConfig */
+ * Load custom configuration files and caches the object if the `cache` field at root is true.
+ * @function loadCustomConfig
+ * @returns {Promise<null | Object>} A promise that resolves to null or the custom config object.
+ * */
+
 async function loadCustomConfig() {
   const customConfig = loadYaml(configPath);
   if (!customConfig) {
     return null;
   }
 
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
+  if (customConfig.cache) {
+    const cache = getLogStores(CacheKeys.CONFIG_STORE);
+    await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
+  }
 
   // TODO: handle remote config
 
-  // return customConfig;
+  return customConfig;
 }
 
 module.exports = loadCustomConfig;
