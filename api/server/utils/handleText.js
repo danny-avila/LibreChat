@@ -165,6 +165,14 @@ function isEnabled(value) {
   return false;
 }
 
+/**
+ * Checks if the provided value is 'user_provided'.
+ *
+ * @param {string} value - The value to check.
+ * @returns {boolean} - Returns true if the value is 'user_provided', otherwise false.
+ */
+const isUserProvided = (value) => value === 'user_provided';
+
 module.exports = {
   createOnProgress,
   isEnabled,
@@ -172,4 +180,5 @@ module.exports = {
   formatSteps,
   formatAction,
   addSpaceIfNeeded,
+  isUserProvided,
 };
