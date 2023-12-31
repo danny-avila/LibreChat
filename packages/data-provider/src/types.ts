@@ -1,5 +1,11 @@
 import OpenAI from 'openai';
-import type { TResPlugin, TMessage, TConversation, TEndpointOption } from './schemas';
+import type {
+  TResPlugin,
+  TMessage,
+  TConversation,
+  TEndpointOption,
+  EModelEndpoint,
+} from './schemas';
 
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
@@ -115,7 +121,10 @@ export type TSearchResults = {
 
 export type TConfig = {
   availableModels?: [];
+  name?: string;
   userProvide?: boolean | null;
+  userProvideURL?: boolean | null;
+  type?: EModelEndpoint;
   availableTools?: [];
   plugins?: Record<string, string>;
   azure?: boolean;
