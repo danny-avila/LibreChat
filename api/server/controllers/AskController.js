@@ -106,7 +106,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     let response = isMyUser(req.user.email)
       ? await client.sendMessage(text, messageOptions)
-      : await client.sendDummyMessage(text, messageOptions);
+      : await client.sendDummyMessage(res, text, messageOptions);
 
     if (overrideParentMessageId) {
       response.parentMessageId = overrideParentMessageId;
