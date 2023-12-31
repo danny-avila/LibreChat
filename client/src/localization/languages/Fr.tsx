@@ -36,8 +36,9 @@ export default {
   com_ui_enter: 'Entrer',
   com_ui_submit: 'Soumettre',
   com_ui_upload_success: 'Fichier téléversé avec succès',
-  com_ui_upload_error: 'Une erreur s\'est produite lors du téléversement de votre fichier', 
-  com_ui_upload_invalid: 'Fichier invalide pour le téléversement. Doit être une image ne dépassant pas 2 Mo',
+  com_ui_upload_error: 'Une erreur s\'est produite lors du téléversement de votre fichier',
+  com_ui_upload_invalid:
+    'Fichier invalide pour le téléversement. Doit être une image ne dépassant pas 2 Mo',
   com_ui_cancel: 'Annuler',
   com_ui_save: 'Sauvegarder',
   com_ui_copy_to_clipboard: 'Copier dans le presse-papier',
@@ -191,17 +192,21 @@ export default {
   com_endpoint_set_custom_name:
     'Définir un nom personnalisé, au cas où vous trouveriez ce préréglage',
   com_endpoint_preset_delete_confirm: 'Êtes-vous sûr de vouloir supprimer ce préréglage ?',
-  com_endpoint_preset_clear_all_confirm: 'Êtes-vous sûr de vouloir supprimer tous vos préréglages ?',
+  com_endpoint_preset_clear_all_confirm:
+    'Êtes-vous sûr de vouloir supprimer tous vos préréglages ?',
   com_endpoint_preset_import: 'Préréglage importé !',
-  com_endpoint_preset_import_error: 'Il y a eu une erreur lors de l\'importation de votre préréglage. Veuillez réessayer.',
-  com_endpoint_preset_save_error: 'Il y a eu une erreur lors de la sauvegarde de votre préréglage. Veuillez réessayer.',
-  com_endpoint_preset_delete_error: 'Il y a eu une erreur lors de la suppression de votre préréglage. Veuillez réessayer.',
+  com_endpoint_preset_import_error:
+    'Il y a eu une erreur lors de l\'importation de votre préréglage. Veuillez réessayer.',
+  com_endpoint_preset_save_error:
+    'Il y a eu une erreur lors de la sauvegarde de votre préréglage. Veuillez réessayer.',
+  com_endpoint_preset_delete_error:
+    'Il y a eu une erreur lors de la suppression de votre préréglage. Veuillez réessayer.',
   com_endpoint_preset_default_removed: 'n\'est plus le préréglage par défaut.',
   com_endpoint_preset_default_item: 'Par défaut :',
   com_endpoint_preset_default_none: 'Aucun préréglage par défaut actif.',
   com_endpoint_preset_title: 'Préréglage',
   com_endpoint_preset_saved: 'Enregistré!',
-  com_endpoint_preset_default: 'est maintenant le préréglage par défaut.',  
+  com_endpoint_preset_default: 'est maintenant le préréglage par défaut.',
   com_endpoint_preset: 'préréglage',
   com_endpoint_presets: 'préréglages',
   com_endpoint_preset_selected: 'Préréglage actif!',
@@ -221,7 +226,8 @@ export default {
   com_endpoint_presets_clear_warning:
     'Etes-vous sûr de vouloir effacer tous les préréglages ? Cette action est irréversible.',
   com_endpoint_not_implemented: 'Non implémenté',
-  com_endpoint_no_presets: 'Aucun préréglage pour l\'instant, utilisez le bouton paramètres pour en créer un',
+  com_endpoint_no_presets:
+    'Aucun préréglage pour l\'instant, utilisez le bouton paramètres pour en créer un',
   com_endpoint_not_available: 'Aucun endpoint disponible',
   com_endpoint_view_options: 'Voir les options',
   com_endpoint_save_convo_as_preset: 'Enregistrer la conversation comme préréglage',
@@ -244,7 +250,8 @@ export default {
   com_endpoint_config_google_cloud_platform: '(de Google Cloud Platform)',
   com_endpoint_config_google_api_key: 'Clé API Google',
   com_endpoint_config_google_gemini_api: '(API Gemini)',
-  com_endpoint_config_google_api_info: 'Pour obtenir votre clé API de langage génératif (pour Gemini),',
+  com_endpoint_config_google_api_info:
+    'Pour obtenir votre clé API de langage génératif (pour Gemini),',
   com_endpoint_config_key_import_json_key: 'Importez la clé JSON du compte de service.',
   com_endpoint_config_key_import_json_key_success:
     'Clé JSON du compte de service importé avec succès',
