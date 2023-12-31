@@ -68,7 +68,7 @@ export default {
     'Votre compte a été temporairement banni en raison de violations de notre service.',
   com_auth_error_login_server:
     'Une erreur interne du serveur s\'est produite. Veuillez patienter quelques instants et réessayer.',
-  com_auth_no_account: 'Vous n\'avez pas de compte ?',
+  com_auth_no_account: 'Vous n\'avez pas de compte?',
   com_auth_sign_up: 'S\'inscrire',
   com_auth_sign_in: 'Se connecter',
   com_auth_google_login: 'Se connecter avec Google',
@@ -85,7 +85,7 @@ export default {
   com_auth_password_required: 'Le mot de passe est obligatoire',
   com_auth_password_min_length: 'Le mot de passe doit comporter au moins 8 caractères',
   com_auth_password_max_length: 'Le mot de passe doit être inférieur à 128 caractères',
-  com_auth_password_forgot: 'Mot de passe oublié ?',
+  com_auth_password_forgot: 'Mot de passe oublié?',
   com_auth_password_confirm: 'Confirmer le mot de passe',
   com_auth_password_not_match: 'Les mots de passe ne correspondent pas',
   com_auth_continue: 'Continuer',
@@ -127,10 +127,10 @@ export default {
   com_endpoint_bing_context_placeholder:
     'Bing peut utiliser jusqu\'à 7k jetons pour le "contexte", qu\'il peut référencer pour la conversation. La limite spécifique n\'est pas connue mais peut entraîner des erreurs dépassant les 7k jetons',
   com_endpoint_bing_system_message_placeholder:
-    'AVERTISSEMENT : L\'abus de cette fonctionnalité peut vous faire BANNIR de l\'utilisation de Bing ! Cliquez sur "Message système" pour obtenir les instructions complètes et le message par défaut si omis, qui est le préréglage "Sydney" qui est considéré comme sûr.',
+    'AVERTISSEMENT : L\'abus de cette fonctionnalité peut vous faire BANNIR de l\'utilisation de Bing! Cliquez sur "Message système" pour obtenir les instructions complètes et le message par défaut si omis, qui est le préréglage "Sydney" qui est considéré comme sûr.',
   com_endpoint_system_message: 'Message système',
   com_endpoint_message: 'Message',
-  com_endpoint_message_not_appendable: 'Editer votre message ou regenerer.',
+  com_endpoint_message_not_appendable: 'Editer votre message ou regénerer.',
   com_endpoint_default_blank: 'par défaut : vide',
   com_endpoint_default_false: 'par défaut : faux',
   com_endpoint_default_creative: 'par défaut : créatif',
@@ -191,10 +191,9 @@ export default {
   com_endpoint_import: 'Importer',
   com_endpoint_set_custom_name:
     'Définir un nom personnalisé, au cas où vous trouveriez ce préréglage',
-  com_endpoint_preset_delete_confirm: 'Êtes-vous sûr de vouloir supprimer ce préréglage ?',
-  com_endpoint_preset_clear_all_confirm:
-    'Êtes-vous sûr de vouloir supprimer tous vos préréglages ?',
-  com_endpoint_preset_import: 'Préréglage importé !',
+  com_endpoint_preset_delete_confirm: 'Êtes-vous sûr de vouloir supprimer ce préréglage?',
+  com_endpoint_preset_clear_all_confirm: 'Êtes-vous sûr de vouloir supprimer tous vos préréglages?',
+  com_endpoint_preset_import: 'Préréglage importé!',
   com_endpoint_preset_import_error:
     'Il y a eu une erreur lors de l\'importation de votre préréglage. Veuillez réessayer.',
   com_endpoint_preset_save_error:
@@ -224,7 +223,7 @@ export default {
   com_endpoint_export: 'Exporter',
   com_endpoint_save_as_preset: 'Enregistrer comme préréglage',
   com_endpoint_presets_clear_warning:
-    'Etes-vous sûr de vouloir effacer tous les préréglages ? Cette action est irréversible.',
+    'Etes-vous sûr de vouloir effacer tous les préréglages? Cette action est irréversible.',
   com_endpoint_not_implemented: 'Non implémenté',
   com_endpoint_no_presets:
     'Aucun préréglage pour l\'instant, utilisez le bouton paramètres pour en créer un',
