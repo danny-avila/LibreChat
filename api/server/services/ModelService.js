@@ -21,19 +21,56 @@ const {
   CHATGPT_MODELS,
   ANTHROPIC_MODELS,
   GOOGLE_MODELS,
-  CUSTOM_MODELS,
   PROXY,
 } = process.env ?? {};
+
+/**
+ * Fetches OpenAI models from the specified base API path or Azure, based on the provided configuration.
+ *
+ * @param {Object} params - The parameters for fetching the models.
+ * @param {string} params.apiKey - The API key for authentication with the API.
+ * @param {string} params.baseURL - The base path URL for the API.
+ * @param {string} [params.name='OpenAI'] - The name of the API; defaults to 'OpenAI'.
+ * @param {boolean} [params.azure=false] - Whether to fetch models from Azure.
+ * @returns {Promise<string[]>} A promise that resolves to an array of model identifiers.
+ * @async
+ */
+const fetchModels = async ({ apiKey, baseURL, name = 'OpenAI', azure = false }) => {
+  let models = [];
+
+  if (!baseURL && !azure) {
+    return models;
+  }
+
+  try {
+    const payload = {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    };
+
+    if (PROXY) {
+      payload.httpsAgent = new HttpsProxyAgent(PROXY);
+    }
+
+    const res = await axios.get(`${baseURL}${azure ? '' : '/models'}`, payload);
+    models = res.data.data.map((item) => item.id);
+  } catch (err) {
+    logger.error(`Failed to fetch models from ${azure ? 'Azure ' : ''}${name} API`, err);
+  }
+
+  return models;
+};
 
 const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _models = []) => {
   let models = _models.slice() ?? [];
   let apiKey = openAIApiKey;
-  let basePath = 'https://api.openai.com/v1';
+  let baseURL = 'https://api.openai.com/v1';
   let reverseProxyUrl = OPENAI_REVERSE_PROXY;
   if (opts.azure) {
     return models;
     // const azure = getAzureCredentials();
-    // basePath = (genAzureChatCompletion(azure))
+    // baseURL = (genAzureChatCompletion(azure))
     //   .split('/deployments')[0]
     //   .concat(`/models?api-version=${azure.azureOpenAIApiVersion}`);
     // apiKey = azureOpenAIApiKey;
@@ -43,32 +80,20 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
   }
 
   if (reverseProxyUrl) {
-    basePath = extractBaseURL(reverseProxyUrl);
+    baseURL = extractBaseURL(reverseProxyUrl);
   }
 
-  const cachedModels = await modelsCache.get(basePath);
+  const cachedModels = await modelsCache.get(baseURL);
   if (cachedModels) {
     return cachedModels;
   }
 
-  if (basePath || opts.azure) {
-    try {
-      const payload = {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-      };
-
-      if (PROXY) {
-        payload.httpsAgent = new HttpsProxyAgent(PROXY);
-      }
-      const res = await axios.get(`${basePath}${opts.azure ? '' : '/models'}`, payload);
-
-      models = res.data.data.map((item) => item.id);
-      // logger.debug(`Fetched ${models.length} models from ${opts.azure ? 'Azure ' : ''}OpenAI API`);
-    } catch (err) {
-      logger.error(`Failed to fetch models from ${opts.azure ? 'Azure ' : ''}OpenAI API`, err);
-    }
+  if (baseURL || opts.azure) {
+    models = await fetchModels({
+      apiKey,
+      baseURL,
+      azure: opts.azure,
+    });
   }
 
   if (!reverseProxyUrl) {
@@ -76,7 +101,7 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     models = models.filter((model) => regex.test(model));
   }
 
-  await modelsCache.set(basePath, models);
+  await modelsCache.set(baseURL, models);
   return models;
 };
 
@@ -142,19 +167,10 @@ const getGoogleModels = () => {
   return models;
 };
 
-const getCustomModels = () => {
-  let models = defaultModels[EModelEndpoint.custom];
-  if (CUSTOM_MODELS) {
-    models = String(CUSTOM_MODELS).split(',');
-  }
-
-  return models;
-};
-
 module.exports = {
+  fetchModels,
   getOpenAIModels,
   getChatGPTBrowserModels,
   getAnthropicModels,
   getGoogleModels,
-  getCustomModels,
 };

@@ -5,7 +5,6 @@ const {
   getGoogleModels,
   getAnthropicModels,
   getChatGPTBrowserModels,
-  getCustomModels,
 } = require('~/server/services/ModelService');
 
 const fitlerAssistantModels = (str) => {
@@ -19,7 +18,6 @@ async function loadDefaultModels() {
   const chatGPTBrowser = getChatGPTBrowserModels();
   const azureOpenAI = await getOpenAIModels({ azure: true });
   const gptPlugins = await getOpenAIModels({ azure: useAzurePlugins, plugins: true });
-  const custom = getCustomModels();
 
   return {
     [EModelEndpoint.openAI]: openAI,
@@ -30,7 +28,6 @@ async function loadDefaultModels() {
     [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
     [EModelEndpoint.assistant]: openAI.filter(fitlerAssistantModels),
-    [EModelEndpoint.custom]: custom,
   };
 }
 
