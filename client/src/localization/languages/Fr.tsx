@@ -28,15 +28,16 @@ export default {
   com_ui_prompt_templates: 'Modèles de prompt',
   com_ui_hide_prompt_templates: 'Masquer les modèles de prompt',
   com_ui_showing: 'Affichage',
-  com_ui_of: 'de',
-  com_ui_entries: 'Entrées',
+  com_ui_of: 'des',
+  com_ui_entries: 'entrées',
   com_ui_pay_per_call:
     'Toutes les conversations IA au même endroit. Payez à la demande et non par mois',
   com_ui_new_footer: 'Toutes les conversations IA au même endroit.',
   com_ui_enter: 'Entrer',
   com_ui_submit: 'Soumettre',
-  com_ui_upload_success: 'Fichier téléchargé avec succès',
-  com_ui_upload_invalid: 'Fichier invalide pour le téléchargement',
+  com_ui_upload_success: 'Fichier téléversé avec succès',
+  com_ui_upload_error: 'Une erreur s\'est produite lors du téléversement de votre fichier', 
+  com_ui_upload_invalid: 'Fichier invalide pour le téléversement. Doit être une image ne dépassant pas 2 Mo',
   com_ui_cancel: 'Annuler',
   com_ui_save: 'Sauvegarder',
   com_ui_copy_to_clipboard: 'Copier dans le presse-papier',
@@ -55,6 +56,9 @@ export default {
   com_ui_delete: 'Supprimer',
   com_ui_delete_conversation: 'Supprimer la discussions?',
   com_ui_delete_conversation_confirm: 'Cela supprimera',
+  com_ui_preview: 'Aperçu',
+  com_ui_upload: 'Télécharger',
+  com_ui_connect: 'Connecter',
   com_auth_error_login:
     'Impossible de se connecter avec les informations fournies. Veuillez vérifier vos identifiants et réessayer.',
   com_auth_error_login_rl:
@@ -264,6 +268,8 @@ export default {
     'Assurez-vous de cliquer \'Créer et continuer\' pour donner au moins le role \'Utilisateur de Vertex AI\'. Finalement, créez une clé JSON à importer ici.',
   com_nav_welcome_message: 'Comment puis-je vous aider aujourd\'hui?',
   com_nav_auto_scroll: 'Défilement automatique jusqu\'au plus récent à l\'ouverture',
+  com_nav_profile_picture: 'Photo de profil',
+  com_nav_change_picture: 'Changer de photo',
   com_nav_plugin_store: 'Boutique de plugins',
   com_nav_plugin_search: 'Rechercher des plugins',
   com_nav_plugin_auth_error:
@@ -297,4 +303,5 @@ export default {
   com_nav_search_placeholder: 'Rechercher des messages',
   com_nav_setting_general: 'Général',
   com_nav_setting_data: 'Contrôles des données',
+  com_nav_setting_account: 'Compte',
 };
