@@ -4,7 +4,6 @@ const {
   OPENAI_API_KEY: openAIApiKey,
   AZURE_API_KEY: azureOpenAIApiKey,
   ANTHROPIC_API_KEY: anthropicApiKey,
-  CUSTOM_API_KEY: customApiKey,
   CHATGPT_TOKEN: chatGPTToken,
   BINGAI_TOKEN: bingToken,
   PLUGINS_USE_AZURE,
@@ -34,6 +33,5 @@ module.exports = {
     [EModelEndpoint.chatGPTBrowser]: isUserProvided(chatGPTToken),
     [EModelEndpoint.anthropic]: isUserProvided(anthropicApiKey),
     [EModelEndpoint.bingAI]: isUserProvided(bingToken),
-    [EModelEndpoint.custom]: isUserProvided(customApiKey),
   },
 };
