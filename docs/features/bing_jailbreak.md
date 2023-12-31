@@ -1,7 +1,7 @@
 ---
 title: 😈 Bing Jailbreak
 description: Quick overview of the Bing jailbreak and Sydney's system message
-weight: -3
+weight: -2
 ---
 
 # Bing Jailbreak

@@ -21,6 +21,7 @@ const messageSchema = mongoose.Schema(
     },
     model: {
       type: String,
+      default: null,
     },
     conversationSignature: {
       type: String,
@@ -65,10 +66,6 @@ const messageSchema = mongoose.Schema(
       default: false,
     },
     unfinished: {
-      type: Boolean,
-      default: false,
-    },
-    cancelled: {
       type: Boolean,
       default: false,
     },

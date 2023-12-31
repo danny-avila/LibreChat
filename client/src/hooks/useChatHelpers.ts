@@ -217,7 +217,6 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
       conversationId,
       unfinished: false,
-      submitting: true,
       isCreatedByUser: false,
       isEdited: isEditOrContinue,
       error: false,
