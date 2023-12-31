@@ -56,7 +56,7 @@ const availableEndpoints = selector({
       'bingAI',
       'google',
       'anthropic',
-      'custom',
+      'custom_endpoints',
     ];
     const f = get(endpointsFilter);
     return endpoints.filter((endpoint) => f[endpoint]);

@@ -1,9 +1,10 @@
 const Keyv = require('keyv');
-const keyvMongo = require('./keyvMongo');
-const keyvRedis = require('./keyvRedis');
-const { CacheKeys } = require('~/common/enums');
-const { math, isEnabled } = require('~/server/utils');
+const { CacheKeys } = require('librechat-data-provider');
 const { logFile, violationFile } = require('./keyvFiles');
+const { math, isEnabled } = require('~/server/utils');
+const keyvRedis = require('./keyvRedis');
+const keyvMongo = require('./keyvMongo');
+
 const { BAN_DURATION, USE_REDIS } = process.env ?? {};
 
 const duration = math(BAN_DURATION, 7200000);
@@ -20,10 +21,10 @@ const pending_req = isEnabled(USE_REDIS)
 
 const config = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: CacheKeys.CONFIG });
+  : new Keyv({ namespace: CacheKeys.CONFIG_STORE });
 
 const namespaces = {
-  config,
+  [CacheKeys.CONFIG_STORE]: config,
   pending_req,
   ban: new Keyv({ store: keyvMongo, namespace: 'bans', ttl: duration }),
   general: new Keyv({ store: logFile, namespace: 'violations' }),
@@ -39,19 +40,15 @@ const namespaces = {
  * Returns the keyv cache specified by type.
  * If an invalid type is passed, an error will be thrown.
  *
- * @module getLogStores
- * @requires keyv - a simple key-value storage that allows you to easily switch out storage adapters.
- * @requires keyvFiles - a module that includes the logFile and violationFile.
- *
- * @param {string} type - The type of violation, which can be 'concurrent', 'message_limit', 'registrations' or 'logins'.
- * @returns {Keyv} - If a valid type is passed, returns an object containing the logs for violations of the specified type.
- * @throws Will throw an error if an invalid violation type is passed.
+ * @param {string} key - The key for the namespace to access
+ * @returns {Keyv} - If a valid key is passed, returns an object containing the cache store of the specified key.
+ * @throws Will throw an error if an invalid key is passed.
  */
-const getLogStores = (type) => {
-  if (!type || !namespaces[type]) {
-    throw new Error(`Invalid store type: ${type}`);
+const getLogStores = (key) => {
+  if (!key || !namespaces[key]) {
+    throw new Error(`Invalid store key: ${key}`);
   }
-  return namespaces[type];
+  return namespaces[key];
 };
 
 module.exports = getLogStores;

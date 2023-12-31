@@ -1,9 +1,9 @@
-const { getLogStores } = require('~/cache');
-const { CacheKeys } = require('~/common/enums');
+const { CacheKeys } = require('librechat-data-provider');
 const { loadDefaultModels } = require('~/server/services/Config');
+const { getLogStores } = require('~/cache');
 
 async function modelController(req, res) {
-  const cache = getLogStores(CacheKeys.CONFIG);
+  const cache = getLogStores(CacheKeys.CONFIG_STORE);
   let modelConfig = await cache.get(CacheKeys.MODELS_CONFIG);
   if (modelConfig) {
     res.send(modelConfig);

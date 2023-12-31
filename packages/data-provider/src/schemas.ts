@@ -9,6 +9,7 @@ export enum EModelEndpoint {
   gptPlugins = 'gptPlugins',
   anthropic = 'anthropic',
   assistant = 'assistant',
+  custom = 'custom_endpoints',
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [
@@ -20,6 +21,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.gptPlugins,
   EModelEndpoint.google,
   EModelEndpoint.anthropic,
+  EModelEndpoint.custom,
 ];
 
 export const defaultModels = {
@@ -73,6 +75,7 @@ export const alternateName = {
   [EModelEndpoint.gptPlugins]: 'Plugins',
   [EModelEndpoint.google]: 'Google',
   [EModelEndpoint.anthropic]: 'Anthropic',
+  [EModelEndpoint.custom]: 'Custom',
 };
 
 export enum AuthKeys {
@@ -117,13 +120,14 @@ export const endpointSettings = {
 const google = endpointSettings[EModelEndpoint.google];
 
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
-  [EModelEndpoint.azureOpenAI]: '/api/ask/azureOpenAI',
-  [EModelEndpoint.openAI]: '/api/ask/openAI',
-  [EModelEndpoint.bingAI]: '/api/ask/bingAI',
-  [EModelEndpoint.chatGPTBrowser]: '/api/ask/chatGPTBrowser',
-  [EModelEndpoint.google]: '/api/ask/google',
-  [EModelEndpoint.gptPlugins]: '/api/ask/gptPlugins',
-  [EModelEndpoint.anthropic]: '/api/ask/anthropic',
+  [EModelEndpoint.openAI]: `/api/ask/${EModelEndpoint.openAI}`,
+  [EModelEndpoint.bingAI]: `/api/ask/${EModelEndpoint.bingAI}`,
+  [EModelEndpoint.google]: `/api/ask/${EModelEndpoint.google}`,
+  [EModelEndpoint.custom]: `/api/ask/${EModelEndpoint.custom}`,
+  [EModelEndpoint.anthropic]: `/api/ask/${EModelEndpoint.anthropic}`,
+  [EModelEndpoint.gptPlugins]: `/api/ask/${EModelEndpoint.gptPlugins}`,
+  [EModelEndpoint.azureOpenAI]: `/api/ask/${EModelEndpoint.azureOpenAI}`,
+  [EModelEndpoint.chatGPTBrowser]: `/api/ask/${EModelEndpoint.chatGPTBrowser}`,
   [EModelEndpoint.assistant]: '/api/assistants/chat',
 };
 
@@ -132,6 +136,8 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.anthropic,
   EModelEndpoint.google,
   EModelEndpoint.openAI,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.custom,
 ]);
 
 export const supportsFiles = {
@@ -139,12 +145,14 @@ export const supportsFiles = {
   [EModelEndpoint.google]: true,
   [EModelEndpoint.assistant]: true,
   [EModelEndpoint.azureOpenAI]: true,
+  [EModelEndpoint.custom]: true,
 };
 
 export const supportsBalanceCheck = {
   [EModelEndpoint.openAI]: true,
   [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.gptPlugins]: true,
+  [EModelEndpoint.custom]: true,
 };
 
 export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision'];
@@ -540,6 +548,7 @@ type EndpointSchema =
 const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
+  [EModelEndpoint.custom]: openAISchema,
   [EModelEndpoint.google]: googleSchema,
   [EModelEndpoint.bingAI]: bingAISchema,
   [EModelEndpoint.anthropic]: anthropicSchema,
@@ -639,6 +648,14 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
     }
 
     return 'PaLM2';
+  }
+
+  if (endpoint === EModelEndpoint.custom) {
+    if (modelLabel) {
+      return modelLabel;
+    }
+
+    return 'AI';
   }
 
   return '';
@@ -821,6 +838,7 @@ type CompactEndpointSchema =
 const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
   openAI: compactOpenAISchema,
   azureOpenAI: compactOpenAISchema,
+  custom: compactOpenAISchema,
   assistant: assistantSchema,
   google: compactGoogleSchema,
   /* BingAI needs all fields */
@@ -859,3 +877,33 @@ export const parseCompactConvo = (
 
   return convo;
 };
+
+/**
+ * Enum for cache keys.
+ */
+export enum CacheKeys {
+  /**
+   * Key for the config store namespace.
+   */
+  CONFIG_STORE = 'configStore',
+  /**
+   * Key for the plugins cache.
+   */
+  PLUGINS = 'plugins',
+  /**
+   * Key for the model config cache.
+   */
+  MODELS_CONFIG = 'modelsConfig',
+  /**
+   * Key for the default endpoint config cache.
+   */
+  ENDPOINT_CONFIG = 'endpointsConfig',
+  /**
+   * Key for the custom config cache.
+   */
+  CUSTOM_CONFIG = 'customConfig',
+  /**
+   * Key for the override config cache.
+   */
+  OVERRIDE_CONFIG = 'overrideConfig',
+}
