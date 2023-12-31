@@ -15,7 +15,8 @@ Please delete any irrelevant options.
 - [ ] New feature (non-breaking change which adds functionality)
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] This change requires a documentation update
-- [ ] Documentation update 
+- [ ] Documentation update
+- [ ] Translation update
 
 ## Testing
 
