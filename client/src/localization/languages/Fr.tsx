@@ -57,7 +57,7 @@ export default {
   com_ui_delete_conversation: 'Supprimer la discussions?',
   com_ui_delete_conversation_confirm: 'Cela supprimera',
   com_ui_preview: 'Aperçu',
-  com_ui_upload: 'Télécharger',
+  com_ui_upload: 'Téléverser',
   com_ui_connect: 'Connecter',
   com_auth_error_login:
     'Impossible de se connecter avec les informations fournies. Veuillez vérifier vos identifiants et réessayer.',
