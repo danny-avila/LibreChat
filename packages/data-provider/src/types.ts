@@ -133,7 +133,7 @@ export type TConfig = {
 
 export type TModelsConfig = Record<string, string[]>;
 
-export type TEndpointsConfig = Record<string, TConfig | null>;
+export type TEndpointsConfig = Record<EModelEndpoint, TConfig | null>;
 
 export type TUpdateTokenCountResponse = {
   count: number;
