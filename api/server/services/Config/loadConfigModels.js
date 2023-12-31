@@ -1,7 +1,7 @@
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
 const { fetchModels } = require('~/server/services/ModelService');
 const loadCustomConfig = require('./loadCustomConfig');
-// const { isUserProvided } = require('~/server/utils');
+const { isUserProvided } = require('~/server/utils');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -20,14 +20,10 @@ async function loadConfigModels() {
   }
 
   const { endpoints = {} } = customConfig ?? {};
+  const modelsConfig = {};
 
-  let customEndpoints = endpoints[EModelEndpoint.custom];
-  const configModels = {
-    [EModelEndpoint.custom]: [],
-  };
-
-  if (Array.isArray(customEndpoints)) {
-    customEndpoints = customEndpoints.filter(
+  if (Array.isArray(endpoints[EModelEndpoint.custom])) {
+    const customEndpoints = endpoints[EModelEndpoint.custom].filter(
       (endpoint) =>
         endpoint.baseURL &&
         endpoint.apiKey &&
@@ -39,26 +35,26 @@ async function loadConfigModels() {
     for (let i = 0; i < customEndpoints.length; i++) {
       const endpoint = customEndpoints[i];
       const { models, name, baseURL, apiKey } = endpoint;
-      if (models.fetch) {
-        const customEndpoint = {
-          [name]: await fetchModels({
-            baseURL,
-            apiKey,
-          }),
-        };
 
-        configModels[EModelEndpoint.custom].push(customEndpoint);
+      modelsConfig[name] = [];
 
+      // TODO: allow fetching with user provided api key and base url
+      const shouldFetch = models.fetch && !isUserProvided(apiKey) && !isUserProvided(baseURL);
+      if (shouldFetch) {
+        modelsConfig[name] = await fetchModels({
+          baseURL,
+          apiKey,
+        });
         continue;
       }
 
-      if (models.default) {
-        configModels[EModelEndpoint.custom].push({ [name]: models.default });
+      if (Array.isArray(models.default)) {
+        modelsConfig[name] = models.default;
       }
     }
   }
 
-  return configModels;
+  return modelsConfig;
 }
 
 module.exports = loadConfigModels;

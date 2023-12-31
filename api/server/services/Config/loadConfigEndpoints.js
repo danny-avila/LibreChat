@@ -19,24 +19,30 @@ async function loadConfigEndpoints() {
   }
 
   const { endpoints = {} } = customConfig ?? {};
+  const endpointsConfig = {};
 
-  const customEndpoints = endpoints[EModelEndpoint.custom];
-  if (Array.isArray(customEndpoints)) {
-    endpoints[EModelEndpoint.custom] = customEndpoints
-      .filter((endpoint) => endpoint.baseURL && endpoint.apiKey && endpoint.name && endpoint.models)
-      .map((endpoint) => {
-        const { baseURL, apiKey, name } = endpoint;
-        return {
-          [name]: {
-            type: EModelEndpoint.custom,
-            userProvide: isUserProvided(apiKey),
-            userProvideURL: isUserProvided(baseURL),
-          },
-        };
-      });
+  if (Array.isArray(endpoints[EModelEndpoint.custom])) {
+    const customEndpoints = endpoints[EModelEndpoint.custom].filter(
+      (endpoint) =>
+        endpoint.baseURL &&
+        endpoint.apiKey &&
+        endpoint.name &&
+        endpoint.models &&
+        (endpoint.models.fetch || endpoint.models.default),
+    );
+
+    for (let i = 0; i < customEndpoints.length; i++) {
+      const endpoint = customEndpoints[i];
+      const { baseURL, apiKey, name } = endpoint;
+      endpointsConfig[name] = {
+        type: EModelEndpoint.custom,
+        userProvide: isUserProvided(apiKey),
+        userProvideURL: isUserProvided(baseURL),
+      };
+    }
   }
 
-  return endpoints;
+  return endpointsConfig;
 }
 
 module.exports = loadConfigEndpoints;
