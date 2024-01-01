@@ -10,9 +10,6 @@ const convoSchema = mongoose.Schema(
       index: true,
       meiliIndex: true,
     },
-    endpointType: {
-      type: String,
-    },
     title: {
       type: String,
       default: 'New Chat',

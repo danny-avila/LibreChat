@@ -5,6 +5,9 @@ const conversationPreset = {
     default: null,
     required: true,
   },
+  endpointType: {
+    type: String,
+  },
   // for azureOpenAI, openAI, chatGPTBrowser only
   model: {
     type: String,
