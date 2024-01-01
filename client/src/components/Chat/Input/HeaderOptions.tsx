@@ -25,7 +25,7 @@ export default function OptionsBar() {
     useChatContext();
   const { setOption } = useSetIndexOptions();
 
-  const { endpoint, endpointType, conversationId, jailbreak } = conversation ?? {};
+  const { endpoint, conversationId, jailbreak } = conversation ?? {};
 
   const altConditions: { [key: string]: boolean } = {
     bingAI: !!(latestMessage && conversation?.jailbreak && endpoint === 'bingAI'),
@@ -110,7 +110,6 @@ export default function OptionsBar() {
               preset={
                 tPresetUpdateSchema.parse({
                   ...conversation,
-                  endpoint: endpointType ?? endpoint,
                 }) as TPreset
               }
             />
