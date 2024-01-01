@@ -31,7 +31,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
-  const { conversationId, endpoint } = conversation ?? {};
+  const { conversationId, endpoint, endpointType } = conversation ?? {};
 
   const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
 
@@ -151,7 +151,12 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     const isEditOrContinue = isEdited || isContinued;
 
     // set the endpoint option
-    const convo = parseCompactConvo(endpoint, conversation ?? {});
+    const convo = parseCompactConvo({
+      endpoint,
+      endpointType,
+      conversation: conversation ?? {},
+    });
+
     const endpointOption = {
       ...convo,
       endpoint,

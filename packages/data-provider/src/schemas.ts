@@ -646,14 +646,14 @@ export type TPossibleValues = {
 
 export const parseConvo = ({
   endpoint,
+  endpointType,
   conversation,
   possibleValues,
-  endpointType,
 }: {
   endpoint: EModelEndpoint;
+  endpointType?: EModelEndpoint;
   conversation: Partial<TConversation | TPreset>;
   possibleValues?: TPossibleValues;
-  endpointType?: EModelEndpoint;
   // TODO: POC for default schema
   // defaultSchema?: Partial<EndpointSchema>,
 }) => {
@@ -933,19 +933,29 @@ const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
   gptPlugins: compactPluginsSchema,
 };
 
-export const parseCompactConvo = (
-  endpoint: EModelEndpoint | undefined,
-  conversation: Partial<TConversation | TPreset>,
-  possibleValues?: TPossibleValues,
-) => {
+export const parseCompactConvo = ({
+  endpoint,
+  endpointType,
+  conversation,
+  possibleValues,
+}: {
+  endpoint?: EModelEndpoint;
+  endpointType?: EModelEndpoint;
+  conversation: Partial<TConversation | TPreset>;
+  possibleValues?: TPossibleValues;
+  // TODO: POC for default schema
+  // defaultSchema?: Partial<EndpointSchema>,
+}) => {
   if (!endpoint) {
     throw new Error(`undefined endpoint: ${endpoint}`);
   }
 
-  const schema = compactEndpointSchemas[endpoint];
+  let schema = compactEndpointSchemas[endpoint];
 
-  if (!schema) {
+  if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
+  } else if (!schema && endpointType) {
+    schema = compactEndpointSchemas[endpointType];
   }
 
   const convo = schema.parse(conversation) as TConversation;
