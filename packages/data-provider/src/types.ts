@@ -120,7 +120,6 @@ export type TSearchResults = {
 };
 
 export type TConfig = {
-  availableModels?: [];
   name?: string;
   userProvide?: boolean | null;
   userProvideURL?: boolean | null;
