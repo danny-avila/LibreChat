@@ -330,7 +330,7 @@ export const tPresetUpdateSchema = tConversationSchema.merge(
 
 export type TPreset = z.infer<typeof tPresetSchema>;
 
-type DefaultSchemaValues = Partial<typeof google>;
+// type DefaultSchemaValues = Partial<typeof google>;
 
 export const openAISchema = tConversationSchema
   .pick({
@@ -409,55 +409,55 @@ export const googleSchema = tConversationSchema
     topK: google.topK.default,
   }));
 
-const createGoogleSchema = (customGoogle: DefaultSchemaValues) => {
-  const defaults = { ...google, ...customGoogle };
-  return tConversationSchema
-    .pick({
-      model: true,
-      modelLabel: true,
-      promptPrefix: true,
-      examples: true,
-      temperature: true,
-      maxOutputTokens: true,
-      topP: true,
-      topK: true,
-    })
-    .transform((obj) => {
-      const isGeminiPro = obj?.model?.toLowerCase()?.includes('gemini-pro');
+// const createGoogleSchema = (customGoogle: DefaultSchemaValues) => {
+//   const defaults = { ...google, ...customGoogle };
+//   return tConversationSchema
+//     .pick({
+//       model: true,
+//       modelLabel: true,
+//       promptPrefix: true,
+//       examples: true,
+//       temperature: true,
+//       maxOutputTokens: true,
+//       topP: true,
+//       topK: true,
+//     })
+//     .transform((obj) => {
+//       const isGeminiPro = obj?.model?.toLowerCase()?.includes('gemini-pro');
 
-      const maxOutputTokensMax = isGeminiPro
-        ? defaults.maxOutputTokens.maxGeminiPro
-        : defaults.maxOutputTokens.max;
-      const maxOutputTokensDefault = isGeminiPro
-        ? defaults.maxOutputTokens.defaultGeminiPro
-        : defaults.maxOutputTokens.default;
+//       const maxOutputTokensMax = isGeminiPro
+//         ? defaults.maxOutputTokens.maxGeminiPro
+//         : defaults.maxOutputTokens.max;
+//       const maxOutputTokensDefault = isGeminiPro
+//         ? defaults.maxOutputTokens.defaultGeminiPro
+//         : defaults.maxOutputTokens.default;
 
-      let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;
-      maxOutputTokens = Math.min(maxOutputTokens, maxOutputTokensMax);
+//       let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;
+//       maxOutputTokens = Math.min(maxOutputTokens, maxOutputTokensMax);
 
-      return {
-        ...obj,
-        model: obj.model ?? defaults.model.default,
-        modelLabel: obj.modelLabel ?? null,
-        promptPrefix: obj.promptPrefix ?? null,
-        examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
-        temperature: obj.temperature ?? defaults.temperature.default,
-        maxOutputTokens,
-        topP: obj.topP ?? defaults.topP.default,
-        topK: obj.topK ?? defaults.topK.default,
-      };
-    })
-    .catch(() => ({
-      model: defaults.model.default,
-      modelLabel: null,
-      promptPrefix: null,
-      examples: [{ input: { content: '' }, output: { content: '' } }],
-      temperature: defaults.temperature.default,
-      maxOutputTokens: defaults.maxOutputTokens.default,
-      topP: defaults.topP.default,
-      topK: defaults.topK.default,
-    }));
-};
+//       return {
+//         ...obj,
+//         model: obj.model ?? defaults.model.default,
+//         modelLabel: obj.modelLabel ?? null,
+//         promptPrefix: obj.promptPrefix ?? null,
+//         examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
+//         temperature: obj.temperature ?? defaults.temperature.default,
+//         maxOutputTokens,
+//         topP: obj.topP ?? defaults.topP.default,
+//         topK: obj.topK ?? defaults.topK.default,
+//       };
+//     })
+//     .catch(() => ({
+//       model: defaults.model.default,
+//       modelLabel: null,
+//       promptPrefix: null,
+//       examples: [{ input: { content: '' }, output: { content: '' } }],
+//       temperature: defaults.temperature.default,
+//       maxOutputTokens: defaults.maxOutputTokens.default,
+//       topP: defaults.topP.default,
+//       topK: defaults.topK.default,
+//     }));
+// };
 
 export const bingAISchema = tConversationSchema
   .pick({
@@ -648,17 +648,21 @@ export const parseConvo = ({
   endpoint,
   conversation,
   possibleValues,
-}: // TODO: POC for default schema
-// defaultSchema?: Partial<EndpointSchema>,
-{
+  endpointType,
+}: {
   endpoint: EModelEndpoint;
   conversation: Partial<TConversation | TPreset>;
   possibleValues?: TPossibleValues;
+  endpointType?: EModelEndpoint;
+  // TODO: POC for default schema
+  // defaultSchema?: Partial<EndpointSchema>,
 }) => {
-  const schema = endpointSchemas[endpoint];
+  let schema = endpointSchemas[endpoint];
 
-  if (!schema) {
+  if (!schema && !endpointType) {
     throw new Error(`Unknown endpoint: ${endpoint}`);
+  } else if (!schema && endpointType) {
+    schema = endpointSchemas[endpointType];
   }
 
   // if (defaultSchema && schemaCreators[endpoint]) {

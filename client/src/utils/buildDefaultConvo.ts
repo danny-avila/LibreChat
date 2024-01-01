@@ -46,9 +46,14 @@ const buildDefaultConvo = ({
     secondaryModels = [...availableModels];
   }
 
-  const convo = parseConvo(endpointType ?? endpoint, lastConversationSetup, {
-    models: possibleModels,
-    secondaryModels,
+  const convo = parseConvo({
+    endpoint,
+    endpointType,
+    conversation: lastConversationSetup,
+    possibleValues: {
+      models: possibleModels,
+      secondaryModels,
+    },
   });
 
   const defaultConvo = {

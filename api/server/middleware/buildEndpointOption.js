@@ -15,8 +15,8 @@ const buildFunction = {
 };
 
 function buildEndpointOption(req, res, next) {
-  const { endpoint } = req.body;
-  const parsedBody = parseConvo(endpoint, req.body);
+  const { endpoint, endpointType } = req.body;
+  const parsedBody = parseConvo({ endpoint, conversation: req.body, endpointType });
   req.body.endpointOption = buildFunction[endpoint](endpoint, parsedBody);
   if (req.body.files) {
     // hold the promise
