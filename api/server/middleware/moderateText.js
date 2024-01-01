@@ -1,17 +1,15 @@
 const axios = require('axios');
-const CircularJSON = require('circular-json-es6');
 const denyRequest = require('./denyRequest');
 
 async function moderateText(req, res, next) {
   if (process.env.OPENAI_MODERATION === 'true') {
     try {
       const { text } = req.body;
-      const textWithoutCircular = CircularJSON.stringify(text);
 
       const response = await axios.post(
         process.env.OPENAI_MODERATION_REVERSE_PROXY || 'https://api.openai.com/v1/moderations',
         {
-          input: textWithoutCircular,
+          input: text,
         },
         {
           headers: {
