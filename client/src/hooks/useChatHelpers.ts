@@ -160,6 +160,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     const endpointOption = {
       ...convo,
       endpoint,
+      endpointType,
       key: getExpiry(),
     } as TEndpointOption;
     const responseSender = getResponseSender({ model: conversation?.model, ...endpointOption });
