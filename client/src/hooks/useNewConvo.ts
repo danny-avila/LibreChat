@@ -68,6 +68,10 @@ const useNewConvo = (index = 0) => {
             endpointsConfig,
           });
 
+          if (!conversation.endpointType && endpointsConfig[defaultEndpoint]?.type) {
+            conversation.endpointType = endpointsConfig[defaultEndpoint]?.type;
+          }
+
           const models = modelsConfig?.[defaultEndpoint] ?? [];
           conversation = buildDefaultConvo({
             conversation,

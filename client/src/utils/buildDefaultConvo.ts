@@ -15,10 +15,12 @@ const buildDefaultConvo = ({
 }) => {
   const { lastSelectedModel, lastSelectedTools, lastBingSettings } = getLocalStorageItems();
   const { jailbreak, toneStyle } = lastBingSettings;
+  const { endpointType } = conversation;
 
   if (!endpoint) {
     return {
       ...conversation,
+      endpointType,
       endpoint,
     };
   }
@@ -44,13 +46,15 @@ const buildDefaultConvo = ({
     secondaryModels = [...availableModels];
   }
 
-  const convo = parseConvo(endpoint, lastConversationSetup, {
+  const convo = parseConvo(endpointType ?? endpoint, lastConversationSetup, {
     models: possibleModels,
     secondaryModels,
   });
+
   const defaultConvo = {
     ...conversation,
     ...convo,
+    endpointType,
     endpoint,
   };
 

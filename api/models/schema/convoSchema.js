@@ -10,6 +10,9 @@ const convoSchema = mongoose.Schema(
       index: true,
       meiliIndex: true,
     },
+    endpointType: {
+      type: String,
+    },
     title: {
       type: String,
       default: 'New Chat',
@@ -18,36 +21,29 @@ const convoSchema = mongoose.Schema(
     user: {
       type: String,
       index: true,
-      // default: null,
     },
     messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
     // google only
     examples: [{ type: mongoose.Schema.Types.Mixed }],
     agentOptions: {
       type: mongoose.Schema.Types.Mixed,
-      // default: null,
     },
     ...conversationPreset,
     // for bingAI only
     bingConversationId: {
       type: String,
-      // default: null,
     },
     jailbreakConversationId: {
       type: String,
-      // default: null,
     },
     conversationSignature: {
       type: String,
-      // default: null,
     },
     clientId: {
       type: String,
-      // default: null,
     },
     invocationId: {
       type: Number,
-      // default: 1,
     },
   },
   { timestamps: true },

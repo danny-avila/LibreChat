@@ -5,7 +5,7 @@ import {
   SSE,
   createPayload,
   tMessageSchema,
-  tConversationSchema,
+  tConvoUpdateSchema,
   EModelEndpoint,
   removeNullishValues,
 } from 'librechat-data-provider';
@@ -152,10 +152,10 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     let update = {} as TConversation;
     setConversation((prevState) => {
-      update = tConversationSchema.parse({
+      update = tConvoUpdateSchema.parse({
         ...prevState,
         conversationId,
-      });
+      }) as TConversation;
 
       setStorage(update);
       return update;

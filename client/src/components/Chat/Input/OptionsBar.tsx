@@ -1,7 +1,8 @@
 import { useRecoilState } from 'recoil';
 import { Settings2 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { tPresetSchema, EModelEndpoint } from 'librechat-data-provider';
+import { tPresetUpdateSchema, EModelEndpoint } from 'librechat-data-provider';
+import type { TPreset } from 'librechat-data-provider';
 import { PluginStoreDialog } from '~/components';
 import {
   EndpointSettings,
@@ -28,7 +29,7 @@ export default function OptionsBar({ messagesTree }) {
     useChatContext();
   const { setOption } = useSetIndexOptions();
 
-  const { endpoint, conversationId, jailbreak } = conversation ?? {};
+  const { endpoint, endpointType, conversationId, jailbreak } = conversation ?? {};
 
   const altConditions: { [key: string]: boolean } = {
     bingAI: !!(latestMessage && conversation?.jailbreak && endpoint === 'bingAI'),
@@ -151,7 +152,12 @@ export default function OptionsBar({ messagesTree }) {
         <SaveAsPresetDialog
           open={saveAsDialogShow}
           onOpenChange={setSaveAsDialogShow}
-          preset={tPresetSchema.parse({ ...conversation })}
+          preset={
+            tPresetUpdateSchema.parse({
+              ...conversation,
+              endpoint: endpointType ?? endpoint,
+            }) as TPreset
+          }
         />
         <PluginStoreDialog isOpen={showPluginStoreDialog} setIsOpen={setShowPluginStoreDialog} />
       </span>

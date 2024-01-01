@@ -159,6 +159,8 @@ export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision'];
 
 export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
+export const extendedModelEndpointSchema = z.union([eModelEndpointSchema, z.string()]);
+
 export const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
   label: z.string(),
@@ -261,6 +263,7 @@ export const tConversationSchema = z.object({
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: z.string().optional(),
   endpoint: eModelEndpointSchema.nullable(),
+  endpointType: eModelEndpointSchema.optional(),
   suggestions: z.array(z.string()).optional(),
   messages: z.array(z.string()).optional(),
   tools: z.array(tPluginSchema).optional(),
@@ -312,6 +315,18 @@ export const tPresetSchema = tConversationSchema
       order: z.number().optional(),
     }),
   );
+
+export const tConvoUpdateSchema = tConversationSchema.merge(
+  z.object({
+    endpoint: extendedModelEndpointSchema.nullable(),
+  }),
+);
+
+export const tPresetUpdateSchema = tConversationSchema.merge(
+  z.object({
+    endpoint: extendedModelEndpointSchema.nullable(),
+  }),
+);
 
 export type TPreset = z.infer<typeof tPresetSchema>;
 
@@ -629,13 +644,17 @@ export type TPossibleValues = {
   secondaryModels?: string[];
 };
 
-export const parseConvo = (
-  endpoint: EModelEndpoint,
-  conversation: Partial<TConversation | TPreset>,
-  possibleValues?: TPossibleValues,
-  // TODO: POC for default schema
-  // defaultSchema?: Partial<EndpointSchema>,
-) => {
+export const parseConvo = ({
+  endpoint,
+  conversation,
+  possibleValues,
+}: // TODO: POC for default schema
+// defaultSchema?: Partial<EndpointSchema>,
+{
+  endpoint: EModelEndpoint;
+  conversation: Partial<TConversation | TPreset>;
+  possibleValues?: TPossibleValues;
+}) => {
   const schema = endpointSchemas[endpoint];
 
   if (!schema) {

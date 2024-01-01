@@ -28,7 +28,8 @@ export default function HoverButtons({
   latestMessage,
 }: THoverButtons) {
   const localize = useLocalize();
-  const { endpoint } = conversation ?? {};
+  const { endpoint: _endpoint, endpointType } = conversation ?? {};
+  const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
   const { hideEditButton, regenerateEnabled, continueSupported } = useGenerationsByLatest({
     isEditing,

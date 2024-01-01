@@ -27,7 +27,8 @@ export default function PopoverButtons({
     setShowAgentSettings,
   } = useChatContext();
 
-  const { model, endpoint } = conversation ?? {};
+  const { model, endpoint: _endpoint, endpointType } = conversation ?? {};
+  const endpoint = endpointType ?? _endpoint;
   const isGenerativeModel = model?.toLowerCase()?.includes('gemini');
   const isChatModel = !isGenerativeModel && model?.toLowerCase()?.includes('chat');
   const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(model ?? '');
