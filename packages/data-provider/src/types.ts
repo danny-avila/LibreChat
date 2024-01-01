@@ -120,14 +120,15 @@ export type TSearchResults = {
 };
 
 export type TConfig = {
-  name?: string;
-  userProvide?: boolean | null;
-  userProvideURL?: boolean | null;
+  order: number;
   type?: EModelEndpoint;
+  azure?: boolean;
   availableTools?: [];
   plugins?: Record<string, string>;
-  azure?: boolean;
-  order: number;
+  name?: string;
+  iconURL?: string;
+  userProvide?: boolean | null;
+  userProvideURL?: boolean | null;
 };
 
 export type TModelsConfig = Record<string, string[]>;
