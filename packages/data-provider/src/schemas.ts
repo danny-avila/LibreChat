@@ -12,6 +12,11 @@ export enum EModelEndpoint {
   custom = 'custom',
 }
 
+export enum KnownEndpoints {
+  mistral = 'mistral',
+  openrouter = 'openrouter',
+}
+
 export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.openAI,
   EModelEndpoint.assistant,

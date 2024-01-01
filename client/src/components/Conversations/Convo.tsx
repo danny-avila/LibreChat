@@ -87,6 +87,7 @@ export default function Conversation({ conversation, retainView, toggleNav, i })
   const icon = MinimalIcon({
     size: 20,
     endpoint: conversation.endpoint,
+    endpointType: conversation.endpointType,
     model: conversation.model,
     error: false,
     className: 'mr-0',

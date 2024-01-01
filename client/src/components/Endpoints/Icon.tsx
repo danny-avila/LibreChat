@@ -1,4 +1,5 @@
 import { EModelEndpoint } from 'librechat-data-provider';
+import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
 import {
   Plugin,
   GPTIcon,
@@ -100,7 +101,10 @@ const Icon: React.FC<IconProps> = (props) => {
         name: 'Custom',
       },
       null: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'N/A' },
-      default: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'UNKNOWN' },
+      default: {
+        icon: <UnknownIcon endpoint={endpoint ?? ''} className="icon-sm" context="message" />,
+        name: endpoint,
+      },
     };
 
     const { icon, bg, name } =

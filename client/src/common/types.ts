@@ -1,4 +1,11 @@
-import type { TConversation, TMessage, TPreset, TLoginUser, TUser } from 'librechat-data-provider';
+import type {
+  TConversation,
+  TMessage,
+  TPreset,
+  TLoginUser,
+  TUser,
+  EModelEndpoint,
+} from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
@@ -196,7 +203,8 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
     button?: boolean;
     message?: boolean;
     className?: string;
-    endpoint?: string | null;
+    endpoint?: EModelEndpoint | string | null;
+    endpointType?: EModelEndpoint | null;
   };
 
 export type Option = Record<string, unknown> & {

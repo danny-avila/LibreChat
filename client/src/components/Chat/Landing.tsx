@@ -19,7 +19,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
     endpoint = EModelEndpoint.openAI;
   }
 
-  const iconKey = endpointsConfig?.[endpoint ?? '']?.type ?? endpoint ?? 'unknown';
+  const iconKey = endpointsConfig?.[endpoint ?? '']?.type ? 'unknown' : endpoint ?? 'unknown';
 
   return (
     <div className="relative h-full">
@@ -27,7 +27,13 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
       <div className="flex h-full flex-col items-center justify-center">
         <div className="mb-3 h-[72px] w-[72px]">
           <div className="gizmo-shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
-            {icons[iconKey]({ size: 41, className: 'h-2/3 w-2/3' })}
+            {icons[iconKey]({
+              size: 41,
+              context: 'landing',
+              className: 'h-2/3 w-2/3',
+              endpoint: endpoint as EModelEndpoint | string,
+              iconURL: endpointsConfig?.[endpoint ?? ''].iconURL,
+            })}
           </div>
         </div>
         <div className="mb-5 text-2xl font-medium dark:text-white">

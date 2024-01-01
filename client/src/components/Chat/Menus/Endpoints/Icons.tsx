@@ -9,6 +9,7 @@ import {
   CustomMinimalIcon,
   LightningIcon,
 } from '~/components/svg';
+import UnknownIcon from './UnknownIcon';
 import { cn } from '~/utils';
 
 export const icons = {
@@ -41,5 +42,5 @@ export const icons = {
       ></path>
     </svg>
   ),
-  unknown: GPTIcon,
+  unknown: UnknownIcon,
 };
