@@ -13,9 +13,11 @@ const {
   setHeaders,
   validateEndpoint,
   buildEndpointOption,
+  moderateText,
 } = require('~/server/middleware');
 const { logger } = require('~/config');
 
+router.use(moderateText);
 router.post('/abort', handleAbort());
 
 router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, res) => {
