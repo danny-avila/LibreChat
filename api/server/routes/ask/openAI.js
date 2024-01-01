@@ -10,18 +10,11 @@ const {
 } = require('~/server/middleware');
 
 const router = express.Router();
-
+router.use(moderateText);
 router.post('/abort', handleAbort());
 
-router.post(
-  '/',
-  validateEndpoint,
-  buildEndpointOption,
-  moderateText,
-  setHeaders,
-  async (req, res, next) => {
-    await AskController(req, res, next, initializeClient, addTitle);
-  },
-);
+router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, res, next) => {
+  await AskController(req, res, next, initializeClient, addTitle);
+});
 
 module.exports = router;
