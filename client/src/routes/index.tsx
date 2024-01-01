@@ -45,6 +45,10 @@ export const router = createBrowserRouter([
         element: <Login />,
       },
       {
+        path: 'chat/share/:conversationId?',
+        element: <SharedConvo />,
+      },
+      {
         path: '/',
         element: <Root />,
         children: [
@@ -67,10 +71,6 @@ export const router = createBrowserRouter([
           {
             path: 'search/:query?',
             element: <Search />,
-          },
-          {
-            path: 'chat/share/:conversationId?',
-            element: <SharedConvo />,
           },
           {
             path: 'leaderboard',
