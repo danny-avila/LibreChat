@@ -350,4 +350,7 @@ export default {
   com_error_insufficient_quota:
     '对于由此造成的任何不便，我们深表歉意。默认API已达到其极限。要继续使用此服务，请设置您自己的API密钥。您可以通过单击文本框左角的模型徽标并为当前选定的端点选择“设置令牌”来做到这一点。感谢您的理解。',
   com_error_unknown: '哎呀！出了问题。请稍后重试。这是我们遇到的具体错误消息： {0}',
+  com_msg_playback: '播放',
+  com_msg_playback_pause: '暂停播放',
+  com_msg_playback_stop: '停止播放',
 };

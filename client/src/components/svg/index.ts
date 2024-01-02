@@ -37,3 +37,6 @@ export { default as PaLMinimalIcon } from './PaLMinimalIcon';
 export { default as AnthropicMinimalIcon } from './AnthropicMinimalIcon';
 export { default as BingIcon } from './BingIcon';
 export { default as SendMessageIcon } from './SendMessageIcon';
+export { default as PlayIcon } from './PlayIcon';
+export { default as PauseIcon } from './PauseIcon';
+export { default as StopIcon } from './StopIcon';

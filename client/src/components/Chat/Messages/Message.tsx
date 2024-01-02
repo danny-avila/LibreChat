@@ -14,8 +14,10 @@ import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
+import Error from '~/components/Messages/Content/Error';
 
 export default function Message(props: TMessageProps) {
+  const synth = window.speechSynthesis;
   const autoScroll = useRecoilValue(store.autoScroll);
   const {
     message,
@@ -116,6 +118,76 @@ export default function Message(props: TMessageProps) {
     }, 3000);
   };
 
+  const speak = (msg, updateHoverButtons) => {
+    const cb = Symbol('stopCallback');
+    const u = new SpeechSynthesisUtterance();
+    u.lang = 'zh-CN';
+    u.text = msg;
+    u[cb] = updateHoverButtons;
+    // console.log(msg);
+    u.onend = (event) => {
+      // console.log('Finshed speaking')
+      event.utterance[cb]({ isStopped: true, isPaused: false });
+    };
+    synth.speak(u);
+  };
+
+  const pause = () => {
+    synth.pause();
+  };
+
+  const resume = () => {
+    synth.resume();
+  };
+
+  const stop = () => {
+    synth.cancel();
+  };
+
+  const playbackMessage = (status, setStatus) => {
+    let { isStopped, isPaused } = status;
+    if (isStopped && !isPaused) {
+      // console.log('(1) status ==> stopped: ' + isStopped + '->false, paused: ' + isPaused + ', text: ' + text)
+      isStopped = false;
+      stop();
+      if (text) {
+        setStatus({ isStopped, isPaused });
+        if (error) {
+          const errMsg = Error({ text });
+          speak(errMsg, setStatus);
+        } else {
+          speak(text, setStatus);
+        }
+      }
+    } else if (!isStopped && !isPaused) {
+      // console.log('(2) status ==> stopped: ' + isStopped + ', paused: ' + isPaused + '->true, text: ' + text)
+      isPaused = true;
+      setStatus({ isStopped, isPaused });
+      pause();
+    } else if (!isStopped && isPaused) {
+      // console.log('(3) status ==> stopped: ' + isStopped + ', paused: ' + isPaused + '->false, text: ' + text)
+      isPaused = false;
+      setStatus({ isStopped, isPaused });
+      resume();
+    } else {
+      console.log('paly back status: ' + isStopped + ' ' + isPaused);
+    }
+  };
+
+  const stopPlaybackMessage = (status, setStatus) => {
+    let { isStopped, isPaused } = status;
+    if (isStopped) {
+      // console.log('(1) stop ==> ' + isStopped + ' ' + isPaused)
+      // pass
+    } else {
+      // console.log('(2) stop ==> ' + isStopped + ' ' + isPaused)
+      isStopped = true;
+      isPaused = false;
+      setStatus({ isStopped, isPaused });
+      stop();
+    }
+  };
+
   return (
     <>
       <div
@@ -177,6 +249,7 @@ export default function Message(props: TMessageProps) {
                     setSiblingIdx={setSiblingIdx}
                   />
                   <HoverButtons
+                    showStopButton={false}
                     isEditing={edit}
                     message={message}
                     enterEdit={enterEdit}
@@ -186,6 +259,8 @@ export default function Message(props: TMessageProps) {
                     copyToClipboard={copyToClipboard}
                     handleContinue={handleContinue}
                     latestMessage={latestMessage}
+                    stopPlaybackMessage={stopPlaybackMessage}
+                    playbackMessage={playbackMessage}
                   />
                 </SubRow>
               )}

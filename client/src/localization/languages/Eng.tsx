@@ -384,4 +384,7 @@ export default {
     'Oops! Something went wrong. Please try again in a few moments. Here\'s the specific error message we encountered: {0}',
   com_nav_lang_arabic: 'العربية',
   com_nav_lang_dutch: 'Nederlands',
+  com_msg_playback: 'Play',
+  com_msg_playback_pause: 'Pause',
+  com_msg_playback_stop: 'Stop',
 };
