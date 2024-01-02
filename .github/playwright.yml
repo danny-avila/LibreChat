@@ -36,8 +36,8 @@
 #       PLAYWRIGHT_BROWSERS_PATH: 0 # Places binaries to node_modules/@playwright/test
 #       TITLE_CONVO: false
 #     steps:
-#       - uses: actions/checkout@v3
-#       - uses: actions/setup-node@v3
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-node@v4
 #         with:
 #           node-version: 18
 #           cache: 'npm'

@@ -1,7 +1,13 @@
 const fs = require('fs');
 const path = require('path');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { updateFile } = require('~/models');
 
+/**
+ * Encodes an image file to base64.
+ * @param {string} imagePath - The path to the image file.
+ * @returns {Promise<string>} A promise that resolves with the base64 encoded image data.
+ */
 function encodeImage(imagePath) {
   return new Promise((resolve, reject) => {
     fs.readFile(imagePath, (err, data) => {
@@ -14,6 +20,12 @@ function encodeImage(imagePath) {
   });
 }
 
+/**
+ * Updates the file and encodes the image.
+ * @param {Object} req - The request object.
+ * @param {Object} file - The file object.
+ * @returns {Promise<[MongoFile, string]>}  - A promise that resolves to an array of results from updateFile and encodeImage.
+ */
 async function updateAndEncode(req, file) {
   const { publicPath, imageOutput } = req.app.locals.config;
   const userPath = path.join(imageOutput, req.user.id);
@@ -29,7 +41,14 @@ async function updateAndEncode(req, file) {
   return await Promise.all(promises);
 }
 
-async function encodeAndFormat(req, files) {
+/**
+ * Encodes and formats the given files.
+ * @param {Express.Request} req - The request object.
+ * @param {Array<MongoFile>} files - The array of files to encode and format.
+ * @param {EModelEndpoint} [endpoint] - Optional: The endpoint for the image.
+ * @returns {Promise<Object>} - A promise that resolves to the result object containing the encoded images and file details.
+ */
+async function encodeAndFormat(req, files, endpoint) {
   const promises = [];
   for (let file of files) {
     promises.push(updateAndEncode(req, file));
@@ -46,13 +65,19 @@ async function encodeAndFormat(req, files) {
   };
 
   for (const [file, base64] of encodedImages) {
-    result.image_urls.push({
+    const imagePart = {
       type: 'image_url',
       image_url: {
         url: `data:image/webp;base64,${base64}`,
         detail,
       },
-    });
+    };
+
+    if (endpoint && endpoint === EModelEndpoint.google) {
+      imagePart.image_url = imagePart.image_url.url;
+    }
+
+    result.image_urls.push(imagePart);
 
     result.files.push({
       file_id: file.file_id,

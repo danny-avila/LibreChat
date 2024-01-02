@@ -11,7 +11,7 @@ import {
 } from '~/hooks';
 import { TooltipProvider, Tooltip } from '~/components/ui';
 import { Conversations, Pages } from '../Conversations';
-import { Spinner } from '~/components';
+import { Spinner } from '~/components/svg';
 import SearchBar from './SearchBar';
 import NavToggle from './NavToggle';
 import NavLinks from './NavLinks';

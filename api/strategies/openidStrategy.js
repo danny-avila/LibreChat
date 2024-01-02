@@ -1,16 +1,16 @@
-const passport = require('passport');
-const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
-const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-
-const User = require('../models/User');
+const axios = require('axios');
+const passport = require('passport');
+const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
+const { logger } = require('~/config');
+const User = require('~/models/User');
 
 let crypto;
 try {
   crypto = require('node:crypto');
 } catch (err) {
-  console.error('crypto support is disabled!');
+  logger.error('[openidStrategy] crypto support is disabled!', err);
 }
 
 const downloadImage = async (url, imagePath, accessToken) => {
@@ -29,7 +29,9 @@ const downloadImage = async (url, imagePath, accessToken) => {
 
     return `/images/openid/${fileName}`;
   } catch (error) {
-    console.error(`Error downloading image at URL "${url}": ${error}`);
+    logger.error(
+      `[openidStrategy] downloadImage: Error downloading image at URL "${url}": ${error}`,
+    );
     return '';
   }
 };
@@ -130,7 +132,7 @@ async function setupOpenId() {
 
     passport.use('openid', openidLogin);
   } catch (err) {
-    console.error(err);
+    logger.error('[openidStrategy]', err);
   }
 }
 

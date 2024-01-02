@@ -1,8 +1,9 @@
 const { promptTokensEstimate } = require('openai-chat-tokens');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, supportsBalanceCheck } = require('librechat-data-provider');
 const { formatFromLangChain } = require('~/app/clients/prompts');
 const checkBalance = require('~/models/checkBalance');
 const { isEnabled } = require('~/server/utils');
+const { logger } = require('~/config');
 
 const createStartHandler = ({
   context,
@@ -16,9 +17,15 @@ const createStartHandler = ({
     const { model, functions, function_call } = invocation_params;
     const messages = _messages[0].map(formatFromLangChain);
 
-    if (manager.debug) {
-      console.log(`handleChatModelStart: ${context}`);
-      console.dir({ model, functions, function_call }, { depth: null });
+    logger.debug(`[createStartHandler] handleChatModelStart: ${context}`, {
+      model,
+      function_call,
+    });
+
+    if (context !== 'title') {
+      logger.debug(`[createStartHandler] handleChatModelStart: ${context}`, {
+        functions,
+      });
     }
 
     const payload = { messages };
@@ -35,13 +42,15 @@ const createStartHandler = ({
     }
 
     prelimPromptTokens += promptTokensEstimate(payload);
-    if (manager.debug) {
-      console.log('Prelim Prompt Tokens & Token Buffer', prelimPromptTokens, tokenBuffer);
-    }
+    logger.debug('[createStartHandler]', {
+      prelimPromptTokens,
+      tokenBuffer,
+    });
     prelimPromptTokens += tokenBuffer;
 
     try {
-      if (isEnabled(process.env.CHECK_BALANCE)) {
+      // TODO: if plugins extends to non-OpenAI models, this will need to be updated
+      if (isEnabled(process.env.CHECK_BALANCE) && supportsBalanceCheck[EModelEndpoint.openAI]) {
         const generations =
           initialMessageCount && messages.length > initialMessageCount
             ? messages.slice(initialMessageCount)
@@ -61,7 +70,7 @@ const createStartHandler = ({
         });
       }
     } catch (err) {
-      console.error(`[${context}] checkBalance error`, err);
+      logger.error(`[createStartHandler][${context}] checkBalance error`, err);
       manager.abortController.abort();
       if (context === 'summary' || context === 'plugins') {
         manager.addRun(runId, { conversationId, error: err.message });

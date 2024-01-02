@@ -1,7 +1,8 @@
+const { getResponseSender } = require('librechat-data-provider');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage, getConvoTitle, getConvo } = require('~/models');
-const { getResponseSender } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
+const { logger } = require('~/config');
 
 const EditController = async (req, res, next, initializeClient) => {
   let {
@@ -14,8 +15,15 @@ const EditController = async (req, res, next, initializeClient) => {
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
-  console.log('edit log');
-  console.dir({ text, generation, isContinued, conversationId, endpointOption }, { depth: null });
+
+  logger.debug('[EditController]', {
+    text,
+    generation,
+    isContinued,
+    conversationId,
+    ...endpointOption,
+  });
+
   let metadata;
   let userMessage;
   let promptTokens;
@@ -42,6 +50,7 @@ const EditController = async (req, res, next, initializeClient) => {
     generation,
     onProgress: ({ text: partialText }) => {
       const currentTimestamp = Date.now();
+
       if (currentTimestamp - lastSavedTimestamp > saveDelay) {
         lastSavedTimestamp = currentTimestamp;
         saveMessage({
@@ -50,8 +59,8 @@ const EditController = async (req, res, next, initializeClient) => {
           conversationId,
           parentMessageId: overrideParentMessageId ?? userMessageId,
           text: partialText,
+          model: endpointOption.modelOptions.model,
           unfinished: true,
-          cancelled: false,
           isEdited: true,
           error: false,
           user,
@@ -63,19 +72,20 @@ const EditController = async (req, res, next, initializeClient) => {
       }
     },
   });
+
+  const getAbortData = () => ({
+    conversationId,
+    messageId: responseMessageId,
+    sender,
+    parentMessageId: overrideParentMessageId ?? userMessageId,
+    text: getPartialText(),
+    userMessage,
+    promptTokens,
+  });
+
+  const { abortController, onStart } = createAbortController(req, res, getAbortData);
+
   try {
-    const getAbortData = () => ({
-      conversationId,
-      messageId: responseMessageId,
-      sender,
-      parentMessageId: overrideParentMessageId ?? userMessageId,
-      text: getPartialText(),
-      userMessage,
-      promptTokens,
-    });
-
-    const { abortController, onStart } = createAbortController(req, res, getAbortData);
-
     const { client } = await initializeClient({ req, res, endpointOption });
 
     let response = await client.sendMessage(text, {
@@ -87,39 +97,33 @@ const EditController = async (req, res, next, initializeClient) => {
       parentMessageId,
       responseMessageId,
       overrideParentMessageId,
-      ...endpointOption,
-      onProgress: progressCallback.call(null, {
-        res,
-        text,
-        parentMessageId: overrideParentMessageId ?? userMessageId,
-      }),
       getReqData,
       onStart,
       addMetadata,
       abortController,
+      onProgress: progressCallback.call(null, {
+        res,
+        text,
+        parentMessageId: overrideParentMessageId || userMessageId,
+      }),
     });
 
     if (metadata) {
       response = { ...response, ...metadata };
     }
 
-    if (overrideParentMessageId) {
-      response.parentMessageId = overrideParentMessageId;
+    if (!abortController.signal.aborted) {
+      sendMessage(res, {
+        title: await getConvoTitle(user, conversationId),
+        final: true,
+        conversation: await getConvo(user, conversationId),
+        requestMessage: userMessage,
+        responseMessage: response,
+      });
+      res.end();
+
+      await saveMessage({ ...response, user });
     }
-
-    sendMessage(res, {
-      title: await getConvoTitle(user, conversationId),
-      final: true,
-      conversation: await getConvo(user, conversationId),
-      requestMessage: userMessage,
-      responseMessage: response,
-    });
-    res.end();
-
-    await saveMessage({ ...response, user });
-    await saveMessage(userMessage);
-
-    // TODO: add title service
   } catch (error) {
     const partialText = getPartialText();
     handleAbortError(res, req, error, {

@@ -18,5 +18,6 @@ router.use(uaParser);
 
 router.use('/', files);
 router.use('/images', images);
+router.use('/images/avatar', require('./avatar'));
 
 module.exports = router;

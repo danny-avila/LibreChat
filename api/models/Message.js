@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const Message = require('./schema/messageSchema');
+const logger = require('~/config/winston');
 
 const idSchema = z.string().uuid();
 
@@ -14,17 +15,16 @@ module.exports = {
     parentMessageId,
     sender,
     text,
-    isCreatedByUser = false,
+    isCreatedByUser,
     error,
     unfinished,
-    cancelled,
     files,
-    isEdited = false,
-    finish_reason = null,
-    tokenCount = null,
-    plugin = null,
-    plugins = null,
-    model = null,
+    isEdited,
+    finish_reason,
+    tokenCount,
+    plugin,
+    plugins,
+    model,
   }) {
     try {
       const validConvoId = idSchema.safeParse(conversationId);
@@ -44,7 +44,6 @@ module.exports = {
         finish_reason,
         error,
         unfinished,
-        cancelled,
         tokenCount,
         plugin,
         plugins,
@@ -67,7 +66,7 @@ module.exports = {
         tokenCount,
       };
     } catch (err) {
-      console.error(`Error saving message: ${err}`);
+      logger.error('Error saving message:', err);
       throw new Error('Failed to save message.');
     }
   },
@@ -92,7 +91,7 @@ module.exports = {
         isEdited: true,
       };
     } catch (err) {
-      console.error(`Error updating message: ${err}`);
+      logger.error('Error updating message:', err);
       throw new Error('Failed to update message.');
     }
   },
@@ -106,7 +105,7 @@ module.exports = {
         });
       }
     } catch (err) {
-      console.error(`Error deleting messages: ${err}`);
+      logger.error('Error deleting messages:', err);
       throw new Error('Failed to delete messages.');
     }
   },
@@ -115,7 +114,7 @@ module.exports = {
     try {
       return await Message.find(filter).sort({ createdAt: 1 }).lean();
     } catch (err) {
-      console.error(`Error getting messages: ${err}`);
+      logger.error('Error getting messages:', err);
       throw new Error('Failed to get messages.');
     }
   },
@@ -124,7 +123,7 @@ module.exports = {
     try {
       return await Message.deleteMany(filter);
     } catch (err) {
-      console.error(`Error deleting messages: ${err}`);
+      logger.error('Error deleting messages:', err);
       throw new Error('Failed to delete messages.');
     }
   },

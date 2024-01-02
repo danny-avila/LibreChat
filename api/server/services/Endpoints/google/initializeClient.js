@@ -1,5 +1,5 @@
 const { GoogleClient } = require('~/app');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, AuthKeys } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 
 const initializeClient = async ({ req, res, endpointOption }) => {
@@ -11,14 +11,26 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   if (expiresAt && isUserProvided) {
     checkUserKeyExpiry(
       expiresAt,
-      'Your Google key has expired. Please provide your JSON credentials again.',
+      'Your Google Credentials have expired. Please provide your Service Account JSON Key or Generative Language API Key again.',
     );
     userKey = await getUserKey({ userId: req.user.id, name: EModelEndpoint.google });
   }
 
-  const apiKey = isUserProvided ? userKey : require('~/data/auth.json');
+  let serviceKey = {};
+  try {
+    serviceKey = require('~/data/auth.json');
+  } catch (e) {
+    // Do nothing
+  }
 
-  const client = new GoogleClient(apiKey, {
+  const credentials = isUserProvided
+    ? userKey
+    : {
+      [AuthKeys.GOOGLE_SERVICE_KEY]: serviceKey,
+      [AuthKeys.GOOGLE_API_KEY]: GOOGLE_KEY,
+    };
+
+  const client = new GoogleClient(credentials, {
     req,
     res,
     reverseProxyUrl: GOOGLE_REVERSE_PROXY ?? null,
@@ -28,7 +40,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   return {
     client,
-    apiKey,
+    credentials,
   };
 };
 

@@ -8,9 +8,9 @@ const { openAIApiKey, azureOpenAIApiKey, useAzurePlugins, userProvidedOpenAI, go
  */
 async function loadAsyncEndpoints() {
   let i = 0;
-  let key, googleUserProvides;
+  let serviceKey, googleUserProvides;
   try {
-    key = require('~/data/auth.json');
+    serviceKey = require('~/data/auth.json');
   } catch (e) {
     if (i === 0) {
       i++;
@@ -33,7 +33,7 @@ async function loadAsyncEndpoints() {
   }
   const plugins = transformToolsToMap(tools);
 
-  const google = key || googleUserProvides ? { userProvide: googleUserProvides } : false;
+  const google = serviceKey || googleKey ? { userProvide: googleUserProvides } : false;
 
   const gptPlugins =
     openAIApiKey || azureOpenAIApiKey

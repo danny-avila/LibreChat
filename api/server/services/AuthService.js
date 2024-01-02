@@ -1,10 +1,12 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const User = require('../../models/User');
-const Session = require('../../models/Session');
-const Token = require('../../models/schema/tokenSchema');
-const { registerSchema, errorsToString } = require('../../strategies/validators');
-const { sendEmail } = require('../utils');
+const { registerSchema, errorsToString } = require('~/strategies/validators');
+const Token = require('~/models/schema/tokenSchema');
+const { sendEmail } = require('~/server/utils');
+const Session = require('~/models/Session');
+const { logger } = require('~/config');
+const User = require('~/models/User');
+
 const domains = {
   client: process.env.DOMAIN_CLIENT,
   server: process.env.DOMAIN_SERVER,
@@ -29,7 +31,7 @@ const logoutUser = async (userId, refreshToken) => {
       try {
         await Session.deleteOne({ _id: session._id });
       } catch (deleteErr) {
-        console.error(deleteErr);
+        logger.error('[logoutUser] Failed to delete session.', deleteErr);
         return { status: 500, message: 'Failed to delete session.' };
       }
     }
@@ -50,7 +52,7 @@ const registerUser = async (user) => {
   const { error } = registerSchema.safeParse(user);
   if (error) {
     const errorMessage = errorsToString(error.errors);
-    console.info(
+    logger.info(
       'Route: register - Validation Error',
       { name: 'Request params:', value: user },
       { name: 'Validation error:', value: errorMessage },
@@ -65,7 +67,7 @@ const registerUser = async (user) => {
     const existingUser = await User.findOne({ email }).lean();
 
     if (existingUser) {
-      console.info(
+      logger.info(
         'Register User - Email in use',
         { name: 'Request params:', value: user },
         { name: 'Existing user:', value: existingUser },
@@ -229,7 +231,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
 
     return token;
   } catch (error) {
-    console.log('Error in setting authentication tokens:', error);
+    logger.error('[setAuthTokens] Error in setting authentication tokens:', error);
     throw error;
   }
 };

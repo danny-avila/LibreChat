@@ -1,6 +1,8 @@
-const { promises: fs } = require('fs');
 const path = require('path');
-const { addOpenAPISpecs } = require('../../app/clients/tools/util/addOpenAPISpecs');
+const { promises: fs } = require('fs');
+const { addOpenAPISpecs } = require('~/app/clients/tools/util/addOpenAPISpecs');
+const { CacheKeys } = require('~/common/enums');
+const { getLogStores } = require('~/cache');
 
 const filterUniquePlugins = (plugins) => {
   const seen = new Set();
@@ -27,6 +29,13 @@ const isPluginAuthenticated = (plugin) => {
 
 const getAvailablePluginsController = async (req, res) => {
   try {
+    const cache = getLogStores(CacheKeys.CONFIG);
+    const cachedPlugins = await cache.get(CacheKeys.PLUGINS);
+    if (cachedPlugins) {
+      res.status(200).json(cachedPlugins);
+      return;
+    }
+
     const manifestFile = await fs.readFile(
       path.join(__dirname, '..', '..', 'app', 'clients', 'tools', 'manifest.json'),
       'utf8',
@@ -42,6 +51,7 @@ const getAvailablePluginsController = async (req, res) => {
       }
     });
     const plugins = await addOpenAPISpecs(authenticatedPlugins);
+    await cache.set(CacheKeys.PLUGINS, plugins);
     res.status(200).json(plugins);
   } catch (error) {
     res.status(500).json({ message: error.message });
