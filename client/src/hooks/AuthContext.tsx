@@ -112,7 +112,12 @@ const AuthContextProvider = ({
           if (authConfig?.test) {
             return;
           }
-          navigate('/login');
+          const isSharedPage = localStorage.getItem('isSharedPage');
+          if (isSharedPage == 'true') {
+            setUserContext({ token, isAuthenticated: false, user });
+          } else {
+            navigate('/login');
+          }
         }
       },
       onError: (error) => {

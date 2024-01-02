@@ -27,14 +27,14 @@ export default function SharedConvo() {
   const [pageTitle, setPageTitle] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
   const [shareLink, setShareLink] = useState<string>('');
-
+  localStorage.setItem('isSharedPage', 'true');
   const [liked, setLiked] = useState<boolean>(false);
   const [numOfLikes, setNumOfLikes] = useState<number>(0);
   const [showRegMsg, setShowRegMsg] = useState<boolean>(false);
   const localize = useLocalize();
 
   const { screenshotTargetRef } = useScreenshot();
-  const { user, token } = useAuthContext();
+  // const { user, token } = useAuthContext();
   const { conversationId } = useParams();
   const likeConversationMutation = useLikeConversationMutation(conversationId || '');
   const navigate = useNavigate();
@@ -112,7 +112,8 @@ export default function SharedConvo() {
 
   // Likes the conversation
   const likeHandler = async () => {
-    if (!conversation || !user) {
+    // if (!conversation || !user) {
+    if (!conversation) {
       return;
     }
 
@@ -131,17 +132,17 @@ export default function SharedConvo() {
     if (liked) {
       setNumOfLikes(numOfLikes - 1);
       conversation.likes = conversation.likes - 1;
-      delete conversation.likedBy[user.id];
+      // delete conversation.likedBy[user.id];
     } else {
       setNumOfLikes(numOfLikes + 1);
       conversation.likes = conversation.likes + 1;
-      conversation.likedBy[user.id] = new Date();
+      // conversation.likedBy[user.id] = new Date();
     }
 
     // update database
     likeConversationMutation.mutate({
       conversationId: conversation.conversationId,
-      userId: user?.id,
+      // userId: user?.id,
       liked: !liked,
     });
   };
@@ -162,7 +163,7 @@ export default function SharedConvo() {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          // Authorization: `Bearer ${token}`,
         },
       });
       const responseObject = await response.json();
@@ -180,7 +181,7 @@ export default function SharedConvo() {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          // Authorization: `Bearer ${token}`,
         },
       });
       const responseObject = await response.json();
@@ -198,7 +199,7 @@ export default function SharedConvo() {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          // Authorization: `Bearer ${token}`,
         },
       });
       const responseObject = await response.json();
@@ -232,8 +233,10 @@ export default function SharedConvo() {
 
   // Get recommendations on mount
   useEffect(() => {
+    localStorage.setItem('isSharedPage', 'true');
     fetchConversation();
-  }, [token]);
+    localStorage.setItem('isSharedPage', 'false');
+  }, []);
 
   // Check if the conversation has been set as private
   useEffect(() => {
@@ -250,14 +253,14 @@ export default function SharedConvo() {
       );
       setNumOfLikes(conversation.likes || 0);
 
-      if (user && conversation.likedBy) {
-        setLiked(conversation.likedBy[user?.id] ? true : false);
-      }
+      // if (user && conversation.likedBy) {
+      //   setLiked(conversation.likedBy[user?.id] ? true : false);
+      // }
     } else {
       setIsPrivate(true);
       setPageTitle(localize('com_ui_private_conversation'));
     }
-  }, [conversation, user]);
+  }, [conversation]);
 
   useDocumentTitle(pageTitle);
 
@@ -344,7 +347,7 @@ export default function SharedConvo() {
                         </button>
 
                         {/*Like button*/}
-                        <button
+                        {/* <button
                           className="ml-0.5 flex flex-row items-center gap-1 p-1 hover:bg-gray-200 dark:hover:bg-gray-600"
                           onClick={user ? likeHandler : showRegMsgHandler}
                         >
@@ -365,7 +368,7 @@ export default function SharedConvo() {
                             </svg>
                           </div>
                           <div>{localize('com_ui_number_of_likes', numOfLikes.toString())}</div>
-                        </button>
+                        </button> */}
                         {/*View Count Display*/}
                         <div>
                           {localize(

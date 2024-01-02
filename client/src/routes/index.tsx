@@ -16,13 +16,20 @@ import Profile from '../components/Profile';
 import Leaderboard from '~/components/ui/Leaderboard';
 import SharedConvo from '~/components/ui/SharedConvo';
 import Recommendations from '~/components/ui/Recommendations';
+import { useEffect } from 'react';
 
-const AuthLayout = () => (
-  <AuthContextProvider>
-    <Outlet />
-    <ApiErrorWatcher />
-  </AuthContextProvider>
-);
+const AuthLayout = () => {
+  useEffect(() => {
+    localStorage.setItem('isSharedPage', 'false');
+  }, []);
+
+  return (
+    <AuthContextProvider>
+      <Outlet />
+      <ApiErrorWatcher />
+    </AuthContextProvider>
+  );
+};
 
 export const router = createBrowserRouter([
   {
@@ -43,6 +50,10 @@ export const router = createBrowserRouter([
       {
         path: 'login',
         element: <Login />,
+      },
+      {
+        path: 'chat/share/:conversationId?',
+        element: <SharedConvo />,
       },
       {
         path: '/',
@@ -67,10 +78,6 @@ export const router = createBrowserRouter([
           {
             path: 'search/:query?',
             element: <Search />,
-          },
-          {
-            path: 'chat/share/:conversationId?',
-            element: <SharedConvo />,
           },
           {
             path: 'leaderboard',
