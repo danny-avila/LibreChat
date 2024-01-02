@@ -125,9 +125,9 @@ export type TConfig = {
   azure?: boolean;
   availableTools?: [];
   plugins?: Record<string, string>;
-  defaultModelLabel?: string;
   name?: string;
   iconURL?: string;
+  modelDisplayLabel?: string;
   userProvide?: boolean | null;
   userProvideURL?: boolean | null;
 };

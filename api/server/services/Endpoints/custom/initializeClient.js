@@ -24,7 +24,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     titleModel: endpointConfig.titleModel,
     forcePrompt: endpointConfig.forcePrompt,
     summaryModel: endpointConfig.summaryModel,
-    defaultModelLabel: endpointConfig.defaultModelLabel,
+    modelDisplayLabel: endpointConfig.modelDisplayLabel,
     titleMethod: endpointConfig.titleMethod ?? 'completion',
     contextStrategy: endpointConfig.summarize ? 'summarize' : null,
   };

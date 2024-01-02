@@ -10,7 +10,7 @@ const EditController = async (req, res, next, initializeClient) => {
     generation,
     endpointOption,
     conversationId,
-    defaultModelLabel,
+    modelDisplayLabel,
     responseMessageId,
     isContinued = false,
     parentMessageId = null,
@@ -33,7 +33,7 @@ const EditController = async (req, res, next, initializeClient) => {
   const sender = getResponseSender({
     ...endpointOption,
     model: endpointOption.modelOptions.model,
-    defaultModelLabel,
+    modelDisplayLabel,
   });
   const userMessageId = parentMessageId;
   const user = req.user.id;

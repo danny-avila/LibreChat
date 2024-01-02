@@ -33,12 +33,12 @@ async function loadConfigEndpoints() {
 
     for (let i = 0; i < customEndpoints.length; i++) {
       const endpoint = customEndpoints[i];
-      const { baseURL, apiKey, name, defaultModelLabel } = endpoint;
+      const { baseURL, apiKey, name, modelDisplayLabel } = endpoint;
       endpointsConfig[name] = {
         type: EModelEndpoint.custom,
         userProvide: isUserProvided(apiKey),
         userProvideURL: isUserProvided(baseURL),
-        defaultModelLabel,
+        modelDisplayLabel,
       };
     }
   }

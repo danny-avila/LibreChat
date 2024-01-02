@@ -691,7 +691,7 @@ export const parseConvo = ({
 export type TEndpointOption = {
   endpoint: EModelEndpoint;
   endpointType?: EModelEndpoint;
-  defaultModelLabel?: string;
+  modelDisplayLabel?: string;
   model?: string | null;
   promptPrefix?: string;
   temperature?: number;
@@ -702,7 +702,7 @@ export type TEndpointOption = {
 };
 
 export const getResponseSender = (endpointOption: TEndpointOption): string => {
-  const { model, endpoint, endpointType, defaultModelLabel, chatGptLabel, modelLabel, jailbreak } =
+  const { model, endpoint, endpointType, modelDisplayLabel, chatGptLabel, modelLabel, jailbreak } =
     endpointOption;
 
   if (
@@ -760,8 +760,8 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
       return 'GPT-3.5';
     } else if (model && model.includes('gpt-4')) {
       return 'GPT-4';
-    } else if (defaultModelLabel) {
-      return defaultModelLabel;
+    } else if (modelDisplayLabel) {
+      return modelDisplayLabel;
     }
 
     return 'AI';

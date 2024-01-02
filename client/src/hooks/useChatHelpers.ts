@@ -161,12 +161,12 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       conversation: conversation ?? {},
     });
 
-    const { defaultModelLabel } = endpointsConfig[endpoint ?? ''] ?? {};
+    const { modelDisplayLabel } = endpointsConfig[endpoint ?? ''] ?? {};
     const endpointOption = {
       ...convo,
       endpoint,
       endpointType,
-      defaultModelLabel,
+      modelDisplayLabel,
       key: getExpiry(),
     } as TEndpointOption;
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
