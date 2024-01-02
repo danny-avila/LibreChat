@@ -62,4 +62,4 @@ endpoints:
       modelDisplayLabel: "OpenRouter"
 
 # See the Custom Configuration Guide for more information:
-# 
+# https://docs.librechat.ai/install/configuration/custom_config.html
