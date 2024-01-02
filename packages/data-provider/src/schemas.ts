@@ -690,6 +690,8 @@ export const parseConvo = ({
 
 export type TEndpointOption = {
   endpoint: EModelEndpoint;
+  endpointType?: EModelEndpoint;
+  defaultModelLabel?: string;
   model?: string | null;
   promptPrefix?: string;
   temperature?: number;
@@ -700,7 +702,8 @@ export type TEndpointOption = {
 };
 
 export const getResponseSender = (endpointOption: TEndpointOption): string => {
-  const { model, endpoint, chatGptLabel, modelLabel, jailbreak } = endpointOption;
+  const { model, endpoint, endpointType, defaultModelLabel, chatGptLabel, modelLabel, jailbreak } =
+    endpointOption;
 
   if (
     [
@@ -716,6 +719,8 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
       return 'GPT-3.5';
     } else if (model && model.includes('gpt-4')) {
       return 'GPT-4';
+    } else if (model && model.includes('mistral')) {
+      return 'Mistral';
     }
     return alternateName[endpoint] ?? 'ChatGPT';
   }
@@ -740,9 +745,23 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
     return 'PaLM2';
   }
 
-  if (endpoint === EModelEndpoint.custom) {
+  if (
+    endpoint === EModelEndpoint.custom ||
+    endpointType === EModelEndpoint.custom ||
+    !defaultEndpoints.includes(endpoint)
+  ) {
     if (modelLabel) {
       return modelLabel;
+    } else if (chatGptLabel) {
+      return chatGptLabel;
+    } else if (model && model.includes('mistral')) {
+      return 'Mistral';
+    } else if (model && model.includes('gpt-3')) {
+      return 'GPT-3.5';
+    } else if (model && model.includes('gpt-4')) {
+      return 'GPT-4';
+    } else if (defaultModelLabel) {
+      return defaultModelLabel;
     }
 
     return 'AI';

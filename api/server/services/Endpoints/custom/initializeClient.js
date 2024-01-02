@@ -27,6 +27,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     proxy: PROXY ?? null,
     req,
     res,
+    defaultModelLabel: endpointConfig.defaultModelLabel,
     ...endpointOption,
   };
 
