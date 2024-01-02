@@ -8,6 +8,7 @@ import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
+import { ArrowUpIcon, ArrowDownIcon } from '~/components/svg';
 
 export default function Message(props: TMessageProps) {
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
@@ -26,6 +27,10 @@ export default function Message(props: TMessageProps) {
     handleContinue,
     copyToClipboard,
     regenerateMessage,
+    messageRef,
+    showExpand,
+    isExpand,
+    handleExpand,
   } = useMessageHelpers(props);
 
   const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
@@ -41,8 +46,8 @@ export default function Message(props: TMessageProps) {
         onWheel={handleScroll}
         onTouchMove={handleScroll}
       >
-        <div className="m-auto justify-center p-4 py-2 text-base md:gap-6 ">
-          <div className="} group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
+        <div className="m-auto justify-center p-4 py-2 text-base md:gap-6">
+          <div className="group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
             <div className="relative flex flex-shrink-0 flex-col items-end">
               <div>
                 <div className="pt-0.5">
@@ -56,14 +61,32 @@ export default function Message(props: TMessageProps) {
                 </div>
               </div>
             </div>
-            <div
-              className={cn('relative flex w-full flex-col', isCreatedByUser ? '' : 'agent-turn')}
-            >
-              <div className="select-none font-semibold">
+            <div className={cn('relative w-full flex-col', isCreatedByUser ? '' : 'agent-turn')}>
+              <div className="flex select-none items-center justify-between font-semibold ">
                 {isCreatedByUser ? 'You' : message.sender}
+                {isCreatedByUser && !edit && showExpand && (
+                  <button
+                    className="rounded-full p-1 hover:bg-gray-100 hover:brightness-110 dark:hover:bg-gray-700"
+                    onClick={handleExpand}
+                  >
+                    {isExpand ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                  </button>
+                )}
               </div>
               <div className="flex-col gap-1 md:gap-3">
-                <div className="flex max-w-full flex-grow flex-col gap-0">
+                <div
+                  ref={messageRef}
+                  className={cn(
+                    'flex max-w-full flex-grow flex-col gap-0',
+                    isCreatedByUser && !edit && showExpand
+                      ? 'h-[120px] cursor-pointer brightness-100 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      : '',
+                    !isCreatedByUser || isExpand || edit
+                      ? 'h-auto'
+                      : 'readmore-blur overflow-hidden',
+                  )}
+                  onClick={handleExpand}
+                >
                   {/* Legacy Plugins */}
                   {message?.plugin && <Plugin plugin={message?.plugin} />}
                   <MessageContent

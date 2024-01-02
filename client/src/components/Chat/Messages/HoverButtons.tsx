@@ -7,7 +7,10 @@ import { cn } from '~/utils';
 type THoverButtons = {
   isEditing: boolean;
   enterEdit: (cancel?: boolean) => void;
-  copyToClipboard: (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => void;
+  copyToClipboard: (
+    e: React.MouseEvent<HTMLButtonElement, MouseEvent>,
+    setIsCopied: React.Dispatch<React.SetStateAction<boolean>>,
+  ) => void;
   conversation: TConversation | null;
   isSubmitting: boolean;
   message: TMessage;
@@ -72,7 +75,7 @@ export default function HoverButtons({
           'ml-0 flex items-center gap-1.5 rounded-md p-1 pl-0 text-xs hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
           isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
         )}
-        onClick={() => copyToClipboard(setIsCopied)}
+        onClick={(e) => copyToClipboard(e, setIsCopied)}
         type="button"
         title={
           isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')

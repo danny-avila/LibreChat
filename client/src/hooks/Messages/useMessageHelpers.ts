@@ -1,5 +1,5 @@
 import copy from 'copy-to-clipboard';
-import { useEffect, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
@@ -26,6 +26,28 @@ export default function useMessageHelpers(props: TMessageProps) {
   const { text, children, messageId = null, isCreatedByUser } = message ?? {};
   const edit = messageId === currentEditId;
   const isLast = !children?.length;
+  const messageRef = useRef<HTMLDivElement>(null);
+  const [isExpand, setIsExpand] = useState(false);
+  const [showExpand, setShowExpand] = useState(false);
+
+  useEffect(() => {
+    const calculateLines = () => {
+      if (!messageRef.current) {
+        return 1;
+      }
+      const messageHeight = messageRef.current.clientHeight;
+      const lineHeight = parseInt(window.getComputedStyle(messageRef.current).lineHeight);
+      const lines = Math.floor(messageHeight / lineHeight);
+      return lines;
+    };
+    const lines = calculateLines();
+    if (lines > 3) {
+      setShowExpand(true);
+    } else {
+      setShowExpand(false);
+      setIsExpand(true);
+    }
+  }, [message]);
 
   useEffect(() => {
     if (!message) {
@@ -67,13 +89,24 @@ export default function useMessageHelpers(props: TMessageProps) {
     regenerate(message);
   };
 
-  const copyToClipboard = (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
+  const copyToClipboard = (
+    e: React.MouseEvent<HTMLButtonElement, MouseEvent>,
+    setIsCopied: React.Dispatch<React.SetStateAction<boolean>>,
+  ) => {
     setIsCopied(true);
     copy(text ?? '');
+    e.stopPropagation();
 
     setTimeout(() => {
       setIsCopied(false);
     }, 3000);
+  };
+
+  const handleExpand = () => {
+    if (!showExpand) {
+      return;
+    }
+    setIsExpand(!isExpand);
   };
 
   return {
@@ -89,5 +122,9 @@ export default function useMessageHelpers(props: TMessageProps) {
     handleContinue,
     copyToClipboard,
     regenerateMessage,
+    messageRef,
+    showExpand,
+    isExpand,
+    handleExpand,
   };
 }
