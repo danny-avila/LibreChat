@@ -94,9 +94,22 @@ class OpenAIClient extends BaseClient {
     }
 
     const { reverseProxyUrl: reverseProxy } = this.options;
+
+    if (
+      !this.useOpenRouter &&
+      reverseProxy &&
+      reverseProxy.includes('https://openrouter.ai/api/v1')
+    ) {
+      this.useOpenRouter = true;
+    }
+
     this.FORCE_PROMPT =
       isEnabled(OPENAI_FORCE_PROMPT) ||
       (reverseProxy && reverseProxy.includes('completions') && !reverseProxy.includes('chat'));
+
+    if (typeof this.options.forcePrompt === 'boolean') {
+      this.FORCE_PROMPT = this.options.forcePrompt;
+    }
 
     if (this.azure && process.env.AZURE_OPENAI_DEFAULT_MODEL) {
       this.azureEndpoint = genAzureChatCompletion(this.azure, this.modelOptions.model);
@@ -532,6 +545,19 @@ class OpenAIClient extends BaseClient {
     return llm;
   }
 
+  /**
+   * Generates a concise title for a conversation based on the user's input text and response.
+   * Uses either specified method or starts with the OpenAI `functions` method (using LangChain).
+   * If the `functions` method fails, it falls back to the `completion` method,
+   * which involves sending a chat completion request with specific instructions for title generation.
+   *
+   * @param {Object} params - The parameters for the conversation title generation.
+   * @param {string} params.text - The user's input.
+   * @param {string} [params.responseText=''] - The AI's immediate response to the user.
+   *
+   * @returns {Promise<string | 'New Chat'>} A promise that resolves to the generated conversation title.
+   *                            In case of failure, it will return the default title, "New Chat".
+   */
   async titleConvo({ text, responseText = '' }) {
     let title = 'New Chat';
     const convo = `||>User:
@@ -541,32 +567,25 @@ class OpenAIClient extends BaseClient {
 
     const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
+    const model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+
     const modelOptions = {
-      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo',
+      // TODO: remove the gpt fallback and make it specific to endpoint
+      model,
       temperature: 0.2,
       presence_penalty: 0,
       frequency_penalty: 0,
       max_tokens: 16,
     };
 
-    try {
-      this.abortController = new AbortController();
-      const llm = this.initializeLLM({ ...modelOptions, context: 'title', tokenBuffer: 150 });
-      title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
-    } catch (e) {
-      if (e?.message?.toLowerCase()?.includes('abort')) {
-        logger.debug('[OpenAIClient] Aborted title generation');
-        return;
-      }
-      logger.error(
-        '[OpenAIClient] There was an issue generating title with LangChain, trying the old method...',
-        e,
-      );
-      modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+    const titleChatCompletion = async () => {
+      modelOptions.model = model;
+
       if (this.azure) {
         modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL ?? modelOptions.model;
         this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model);
       }
+
       const instructionsPayload = [
         {
           role: 'system',
@@ -580,10 +599,39 @@ ${convo}
       ];
 
       try {
-        title = (await this.sendPayload(instructionsPayload, { modelOptions })).replaceAll('"', '');
+        const onProgress = () => ({});
+        title = (
+          await this.sendPayload(instructionsPayload, { modelOptions, onProgress })
+        ).replaceAll('"', '');
       } catch (e) {
-        logger.error('[OpenAIClient] There was another issue generating the title', e);
+        logger.error(
+          '[OpenAIClient] There was an issue generating the title with the completion method',
+          e,
+        );
       }
+    };
+
+    if (this.options.titleMethod === 'completion') {
+      await titleChatCompletion();
+      logger.debug('[OpenAIClient] Convo Title: ' + title);
+      return title;
+    }
+
+    try {
+      this.abortController = new AbortController();
+      const llm = this.initializeLLM({ ...modelOptions, context: 'title', tokenBuffer: 150 });
+      title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
+    } catch (e) {
+      if (e?.message?.toLowerCase()?.includes('abort')) {
+        logger.debug('[OpenAIClient] Aborted title generation');
+        return;
+      }
+      logger.error(
+        '[OpenAIClient] There was an issue generating title with LangChain, trying completion method...',
+        e,
+      );
+
+      await titleChatCompletion();
     }
 
     logger.debug('[OpenAIClient] Convo Title: ' + title);
@@ -595,8 +643,11 @@ ${convo}
     let context = messagesToRefine;
     let prompt;
 
+    // TODO: remove the gpt fallback and make it specific to endpoint
     const { OPENAI_SUMMARY_MODEL = 'gpt-3.5-turbo' } = process.env ?? {};
-    const maxContextTokens = getModelMaxTokens(OPENAI_SUMMARY_MODEL) ?? 4095;
+    const model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
+    const maxContextTokens = getModelMaxTokens(model) ?? 4095;
+
     // 3 tokens for the assistant label, and 98 for the summarizer prompt (101)
     let promptBuffer = 101;
 
@@ -646,7 +697,7 @@ ${convo}
     logger.debug('[OpenAIClient] initialPromptTokens', initialPromptTokens);
 
     const llm = this.initializeLLM({
-      model: OPENAI_SUMMARY_MODEL,
+      model,
       temperature: 0.2,
       context: 'summary',
       tokenBuffer: initialPromptTokens,

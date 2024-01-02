@@ -19,15 +19,22 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   const CUSTOM_API_KEY = endpointConfig.apiKey;
   const CUSTOM_BASE_URL = endpointConfig.baseURL;
 
-  const contextStrategy = endpointConfig.summarize ? 'summarize' : null;
+  const customOptions = {
+    titleConvo: endpointConfig.titleConvo,
+    titleModel: endpointConfig.titleModel,
+    forcePrompt: endpointConfig.forcePrompt,
+    summaryModel: endpointConfig.summaryModel,
+    defaultModelLabel: endpointConfig.defaultModelLabel,
+    titleMethod: endpointConfig.titleMethod ?? 'completion',
+    contextStrategy: endpointConfig.summarize ? 'summarize' : null,
+  };
 
   const clientOptions = {
-    contextStrategy,
     reverseProxyUrl: CUSTOM_BASE_URL ?? null,
     proxy: PROXY ?? null,
     req,
     res,
-    defaultModelLabel: endpointConfig.defaultModelLabel,
+    ...customOptions,
     ...endpointOption,
   };
 
