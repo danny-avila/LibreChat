@@ -1763,3 +1763,33 @@ html {
   border-color: #ececf1;
   border-color: var(--surface-tertiary)
 }
+
+.readmore-blur::before {
+  content: '';
+  width: 100%;
+  height: 0px;
+  display: block;
+  background: linear-gradient(#fff, rgba(255, 255, 255, 0));
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.readmore-blur::after {
+  content: '';
+  width: 100%;
+  height: 50px;
+  display: block;
+  background: linear-gradient(rgba(255, 255, 255, 0), #fff);
+  position: absolute;
+  bottom: 0;
+  left: 0;
+}
+
+.dark .readmore-blur::before {
+  background: linear-gradient(#343541, rgba(255, 255, 255, 0));
+}
+
+.dark .readmore-blur::after {
+  background: linear-gradient(rgba(255, 255, 255, 0), #343541);
+}

@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { IoIosArrowDown, IoIosArrowUp } from 'react-icons/io';
 import { Plugin } from '~/components/Messages/Content';
 import MessageContent from './Content/MessageContent';
 import type { TMessageProps } from '~/common';
@@ -10,6 +12,7 @@ import SubRow from './SubRow';
 import { cn } from '~/utils';
 
 export default function Message(props: TMessageProps) {
+  const [expand, setExpand] = useState(false);
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
     props;
 
@@ -57,10 +60,22 @@ export default function Message(props: TMessageProps) {
               </div>
             </div>
             <div
-              className={cn('relative flex w-full flex-col', isCreatedByUser ? '' : 'agent-turn')}
+              className={cn(
+                'relative flex w-full flex-col',
+                isCreatedByUser ? '' : 'agent-turn',
+                !isCreatedByUser || expand ? 'h-auto' : 'readmore-blur h-[120px] overflow-hidden',
+              )}
             >
-              <div className="select-none font-semibold">
+              <div className="flex select-none items-center justify-between font-semibold ">
                 {isCreatedByUser ? 'You' : message.sender}
+                {isCreatedByUser && (
+                  <button
+                    className="rounded-full p-1 hover:bg-gray-100 hover:brightness-110 dark:hover:bg-gray-700"
+                    onClick={() => setExpand(!expand)}
+                  >
+                    {expand ? <IoIosArrowUp /> : <IoIosArrowDown />}
+                  </button>
+                )}
               </div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
