@@ -449,7 +449,7 @@ class OpenAIClient extends BaseClient {
         },
         opts.abortController || new AbortController(),
       );
-    } else if (typeof opts.onProgress === 'function') {
+    } else if (typeof opts.onProgress === 'function' || this.options.useChatCompletion) {
       reply = await this.chatCompletion({
         payload,
         clientOptions: opts,
@@ -599,9 +599,8 @@ ${convo}
       ];
 
       try {
-        const onProgress = () => ({});
         title = (
-          await this.sendPayload(instructionsPayload, { modelOptions, onProgress })
+          await this.sendPayload(instructionsPayload, { modelOptions, useChatCompletion: true })
         ).replaceAll('"', '');
       } catch (e) {
         logger.error(
@@ -831,6 +830,14 @@ ${convo}
         apiKey: this.apiKey,
         ...opts,
       });
+
+      /* hacky fix for Mistral AI API not allowing a singular system message in payload */
+      if (this.completionsUrl.includes('https://api.mistral.ai/v1') && modelOptions.messages) {
+        const { messages } = modelOptions;
+        if (messages.length === 1 && messages[0].role === 'system') {
+          modelOptions.messages[0].role = 'user';
+        }
+      }
 
       let UnexpectedRoleError = false;
       if (modelOptions.stream) {
