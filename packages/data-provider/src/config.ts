@@ -21,9 +21,11 @@ export const endpointSchema = z.object({
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean(),
-  endpoints: z.object({
-    custom: z.array(endpointSchema.partial()),
-  }),
+  endpoints: z
+    .object({
+      custom: z.array(endpointSchema.partial()),
+    })
+    .strict(),
 });
 
 export enum KnownEndpoints {

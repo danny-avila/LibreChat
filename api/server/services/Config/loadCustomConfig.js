@@ -1,13 +1,15 @@
 const path = require('path');
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, configSchema } = require('librechat-data-provider');
 const loadYaml = require('~/utils/loadYaml');
 const { getLogStores } = require('~/cache');
+const { logger } = require('~/config');
 
-const apiRoot = path.resolve(__dirname, '..', '..', '..');
-const configPath = path.resolve(apiRoot, 'data', 'custom-config.yaml');
+const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
+const configPath = path.resolve(projectRoot, 'librechat.yaml');
 
 /**
  * Load custom configuration files and caches the object if the `cache` field at root is true.
+ * Validation via parsing the config file with the config schema.
  * @function loadCustomConfig
  * @returns {Promise<null | Object>} A promise that resolves to null or the custom config object.
  * */
@@ -16,6 +18,14 @@ async function loadCustomConfig() {
   const customConfig = loadYaml(configPath);
   if (!customConfig) {
     return null;
+  }
+
+  const result = configSchema.strict().safeParse(customConfig);
+  if (!result.success) {
+    logger.error(`Invalid custom config file at ${configPath}`, result.error);
+    return null;
+  } else {
+    logger.info('Loaded custom config file');
   }
 
   if (customConfig.cache) {
