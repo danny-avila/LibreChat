@@ -1,6 +1,6 @@
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
+const { isUserProvided, extractEnvVariable } = require('~/server/utils');
 const loadCustomConfig = require('./loadCustomConfig');
-const { isUserProvided } = require('~/server/utils');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -33,12 +33,17 @@ async function loadConfigEndpoints() {
 
     for (let i = 0; i < customEndpoints.length; i++) {
       const endpoint = customEndpoints[i];
-      const { baseURL, apiKey, name, modelDisplayLabel } = endpoint;
+      const { baseURL, apiKey, name, iconURL, modelDisplayLabel } = endpoint;
+
+      const resolvedApiKey = extractEnvVariable(apiKey);
+      const resolvedBaseURL = extractEnvVariable(baseURL);
+
       endpointsConfig[name] = {
         type: EModelEndpoint.custom,
-        userProvide: isUserProvided(apiKey),
-        userProvideURL: isUserProvided(baseURL),
+        userProvide: isUserProvided(resolvedApiKey),
+        userProvideURL: isUserProvided(resolvedBaseURL),
         modelDisplayLabel,
+        iconURL,
       };
     }
   }
