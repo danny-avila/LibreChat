@@ -1,5 +1,6 @@
 const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { isUserProvided, extractEnvVariable } = require('~/server/utils');
 const getCustomConfig = require('~/cache/getCustomConfig');
 const { OpenAIClient } = require('~/app');
 
@@ -16,8 +17,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   const customEndpoints = endpoints[EModelEndpoint.custom] ?? [];
   const endpointConfig = customEndpoints.find((endpointConfig) => endpointConfig.name === endpoint);
 
-  const CUSTOM_API_KEY = endpointConfig.apiKey;
-  const CUSTOM_BASE_URL = endpointConfig.baseURL;
+  const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
+  const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
 
   const customOptions = {
     titleConvo: endpointConfig.titleConvo,
@@ -42,15 +43,15 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     [endpoint]: CUSTOM_API_KEY,
   };
 
-  const isUserProvided = credentials[endpoint] === 'user_provided';
+  const useUserKey = isUserProvided(credentials[endpoint]);
 
   let userKey = null;
-  if (expiresAt && isUserProvided) {
+  if (expiresAt && useUserKey) {
     checkUserKeyExpiry(expiresAt, 'Your API key has expired. Please provide it again.');
     userKey = await getUserKey({ userId: req.user.id, name: endpoint });
   }
 
-  let apiKey = isUserProvided ? userKey : credentials[endpoint];
+  let apiKey = useUserKey ? userKey : credentials[endpoint];
 
   if (!apiKey) {
     throw new Error('API key not provided.');
