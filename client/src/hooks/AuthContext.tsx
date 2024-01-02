@@ -42,6 +42,7 @@ const AuthContextProvider = ({
       //@ts-ignore - ok for token to be undefined initially
       setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
+      // localStorage.setItem('isSharedPage', 'false');
       if (redirect) {
         navigate(redirect, { replace: true });
       }
@@ -104,7 +105,12 @@ const AuthContextProvider = ({
           if (authConfig?.test) {
             return;
           }
-          navigate('/login');
+          const isSharedPage = localStorage.getItem('isSharedPage');
+          if (isSharedPage == 'true') {
+            setUserContext({ token, isAuthenticated: false, user });
+          } else {
+            navigate('/login');
+          }
         }
       },
       onError: (error) => {

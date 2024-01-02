@@ -8,6 +8,7 @@ import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
 
 function Login() {
+  localStorage.setItem('isSharedPage', 'false');
   const { login, error, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();

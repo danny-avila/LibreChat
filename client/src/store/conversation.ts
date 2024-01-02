@@ -27,6 +27,11 @@ const latestMessage = atom<TMessage | null>({
   default: null,
 });
 
+const isSharedPage = atom<string | null | undefined>({
+  key: 'isSharedPage',
+  default: 'false',
+});
+
 const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   key: 'messagesSiblingIdx',
   default: 0,
@@ -37,5 +42,6 @@ export default {
   conversation,
   messagesTree,
   latestMessage,
+  isSharedPage,
   messagesSiblingIdxFamily,
 };
