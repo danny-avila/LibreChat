@@ -30,32 +30,42 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     contextStrategy: endpointConfig.summarize ? 'summarize' : null,
   };
 
+  const useUserKey = isUserProvided(CUSTOM_API_KEY);
+  const useUserURL = isUserProvided(CUSTOM_BASE_URL);
+
+  let userValues = null;
+  if (expiresAt && (useUserKey || useUserURL)) {
+    checkUserKeyExpiry(
+      expiresAt,
+      `Your API values for ${endpoint} have expired. Please configure them again.`,
+    );
+    userValues = await getUserKey({ userId: req.user.id, name: endpoint });
+    try {
+      userValues = JSON.parse(userValues);
+    } catch (e) {
+      throw new Error(`Invalid JSON provided for ${endpoint} user values.`);
+    }
+  }
+
+  let apiKey = useUserKey ? userValues.apiKey : CUSTOM_API_KEY;
+  let baseURL = useUserURL ? userValues.baseURL : CUSTOM_BASE_URL;
+
+  if (!apiKey) {
+    throw new Error(`${endpoint} API key not provided.`);
+  }
+
+  if (!baseURL) {
+    throw new Error(`${endpoint} Base URL not provided.`);
+  }
+
   const clientOptions = {
-    reverseProxyUrl: CUSTOM_BASE_URL ?? null,
+    reverseProxyUrl: baseURL ?? null,
     proxy: PROXY ?? null,
     req,
     res,
     ...customOptions,
     ...endpointOption,
   };
-
-  const credentials = {
-    [endpoint]: CUSTOM_API_KEY,
-  };
-
-  const useUserKey = isUserProvided(credentials[endpoint]);
-
-  let userKey = null;
-  if (expiresAt && useUserKey) {
-    checkUserKeyExpiry(expiresAt, 'Your API key has expired. Please provide it again.');
-    userKey = await getUserKey({ userId: req.user.id, name: endpoint });
-  }
-
-  let apiKey = useUserKey ? userKey : credentials[endpoint];
-
-  if (!apiKey) {
-    throw new Error('API key not provided.');
-  }
 
   const client = new OpenAIClient(apiKey, clientOptions);
   return {

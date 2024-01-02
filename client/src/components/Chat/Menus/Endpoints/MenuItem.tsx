@@ -46,7 +46,8 @@ const MenuItem: FC<MenuItemProps> = ({
     }
   };
 
-  const iconKey = endpointsConfig?.[endpoint ?? '']?.type ? 'unknown' : endpoint ?? 'unknown';
+  const endpointType = endpointsConfig?.[endpoint ?? '']?.type;
+  const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
   const Icon = icons[iconKey];
 
   return (
@@ -141,7 +142,13 @@ const MenuItem: FC<MenuItemProps> = ({
         </div>
       </div>
       {userProvidesKey && (
-        <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
+        <SetKeyDialog
+          open={isDialogOpen}
+          endpoint={endpoint}
+          endpointType={endpointType}
+          onOpenChange={setDialogOpen}
+          userProvideURL={endpointsConfig?.[endpoint ?? '']?.userProvideURL}
+        />
       )}
     </>
   );

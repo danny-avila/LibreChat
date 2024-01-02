@@ -148,7 +148,7 @@ export type TDisplayProps = TText &
 export type TConfigProps = {
   userKey: string;
   setUserKey: React.Dispatch<React.SetStateAction<string>>;
-  endpoint: string;
+  endpoint: EModelEndpoint | string;
 };
 
 export type TDangerButtonProps = {
