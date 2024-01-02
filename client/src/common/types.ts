@@ -201,6 +201,7 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
   Pick<TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
     size?: number;
     button?: boolean;
+    iconURL?: string;
     message?: boolean;
     className?: string;
     endpoint?: EModelEndpoint | string | null;

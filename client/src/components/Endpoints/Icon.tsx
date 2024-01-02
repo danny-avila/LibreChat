@@ -15,9 +15,8 @@ import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
 const Icon: React.FC<IconProps> = (props) => {
-  const { size = 30, isCreatedByUser, button, model = '', endpoint, error, jailbreak } = props;
-
   const { user } = useAuthContext();
+  const { size = 30, isCreatedByUser, button, model = '', endpoint, error, jailbreak } = props;
 
   if (isCreatedByUser) {
     const username = user?.name || 'User';
@@ -102,7 +101,14 @@ const Icon: React.FC<IconProps> = (props) => {
       },
       null: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'N/A' },
       default: {
-        icon: <UnknownIcon endpoint={endpoint ?? ''} className="icon-sm" context="message" />,
+        icon: (
+          <UnknownIcon
+            iconURL={props.iconURL}
+            endpoint={endpoint ?? ''}
+            className="icon-sm"
+            context="message"
+          />
+        ),
         name: endpoint,
       },
     };

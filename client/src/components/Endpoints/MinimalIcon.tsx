@@ -41,7 +41,14 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.bingAI]: { icon: <BingAIMinimalIcon />, name: 'BingAI' },
     [EModelEndpoint.chatGPTBrowser]: { icon: <LightningIcon />, name: 'ChatGPT' },
     default: {
-      icon: <UnknownIcon endpoint={endpoint} className="icon-sm" context="nav" />,
+      icon: (
+        <UnknownIcon
+          iconURL={props.iconURL}
+          endpoint={endpoint}
+          className="icon-sm"
+          context="nav"
+        />
+      ),
       name: endpoint,
     },
   };
