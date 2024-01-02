@@ -21,6 +21,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
 
   const customOptions = {
+    addParams: endpointConfig.addParams,
+    dropParams: endpointConfig.dropParams,
     titleConvo: endpointConfig.titleConvo,
     titleModel: endpointConfig.titleModel,
     forcePrompt: endpointConfig.forcePrompt,

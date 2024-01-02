@@ -771,7 +771,9 @@ ${convo}
       if (!abortController) {
         abortController = new AbortController();
       }
-      const modelOptions = { ...this.modelOptions };
+
+      let modelOptions = { ...this.modelOptions };
+
       if (typeof onProgress === 'function') {
         modelOptions.stream = true;
       }
@@ -832,11 +834,24 @@ ${convo}
       });
 
       /* hacky fix for Mistral AI API not allowing a singular system message in payload */
-      if (this.completionsUrl.includes('https://api.mistral.ai/v1') && modelOptions.messages) {
+      if (opts.baseURL.includes('https://api.mistral.ai/v1') && modelOptions.messages) {
         const { messages } = modelOptions;
         if (messages.length === 1 && messages[0].role === 'system') {
           modelOptions.messages[0].role = 'user';
         }
+      }
+
+      if (this.options.addParams && typeof this.options.addParams === 'object') {
+        modelOptions = {
+          ...modelOptions,
+          ...this.options.addParams,
+        };
+      }
+
+      if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
+        this.options.dropParams.forEach((param) => {
+          delete modelOptions[param];
+        });
       }
 
       let UnexpectedRoleError = false;
