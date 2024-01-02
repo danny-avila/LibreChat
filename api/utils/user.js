@@ -6,6 +6,16 @@ function isMyUser(email) {
   return email === process.env.MY_USER;
 }
 
+/**
+ * デバッグ用関数
+ *
+ * GPTの代わりにダミーのレスポンスを返すためのフラグ
+ */
+function isDummyMode() {
+  return process.env.DUMMY_MODE === 'true';
+}
+
 module.exports = {
   isMyUser,
+  isDummyMode,
 };
