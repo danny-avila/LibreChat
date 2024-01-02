@@ -1,11 +1,5 @@
 import OpenAI from 'openai';
-import type {
-  TResPlugin,
-  TMessage,
-  TConversation,
-  TEndpointOption,
-  EModelEndpoint,
-} from './schemas';
+import type { TResPlugin, TMessage, TConversation, EModelEndpoint } from './schemas';
 
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
@@ -16,6 +10,19 @@ export * from './schemas';
 export type TMessages = TMessage[];
 
 export type TMessagesAtom = TMessages | null;
+
+export type TEndpointOption = {
+  endpoint: EModelEndpoint;
+  endpointType?: EModelEndpoint;
+  modelDisplayLabel?: string;
+  model?: string | null;
+  promptPrefix?: string;
+  temperature?: number;
+  chatGptLabel?: string | null;
+  modelLabel?: string | null;
+  jailbreak?: boolean;
+  key?: string | null;
+};
 
 export type TSubmission = {
   plugin?: TResPlugin;

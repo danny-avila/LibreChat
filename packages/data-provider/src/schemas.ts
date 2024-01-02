@@ -12,82 +12,6 @@ export enum EModelEndpoint {
   custom = 'custom',
 }
 
-export enum KnownEndpoints {
-  mistral = 'mistral',
-  openrouter = 'openrouter',
-}
-
-export const defaultEndpoints: EModelEndpoint[] = [
-  EModelEndpoint.openAI,
-  EModelEndpoint.assistant,
-  EModelEndpoint.azureOpenAI,
-  EModelEndpoint.bingAI,
-  EModelEndpoint.chatGPTBrowser,
-  EModelEndpoint.gptPlugins,
-  EModelEndpoint.google,
-  EModelEndpoint.anthropic,
-  EModelEndpoint.custom,
-];
-
-export const defaultModels = {
-  [EModelEndpoint.google]: [
-    'gemini-pro',
-    'gemini-pro-vision',
-    'chat-bison',
-    'chat-bison-32k',
-    'codechat-bison',
-    'codechat-bison-32k',
-    'text-bison',
-    'text-bison-32k',
-    'text-unicorn',
-    'code-gecko',
-    'code-bison',
-    'code-bison-32k',
-  ],
-  [EModelEndpoint.anthropic]: [
-    'claude-2.1',
-    'claude-2',
-    'claude-1.2',
-    'claude-1',
-    'claude-1-100k',
-    'claude-instant-1',
-    'claude-instant-1-100k',
-  ],
-  [EModelEndpoint.openAI]: [
-    'gpt-3.5-turbo-16k-0613',
-    'gpt-3.5-turbo-16k',
-    'gpt-4-1106-preview',
-    'gpt-3.5-turbo',
-    'gpt-3.5-turbo-1106',
-    'gpt-4-vision-preview',
-    'gpt-4',
-    'gpt-3.5-turbo-instruct-0914',
-    'gpt-3.5-turbo-0613',
-    'gpt-3.5-turbo-0301',
-    'gpt-3.5-turbo-instruct',
-    'gpt-4-0613',
-    'text-davinci-003',
-    'gpt-4-0314',
-  ],
-};
-
-export const alternateName = {
-  [EModelEndpoint.openAI]: 'OpenAI',
-  [EModelEndpoint.assistant]: 'Assistants',
-  [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
-  [EModelEndpoint.bingAI]: 'Bing',
-  [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
-  [EModelEndpoint.gptPlugins]: 'Plugins',
-  [EModelEndpoint.google]: 'Google',
-  [EModelEndpoint.anthropic]: 'Anthropic',
-  [EModelEndpoint.custom]: 'Custom',
-};
-
-export enum AuthKeys {
-  GOOGLE_SERVICE_KEY = 'GOOGLE_SERVICE_KEY',
-  GOOGLE_API_KEY = 'GOOGLE_API_KEY',
-}
-
 export const endpointSettings = {
   [EModelEndpoint.google]: {
     model: {
@@ -123,44 +47,6 @@ export const endpointSettings = {
 };
 
 const google = endpointSettings[EModelEndpoint.google];
-
-export const EndpointURLs: { [key in EModelEndpoint]: string } = {
-  [EModelEndpoint.openAI]: `/api/ask/${EModelEndpoint.openAI}`,
-  [EModelEndpoint.bingAI]: `/api/ask/${EModelEndpoint.bingAI}`,
-  [EModelEndpoint.google]: `/api/ask/${EModelEndpoint.google}`,
-  [EModelEndpoint.custom]: `/api/ask/${EModelEndpoint.custom}`,
-  [EModelEndpoint.anthropic]: `/api/ask/${EModelEndpoint.anthropic}`,
-  [EModelEndpoint.gptPlugins]: `/api/ask/${EModelEndpoint.gptPlugins}`,
-  [EModelEndpoint.azureOpenAI]: `/api/ask/${EModelEndpoint.azureOpenAI}`,
-  [EModelEndpoint.chatGPTBrowser]: `/api/ask/${EModelEndpoint.chatGPTBrowser}`,
-  [EModelEndpoint.assistant]: '/api/assistants/chat',
-};
-
-export const modularEndpoints = new Set<EModelEndpoint | string>([
-  EModelEndpoint.gptPlugins,
-  EModelEndpoint.anthropic,
-  EModelEndpoint.google,
-  EModelEndpoint.openAI,
-  EModelEndpoint.azureOpenAI,
-  EModelEndpoint.custom,
-]);
-
-export const supportsFiles = {
-  [EModelEndpoint.openAI]: true,
-  [EModelEndpoint.google]: true,
-  [EModelEndpoint.assistant]: true,
-  [EModelEndpoint.azureOpenAI]: true,
-  [EModelEndpoint.custom]: true,
-};
-
-export const supportsBalanceCheck = {
-  [EModelEndpoint.openAI]: true,
-  [EModelEndpoint.azureOpenAI]: true,
-  [EModelEndpoint.gptPlugins]: true,
-  [EModelEndpoint.custom]: true,
-};
-
-export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision'];
 
 export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
@@ -414,56 +300,6 @@ export const googleSchema = tConversationSchema
     topK: google.topK.default,
   }));
 
-// const createGoogleSchema = (customGoogle: DefaultSchemaValues) => {
-//   const defaults = { ...google, ...customGoogle };
-//   return tConversationSchema
-//     .pick({
-//       model: true,
-//       modelLabel: true,
-//       promptPrefix: true,
-//       examples: true,
-//       temperature: true,
-//       maxOutputTokens: true,
-//       topP: true,
-//       topK: true,
-//     })
-//     .transform((obj) => {
-//       const isGeminiPro = obj?.model?.toLowerCase()?.includes('gemini-pro');
-
-//       const maxOutputTokensMax = isGeminiPro
-//         ? defaults.maxOutputTokens.maxGeminiPro
-//         : defaults.maxOutputTokens.max;
-//       const maxOutputTokensDefault = isGeminiPro
-//         ? defaults.maxOutputTokens.defaultGeminiPro
-//         : defaults.maxOutputTokens.default;
-
-//       let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;
-//       maxOutputTokens = Math.min(maxOutputTokens, maxOutputTokensMax);
-
-//       return {
-//         ...obj,
-//         model: obj.model ?? defaults.model.default,
-//         modelLabel: obj.modelLabel ?? null,
-//         promptPrefix: obj.promptPrefix ?? null,
-//         examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
-//         temperature: obj.temperature ?? defaults.temperature.default,
-//         maxOutputTokens,
-//         topP: obj.topP ?? defaults.topP.default,
-//         topK: obj.topK ?? defaults.topK.default,
-//       };
-//     })
-//     .catch(() => ({
-//       model: defaults.model.default,
-//       modelLabel: null,
-//       promptPrefix: null,
-//       examples: [{ input: { content: '' }, output: { content: '' } }],
-//       temperature: defaults.temperature.default,
-//       maxOutputTokens: defaults.maxOutputTokens.default,
-//       topP: defaults.topP.default,
-//       topK: defaults.topK.default,
-//     }));
-// };
-
 export const bingAISchema = tConversationSchema
   .pick({
     jailbreak: true,
@@ -607,168 +443,6 @@ export const assistantSchema = tConversationSchema
   })
   .transform(removeNullishValues)
   .catch(() => ({}));
-
-type EndpointSchema =
-  | typeof openAISchema
-  | typeof googleSchema
-  | typeof bingAISchema
-  | typeof anthropicSchema
-  | typeof chatGPTBrowserSchema
-  | typeof gptPluginsSchema
-  | typeof assistantSchema;
-
-const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
-  [EModelEndpoint.openAI]: openAISchema,
-  [EModelEndpoint.azureOpenAI]: openAISchema,
-  [EModelEndpoint.custom]: openAISchema,
-  [EModelEndpoint.google]: googleSchema,
-  [EModelEndpoint.bingAI]: bingAISchema,
-  [EModelEndpoint.anthropic]: anthropicSchema,
-  [EModelEndpoint.chatGPTBrowser]: chatGPTBrowserSchema,
-  [EModelEndpoint.gptPlugins]: gptPluginsSchema,
-  [EModelEndpoint.assistant]: assistantSchema,
-};
-
-// const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
-//   [EModelEndpoint.google]: createGoogleSchema,
-// };
-
-export function getFirstDefinedValue(possibleValues: string[]) {
-  let returnValue;
-  for (const value of possibleValues) {
-    if (value) {
-      returnValue = value;
-      break;
-    }
-  }
-  return returnValue;
-}
-
-export type TPossibleValues = {
-  models: string[];
-  secondaryModels?: string[];
-};
-
-export const parseConvo = ({
-  endpoint,
-  endpointType,
-  conversation,
-  possibleValues,
-}: {
-  endpoint: EModelEndpoint;
-  endpointType?: EModelEndpoint;
-  conversation: Partial<TConversation | TPreset>;
-  possibleValues?: TPossibleValues;
-  // TODO: POC for default schema
-  // defaultSchema?: Partial<EndpointSchema>,
-}) => {
-  let schema = endpointSchemas[endpoint];
-
-  if (!schema && !endpointType) {
-    throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema && endpointType) {
-    schema = endpointSchemas[endpointType];
-  }
-
-  // if (defaultSchema && schemaCreators[endpoint]) {
-  //   schema = schemaCreators[endpoint](defaultSchema);
-  // }
-
-  const convo = schema.parse(conversation) as TConversation;
-  const { models, secondaryModels } = possibleValues ?? {};
-
-  if (models && convo) {
-    convo.model = getFirstDefinedValue(models) ?? convo.model;
-  }
-
-  if (secondaryModels && convo.agentOptions) {
-    convo.agentOptions.model = getFirstDefinedValue(secondaryModels) ?? convo.agentOptions.model;
-  }
-
-  return convo;
-};
-
-export type TEndpointOption = {
-  endpoint: EModelEndpoint;
-  endpointType?: EModelEndpoint;
-  modelDisplayLabel?: string;
-  model?: string | null;
-  promptPrefix?: string;
-  temperature?: number;
-  chatGptLabel?: string | null;
-  modelLabel?: string | null;
-  jailbreak?: boolean;
-  key?: string | null;
-};
-
-export const getResponseSender = (endpointOption: TEndpointOption): string => {
-  const { model, endpoint, endpointType, modelDisplayLabel, chatGptLabel, modelLabel, jailbreak } =
-    endpointOption;
-
-  if (
-    [
-      EModelEndpoint.openAI,
-      EModelEndpoint.azureOpenAI,
-      EModelEndpoint.gptPlugins,
-      EModelEndpoint.chatGPTBrowser,
-    ].includes(endpoint)
-  ) {
-    if (chatGptLabel) {
-      return chatGptLabel;
-    } else if (model && model.includes('gpt-3')) {
-      return 'GPT-3.5';
-    } else if (model && model.includes('gpt-4')) {
-      return 'GPT-4';
-    } else if (model && model.includes('mistral')) {
-      return 'Mistral';
-    }
-    return alternateName[endpoint] ?? 'ChatGPT';
-  }
-
-  if (endpoint === EModelEndpoint.bingAI) {
-    return jailbreak ? 'Sydney' : 'BingAI';
-  }
-
-  if (endpoint === EModelEndpoint.anthropic) {
-    return modelLabel ?? 'Claude';
-  }
-
-  if (endpoint === EModelEndpoint.google) {
-    if (modelLabel) {
-      return modelLabel;
-    } else if (model && model.includes('gemini')) {
-      return 'Gemini';
-    } else if (model && model.includes('code')) {
-      return 'Codey';
-    }
-
-    return 'PaLM2';
-  }
-
-  if (
-    endpoint === EModelEndpoint.custom ||
-    endpointType === EModelEndpoint.custom ||
-    !defaultEndpoints.includes(endpoint)
-  ) {
-    if (modelLabel) {
-      return modelLabel;
-    } else if (chatGptLabel) {
-      return chatGptLabel;
-    } else if (model && model.includes('mistral')) {
-      return 'Mistral';
-    } else if (model && model.includes('gpt-3')) {
-      return 'GPT-3.5';
-    } else if (model && model.includes('gpt-4')) {
-      return 'GPT-4';
-    } else if (modelDisplayLabel) {
-      return modelDisplayLabel;
-    }
-
-    return 'AI';
-  }
-
-  return '';
-};
 
 export const compactOpenAISchema = tConversationSchema
   .pick({
@@ -935,94 +609,52 @@ export const compactPluginsSchema = tConversationSchema
   })
   .catch(() => ({}));
 
-type CompactEndpointSchema =
-  | typeof compactOpenAISchema
-  | typeof assistantSchema
-  | typeof compactGoogleSchema
-  | typeof bingAISchema
-  | typeof compactAnthropicSchema
-  | typeof compactChatGPTSchema
-  | typeof compactPluginsSchema;
+// const createGoogleSchema = (customGoogle: DefaultSchemaValues) => {
+//   const defaults = { ...google, ...customGoogle };
+//   return tConversationSchema
+//     .pick({
+//       model: true,
+//       modelLabel: true,
+//       promptPrefix: true,
+//       examples: true,
+//       temperature: true,
+//       maxOutputTokens: true,
+//       topP: true,
+//       topK: true,
+//     })
+//     .transform((obj) => {
+//       const isGeminiPro = obj?.model?.toLowerCase()?.includes('gemini-pro');
 
-const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
-  openAI: compactOpenAISchema,
-  azureOpenAI: compactOpenAISchema,
-  custom: compactOpenAISchema,
-  assistant: assistantSchema,
-  google: compactGoogleSchema,
-  /* BingAI needs all fields */
-  bingAI: bingAISchema,
-  anthropic: compactAnthropicSchema,
-  chatGPTBrowser: compactChatGPTSchema,
-  gptPlugins: compactPluginsSchema,
-};
+//       const maxOutputTokensMax = isGeminiPro
+//         ? defaults.maxOutputTokens.maxGeminiPro
+//         : defaults.maxOutputTokens.max;
+//       const maxOutputTokensDefault = isGeminiPro
+//         ? defaults.maxOutputTokens.defaultGeminiPro
+//         : defaults.maxOutputTokens.default;
 
-export const parseCompactConvo = ({
-  endpoint,
-  endpointType,
-  conversation,
-  possibleValues,
-}: {
-  endpoint?: EModelEndpoint;
-  endpointType?: EModelEndpoint;
-  conversation: Partial<TConversation | TPreset>;
-  possibleValues?: TPossibleValues;
-  // TODO: POC for default schema
-  // defaultSchema?: Partial<EndpointSchema>,
-}) => {
-  if (!endpoint) {
-    throw new Error(`undefined endpoint: ${endpoint}`);
-  }
+//       let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;
+//       maxOutputTokens = Math.min(maxOutputTokens, maxOutputTokensMax);
 
-  let schema = compactEndpointSchemas[endpoint];
-
-  if (!schema && !endpointType) {
-    throw new Error(`Unknown endpoint: ${endpoint}`);
-  } else if (!schema && endpointType) {
-    schema = compactEndpointSchemas[endpointType];
-  }
-
-  const convo = schema.parse(conversation) as TConversation;
-  // const { models, secondaryModels } = possibleValues ?? {};
-  const { models } = possibleValues ?? {};
-
-  if (models && convo) {
-    convo.model = getFirstDefinedValue(models) ?? convo.model;
-  }
-
-  // if (secondaryModels && convo.agentOptions) {
-  //   convo.agentOptionmodel = getFirstDefinedValue(secondaryModels) ?? convo.agentOptionmodel;
-  // }
-
-  return convo;
-};
-
-/**
- * Enum for cache keys.
- */
-export enum CacheKeys {
-  /**
-   * Key for the config store namespace.
-   */
-  CONFIG_STORE = 'configStore',
-  /**
-   * Key for the plugins cache.
-   */
-  PLUGINS = 'plugins',
-  /**
-   * Key for the model config cache.
-   */
-  MODELS_CONFIG = 'modelsConfig',
-  /**
-   * Key for the default endpoint config cache.
-   */
-  ENDPOINT_CONFIG = 'endpointsConfig',
-  /**
-   * Key for the custom config cache.
-   */
-  CUSTOM_CONFIG = 'customConfig',
-  /**
-   * Key for the override config cache.
-   */
-  OVERRIDE_CONFIG = 'overrideConfig',
-}
+//       return {
+//         ...obj,
+//         model: obj.model ?? defaults.model.default,
+//         modelLabel: obj.modelLabel ?? null,
+//         promptPrefix: obj.promptPrefix ?? null,
+//         examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
+//         temperature: obj.temperature ?? defaults.temperature.default,
+//         maxOutputTokens,
+//         topP: obj.topP ?? defaults.topP.default,
+//         topK: obj.topK ?? defaults.topK.default,
+//       };
+//     })
+//     .catch(() => ({
+//       model: defaults.model.default,
+//       modelLabel: null,
+//       promptPrefix: null,
+//       examples: [{ input: { content: '' }, output: { content: '' } }],
+//       temperature: defaults.temperature.default,
+//       maxOutputTokens: defaults.maxOutputTokens.default,
+//       topP: defaults.topP.default,
+//       topK: defaults.topK.default,
+//     }));
+// };

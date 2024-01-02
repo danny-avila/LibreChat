@@ -1,6 +1,6 @@
-import { tConvoUpdateSchema } from './schemas';
 import type { TSubmission, TMessage, TEndpointOption } from './types';
-import { EModelEndpoint, EndpointURLs } from './types';
+import { tConvoUpdateSchema, EModelEndpoint } from './schemas';
+import { EndpointURLs } from './config';
 
 export default function createPayload(submission: TSubmission) {
   const { conversation, message, messages, endpointOption, isEdited, isContinued } = submission;
