@@ -1,8 +1,12 @@
 import { z } from 'zod';
-import { EModelEndpoint } from './schemas';
+import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 
 export const endpointSchema = z.object({
-  name: z.string(),
+  name: z.string().refine((value) => !eModelEndpointSchema.safeParse(value).success, {
+    message: `Value cannot be one of the default endpoint (EModelEndpoint) values: ${Object.values(
+      EModelEndpoint,
+    ).join(', ')}`,
+  }),
   apiKey: z.string(),
   baseURL: z.string(),
   models: z.object({
