@@ -57,7 +57,6 @@ services:
     # ports: 
     #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
     environment:
-      - MEILI_HTTP_ADDR=meilisearch:7700
       - MEILI_NO_ANALYTICS=true
       - MEILI_MASTER_KEY=5c71cf56d672d009e36070b5bc5e47b743535ae55c818ae3b735bb6ebfb4ba63
     volumes:
