@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import { useLocalize, useUserKey } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
@@ -26,7 +27,8 @@ const MenuItem: FC<MenuItemProps> = ({
   userProvidesKey,
   ...rest
 }) => {
-  const Icon = icons[endpoint] ?? icons.unknown;
+  const { data: endpointsConfig } = useGetEndpointsQuery();
+
   const [isDialogOpen, setDialogOpen] = useState(false);
   const { newConversation } = useChatContext();
   const { getExpiry } = useUserKey(endpoint);
@@ -44,6 +46,10 @@ const MenuItem: FC<MenuItemProps> = ({
     }
   };
 
+  const endpointType = endpointsConfig?.[endpoint ?? '']?.type;
+  const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
+  const Icon = icons[iconKey];
+
   return (
     <>
       <div
@@ -56,7 +62,15 @@ const MenuItem: FC<MenuItemProps> = ({
         <div className="flex grow items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              {<Icon size={18} className="icon-md shrink-0 dark:text-white" />}
+              {
+                <Icon
+                  size={18}
+                  endpoint={endpoint}
+                  context={'menu-item'}
+                  className="icon-md shrink-0 dark:text-white"
+                  iconURL={endpointsConfig?.[endpoint ?? '']?.iconURL}
+                />
+              }
               <div>
                 {title}
                 <div className="text-token-text-tertiary">{description}</div>
@@ -128,7 +142,13 @@ const MenuItem: FC<MenuItemProps> = ({
         </div>
       </div>
       {userProvidesKey && (
-        <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
+        <SetKeyDialog
+          open={isDialogOpen}
+          endpoint={endpoint}
+          endpointType={endpointType}
+          onOpenChange={setDialogOpen}
+          userProvideURL={endpointsConfig?.[endpoint ?? '']?.userProvideURL}
+        />
       )}
     </>
   );

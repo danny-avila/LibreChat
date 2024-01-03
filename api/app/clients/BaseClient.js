@@ -520,6 +520,7 @@ class BaseClient {
     await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,
+      endpointType: this.options.endpointType,
       ...endpointOptions,
     });
   }

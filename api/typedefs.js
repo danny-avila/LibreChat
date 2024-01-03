@@ -21,6 +21,12 @@
  */
 
 /**
+ * @exports TConfig
+ * @typedef {import('librechat-data-provider').TConfig} TConfig
+ * @memberof typedefs
+ */
+
+/**
  * @exports ImageMetadata
  * @typedef {Object} ImageMetadata
  * @property {string} file_id - The identifier of the file.
@@ -280,8 +286,8 @@
  * @property {boolean|{userProvide: boolean}} [chatGPTBrowser] - Flag to indicate if ChatGPT Browser endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [anthropic] - Flag to indicate if Anthropic endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [bingAI] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
- * @property {boolean|{userProvide: boolean}} [bingAI] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
- * @property {boolean|{userProvide: boolean}} [bingAI] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
+ * @property {boolean|{userProvide: boolean}} [google] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
+ * @property {boolean|{userProvide: boolean, userProvideURL: boolean, name: string}} [custom] - Custom Endpoint configuration.
  * @memberof typedefs
  */
 
@@ -313,13 +319,14 @@
  * @property {boolean|{userProvide: boolean}} [anthropic] - Flag to indicate if Anthropic endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [bingAI] - Flag to indicate if BingAI endpoint is user provided, or its configuration.
  * @property {boolean|{userProvide: boolean}} [google] - Flag to indicate if Google endpoint is user provided, or its configuration.
+ * @property {boolean|{userProvide: boolean, userProvideURL: boolean, name: string}} [custom] - Custom Endpoint configuration.
  * @property {boolean|GptPlugins} [gptPlugins] - Configuration for GPT plugins.
  * @memberof typedefs
  */
 
 /**
  * @exports EndpointConfig
- * @typedef {boolean|{userProvide: boolean}|GptPlugins} EndpointConfig
+ * @typedef {boolean|TConfig} EndpointConfig
  * @memberof typedefs
  */
 

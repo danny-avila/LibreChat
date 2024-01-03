@@ -1,6 +1,4 @@
 import TextareaAutosize from 'react-textarea-autosize';
-import type { TModelSelectProps } from '~/common';
-import { ESide } from '~/common';
 import {
   SelectDropDown,
   Input,
@@ -10,9 +8,11 @@ import {
   HoverCard,
   HoverCardTrigger,
 } from '~/components/ui';
-import OptionHover from './OptionHover';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
+import type { TModelSelectProps } from '~/common';
+import OptionHover from './OptionHover';
 import { useLocalize } from '~/hooks';
+import { ESide } from '~/common';
 
 export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
   const localize = useLocalize();
@@ -28,9 +28,6 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     frequency_penalty: freqP,
     presence_penalty: presP,
   } = conversation;
-  const endpoint = conversation.endpoint || 'openAI';
-  const isOpenAI = endpoint === 'openAI' || endpoint === 'azureOpenAI';
-
   const setModel = setOption('model');
   const setChatGptLabel = setOption('chatGptLabel');
   const setPromptPrefix = setOption('promptPrefix');
@@ -52,47 +49,43 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             containerClassName="flex w-full resize-none"
           />
         </div>
-        {isOpenAI && (
-          <>
-            <div className="grid w-full items-center gap-2">
-              <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                {localize('com_endpoint_custom_name')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
-              </Label>
-              <Input
-                id="chatGptLabel"
-                disabled={readonly}
-                value={chatGptLabel || ''}
-                onChange={(e) => setChatGptLabel(e.target.value ?? null)}
-                placeholder={localize('com_endpoint_openai_custom_name_placeholder')}
-                className={cn(
-                  defaultTextProps,
-                  'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
-                  'flex h-10 max-h-10 w-full resize-none px-3 py-2',
-                  removeFocusOutlines,
-                )}
-              />
-            </div>
-            <div className="grid w-full items-center gap-2">
-              <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
-                {localize('com_endpoint_prompt_prefix')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
-              </Label>
-              <TextareaAutosize
-                id="promptPrefix"
-                disabled={readonly}
-                value={promptPrefix || ''}
-                onChange={(e) => setPromptPrefix(e.target.value ?? null)}
-                placeholder={localize('com_endpoint_openai_prompt_prefix_placeholder')}
-                className={cn(
-                  defaultTextProps,
-                  'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
-                  'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
-                )}
-              />
-            </div>
-          </>
-        )}
+        <div className="grid w-full items-center gap-2">
+          <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
+            {localize('com_endpoint_custom_name')}{' '}
+            <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
+          </Label>
+          <Input
+            id="chatGptLabel"
+            disabled={readonly}
+            value={chatGptLabel || ''}
+            onChange={(e) => setChatGptLabel(e.target.value ?? null)}
+            placeholder={localize('com_endpoint_openai_custom_name_placeholder')}
+            className={cn(
+              defaultTextProps,
+              'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
+              'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+              removeFocusOutlines,
+            )}
+          />
+        </div>
+        <div className="grid w-full items-center gap-2">
+          <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
+            {localize('com_endpoint_prompt_prefix')}{' '}
+            <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
+          </Label>
+          <TextareaAutosize
+            id="promptPrefix"
+            disabled={readonly}
+            value={promptPrefix || ''}
+            onChange={(e) => setPromptPrefix(e.target.value ?? null)}
+            placeholder={localize('com_endpoint_openai_prompt_prefix_placeholder')}
+            className={cn(
+              defaultTextProps,
+              'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
+              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
+            )}
+          />
+        </div>
       </div>
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 px-3 sm:col-span-2">
         <HoverCard openDelay={300}>
@@ -101,7 +94,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_temperature')}{' '}
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default_with_num', isOpenAI ? '1' : '0')})
+                  ({localize('com_endpoint_default_with_num', '1')})
                 </small>
               </Label>
               <InputNumber
