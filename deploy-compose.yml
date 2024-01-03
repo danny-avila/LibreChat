@@ -23,6 +23,7 @@ services:
       - MEILI_HOST=http://meilisearch:7700
     volumes:
       - ./images:/app/client/public/images
+      - ./librechat.yaml:/app/librechat.yaml
   client:
     build:
       context: .
