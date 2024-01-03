@@ -1,6 +1,14 @@
+# LibreChat Configuration Guide
+
+This document provides detailed instructions for configuring the `librechat.yaml` file used by LibreChat.
+
+In future updates, some of the configurations from [your `.env` file](./dotenv.md) will migrate here.
+
+Further customization of the current configurations are also planned.
+
 # Table of Contents
 
-1. [LibreChat Configuration Guide](#librechat-configuration-guide)
+1. [Intro](#librechat-configuration-guide)
     - [Configuration Overview](#configuration-overview)
         - [1. Version](#1-version)
         - [2. Cache Settings](#2-cache-settings)
@@ -10,14 +18,6 @@
     - [Default Parameters](#default-parameters)
         - [Breakdown](#breakdown)
     - [Example Config](#example-config)
-
-# LibreChat Configuration Guide
-
-This document provides detailed instructions for configuring the `librechat.yaml` file used by LibreChat.
-
-In future updates, some of the configurations from [your `.env` file](./dotenv.md) will migrate here.
-
-Further customization of the current configurations are also planned.
 
 ## Configuration Overview
 
