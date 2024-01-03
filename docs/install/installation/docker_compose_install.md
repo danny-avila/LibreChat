@@ -107,13 +107,11 @@ For more info see:
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
 # ...
       - MEILI_HOST=http://meilisearch:7700
-      - MEILI_HTTP_ADDR=meilisearch:7700
 # ...
     env_file:
       - .env
     environment:
       - MEILI_HOST=http://meilisearch:7700
-      - MEILI_HTTP_ADDR=meilisearch:7700
 ```
 
 - If for some reason you're not able to build the app image, you can pull the latest image from **Dockerhub**.
