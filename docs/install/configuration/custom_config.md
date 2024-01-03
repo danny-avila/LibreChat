@@ -48,11 +48,13 @@ Each endpoint in the `custom` array should have the following structure:
   - Type: String (apiKey | `"user_provided"`)
   - **Example**: `apiKey: "${MISTRAL_API_KEY}"` | `apiKey: "your_api_key"` | `apiKey: "user_provided"`
   - **Required**
+  - **Note**: It's highly recommended to use the env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
 
 - **baseURL**: Base URL for the API. Can reference an environment variable, or allow user to provide the value.
   - Type: String (baseURL | `"user_provided"`)
   - **Example**: `baseURL: "https://api.mistral.ai/v1"` | `baseURL: "${MISTRAL_BASE_URL}"` | `baseURL: "user_provided"`
   - **Required**
+  - **Note**: It's highly recommended to use the env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
 
 - **iconURL**: The URL to use as the Endpoint Icon.
   - Type: Boolean
@@ -89,6 +91,7 @@ Each endpoint in the `custom` array should have the following structure:
 - **summarize**: Enables summarization when set to `true`.
   - Type: Boolean
   - Example: `summarize: false`
+  - **Note**: This feature requires an OpenAI Functions compatible API
 
 - **summaryModel**: Specifies the model to use if summarization is enabled.
   - Type: String
@@ -100,17 +103,68 @@ Each endpoint in the `custom` array should have the following structure:
   - Example: `forcePrompt: false`
   - **Note**: This combines all messages into a single text payload, following the OpenAI format.
 
-- **modelDisplayLabel**: The label displayed in messages for the current AI model.
+- **modelDisplayLabel**: The label displayed in messages next to the Icon for the current AI model.
   - Type: String
   - Example: `modelDisplayLabel: "Mistral"`
   - **Note**: The display order is:
     - 1. Custom name set via preset (if available) 
     - 2. Label derived from the model name (if applicable)
-    - 3. This value, if the above are not specified. Default is "AI" when not set.
+    - 3. This value, `modelDisplayLabel`, is used if the above are not specified. Defaults to "AI".
+
+- **addParams**: Adds additional parameters to requests.
+  - Type: Object/Dictionary
+  - **Description**: Adds/Overrides parameters. Useful for specifying API-specific options.
+  - **Example**: 
+```yaml
+    addParams:
+      safe_mode: true
+```
+
+- **dropParams**: Removes default parameters from requests.
+  - Type: Array of Strings
+  - **Description**: Excludes specified default parameters. Useful for APIs that do not accept or recognize certain parameters.
+  - **Example**: `dropParams: ["stop", "temperature", "top_p"]`
+  - **Note**: For a list of default parameters sent with every request, see the "Default Parameters" Section below.
 
 ## Additional Notes
 - Ensure that all URLs and keys are correctly specified to avoid connectivity issues.
-- Version compatibility should be checked to ensure smooth operation.
+
+## Default Parameters
+
+Custom endpoints share logic with the OpenAI endpoint, and thus have default parameters tailored to the OpenAI API.
+
+```json
+{
+  "model": "your-selected-model",
+  "temperature": 1,
+  "top_p": 1,
+  "presence_penalty": 0,
+  "frequency_penalty": 0,
+  "stop": [
+    "||>",
+    "\nUser:",
+    "<|diff_marker|>",
+  ],
+  "user": "LibreChat_User_ID",
+  "stream": true,
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi how are you",
+    },
+  ],
+}
+```
+### Breakdown
+- `model`: The selected model from list of models.
+- `temperature`: Defaults to `1` if not provided via preset,
+- `top_p`: Defaults to `1` if not provided via preset,
+- `presence_penalty`: Defaults to `0` if not provided via preset,
+- `frequency_penalty`: Defaults to `0` if not provided via preset,
+- `stop`: Sequences where the AI will stop generating further tokens. By default, uses the start token (`||>`), the user label (`\nUser:`), and end token (`<|diff_marker|>`). Up to 4 sequences can be provided to the [OpenAI API](https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop)
+- `user`: A unique identifier representing your end-user, which can help OpenAI to [monitor and detect abuse](https://platform.openai.com/docs/api-reference/chat/create#chat-create-user).
+- `stream`: If set, partial message deltas will be sent, like in ChatGPT. Otherwise, generation will only be available when completed.
+- `messages`: [OpenAI format for messages](https://platform.openai.com/docs/api-reference/chat/create#chat-create-messages); the `name` field is added to messages with `system` and `assistant` roles when a prompt prefix (custom name) is specified via preset.
 
 ## Example Config
 
@@ -131,6 +185,9 @@ endpoints:
       summaryModel: "mistral-tiny" 
       forcePrompt: false 
       modelDisplayLabel: "Mistral"
+      addParams:
+        safe_mode: true
+      dropParams: ["stop", "temperature", "top_p"]
 
      # OpenRouter.ai API
     - name: "OpenRouter"
