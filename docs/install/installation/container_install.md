@@ -55,7 +55,6 @@ Follow [this guide](../configuration/ai_setup.md) to populate the containers wit
 HOST=0.0.0.0
 MONGO_URI=mongodb://librechat-mongodb:27017/LibreChat
 MEILI_HOST=http://librechat-meilisearch:7700
-MEILI_HTTP_ADDR=librechat-meilisearch:7700
 MEILI_NO_ANALYTICS=true
 ```
 
