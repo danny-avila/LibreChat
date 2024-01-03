@@ -1,3 +1,16 @@
+# Table of Contents
+
+1. [LibreChat Configuration Guide](#librechat-configuration-guide)
+    - [Configuration Overview](#configuration-overview)
+        - [1. Version](#1-version)
+        - [2. Cache Settings](#2-cache-settings)
+        - [3. Endpoints](#3-endpoints)
+            - [Endpoint Object Structure](#endpoint-object-structure)
+    - [Additional Notes](#additional-notes)
+    - [Default Parameters](#default-parameters)
+        - [Breakdown](#breakdown)
+    - [Example Config](#example-config)
+
 # LibreChat Configuration Guide
 
 This document provides detailed instructions for configuring the `librechat.yaml` file used by LibreChat.
@@ -164,7 +177,7 @@ Custom endpoints share logic with the OpenAI endpoint, and thus have default par
 - `stop`: Sequences where the AI will stop generating further tokens. By default, uses the start token (`||>`), the user label (`\nUser:`), and end token (`<|diff_marker|>`). Up to 4 sequences can be provided to the [OpenAI API](https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop)
 - `user`: A unique identifier representing your end-user, which can help OpenAI to [monitor and detect abuse](https://platform.openai.com/docs/api-reference/chat/create#chat-create-user).
 - `stream`: If set, partial message deltas will be sent, like in ChatGPT. Otherwise, generation will only be available when completed.
-- `messages`: [OpenAI format for messages](https://platform.openai.com/docs/api-reference/chat/create#chat-create-messages); the `name` field is added to messages with `system` and `assistant` roles when a prompt prefix (custom name) is specified via preset.
+- `messages`: [OpenAI format for messages](https://platform.openai.com/docs/api-reference/chat/create#chat-create-messages); the `name` field is added to messages with `system` and `assistant` roles when a custom name is specified via preset.
 
 ## Example Config
 
