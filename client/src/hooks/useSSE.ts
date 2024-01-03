@@ -209,16 +209,23 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   };
 
   const errorHandler = ({ data, submission }: { data?: TResData; submission: TSubmission }) => {
-    const { messages, message } = submission;
+    const { messages, message, initialResponse } = submission;
 
     const conversationId = message?.conversationId ?? submission?.conversationId;
     const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
       const metadata = data['responseMessage'] ?? data;
-      return tMessageSchema.parse({
+      const errorMessage = {
+        ...initialResponse,
         ...metadata,
         error: true,
         parentMessageId: message?.messageId,
-      });
+      };
+
+      if (!errorMessage.messageId) {
+        errorMessage.messageId = v4();
+      }
+
+      return tMessageSchema.parse(errorMessage);
     };
 
     if (!data) {
