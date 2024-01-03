@@ -16,7 +16,7 @@ Further customization of the current configurations are also planned.
             - [Endpoint Object Structure](#endpoint-object-structure)
     - [Additional Notes](#additional-notes)
     - [Default Parameters](#default-parameters)
-        - [Breakdown](#breakdown)
+        - [Breakdown of Default Params](#breakdown-of-default-params)
     - [Example Config](#example-config)
 
 ## Configuration Overview
@@ -168,7 +168,7 @@ Custom endpoints share logic with the OpenAI endpoint, and thus have default par
   ],
 }
 ```
-### Breakdown
+### Breakdown of Default Params
 - `model`: The selected model from list of models.
 - `temperature`: Defaults to `1` if not provided via preset,
 - `top_p`: Defaults to `1` if not provided via preset,
