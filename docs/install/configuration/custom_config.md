@@ -101,7 +101,7 @@ Each endpoint in the `custom` array should have the following structure:
 - **forcePrompt**: If `true`, sends a `prompt` parameter instead of `messages`.
   - Type: Boolean
   - Example: `forcePrompt: false`
-  - **Note**: This combines all messages into a single text payload, following the OpenAI format.
+  - **Note**: This combines all messages into a single text payload, [following OpenAI format](https://github.com/pvicente/openai-python/blob/main/chatml.md), and uses the `/completions` endpoint of your baseURL rather than `/chat/completions`.
 
 - **modelDisplayLabel**: The label displayed in messages next to the Icon for the current AI model.
   - Type: String
@@ -121,7 +121,7 @@ Each endpoint in the `custom` array should have the following structure:
 ```
 
 - **dropParams**: Removes default parameters from requests.
-  - Type: Array of Strings
+  - Type: Array/List of Strings
   - **Description**: Excludes specified default parameters. Useful for APIs that do not accept or recognize certain parameters.
   - **Example**: `dropParams: ["stop", "temperature", "top_p"]`
   - **Note**: For a list of default parameters sent with every request, see the "Default Parameters" Section below.
