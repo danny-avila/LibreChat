@@ -39,22 +39,26 @@ const models = [
   'gpt-3.5-turbo-0301',
 ];
 
+const openAIModels = {
+  'gpt-4': 8191,
+  'gpt-4-0613': 8191,
+  'gpt-4-32k': 32767,
+  'gpt-4-32k-0314': 32767,
+  'gpt-4-32k-0613': 32767,
+  'gpt-3.5-turbo': 4095,
+  'gpt-3.5-turbo-0613': 4095,
+  'gpt-3.5-turbo-0301': 4095,
+  'gpt-3.5-turbo-16k': 15999,
+  'gpt-3.5-turbo-16k-0613': 15999,
+  'gpt-3.5-turbo-1106': 16380, // -5 from max
+  'gpt-4-1106': 127995, // -5 from max
+  'mistral-': 31995, // -5 from max
+};
+
 // Order is important here: by model series and context size (gpt-4 then gpt-3, ascending)
 const maxTokensMap = {
-  [EModelEndpoint.openAI]: {
-    'gpt-4': 8191,
-    'gpt-4-0613': 8191,
-    'gpt-4-32k': 32767,
-    'gpt-4-32k-0314': 32767,
-    'gpt-4-32k-0613': 32767,
-    'gpt-3.5-turbo': 4095,
-    'gpt-3.5-turbo-0613': 4095,
-    'gpt-3.5-turbo-0301': 4095,
-    'gpt-3.5-turbo-16k': 15999,
-    'gpt-3.5-turbo-16k-0613': 15999,
-    'gpt-3.5-turbo-1106': 16380, // -5 from max
-    'gpt-4-1106': 127995, // -5 from max
-  },
+  [EModelEndpoint.openAI]: openAIModels,
+  [EModelEndpoint.custom]: openAIModels,
   [EModelEndpoint.google]: {
     /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
     gemini: 32750, // -10 from max

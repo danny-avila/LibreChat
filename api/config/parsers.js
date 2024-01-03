@@ -1,11 +1,16 @@
+const { klona } = require('klona');
 const winston = require('winston');
 const traverse = require('traverse');
-const { klona } = require('klona/full');
 
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
 
-const sensitiveKeys = [/^(sk-)[^\s]+/, /(Bearer )[^\s]+/, /(api-key:? )[^\s]+/, /(key=)[^\s]+/];
+const sensitiveKeys = [
+  /^(sk-)[^\s]+/, // OpenAI API key pattern
+  /(Bearer )[^\s]+/, // Header: Bearer token pattern
+  /(api-key:? )[^\s]+/, // Header: API key pattern
+  /(key=)[^\s]+/, // URL query param: sensitive key pattern (Google)
+];
 
 /**
  * Determines if a given value string is sensitive and returns matching regex patterns.
@@ -102,55 +107,72 @@ const condenseArray = (item) => {
  */
 const debugTraverse = winston.format.printf(({ level, message, timestamp, ...metadata }) => {
   let msg = `${timestamp} ${level}: ${truncateLongStrings(message?.trim(), 150)}`;
-
-  if (level !== 'debug') {
-    return msg;
-  }
-
-  if (!metadata) {
-    return msg;
-  }
-
-  const debugValue = metadata[SPLAT_SYMBOL]?.[0];
-
-  if (!debugValue) {
-    return msg;
-  }
-
-  if (debugValue && Array.isArray(debugValue)) {
-    msg += `\n${JSON.stringify(debugValue.map(condenseArray))}`;
-    return msg;
-  }
-
-  if (typeof debugValue !== 'object') {
-    return (msg += ` ${debugValue}`);
-  }
-
-  msg += '\n{';
-
-  const copy = klona(metadata);
-  traverse(copy).forEach(function (value) {
-    const parent = this.parent;
-    const parentKey = `${parent && parent.notRoot ? parent.key + '.' : ''}`;
-    const tabs = `${parent && parent.notRoot ? '\t\t' : '\t'}`;
-    if (this.isLeaf && typeof value === 'string') {
-      const truncatedText = truncateLongStrings(value);
-      msg += `\n${tabs}${parentKey}${this.key}: ${JSON.stringify(truncatedText)},`;
-    } else if (this.notLeaf && Array.isArray(value) && value.length > 0) {
-      const currentMessage = `\n${tabs}// ${value.length} ${this.key.replace(/s$/, '')}(s)`;
-      this.update(currentMessage, true);
-      msg += currentMessage;
-      const stringifiedArray = value.map(condenseArray);
-      msg += `\n${tabs}${parentKey}${this.key}: [${stringifiedArray}],`;
-    } else if (this.isLeaf && typeof value === 'function') {
-      msg += `\n${tabs}${parentKey}${this.key}: function,`;
-    } else if (this.isLeaf) {
-      msg += `\n${tabs}${parentKey}${this.key}: ${value},`;
+  try {
+    if (level !== 'debug') {
+      return msg;
     }
-  });
 
-  msg += '\n}';
-  return msg;
+    if (!metadata) {
+      return msg;
+    }
+
+    const debugValue = metadata[SPLAT_SYMBOL]?.[0];
+
+    if (!debugValue) {
+      return msg;
+    }
+
+    if (debugValue && Array.isArray(debugValue)) {
+      msg += `\n${JSON.stringify(debugValue.map(condenseArray))}`;
+      return msg;
+    }
+
+    if (typeof debugValue !== 'object') {
+      return (msg += ` ${debugValue}`);
+    }
+
+    msg += '\n{';
+
+    const copy = klona(metadata);
+    traverse(copy).forEach(function (value) {
+      if (typeof this?.key === 'symbol') {
+        return;
+      }
+
+      let _parentKey = '';
+      const parent = this.parent;
+
+      if (typeof parent?.key !== 'symbol' && parent?.key) {
+        _parentKey = parent.key;
+      }
+
+      const parentKey = `${parent && parent.notRoot ? _parentKey + '.' : ''}`;
+
+      const tabs = `${parent && parent.notRoot ? '    ' : '  '}`;
+
+      const currentKey = this?.key ?? 'unknown';
+
+      if (this.isLeaf && typeof value === 'string') {
+        const truncatedText = truncateLongStrings(value);
+        msg += `\n${tabs}${parentKey}${currentKey}: ${JSON.stringify(truncatedText)},`;
+      } else if (this.notLeaf && Array.isArray(value) && value.length > 0) {
+        const currentMessage = `\n${tabs}// ${value.length} ${currentKey.replace(/s$/, '')}(s)`;
+        this.update(currentMessage, true);
+        msg += currentMessage;
+        const stringifiedArray = value.map(condenseArray);
+        msg += `\n${tabs}${parentKey}${currentKey}: [${stringifiedArray}],`;
+      } else if (this.isLeaf && typeof value === 'function') {
+        msg += `\n${tabs}${parentKey}${currentKey}: function,`;
+      } else if (this.isLeaf) {
+        msg += `\n${tabs}${parentKey}${currentKey}: ${value},`;
+      }
+    });
+
+    msg += '\n}';
+    return msg;
+  } catch (e) {
+    return (msg += `\n[LOGGER PARSING ERROR] ${e.message}`);
+  }
 });
 
 module.exports = {

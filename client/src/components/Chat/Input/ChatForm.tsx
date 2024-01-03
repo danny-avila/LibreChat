@@ -30,6 +30,8 @@ export default function ChatForm({ index = 0 }) {
   };
 
   const { requiresKey } = useRequiresKey();
+  const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
+  const endpoint = endpointType ?? _endpoint;
 
   return (
     <form
@@ -49,9 +51,9 @@ export default function ChatForm({ index = 0 }) {
               onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
               setText={setText}
               submitMessage={submitMessage}
-              endpoint={conversation?.endpoint}
+              endpoint={endpoint}
             />
-            <AttachFile endpoint={conversation?.endpoint ?? ''} disabled={requiresKey} />
+            <AttachFile endpoint={endpoint ?? ''} disabled={requiresKey} />
             {isSubmitting && showStopButton ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (

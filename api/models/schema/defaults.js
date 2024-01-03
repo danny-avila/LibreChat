@@ -5,6 +5,9 @@ const conversationPreset = {
     default: null,
     required: true,
   },
+  endpointType: {
+    type: String,
+  },
   // for azureOpenAI, openAI, chatGPTBrowser only
   model: {
     type: String,
@@ -95,7 +98,6 @@ const agentOptions = {
     // default: null,
     required: false,
   },
-  // for google only
   modelLabel: {
     type: String,
     // default: null,

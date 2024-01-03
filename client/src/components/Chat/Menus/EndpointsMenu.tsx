@@ -21,7 +21,7 @@ const EndpointsMenu: FC = () => {
   }
   return (
     <Root>
-      <TitleButton primaryText={(alternateName[selected] ?? '') + ' '} />
+      <TitleButton primaryText={(alternateName[selected] ?? selected ?? '') + ' '} />
       <Portal>
         <div
           style={{

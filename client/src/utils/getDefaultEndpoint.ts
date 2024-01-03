@@ -1,4 +1,9 @@
-import type { TConversation, TPreset, TEndpointsConfig } from 'librechat-data-provider';
+import type {
+  TConversation,
+  TPreset,
+  TEndpointsConfig,
+  EModelEndpoint,
+} from 'librechat-data-provider';
 import getLocalStorageItems from './getLocalStorageItems';
 import mapEndpoints from './mapEndpoints';
 
@@ -42,7 +47,7 @@ const getDefinedEndpoint = (endpointsConfig: TEndpointsConfig) => {
   return endpoints.find((e) => Object.hasOwn(endpointsConfig ?? {}, e));
 };
 
-const getDefaultEndpoint = ({ convoSetup, endpointsConfig }: TDefaultEndpoint) => {
+const getDefaultEndpoint = ({ convoSetup, endpointsConfig }: TDefaultEndpoint): EModelEndpoint => {
   return (
     getEndpointFromSetup(convoSetup, endpointsConfig) ||
     getEndpointFromLocalStorage(endpointsConfig) ||

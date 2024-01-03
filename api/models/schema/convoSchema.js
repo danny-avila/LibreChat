@@ -18,36 +18,29 @@ const convoSchema = mongoose.Schema(
     user: {
       type: String,
       index: true,
-      // default: null,
     },
     messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
     // google only
-    examples: [{ type: mongoose.Schema.Types.Mixed }],
+    examples: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
     agentOptions: {
       type: mongoose.Schema.Types.Mixed,
-      // default: null,
     },
     ...conversationPreset,
     // for bingAI only
     bingConversationId: {
       type: String,
-      // default: null,
     },
     jailbreakConversationId: {
       type: String,
-      // default: null,
     },
     conversationSignature: {
       type: String,
-      // default: null,
     },
     clientId: {
       type: String,
-      // default: null,
     },
     invocationId: {
       type: Number,
-      // default: 1,
     },
   },
   { timestamps: true },

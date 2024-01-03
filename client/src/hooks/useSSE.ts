@@ -1,3 +1,4 @@
+import { v4 } from 'uuid';
 import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
@@ -5,7 +6,7 @@ import {
   SSE,
   createPayload,
   tMessageSchema,
-  tConversationSchema,
+  tConvoUpdateSchema,
   EModelEndpoint,
   removeNullishValues,
 } from 'librechat-data-provider';
@@ -64,7 +65,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           messageId: message?.overrideParentMessageId + '_',
           plugin: plugin ?? null,
           plugins: plugins ?? [],
-          submitting: true,
           // unfinished: true
         },
       ]);
@@ -79,7 +79,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           messageId: message?.messageId + '_',
           plugin: plugin ?? null,
           plugins: plugins ?? [],
-          submitting: true,
           // unfinished: true
         },
       ]);
@@ -136,7 +135,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           ...initialResponse,
           parentMessageId: message?.overrideParentMessageId ?? null,
           messageId: message?.overrideParentMessageId + '_',
-          submitting: true,
         },
       ]);
     } else {
@@ -147,7 +145,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           ...initialResponse,
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
-          submitting: true,
         },
       ]);
     }
@@ -156,10 +153,10 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     let update = {} as TConversation;
     setConversation((prevState) => {
-      update = tConversationSchema.parse({
+      update = tConvoUpdateSchema.parse({
         ...prevState,
         conversationId,
-      });
+      }) as TConversation;
 
       setStorage(update);
       return update;
@@ -211,10 +208,37 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     setIsSubmitting(false);
   };
 
-  const errorHandler = (data: TResData, submission: TSubmission) => {
+  const errorHandler = ({ data, submission }: { data?: TResData; submission: TSubmission }) => {
     const { messages, message } = submission;
 
-    if (!data.conversationId) {
+    const conversationId = message?.conversationId ?? submission?.conversationId;
+    const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
+      const metadata = data['responseMessage'] ?? data;
+      return tMessageSchema.parse({
+        ...metadata,
+        error: true,
+        parentMessageId: message?.messageId,
+      });
+    };
+
+    if (!data) {
+      const convoId = conversationId ?? v4();
+      const errorResponse = parseErrorResponse({
+        text: 'Error connecting to server',
+        ...submission,
+        conversationId: convoId,
+      });
+      setMessages([...messages, message, errorResponse]);
+      newConversation({ template: { conversationId: convoId } });
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!conversationId && !data.conversationId) {
+      const convoId = v4();
+      const errorResponse = parseErrorResponse(data);
+      setMessages([...messages, message, errorResponse]);
+      newConversation({ template: { conversationId: convoId } });
       setIsSubmitting(false);
       return;
     }
@@ -238,6 +262,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const abortConversation = (conversationId = '', submission: TSubmission) => {
     console.log(submission);
     const { endpoint } = submission?.conversation || {};
+    let res: Response;
 
     fetch(`/api/ask/${endpoint}/abort`, {
       method: 'POST',
@@ -249,9 +274,15 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         abortKey: conversationId,
       }),
     })
-      .then((response) => response.json())
+      .then((response) => {
+        res = response;
+        return response.json();
+      })
       .then((data) => {
         console.log('aborted', data);
+        if (res.status === 404) {
+          return setIsSubmitting(false);
+        }
         cancelHandler(data, submission);
       })
       .catch((error) => {
@@ -315,19 +346,20 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       abortConversation(message?.conversationId ?? submission?.conversationId, submission);
 
     events.onerror = function (e: MessageEvent) {
-      console.log('error in opening conn.');
+      console.log('error in server stream.');
       startupConfig?.checkBalance && balanceQuery.refetch();
       events.close();
 
-      let data = {} as TResData;
+      let data: TResData | undefined = undefined;
       try {
-        data = JSON.parse(e.data);
+        data = JSON.parse(e.data) as TResData;
       } catch (error) {
         console.error(error);
         console.log(e);
       }
 
-      errorHandler(data, { ...submission, message });
+      errorHandler({ data, submission: { ...submission, message } });
+      events.oncancel();
     };
 
     setIsSubmitting(true);

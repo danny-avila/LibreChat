@@ -48,6 +48,9 @@ bower_components/
 .floo
 .flooignore
 
+#config file
+librechat.yaml
+
 # Environment
 .npmrc
 .env*
@@ -71,6 +74,10 @@ config.local.ts
 **/storageState.json
 junit.xml
 
+# docker override file
+docker-compose.override.yaml
+docker-compose.override.yml
+
 # meilisearch
 meilisearch
 meilisearch.exe
@@ -79,3 +86,5 @@ auth.json
 
 /packages/ux-shared/
 /images
+
+!client/src/components/Nav/SettingsTabs/Data/

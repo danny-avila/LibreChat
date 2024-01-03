@@ -1,36 +1,11 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { registerUser } = require('~/server/services/AuthService');
-const { askQuestion, silentExit } = require('./helpers');
-const connectDb = require('~/lib/db/connectDb');
+const { askQuestion, silentExit, connectWithTimeout } = require('./helpers');
 const User = require('~/models/User');
 
 (async () => {
-  /**
-   * Connect to the database
-   * - If it takes a while, we'll warn the user
-   */
-  // Warn the user if this is taking a while
-  let timeout = setTimeout(() => {
-    console.orange(
-      'This is taking a while... You may need to check your connection if this fails.',
-    );
-    timeout = setTimeout(() => {
-      console.orange('Still going... Might as well assume the connection failed...');
-      timeout = setTimeout(() => {
-        console.orange('Error incoming in 3... 2... 1...');
-      }, 13000);
-    }, 10000);
-  }, 5000);
-  // Attempt to connect to the database
-  try {
-    console.orange('Warming up the engines...');
-    await connectDb();
-    clearTimeout(timeout);
-  } catch (e) {
-    console.error(e);
-    silentExit(1);
-  }
+  await connectWithTimeout();
 
   /**
    * Show the welcome / help menu

@@ -165,6 +165,27 @@ function isEnabled(value) {
   return false;
 }
 
+/**
+ * Checks if the provided value is 'user_provided'.
+ *
+ * @param {string} value - The value to check.
+ * @returns {boolean} - Returns true if the value is 'user_provided', otherwise false.
+ */
+const isUserProvided = (value) => value === 'user_provided';
+
+/**
+ * Extracts the value of an environment variable from a string.
+ * @param {string} value - The value to be processed, possibly containing an env variable placeholder.
+ * @returns {string} - The actual value from the environment variable or the original value.
+ */
+function extractEnvVariable(value) {
+  const envVarMatch = value.match(/^\${(.+)}$/);
+  if (envVarMatch) {
+    return process.env[envVarMatch[1]] || value;
+  }
+  return value;
+}
+
 module.exports = {
   createOnProgress,
   isEnabled,
@@ -172,4 +193,6 @@ module.exports = {
   formatSteps,
   formatAction,
   addSpaceIfNeeded,
+  isUserProvided,
+  extractEnvVariable,
 };

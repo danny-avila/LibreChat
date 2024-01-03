@@ -1,3 +1,9 @@
+---
+title: ✨ Third-Party Tools and Contributions
+description: Collection of third-party tools provided by the community
+weight: -2
+---
+
 # Third-Party Tools
 
 > ⚠️ Warning: The tools featured here are not officially maintained or supported by the LibreChat team
