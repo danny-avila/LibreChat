@@ -9,6 +9,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     text,
     endpointOption,
     conversationId,
+    modelDisplayLabel,
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
@@ -22,7 +23,11 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   let responseMessageId;
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
-  const sender = getResponseSender({ ...endpointOption, model: endpointOption.modelOptions.model });
+  const sender = getResponseSender({
+    ...endpointOption,
+    model: endpointOption.modelOptions.model,
+    modelDisplayLabel,
+  });
   const newConvo = !conversationId;
   const user = req.user.id;
 

@@ -7,6 +7,10 @@ const addTitle = async (req, { text, response, client }) => {
     return;
   }
 
+  if (client.options.titleConvo === false) {
+    return;
+  }
+
   // If the request was aborted and is not azure, don't generate the title.
   if (!client.azure && client.abortController.signal.aborted) {
     return;

@@ -77,7 +77,6 @@ const EditPresetDialog = ({
                     {'ㅤ'}
                   </Label>
                   <PopoverButtons
-                    endpoint={endpoint}
                     buttonClass="ml-0 w-full dark:bg-gray-700 dark:hover:bg-gray-800 p-2 h-[40px] justify-center mt-0"
                     iconClass="hidden lg:block w-4"
                   />

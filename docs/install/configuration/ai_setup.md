@@ -330,15 +330,21 @@ To use Azure with the Plugins endpoint, make sure the following environment vari
 
 > See their available models and pricing here: **[Supported Models](https://openrouter.ai/docs#models)**
 
-OpenRouter is so great, I decided to integrate it to the project as a standalone feature.
+OpenRouter is integrated to the LibreChat by overriding the OpenAI endpoint.
 
-**Setup:**
+**Important**: As of v0.6.6, you can use OpenRouter as its own standalone endpoint:
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/4955bfa3-7b6b-4602-933f-daef89c9eab3)
+
+### [Review the Custom Config Guide (click here)](./custom_config.md) to add an `OpenRouter` Endpoint
+
+**Setup (legacy):**
 - Signup to **[OpenRouter](https://openrouter.ai/)** and create a key. You should name it and set a limit as well.
 - Set the environment variable `OPENROUTER_API_KEY` in your .env file to the key you just created.
 - Set something in the `OPENAI_API_KEY`, it can be anyting, but **do not** leave it blank or set to `user_provided`  
 - Restart your LibreChat server and use the OpenAI or Plugins endpoints.
 
-**Notes:** 
+**Notes:**
 - [TODO] **In the future, you will be able to set up OpenRouter from the frontend as well.**
 - This will override the official OpenAI API or your reverse proxy settings for both Plugins and OpenAI.
 - On initial setup, you may need to refresh your page twice to see all their supported models populate automatically.

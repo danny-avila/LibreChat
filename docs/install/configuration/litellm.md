@@ -62,6 +62,8 @@ git clone https://github.com/danny-avila/LibreChat.git
 OPENAI_REVERSE_PROXY=http://host.docker.internal:8000/v1/chat/completions
 ```
 
+**Important**: As of v0.6.6, it's recommend you use the `librechat.yaml` [Configuration file (guide here)](./custom_config.md) to add Reverse Proxies as separate endpoints.
+
 #### 3. Save fake OpenAI key in Librechat's `.env` 
 
 Copy Librechat's `.env.example` to `.env` and overwrite the default OPENAI_API_KEY (by default it requires the user to pass a key).

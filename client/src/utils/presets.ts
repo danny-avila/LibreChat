@@ -26,7 +26,10 @@ export const getPresetTitle = (preset: TPreset) => {
   let modelInfo = model || '';
   let label = '';
 
-  if (endpoint && [EModelEndpoint.azureOpenAI, EModelEndpoint.openAI].includes(endpoint)) {
+  if (
+    endpoint &&
+    [EModelEndpoint.azureOpenAI, EModelEndpoint.openAI, EModelEndpoint.custom].includes(endpoint)
+  ) {
     label = chatGptLabel || '';
   } else if (endpoint && [EModelEndpoint.google, EModelEndpoint.anthropic].includes(endpoint)) {
     label = modelLabel || '';

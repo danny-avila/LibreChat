@@ -7,7 +7,13 @@ import {
   useRecoilState,
   useRecoilValue,
 } from 'recoil';
-import type { TConversation, TSubmission, TPreset, TModelsConfig } from 'librechat-data-provider';
+import type {
+  TConversation,
+  TSubmission,
+  TPreset,
+  TModelsConfig,
+  TEndpointsConfig,
+} from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
 import { useDeleteFilesMutation } from '~/data-provider';
 import useOriginNavigate from './useOriginNavigate';
@@ -22,7 +28,7 @@ const useNewConvo = (index = 0) => {
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
-  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
+  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -61,6 +67,10 @@ const useNewConvo = (index = 0) => {
             convoSetup: activePreset ?? conversation,
             endpointsConfig,
           });
+
+          if (!conversation.endpointType && endpointsConfig[defaultEndpoint]?.type) {
+            conversation.endpointType = endpointsConfig[defaultEndpoint]?.type;
+          }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];
           conversation = buildDefaultConvo({
