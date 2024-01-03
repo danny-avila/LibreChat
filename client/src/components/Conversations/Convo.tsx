@@ -1,7 +1,10 @@
 import { useRecoilValue } from 'recoil';
 import { useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { useUpdateConversationMutation } from 'librechat-data-provider/react-query';
+import {
+  useGetEndpointsQuery,
+  useUpdateConversationMutation,
+} from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useConversations, useNavigateToConvo } from '~/hooks';
 import { MinimalIcon } from '~/components/Endpoints';
@@ -15,8 +18,9 @@ type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
 export default function Conversation({ conversation, retainView, toggleNav, i }) {
   const { conversationId: currentConvoId } = useParams();
-  const activeConvos = useRecoilValue(store.allConversationsSelector);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
+  const activeConvos = useRecoilValue(store.allConversationsSelector);
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const { refreshConversations } = useConversations();
   const { navigateToConvo } = useNavigateToConvo();
   const { showToast } = useToastContext();
@@ -86,7 +90,9 @@ export default function Conversation({ conversation, retainView, toggleNav, i })
 
   const icon = MinimalIcon({
     size: 20,
+    iconURL: endpointsConfig?.[conversation.endpoint ?? '']?.iconURL,
     endpoint: conversation.endpoint,
+    endpointType: conversation.endpointType,
     model: conversation.model,
     error: false,
     className: 'mr-0',

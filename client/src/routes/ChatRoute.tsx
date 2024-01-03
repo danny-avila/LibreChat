@@ -9,6 +9,7 @@ import {
 import { useNewConvo, useConfigOverride } from '~/hooks';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
+import { Spinner } from '~/components/svg';
 import store from '~/store';
 
 export default function ChatRoute() {
@@ -50,6 +51,10 @@ export default function ChatRoute() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConvoQuery.data, modelsQuery.data, endpointsQuery.data]);
+
+  if (endpointsQuery.isLoading || modelsQuery.isLoading) {
+    return <Spinner className="m-auto dark:text-white" />;
+  }
 
   if (!isAuthenticated) {
     return null;

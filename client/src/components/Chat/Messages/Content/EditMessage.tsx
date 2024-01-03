@@ -19,7 +19,8 @@ const EditMessage = ({
 
   const textEditor = useRef<HTMLDivElement | null>(null);
   const { conversationId, parentMessageId, messageId } = message;
-  const { endpoint } = conversation ?? { endpoint: null };
+  const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
+  const endpoint = endpointType ?? _endpoint;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 

@@ -1,8 +1,13 @@
-/* types/schemas/schema helpers */
+/* config */
+export * from './config';
+/* schema helpers  */
+export * from './parsers';
+/* types (exports schemas from `./types` as they contain needed in other defs) */
 export * from './types';
 export * from './types/assistants';
 export * from './types/files';
 export * from './types/mutations';
+/* query/mutation keys */
 export * from './keys';
 /* api call helpers */
 export * from './headers-helpers';

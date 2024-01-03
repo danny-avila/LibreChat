@@ -302,11 +302,13 @@ OPENAI_TITLE_MODEL=gpt-3.5-turbo
 OPENAI_SUMMARIZE=true
 ```
 
-> **Not yet implemented**: this will be a conversation option enabled by default to save users on tokens. We are using the ConversationSummaryBufferMemory method to summarize messages. To learn more about this, see this article: [https://www.pinecone.io/learn/series/langchain/langchain-conversational-memory/](https://www.pinecone.io/learn/series/langchain/langchain-conversational-memory/)
+> **Experimental**: We are using the ConversationSummaryBufferMemory method to summarize messages. To learn more about this, see this article: [https://www.pinecone.io/learn/series/langchain/langchain-conversational-memory/](https://www.pinecone.io/learn/series/langchain/langchain-conversational-memory/)
 
 - Reverse proxy settings for OpenAI:
     - see: [LiteLLM](./litellm.md) 
     - see also: [Free AI APIs](./free_ai_apis.md#nagaai)
+
+**Important**: As of v0.6.6, it's recommend you use the `librechat.yaml` [Configuration file (guide here)](./custom_config.md) to add Reverse Proxies as separate endpoints.
 
 ```bash
 OPENAI_REVERSE_PROXY=

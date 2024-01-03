@@ -3,6 +3,7 @@ import { BookCopy } from 'lucide-react';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { EditPresetDialog, PresetItems } from './Presets';
 import { useLocalize, usePresets } from '~/hooks';
+import { useChatContext } from '~/Providers';
 import { cn } from '~/utils';
 
 const PresetsMenu: FC = () => {
@@ -18,6 +19,7 @@ const PresetsMenu: FC = () => {
     submitPreset,
     exportPreset,
   } = usePresets();
+  const { preset } = useChatContext();
 
   const presets = presetsQuery.data || [];
   return (
@@ -64,7 +66,7 @@ const PresetsMenu: FC = () => {
           </Content>
         </div>
       </Portal>
-      <EditPresetDialog submitPreset={submitPreset} exportPreset={exportPreset} />
+      {preset && <EditPresetDialog submitPreset={submitPreset} exportPreset={exportPreset} />}
     </Root>
   );
 };

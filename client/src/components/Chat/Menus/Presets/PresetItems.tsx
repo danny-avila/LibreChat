@@ -2,6 +2,7 @@ import { Trash2 } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Close } from '@radix-ui/react-popover';
 import { Flipper, Flipped } from 'react-flip-toolkit';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import type { TPreset } from 'librechat-data-provider';
 import FileUpload from '~/components/Input/EndpointMenu/FileUpload';
@@ -31,6 +32,7 @@ const PresetItems: FC<{
   clearAllPresets,
   onFileSelected,
 }) => {
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const localize = useLocalize();
   return (
@@ -93,6 +95,10 @@ const PresetItems: FC<{
               return null;
             }
 
+            const iconKey = endpointsConfig?.[preset.endpoint ?? '']?.type
+              ? 'unknown'
+              : preset.endpoint ?? 'unknown';
+
             return (
               <Close asChild key={`preset-${preset.presetId}`}>
                 <div key={`preset-${preset.presetId}`}>
@@ -103,8 +109,11 @@ const PresetItems: FC<{
                       title={getPresetTitle(preset)}
                       disableHover={true}
                       onClick={() => onSelectPreset(preset)}
-                      icon={icons[preset.endpoint ?? 'unknown']({
+                      icon={icons[iconKey]({
+                        context: 'menu-item',
+                        iconURL: endpointsConfig?.[preset.endpoint ?? ''].iconURL,
                         className: 'icon-md mr-1 dark:text-white',
+                        endpoint: preset.endpoint,
                       })}
                       selected={false}
                       data-testid={`preset-item-${preset}`}

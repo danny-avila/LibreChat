@@ -2,7 +2,8 @@ import { useRecoilState } from 'recoil';
 import { Settings2 } from 'lucide-react';
 import { Root, Anchor } from '@radix-ui/react-popover';
 import { useState, useEffect, useMemo } from 'react';
-import { tPresetSchema, EModelEndpoint } from 'librechat-data-provider';
+import { tPresetUpdateSchema, EModelEndpoint } from 'librechat-data-provider';
+import type { TPreset } from 'librechat-data-provider';
 import { EndpointSettings, SaveAsPresetDialog } from '~/components/Endpoints';
 import { ModelSelect } from '~/components/Input/ModelSelect';
 import { PluginStoreDialog } from '~/components';
@@ -106,7 +107,11 @@ export default function OptionsBar() {
             <SaveAsPresetDialog
               open={saveAsDialogShow}
               onOpenChange={setSaveAsDialogShow}
-              preset={tPresetSchema.parse({ ...conversation })}
+              preset={
+                tPresetUpdateSchema.parse({
+                  ...conversation,
+                }) as TPreset
+              }
             />
             <PluginStoreDialog
               isOpen={showPluginStoreDialog}
