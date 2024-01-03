@@ -1,21 +1,26 @@
-import React, { ChangeEvent, FC } from 'react';
+import { forwardRef } from 'react';
+import type { ChangeEvent, FC, Ref } from 'react';
 import { cn, defaultTextPropsLabel, removeFocusOutlines } from '~/utils/';
 import { Input, Label } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 interface InputWithLabelProps {
+  id: string;
   value: string;
-  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   label: string;
   subLabel?: string;
-  id: string;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  labelClassName?: string;
+  inputClassName?: string;
+  ref?: Ref<HTMLInputElement>;
 }
 
-const InputWithLabel: FC<InputWithLabelProps> = ({ value, onChange, label, subLabel, id }) => {
+const InputWithLabel: FC<InputWithLabelProps> = forwardRef((props, ref) => {
+  const { id, value, label, subLabel, onChange, labelClassName = '', inputClassName = '' } = props;
   const localize = useLocalize();
   return (
     <>
-      <div className="flex flex-row">
+      <div className={cn('flex flex-row', labelClassName)}>
         <Label htmlFor={id} className="text-left text-sm font-medium">
           {label}
         </Label>
@@ -24,21 +29,22 @@ const InputWithLabel: FC<InputWithLabelProps> = ({ value, onChange, label, subLa
         )}
         <br />
       </div>
-
       <Input
         id={id}
         data-testid={`input-${id}`}
         value={value ?? ''}
         onChange={onChange}
+        ref={ref}
         placeholder={`${localize('com_endpoint_config_value')} ${label}`}
         className={cn(
           defaultTextPropsLabel,
           'flex h-10 max-h-10 w-full resize-none px-3 py-2',
           removeFocusOutlines,
+          inputClassName,
         )}
       />
     </>
   );
-};
+});
 
 export default InputWithLabel;

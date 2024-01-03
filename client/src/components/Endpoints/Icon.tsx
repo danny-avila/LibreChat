@@ -1,9 +1,11 @@
 import { EModelEndpoint } from 'librechat-data-provider';
+import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
 import {
   Plugin,
   GPTIcon,
   AnthropicIcon,
   AzureMinimalIcon,
+  CustomMinimalIcon,
   PaLMIcon,
   CodeyIcon,
   GeminiIcon,
@@ -13,9 +15,8 @@ import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
 const Icon: React.FC<IconProps> = (props) => {
-  const { size = 30, isCreatedByUser, button, model = '', endpoint, error, jailbreak } = props;
-
   const { user } = useAuthContext();
+  const { size = 30, isCreatedByUser, button, model = '', endpoint, error, jailbreak } = props;
 
   if (isCreatedByUser) {
     const username = user?.name || 'User';
@@ -94,8 +95,22 @@ const Icon: React.FC<IconProps> = (props) => {
             : `rgba(0, 163, 255, ${button ? 0.75 : 1})`,
         name: 'ChatGPT',
       },
+      [EModelEndpoint.custom]: {
+        icon: <CustomMinimalIcon size={size * 0.7} />,
+        name: 'Custom',
+      },
       null: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'N/A' },
-      default: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'UNKNOWN' },
+      default: {
+        icon: (
+          <UnknownIcon
+            iconURL={props.iconURL}
+            endpoint={endpoint ?? ''}
+            className="icon-sm"
+            context="message"
+          />
+        ),
+        name: endpoint,
+      },
     };
 
     const { icon, bg, name } =

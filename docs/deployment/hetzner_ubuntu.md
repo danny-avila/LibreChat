@@ -125,7 +125,6 @@ HOST=<yourserverip>
 ```
 SEARCH=true
 MEILI_HOST=meilisearch
-MEILI_HTTP_ADDR=meilisearch
 ```
 
 ### 5. After everything file has been updated, run  `docker-compose build` then `docker-compose up`

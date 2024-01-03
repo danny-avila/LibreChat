@@ -1,5 +1,6 @@
 const express = require('express');
 const openAI = require('./openAI');
+const custom = require('./custom');
 const google = require('./google');
 const anthropic = require('./anthropic');
 const gptPlugins = require('./gptPlugins');
@@ -38,5 +39,6 @@ router.use([`/${EModelEndpoint.azureOpenAI}`, `/${EModelEndpoint.openAI}`], open
 router.use(`/${EModelEndpoint.gptPlugins}`, gptPlugins);
 router.use(`/${EModelEndpoint.anthropic}`, anthropic);
 router.use(`/${EModelEndpoint.google}`, google);
+router.use(`/${EModelEndpoint.custom}`, custom);
 
 module.exports = router;

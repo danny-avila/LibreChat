@@ -1,4 +1,11 @@
-import type { TConversation, TMessage, TPreset, TLoginUser, TUser } from 'librechat-data-provider';
+import type {
+  TConversation,
+  TMessage,
+  TPreset,
+  TLoginUser,
+  TUser,
+  EModelEndpoint,
+} from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
@@ -141,7 +148,7 @@ export type TDisplayProps = TText &
 export type TConfigProps = {
   userKey: string;
   setUserKey: React.Dispatch<React.SetStateAction<string>>;
-  endpoint: string;
+  endpoint: EModelEndpoint | string;
 };
 
 export type TDangerButtonProps = {
@@ -194,9 +201,11 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
   Pick<TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
     size?: number;
     button?: boolean;
+    iconURL?: string;
     message?: boolean;
     className?: string;
-    endpoint?: string | null;
+    endpoint?: EModelEndpoint | string | null;
+    endpointType?: EModelEndpoint | null;
   };
 
 export type Option = Record<string, unknown> & {

@@ -11,6 +11,7 @@ const defaultConfig: TEndpointsConfig = {
   [EModelEndpoint.gptPlugins]: null,
   [EModelEndpoint.google]: null,
   [EModelEndpoint.anthropic]: null,
+  [EModelEndpoint.custom]: null,
 };
 
 const endpointsConfig = atom<TEndpointsConfig>({
@@ -55,6 +56,7 @@ const availableEndpoints = selector({
       'bingAI',
       'google',
       'anthropic',
+      'custom',
     ];
     const f = get(endpointsFilter);
     return endpoints.filter((endpoint) => f[endpoint]);

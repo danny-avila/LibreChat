@@ -6,8 +6,10 @@ import {
   AzureMinimalIcon,
   BingAIMinimalIcon,
   GoogleMinimalIcon,
+  CustomMinimalIcon,
   LightningIcon,
 } from '~/components/svg';
+import UnknownIcon from './UnknownIcon';
 import { cn } from '~/utils';
 
 export const icons = {
@@ -18,6 +20,7 @@ export const icons = {
   [EModelEndpoint.chatGPTBrowser]: LightningIcon,
   [EModelEndpoint.google]: GoogleMinimalIcon,
   [EModelEndpoint.bingAI]: BingAIMinimalIcon,
+  [EModelEndpoint.custom]: CustomMinimalIcon,
   [EModelEndpoint.assistant]: ({ className = '' }) => (
     <svg
       width="24"
@@ -39,5 +42,5 @@ export const icons = {
       ></path>
     </svg>
   ),
-  unknown: GPTIcon,
+  unknown: UnknownIcon,
 };

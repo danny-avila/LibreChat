@@ -1,18 +1,20 @@
 import { v4 } from 'uuid';
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, parseCompactConvo } from 'librechat-data-provider';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { QueryKeys, parseCompactConvo, getResponseSender } from 'librechat-data-provider';
-import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
+import { useGetMessagesByConvoId, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type {
   TMessage,
   TSubmission,
   TEndpointOption,
   TConversation,
+  TEndpointsConfig,
   TGetConversationsResponse,
 } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
+import useGetSender from './Conversations/useGetSender';
 import { useAuthContext } from './AuthContext';
 import useUserKey from './Input/useUserKey';
 import useNewConvo from './useNewConvo';
@@ -20,10 +22,12 @@ import store from '~/store';
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId: string | undefined) {
+  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const [showStopButton, setShowStopButton] = useState(true);
   const [filesLoading, setFilesLoading] = useState(false);
   const setFilesToDelete = useSetFilesToDelete();
+  const getSender = useGetSender();
 
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthContext();
@@ -31,7 +35,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
-  const { conversationId, endpoint } = conversation ?? {};
+  const { conversationId, endpoint, endpointType } = conversation ?? {};
 
   const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
 
@@ -151,13 +155,21 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     const isEditOrContinue = isEdited || isContinued;
 
     // set the endpoint option
-    const convo = parseCompactConvo(endpoint, conversation ?? {});
+    const convo = parseCompactConvo({
+      endpoint,
+      endpointType,
+      conversation: conversation ?? {},
+    });
+
+    const { modelDisplayLabel } = endpointsConfig[endpoint ?? ''] ?? {};
     const endpointOption = {
       ...convo,
       endpoint,
+      endpointType,
+      modelDisplayLabel,
       key: getExpiry(),
     } as TEndpointOption;
-    const responseSender = getResponseSender({ model: conversation?.model, ...endpointOption });
+    const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
     let currentMessages: TMessage[] | null = getMessages() ?? [];
 
