@@ -332,7 +332,9 @@ To use Azure with the Plugins endpoint, make sure the following environment vari
 
 OpenRouter is integrated to the LibreChat by overriding the OpenAI endpoint.
 
-**Important**: As of v0.6.6, you can use OpenRouter as its own standalone endpoint as shown below
+**Important**: As of v0.6.6, you can use OpenRouter as its own standalone endpoint:
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/4955bfa3-7b6b-4602-933f-daef89c9eab3)
 
 ### [Review the Custom Config Guide (click here)](./custom_config.md) to add an `OpenRouter` Endpoint
 
