@@ -21,16 +21,13 @@ const initializeFirebase = () => {
   };
 
   if (Object.values(firebaseConfig).some((value) => !value)) {
-    i === 0 &&
-      logger.info(
-        '[Optional] Firebase configuration missing or incomplete. Firebase will not be initialized.',
-      );
+    i === 0 && logger.info('[Optional] CDN not initialized.');
     i++;
     return null;
   }
 
   firebaseApp = firebase.initializeApp(firebaseConfig);
-  logger.info('Firebase initialized');
+  logger.info('Firebase CDN initialized');
   return firebaseApp;
 };
 
