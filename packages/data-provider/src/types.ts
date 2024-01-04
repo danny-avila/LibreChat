@@ -139,9 +139,11 @@ export type TConfig = {
   userProvideURL?: boolean | null;
 };
 
-export type TModelsConfig = Record<string, string[]>;
+export type TEndpointsConfig =
+  | Record<EModelEndpoint | string, TConfig | null | undefined>
+  | undefined;
 
-export type TEndpointsConfig = Record<EModelEndpoint, TConfig | null>;
+export type TModelsConfig = Record<string, string[]>;
 
 export type TUpdateTokenCountResponse = {
   count: number;

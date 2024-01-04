@@ -7,10 +7,10 @@ import type { FC } from 'react';
 import type { TPreset } from 'librechat-data-provider';
 import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
+import { cn, getEndpointField } from '~/utils';
 import { useChatContext } from '~/Providers';
-import store from '~/store';
 import { icons } from './Icons';
-import { cn } from '~/utils';
+import store from '~/store';
 
 type MenuItemProps = {
   title: string;
@@ -50,7 +50,7 @@ const MenuItem: FC<MenuItemProps> = ({
       const template: Partial<TPreset> = { endpoint: newEndpoint, conversationId: 'new' };
       const { conversationId } = conversation ?? {};
       if (modularChat && conversationId && conversationId !== 'new') {
-        template.endpointType = endpointsConfig?.[newEndpoint]?.type;
+        template.endpointType = getEndpointField(endpointsConfig, newEndpoint, 'type');
 
         const currentConvo = getDefaultConversation({
           /* target endpointType is necessary to avoid endpoint mixing */
@@ -66,7 +66,7 @@ const MenuItem: FC<MenuItemProps> = ({
     }
   };
 
-  const endpointType = endpointsConfig?.[endpoint ?? '']?.type;
+  const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
   const Icon = icons[iconKey];
 
@@ -88,7 +88,7 @@ const MenuItem: FC<MenuItemProps> = ({
                   endpoint={endpoint}
                   context={'menu-item'}
                   className="icon-md shrink-0 dark:text-white"
-                  iconURL={endpointsConfig?.[endpoint ?? '']?.iconURL}
+                  iconURL={getEndpointField(endpointsConfig, endpoint, 'iconURL')}
                 />
               }
               <div>
@@ -167,7 +167,7 @@ const MenuItem: FC<MenuItemProps> = ({
           endpoint={endpoint}
           endpointType={endpointType}
           onOpenChange={setDialogOpen}
-          userProvideURL={endpointsConfig?.[endpoint ?? '']?.userProvideURL}
+          userProvideURL={getEndpointField(endpointsConfig, endpoint, 'userProvideURL')}
         />
       )}
     </>
