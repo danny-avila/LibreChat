@@ -532,11 +532,6 @@ You can now make last minute changes, click on `Create user pool` when you're do
 
 > The `OPENID_SCOPE` and `OPENID_CALLBACK_URL` are pre-configured with the correct values
 
-If you want to restrict by the role, specify `OPENID_REQUIRED_ROLE` parameter. Behaviour of this field depends on your 
-OpenID provider. Be sure that your OpenID provider return the roles.
-
-Check your AccessToken to determine the structure of your token [here](api/strategies/openidStrategy.js).
-
 6. Open the `.env` file at the root of your LibreChat folder and add the following variables with the values you copied:
 
 ```bash
@@ -546,6 +541,7 @@ OPENID_ISSUER=https://cognito-idp.[AWS REGION].amazonaws.com/[USER POOL ID]/.wel
 OPENID_SESSION_SECRET=Any random string
 OPENID_SCOPE=openid profile email
 OPENID_CALLBACK_URL=/oauth/openid/callback
+OPENID_REQUIRED_ROLE=You role for access
 ```
 7. Save the .env file
 
@@ -578,6 +574,50 @@ OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyon
 11. Save the .env file
 
 > Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+
+
+---
+
+### OpenID with Keycloak and Role Restriction
+
+1. **Access Keycloak Admin Console:**
+  - Open the Keycloak Admin Console in your web browser. This is usually found at a URL like `http://localhost:8080/auth/admin/`.
+
+2. **Create a Realm (if necessary):**
+  - If you don't already have a realm for your application, create one. Click on 'Add Realm' and give it a name.
+
+3. **Create a Client:**
+  - Within your realm, click on 'Clients' and then 'Create'.
+  - Enter a client ID and select 'openid-connect' as the Client Protocol.
+  - Set the 'Access Type' to 'confidential' as it will have a client secret.
+  - In 'Valid Redirect URIs', enter `http://localhost:3080/oauth/openid/callback` or the appropriate URI for your application.
+
+4. **Configure Client:**
+  - After creating the client, you will be redirected to its settings page.
+  - Note the 'Client ID' and 'Secret' from the 'Credentials' tab – you'll need these for your application.
+
+5. **Add Roles:**
+  - Go to the 'Roles' tab in your client or realm (depending on where you want to define the roles).
+  - Create a new role that matches the value you have in `OPENID_REQUIRED_ROLE`.
+
+6. **Assign Roles to Users:**
+  - Go to 'Users', select a user, and go to the 'Role Mappings' tab.
+  - Assign the appropriate role (that matches `OPENID_REQUIRED_ROLE`) to the user.
+
+7. **Configure Client Scopes (Optional):**
+  - If you want to include role information in the token, add a client scope and mapper.
+  - Go to 'Client Scopes', create a new scope, and add a mapper to include the role information in the token.
+
+8. **Update Your Project's Configuration:**
+  - Open the `.env` file in your project folder and add the following variables:
+    ```
+    OPENID_ISSUER=http://localhost:8080/auth/realms/[YourRealmName]
+    OPENID_CLIENT_ID=[YourClientID]
+    OPENID_CLIENT_SECRET=[YourClientSecret]
+    OPENID_CALLBACK_URL=http://localhost:3080/oauth/openid/callback
+    OPENID_SCOPE="openid profile email"
+    OPENID_REQUIRED_ROLE=[YourRequiredRole]
+    ```
 
 
 ---
