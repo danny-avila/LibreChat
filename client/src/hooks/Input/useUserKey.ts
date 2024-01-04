@@ -8,7 +8,7 @@ import {
 
 const useUserKey = (endpoint: string) => {
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const config = endpointsConfig?.[endpoint];
+  const config = endpointsConfig?.[endpoint ?? ''];
 
   const { azure } = config ?? {};
   let keyName = endpoint;
