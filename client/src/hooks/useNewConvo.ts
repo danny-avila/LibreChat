@@ -46,6 +46,7 @@ const useNewConvo = (index = 0) => {
         preset: TPreset | null = null,
         modelsData?: TModelsConfig,
         buildDefault?: boolean,
+        keepLatestMessage?: boolean,
       ) => {
         const modelsConfig = modelsData ?? snapshot.getLoadable(store.modelsConfig).contents;
         const { endpoint = null } = conversation;
@@ -84,7 +85,9 @@ const useNewConvo = (index = 0) => {
         setStorage(conversation);
         setConversation(conversation);
         setSubmission({} as TSubmission);
-        resetLatestMessage();
+        if (!keepLatestMessage) {
+          resetLatestMessage();
+        }
 
         if (conversation.conversationId === 'new' && !modelsData) {
           navigate('new');
@@ -99,11 +102,13 @@ const useNewConvo = (index = 0) => {
       preset,
       modelsData,
       buildDefault = true,
+      keepLatestMessage = false,
     }: {
       template?: Partial<TConversation>;
       preset?: TPreset;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
+      keepLatestMessage?: boolean;
     } = {}) => {
       const conversation = {
         conversationId: 'new',
@@ -130,7 +135,7 @@ const useNewConvo = (index = 0) => {
         }
       }
 
-      switchToConversation(conversation, preset, modelsData, buildDefault);
+      switchToConversation(conversation, preset, modelsData, buildDefault, keepLatestMessage);
     },
     [switchToConversation, files, mutateAsync, setFiles],
   );

@@ -23,9 +23,11 @@ const messageSchema = mongoose.Schema(
       type: String,
       default: null,
     },
+    endpoint: {
+      type: String,
+    },
     conversationSignature: {
       type: String,
-      // required: true
     },
     clientId: {
       type: String,
@@ -35,7 +37,6 @@ const messageSchema = mongoose.Schema(
     },
     parentMessageId: {
       type: String,
-      // required: true
     },
     tokenCount: {
       type: Number,
