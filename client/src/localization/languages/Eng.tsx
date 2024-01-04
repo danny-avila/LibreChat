@@ -15,6 +15,7 @@ export default {
   com_ui_limitation_harmful_biased:
     'May occasionally produce harmful instructions or biased content',
   com_ui_limitation_limited_2021: 'Limited knowledge of world and events after 2021',
+  com_ui_experimental: 'Experimental',
   com_ui_input: 'Input',
   com_ui_close: 'Close',
   com_ui_model: 'Model',
@@ -257,6 +258,7 @@ export default {
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
   com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
+  com_nav_modular_chat: 'Enable switching Endpoints mid-conversation',
   com_nav_profile_picture: 'Profile Picture',
   com_nav_change_picture: 'Change picture',
   com_nav_plugin_store: 'Plugin store',

@@ -1,9 +1,9 @@
 import * as Tabs from '@radix-ui/react-tabs';
+import type { TDialogProps } from '~/common';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
 import { GearIcon, DataIcon, UserIcon } from '~/components/svg';
-import { useMediaQuery, useLocalize } from '~/hooks';
-import type { TDialogProps } from '~/common';
 import { General, Data, Account } from './SettingsTabs';
+import { useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
@@ -13,7 +13,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:h-[373px] md:w-[680px]')}
+        className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:min-h-[373px] md:w-[680px]')}
         style={{ borderRadius: '12px' }}
       >
         <DialogHeader>

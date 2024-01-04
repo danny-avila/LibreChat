@@ -106,6 +106,7 @@ export const tAgentOptionsSchema = z.object({
 
 export const tMessageSchema = z.object({
   messageId: z.string(),
+  endpoint: z.string().optional(),
   clientId: z.string().nullable().optional(),
   conversationId: z.string().nullable(),
   parentMessageId: z.string().nullable(),

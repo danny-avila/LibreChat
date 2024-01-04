@@ -161,7 +161,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       conversation: conversation ?? {},
     });
 
-    const { modelDisplayLabel } = endpointsConfig[endpoint ?? ''] ?? {};
+    const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
     const endpointOption = {
       ...convo,
       endpoint,
@@ -225,6 +225,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     const initialResponse: TMessage = {
       sender: responseSender,
       text: responseText,
+      endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
       conversationId,
