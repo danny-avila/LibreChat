@@ -6,7 +6,7 @@ import {
   useGetModelsQuery,
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
-import { tPresetSchema } from 'librechat-data-provider';
+import { TPreset } from 'librechat-data-provider';
 import { useNewConvo, useConfigOverride } from '~/hooks';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
@@ -47,7 +47,7 @@ export default function ChatRoute() {
       newConversation({
         template: initialConvoQuery.data,
         /* this is necessary to load all existing settings */
-        preset: tPresetSchema.parse({ ...initialConvoQuery.data }),
+        preset: initialConvoQuery.data as TPreset,
         modelsData: modelsQuery.data,
       });
       hasSetConversation.current = true;
