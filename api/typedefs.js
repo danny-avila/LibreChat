@@ -573,18 +573,45 @@
  * @property {ContentPart[]} content - The content of the message.
  */
 
+// /**
+//  * @typedef {OpenAI & {
+// * req: Express.Request,
+// * res: Express.Response
+// * getPartialText: () => string,
+// * processedFileIds: Set<string>,
+// * mappedOrder: Map<string, number>,
+// * completeToolCallSteps: Set<string>,
+// * seenCompletedMessages: Set<string>,
+// * seenToolCalls: Map<string, StepToolCall>,
+// * progressCallback: (options: Object) => void,
+// * addContentData: (data: TContentData) => void,
+// * responseMessage: ResponseMessage,
+// * }} OpenAIClient - for reference only
+// */
+
 /**
- * @typedef {OpenAI & {
- * req: Express.Request,
- * res: Express.Response
- * getPartialText: () => string,
- * processedFileIds: Set<string>,
- * mappedOrder: Map<string, number>,
- * completeToolCallSteps: Set<string>,
- * seenCompletedMessages: Set<string>,
- * seenToolCalls: Map<string, StepToolCall>,
- * progressCallback: (options: Object) => void,
- * addContentData: (data: TContentData) => void,
- * responseMessage: ResponseMessage,
- * }} OpenAIClient
+ * @typedef {Object} OpenAIClientType
+ *
+ * @property {Express.Request} req - The Express request object.
+ * @property {Express.Response} res - The Express response object.
+ * @property {() => string} getPartialText - Retrieves the current tokens accumulated by `progressCallback`.
+ *
+ * Note: not used until real streaming is implemented by OpenAI.
+ *
+ * @property {Set<string>} processedFileIds - A set of IDs for processed files.
+ * @property {Map<string, number>} mappedOrder - A map to maintain the order of individual `tool_calls` and `steps`.
+ * @property {Set<string>} completeToolCallSteps - A set of completed tool call steps.
+ * @property {Set<string>} seenCompletedMessages - A set of completed messages that have been seen/processed.
+ * @property {Map<string, StepToolCall>} seenToolCalls - A map of tool calls that have been seen/processed.
+ * @property {(options: Object) => void} progressCallback - Accumulates tokens & invokes `sendIntermediateMessage`,
+ * which sends an intermediate SSE message.
+ * @property {(data: TContentData) => void} addContentData - Updates the response message's relevant
+ * content array with the part by index & sends intermediate SSE message with content data.
+ *
+ * Note: does not send intermediate SSE message for messages, which are streamed
+ * (may soon be streamed) directly from OpenAI API.
+ *
+ * @property {ResponseMessage} responseMessage - A message object for responses.
+ *
+ * @typedef {OpenAI & OpenAIClientType} OpenAIClient
  */
