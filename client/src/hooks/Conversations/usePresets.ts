@@ -13,11 +13,11 @@ import {
 } from '~/data-provider';
 import { useChatContext, useToastContext } from '~/Providers';
 import useNavigateToConvo from '~/hooks/useNavigateToConvo';
+import { cleanupPreset, getEndpointField } from '~/utils';
 import useDefaultConvo from '~/hooks/useDefaultConvo';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { NotificationSeverity } from '~/common';
 import useLocalize from '~/hooks/useLocalize';
-import { cleanupPreset } from '~/utils';
 import store from '~/store';
 
 export default function usePresets() {
@@ -162,12 +162,13 @@ export default function usePresets() {
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
 
-    const currentEndpointType = endpointsConfig?.[endpoint ?? '']?.type ?? '';
-    const endpointType = endpointsConfig?.[newPreset?.endpoint ?? '']?.type;
+    const currentEndpointType = getEndpointField(endpointsConfig, endpoint, 'type');
+    const endpointType = getEndpointField(endpointsConfig, newPreset.endpoint, 'type');
 
     if (
-      (modularEndpoints.has(endpoint ?? '') || modularEndpoints.has(currentEndpointType)) &&
-      (modularEndpoints.has(newPreset?.endpoint ?? '') || modularEndpoints.has(endpointType)) &&
+      (modularEndpoints.has(endpoint ?? '') || modularEndpoints.has(currentEndpointType ?? '')) &&
+      (modularEndpoints.has(newPreset?.endpoint ?? '') ||
+        modularEndpoints.has(endpointType ?? '')) &&
       (endpoint === newPreset?.endpoint || modularChat)
     ) {
       const currentConvo = getDefaultConversation({

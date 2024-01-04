@@ -11,6 +11,7 @@ import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from './NewDeleteButton';
+import { getEndpointField } from '~/utils';
 import RenameButton from './RenameButton';
 import store from '~/store';
 
@@ -90,7 +91,7 @@ export default function Conversation({ conversation, retainView, toggleNav, i })
 
   const icon = MinimalIcon({
     size: 20,
-    iconURL: endpointsConfig?.[conversation.endpoint ?? '']?.iconURL,
+    iconURL: getEndpointField(endpointsConfig, conversation.endpoint, 'iconURL'),
     endpoint: conversation.endpoint,
     endpointType: conversation.endpointType,
     model: conversation.model,

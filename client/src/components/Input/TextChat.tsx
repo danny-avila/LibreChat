@@ -1,13 +1,14 @@
-import React, { useEffect, useContext, useRef, useState, useCallback } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useRecoilValue, useRecoilState, useSetRecoilState } from 'recoil';
-import SubmitButton from './SubmitButton';
+import React, { useEffect, useContext, useRef, useState, useCallback } from 'react';
 
-import OptionsBar from './OptionsBar';
 import { EndpointMenu } from './EndpointMenu';
+import SubmitButton from './SubmitButton';
+import OptionsBar from './OptionsBar';
 import Footer from './Footer';
+
 import { useMessageHandler, ThemeContext } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, getEndpointField } from '~/utils';
 import store from '~/store';
 
 interface TextChatProps {
@@ -195,7 +196,7 @@ export default function TextChat({ isSearchView = false }: TextChatProps) {
                   isSubmitting={isSubmitting}
                   userProvidesKey={
                     conversation?.endpoint
-                      ? endpointsConfig?.[conversation.endpoint]?.userProvide
+                      ? getEndpointField(endpointsConfig, conversation.endpoint, 'userProvide')
                       : undefined
                   }
                   hasText={hasText}
