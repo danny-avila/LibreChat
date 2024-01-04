@@ -33,7 +33,6 @@ export default function useContentHandler({ setMessages, setConversation }: TUse
       response = {
         ...initialResponse,
         parentMessageId: userMessage?.messageId,
-        submitting: true,
         messageId,
         content: [],
       };
