@@ -5,6 +5,7 @@ import {
   useGetEndpointsQuery,
   useUpdateConversationMutation,
 } from 'librechat-data-provider/react-query';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useConversations, useNavigateToConvo } from '~/hooks';
 import { MinimalIcon } from '~/components/Endpoints';
@@ -42,7 +43,7 @@ export default function Conversation({ conversation, retainView, toggleNav, i })
     document.title = title;
 
     // set conversation to the new conversation
-    if (conversation?.endpoint === 'gptPlugins') {
+    if (conversation?.endpoint === EModelEndpoint.gptPlugins) {
       let lastSelectedTools = [];
       try {
         lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') ?? [];

@@ -11,6 +11,7 @@ const buildDefaultConvo = ({
   conversation: TConversation;
   endpoint: EModelEndpoint;
   models: string[];
+  // TODO: fix this type as we should allow undefined
   lastConversationSetup: TConversation;
 }) => {
   const { lastSelectedModel, lastSelectedTools, lastBingSettings } = getLocalStorageItems();
