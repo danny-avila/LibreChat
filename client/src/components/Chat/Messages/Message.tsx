@@ -62,9 +62,12 @@ export default function Message(props: TMessageProps) {
             <div
               className={cn(
                 'relative flex w-full flex-col',
-                isCreatedByUser ? '' : 'agent-turn',
+                isCreatedByUser
+                  ? 'cursor-pointer hover:bg-gray-100 hover:brightness-100 dark:hover:bg-gray-700'
+                  : 'agent-turn',
                 !isCreatedByUser || expand ? 'h-auto' : 'readmore-blur h-[120px] overflow-hidden',
               )}
+              onClick={() => setExpand(!expand)}
             >
               <div className="flex select-none items-center justify-between font-semibold ">
                 {isCreatedByUser ? 'You' : message.sender}
