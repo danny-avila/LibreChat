@@ -28,18 +28,22 @@ async function createOnTextProgress(openai) {
 
   openai.getPartialText = getPartialText;
   openai.progressCallback = progressCallback;
+
   openai.responseMessage = {
     role: 'assistant',
     messageId: v4(),
     content: [],
   };
+
   openai.addContentData = (data) => {
     const { type, index } = data;
     const part = data[type];
     openai.responseMessage.content[index] = part;
+
     if (type === ContentTypes.TEXT) {
       return;
     }
+
     sendMessage(openai.res, {
       index,
       type: type,
