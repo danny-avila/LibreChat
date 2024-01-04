@@ -45,6 +45,7 @@ async function convertToWebP(req, file, resolution = 'high', basename = '') {
     const newFileName = path.basename(file.path ?? basename);
     const newPath = path.join(userPath, newFileName);
 
+    // TODO: implement different save strategies: local, firebase, etc.
     if (extension.toLowerCase() === '.webp') {
       const bytes = Buffer.byteLength(resizedBuffer);
       await fs.promises.writeFile(newPath, resizedBuffer);

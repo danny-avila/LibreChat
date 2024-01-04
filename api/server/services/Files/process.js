@@ -119,7 +119,7 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
     };
 
     if (save) {
-      createFile(file, true); // Assuming createFile is a function you have defined
+      createFile(file, true);
     }
 
     return file;
@@ -154,14 +154,13 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
       usage: 1,
       file_id,
     };
-    createFile(file, true); // Assuming createFile is a function you have defined
+    createFile(file, true);
     return file;
   };
 
   /** @param {Buffer} dataBuffer */
   const processOtherFileTypes = async (dataBuffer) => {
     // Logic to handle other file types
-    // Placeholder: You should implement this based on your specific requirements
     console.log('Non-image file type detected');
     return { filepath: `/api/files/download/${file_id}`, bytes: dataBuffer.length };
   };
