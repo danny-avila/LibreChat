@@ -12,9 +12,10 @@ import {
 } from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
 import AutoScrollSwitch from './AutoScrollSwitch';
-import DangerButton from '../DangerButton';
-import store from '~/store';
 import { Dropdown } from '~/components/ui';
+import DangerButton from '../DangerButton';
+import ModularChat from './ModularChat';
+import store from '~/store';
 
 export const ThemeSelector = ({
   theme,
@@ -187,6 +188,9 @@ function General() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <AutoScrollSwitch />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <ModularChat />
         </div>
       </div>
     </Tabs.Content>
