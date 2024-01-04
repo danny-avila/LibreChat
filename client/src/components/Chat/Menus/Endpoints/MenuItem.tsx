@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { Settings } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
-import { useLocalize, useUserKey } from '~/hooks';
+import type { TPreset } from 'librechat-data-provider';
+import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 import { useChatContext } from '~/Providers';
+import store from '~/store';
 import { icons } from './Icons';
 import { cn } from '~/utils';
 
@@ -27,10 +30,12 @@ const MenuItem: FC<MenuItemProps> = ({
   userProvidesKey,
   ...rest
 }) => {
-  const { data: endpointsConfig } = useGetEndpointsQuery();
-
+  const modularChat = useRecoilValue(store.modularChat);
   const [isDialogOpen, setDialogOpen] = useState(false);
-  const { newConversation } = useChatContext();
+  const { data: endpointsConfig } = useGetEndpointsQuery();
+  const { conversation, newConversation } = useChatContext();
+  const getDefaultConversation = useDefaultConvo();
+
   const { getExpiry } = useUserKey(endpoint);
   const localize = useLocalize();
   const expiryTime = getExpiry();
@@ -42,7 +47,22 @@ const MenuItem: FC<MenuItemProps> = ({
       if (!expiryTime) {
         setDialogOpen(true);
       }
-      newConversation({ template: { endpoint: newEndpoint, conversationId: 'new' } });
+      const template: Partial<TPreset> = { endpoint: newEndpoint, conversationId: 'new' };
+      const { conversationId } = conversation ?? {};
+      if (modularChat && conversationId && conversationId !== 'new') {
+        template.endpointType = endpointsConfig?.[newEndpoint]?.type;
+
+        const currentConvo = getDefaultConversation({
+          /* target endpointType is necessary to avoid endpoint mixing */
+          conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
+          preset: template,
+        });
+
+        /* We don't reset the latest message, only when changing settings mid-converstion */
+        newConversation({ template: currentConvo, keepLatestMessage: true });
+        return;
+      }
+      newConversation({ template });
     }
   };
 

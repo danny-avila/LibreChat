@@ -1,11 +1,11 @@
-import { QueryKeys, modularEndpoints } from 'librechat-data-provider';
-import { useCreatePresetMutation } from 'librechat-data-provider/react-query';
 import filenamify from 'filenamify';
-import { useCallback, useEffect, useRef } from 'react';
-import { useRecoilState, useSetRecoilState } from 'recoil';
 import exportFromJSON from 'export-from-json';
+import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { TPreset } from 'librechat-data-provider';
+import { QueryKeys, modularEndpoints } from 'librechat-data-provider';
+import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
+import { useCreatePresetMutation } from 'librechat-data-provider/react-query';
+import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
 import {
   useUpdatePresetMutation,
   useDeletePresetMutation,
@@ -27,6 +27,7 @@ export default function usePresets() {
   const { showToast } = useToastContext();
   const { user, isAuthenticated } = useAuthContext();
 
+  const modularChat = useRecoilValue(store.modularChat);
   const [_defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
   const setPresetModalVisible = useSetRecoilState(store.presetModalVisible);
   const { preset, conversation, newConversation, setPreset } = useChatContext();
@@ -159,14 +160,20 @@ export default function usePresets() {
       duration: 750,
     });
 
+    const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+
+    const currentEndpointType = endpointsConfig?.[endpoint ?? '']?.type ?? '';
+    const endpointType = endpointsConfig?.[newPreset?.endpoint ?? '']?.type;
+
     if (
-      modularEndpoints.has(endpoint ?? '') &&
-      modularEndpoints.has(newPreset?.endpoint ?? '') &&
-      endpoint === newPreset?.endpoint
+      (modularEndpoints.has(endpoint ?? '') || modularEndpoints.has(currentEndpointType)) &&
+      (modularEndpoints.has(newPreset?.endpoint ?? '') || modularEndpoints.has(endpointType)) &&
+      (endpoint === newPreset?.endpoint || modularChat)
     ) {
       const currentConvo = getDefaultConversation({
-        conversation: conversation ?? {},
-        preset: newPreset,
+        /* target endpointType is necessary to avoid endpoint mixing */
+        conversation: { ...(conversation ?? {}), endpointType },
+        preset: { ...newPreset, endpointType },
       });
 
       /* We don't reset the latest message, only when changing settings mid-converstion */

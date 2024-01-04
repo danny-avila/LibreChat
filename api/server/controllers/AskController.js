@@ -118,6 +118,8 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       response = { ...response, ...metadata };
     }
 
+    response.endpoint = endpointOption.endpoint;
+
     if (client.options.attachments) {
       userMessage.files = client.options.attachments;
       delete userMessage.image_urls;

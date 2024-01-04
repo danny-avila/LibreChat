@@ -50,6 +50,25 @@ const autoScroll = atom<boolean>({
   ] as const,
 });
 
+const modularChat = atom<boolean>({
+  key: 'modularChat',
+  default: localStorage.getItem('modularChat') === 'true',
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('modularChat');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('modularChat', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 export default {
   abortScroll,
   optionSettings,
@@ -58,4 +77,5 @@ export default {
   showBingToneSetting,
   showPopover,
   autoScroll,
+  modularChat,
 };
