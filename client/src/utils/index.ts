@@ -1,7 +1,7 @@
 export * from './json';
 export * from './presets';
 export * from './languages';
-export * from './mapEndpoints';
+export * from './endpoints';
 export { default as cn } from './cn';
 export { default as buildTree } from './buildTree';
 export { default as getLoginError } from './getLoginError';

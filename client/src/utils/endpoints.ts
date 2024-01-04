@@ -1,7 +1,7 @@
 import { defaultEndpoints } from 'librechat-data-provider';
 import type { EModelEndpoint, TEndpointsConfig, TConfig } from 'librechat-data-provider';
 
-const getEndpointsFilter = (endpointsConfig: TEndpointsConfig) => {
+export const getEndpointsFilter = (endpointsConfig: TEndpointsConfig) => {
   const filter: Record<string, boolean> = {};
   if (!endpointsConfig) {
     return filter;
@@ -12,7 +12,7 @@ const getEndpointsFilter = (endpointsConfig: TEndpointsConfig) => {
   return filter;
 };
 
-const getAvailableEndpoints = (
+export const getAvailableEndpoints = (
   filter: Record<string, boolean>,
   endpointsConfig: TEndpointsConfig,
 ) => {

@@ -5,7 +5,7 @@ import type {
   EModelEndpoint,
 } from 'librechat-data-provider';
 import getLocalStorageItems from './getLocalStorageItems';
-import { mapEndpoints } from './mapEndpoints';
+import { mapEndpoints } from './endpoints';
 
 type TConvoSetup = Partial<TPreset> | Partial<TConversation>;
 
