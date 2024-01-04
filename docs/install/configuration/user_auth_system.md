@@ -532,6 +532,11 @@ You can now make last minute changes, click on `Create user pool` when you're do
 
 > The `OPENID_SCOPE` and `OPENID_CALLBACK_URL` are pre-configured with the correct values
 
+If you want to restrict by the role, specify `OPENID_REQUIRED_ROLE` parameter. Behaviour of this field depends on your 
+OpenID provider. Be sure that your OpenID provider return the roles.
+
+Check your AccessToken to determine the structure of your token [here](api/strategies/openidStrategy.js).
+
 6. Open the `.env` file at the root of your LibreChat folder and add the following variables with the values you copied:
 
 ```bash

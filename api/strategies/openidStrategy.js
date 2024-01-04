@@ -5,6 +5,7 @@ const passport = require('passport');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const { logger } = require('~/config');
 const User = require('~/models/User');
+const jwtDecode = require('jwt-decode');
 
 let crypto;
 try {
@@ -44,6 +45,7 @@ async function setupOpenId() {
       client_secret: process.env.OPENID_CLIENT_SECRET,
       redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
     });
+    const requiredRole = process.env.OPENID_REQUIRED_ROLE;
 
     const openidLogin = new OpenIDStrategy(
       {
@@ -69,6 +71,21 @@ async function setupOpenId() {
             fullName = userinfo.family_name;
           } else {
             fullName = userinfo.username || userinfo.email;
+          }
+
+          const decodedAccessToken = jwtDecode.jwtDecode(tokenset.access_token);
+          let roles = [];
+          if (decodedAccessToken.roles) {
+            roles = decodedAccessToken.roles;
+          } else if (decodedAccessToken.realm_access && decodedAccessToken.realm_access.roles) {
+            roles = decodedAccessToken.realm_access.roles;
+          }
+          user.roles = roles;
+
+          if (requiredRole && !roles.includes(requiredRole)) {
+            return done(null, false, {
+              message: `You must have the "${requiredRole}" role to log in.`,
+            });
           }
 
           if (!user) {
