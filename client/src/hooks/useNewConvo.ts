@@ -14,7 +14,7 @@ import type {
   TModelsConfig,
   TEndpointsConfig,
 } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
+import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
 import { useDeleteFilesMutation } from '~/data-provider';
 import useOriginNavigate from './useOriginNavigate';
 import useSetStorage from './useSetStorage';
@@ -69,8 +69,9 @@ const useNewConvo = (index = 0) => {
             endpointsConfig,
           });
 
-          if (!conversation.endpointType && endpointsConfig[defaultEndpoint]?.type) {
-            conversation.endpointType = endpointsConfig[defaultEndpoint]?.type;
+          const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
+          if (!conversation.endpointType && endpointType) {
+            conversation.endpointType = endpointType;
           }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];

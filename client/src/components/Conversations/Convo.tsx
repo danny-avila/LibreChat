@@ -5,12 +5,14 @@ import {
   useGetEndpointsQuery,
   useUpdateConversationMutation,
 } from 'librechat-data-provider/react-query';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useConversations, useNavigateToConvo } from '~/hooks';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from './NewDeleteButton';
+import { getEndpointField } from '~/utils';
 import RenameButton from './RenameButton';
 import store from '~/store';
 
@@ -41,7 +43,7 @@ export default function Conversation({ conversation, retainView, toggleNav, i })
     document.title = title;
 
     // set conversation to the new conversation
-    if (conversation?.endpoint === 'gptPlugins') {
+    if (conversation?.endpoint === EModelEndpoint.gptPlugins) {
       let lastSelectedTools = [];
       try {
         lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') ?? [];
@@ -90,7 +92,7 @@ export default function Conversation({ conversation, retainView, toggleNav, i })
 
   const icon = MinimalIcon({
     size: 20,
-    iconURL: endpointsConfig?.[conversation.endpoint ?? '']?.iconURL,
+    iconURL: getEndpointField(endpointsConfig, conversation.endpoint, 'iconURL'),
     endpoint: conversation.endpoint,
     endpointType: conversation.endpointType,
     model: conversation.model,
