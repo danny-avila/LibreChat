@@ -1,5 +1,5 @@
 version: 1.0.0
-cache: true
+cache: false
 endpoints:
   custom:
     - name: "NagaAI"
