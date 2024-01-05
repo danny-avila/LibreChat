@@ -4,25 +4,15 @@ const fs = require('fs');
 const path = require('path');
 const { z } = require('zod');
 const OpenAI = require('openai');
-const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const {
-  saveImageToFirebaseStorage,
-  getFirebaseStorageImageUrl,
-  getFirebaseStorage,
-} = require('~/server/services/Files/Firebase');
-const { getImageBasename } = require('~/server/services/Files/images');
-const extractBaseURL = require('~/utils/extractBaseURL');
 const saveImageFromUrl = require('../saveImageFromUrl');
-const { logger } = require('~/config');
-
+const extractBaseURL = require('../../../../utils/extractBaseURL');
 const { DALLE3_SYSTEM_PROMPT, DALLE_REVERSE_PROXY, PROXY } = process.env;
 class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
 
-    this.userId = fields.userId;
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
     const config = { apiKey };
     if (DALLE_REVERSE_PROXY) {
@@ -47,31 +37,20 @@ class DALLE3 extends Tool {
     // 3. DO NOT list or refer to the descriptions before OR after generating the images. They should ONLY ever be written out ONCE, in the \`"prompts"\` field of the request. You do not need to ask for permission to generate, just do it!
     // 4. Always mention the image type (photo, oil painting, watercolor painting, illustration, cartoon, drawing, vector, render, etc.) at the beginning of the caption. Unless the captions suggests otherwise, make one of the images a photo.
     // 5. Diversify depictions of ALL images with people to always include always DESCENT and GENDER for EACH person using direct terms. Adjust only human descriptions.
+    // 6. Always end any prompt with the extensions "--v 6 --fast" to make sure that you use version 6 of the model midjurney and on the fast mode.
     // - EXPLICITLY specify these attributes, not abstractly reference them. The attributes should be specified in a minimal way and should directly describe their physical form.
     // - Your choices should be grounded in reality. For example, all of a given OCCUPATION should not be the same gender or race. Additionally, focus on creating diverse, inclusive, and exploratory scenes via the properties you choose during rewrites.  Make choices that may be insightful or unique sometimes.
     // - Use "various" or "diverse" ONLY IF the description refers to groups of more than 3 people. Do not change the number of people requested in the original description.
     // - Don't alter memes, fictional character origins, or unseen people. Maintain the original prompt's intent and prioritize quality.
-    // The prompt must intricately describe every part of the image in concrete, objective detail. THINK about what the end goal of the description is, and extrapolate that to what would make satisfying images.
-    // All descriptions sent to dalle should be a paragraph of text that is extremely descriptive and detailed. Each should be more than 3 sentences long.`;
+    // THINK about what the end goal of the description is, and extrapolate that to what would make satisfying images.
+    // All descriptions sent to dalle should be a paragraph of text. Each should be more than 5 words long.
+    // MAKE SURE that the end result is the same given description prompt (language and grammer fixed) with 3 or 4 short descriptions (2 words) after it with ',' after each one, then end with the arguments "--v 6 --fast", and make sure you didn't add any new items to the image or change the wanted mean of it.`;
     this.schema = z.object({
       prompt: z
         .string()
         .max(4000)
         .describe(
-          'A text description of the desired image, following the rules, up to 4000 characters.',
-        ),
-      style: z
-        .enum(['vivid', 'natural'])
-        .describe(
-          'Must be one of `vivid` or `natural`. `vivid` generates hyper-real and dramatic images, `natural` produces more natural, less hyper-real looking images',
-        ),
-      quality: z
-        .enum(['hd', 'standard'])
-        .describe('The quality of the generated image. Only `hd` and `standard` are supported.'),
-      size: z
-        .enum(['1024x1024', '1792x1024', '1024x1792'])
-        .describe(
-          'The size of the requested image. Use 1024x1024 (square) as the default, 1792x1024 if the user requests a wide image, and 1024x1792 for full-body portraits. Always include this parameter in the request.',
+          'A given description of the desired image, add short enhance descriptions after it, make sure you end the prompt with "--v 6 --fast".',
         ),
     });
   }
@@ -79,7 +58,7 @@ class DALLE3 extends Tool {
   getApiKey() {
     const apiKey = process.env.DALLE_API_KEY || '';
     if (!apiKey) {
-      throw new Error('Missing DALLE_API_KEY environment variable.');
+      throw new Error('Missing MIDJ_API_KEY environment variable.');
     }
     return apiKey;
   }
@@ -100,28 +79,34 @@ class DALLE3 extends Tool {
   }
 
   async _call(data) {
-    const { prompt, quality = 'standard', size = '1024x1024', style = 'vivid' } = data;
+    const { prompt } = data;
     if (!prompt) {
       throw new Error('Missing required field: prompt');
     }
 
     let resp;
-    try {
-      resp = await this.openai.images.generate({
-        model: 'dall-e-3',
-        quality,
-        style,
-        size,
-        prompt: this.replaceUnwantedChars(prompt),
-        n: 1,
-      });
-    } catch (error) {
-      return `Something went wrong when trying to generate the image. The DALL-E API may be unavailable:
+    const models = ['midjourney', 'kandinsky-3']; // That part means if the first model faild to generate image it will try with the next one
+    for (const model of models) {
+      try {
+        resp = await this.openai.images.generate({
+          model,
+          prompt: this.replaceUnwantedChars(prompt),
+          n: 4,
+        });
+        break; // If the image generation is successful, break out of the loop
+      } catch (error) {
+        if (models.indexOf(model) === models.length - 1) {
+          // If this is the last model in the array and it still fails, return the error
+          return `Something went wrong when trying to generate the image. The API may be unavailable:
 Error Message: ${error.message}`;
+        }
+        // If the current model fails, continue to the next one
+        console.error(`Model ${model} failed: ${error.message}`);
+      }
     }
 
     if (!resp) {
-      return 'Something went wrong when trying to generate the image. The DALL-E API may be unavailable';
+      return 'Something went wrong when trying to generate the image. The API may unavailable';
     }
 
     const theImageUrl = resp.data[0].url;
@@ -130,17 +115,15 @@ Error Message: ${error.message}`;
       return 'No image URL returned from OpenAI API. There may be a problem with the API or your configuration.';
     }
 
-    const imageBasename = getImageBasename(theImageUrl);
-    let imageName = `image_${uuidv4()}.png`;
+    const regex = /[\w\d]+.png/;
+    const match = theImageUrl.match(regex);
+    let imageName = '1.png';
 
-    if (imageBasename) {
-      imageName = imageBasename;
-      logger.debug('[DALL-E-3]', { imageName }); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
+    if (match) {
+      imageName = match[0];
+      console.log(imageName); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
     } else {
-      logger.debug('[DALL-E-3] No image name found in the string.', {
-        theImageUrl,
-        data: resp.data[0],
-      });
+      console.log('No image name found in the string.');
     }
 
     this.outputPath = path.resolve(
@@ -153,7 +136,6 @@ Error Message: ${error.message}`;
       'client',
       'public',
       'images',
-      this.userId,
     );
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
@@ -162,24 +144,13 @@ Error Message: ${error.message}`;
     if (!fs.existsSync(this.outputPath)) {
       fs.mkdirSync(this.outputPath, { recursive: true });
     }
-    const storage = getFirebaseStorage();
-    if (storage) {
-      try {
-        await saveImageToFirebaseStorage(this.userId, theImageUrl, imageName);
-        this.result = await getFirebaseStorageImageUrl(`${this.userId}/${imageName}`);
-        logger.debug('[DALL-E-3] result: ' + this.result);
-      } catch (error) {
-        logger.error('Error while saving the image to Firebase Storage:', error);
-        this.result = `Failed to save the image to Firebase Storage. ${error.message}`;
-      }
-    } else {
-      try {
-        await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
-        this.result = this.getMarkdownImageUrl(imageName);
-      } catch (error) {
-        logger.error('Error while saving the image locally:', error);
-        this.result = `Failed to save the image locally. ${error.message}`;
-      }
+
+    try {
+      await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
+      this.result = this.getMarkdownImageUrl(imageName);
+    } catch (error) {
+      console.error('Error while saving the image:', error);
+      this.result = theImageUrl;
     }
 
     return this.result;

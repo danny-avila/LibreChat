@@ -1,30 +1,19 @@
-// From https://platform.openai.com/docs/api-reference/images/create
+// From https://platform.openai.com/docs/guides/images/usage?context=node
 // To use this tool, you must pass in a configured OpenAIApi object.
 const fs = require('fs');
 const path = require('path');
+const { z } = require('zod');
 const OpenAI = require('openai');
-// const { genAzureEndpoint } = require('~/utils/genAzureEndpoints');
-const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const {
-  saveImageToFirebaseStorage,
-  getFirebaseStorageImageUrl,
-  getFirebaseStorage,
-} = require('~/server/services/Files/Firebase');
-const { getImageBasename } = require('~/server/services/Files/images');
-const extractBaseURL = require('~/utils/extractBaseURL');
 const saveImageFromUrl = require('./saveImageFromUrl');
-const { logger } = require('~/config');
-
-const { DALLE_REVERSE_PROXY, PROXY } = process.env;
+const extractBaseURL = require('../../../utils/extractBaseURL');
+const { DALLE3_SYSTEM_PROMPT, DALLE_REVERSE_PROXY, PROXY } = process.env;
 class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
 
-    this.userId = fields.userId;
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
-
     const config = { apiKey };
     if (DALLE_REVERSE_PROXY) {
       config.baseURL = extractBaseURL(DALLE_REVERSE_PROXY);
@@ -33,38 +22,48 @@ class OpenAICreateImage extends Tool {
     if (PROXY) {
       config.httpAgent = new HttpsProxyAgent(PROXY);
     }
-    // let azureKey = fields.AZURE_API_KEY || process.env.AZURE_API_KEY;
 
-    // if (azureKey) {
-    //   apiKey = azureKey;
-    //   const azureConfig = {
-    //     apiKey,
-    //     azureOpenAIApiInstanceName: process.env.AZURE_OPENAI_API_INSTANCE_NAME || fields.azureOpenAIApiInstanceName,
-    //     azureOpenAIApiDeploymentName: process.env.AZURE_OPENAI_API_DEPLOYMENT_NAME || fields.azureOpenAIApiDeploymentName,
-    //     azureOpenAIApiVersion: process.env.AZURE_OPENAI_API_VERSION || fields.azureOpenAIApiVersion
-    //   };
-    //   config = {
-    //     apiKey,
-    //     basePath: genAzureEndpoint({
-    //       ...azureConfig,
-    //     }),
-    //     baseOptions: {
-    //       headers: { 'api-key': apiKey },
-    //       params: {
-    //         'api-version': azureConfig.azureOpenAIApiVersion // this might change. I got the current value from the sample code at https://oai.azure.com/portal/chat
-    //       }
-    //     }
-    //   };
-    // }
     this.openai = new OpenAI(config);
-    this.name = 'sdxl';
-    this.description = `You can generate images with 'dall-e'. This tool is exclusively for visual content.
-Guidelines:
-- Visually describe the moods, details, structures, styles, and/or proportions of the image. Remember, the focus is on visual attributes.
-- Craft your input by "showing" and not "telling" the imagery. Think in terms of what you'd want to see in a photograph or a painting.
-- It's best to follow this format for image creation. Come up with the optional inputs yourself if none are given:
-"Subject: [subject], Style: [style], Color: [color], Details: [details], Emotion: [emotion]"
-- Generate images only once per human query unless explicitly requested by the user`;
+    this.name = 'dall-e';
+    this.description = `Use DALLE to create images from text descriptions.
+    - It requires prompts to be in English, detailed, and to specify image type and human features for diversity.
+    - Create only one image, without repeating or listing descriptions outside the "prompts" field.
+    - Maintains the original intent of the description, with parameters for image style, quality, and size to tailor the output.`;
+    this.description_for_model =
+      DALLE3_SYSTEM_PROMPT ??
+      `// Whenever a description of an image is given, generate prompts (following these rules), and use dalle to create the image. If the user does not ask for a specific number of images, default to creating 2 prompts to send to dalle that are written to be as diverse as possible. All prompts sent to dalle must abide by the following policies:
+    // 1. Prompts must be in English. Translate to English if needed.
+    // 2. One image per function call. Create only 1 image per request unless explicitly told to generate more than 1 image.
+    // 3. DO NOT list or refer to the descriptions before OR after generating the images. They should ONLY ever be written out ONCE, in the \`"prompts"\` field of the request. You do not need to ask for permission to generate, just do it!
+    // 4. Always mention the image type (photo, oil painting, watercolor painting, illustration, cartoon, drawing, vector, render, etc.) at the beginning of the caption. Unless the captions suggests otherwise, make one of the images a photo.
+    // 5. Diversify depictions of ALL images with people to always include always DESCENT and GENDER for EACH person using direct terms. Adjust only human descriptions.
+    // - EXPLICITLY specify these attributes, not abstractly reference them. The attributes should be specified in a minimal way and should directly describe their physical form.
+    // - Your choices should be grounded in reality. For example, all of a given OCCUPATION should not be the same gender or race. Additionally, focus on creating diverse, inclusive, and exploratory scenes via the properties you choose during rewrites.  Make choices that may be insightful or unique sometimes.
+    // - Use "various" or "diverse" ONLY IF the description refers to groups of more than 3 people. Do not change the number of people requested in the original description.
+    // - Don't alter memes, fictional character origins, or unseen people. Maintain the original prompt's intent and prioritize quality.
+    // The prompt must intricately describe every part of the image in concrete, objective detail. THINK about what the end goal of the description is, and extrapolate that to what would make satisfying images.
+    // All descriptions sent to dalle should be a paragraph of text that is extremely descriptive and detailed. Each should be more than 3 sentences long.`;
+    this.schema = z.object({
+      prompt: z
+        .string()
+        .max(4000)
+        .describe(
+          'A text description of the desired image, following the rules, up to 4000 characters.',
+        ),
+      style: z
+        .enum(['hyper-real', 'basic', 'logo'])
+        .describe(
+          'Must be one of `hyper-real` or `basic` or `logo`. `hyper-real` generates vivid and dramatic images, `basic` produces more natural, less hyper-real looking images, more simple and clear `logo` creating illustration circular logo, the background is blank white screen as default for logo.',
+        ),
+      quality: z
+        .enum(['1080p', 'standard'])
+        .describe('The quality of the generated image. Only `1080p` and `standard` are supported.'),
+      size: z
+      .enum(['1024x1024', '1792x1024', '1024x1792'])
+      .describe(
+        'The size of the requested image. Use 1024x1024 (square) as the default, 1792x1024 if the user requests a wide image, and 1024x1792 for full-body portraits. Always include this parameter in the request.',
+      ),
+    });
   }
 
   getApiKey() {
@@ -90,32 +89,55 @@ Guidelines:
     return `![generated image](/${imageUrl})`;
   }
 
-  async _call(input) {
-    const resp = await this.openai.images.generate({
-      prompt: this.replaceUnwantedChars(input),
-      // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
-      n: 1,
-      // size: '1024x1024'
-      size: '512x512',
-    });
+  async _call(data) {
+    const { prompt, quality = 'standard', size = '1024x1024', style = 'hyper-real' } = data;
+    if (!prompt) {
+      throw new Error('Missing required field: prompt');
+    }
+
+    let resp;
+    const models = ['dall-e-3', 'sdxl', 'kandinsky-3']; // That part means if the first model faild to generate image it will try with the next one
+    for (const model of models) {
+      try {
+        resp = await this.openai.images.generate({
+          model,
+          quality,
+          style,
+          size,
+          prompt: this.replaceUnwantedChars(prompt),
+          n: 1,
+        });
+        break; // If the image generation is successful, break out of the loop
+      } catch (error) {
+        if (models.indexOf(model) === models.length - 1) {
+          // If this is the last model in the array and it still fails, return the error
+          return `Something went wrong when trying to generate the image. The API may be unavailable:
+Error Message: ${error.message}`;
+        }
+        // If the current model fails, continue to the next one
+        console.error(`Model ${model} failed: ${error.message}`);
+      }
+    }
+
+    if (!resp) {
+      return 'Something went wrong when trying to generate the image. The API may unavailable';
+    }
 
     const theImageUrl = resp.data[0].url;
 
     if (!theImageUrl) {
-      throw new Error('No image URL returned from OpenAI API.');
+      return 'No image URL returned from OpenAI API. There may be a problem with the API or your configuration.';
     }
 
-    const imageBasename = getImageBasename(theImageUrl);
-    let imageName = `image_${uuidv4()}.png`;
+    const regex = /[\w\d]+.png/;
+    const match = theImageUrl.match(regex);
+    let imageName = '1.png';
 
-    if (imageBasename) {
-      imageName = imageBasename;
-      logger.debug('[DALL-E]', { imageName }); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
+    if (match) {
+      imageName = match[0];
+      console.log(imageName); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
     } else {
-      logger.debug('[DALL-E] No image name found in the string.', {
-        theImageUrl,
-        data: resp.data[0],
-      });
+      console.log('No image name found in the string.');
     }
 
     this.outputPath = path.resolve(
@@ -127,9 +149,7 @@ Guidelines:
       'client',
       'public',
       'images',
-      this.userId,
     );
-
     const appRoot = path.resolve(__dirname, '..', '..', '..', '..', 'client');
     this.relativeImageUrl = path.relative(appRoot, this.outputPath);
 
@@ -138,25 +158,14 @@ Guidelines:
       fs.mkdirSync(this.outputPath, { recursive: true });
     }
 
-    const storage = getFirebaseStorage();
-    if (storage) {
-      try {
-        await saveImageToFirebaseStorage(this.userId, theImageUrl, imageName);
-        this.result = await getFirebaseStorageImageUrl(`${this.userId}/${imageName}`);
-        logger.debug('[DALL-E] result: ' + this.result);
-      } catch (error) {
-        logger.error('Error while saving the image to Firebase Storage:', error);
-        this.result = `Failed to save the image to Firebase Storage. ${error.message}`;
-      }
-    } else {
-      try {
-        await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
-        this.result = this.getMarkdownImageUrl(imageName);
-      } catch (error) {
-        logger.error('Error while saving the image locally:', error);
-        this.result = `Failed to save the image locally. ${error.message}`;
-      }
+    try {
+      await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
+      this.result = this.getMarkdownImageUrl(imageName);
+    } catch (error) {
+      console.error('Error while saving the image:', error);
+      this.result = theImageUrl;
     }
+
     return this.result;
   }
 }

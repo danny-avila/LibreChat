@@ -83,9 +83,9 @@
     ]
   },
   {
-    "name": "DALL-E",
+    "name": "DALL-E 3",
     "pluginKey": "dall-e",
-    "description": "Create realistic images and art from a description in natural language",
+    "description": "[DALL-E 3] Create realistic images and art from a description in natural language",
     "icon": "https://i.imgur.com/u2TzXzH.png",
     "authConfig": [
       {
@@ -96,15 +96,15 @@
     ]
   },
   {
-    "name": "DALL-E-3",
+    "name": "Midjoureny",
     "pluginKey": "dalle",
-    "description": "[DALL-E-3] Create realistic images and art from a description in natural language",
-    "icon": "https://i.imgur.com/u2TzXzH.png",
+    "description": "[Midjoureny] Create realistic images and art from a description in natural language",
+    "icon": "https://upload.wikimedia.org/wikipedia/commons/e/e6/Midjourney_Emblem.png",
     "authConfig": [
       {
         "authField": "DALLE_API_KEY",
         "label": "OpenAI API Key",
-        "description": "You can use DALL-E with your API Key from OpenAI."
+        "description": "You can use Midjoureny with your API Key from Discord."
       }
     ]
   },
