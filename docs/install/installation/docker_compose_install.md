@@ -67,6 +67,12 @@ docker-compose down
 git checkout main
 # Pull the latest changes to the main branch from Github
 git pull 
+# Prune all LibreChat Docker images
+docker rmi librechat:latest
+# Remove all unused dangling Docker images.
+# Be careful, as this will delete all dangling docker images on your
+# computer, also those not created by LibreChat!
+docker image prune -f
 # Building a new LibreChat image without cache
 docker-compose build --no-cache
 
