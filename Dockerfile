@@ -1,5 +1,5 @@
 # Base node image
-FROM node:20-alpine AS node
+FROM node:18-alpine AS node
 
 COPY . /app
 WORKDIR /app
