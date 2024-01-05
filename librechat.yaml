@@ -7,7 +7,6 @@ endpoints:
       apiKey: "user_provided"
       baseURL: "https://api.naga.ac/v1"
       models:
-        default: ["gpt-3.5-turbo"]
         fetch: true
       titleConvo: true
       titleModel: "gpt-3.5-turbo"
