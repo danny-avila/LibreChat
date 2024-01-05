@@ -3,3 +3,4 @@ client/dist/images
 data-node
 .env
 **/.env
+librechat.yaml
