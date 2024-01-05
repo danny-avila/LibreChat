@@ -25,6 +25,7 @@ services:
       - MEILI_HTTP_ADDR=meilisearch:7700
     volumes:
       - ./.env:/app/.env
+      - ./librechat.yaml:/app/librechat.yaml
   mongodb:
     container_name: chat-mongodb
     image: mongo

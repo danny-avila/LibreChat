@@ -1,5 +1,7 @@
 node_modules
 data-node
 meili_data*
+librechat*
+Dockerfile*
 # Ignore all hidden files
 .*
