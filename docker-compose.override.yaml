@@ -2,7 +2,7 @@ version: '3.4'
 
 # # TO USE THIS FILE, FIRST UNCOMMENT THE FOLLOWING LINE ('services:')
 
-# services:
+services:
 
 # # THEN UNCOMMENT ONLY THE SECTION OR SECTIONS CONTAINING THE CHANGES YOU WANT TO APPLY
 # # SAVE THIS FILE AS 'docker-compose.override.yaml'
