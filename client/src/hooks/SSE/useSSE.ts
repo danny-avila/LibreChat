@@ -7,6 +7,7 @@ import {
   SSE,
   QueryKeys,
   EndpointURLs,
+  Constants,
   createPayload,
   tPresetSchema,
   tMessageSchema,
@@ -122,7 +123,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     }
 
     // refresh title
-    if (isNewConvo && requestMessage?.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (isNewConvo && requestMessage?.parentMessageId == Constants.NO_PARENT) {
       setTimeout(() => {
         genTitle.mutate({ conversationId: convoUpdate.conversationId as string });
       }, 2500);
@@ -182,7 +183,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       if (!convoData) {
         return convoData;
       }
-      if (message.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+      if (message.parentMessageId == Constants.NO_PARENT) {
         return addConversation(convoData, update);
       } else {
         return updateConversation(convoData, update);
@@ -215,7 +216,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     }
 
     // refresh title
-    if (isNewConvo && requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (isNewConvo && requestMessage.parentMessageId == Constants.NO_PARENT) {
       setTimeout(() => {
         genTitle.mutate({ conversationId: conversation.conversationId as string });
       }, 2500);

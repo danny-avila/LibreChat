@@ -1,7 +1,7 @@
 import { v4 } from 'uuid';
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, parseCompactConvo } from 'librechat-data-provider';
+import { Constants, QueryKeys, parseCompactConvo } from 'librechat-data-provider';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { useGetMessagesByConvoId, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type {
@@ -139,11 +139,10 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     // this is not a real messageId, it is used as placeholder before real messageId returned
     text = text.trim();
     const fakeMessageId = v4();
-    parentMessageId =
-      parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
+    parentMessageId = parentMessageId || latestMessage?.messageId || Constants.NO_PARENT;
 
     if (conversationId == 'new') {
-      parentMessageId = '00000000-0000-0000-0000-000000000000';
+      parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
       conversationId = null;
     }
