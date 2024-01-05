@@ -32,6 +32,7 @@ services:
       - ./.env.development:/app/.env.development
       - ./.env.production:/app/.env.production
       - ./images:/app/client/public/images
+      - ./librechat.yaml:/app/librechat.yaml
   mongodb:
     container_name: chat-mongodb
     image: mongo
