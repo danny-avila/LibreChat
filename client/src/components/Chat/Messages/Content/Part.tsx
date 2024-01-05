@@ -1,16 +1,10 @@
 import { ToolCallTypes } from 'librechat-data-provider';
-import type {
-  ContentPart,
-  CodeToolCall,
-  ImageFile,
-  Text,
-  PartMetadata,
-} from 'librechat-data-provider';
+import type { ContentPart } from 'librechat-data-provider';
 import type { TDisplayProps } from '~/common';
 import CodeAnalyze from './CodeAnalyze';
 import Markdown from './Markdown';
 import Image from './Image';
-import { cn } from '~/utils';
+import { cn, isText, isImageFile, isCodeToolCall } from '~/utils';
 
 // import EditMessage from './EditMessage';
 
@@ -31,18 +25,6 @@ const DisplayMessage = ({ text, isCreatedByUser = false, message, showCursor }: 
     </div>
   );
 };
-
-function isText(part: ContentPart): part is Text & PartMetadata {
-  return (part as Text).value !== undefined;
-}
-
-function isCodeToolCall(part: ContentPart): part is CodeToolCall & PartMetadata {
-  return (part as CodeToolCall).type === ToolCallTypes.CODE_INTERPRETER;
-}
-
-function isImageFile(part: ContentPart): part is ImageFile & PartMetadata {
-  return (part as ImageFile).file_id !== undefined;
-}
 
 export default function Part({
   part,
