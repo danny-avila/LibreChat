@@ -96,15 +96,15 @@
     ]
   },
   {
-    "name": "Midjoureny",
+    "name": "midjourney",
     "pluginKey": "dalle",
-    "description": "[Midjoureny] Create realistic images and art from a description in natural language",
+    "description": "[midjourney] Create realistic images and art from a description in natural language",
     "icon": "https://upload.wikimedia.org/wikipedia/commons/e/e6/Midjourney_Emblem.png",
     "authConfig": [
       {
         "authField": "DALLE_API_KEY",
         "label": "OpenAI API Key",
-        "description": "You can use Midjoureny with your API Key from Discord."
+        "description": "You can use midjourney with your API Key from Discord."
       }
     ]
   },
