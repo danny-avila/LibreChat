@@ -125,7 +125,6 @@ function General() {
 
   const clearConvos = () => {
     if (confirmClear) {
-      console.log('Clearing conversations...');
       setConfirmClear(false);
       clearConvosMutation.mutate(
         {},

@@ -1,6 +1,14 @@
 const { updateUserPluginsService } = require('~/server/services/UserService');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { logger } = require('~/config');
+const {
+  deleteMessages,
+  deleteConvos,
+  User,
+  Session,
+  Balance,
+  Transaction,
+} = require('@librechat/backend/models');
 
 const getUserController = async (req, res) => {
   res.status(200).send(req.user);
@@ -50,7 +58,26 @@ const updateUserPluginsController = async (req, res) => {
   }
 };
 
+const deleteUserController = async (req, res) => {
+  console.log('user.js');
+  const { user } = req;
+  try {
+    await user.deleteOne({ _id: user._id });
+    await deleteConvos(user, {});
+    await deleteMessages({ user });
+    await Session.deleteAllUserSessions(user);
+    await User.deleteMany({ _id: user });
+    await Balance.deleteMany({ user });
+    await Transaction.deleteMany({ user });
+    res.status(200).send({ message: 'User deleted' });
+  } catch (err) {
+    logger.error('[deleteUserController]', err);
+    res.status(500).send({ message: err.message });
+  }
+};
+
 module.exports = {
   getUserController,
   updateUserPluginsController,
+  deleteUserController,
 };

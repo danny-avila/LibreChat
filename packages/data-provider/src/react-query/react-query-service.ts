@@ -452,6 +452,15 @@ export const useUpdateUserPluginsMutation = (): UseMutationResult<
   });
 };
 
+export const useDeleteUserMutation = (): UseMutationResult<unknown> => {
+  const queryClient = useQueryClient();
+  return useMutation(() => dataService.deleteUser(), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.user]);
+    },
+  });
+};
+
 export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => {
   return useQuery<t.TStartupConfig>(
     [QueryKeys.startupConfig],

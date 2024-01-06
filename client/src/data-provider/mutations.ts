@@ -116,3 +116,28 @@ export const useUploadAvatarMutation = (
     ...(options || {}),
   });
 };
+
+export const useDeleteUserMutation = (
+  options?: LogoutOptions,
+): UseMutationResult<unknown, unknown, undefined, unknown> => {
+  const queryClient = useQueryClient();
+  const setDefaultPreset = useSetRecoilState(store.defaultPreset);
+  return useMutation([MutationKeys.logoutUser], {
+    mutationFn: () => dataService.logout(),
+
+    ...(options || {}),
+    onSuccess: (...args) => {
+      options?.onSuccess?.(...args);
+    },
+    onMutate: (...args) => {
+      setDefaultPreset(null);
+      queryClient.removeQueries();
+      localStorage.removeItem('lastConversationSetup');
+      localStorage.removeItem('lastSelectedModel');
+      localStorage.removeItem('lastSelectedTools');
+      localStorage.removeItem('filesToDelete');
+      localStorage.removeItem('lastAssistant');
+      options?.onMutate?.(...args);
+    },
+  });
+};

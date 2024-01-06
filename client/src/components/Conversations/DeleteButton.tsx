@@ -20,7 +20,6 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
           if (currentConvoId == conversationId) {
             newConversation();
           }
-
           refreshConversations();
           retainView();
         },

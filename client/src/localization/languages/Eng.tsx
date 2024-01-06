@@ -55,6 +55,7 @@ export default {
   com_ui_preview: 'Preview',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
+  com_ui_locked: 'Locked',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
@@ -290,6 +291,12 @@ export default {
   com_nav_help_faq: 'Help & FAQ',
   com_nav_settings: 'Settings',
   com_nav_search_placeholder: 'Search messages',
+  com_nav_delete_account: 'Delete account',
+  com_nav_delete_account_confirm: 'Delete account - are you sure?',
+  com_nav_delete_account_button: 'Permanently delete my account',
+  com_dialog_delete_warning: 'WARNING: This will permanently delete your account.',
+  com_dialog_delete_data_info: 'All your data will be deleted.',
+  com_dialog_delete_help_center: 'For more information, please visit our Help Center.',
   com_nav_setting_general: 'General',
   com_nav_setting_data: 'Data controls',
   com_nav_setting_account: 'Account',
