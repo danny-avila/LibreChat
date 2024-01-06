@@ -115,36 +115,46 @@ endpoints:
 ```
 
 ### **name**:
+
   > A unique name for the endpoint.
+
   - Type: String
   - Example: `name: "Mistral"`
   - **Required**
   - **Note**: Will be used as the "title" in the Endpoints Selector
 
 ### **apiKey**: 
+
   > Your API key for the service. Can reference an environment variable, or allow user to provide the value.
+
   - Type: String (apiKey | `"user_provided"`)
   - Example: `apiKey: "${MISTRAL_API_KEY}"` | `apiKey: "your_api_key"` | `apiKey: "user_provided"`
   - **Required**
   - **Note**: It's highly recommended to use the env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
 
 ### **baseURL**: 
+
   > Base URL for the API. Can reference an environment variable, or allow user to provide the value.
+
   - Type: String (baseURL | `"user_provided"`)
   - Example: `baseURL: "https://api.mistral.ai/v1"` | `baseURL: "${MISTRAL_BASE_URL}"` | `baseURL: "user_provided"`
   - **Required**
   - **Note**: It's highly recommended to use the env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
 
-### **iconURL**: 
+### **iconURL**:
+
   > The URL to use as the Endpoint Icon.
+
   - Type: Boolean
   - Example: `iconURL: https://github.com/danny-avila/LibreChat/raw/main/docs/assets/LibreChat.svg`
   - **Note**: The following are "known endpoints" (case-insensitive), which have icons provided for them. If your endpoint `name` matches the following names, you should omit this field:
     - "Mistral"
     - "OpenRouter"
 
-### **models**: 
+### **models**:
+
   > Configuration for models.
+
   - **Required**
   - **default**: An array of strings indicating the default models to use. At least one value is required.
     - Type: Array of Strings
@@ -155,45 +165,59 @@ endpoints:
     - Example: `fetch: true`
     - **Note**: May cause slowdowns during initial use of the app if the response is delayed. Defaults to `false`.
 
-### **titleConvo**: 
+### **titleConvo**:
+
   > Enables title conversation when set to `true`.
+
   - Type: Boolean
   - Example: `titleConvo: true`
 
 ### **titleMethod**: 
+
   > Chooses between "completion" or "functions" for title method.
+
   - Type: String (`"completion"` | `"functions"`)
   - Example: `titleMethod: "completion"`
   - **Note**: Defaults to "completion" if omitted.
 
 ### **titleModel**: 
+
   > Specifies the model to use for titles.
+
   - Type: String
   - Example: `titleModel: "mistral-tiny"`
   - **Note**: Defaults to "gpt-3.5-turbo" if omitted. May cause issues if "gpt-3.5-turbo" is not available.
 
 ### **summarize**: 
+
   > Enables summarization when set to `true`.
+
   - Type: Boolean
   - Example: `summarize: false`
   - **Note**: This feature requires an OpenAI Functions compatible API
 
-### **summaryModel**: 
+### **summaryModel**:
+
   > Specifies the model to use if summarization is enabled.
+
   - Type: String
   - Example: `summaryModel: "mistral-tiny"`
   - **Note**: Defaults to "gpt-3.5-turbo" if omitted. May cause issues if "gpt-3.5-turbo" is not available.
 
-### **forcePrompt**: 
+### **forcePrompt**:
+
   > If `true`, sends a `prompt` parameter instead of `messages`.
+
   - Type: Boolean
   - Example: `forcePrompt: false`
   - **Note**: This combines all messages into a single text payload, [following OpenAI format](https://github.com/pvicente/openai-python/blob/main/chatml.md), and
 
  uses the `/completions` endpoint of your baseURL rather than `/chat/completions`.
 
-### **modelDisplayLabel**: 
+### **modelDisplayLabel**:
+
   > The label displayed in messages next to the Icon for the current AI model.
+
   - Type: String
   - Example: `modelDisplayLabel: "Mistral"`
   - **Note**: The display order is:
@@ -201,8 +225,10 @@ endpoints:
     - 2. Label derived from the model name (if applicable)
     - 3. This value, `modelDisplayLabel`, is used if the above are not specified. Defaults to "AI".
 
-### **addParams**: 
+### **addParams**:
+
   > Adds additional parameters to requests.
+
   - Type: Object/Dictionary
   - **Description**: Adds/Overrides parameters. Useful for specifying API-specific options.
   - **Example**: 
@@ -211,8 +237,10 @@ endpoints:
       safe_mode: true
 ```
 
-### **dropParams**: 
+### **dropParams**:
+
   > Removes [default parameters](#default-parameters) from requests.
+
   - Type: Array/List of Strings
   - **Description**: Excludes specified [default parameters](#default-parameters). Useful for APIs that do not accept or recognize certain parameters.
   - **Example**: `dropParams: ["stop", "temperature", "top_p"]`
