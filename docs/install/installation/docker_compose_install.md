@@ -25,10 +25,11 @@ Install Docker on your system. **[Docker Desktop](https://www.docker.com/product
 ### LibreChat Configuration
 Before running LibreChat with Docker, you need to configure some settings:
 
-- Edit the credentials you see in `docker-compose.yml` under the API service as needed.
-   - See my notes below for specific instructions on some of the configuration
 - Provide all necessary credentials in the `.env` file before the next step.
    - Docker will read this env file. See the **[/.env.example](https://github.com/danny-avila/LibreChat/blob/main/.env.example)** file for reference.
+- If you want to change the `docker-compose.yml` file, please create a `docker-compose.override.yml` file based on the `docker-compose.override.yml.example`.
+  This allows you to update without having to modify `docker-compose.yml`.
+- Either create an empty `librechat.yaml` file or use the example from `librechat.example.yaml`.
 
 #### [AI Setup](../configuration/ai_setup.md) (Required)
 At least one AI endpoint should be setup for use.
@@ -42,17 +43,18 @@ How to set up the user/auth system and Google login.
 ### Running LibreChat
 Once you have completed all the setup, you can start the LibreChat application by running the command `docker-compose up` in your terminal. After running this command, you can access the LibreChat application at `http://localhost:3080`.
 
-If you build your own containers out of the git checkout with `docker-compose up --build` you should pre-create the mount points for the volumes. This avoids occasional trouble with directory permissions when rebuilding:
-```
-mkdir meili_data images .env.production .env.development data-node
-```
-
 **Note:** MongoDB does not support older ARM CPUs like those found in Raspberry Pis. However, you can make it work by setting MongoDB’s version to mongo:4.4.18 in docker-compose.yml, the most recent version compatible with
 
 That's it! If you need more detailed information on configuring your compose file, see my notes below.
 
 ## Updating LibreChat
-- Run `npm run update` from the project directory for a clean installation.
+The following commands will fetch the latest code of LibreChat and build a new docker image.
+
+```bash
+git pull
+docker-compose down
+docker-compose up --build
+```
 
 If you're having issues running this command, you can try running what the script does manually:
 
@@ -61,15 +63,15 @@ Prefix commands with `sudo` according to your environment permissions.
 ```bash
 # Stop the container (if running)
 docker-compose down
-# Fetch the latest changes from Github
-git fetch origin
 # Switch to the repo's main branch
 git checkout main
 # Pull the latest changes to the main branch from Github
-git pull origin main
+git pull 
 # Prune all LibreChat Docker images
 docker rmi librechat:latest
-# Remove all unused dangling Docker images
+# Remove all unused dangling Docker images.
+# Be careful, as this will delete all dangling docker images on your
+# computer, also those not created by LibreChat!
 docker image prune -f
 # Building a new LibreChat image without cache
 docker-compose build --no-cache
@@ -83,6 +85,7 @@ docker-compose up
 ### Config notes for docker-compose.yml file
 
 Modification to the `docker-compose.yml` should be made with `docker-compose.override.yml` whenever possible to prevent conflicts when updating. You can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`, or modify the default configuration provided by the main `docker-compose.yml`, without the need to directly edit or duplicate the whole file.
+The file `docker-compose.override.yml.example` gives some examples of the most common reconfiguration options used.
 
 For more info see: 
 
@@ -93,9 +96,6 @@ For more info see:
     - **[docker docs - understanding-multiple-compose-files](https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files)**
     - **[docker docs - merge-compose-files](https://docs.docker.com/compose/multiple-compose-files/merge/#merge-compose-files)**
     - **[docker docs - specifying-multiple-compose-files](https://docs.docker.com/compose/reference/#specifying-multiple-compose-files)**
-
-- You can also view an example of an override file for LibreChat in your LibreChat folder and on GitHub: 
-    - **[docker-compose.override.example](https://github.com/danny-avila/LibreChat/blob/main/docker-compose.override.yaml.example)**
 
 - Any environment variables set in your compose file will override variables with the same name in your .env file. Note that the following variables are necessary to include in the compose file so they work in the docker environment, so they are included for you.
 

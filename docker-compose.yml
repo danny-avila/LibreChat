@@ -17,20 +17,13 @@ services:
     restart: always
     user: "${UID}:${GID}"
     extra_hosts:
-    - "host.docker.internal:host-gateway"
-    env_file:
-      - .env
+     - "host.docker.internal:host-gateway"
     environment:
       - HOST=0.0.0.0
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       - MEILI_HOST=http://meilisearch:7700
     volumes:
-      - /app/client/node_modules
-      - /app/api/node_modules
-      - ./api:/app/api
       - ./.env:/app/.env
-      - ./.env.development:/app/.env.development
-      - ./.env.production:/app/.env.production
       - ./images:/app/client/public/images
       - ./librechat.yaml:/app/librechat.yaml
   mongodb:
@@ -45,8 +38,6 @@ services:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.5
     restart: always
-    env_file:
-      - .env
     user: "${UID}:${GID}"
     environment:
       - MEILI_HOST=http://meilisearch:7700
