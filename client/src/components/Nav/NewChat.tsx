@@ -6,15 +6,19 @@ export default function NewChat({ toggleNav }: { toggleNav: () => void }) {
   const navigate = useOriginNavigate();
   const localize = useLocalize();
 
-  const clickHandler = () => {
-    newConvo();
-    newConversation();
-    navigate('new');
-    toggleNav();
+  const clickHandler = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (event.button === 0 && !event.ctrlKey) {
+      event.preventDefault();
+      newConvo();
+      newConversation();
+      navigate('new');
+      toggleNav();
+    }
   };
 
   return (
     <a
+      href="/"
       data-testid="nav-new-chat-button"
       onClick={clickHandler}
       className="flex h-11 flex-shrink-0 flex-grow cursor-pointer items-center gap-3 rounded-md border border-white/20 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"

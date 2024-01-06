@@ -14,7 +14,7 @@ import type {
   TModelsConfig,
   TEndpointsConfig,
 } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
+import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
 import { useDeleteFilesMutation } from '~/data-provider';
 import useOriginNavigate from './useOriginNavigate';
 import useSetStorage from './useSetStorage';
@@ -46,6 +46,7 @@ const useNewConvo = (index = 0) => {
         preset: TPreset | null = null,
         modelsData?: TModelsConfig,
         buildDefault?: boolean,
+        keepLatestMessage?: boolean,
       ) => {
         const modelsConfig = modelsData ?? snapshot.getLoadable(store.modelsConfig).contents;
         const { endpoint = null } = conversation;
@@ -68,8 +69,9 @@ const useNewConvo = (index = 0) => {
             endpointsConfig,
           });
 
-          if (!conversation.endpointType && endpointsConfig[defaultEndpoint]?.type) {
-            conversation.endpointType = endpointsConfig[defaultEndpoint]?.type;
+          const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
+          if (!conversation.endpointType && endpointType) {
+            conversation.endpointType = endpointType;
           }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];
@@ -84,7 +86,9 @@ const useNewConvo = (index = 0) => {
         setStorage(conversation);
         setConversation(conversation);
         setSubmission({} as TSubmission);
-        resetLatestMessage();
+        if (!keepLatestMessage) {
+          resetLatestMessage();
+        }
 
         if (conversation.conversationId === 'new' && !modelsData) {
           navigate('new');
@@ -99,11 +103,13 @@ const useNewConvo = (index = 0) => {
       preset,
       modelsData,
       buildDefault = true,
+      keepLatestMessage = false,
     }: {
       template?: Partial<TConversation>;
       preset?: TPreset;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
+      keepLatestMessage?: boolean;
     } = {}) => {
       const conversation = {
         conversationId: 'new',
@@ -130,7 +136,7 @@ const useNewConvo = (index = 0) => {
         }
       }
 
-      switchToConversation(conversation, preset, modelsData, buildDefault);
+      switchToConversation(conversation, preset, modelsData, buildDefault, keepLatestMessage);
     },
     [switchToConversation, files, mutateAsync, setFiles],
   );

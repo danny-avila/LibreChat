@@ -8,10 +8,10 @@ import type { TPreset } from 'librechat-data-provider';
 import FileUpload from '~/components/Input/EndpointMenu/FileUpload';
 import { PinIcon, EditIcon, TrashIcon } from '~/components/svg';
 import DialogTemplate from '~/components/ui/DialogTemplate';
+import { getPresetTitle, getEndpointField } from '~/utils';
 import { Dialog, DialogTrigger } from '~/components/ui/';
 import { MenuSeparator, MenuItem } from '../UI';
 import { icons } from '../Endpoints/Icons';
-import { getPresetTitle } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -95,7 +95,7 @@ const PresetItems: FC<{
               return null;
             }
 
-            const iconKey = endpointsConfig?.[preset.endpoint ?? '']?.type
+            const iconKey = getEndpointField(endpointsConfig, preset.endpoint, 'type')
               ? 'unknown'
               : preset.endpoint ?? 'unknown';
 
@@ -111,7 +111,7 @@ const PresetItems: FC<{
                       onClick={() => onSelectPreset(preset)}
                       icon={icons[iconKey]({
                         context: 'menu-item',
-                        iconURL: endpointsConfig?.[preset.endpoint ?? ''].iconURL,
+                        iconURL: getEndpointField(endpointsConfig, preset.endpoint, 'iconURL'),
                         className: 'icon-md mr-1 dark:text-white',
                         endpoint: preset.endpoint,
                       })}
