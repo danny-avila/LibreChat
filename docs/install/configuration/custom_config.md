@@ -1,3 +1,9 @@
+---
+title: 🖥️ Custom Endpoints & Config
+description: Comprehensive guide for configuring the `librechat.yaml` file AKA the LibreChat Config file. This document is your one-stop resource for understanding and customizing endpoints & other integrations.
+weight: -10
+---
+
 # LibreChat Configuration Guide
 
 Welcome to the guide for configuring the **librechat.yaml** file in LibreChat.
