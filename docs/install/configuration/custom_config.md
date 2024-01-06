@@ -1,15 +1,29 @@
+---
+title: 🖥️ Custom Endpoints & Config
+description: Comprehensive guide for configuring the `librechat.yaml` file AKA the LibreChat Config file. This document is your one-stop resource for understanding and customizing endpoints & other integrations.
+weight: -10
+---
+
 # LibreChat Configuration Guide
 
-This document provides detailed instructions for configuring the `librechat.yaml` file used by LibreChat.
+Welcome to the guide for configuring the **librechat.yaml** file in LibreChat.
 
-In future updates, some of the configurations from [your `.env` file](./dotenv.md) will migrate here.
+This file enables the integration of custom AI endpoints, enabling you to connect with any AI provider compliant with OpenAI API standards.
 
-Further customization of the current configurations are also planned.
+This includes providers like [Mistral AI](https://docs.mistral.ai/platform/client/), as well as reverse proxies that facilitate access to OpenAI servers, adding them alongside existing endpoints like Anthropic.
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/fd0d2307-008f-4e1d-b75b-4f141070ce71)
+
+Future updates will streamline configuration further by migrating some settings from [your `.env` file](./dotenv.md) to `librechat.yaml`.
+
+Stay tuned for ongoing enhancements to customize your LibreChat instance!
 
 # Table of Contents
 
 1. [Intro](#librechat-configuration-guide)
-    - [Configuration Overview](#configuration-overview)
+    - [Setup](#setup)
+    - [Docker Setup](#docker-setup)
+    - [Config Structure](#config-structure)
         - [1. Version](#1-version)
         - [2. Cache Settings](#2-cache-settings)
         - [3. Endpoints](#3-endpoints)
@@ -19,10 +33,39 @@ Further customization of the current configurations are also planned.
         - [Breakdown of Default Params](#breakdown-of-default-params)
     - [Example Config](#example-config)
 
-## Configuration Overview
+## Setup
 
+**The `librechat.yaml` file should be placed in the root of the project where the .env file is located.**
 
-The `librechat.yaml` file contains several key sections.
+You can copy the [example config file](#example-config) as a good starting point while reading the rest of the guide.
+
+The example config file has some options ready to go for Mistral AI and Openrouter.
+
+## Docker Setup
+
+For Docker, you need to make use of an [override file](./docker_override), named `docker-compose.override.yml`, to ensure the config file works for you.
+
+- First, make sure your containers stop running with `docker-compose down`
+- Create or edit existing `docker-compose.override.yml` at the root of the project:
+
+```yaml
+# For more details on the override file, see the Docker Override Guide:
+# https://docs.librechat.ai/install/configuration/docker_override.html
+
+version: '3.4'
+
+services:
+  api:
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml
+```
+
+- Start docker again, and you should see your config file settings apply
+```bash
+docker-compose up # no need to rebuild
+```
+
+## Config Structure
 
 **Note:** Fields not specifically mentioned as required are optional.
 
@@ -48,36 +91,61 @@ The `librechat.yaml` file contains several key sections.
   - **Description**: Each object in the array represents a unique endpoint configuration.
 - **Required**
 
-#### Endpoint Object Structure
+## Endpoint Object Structure
 Each endpoint in the `custom` array should have the following structure:
 
-- **name**: A unique name for the endpoint.
+```yaml
+# Example Endpoint Object Structure
+endpoints:
+  custom:
+    - name: "Mistral"
+      apiKey: "${YOUR_ENV_VAR_KEY}"
+      baseURL: "https://api.mistral.ai/v1"
+      models: 
+        default: ["mistral-tiny", "mistral-small", "mistral-medium"]
+      titleConvo: true
+      titleModel: "mistral-tiny" 
+      summarize: false
+      summaryModel: "mistral-tiny" 
+      forcePrompt: false 
+      modelDisplayLabel: "Mistral"
+      addParams:
+        safe_mode: true
+      dropParams: ["stop", "temperature", "top_p"]
+```
+
+  ### **name**: 
+  > A unique name for the endpoint.
   - Type: String
   - Example: `name: "Mistral"`
   - **Required**
   - **Note**: Will be used as the "title" in the Endpoints Selector
 
-- **apiKey**: Your API key for the service. Can reference an environment variable, or allow user to provide the value.
+### **apiKey**: 
+  > Your API key for the service. Can reference an environment variable, or allow user to provide the value.
   - Type: String (apiKey | `"user_provided"`)
-  - **Example**: `apiKey: "${MISTRAL_API_KEY}"` | `apiKey: "your_api_key"` | `apiKey: "user_provided"`
+  - Example: `apiKey: "${MISTRAL_API_KEY}"` | `apiKey: "your_api_key"` | `apiKey: "user_provided"`
   - **Required**
   - **Note**: It's highly recommended to use the env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
 
-- **baseURL**: Base URL for the API. Can reference an environment variable, or allow user to provide the value.
+### **baseURL**: 
+  > Base URL for the API. Can reference an environment variable, or allow user to provide the value.
   - Type: String (baseURL | `"user_provided"`)
-  - **Example**: `baseURL: "https://api.mistral.ai/v1"` | `baseURL: "${MISTRAL_BASE_URL}"` | `baseURL: "user_provided"`
+  - Example: `baseURL: "https://api.mistral.ai/v1"` | `baseURL: "${MISTRAL_BASE_URL}"` | `baseURL: "user_provided"`
   - **Required**
   - **Note**: It's highly recommended to use the env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
 
-- **iconURL**: The URL to use as the Endpoint Icon.
+### **iconURL**: 
+  > The URL to use as the Endpoint Icon.
   - Type: Boolean
   - Example: `iconURL: https://github.com/danny-avila/LibreChat/raw/main/docs/assets/LibreChat.svg`
-  - **Note**: The following are "known endpoints" (case-insensitive), which have icons provided for them. If your endpoint `name` matches these, you should omit this field:
+  - **Note**: The following are "known endpoints" (case-insensitive), which have icons provided for them. If your endpoint `name` matches the following names, you should omit this field:
     - "Mistral"
     - "OpenRouter"
 
-- **models**: Configuration for models.
-- **Required**
+### **models**: 
+  > Configuration for models.
+  - **Required**
   - **default**: An array of strings indicating the default models to use. At least one value is required.
     - Type: Array of Strings
     - Example: `default: ["mistral-tiny", "mistral-small", "mistral-medium"]`
@@ -87,36 +155,45 @@ Each endpoint in the `custom` array should have the following structure:
     - Example: `fetch: true`
     - **Note**: May cause slowdowns during initial use of the app if the response is delayed. Defaults to `false`.
 
-- **titleConvo**: Enables title conversation when set to `true`.
+### **titleConvo**: 
+  > Enables title conversation when set to `true`.
   - Type: Boolean
   - Example: `titleConvo: true`
 
-- **titleMethod**: Chooses between "completion" or "functions" for title method.
+### **titleMethod**: 
+  > Chooses between "completion" or "functions" for title method.
   - Type: String (`"completion"` | `"functions"`)
   - Example: `titleMethod: "completion"`
   - **Note**: Defaults to "completion" if omitted.
 
-- **titleModel**: Specifies the model to use for titles.
+### **titleModel**: 
+  > Specifies the model to use for titles.
   - Type: String
   - Example: `titleModel: "mistral-tiny"`
   - **Note**: Defaults to "gpt-3.5-turbo" if omitted. May cause issues if "gpt-3.5-turbo" is not available.
 
-- **summarize**: Enables summarization when set to `true`.
+### **summarize**: 
+  > Enables summarization when set to `true`.
   - Type: Boolean
   - Example: `summarize: false`
   - **Note**: This feature requires an OpenAI Functions compatible API
 
-- **summaryModel**: Specifies the model to use if summarization is enabled.
+### **summaryModel**: 
+  > Specifies the model to use if summarization is enabled.
   - Type: String
   - Example: `summaryModel: "mistral-tiny"`
   - **Note**: Defaults to "gpt-3.5-turbo" if omitted. May cause issues if "gpt-3.5-turbo" is not available.
 
-- **forcePrompt**: If `true`, sends a `prompt` parameter instead of `messages`.
+### **forcePrompt**: 
+  > If `true`, sends a `prompt` parameter instead of `messages`.
   - Type: Boolean
   - Example: `forcePrompt: false`
-  - **Note**: This combines all messages into a single text payload, [following OpenAI format](https://github.com/pvicente/openai-python/blob/main/chatml.md), and uses the `/completions` endpoint of your baseURL rather than `/chat/completions`.
+  - **Note**: This combines all messages into a single text payload, [following OpenAI format](https://github.com/pvicente/openai-python/blob/main/chatml.md), and
 
-- **modelDisplayLabel**: The label displayed in messages next to the Icon for the current AI model.
+ uses the `/completions` endpoint of your baseURL rather than `/chat/completions`.
+
+### **modelDisplayLabel**: 
+  > The label displayed in messages next to the Icon for the current AI model.
   - Type: String
   - Example: `modelDisplayLabel: "Mistral"`
   - **Note**: The display order is:
@@ -124,7 +201,8 @@ Each endpoint in the `custom` array should have the following structure:
     - 2. Label derived from the model name (if applicable)
     - 3. This value, `modelDisplayLabel`, is used if the above are not specified. Defaults to "AI".
 
-- **addParams**: Adds additional parameters to requests.
+### **addParams**: 
+  > Adds additional parameters to requests.
   - Type: Object/Dictionary
   - **Description**: Adds/Overrides parameters. Useful for specifying API-specific options.
   - **Example**: 
@@ -133,12 +211,12 @@ Each endpoint in the `custom` array should have the following structure:
       safe_mode: true
 ```
 
-- **dropParams**: Removes default parameters from requests.
+### **dropParams**: 
+  > Removes [default parameters](#default-parameters) from requests.
   - Type: Array/List of Strings
-  - **Description**: Excludes specified default parameters. Useful for APIs that do not accept or recognize certain parameters.
+  - **Description**: Excludes specified [default parameters](#default-parameters). Useful for APIs that do not accept or recognize certain parameters.
   - **Example**: `dropParams: ["stop", "temperature", "top_p"]`
-  - **Note**: For a list of default parameters sent with every request, see the "Default Parameters" Section below.
-
+  - **Note**: For a list of default parameters sent with every request, see the ["Default Parameters"](#default-parameters) Section below.
 ## Additional Notes
 - Ensure that all URLs and keys are correctly specified to avoid connectivity issues.
 
