@@ -8,6 +8,11 @@ version: '3.4'
 # # SAVE THIS FILE AS 'docker-compose.override.yaml'
 # # AND USE THE 'docker-compose build' & 'docker-compose up -d' COMMANDS AS YOU WOULD NORMALLY DO
 
+# # USE LIBRECHAT CONFIG FILE
+#   api:
+#     volumes:
+#       - ./librechat.yaml:/app/librechat.yaml
+
 # # BUILD FROM LATEST IMAGE
 #   api:
 #     image: ghcr.io/danny-avila/librechat-dev:latest

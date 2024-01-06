@@ -48,6 +48,8 @@ Using the default environment values from [/.env.example](https://github.com/dan
 
 This guide will walk you through setting up each Endpoint as needed.
 
+For **custom endpoint** configuration, such as adding [Mistral AI](https://docs.mistral.ai/platform/client/) or [Openrouter](https://openrouter.ai/) refer to the **[librechat.yaml configuration guide](./custom_config.md)**.
+
 **Reminder: If you use docker, you should [rebuild the docker image (here's how)](dotenv.md) each time you update your credentials**
 
 *Note: Configuring pre-made Endpoint/model/conversation settings as singular options for your users is a planned feature. See the related discussion here: [System-wide custom model settings (lightweight GPTs) #1291](https://github.com/danny-avila/LibreChat/discussions/1291)*
