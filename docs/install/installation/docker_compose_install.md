@@ -34,6 +34,9 @@ Before running LibreChat with Docker, you need to configure some settings:
 #### [AI Setup](../configuration/ai_setup.md) (Required)
 At least one AI endpoint should be setup for use.
 
+#### [Custom Endpoints & Configuration](../configuration/custom_config.md#docker-setup) (Optional)
+Allows you to customize AI endpoints, such as Mistral AI, and other settings to suit your specific needs.
+
 #### [Manage Your MongoDB Database](../../features/manage_your_database.md) (Optional)
 Safely access and manage your MongoDB database using Mongo Express
 
