@@ -96,7 +96,7 @@ class OpenAICreateImage extends Tool {
     }
 
     let resp;
-    const models = ['dall-e-3', 'sdxl', 'kandinsky-3']; // That part means if the first model faild to generate image it will try with the next one
+    const models = ['dall-e-3'];
     for (const model of models) {
       try {
         resp = await this.openai.images.generate({
