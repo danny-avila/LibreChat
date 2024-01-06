@@ -114,7 +114,7 @@ endpoints:
       dropParams: ["stop", "temperature", "top_p"]
 ```
 
-  ### **name**: 
+### **name**:
   > A unique name for the endpoint.
   - Type: String
   - Example: `name: "Mistral"`
