@@ -12,11 +12,11 @@ This file enables the integration of custom AI endpoints, enabling you to connec
 
 This includes providers like [Mistral AI](https://docs.mistral.ai/platform/client/), as well as reverse proxies that facilitate access to OpenAI servers, adding them alongside existing endpoints like Anthropic.
 
-[insert image here]
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/fd0d2307-008f-4e1d-b75b-4f141070ce71)
 
 Future updates will streamline configuration further by migrating some settings from [your `.env` file](./dotenv.md) to `librechat.yaml`.
 
-Stay tuned for ongoing enhancements to customize your LibreChat experience!
+Stay tuned for ongoing enhancements to customize your LibreChat instance!
 
 # Table of Contents
 
