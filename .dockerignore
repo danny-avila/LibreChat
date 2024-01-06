@@ -1,6 +1,7 @@
-**/node_modules
-client/dist/images
+node_modules
 data-node
-.env
-**/.env
-librechat.yaml
+meili_data*
+librechat*
+Dockerfile*
+# Ignore all hidden files
+.*
