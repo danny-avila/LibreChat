@@ -82,7 +82,7 @@ const MenuItem: FC<MenuItemProps> = ({
         <div className="flex grow items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              {
+              {Icon && (
                 <Icon
                   size={18}
                   endpoint={endpoint}
@@ -90,7 +90,7 @@ const MenuItem: FC<MenuItemProps> = ({
                   className="icon-md shrink-0 dark:text-white"
                   iconURL={getEndpointField(endpointsConfig, endpoint, 'iconURL')}
                 />
-              }
+              )}
               <div>
                 {title}
                 <div className="text-token-text-tertiary">{description}</div>
