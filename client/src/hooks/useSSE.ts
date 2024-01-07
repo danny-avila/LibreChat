@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import {
   /* @ts-ignore */
   SSE,
+  EndpointURLs,
   createPayload,
   tMessageSchema,
   tConvoUpdateSchema,
@@ -268,10 +269,11 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
   const abortConversation = (conversationId = '', submission: TSubmission) => {
     console.log(submission);
-    const { endpoint } = submission?.conversation || {};
+    const { endpoint: _endpoint, endpointType } = submission?.conversation || {};
+    const endpoint = endpointType ?? _endpoint;
     let res: Response;
 
-    fetch(`/api/ask/${endpoint}/abort`, {
+    fetch(`${EndpointURLs[endpoint ?? '']}/abort`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -283,7 +285,29 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     })
       .then((response) => {
         res = response;
-        return response.json();
+        // Check if the response is JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          return response.json();
+        } else if (response.status === 204) {
+          const responseMessage = {
+            ...submission.initialResponse,
+            text: submission.initialResponse.text.replace(
+              '<span className="result-streaming">█</span>',
+              '',
+            ),
+          };
+
+          return {
+            requestMessage: submission.message,
+            responseMessage: responseMessage,
+            conversation: submission.conversation,
+          };
+        } else {
+          throw new Error(
+            'Unexpected response from server; Status: ' + res.status + ' ' + res.statusText,
+          );
+        }
       })
       .then((data) => {
         console.log('aborted', data);
@@ -295,6 +319,22 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       .catch((error) => {
         console.error('Error aborting request');
         console.error(error);
+        const convoId = conversationId ?? v4();
+
+        const text =
+          submission.initialResponse?.text?.length > 45 ? submission.initialResponse?.text : '';
+
+        const errorMessage = {
+          ...submission,
+          ...submission.initialResponse,
+          text: text ?? error.message ?? 'Error cancelling request',
+          unfinished: !!text.length,
+          error: true,
+        };
+
+        const errorResponse = tMessageSchema.parse(errorMessage);
+        setMessages([...submission.messages, submission.message, errorResponse]);
+        newConversation({ template: { conversationId: convoId } });
         setIsSubmitting(false);
       });
     return;
