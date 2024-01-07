@@ -1,5 +1,5 @@
-const initialize = require('./initialize');
+const manage = require('./manage');
 
 module.exports = {
-  ...initialize,
+  ...manage,
 };

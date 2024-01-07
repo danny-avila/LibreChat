@@ -1,11 +1,11 @@
-const crypto = require('crypto');
 const OpenAI = require('openai');
-const { logger } = require('~/config');
 const express = require('express');
-const { sendMessage } = require('~/server/utils');
+const { EModelEndpoint, Constants } = require('librechat-data-provider');
+const { initThread, saveUserMessage, saveAssistantMessage } = require('~/server/services/Threads');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const { createRun } = require('~/server/services/Runs');
-const { initThread } = require('~/server/services/Threads');
+const { sendMessage } = require('~/server/utils');
+const { logger } = require('~/config');
 
 const router = express.Router();
 const {
@@ -29,39 +29,75 @@ const defaultModel = 'gpt-3.5-turbo-1106';
 router.post('/', setHeaders, async (req, res) => {
   try {
     logger.debug('[/assistants/chat/] req.body', req.body);
-    const { assistant_id, messages, text: userMessage, messageId } = req.body;
-    const conversationId = req.body.conversationId || crypto.randomUUID();
-    // let thread_id = req.body.thread_id ?? 'thread_nZoiCbPauU60LqY1Q0ME1elg'; // for testing
-    let thread_id = req.body.thread_id;
+    const {
+      messages: _messages,
+      text,
+      messageId,
+      files = [],
+      promptPrefix,
+      assistant_id,
+      instructions,
+      parentMessageId = Constants.NO_PARENT,
+      // TODO: model is not currently sent from the frontend
+      // maybe it should only be sent when changed from the assistant's model?
+      model = defaultModel,
+    } = req.body;
+
+    /* NOTE:
+     * conversationId is the thread_id; to manage multiple threads in one conversation adds significant complexity
+     */
+    let thread_id = req.body.conversationId;
 
     if (!assistant_id) {
       throw new Error('Missing assistant_id');
     }
 
+    // TODO: needs to be initialized with `initializeClient`
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
     openai.req = req;
     openai.res = res;
     createOnTextProgress(openai);
-    console.log(messages);
 
+    // TODO: may allow multiple messages to be created beforehand in a future update
     const initThreadBody = {
       messages: [
         {
           role: 'user',
-          content: userMessage,
+          content: text,
           metadata: {
             messageId,
           },
         },
       ],
       metadata: {
-        conversationId,
+        user: req.user.id,
       },
     };
 
     const result = await initThread({ openai, body: initThreadBody, thread_id });
-    // const { messages: _messages } = result;
     thread_id = result.thread_id;
+
+    const conversation = {
+      conversationId: thread_id,
+      // TODO: title feature
+      title: 'New Chat',
+      endpoint: EModelEndpoint.assistant,
+      promptPrefix: promptPrefix,
+      instructions: instructions,
+      assistant_id,
+      model,
+    };
+
+    await saveUserMessage({
+      user: req.user.id,
+      text,
+      messageId,
+      parentMessageId,
+      file_ids: files,
+      conversationId: thread_id,
+      assistant_id,
+      model,
+    });
 
     /* NOTE:
      * By default, a Run will use the model and tools configuration specified in Assistant object,
@@ -75,36 +111,31 @@ router.post('/', setHeaders, async (req, res) => {
 
     // todo: retry logic
     const response = await runAssistant({ openai, thread_id, run_id: run.id });
+    logger.debug('[/assistants/chat/] response', response);
+    const responseMessage = {
+      ...openai.responseMessage,
+      parentMessageId: messageId,
+      conversationId: thread_id,
+      user: req.user.id,
+      assistant_id,
+      model,
+    };
+
+    // responseMessage.tokenCount = getTotalTokenCount(responseMessage.content);
 
     // TODO: parse responses, save to db, send to user
 
     sendMessage(res, {
       title: 'New Chat',
       final: true,
-      conversation: {
-        conversationId: 'fake-convo-id',
-        title: 'New Chat',
-      },
+      conversation,
       requestMessage: {
-        messageId: 'fake-user-message-id',
-        parentMessageId: '00000000-0000-0000-0000-000000000000',
-        conversationId: 'fake-convo-id',
-        sender: 'User',
-        text: req.body.text,
-        isCreatedByUser: true,
-      },
-      responseMessage: {
-        messageId: 'fake-response-id',
-        conversationId: 'fake-convo-id',
-        parentMessageId: 'fake-user-message-id',
-        isCreatedByUser: false,
-        isEdited: false,
-        model: defaultModel,
-        sender: 'Assistant',
-        text: response.text,
+        parentMessageId,
       },
     });
     res.end();
+
+    await saveAssistantMessage(responseMessage);
   } catch (error) {
     // res.status(500).json({ error: error.message });
     logger.error('[/assistants/chat/]', error);

@@ -211,7 +211,7 @@ export const tConversationSchema = z.object({
   imageDetail: eImageDetailSchema.optional(),
   /* assistant */
   assistant_id: z.string().optional(),
-  thread_id: z.string().optional(),
+  instructions: z.string().optional(),
 });
 
 export type TConversation = z.infer<typeof tConversationSchema>;
@@ -472,7 +472,8 @@ export const assistantSchema = tConversationSchema
   .pick({
     model: true,
     assistant_id: true,
-    thread_id: true,
+    instructions: true,
+    promptPrefix: true,
   })
   .transform(removeNullishValues)
   .catch(() => ({}));

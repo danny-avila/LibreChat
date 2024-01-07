@@ -1,6 +1,7 @@
 const {
   getMessages,
   saveMessage,
+  recordMessage,
   updateMessage,
   deleteMessagesSince,
   deleteMessages,
@@ -31,6 +32,7 @@ module.exports = {
 
   getMessages,
   saveMessage,
+  recordMessage,
   updateMessage,
   deleteMessagesSince,
   deleteMessages,

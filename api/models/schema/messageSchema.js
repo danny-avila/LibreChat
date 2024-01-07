@@ -103,6 +103,7 @@ const messageSchema = mongoose.Schema(
       default: undefined,
     },
     plugins: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
+    content: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
   },
   { timestamps: true },
 );
