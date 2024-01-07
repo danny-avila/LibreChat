@@ -1,11 +1,12 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
-const { connectWithTimeout, silentExit } = require('./helpers');
+const { silentExit } = require('./helpers');
 const Balance = require('~/models/Balance');
 const User = require('~/models/User');
+const connect = require('./connect');
 
 (async () => {
-  await connectWithTimeout();
+  await connect();
 
   /**
    * Show the welcome / help menu
