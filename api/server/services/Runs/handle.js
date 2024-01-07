@@ -10,14 +10,19 @@ const RunManager = require('./RunManager');
  * @param {string} params.body.assistant_id - The ID of the assistant to use for this run.
  * @param {string} [params.body.model] - Optional. The ID of the model to be used for this run.
  * @param {string} [params.body.instructions] - Optional. Override the default system message of the assistant.
+ * @param {string} [params.body.additional_instructions] - Optional. Appends additional instructions
+ * at theend of the instructions for the run. This is useful for modifying
+ * the behavior on a per-run basis without overriding other instructions.
  * @param {Object[]} [params.body.tools] - Optional. Override the tools the assistant can use for this run.
- * @param {string[]} [params.body.file_ids] - Optional. List of File IDs the assistant can use for this run.
+ * @param {string[]} [params.body.file_ids] - Optional.
+ * List of File IDs the assistant can use for this run.
+ *
+ * **Note:** The API seems to prefer files added to messages, not runs.
  * @param {Object} [params.body.metadata] - Optional. Metadata for the run.
  * @return {Promise<Run>} A promise that resolves to the created run object.
  */
 async function createRun({ openai, thread_id, body }) {
-  const run = await openai.beta.threads.runs.create(thread_id, body);
-  return run;
+  return await openai.beta.threads.runs.create(thread_id, body);
 }
 
 /**
