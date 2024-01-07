@@ -97,7 +97,8 @@ const PresetItems: FC<{
 
             const iconKey = getEndpointField(endpointsConfig, preset.endpoint, 'type')
               ? 'unknown'
-              : preset.endpoint ?? 'unknown';
+              : preset.endpointType ?? preset.endpoint ?? 'unknown';
+            const Icon = icons[iconKey];
 
             return (
               <Close asChild key={`preset-${preset.presetId}`}>
@@ -109,12 +110,15 @@ const PresetItems: FC<{
                       title={getPresetTitle(preset)}
                       disableHover={true}
                       onClick={() => onSelectPreset(preset)}
-                      icon={icons[iconKey]({
-                        context: 'menu-item',
-                        iconURL: getEndpointField(endpointsConfig, preset.endpoint, 'iconURL'),
-                        className: 'icon-md mr-1 dark:text-white',
-                        endpoint: preset.endpoint,
-                      })}
+                      icon={
+                        Icon &&
+                        Icon({
+                          context: 'menu-item',
+                          iconURL: getEndpointField(endpointsConfig, preset.endpoint, 'iconURL'),
+                          className: 'icon-md mr-1 dark:text-white',
+                          endpoint: preset.endpoint,
+                        })
+                      }
                       selected={false}
                       data-testid={`preset-item-${preset}`}
                     >

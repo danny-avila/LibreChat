@@ -23,6 +23,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const iconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
+  const Icon = icons[iconKey];
 
   return (
     <div className="relative h-full">
@@ -31,7 +32,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
         <div className="mb-3 h-[72px] w-[72px]">
           <div className="gizmo-shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
             {endpoint &&
-              icons[iconKey]({
+              Icon &&
+              Icon({
                 size: 41,
                 context: 'landing',
                 className: 'h-2/3 w-2/3',

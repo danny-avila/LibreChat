@@ -11,18 +11,24 @@ async function saveImageFromUrl(url, outputPath, outputFilename) {
       responseType: 'stream',
     });
 
+    // Get the content type from the response headers
+    const contentType = response.headers['content-type'];
+    let extension = contentType.split('/').pop();
+
     // Check if the output directory exists, if not, create it
     if (!fs.existsSync(outputPath)) {
       fs.mkdirSync(outputPath, { recursive: true });
     }
 
-    // Ensure the output filename has a '.png' extension
-    const filenameWithPngExt = outputFilename.endsWith('.png')
-      ? outputFilename
-      : `${outputFilename}.png`;
+    // Replace or append the correct extension
+    const extRegExp = new RegExp(path.extname(outputFilename) + '$');
+    outputFilename = outputFilename.replace(extRegExp, `.${extension}`);
+    if (!path.extname(outputFilename)) {
+      outputFilename += `.${extension}`;
+    }
 
     // Create a writable stream for the output path
-    const outputFilePath = path.join(outputPath, filenameWithPngExt);
+    const outputFilePath = path.join(outputPath, outputFilename);
     const writer = fs.createWriteStream(outputFilePath);
 
     // Pipe the response data to the output file
