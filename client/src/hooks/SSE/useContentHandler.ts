@@ -4,7 +4,6 @@ import type {
   TMessage,
   TConversation,
   TContentData,
-  Text,
   ContentPart,
 } from 'librechat-data-provider';
 type TUseContentHandler = {
@@ -16,7 +15,7 @@ type TContentHandler = {
   submission: TSubmission;
 };
 
-export default function useContentHandler({ setMessages, setConversation }: TUseContentHandler) {
+export default function useContentHandler({ setMessages }: TUseContentHandler) {
   const messageMap = new Map<string, TMessage>();
   return ({ data, submission }: TContentHandler) => {
     const { type, messageId, index, stream } = data;
@@ -42,7 +41,8 @@ export default function useContentHandler({ setMessages, setConversation }: TUse
     // TODO: handle streaming for non-text
     const part =
       stream && data.text ? ({ value: data.text as unknown as string } as ContentPart) : data[type];
-    response.content = response.content || [];
+    /* spreading the content array to avoid mutation */
+    response.content = [...(response.content ?? [])];
     response.content[index] = part;
     response.content = response.content.filter((p) => p !== undefined);
 
