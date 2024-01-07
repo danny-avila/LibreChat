@@ -115,6 +115,12 @@
  */
 
 /**
+ * @exports ContentPart
+ * @typedef {import('librechat-data-provider').ContentPart} ContentPart
+ * @memberof typedefs
+ */
+
+/**
  * @exports PartMetadata
  * @typedef {import('librechat-data-provider').PartMetadata} PartMetadata
  * @memberof typedefs
@@ -335,6 +341,8 @@
  * @property {number} [completed_at] - The Unix timestamp (in seconds) for when the run was completed.
  * @property {string} [model] - The model that the assistant used for this run.
  * @property {string} [instructions] - The instructions that the assistant used for this run.
+ * @property {string} [additional_instructions] - Optional. Appends additional instructions
+ * at theend of the instructions for the run. This is useful for modifying
  * @property {Tool[]} [tools] - The list of tools used for this run.
  * @property {string[]} [file_ids] - The list of File IDs used for this run.
  * @property {Object} [metadata] - Metadata associated with this run.
