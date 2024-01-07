@@ -13,6 +13,7 @@ async function loadDefaultEndpointsConfig() {
 
   let enabledEndpoints = [
     EModelEndpoint.openAI,
+    EModelEndpoint.assistant,
     EModelEndpoint.azureOpenAI,
     EModelEndpoint.google,
     EModelEndpoint.bingAI,
@@ -31,6 +32,7 @@ async function loadDefaultEndpointsConfig() {
 
   const endpointConfig = {
     [EModelEndpoint.openAI]: openAI,
+    [EModelEndpoint.assistant]: openAI,
     [EModelEndpoint.azureOpenAI]: azureOpenAI,
     [EModelEndpoint.google]: google,
     [EModelEndpoint.bingAI]: bingAI,

@@ -45,30 +45,10 @@ const endpointsFilter = selector({
   },
 });
 
-const availableEndpoints = selector({
-  key: 'availableEndpoints',
-  get: ({ get }) => {
-    const endpoints = [
-      'azureOpenAI',
-      'openAI',
-      'chatGPTBrowser',
-      'gptPlugins',
-      'bingAI',
-      'google',
-      'anthropic',
-      'custom',
-    ];
-    const f = get(endpointsFilter);
-    return endpoints.filter((endpoint) => f[endpoint]);
-  },
-});
-// const modelAvailable
-
 export default {
   plugins,
   endpointsConfig,
   endpointsFilter,
-  availableEndpoints,
   defaultConfig,
   endpointsQueryEnabled,
 };
