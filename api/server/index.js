@@ -46,7 +46,7 @@ const startServer = async () => {
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn(
-      'Social logins are disabled. Set Envrionment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.',
+      'Social logins are disabled. Set Environment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.',
     );
   }
 
