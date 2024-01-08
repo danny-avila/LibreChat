@@ -105,7 +105,7 @@ const EditMessage = ({
           {localize('com_ui_save_submit')}
         </button>
         <button
-          className="btn btn-neutral relative mr-2"
+          className="btn btn-secondary relative mr-2"
           disabled={isSubmitting}
           onClick={updateMessage}
         >
