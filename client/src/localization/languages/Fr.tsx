@@ -41,6 +41,7 @@ export default {
     'Fichier invalide pour le téléversement. Doit être une image ne dépassant pas 2 Mo',
   com_ui_cancel: 'Annuler',
   com_ui_save: 'Sauvegarder',
+  com_ui_save_submit: 'Enregistrer & Soumettre',
   com_ui_copy_to_clipboard: 'Copier dans le presse-papier',
   com_ui_copied_to_clipboard: 'Copié dans le presse-papier',
   com_ui_regenerate: 'Régénérer',
