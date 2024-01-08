@@ -2,6 +2,7 @@ import { ToolCallTypes } from 'librechat-data-provider';
 import type { ContentPart } from 'librechat-data-provider';
 import type { TDisplayProps } from '~/common';
 import CodeAnalyze from './CodeAnalyze';
+import Container from './Container';
 import Markdown from './Markdown';
 import Image from './Image';
 import { cn, isText, isImageFile, isCodeToolCall } from '~/utils';
@@ -39,23 +40,25 @@ export default function Part({
   if (isText(part)) {
     // Access the value property
     return (
-      <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-70">
-        <DisplayMessage
-          text={part.value}
-          isCreatedByUser={true}
-          message={message}
-          showCursor={showCursor}
-        />
-      </div>
+      <Container>
+        <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-70">
+          <DisplayMessage
+            text={part.value}
+            isCreatedByUser={true}
+            message={message}
+            showCursor={showCursor}
+          />
+        </div>
+      </Container>
     );
   } else if (isCodeToolCall(part)) {
+    const code_interpreter = part[ToolCallTypes.CODE_INTERPRETER];
     return (
-      <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-70">
-        <CodeAnalyze
-          progress={part.progress ?? 0.1}
-          code={part[ToolCallTypes.CODE_INTERPRETER].input}
-        />
-      </div>
+      <CodeAnalyze
+        progress={part.progress ?? 0.1}
+        code={code_interpreter.input}
+        outputs={code_interpreter.outputs ?? []}
+      />
     );
   } else if (isImageFile(part)) {
     return (

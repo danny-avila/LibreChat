@@ -2,7 +2,6 @@ import { Suspense } from 'react';
 // import type { ContentPart } from 'librechat-data-provider';
 import { UnfinishedMessage } from './MessageContent';
 import { DelayedRender } from '~/components/ui';
-import Container from './Container';
 import Part from './Part';
 
 // Content Component
@@ -25,7 +24,7 @@ any) => {
     const { messageId } = message;
 
     return (
-      <Container>
+      <>
         {content.map((part, idx) => {
           return (
             <Part
@@ -43,7 +42,7 @@ any) => {
             </DelayedRender>
           </Suspense>
         )}
-      </Container>
+      </>
     );
   }
 };
