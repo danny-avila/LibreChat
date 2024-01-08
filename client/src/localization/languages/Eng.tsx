@@ -38,6 +38,7 @@ export default {
   com_ui_upload_invalid: 'Invalid file for upload. Must be an image not exceeding 2 MB',
   com_ui_cancel: 'Cancel',
   com_ui_save: 'Save',
+  com_ui_save_submit: 'Save & Submit',
   com_ui_copy_to_clipboard: 'Copy to clipboard',
   com_ui_copied_to_clipboard: 'Copied to clipboard',
   com_ui_regenerate: 'Regenerate',

@@ -15,6 +15,7 @@ export default {
   com_ui_limitation_harmful_biased:
     'Иногда может создавать вредные инструкции или предвзятое содержимое',
   com_ui_limitation_limited_2021: 'Ограниченные знания о мире и событиях после 2021 года',
+  com_ui_experimental: 'Экспериментальный',
   com_ui_input: 'Ввод',
   com_ui_close: 'Закрыть',
   com_ui_model: 'Модель',
@@ -36,6 +37,7 @@ export default {
   com_ui_upload_invalid: 'Недопустимый файл для загрузки',
   com_ui_cancel: 'Отмена',
   com_ui_save: 'Сохранить',
+  com_ui_save_submit: 'Сохранить и отправить',
   com_ui_copy_to_clipboard: 'Копировать в буфер обмена',
   com_ui_copied_to_clipboard: 'Скопировано в буфер обмена',
   com_ui_regenerate: 'Повторная генерация',
@@ -257,6 +259,7 @@ export default {
     'Убедитесь что нажали на \'Create and Continue\' чтобы получить как минимум \'Vertex AI User\'. Наконец, создайте JSON-ключ чтобы импортировать его сюда.',
   com_nav_welcome_message: 'Чем я могу помочь вам сегодня?',
   com_nav_auto_scroll: 'Автоматически проматывать к самым новым сообщениям при открытии',
+  com_nav_modular_chat: 'Разрешить менять точки подключения в середине разговора',
   com_nav_plugin_store: 'Магазин плагинов',
   com_nav_plugin_search: 'Поиск плагинов',
   com_nav_plugin_auth_error:
@@ -291,7 +294,7 @@ export default {
   com_nav_clear_conversation: 'Удалить разговоры',
   com_nav_clear_conversation_confirm_message:
     'Вы уверены, что хотите удалить все разговоры? Это действие нельзя отменить.',
-  com_nav_help_faq: 'Помощь и ЧаВо',
+  com_nav_help_faq: 'Помощь и Вопросы',
   com_nav_settings: 'Настройки',
   com_nav_search_placeholder: 'Поиск сообщений',
   com_nav_setting_general: 'Общие',

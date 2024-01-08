@@ -37,6 +37,7 @@ export default {
   com_ui_upload_invalid: 'Archivo inválido para subir',
   com_ui_cancel: 'Cancelar',
   com_ui_save: 'Guardar',
+  com_ui_save_submit: 'Guardar y enviar',
   com_ui_copy_to_clipboard: 'Copiar al portapapeles',
   com_ui_copied_to_clipboard: 'Copiado al portapapeles',
   com_ui_regenerate: 'Regenerar',
