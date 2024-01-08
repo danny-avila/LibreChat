@@ -4,6 +4,8 @@ const { isUserProvided, extractEnvVariable } = require('~/server/utils');
 const getCustomConfig = require('~/cache/getCustomConfig');
 const { OpenAIClient } = require('~/app');
 
+const envVarRegex = /^\${(.+)}$/;
+
 const { PROXY } = process.env;
 
 const initializeClient = async ({ req, res, endpointOption }) => {
@@ -19,6 +21,14 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
+
+  if (CUSTOM_API_KEY.match(envVarRegex)) {
+    throw new Error(`Missing API Key for ${endpoint}.`);
+  }
+
+  if (CUSTOM_BASE_URL.match(envVarRegex)) {
+    throw new Error(`Missing Base URL for ${endpoint}.`);
+  }
 
   const customOptions = {
     addParams: endpointConfig.addParams,
