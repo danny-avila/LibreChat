@@ -200,11 +200,12 @@ export const tPresetSchema = tConversationSchema
   })
   .merge(
     z.object({
-      conversationId: z.string().optional(),
+      conversationId: z.string().nullable().optional(),
       presetId: z.string().nullable().optional(),
       title: z.string().nullable().optional(),
       defaultPreset: z.boolean().optional(),
       order: z.number().optional(),
+      endpoint: extendedModelEndpointSchema.nullable(),
     }),
   );
 
