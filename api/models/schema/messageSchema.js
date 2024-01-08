@@ -104,6 +104,9 @@ const messageSchema = mongoose.Schema(
     },
     plugins: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
     content: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
+    thread_id: {
+      type: String,
+    },
   },
   { timestamps: true },
 );

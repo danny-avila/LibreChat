@@ -241,6 +241,7 @@ function createInProgressHandler(openai, thread_id, messages) {
           [ContentTypes.TOOL_CALL]: toolCall,
           index: toolCallIndex,
           type: ContentTypes.TOOL_CALL,
+          thread_id,
         });
 
         // Update the stored tool call
@@ -286,6 +287,7 @@ function createInProgressHandler(openai, thread_id, messages) {
         messageId: openai.responseMessage.messageId,
         type: ContentTypes.TEXT,
         stream: true,
+        thread_id,
       });
 
       const stream = new TextStream(result.text, { delay: 5 });
@@ -346,7 +348,7 @@ async function runAssistant({
 
       if (step.type === StepTypes.MESSAGE_CREATION) {
         const incompleteToolCallSteps = finalSteps.filter(
-          (s) => s.type === StepTypes.TOOL_CALLS && !openai.completeToolCallSteps.has(s.id),
+          (s) => s && s.type === StepTypes.TOOL_CALLS && !openai.completeToolCallSteps.has(s.id),
         );
         for (const incompleteToolCallStep of incompleteToolCallSteps) {
           await in_progress({ step: incompleteToolCallStep });

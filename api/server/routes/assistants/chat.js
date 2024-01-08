@@ -1,3 +1,4 @@
+const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const express = require('express');
 const { EModelEndpoint, Constants } = require('librechat-data-provider');
@@ -37,16 +38,19 @@ router.post('/', setHeaders, async (req, res) => {
       promptPrefix,
       assistant_id,
       instructions,
+      thread_id: _thread_id,
+      conversationId: convoId,
       parentMessageId = Constants.NO_PARENT,
       // TODO: model is not currently sent from the frontend
       // maybe it should only be sent when changed from the assistant's model?
       model = defaultModel,
     } = req.body;
 
-    /* NOTE:
-     * conversationId is the thread_id; to manage multiple threads in one conversation adds significant complexity
-     */
-    let thread_id = req.body.conversationId;
+    /** @type {string|undefined} - the current thread id */
+    let thread_id = _thread_id;
+
+    /** @type {string} - The conversation UUID - created if undefined */
+    const conversationId = convoId ?? v4();
 
     if (!assistant_id) {
       throw new Error('Missing assistant_id');
@@ -71,6 +75,7 @@ router.post('/', setHeaders, async (req, res) => {
       ],
       metadata: {
         user: req.user.id,
+        conversationId,
       },
     };
 
@@ -78,7 +83,7 @@ router.post('/', setHeaders, async (req, res) => {
     thread_id = result.thread_id;
 
     const conversation = {
-      conversationId: thread_id,
+      conversationId,
       // TODO: title feature
       title: 'New Chat',
       endpoint: EModelEndpoint.assistant,
@@ -94,8 +99,9 @@ router.post('/', setHeaders, async (req, res) => {
       messageId,
       parentMessageId,
       file_ids: files,
-      conversationId: thread_id,
+      conversationId,
       assistant_id,
+      thread_id,
       model,
     });
 
@@ -115,9 +121,10 @@ router.post('/', setHeaders, async (req, res) => {
     const responseMessage = {
       ...openai.responseMessage,
       parentMessageId: messageId,
-      conversationId: thread_id,
+      conversationId,
       user: req.user.id,
       assistant_id,
+      thread_id,
       model,
     };
 

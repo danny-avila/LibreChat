@@ -154,6 +154,8 @@ export const tMessageSchema = z.object({
   unfinished: z.boolean().optional(),
   searchResult: z.boolean().optional(),
   finish_reason: z.string().optional(),
+  /* assistant */
+  thread_id: z.string().optional(),
 });
 
 export type TMessage = z.input<typeof tMessageSchema> & {

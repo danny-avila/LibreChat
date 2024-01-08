@@ -215,6 +215,7 @@ export type ContentPart = (CodeToolCall | RetrievalToolCall | FunctionToolCall |
 export type TContentData = Record<ContentTypes, ContentPart> & {
   type: ContentTypes;
   messageId: string;
+  thread_id: string;
   index: number;
   stream?: boolean;
 };

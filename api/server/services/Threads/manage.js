@@ -37,6 +37,7 @@ async function initThread({ openai, body, thread_id: _thread_id }) {
  * @param {string} params.messageId - The user message Id.
  * @param {string} params.model - The model used by the assistant.
  * @param {string} params.assistant_id - The current assistant Id.
+ * @param {string} params.thread_id - The thread Id.
  * @param {string} params.conversationId - The message's conversationId
  * @param {string} [params.parentMessageId] - Optional if initial message.
  * Defaults to Constants.NO_PARENT.
@@ -73,6 +74,7 @@ async function saveUserMessage(params) {
     messageId: params.messageId,
     conversationId: params.conversationId,
     parentMessageId: params.parentMessageId ?? Constants.NO_PARENT,
+    thread_id: params.thread_id,
     sender: 'User',
     text: params.text,
     isCreatedByUser: true,
@@ -99,6 +101,7 @@ async function saveUserMessage(params) {
  * @param {string} params.user - The user's ID.
  * @param {string} params.messageId - The message Id.
  * @param {string} params.assistant_id - The assistant Id.
+ * @param {string} params.thread_id - The thread Id.
  * @param {string} params.model - The model used by the assistant.
  * @param {ContentPart[]} params.content - The message content parts.
  * @param {string} params.conversationId - The message's conversationId
@@ -125,12 +128,13 @@ async function saveAssistantMessage(params) {
     messageId: params.messageId,
     conversationId: params.conversationId,
     parentMessageId: params.parentMessageId,
+    thread_id: params.thread_id,
     /* For messages, use the assistant_id instead of model */
     model: params.assistant_id,
     content: params.content,
     sender: 'Assistant',
     isCreatedByUser: false,
-    text,
+    text: text.trim(),
     // tokenCount,
   });
 

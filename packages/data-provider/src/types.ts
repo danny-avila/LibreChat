@@ -25,6 +25,8 @@ export type TEndpointOption = {
   modelLabel?: string | null;
   jailbreak?: boolean;
   key?: string | null;
+  /* assistant */
+  thread_id?: string;
 };
 
 export type TSubmission = {

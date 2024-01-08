@@ -146,6 +146,11 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       currentMessages = [];
       conversationId = null;
     }
+
+    const parentMessage = currentMessages?.find(
+      (msg) => msg.messageId === latestMessage?.parentMessageId,
+    );
+
     const currentMsg: TMessage = {
       text,
       sender: 'User',
@@ -153,12 +158,10 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       parentMessageId,
       conversationId,
       messageId: isContinued && messageId ? messageId : fakeMessageId,
+      thread_id: parentMessage?.thread_id,
       error: false,
     };
 
-    const parentMessage = currentMessages?.find(
-      (msg) => msg.messageId === latestMessage?.parentMessageId,
-    );
     const reuseFiles = isRegenerate && parentMessage?.files;
     if (reuseFiles && parentMessage.files?.length) {
       currentMsg.files = parentMessage.files;
@@ -187,6 +190,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
+      thread_id: parentMessage?.thread_id,
       conversationId,
       unfinished: false,
       isCreatedByUser: false,
