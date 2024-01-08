@@ -16,7 +16,7 @@ import { cn } from '~/utils';
 
 const Icon: React.FC<IconProps> = (props) => {
   const { user } = useAuthContext();
-  const { size = 30, isCreatedByUser, button, model = '', endpoint, error, jailbreak } = props;
+  const { size = 30, isCreatedByUser, button, model = '', endpoint, jailbreak } = props;
 
   if (isCreatedByUser) {
     const username = user?.name || 'User';
@@ -130,11 +130,11 @@ const Icon: React.FC<IconProps> = (props) => {
         )}
       >
         {icon}
-        {error && (
+        {/* {error && (
           <span className="absolute right-0 top-[20px] -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
             !
           </span>
-        )}
+        )} */}
       </div>
     );
   }
