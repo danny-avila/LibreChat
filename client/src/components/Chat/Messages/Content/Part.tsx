@@ -55,7 +55,7 @@ export default function Part({
     const code_interpreter = part[ToolCallTypes.CODE_INTERPRETER];
     return (
       <CodeAnalyze
-        progress={part.progress ?? 0.1}
+        initialProgress={part.progress ?? 0.1}
         code={code_interpreter.input}
         outputs={code_interpreter.outputs ?? []}
       />
