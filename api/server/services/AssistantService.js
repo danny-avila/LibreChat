@@ -1,5 +1,6 @@
 const path = require('path');
 const { v4 } = require('uuid');
+const { klona } = require('klona');
 const {
   ContentTypes,
   StepTypes,
@@ -341,9 +342,10 @@ async function runAssistant({
       }
 
       const resolved = await Promise.all(promises);
+      const finalSteps = filterSteps(steps.concat(resolved));
 
-      if (step.type === StepTypes.MESSAGE_CREATION && steps.length) {
-        const incompleteToolCallSteps = filterSteps(steps.concat(resolved)).filter(
+      if (step.type === StepTypes.MESSAGE_CREATION) {
+        const incompleteToolCallSteps = finalSteps.filter(
           (s) => s.type === StepTypes.TOOL_CALLS && !openai.completeToolCallSteps.has(s.id),
         );
         for (const incompleteToolCallStep of incompleteToolCallSteps) {
@@ -354,7 +356,8 @@ async function runAssistant({
       // const res = resolved.shift();
       // messages = messages.concat(res.data.filter((msg) => msg && msg.run_id === run_id));
       resolved.push(step);
-      steps = filterSteps(steps.concat(resolved));
+      /* Note: no issues without deep cloning, but it's safer to do so */
+      steps = klona(finalSteps);
     },
   });
 
