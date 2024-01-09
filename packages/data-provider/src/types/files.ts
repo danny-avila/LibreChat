@@ -51,6 +51,7 @@ export type DeleteFilesResponse = {
 export type BatchFile = {
   file_id: string;
   filepath: string;
+  source: FileSources;
 };
 
 export type DeleteFilesBody = {

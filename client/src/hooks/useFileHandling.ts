@@ -133,6 +133,7 @@ const useFileHandling = () => {
           height: data.height,
           width: data.width,
           filename: data.filename,
+          source: data.source,
         });
       }, 300);
     },
