@@ -126,4 +126,49 @@ async function getLocalFileURL({ fileName, basePath = 'images' }) {
   return path.posix.join('/', basePath, fileName);
 }
 
-module.exports = { saveFile, saveLocalImage, saveFileFromURL, getLocalFileURL };
+/**
+ * Validates if a given filepath is within a specified subdirectory under a base path. This function constructs
+ * the expected base path using the base, subfolder, and user id from the request, and then checks if the
+ * provided filepath starts with this constructed base path.
+ *
+ * @param {Express.Request} req - The request object from Express. It should contain a `user` property with an `id`.
+ * @param {string} base - The base directory path.
+ * @param {string} subfolder - The subdirectory under the base path.
+ * @param {string} filepath - The complete file path to be validated.
+ *
+ * @returns {boolean}
+ *          Returns true if the filepath is within the specified base and subfolder, false otherwise.
+ */
+const isValidPath = (req, base, subfolder, filepath) => {
+  const normalizedBase = path.resolve(base, subfolder, req.user.id);
+  const normalizedFilepath = path.resolve(filepath);
+  return normalizedFilepath.startsWith(normalizedBase);
+};
+
+/**
+ * Deletes a file from the filesystem. This function takes a file object, constructs the full path, and
+ * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
+ *
+ * @param {Express.Request} req - The request object from Express. It should have an `app.locals.paths` object with
+ *                       a `publicPath` property.
+ * @param {MongoFile} file - The file object to be deleted. It should have a `filepath` property that is
+ *                           a string representing the path of the file relative to the publicPath.
+ *
+ * @returns {Promise<void>}
+ *          A promise that resolves when the file has been successfully deleted, or throws an error if the
+ *          file path is invalid or if there is an error in deletion.
+ */
+const deleteLocalFile = async (req, file) => {
+  const { publicPath } = req.app.locals.paths;
+  const parts = file.filepath.split(path.sep);
+  const subfolder = parts[1];
+  const filepath = path.join(publicPath, file.filepath);
+
+  if (!isValidPath(req, publicPath, subfolder, filepath)) {
+    throw new Error('Invalid file path');
+  }
+
+  await fs.promises.unlink(filepath);
+};
+
+module.exports = { saveFile, saveLocalImage, saveFileFromURL, getLocalFileURL, deleteLocalFile };

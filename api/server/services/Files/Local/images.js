@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { updateFile, createFile } = require('~/models');
 const { resizeImage } = require('../images/resize');
+const { updateFile } = require('~/models');
 
 /**
  * Converts an image file to the WebP format. The function first resizes the image based on the specified
@@ -26,7 +26,7 @@ const { resizeImage } = require('../images/resize');
  *            - width: The width of the converted image.
  *            - height: The height of the converted image.
  */
-async function convertToWebP(req, file, resolution = 'high') {
+async function uploadLocalImage(req, file, resolution = 'high') {
   const inputFilePath = file.path;
   const { buffer: resizedBuffer, width, height } = await resizeImage(inputFilePath, resolution);
   const extension = path.extname(inputFilePath);
@@ -94,36 +94,4 @@ async function encodeLocal(req, file) {
   return await Promise.all(promises);
 }
 
-/**
- * Applies the local strategy for image uploads.
- * Saves file metadata to the database with an expiry TTL.
- * Files must be deleted from the server filesystem manually.
- *
- * @param {Object} params - The parameters object.
- * @param {Express.Request} params.req - The Express request object.
- * @param {Express.Response} params.res - The Express response object.
- * @param {Express.Multer.File} params.file - The uploaded file.
- * @param {ImageMetadata} params.metadata - Additional metadata for the file.
- * @returns {Promise<void>}
- */
-const saveLocalImage = async ({ req, res, file, metadata }) => {
-  const { file_id, temp_file_id } = metadata;
-  const { filepath, bytes, width, height } = await convertToWebP(req, file);
-  const result = await createFile(
-    {
-      user: req.user.id,
-      file_id,
-      temp_file_id,
-      bytes,
-      filepath,
-      filename: file.originalname,
-      type: 'image/webp',
-      width,
-      height,
-    },
-    true,
-  );
-  res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
-};
-
-module.exports = { convertToWebP, encodeImage, encodeLocal, saveLocalImage };
+module.exports = { uploadLocalImage, encodeImage, encodeLocal };

@@ -1,32 +1,13 @@
 const { z } = require('zod');
-const path = require('path');
-const fs = require('fs').promises;
 const express = require('express');
+const { FileSources } = require('librechat-data-provider');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteFiles, getFiles } = require('~/models');
 const { logger } = require('~/config');
 
 const router = express.Router();
 
 const isUUID = z.string().uuid();
-
-const isValidPath = (req, base, subfolder, filepath) => {
-  const normalizedBase = path.resolve(base, subfolder, req.user.id);
-  const normalizedFilepath = path.resolve(filepath);
-  return normalizedFilepath.startsWith(normalizedBase);
-};
-
-const deleteFile = async (req, file) => {
-  const { publicPath } = req.app.locals.paths;
-  const parts = file.filepath.split(path.sep);
-  const subfolder = parts[1];
-  const filepath = path.join(publicPath, file.filepath);
-
-  if (!isValidPath(req, publicPath, subfolder, filepath)) {
-    throw new Error('Invalid file path');
-  }
-
-  await fs.unlink(filepath);
-};
 
 router.get('/', async (req, res) => {
   try {
@@ -41,6 +22,8 @@ router.get('/', async (req, res) => {
 router.delete('/', async (req, res) => {
   try {
     const { files: _files } = req.body;
+
+    /** @type {MongoFile[]} */
     const files = _files.filter((file) => {
       if (!file.file_id) {
         return false;
@@ -57,9 +40,24 @@ router.delete('/', async (req, res) => {
     }
 
     const file_ids = files.map((file) => file.file_id);
+    const deletionMethods = {};
     const promises = [];
     promises.push(await deleteFiles(file_ids));
+
     for (const file of files) {
+      const source = file.source ?? FileSources.local;
+
+      if (deletionMethods[source]) {
+        promises.push(deletionMethods[source](req, file));
+        continue;
+      }
+
+      const { deleteFile } = getStrategyFunctions(source);
+      if (!deleteFile) {
+        throw new Error(`Delete function not implemented for ${source}`);
+      }
+
+      deletionMethods[source] = deleteFile;
       promises.push(deleteFile(req, file));
     }
 

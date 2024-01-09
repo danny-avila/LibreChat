@@ -8,7 +8,7 @@ const { getFirebaseStorage } = require('./initialize');
  * @param {string} fileName - The name of the file to delete.
  * @returns {Promise<void>} A promise that resolves when the file is deleted.
  */
-async function deleteFileFromFirebase(basePath, fileName) {
+async function deleteFile(basePath, fileName) {
   const storage = getFirebaseStorage();
   if (!storage) {
     console.error('Firebase is not initialized. Cannot delete file from Firebase Storage.');
@@ -27,39 +27,38 @@ async function deleteFileFromFirebase(basePath, fileName) {
 }
 
 /**
- * Saves an image from a given URL to Firebase Storage. The function first initializes the Firebase Storage
- * reference, then uploads the image to a specified basePath in the Firebase Storage. It handles initialization
+ * Saves an file from a given URL to Firebase Storage. The function first initializes the Firebase Storage
+ * reference, then uploads the file to a specified basePath in the Firebase Storage. It handles initialization
  * errors and upload errors, logging them to the console. If the upload is successful, the file name is returned.
  *
  * @param {Object} params - The parameters object.
  * @param {string} params.userId - The user's unique identifier. This is used to create a user-specific basePath
  *                                 in Firebase Storage.
- * @param {string} params.URL - The URL of the image to be uploaded. The image at this URL will be fetched
+ * @param {string} params.URL - The URL of the file to be uploaded. The file at this URL will be fetched
  *                              and uploaded to Firebase Storage.
- * @param {string} params.fileName - The name that will be used to save the image in Firebase Storage. This
+ * @param {string} params.fileName - The name that will be used to save the file in Firebase Storage. This
  *                                   should include the file extension.
- * @param {string} [params.basePath='images'] - Optional. The base basePath in Firebase Storage where the image will
+ * @param {string} [params.basePath='images'] - Optional. The base basePath in Firebase Storage where the file will
  *                                          be stored. Defaults to 'images' if not specified.
  *
  * @returns {Promise<string|null>}
- *          A promise that resolves to the file name if the image is successfully uploaded, or null if there
+ *          A promise that resolves to the file name if the file is successfully uploaded, or null if there
  *          is an error in initialization or upload.
  */
 async function saveURLToFirebase({ userId, URL, fileName, basePath = 'images' }) {
   const storage = getFirebaseStorage();
   if (!storage) {
-    console.error('Firebase is not initialized. Cannot save image to Firebase Storage.');
+    console.error('Firebase is not initialized. Cannot save file to Firebase Storage.');
     return null;
   }
 
   const storageRef = ref(storage, `${basePath}/${userId.toString()}/${fileName}`);
 
   try {
-    // Upload image to Firebase Storage using the image URL
     await uploadBytes(storageRef, await fetch(URL).then((response) => response.buffer()));
     return fileName;
   } catch (error) {
-    console.error('Error uploading image to Firebase Storage:', error.message);
+    console.error('Error uploading file to Firebase Storage:', error.message);
     return null;
   }
 }
@@ -97,8 +96,78 @@ async function getFirebaseURL({ fileName, basePath = 'images' }) {
   }
 }
 
+/**
+ * Uploads a buffer to Firebase Storage.
+ *
+ * @param {Object} params - The parameters object.
+ * @param {string} params.userId - The user's unique identifier. This is used to create a user-specific basePath
+ *                                 in Firebase Storage.
+ * @param {string} params.fileName - The name of the file to be saved in Firebase Storage.
+ * @param {string} params.buffer - The buffer to be uploaded.
+ * @param {string} [params.basePath='images'] - Optional. The base basePath in Firebase Storage where the file will
+ *                                          be stored. Defaults to 'images' if not specified.
+ *
+ * @returns {Promise<string>} - A promise that resolves to the download URL of the uploaded file.
+ */
+async function saveBufferToFirebase({ userId, buffer, fileName, basePath = 'images' }) {
+  const storage = getFirebaseStorage();
+  if (!storage) {
+    throw new Error('Firebase is not initialized');
+  }
+
+  const storageRef = ref(storage, `${basePath}/${userId}/${fileName}`);
+  await uploadBytes(storageRef, buffer);
+
+  // Assuming you have a function to get the download URL
+  return await getFirebaseURL({ fileName, basePath: `${basePath}/${userId}` });
+}
+
+/**
+ * Extracts and decodes the file path from a Firebase Storage URL.
+ *
+ * @param {string} urlString - The Firebase Storage URL.
+ * @returns {string} The decoded file path.
+ */
+function extractFirebaseFilePath(urlString) {
+  try {
+    const url = new URL(urlString);
+    const pathRegex = /\/o\/(.+?)(\?|$)/;
+    const match = url.pathname.match(pathRegex);
+
+    if (match && match[1]) {
+      return decodeURIComponent(match[1]);
+    }
+
+    return '';
+  } catch (error) {
+    // If URL parsing fails, return an empty string
+    return '';
+  }
+}
+
+/**
+ * Deletes a file from Firebase storage. This function determines the subfolder (either 'images' or 'documents')
+ * based on the file type and constructs a Firebase storage path using the user's ID and the file name.
+ * It then deletes the file from Firebase storage.
+ *
+ * @param {Object} req - The request object from Express. It should contain a `user` object with an `id` property.
+ * @param {Object} file - The file object to be deleted. It should have `filepath` and `type` properties.
+ *                        `filepath` is a string representing the file's name, and `type` is used to determine
+ *                        the file's storage subfolder in Firebase.
+ *
+ * @returns {Promise<void>}
+ *          A promise that resolves when the file has been successfully deleted from Firebase storage.
+ *          Throws an error if there is an issue with deletion.
+ */
+const deleteFirebaseFile = async (req, file) => {
+  const fileName = extractFirebaseFilePath(file.filepath);
+  await deleteFile('', fileName);
+};
+
 module.exports = {
-  saveURLToFirebase,
+  deleteFile,
   getFirebaseURL,
-  deleteFileFromFirebase,
+  saveURLToFirebase,
+  deleteFirebaseFile,
+  saveBufferToFirebase,
 };

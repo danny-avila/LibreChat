@@ -1,5 +1,5 @@
+const { updateFileUsage, createFile } = require('~/models');
 const { getStrategyFunctions } = require('./strategies');
-const { updateFileUsage } = require('~/models');
 const { logger } = require('~/config');
 
 const processFiles = async (files) => {
@@ -46,7 +46,43 @@ const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath })
   }
 };
 
+/**
+ * Applies the current strategy for image uploads.
+ * Saves file metadata to the database with an expiry TTL.
+ * Files must be deleted from the server filesystem manually.
+ *
+ * @param {Object} params - The parameters object.
+ * @param {Express.Request} params.req - The Express request object.
+ * @param {Express.Response} params.res - The Express response object.
+ * @param {Express.Multer.File} params.file - The uploaded file.
+ * @param {ImageMetadata} params.metadata - Additional metadata for the file.
+ * @returns {Promise<void>}
+ */
+const processImageUpload = async ({ req, res, file, metadata }) => {
+  const source = req.app.locals.fileStrategy;
+  const { handleImageUpload } = getStrategyFunctions(source);
+  const { file_id, temp_file_id } = metadata;
+  const { filepath, bytes, width, height } = await handleImageUpload(req, file);
+  const result = await createFile(
+    {
+      user: req.user.id,
+      file_id,
+      temp_file_id,
+      bytes,
+      filepath,
+      filename: file.originalname,
+      source,
+      type: 'image/webp',
+      width,
+      height,
+    },
+    true,
+  );
+  res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
+};
+
 module.exports = {
+  processImageUpload,
   processFiles,
   processFileURL,
 };
