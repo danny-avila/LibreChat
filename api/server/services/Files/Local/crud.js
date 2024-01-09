@@ -123,7 +123,7 @@ async function saveFileFromURL({ userId, URL, fileName, basePath = 'images' }) {
  *          The constructed local file path.
  */
 async function getLocalFileURL({ fileName, basePath = 'images' }) {
-  return path.join(basePath, fileName);
+  return path.posix.join('/', basePath, fileName);
 }
 
 module.exports = { saveFile, saveLocalImage, saveFileFromURL, getLocalFileURL };

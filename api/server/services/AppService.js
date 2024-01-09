@@ -11,7 +11,7 @@ const paths = require('~/config/paths');
  */
 const AppService = async (app) => {
   const config = (await loadCustomConfig()) ?? {};
-  const fileStrategy = config.CDN_PROVIDER ?? FileSources.local;
+  const fileStrategy = config.fileStrategy ?? FileSources.local;
 
   if (fileStrategy === FileSources.firebase) {
     initializeFirebase();

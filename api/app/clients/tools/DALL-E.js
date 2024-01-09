@@ -77,7 +77,7 @@ Guidelines:
   }
 
   wrapInMarkdown(imageUrl) {
-    return `![generated image](/${imageUrl})`;
+    return `![generated image](${imageUrl})`;
   }
 
   async _call(input) {

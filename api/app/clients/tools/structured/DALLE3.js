@@ -86,7 +86,7 @@ class DALLE3 extends Tool {
   }
 
   wrapInMarkdown(imageUrl) {
-    return `![generated image](/${imageUrl})`;
+    return `![generated image](${imageUrl})`;
   }
 
   async _call(data) {

@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
+import { FileSources } from './types/files';
+
+export const fileSourceSchema = z.nativeEnum(FileSources);
 
 export const endpointSchema = z.object({
   name: z.string().refine((value) => !eModelEndpointSchema.safeParse(value).success, {
@@ -25,6 +28,7 @@ export const endpointSchema = z.object({
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean(),
+  fileStrategy: fileSourceSchema.optional(),
   endpoints: z
     .object({
       custom: z.array(endpointSchema.partial()),
