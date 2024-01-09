@@ -161,6 +161,9 @@ function extractFirebaseFilePath(urlString) {
  */
 const deleteFirebaseFile = async (req, file) => {
   const fileName = extractFirebaseFilePath(file.filepath);
+  if (!fileName.includes(req.user.id)) {
+    throw new Error('Invalid file path');
+  }
   await deleteFile('', fileName);
 };
 
