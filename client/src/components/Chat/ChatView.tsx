@@ -6,11 +6,12 @@ import { useChatHelpers, useSSE } from '~/hooks';
 // import GenerationButtons from './Input/GenerationButtons';
 import MessagesView from './Messages/MessagesView';
 // import OptionsBar from './Input/OptionsBar';
+import { useGetFiles } from '~/data-provider';
+import { buildTree, mapFiles } from '~/utils';
 import { Spinner } from '~/components/svg';
 import { ChatContext } from '~/Providers';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
-import { buildTree } from '~/utils';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
@@ -21,11 +22,16 @@ function ChatView({ index = 0 }: { index?: number }) {
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
   useSSE(submissionAtIndex);
 
+  const { data: fileMap } = useGetFiles({
+    select: mapFiles,
+  });
+
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
     select: (data) => {
-      const dataTree = buildTree(data, false);
+      const dataTree = buildTree({ messages: data, fileMap });
       return dataTree?.length === 0 ? null : dataTree ?? null;
     },
+    enabled: !!fileMap,
   });
 
   const chatHelpers = useChatHelpers(index, conversationId);
