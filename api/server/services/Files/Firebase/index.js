@@ -1,7 +1,7 @@
-const images = require('./images');
+const crud = require('./crud');
 const initialize = require('./initialize');
 
 module.exports = {
-  ...images,
+  ...crud,
   ...initialize,
 };

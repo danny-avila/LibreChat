@@ -6,12 +6,12 @@ const express = require('express');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
 const errorController = require('./controllers/ErrorController');
-const { jwtLogin, passportLogin } = require('../strategies');
+const { jwtLogin, passportLogin } = require('~/strategies');
 const configureSocialLogins = require('./socialLogins');
-const { connectDb, indexSync } = require('../lib/db');
+const { connectDb, indexSync } = require('~/lib/db');
 const AppService = require('./services/AppService');
 const noIndex = require('./middleware/noIndex');
-const { logger } = require('../config');
+const { logger } = require('~/config');
 
 const routes = require('./routes');
 

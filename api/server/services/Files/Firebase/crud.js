@@ -1,6 +1,30 @@
 const fetch = require('node-fetch');
-const { ref, uploadBytes, getDownloadURL } = require('firebase/storage');
+const { ref, uploadBytes, getDownloadURL, deleteObject } = require('firebase/storage');
 const { getFirebaseStorage } = require('./initialize');
+
+/**
+ * Deletes a file from Firebase Storage.
+ * @param {string} directory - The directory name
+ * @param {string} fileName - The name of the file to delete.
+ * @returns {Promise<void>} A promise that resolves when the file is deleted.
+ */
+async function deleteFileFromFirebase(path, fileName) {
+  const storage = getFirebaseStorage();
+  if (!storage) {
+    console.error('Firebase is not initialized. Cannot delete file from Firebase Storage.');
+    throw new Error('Firebase is not initialized');
+  }
+
+  const storageRef = ref(storage, `${path}/${fileName}`);
+
+  try {
+    await deleteObject(storageRef);
+    console.log('File deleted successfully from Firebase Storage');
+  } catch (error) {
+    console.error('Error deleting file from Firebase Storage:', error.message);
+    throw error;
+  }
+}
 
 async function saveImageToFirebaseStorage(userId, imageUrl, imageName) {
   const storage = getFirebaseStorage();
@@ -42,4 +66,5 @@ async function getFirebaseStorageImageUrl(imageName) {
 module.exports = {
   saveImageToFirebaseStorage,
   getFirebaseStorageImageUrl,
+  deleteFileFromFirebase,
 };

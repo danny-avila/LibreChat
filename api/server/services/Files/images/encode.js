@@ -1,45 +1,9 @@
-const fs = require('fs');
-const path = require('path');
-const { EModelEndpoint } = require('librechat-data-provider');
-const { updateFile } = require('~/models');
+const { EModelEndpoint, FileSources } = require('librechat-data-provider');
+const { encodeLocal } = require('../Local/images');
 
-/**
- * Encodes an image file to base64.
- * @param {string} imagePath - The path to the image file.
- * @returns {Promise<string>} A promise that resolves with the base64 encoded image data.
- */
-function encodeImage(imagePath) {
-  return new Promise((resolve, reject) => {
-    fs.readFile(imagePath, (err, data) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(data.toString('base64'));
-      }
-    });
-  });
-}
-
-/**
- * Updates the file and encodes the image.
- * @param {Object} req - The request object.
- * @param {Object} file - The file object.
- * @returns {Promise<[MongoFile, string]>}  - A promise that resolves to an array of results from updateFile and encodeImage.
- */
-async function updateAndEncode(req, file) {
-  const { publicPath, imageOutput } = req.app.locals.paths;
-  const userPath = path.join(imageOutput, req.user.id);
-
-  if (!fs.existsSync(userPath)) {
-    fs.mkdirSync(userPath, { recursive: true });
-  }
-  const filepath = path.join(publicPath, file.filepath);
-
-  const promises = [];
-  promises.push(updateFile({ file_id: file.file_id }));
-  promises.push(encodeImage(filepath));
-  return await Promise.all(promises);
-}
+const encodeStrategies = {
+  [FileSources.local]: encodeLocal,
+};
 
 /**
  * Encodes and formats the given files.
@@ -49,6 +13,12 @@ async function updateAndEncode(req, file) {
  * @returns {Promise<Object>} - A promise that resolves to the result object containing the encoded images and file details.
  */
 async function encodeAndFormat(req, files, endpoint) {
+  const { fileStrategy } = req.app.locals;
+  /**
+   * @type {function(Express.Request, MongoFile): Promise<[MongoFile, string]>}
+   */
+  const updateAndEncode = encodeStrategies[fileStrategy];
+
   const promises = [];
   for (let file of files) {
     promises.push(updateAndEncode(req, file));
@@ -92,6 +62,5 @@ async function encodeAndFormat(req, files, endpoint) {
 }
 
 module.exports = {
-  encodeImage,
   encodeAndFormat,
 };
