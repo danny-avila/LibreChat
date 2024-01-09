@@ -34,10 +34,10 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
         { tokens: 10000000, label: '10 Million', price: '250 RMB' },
       ]
       : [
-        { tokens: 100000, label: '100k', price: '15 USD' }, // Example alternative prices
-        { tokens: 500000, label: '500k', price: '40 USD' },
-        { tokens: 1000000, label: '1 Million', price: '60 USD' },
-        { tokens: 10000000, label: '10 Million', price: '300 USD' },
+        { tokens: 100000, label: '100k', price: '2 USD' }, // Example alternative prices
+        { tokens: 500000, label: '500k', price: '6 USD' },
+        { tokens: 1000000, label: '1 Million', price: '10 USD' },
+        { tokens: 10000000, label: '10 Million', price: '50 USD' },
       ];
 
   const fetchTokenBalance = async () => {
