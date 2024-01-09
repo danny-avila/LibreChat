@@ -6,35 +6,21 @@ exports.createPaymentIntent = async (req, res) => {
     console.log('req.body:', req.body);
     const { priceId, userId, domain, email } = req.body;
 
-    if (
-      ![
-        'price_1ORgxoHKD0byXXClx3u1yLa0',
-        'price_1ORgyJHKD0byXXClfvOyCbp7',
-        'price_1ORgyiHKD0byXXClHetdaI3W',
-        'price_1ORgzMHKD0byXXClDCm5PkwO',
-      ].includes(priceId)
-    ) {
+    const validPriceIds = [
+      'price_1ORgxoHKD0byXXClx3u1yLa0',
+      'price_1ORgyJHKD0byXXClfvOyCbp7',
+      'price_1ORgyiHKD0byXXClHetdaI3W',
+      'price_1ORgzMHKD0byXXClDCm5PkwO',
+      'price_1ORgzyHKD0byXXCl9hIUu3Fn', // New price IDs
+      'price_1ORh0JHKD0byXXCl40t8BtlB',
+      'price_1ORh0cHKD0byXXClqFvZXCiA',
+      'price_1ORh15HKD0byXXClGtCFxyXf',
+    ];
+
+    if (!validPriceIds.includes(priceId)) {
       res.status(400).json({ error: 'Invalid price ID' });
       return;
     }
-
-    // // Determine the currency based on the domain
-    // let currency;
-    // switch(domain) {
-    //   case 'gptchina.io':
-    //     currency = `CNY`;
-    //     break;
-    //   case 'gptglobal.io':
-    //     currency = `CNY`;
-    //     break;
-    //   case '8124-204-16-39-70.ngrok-free.app':
-    //     currency = `CNY`;
-    //     break;
-    //   // Add cases for other domains
-    //   default:
-    //     res.status(400).json({ error: 'Invalid domain' });
-    //     return;
-    // }
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card', 'wechat_pay', 'alipay'],
@@ -98,7 +84,6 @@ exports.handleWebhook = async (req, res) => {
 
     console.log('Price ID:', priceId);
 
-    // Determine the number of tokens based on the price ID
     let tokens;
     switch (priceId) {
       case 'price_1ORgzMHKD0byXXClDCm5PkwO':
@@ -113,13 +98,24 @@ exports.handleWebhook = async (req, res) => {
       case 'price_1ORgxoHKD0byXXClx3u1yLa0':
         tokens = 100000;
         break;
+      case 'price_1ORgzyHKD0byXXCl9hIUu3Fn':
+        tokens = 100000; // Adjust as needed
+        break;
+      case 'price_1ORh0JHKD0byXXCl40t8BtlB':
+        tokens = 500000; // Adjust as needed
+        break;
+      case 'price_1ORh0cHKD0byXXClqFvZXCiA':
+        tokens = 1000000; // Adjust as needed
+        break;
+      case 'price_1ORh15HKD0byXXClGtCFxyXf':
+        tokens = 10000000; // Adjust as needed
+        break;
       default:
         console.error('Invalid price ID:', priceId);
         res.status(400).send({ error: 'Invalid price ID' });
         return;
     }
 
-    // Add tokens to user's account
     try {
       const newBalance = await addTokensByUserId(userId, tokens);
       res.status(200).send(`Success! New balance is ${newBalance}`);

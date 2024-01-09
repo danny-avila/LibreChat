@@ -60,26 +60,49 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
     }
 
     let priceId;
-    switch (selectedTokens) {
-      case 100000:
-        priceId = 'price_1ORgxoHKD0byXXClx3u1yLa0'; // 10 RMB
-        break;
-      case 500000:
-        priceId = 'price_1ORgyJHKD0byXXClfvOyCbp7'; // 35 RMB
-        break;
-      case 1000000:
-        priceId = 'price_1ORgyiHKD0byXXClHetdaI3W'; // 50 RMB
-        break;
-      case 10000000:
-        priceId = 'price_1ORgzMHKD0byXXClDCm5PkwO'; // 250 RMB
-        break;
-      default:
-        console.error('Invalid token selection');
-        return;
+    const domain = window.location.hostname; // Get the current domain
+
+    if (domain === 'gptchina.io') {
+      // Use RMB price IDs for gptchina.io
+      switch (selectedTokens) {
+        case 100000:
+          priceId = 'price_1ORgxoHKD0byXXClx3u1yLa0'; // 10 RMB
+          break;
+        case 500000:
+          priceId = 'price_1ORgyJHKD0byXXClfvOyCbp7'; // 35 RMB
+          break;
+        case 1000000:
+          priceId = 'price_1ORgyiHKD0byXXClHetdaI3W'; // 50 RMB
+          break;
+        case 10000000:
+          priceId = 'price_1ORgzMHKD0byXXClDCm5PkwO'; // 250 RMB
+          break;
+        default:
+          console.error('Invalid token selection');
+          return;
+      }
+    } else {
+      // Use USD price IDs for other domains
+      switch (selectedTokens) {
+        case 100000:
+          priceId = 'price_1ORgzyHKD0byXXCl9hIUu3Fn'; // 100k Tokens - GPT GLOBAL $2.00
+          break;
+        case 500000:
+          priceId = 'price_1ORh0JHKD0byXXCl40t8BtlB'; // 500k Tokens - GPT GLOBAL $6.00
+          break;
+        case 1000000:
+          priceId = 'price_1ORh0cHKD0byXXClqFvZXCiA'; // 1M Tokens - GPT GLOBAL $10.00
+          break;
+        case 10000000:
+          priceId = 'price_1ORh15HKD0byXXClGtCFxyXf'; // 10M Tokens $50.00
+          break;
+        default:
+          console.error('Invalid token selection');
+          return;
+      }
     }
 
-    const domain = window.location.hostname;
-
+    // Continue with the Stripe checkout process
     try {
       const res = await fetch('/api/payment/create-checkout-session', {
         method: 'POST',
