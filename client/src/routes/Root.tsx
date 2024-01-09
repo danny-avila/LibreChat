@@ -10,7 +10,6 @@ import { useGetFiles } from '~/data-provider';
 import store from '~/store';
 
 export default function Root() {
-  useGetFiles();
   const location = useLocation();
   const { newConversation } = useConversation();
   const { isAuthenticated } = useAuthContext();
@@ -26,6 +25,7 @@ export default function Root() {
   const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
   const setModelsConfig = useSetRecoilState(store.modelsConfig);
 
+  useGetFiles({ enabled: isAuthenticated });
   const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
   const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated && modelsQueryEnabled });
 
