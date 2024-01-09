@@ -27,7 +27,7 @@ function encodeImage(imagePath) {
  * @returns {Promise<[MongoFile, string]>}  - A promise that resolves to an array of results from updateFile and encodeImage.
  */
 async function updateAndEncode(req, file) {
-  const { publicPath, imageOutput } = req.app.locals.config;
+  const { publicPath, imageOutput } = req.app.locals.paths;
   const userPath = path.join(imageOutput, req.user.id);
 
   if (!fs.existsSync(userPath)) {

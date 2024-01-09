@@ -16,7 +16,7 @@ const isValidPath = (req, base, subfolder, filepath) => {
 };
 
 const deleteFile = async (req, file) => {
-  const { publicPath } = req.app.locals.config;
+  const { publicPath } = req.app.locals.paths;
   const parts = file.filepath.split(path.sep);
   const subfolder = parts[1];
   const filepath = path.join(publicPath, file.filepath);

@@ -8,7 +8,7 @@ async function convertToWebP(req, file, resolution = 'high') {
   const { buffer: resizedBuffer, width, height } = await resizeImage(inputFilePath, resolution);
   const extension = path.extname(inputFilePath);
 
-  const { imageOutput } = req.app.locals.config;
+  const { imageOutput } = req.app.locals.paths;
   const userPath = path.join(imageOutput, req.user.id);
 
   if (!fs.existsSync(userPath)) {

@@ -40,7 +40,7 @@ async function saveFile(file, outputPath, outputFilename) {
  * @throws Will throw an error if the image saving process fails.
  */
 const saveLocalImage = async (req, file, filename) => {
-  const imagePath = req.app.locals.config.imageOutput;
+  const imagePath = req.app.locals.paths.imageOutput;
   const outputPath = path.join(imagePath, req.user.id ?? '');
   await saveFile(file, outputPath, filename);
 };
