@@ -1,14 +1,16 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Outlet, useLocation } from 'react-router-dom';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useGetModelsQuery, useGetSearchEnabledQuery } from 'librechat-data-provider/react-query';
 import type { ContextType } from '~/common';
 import { useAuthContext, useServerStream, useConversation } from '~/hooks';
 import { Nav, MobileNav } from '~/components/Nav';
+import { useGetFiles } from '~/data-provider';
 import store from '~/store';
 
 export default function Root() {
+  useGetFiles();
   const location = useLocation();
   const { newConversation } = useConversation();
   const { isAuthenticated } = useAuthContext();
