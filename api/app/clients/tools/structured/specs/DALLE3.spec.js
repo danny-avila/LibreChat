@@ -2,19 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
 const DALLE3 = require('../DALLE3');
-const {
-  getFirebaseStorage,
-  saveImageToFirebaseStorage,
-} = require('~/server/services/Files/Firebase');
-const saveImageFromUrl = require('../../saveImageFromUrl');
+const { processFileURL } = require('~/server/services/Files/process');
+const { saveFileFromURL } = require('~/server/services/Files/Local');
+
 const { logger } = require('~/config');
 
 jest.mock('openai');
 
-jest.mock('~/server/services/Files/Firebase', () => ({
-  getFirebaseStorage: jest.fn(),
-  saveImageToFirebaseStorage: jest.fn(),
-  getFirebaseStorageImageUrl: jest.fn(),
+jest.mock('~/server/services/Files/process', () => ({
+  processFileURL: jest.fn(),
 }));
 
 jest.mock('~/server/services/Files/images', () => ({
@@ -122,7 +118,7 @@ describe('DALLE3', () => {
     };
 
     generate.mockResolvedValue(mockResponse);
-    saveImageFromUrl.mockResolvedValue(true);
+    saveFileFromURL.mockResolvedValue(true);
     fs.existsSync.mockReturnValue(true);
     path.resolve.mockReturnValue('/fakepath/images');
     path.join.mockReturnValue('/fakepath/images/img-test.png');
@@ -214,7 +210,7 @@ describe('DALLE3', () => {
     };
     const error = new Error('Error while saving the image');
     generate.mockResolvedValue(mockResponse);
-    saveImageFromUrl.mockRejectedValue(error);
+    saveFileFromURL.mockRejectedValue(error);
     const result = await dalle._call(mockData);
     expect(logger.error).toHaveBeenCalledWith('Error while saving the image locally:', error);
     expect(result).toBe('Failed to save the image locally. Error while saving the image');
@@ -227,16 +223,14 @@ describe('DALLE3', () => {
     const mockImageUrl = 'http://example.com/img-test.png';
     const mockResponse = { data: [{ url: mockImageUrl }] };
     generate.mockResolvedValue(mockResponse);
-    getFirebaseStorage.mockReturnValue({}); // Simulate Firebase being initialized
 
     await dalle._call(mockData);
 
-    expect(getFirebaseStorage).toHaveBeenCalled();
-    expect(saveImageToFirebaseStorage).toHaveBeenCalledWith(
-      undefined,
-      mockImageUrl,
-      expect.any(String),
-    );
+    expect(processFileURL).toHaveBeenCalledWith({
+      userId: undefined,
+      URL: mockImageUrl,
+      fileName: expect.any(String),
+    });
   });
 
   it('should handle error when saving image to Firebase Storage fails', async () => {
@@ -247,17 +241,11 @@ describe('DALLE3', () => {
     const mockResponse = { data: [{ url: mockImageUrl }] };
     const error = new Error('Error while saving to Firebase');
     generate.mockResolvedValue(mockResponse);
-    getFirebaseStorage.mockReturnValue({}); // Simulate Firebase being initialized
-    saveImageToFirebaseStorage.mockRejectedValue(error);
+    processFileURL.mockRejectedValue(error);
 
     const result = await dalle._call(mockData);
 
-    expect(logger.error).toHaveBeenCalledWith(
-      'Error while saving the image to Firebase Storage:',
-      error,
-    );
-    expect(result).toBe(
-      'Failed to save the image to Firebase Storage. Error while saving to Firebase',
-    );
+    expect(logger.error).toHaveBeenCalledWith('Error while saving the image:', error);
+    expect(result).toContain('Failed to save the image');
   });
 });

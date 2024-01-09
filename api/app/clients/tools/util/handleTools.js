@@ -170,6 +170,7 @@ const loadTools = async ({
 
   const toolOptions = {
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
+    dalle: { fileStrategy: options.fileStrategy },
   };
 
   const toolAuthFields = {};

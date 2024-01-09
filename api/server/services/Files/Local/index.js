@@ -1,7 +1,7 @@
 const images = require('./images');
-const save = require('./save');
+const crud = require('./crud');
 
 module.exports = {
-  ...save,
+  ...crud,
   ...images,
 };
