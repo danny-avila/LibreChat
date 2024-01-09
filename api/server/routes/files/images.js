@@ -34,6 +34,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     uuidSchema.parse(metadata.file_id);
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
+
     await localStrategy({ req, res, file, metadata });
   } catch (error) {
     logger.error('[/files/images] Error processing file:', error);

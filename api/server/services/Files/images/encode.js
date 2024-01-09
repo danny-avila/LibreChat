@@ -81,11 +81,11 @@ async function encodeAndFormat(req, files, endpoint) {
 
     result.files.push({
       file_id: file.file_id,
-      filepath: file.filepath,
-      filename: file.filename,
-      type: file.type,
-      height: file.height,
-      width: file.width,
+      // filepath: file.filepath,
+      // filename: file.filename,
+      // type: file.type,
+      // height: file.height,
+      // width: file.width,
     });
   }
   return result;

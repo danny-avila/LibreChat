@@ -2,7 +2,7 @@ const { z } = require('zod');
 const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
-const { deleteFiles } = require('~/models');
+const { deleteFiles, getFiles } = require('~/models');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -27,6 +27,16 @@ const deleteFile = async (req, file) => {
 
   await fs.unlink(filepath);
 };
+
+router.get('/', async (req, res) => {
+  try {
+    const files = await getFiles({ user: req.user.id });
+    res.status(200).send(files);
+  } catch (error) {
+    logger.error('[/files] Error getting files:', error);
+    res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
 
 router.delete('/', async (req, res) => {
   try {
