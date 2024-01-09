@@ -146,14 +146,12 @@ function extractFirebaseFilePath(urlString) {
 }
 
 /**
- * Deletes a file from Firebase storage. This function determines the subfolder (either 'images' or 'documents')
- * based on the file type and constructs a Firebase storage path using the user's ID and the file name.
- * It then deletes the file from Firebase storage.
+ * Deletes a file from Firebase storage. This function determines the filepath from the
+ * Firebase storage URL via regex for deletion. Validated by the user's ID.
  *
- * @param {Object} req - The request object from Express. It should contain a `user` object with an `id` property.
- * @param {Object} file - The file object to be deleted. It should have `filepath` and `type` properties.
- *                        `filepath` is a string representing the file's name, and `type` is used to determine
- *                        the file's storage subfolder in Firebase.
+ * @param {Express.Request} req - The request object from Express.
+ * It should contain a `user` object with an `id` property.
+ * @param {MongoFile} file - The file object to be deleted.
  *
  * @returns {Promise<void>}
  *          A promise that resolves when the file has been successfully deleted from Firebase storage.
