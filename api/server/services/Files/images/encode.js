@@ -29,9 +29,7 @@ async function encodeAndFormat(req, files, endpoint) {
     promises.push(prepareImagePayload(req, file));
   }
 
-  // TODO: make detail configurable, as of now resizing is done
-  // to prefer "high" but "low" may be used if the image is small enough
-  const detail = req.body.detail ?? 'auto';
+  const detail = req.body.imageDetail ?? 'auto';
 
   /** @type {Array<[MongoFile, string]>} */
   const formattedImages = await Promise.all(promises);

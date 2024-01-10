@@ -8,8 +8,9 @@ const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
 const { handleOpenAIErrors } = require('./tools/util');
 const spendTokens = require('~/models/spendTokens');
 const { createLLM, RunManager } = require('./llm');
-const { isEnabled } = require('~/server/utils');
 const ChatGPTClient = require('./ChatGPTClient');
+const { isEnabled } = require('~/server/utils');
+const { getFiles } = require('~/models/File');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
@@ -76,16 +77,7 @@ class OpenAIClient extends BaseClient {
       };
     }
 
-    this.isVisionModel = validateVisionModel(this.modelOptions.model);
-
-    if (this.options.attachments && !this.isVisionModel) {
-      this.modelOptions.model = 'gpt-4-vision-preview';
-      this.isVisionModel = true;
-    }
-
-    if (this.isVisionModel) {
-      delete this.modelOptions.stop;
-    }
+    this.checkVisionRequest(this.options.attachments);
 
     const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
     if (OPENROUTER_API_KEY && !this.azure) {
@@ -204,6 +196,27 @@ class OpenAIClient extends BaseClient {
     return this;
   }
 
+  /**
+   *
+   * Checks if the model is a vision model based on request attachments and sets the appropriate options:
+   * - Sets `this.modelOptions.model` to `gpt-4-vision-preview` if the request is a vision request.
+   * - Sets `this.isVisionModel` to `true` if vision request.
+   * - Deletes `this.modelOptions.stop` if vision request.
+   * @param {Array<Promise<MongoFile> | MongoFile>} attachments
+   */
+  checkVisionRequest(attachments) {
+    this.isVisionModel = validateVisionModel(this.modelOptions.model);
+
+    if (attachments && !this.isVisionModel) {
+      this.modelOptions.model = 'gpt-4-vision-preview';
+      this.isVisionModel = true;
+    }
+
+    if (this.isVisionModel) {
+      delete this.modelOptions.stop;
+    }
+  }
+
   setupTokens() {
     if (this.isChatCompletion) {
       this.startToken = '||>';
@@ -305,6 +318,8 @@ class OpenAIClient extends BaseClient {
     return {
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
+      resendImages: this.options.resendImages,
+      imageDetail: this.options.imageDetail,
       ...this.modelOptions,
     };
   }
@@ -315,6 +330,62 @@ class OpenAIClient extends BaseClient {
       promptPrefix: opts.promptPrefix,
       abortController: opts.abortController,
     };
+  }
+
+  /**
+   *
+   * @param {TMessage[]} _messages
+   * @returns {TMessage[]}
+   */
+  async addPreviousAttachments(_messages) {
+    if (!this.options.resendImages) {
+      return _messages;
+    }
+
+    const requestFiles = [];
+
+    /**
+     *
+     * @param {TMessage} message
+     */
+    const processMessage = async (message) => {
+      const fileIds = message.files.map((file) => file.file_id);
+      const files = await getFiles({
+        file_id: { $in: fileIds },
+      });
+
+      requestFiles.push(await this.addImageURLs(message, files));
+      return message;
+    };
+
+    const promises = [];
+    for (const message of _messages) {
+      if (!message.files) {
+        promises.push(message);
+      } else {
+        promises.push(processMessage(message));
+      }
+    }
+
+    const messages = await Promise.all(promises);
+
+    this.checkVisionRequest(requestFiles);
+    return messages;
+  }
+
+  /**
+   *
+   * Adds image URLs to the message object and returns the files
+   *
+   * @param {TMessage[]} messages
+   * @param {MongoFile[]} files
+   * @returns {Promise<MongoFile[]>}
+   */
+  async addImageURLs(message, attachments) {
+    const { files, image_urls } = await encodeAndFormat(this.options.req, attachments);
+
+    message.image_urls = image_urls;
+    return files;
   }
 
   async buildMessages(
@@ -355,13 +426,13 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.options.attachments) {
-      const attachments = await this.options.attachments;
-      const { files, image_urls } = await encodeAndFormat(
-        this.options.req,
-        attachments.filter((file) => file.type.includes('image')),
+      const attachments = (await this.options.attachments).filter((file) =>
+        file.type.includes('image'),
       );
-
-      orderedMessages[orderedMessages.length - 1].image_urls = image_urls;
+      const files = await this.addImageURLs(
+        orderedMessages[orderedMessages.length - 1],
+        attachments,
+      );
       this.options.attachments = files;
     }
 

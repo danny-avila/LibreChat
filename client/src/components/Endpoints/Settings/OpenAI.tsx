@@ -1,11 +1,13 @@
 import TextareaAutosize from 'react-textarea-autosize';
+import { ImageDetail, imageDetailNumeric, imageDetailValue } from 'librechat-data-provider';
 import {
-  SelectDropDown,
   Input,
   Label,
+  Switch,
   Slider,
-  InputNumber,
   HoverCard,
+  InputNumber,
+  SelectDropDown,
   HoverCardTrigger,
 } from '~/components/ui';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
@@ -20,6 +22,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     return null;
   }
   const {
+    endpoint,
+    endpointType,
     model,
     chatGptLabel,
     promptPrefix,
@@ -27,6 +31,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     top_p: topP,
     frequency_penalty: freqP,
     presence_penalty: presP,
+    resendImages,
+    imageDetail,
   } = conversation;
   const setModel = setOption('model');
   const setChatGptLabel = setOption('chatGptLabel');
@@ -35,6 +41,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setTopP = setOption('top_p');
   const setFreqP = setOption('frequency_penalty');
   const setPresP = setOption('presence_penalty');
+  const setResendImages = setOption('resendImages');
+  const setImageDetail = setOption('imageDetail');
+
+  const optionEndpoint = endpointType ?? endpoint;
 
   return (
     <div className="grid grid-cols-5 gap-6">
@@ -126,7 +136,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="temp" side={ESide.Left} />
+          <OptionHover endpoint={optionEndpoint ?? ''} type="temp" side={ESide.Left} />
         </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
@@ -164,7 +174,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="topp" side={ESide.Left} />
+          <OptionHover endpoint={optionEndpoint ?? ''} type="topp" side={ESide.Left} />
         </HoverCard>
 
         <HoverCard openDelay={300}>
@@ -203,7 +213,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="freq" side={ESide.Left} />
+          <OptionHover endpoint={optionEndpoint ?? ''} type="freq" side={ESide.Left} />
         </HoverCard>
 
         <HoverCard openDelay={300}>
@@ -242,8 +252,66 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className="flex h-4 w-full"
             />
           </HoverCardTrigger>
-          <OptionHover endpoint={conversation?.endpoint ?? ''} type="pres" side={ESide.Left} />
+          <OptionHover endpoint={optionEndpoint ?? ''} type="pres" side={ESide.Left} />
         </HoverCard>
+        <div className="w-full">
+          <div className="mb-2 flex w-full justify-between gap-2">
+            <label
+              htmlFor="resend-images"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+            >
+              <small>{localize('com_endpoint_plug_resend_images')}</small>
+            </label>
+            <label
+              htmlFor="image-detail-value"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+            >
+              <small>Image Detail</small>
+            </label>
+            <Input
+              id="image-detail-value"
+              disabled={true}
+              value={imageDetail ?? ImageDetail.auto}
+              className={cn(
+                defaultTextProps,
+                optionText,
+                'flex rounded-md bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 dark:border-slate-700',
+                'pointer-events-none max-h-5 w-12 border-0 group-hover/temp:border-gray-200',
+              )}
+            />
+          </div>
+          <div className="flex w-full justify-between gap-2">
+            <HoverCard openDelay={500}>
+              <HoverCardTrigger>
+                <Switch
+                  id="resend-images"
+                  checked={resendImages ?? false}
+                  onCheckedChange={(checked: boolean) => setResendImages(checked)}
+                  disabled={readonly}
+                  className="flex"
+                />
+                <OptionHover endpoint={optionEndpoint ?? ''} type="resend" side={ESide.Bottom} />
+              </HoverCardTrigger>
+            </HoverCard>
+            <HoverCard openDelay={500}>
+              <HoverCardTrigger className="flex w-[52%] md:w-[125px]">
+                <Slider
+                  id="image-detail-slider"
+                  disabled={readonly}
+                  value={[
+                    imageDetailNumeric[imageDetail ?? ''] ?? imageDetailNumeric[ImageDetail.auto],
+                  ]}
+                  onValueChange={(value) => setImageDetail(imageDetailValue[value[0]])}
+                  doubleClickHandler={() => setImageDetail(ImageDetail.auto)}
+                  max={2}
+                  min={0}
+                  step={1}
+                />
+                <OptionHover endpoint={optionEndpoint ?? ''} type="detail" side={ESide.Bottom} />
+              </HoverCardTrigger>
+            </HoverCard>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -27,6 +27,12 @@
  */
 
 /**
+ * @exports TMessage
+ * @typedef {import('librechat-data-provider').TMessage} TMessage
+ * @memberof typedefs
+ */
+
+/**
  * @exports FileSources
  * @typedef {import('librechat-data-provider').FileSources} FileSources
  * @memberof typedefs

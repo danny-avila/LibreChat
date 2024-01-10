@@ -46,6 +46,10 @@ class BaseClient {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', response);
   }
 
+  async addPreviousAttachments(messages) {
+    return messages;
+  }
+
   async recordTokenUsage({ promptTokens, completionTokens }) {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', {
       promptTokens,
@@ -484,20 +488,22 @@ class BaseClient {
       mapMethod = this.getMessageMapMethod();
     }
 
-    const orderedMessages = this.constructor.getMessagesForConversation({
+    let _messages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       mapMethod,
     });
 
+    _messages = await this.addPreviousAttachments(_messages);
+
     if (!this.shouldSummarize) {
-      return orderedMessages;
+      return _messages;
     }
 
     // Find the latest message with a 'summary' property
-    for (let i = orderedMessages.length - 1; i >= 0; i--) {
-      if (orderedMessages[i]?.summary) {
-        this.previous_summary = orderedMessages[i];
+    for (let i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i]?.summary) {
+        this.previous_summary = _messages[i];
         break;
       }
     }
@@ -512,7 +518,7 @@ class BaseClient {
       });
     }
 
-    return orderedMessages;
+    return _messages;
   }
 
   async saveMessageToDatabase(message, endpointOptions, user = null) {
