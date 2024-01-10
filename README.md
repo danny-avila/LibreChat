@@ -58,6 +58,10 @@ Click on the thumbnail to open the video☝️
 
 ---
 
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/b5k2mn?referralCode=HI9hWz)
+
+---
+
 ## 📚 Documentation
 For more information on how to use our advanced features, install and configure our software, and access our guidelines and tutorials, please check out our documentation at [docs.librechat.ai](https://docs.librechat.ai)
 
