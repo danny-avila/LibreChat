@@ -74,12 +74,13 @@ function encodeImage(imagePath) {
 }
 
 /**
- * Local: Updates the file and encodes the image.
+ * Local: Updates the file and encodes the image to base64,
+ * for image payload handling: tuple order of [filepath, base64].
  * @param {Object} req - The request object.
  * @param {MongoFile} file - The file object.
- * @returns {Promise<[MongoFile, string]>}  - A promise that resolves to an array of results from updateFile and encodeImage.
+ * @returns {Promise<[MongoFile, string]>} - A promise that resolves to an array of results from updateFile and encodeImage.
  */
-async function encodeLocal(req, file) {
+async function prepareImagesLocal(req, file) {
   const { publicPath, imageOutput } = req.app.locals.paths;
   const userPath = path.join(imageOutput, req.user.id);
 
@@ -94,4 +95,4 @@ async function encodeLocal(req, file) {
   return await Promise.all(promises);
 }
 
-module.exports = { uploadLocalImage, encodeImage, encodeLocal };
+module.exports = { uploadLocalImage, encodeImage, prepareImagesLocal };

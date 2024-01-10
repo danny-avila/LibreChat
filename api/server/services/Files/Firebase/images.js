@@ -3,6 +3,7 @@ const path = require('path');
 const sharp = require('sharp');
 const { saveBufferToFirebase } = require('./crud');
 const { resizeImage } = require('../images/resize');
+const { updateFile } = require('~/models');
 
 /**
  * Converts an image file to the WebP format. The function first resizes the image based on the specified
@@ -50,4 +51,19 @@ async function uploadImageToFirebase(req, file, resolution = 'high') {
   return { filepath: downloadURL, bytes, width, height };
 }
 
-module.exports = { uploadImageToFirebase };
+/**
+ * Local: Updates the file and returns the URL in expected order/format
+ * for image payload handling: tuple order of [filepath, URL].
+ * @param {Object} req - The request object.
+ * @param {MongoFile} file - The file object.
+ * @returns {Promise<[MongoFile, string]>} - A promise that resolves to an array of results from updateFile and encodeImage.
+ */
+async function prepareImageURL(req, file) {
+  const { filepath } = file;
+  const promises = [];
+  promises.push(updateFile({ file_id: file.file_id }));
+  promises.push(filepath);
+  return await Promise.all(promises);
+}
+
+module.exports = { uploadImageToFirebase, prepareImageURL };

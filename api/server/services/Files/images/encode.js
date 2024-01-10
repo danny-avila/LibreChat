@@ -1,9 +1,5 @@
 const { EModelEndpoint, FileSources } = require('librechat-data-provider');
-const { encodeLocal } = require('../Local/images');
-
-const encodeStrategies = {
-  [FileSources.local]: encodeLocal,
-};
+const { getStrategyFunctions } = require('../strategies');
 
 /**
  * Encodes and formats the given files.
@@ -13,32 +9,45 @@ const encodeStrategies = {
  * @returns {Promise<Object>} - A promise that resolves to the result object containing the encoded images and file details.
  */
 async function encodeAndFormat(req, files, endpoint) {
-  const { fileStrategy } = req.app.locals;
-  /**
-   * @type {function(Express.Request, MongoFile): Promise<[MongoFile, string]>}
-   */
-  const updateAndEncode = encodeStrategies[fileStrategy];
-
   const promises = [];
+  const encodingMethods = {};
+
   for (let file of files) {
-    promises.push(updateAndEncode(req, file));
+    const source = file.source ?? FileSources.local;
+
+    if (encodingMethods[source]) {
+      promises.push(encodingMethods[source](req, file));
+      continue;
+    }
+
+    const { prepareImagePayload } = getStrategyFunctions(source);
+    if (!prepareImagePayload) {
+      throw new Error(`Encoding function not implemented for ${source}`);
+    }
+
+    encodingMethods[source] = prepareImagePayload;
+    promises.push(prepareImagePayload(req, file));
   }
 
   // TODO: make detail configurable, as of now resizing is done
   // to prefer "high" but "low" may be used if the image is small enough
   const detail = req.body.detail ?? 'auto';
-  const encodedImages = await Promise.all(promises);
+
+  /** @type {Array<[MongoFile, string]>} */
+  const formattedImages = await Promise.all(promises);
 
   const result = {
     files: [],
     image_urls: [],
   };
 
-  for (const [file, base64] of encodedImages) {
+  for (const [file, imageContent] of formattedImages) {
     const imagePart = {
       type: 'image_url',
       image_url: {
-        url: `data:image/webp;base64,${base64}`,
+        url: imageContent.startsWith('http')
+          ? imageContent
+          : `data:image/webp;base64,${imageContent}`,
         detail,
       },
     };

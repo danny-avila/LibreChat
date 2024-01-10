@@ -3,9 +3,16 @@ const {
   getFirebaseURL,
   saveURLToFirebase,
   deleteFirebaseFile,
+  prepareImageURL,
   uploadImageToFirebase,
 } = require('./Firebase');
-const { getLocalFileURL, saveFileFromURL, deleteLocalFile, uploadLocalImage } = require('./Local');
+const {
+  getLocalFileURL,
+  saveFileFromURL,
+  deleteLocalFile,
+  uploadLocalImage,
+  prepareImagesLocal,
+} = require('./Local');
 
 // Firebase Strategy Functions
 const firebaseStrategy = () => ({
@@ -13,6 +20,7 @@ const firebaseStrategy = () => ({
   saveURL: saveURLToFirebase,
   getFileURL: getFirebaseURL,
   deleteFile: deleteFirebaseFile,
+  prepareImagePayload: prepareImageURL,
   handleImageUpload: uploadImageToFirebase,
 });
 
@@ -23,6 +31,7 @@ const localStrategy = () => ({
   getFileURL: getLocalFileURL,
   deleteFile: deleteLocalFile,
   handleImageUpload: uploadLocalImage,
+  prepareImagePayload: prepareImagesLocal,
 });
 
 // Strategy Selector
