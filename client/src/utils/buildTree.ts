@@ -30,7 +30,9 @@ export default function buildTree({
       messageMap[message.messageId] = { ...message, children: [] };
 
       if (message.files && fileMap) {
-        messageMap[message.messageId].files = message.files.map(({ file_id }) => fileMap[file_id]);
+        messageMap[message.messageId].files = message.files.map(
+          (file) => fileMap[file.file_id] ?? file,
+        );
       }
 
       const parentMessage = messageMap[message.parentMessageId ?? ''];
