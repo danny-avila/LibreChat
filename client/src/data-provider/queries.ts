@@ -1,6 +1,18 @@
-import { UseQueryOptions, useQuery, QueryObserverResult } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
-import type { TPreset } from 'librechat-data-provider';
+import { UseQueryOptions, useQuery, QueryObserverResult } from '@tanstack/react-query';
+import type { TPreset, TFile } from 'librechat-data-provider';
+
+export const useGetFiles = <TData = TFile[] | boolean>(
+  config?: UseQueryOptions<TFile[], unknown, TData>,
+): QueryObserverResult<TData, unknown> => {
+  return useQuery<TFile[], unknown, TData>([QueryKeys.files], () => dataService.getFiles(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
+};
+
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
 ): QueryObserverResult<TPreset[], unknown> => {

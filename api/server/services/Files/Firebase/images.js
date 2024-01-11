@@ -1,45 +1,105 @@
-const fetch = require('node-fetch');
-const { ref, uploadBytes, getDownloadURL } = require('firebase/storage');
-const { getFirebaseStorage } = require('./initialize');
+const fs = require('fs');
+const path = require('path');
+const sharp = require('sharp');
+const { resizeImage } = require('../images/resize');
+const { saveBufferToFirebase } = require('./crud');
+const { updateFile } = require('~/models/File');
+const { logger } = require('~/config');
 
-async function saveImageToFirebaseStorage(userId, imageUrl, imageName) {
-  const storage = getFirebaseStorage();
-  if (!storage) {
-    console.error('Firebase is not initialized. Cannot save image to Firebase Storage.');
-    return null;
+/**
+ * Converts an image file to the WebP format. The function first resizes the image based on the specified
+ * resolution.
+ *
+ *
+ * @param {Object} req - The request object from Express. It should have a `user` property with an `id`
+ *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
+ * @param {Express.Multer.File} file - The file object, which is part of the request. The file object should
+ *                                     have a `path` property that points to the location of the uploaded file.
+ * @param {string} [resolution='high'] - Optional. The desired resolution for the image resizing. Default is 'high'.
+ *
+ * @returns {Promise<{ filepath: string, bytes: number, width: number, height: number}>}
+ *          A promise that resolves to an object containing:
+ *            - filepath: The path where the converted WebP image is saved.
+ *            - bytes: The size of the converted image in bytes.
+ *            - width: The width of the converted image.
+ *            - height: The height of the converted image.
+ */
+async function uploadImageToFirebase(req, file, resolution = 'high') {
+  const inputFilePath = file.path;
+  const { buffer: resizedBuffer, width, height } = await resizeImage(inputFilePath, resolution);
+  const extension = path.extname(inputFilePath);
+  const userId = req.user.id;
+
+  let webPBuffer;
+  let fileName = path.basename(inputFilePath);
+  if (extension.toLowerCase() === '.webp') {
+    webPBuffer = resizedBuffer;
+  } else {
+    webPBuffer = await sharp(resizedBuffer).toFormat('webp').toBuffer();
+    // Replace or append the correct extension
+    const extRegExp = new RegExp(path.extname(fileName) + '$');
+    fileName = fileName.replace(extRegExp, '.webp');
+    if (!path.extname(fileName)) {
+      fileName += '.webp';
+    }
   }
 
-  const storageRef = ref(storage, `images/${userId.toString()}/${imageName}`);
+  const downloadURL = await saveBufferToFirebase({ userId, buffer: webPBuffer, fileName });
 
+  await fs.promises.unlink(inputFilePath);
+
+  const bytes = Buffer.byteLength(webPBuffer);
+  return { filepath: downloadURL, bytes, width, height };
+}
+
+/**
+ * Local: Updates the file and returns the URL in expected order/format
+ * for image payload handling: tuple order of [filepath, URL].
+ * @param {Object} req - The request object.
+ * @param {MongoFile} file - The file object.
+ * @returns {Promise<[MongoFile, string]>} - A promise that resolves to an array of results from updateFile and encodeImage.
+ */
+async function prepareImageURL(req, file) {
+  const { filepath } = file;
+  const promises = [];
+  promises.push(updateFile({ file_id: file.file_id }));
+  promises.push(filepath);
+  return await Promise.all(promises);
+}
+
+/**
+ * Uploads a user's avatar to Firebase Storage and returns the URL.
+ * If the 'manual' flag is set to 'true', it also updates the user's avatar URL in the database.
+ *
+ * @param {object} params - The parameters object.
+ * @param {Buffer} params.buffer - The Buffer containing the avatar image in WebP format.
+ * @param {object} params.User - The User document (mongoose); TODO: remove direct use of Model, `User`
+ * @param {string} params.manual - A string flag indicating whether the update is manual ('true' or 'false').
+ * @returns {Promise<string>} - A promise that resolves with the URL of the uploaded avatar.
+ * @throws {Error} - Throws an error if Firebase is not initialized or if there is an error in uploading.
+ */
+async function processFirebaseAvatar({ buffer, User, manual }) {
   try {
-    // Upload image to Firebase Storage using the image URL
-    await uploadBytes(storageRef, await fetch(imageUrl).then((response) => response.buffer()));
-    return imageName;
+    const downloadURL = await saveBufferToFirebase({
+      userId: User._id.toString(),
+      buffer,
+      fileName: 'avatar.png',
+    });
+
+    const isManual = manual === 'true';
+
+    const url = `${downloadURL}?manual=${isManual}`;
+
+    if (isManual) {
+      User.avatar = url;
+      await User.save();
+    }
+
+    return url;
   } catch (error) {
-    console.error('Error uploading image to Firebase Storage:', error.message);
-    return null;
+    logger.error('Error uploading profile picture:', error);
+    throw error;
   }
 }
 
-async function getFirebaseStorageImageUrl(imageName) {
-  const storage = getFirebaseStorage();
-  if (!storage) {
-    console.error('Firebase is not initialized. Cannot get image URL from Firebase Storage.');
-    return null;
-  }
-
-  const storageRef = ref(storage, `images/${imageName}`);
-
-  try {
-    // Get the download URL for the image from Firebase Storage
-    return `![generated image](${await getDownloadURL(storageRef)})`;
-  } catch (error) {
-    console.error('Error fetching image URL from Firebase Storage:', error.message);
-    return null;
-  }
-}
-
-module.exports = {
-  saveImageToFirebaseStorage,
-  getFirebaseStorageImageUrl,
-};
+module.exports = { uploadImageToFirebase, prepareImageURL, processFirebaseAvatar };

@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 
-const uploadAvatar = require('~/server/services/Files/images/avatar/uploadAvatar');
+const uploadAvatar = require('~/server/services/Files/images/avatar');
 const { requireJwtAuth } = require('~/server/middleware/');
 const User = require('~/models/User');
 
@@ -23,7 +23,12 @@ router.post('/', requireJwtAuth, upload.single('input'), async (req, res) => {
     if (!user) {
       throw new Error('User not found');
     }
-    const url = await uploadAvatar(userId, input, manual);
+    const url = await uploadAvatar({
+      input,
+      userId,
+      manual,
+      fileStrategy: req.app.locals.fileStrategy,
+    });
 
     res.json({ url });
   } catch (error) {

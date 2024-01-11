@@ -1,20 +1,13 @@
 // From https://platform.openai.com/docs/guides/images/usage?context=node
 // To use this tool, you must pass in a configured OpenAIApi object.
-const fs = require('fs');
-const path = require('path');
 const { z } = require('zod');
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const {
-  saveImageToFirebaseStorage,
-  getFirebaseStorageImageUrl,
-  getFirebaseStorage,
-} = require('~/server/services/Files/Firebase');
 const { getImageBasename } = require('~/server/services/Files/images');
+const { processFileURL } = require('~/server/services/Files/process');
 const extractBaseURL = require('~/utils/extractBaseURL');
-const saveImageFromUrl = require('../saveImageFromUrl');
 const { logger } = require('~/config');
 
 const { DALLE3_SYSTEM_PROMPT, DALLE_REVERSE_PROXY, PROXY } = process.env;
@@ -23,6 +16,7 @@ class DALLE3 extends Tool {
     super();
 
     this.userId = fields.userId;
+    this.fileStrategy = fields.fileStrategy;
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
     const config = { apiKey };
     if (DALLE_REVERSE_PROXY) {
@@ -91,12 +85,8 @@ class DALLE3 extends Tool {
       .trim();
   }
 
-  getMarkdownImageUrl(imageName) {
-    const imageUrl = path
-      .join(this.relativeImageUrl, imageName)
-      .replace(/\\/g, '/')
-      .replace('public/', '');
-    return `![generated image](/${imageUrl})`;
+  wrapInMarkdown(imageUrl) {
+    return `![generated image](${imageUrl})`;
   }
 
   async _call(data) {
@@ -143,43 +133,19 @@ Error Message: ${error.message}`;
       });
     }
 
-    this.outputPath = path.resolve(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      '..',
-      '..',
-      'client',
-      'public',
-      'images',
-      this.userId,
-    );
-    const appRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client');
-    this.relativeImageUrl = path.relative(appRoot, this.outputPath);
+    try {
+      const result = await processFileURL({
+        fileStrategy: this.fileStrategy,
+        userId: this.userId,
+        URL: theImageUrl,
+        fileName: imageName,
+        basePath: 'images',
+      });
 
-    // Check if directory exists, if not create it
-    if (!fs.existsSync(this.outputPath)) {
-      fs.mkdirSync(this.outputPath, { recursive: true });
-    }
-    const storage = getFirebaseStorage();
-    if (storage) {
-      try {
-        await saveImageToFirebaseStorage(this.userId, theImageUrl, imageName);
-        this.result = await getFirebaseStorageImageUrl(`${this.userId}/${imageName}`);
-        logger.debug('[DALL-E-3] result: ' + this.result);
-      } catch (error) {
-        logger.error('Error while saving the image to Firebase Storage:', error);
-        this.result = `Failed to save the image to Firebase Storage. ${error.message}`;
-      }
-    } else {
-      try {
-        await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
-        this.result = this.getMarkdownImageUrl(imageName);
-      } catch (error) {
-        logger.error('Error while saving the image locally:', error);
-        this.result = `Failed to save the image locally. ${error.message}`;
-      }
+      this.result = this.wrapInMarkdown(result);
+    } catch (error) {
+      logger.error('Error while saving the image:', error);
+      this.result = `Failed to save the image locally. ${error.message}`;
     }
 
     return this.result;

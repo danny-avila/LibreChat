@@ -8,7 +8,7 @@ const sizeLimit = 20 * 1024 * 1024; // 20 MB
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const outputPath = path.join(req.app.locals.config.imageOutput, 'temp');
+    const outputPath = path.join(req.app.locals.paths.imageOutput, 'temp');
     if (!fs.existsSync(outputPath)) {
       fs.mkdirSync(outputPath, { recursive: true });
     }
