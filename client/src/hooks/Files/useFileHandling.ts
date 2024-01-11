@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useToastContext } from '~/Providers/ToastContext';
+import { useChatContext } from '~/Providers/ChatContext';
 import { useUploadImageMutation } from '~/data-provider';
 import useUpdateFiles from './useUpdateFiles';
 
@@ -20,9 +21,9 @@ const useFileHandling = () => {
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
+  const { files, setFiles, setFilesLoading } = useChatContext();
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
-  const { files, setFiles, addFile, replaceFile, updateFileById, deleteFileById, setFilesLoading } =
-    useUpdateFiles();
+  const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(setFiles);
 
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
@@ -146,6 +147,23 @@ const useFileHandling = () => {
     return true;
   };
 
+  const loadImage = (extendedFile: ExtendedFile, preview: string) => {
+    const img = new Image();
+    img.onload = async () => {
+      extendedFile.width = img.width;
+      extendedFile.height = img.height;
+      extendedFile = {
+        ...extendedFile,
+        progress: 0.6,
+      };
+      replaceFile(extendedFile);
+
+      await uploadFile(extendedFile);
+      URL.revokeObjectURL(preview);
+    };
+    img.src = preview;
+  };
+
   const handleFiles = async (_files: FileList | File[]) => {
     const fileList = Array.from(_files);
     /* Validate files */
@@ -163,11 +181,11 @@ const useFileHandling = () => {
     }
 
     /* Process files */
-    fileList.forEach((originalFile) => {
+    for (const originalFile of fileList) {
       const file_id = v4();
       try {
         const preview = URL.createObjectURL(originalFile);
-        let extendedFile: ExtendedFile = {
+        const extendedFile: ExtendedFile = {
           file_id,
           file: originalFile,
           preview,
@@ -176,28 +194,15 @@ const useFileHandling = () => {
         };
 
         addFile(extendedFile);
-
-        // async processing
-        const img = new Image();
-        img.onload = async () => {
-          extendedFile.width = img.width;
-          extendedFile.height = img.height;
-          extendedFile = {
-            ...extendedFile,
-            progress: 0.6,
-          };
-          replaceFile(extendedFile);
-
-          await uploadFile(extendedFile);
-          URL.revokeObjectURL(preview);
-        };
-        img.src = preview;
+        if (originalFile.type?.split('/')[0] === 'image') {
+          loadImage(extendedFile, preview);
+        }
       } catch (error) {
         deleteFileById(file_id);
         console.log('file handling error', error);
         setError('An error occurred while processing the file.');
       }
-    });
+    }
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {

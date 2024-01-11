@@ -1,9 +1,8 @@
+import type { SetterOrUpdater } from 'recoil';
 import type { ExtendedFile } from '~/common';
-import { useChatContext } from '~/Providers/ChatContext';
 import useSetFilesToDelete from './useSetFilesToDelete';
 
-export default function useUpdateFiles() {
-  const { files, setFiles, setFilesLoading } = useChatContext();
+export default function useUpdateFiles(setFiles: SetterOrUpdater<Map<string, ExtendedFile>>) {
   const setFilesToDelete = useSetFilesToDelete();
 
   const addFile = (newFile: ExtendedFile) => {
@@ -62,12 +61,9 @@ export default function useUpdateFiles() {
   };
 
   return {
-    files,
-    setFiles,
     addFile,
     replaceFile,
     updateFileById,
     deleteFileById,
-    setFilesLoading,
   };
 }
