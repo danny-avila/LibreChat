@@ -1,10 +1,11 @@
 const { FileSources } = require('librechat-data-provider');
 const {
   getFirebaseURL,
+  prepareImageURL,
   saveURLToFirebase,
   deleteFirebaseFile,
-  prepareImageURL,
   uploadImageToFirebase,
+  processFirebaseAvatar,
 } = require('./Firebase');
 const {
   getLocalFileURL,
@@ -12,6 +13,7 @@ const {
   deleteLocalFile,
   uploadLocalImage,
   prepareImagesLocal,
+  processLocalAvatar,
 } = require('./Local');
 
 // Firebase Strategy Functions
@@ -21,6 +23,7 @@ const firebaseStrategy = () => ({
   getFileURL: getFirebaseURL,
   deleteFile: deleteFirebaseFile,
   prepareImagePayload: prepareImageURL,
+  processAvatar: processFirebaseAvatar,
   handleImageUpload: uploadImageToFirebase,
 });
 
@@ -30,6 +33,7 @@ const localStrategy = () => ({
   saveURL: saveFileFromURL,
   getFileURL: getLocalFileURL,
   deleteFile: deleteLocalFile,
+  processAvatar: processLocalAvatar,
   handleImageUpload: uploadLocalImage,
   prepareImagePayload: prepareImagesLocal,
 });
