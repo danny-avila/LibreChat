@@ -624,6 +624,11 @@ class BaseClient {
    * An additional 3 tokens need to be added for assistant label priming after all messages have been counted.
    * In our implementation, this is accounted for in the getMessagesWithinTokenLimit method.
    *
+   * The content parts example was adapted from the following example:
+   * https://github.com/openai/openai-cookbook/pull/881/files
+   *
+   * Note: image token calculation is to be done elsewhere where we have access to the image metadata
+   *
    * @param {Object} message
    */
   getTokenCountForMessage(message) {
@@ -637,11 +642,18 @@ class BaseClient {
     }
 
     const processValue = (value) => {
-      if (typeof value === 'object' && value !== null) {
-        for (let [nestedKey, nestedValue] of Object.entries(value)) {
-          if (nestedKey === 'image_url' || nestedValue === 'image_url') {
+      if (Array.isArray(value)) {
+        for (let item of value) {
+          if (!item || !item.type || item.type === 'image_url') {
             continue;
           }
+
+          const nestedValue = item[item.type];
+
+          if (!nestedValue) {
+            continue;
+          }
+
           processValue(nestedValue);
         }
       } else {
