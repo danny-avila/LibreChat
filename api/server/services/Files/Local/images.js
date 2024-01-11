@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { resizeImage } = require('../images/resize');
-const { updateFile } = require('~/models');
+const { updateFile } = require('~/models/File');
 
 /**
  * Converts an image file to the WebP format. The function first resizes the image based on the specified

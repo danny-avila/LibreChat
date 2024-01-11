@@ -3,7 +3,7 @@ const path = require('path');
 const sharp = require('sharp');
 const { resizeImage } = require('../images/resize');
 const { saveBufferToFirebase } = require('./crud');
-const { updateFile } = require('~/models');
+const { updateFile } = require('~/models/File');
 const { logger } = require('~/config');
 
 /**
