@@ -1,7 +1,7 @@
 const FacebookStrategy = require('passport-facebook').Strategy;
+const { createNewUser, handleExistingUser } = require('./process');
 const { logger } = require('~/config');
 const User = require('~/models/User');
-const { useFirebase, uploadAvatar } = require('~/server/services/Files/images');
 
 const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -13,50 +13,26 @@ const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
     const avatarUrl = profile.photos[0]?.value;
 
     if (oldUser) {
-      await handleExistingUser(oldUser, avatarUrl, useFirebase);
+      await handleExistingUser(oldUser, avatarUrl);
       return cb(null, oldUser);
     }
 
     if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await createNewUser(profile, facebookId, email, avatarUrl, useFirebase);
+      const newUser = await createNewUser({
+        email,
+        avatarUrl,
+        provider: 'facebook',
+        providerKey: 'facebookId',
+        providerId: facebookId,
+        username: profile.displayName,
+        name: profile.name?.givenName + ' ' + profile.name?.familyName,
+      });
       return cb(null, newUser);
     }
   } catch (err) {
     logger.error('[facebookLogin]', err);
     return cb(err);
   }
-};
-
-const handleExistingUser = async (oldUser, avatarUrl, useFirebase) => {
-  if (!useFirebase && !oldUser.avatar.includes('?manual=true')) {
-    oldUser.avatar = avatarUrl;
-    await oldUser.save();
-  } else if (useFirebase && !oldUser.avatar.includes('?manual=true')) {
-    const userId = oldUser._id;
-    const newavatarUrl = await uploadAvatar(userId, avatarUrl);
-    oldUser.avatar = newavatarUrl;
-    await oldUser.save();
-  }
-};
-
-const createNewUser = async (profile, facebookId, email, avatarUrl, useFirebase) => {
-  const newUser = await new User({
-    provider: 'facebook',
-    facebookId,
-    username: profile.displayName,
-    email,
-    name: profile.name?.givenName + ' ' + profile.name?.familyName,
-    avatar: avatarUrl,
-  }).save();
-
-  if (useFirebase) {
-    const userId = newUser._id;
-    const newavatarUrl = await uploadAvatar(userId, avatarUrl);
-    newUser.avatar = newavatarUrl;
-    await newUser.save();
-  }
-
-  return newUser;
 };
 
 module.exports = () =>

@@ -1,3 +1,4 @@
+import { FileSources } from 'librechat-data-provider';
 import type {
   TConversation,
   TMessage,
@@ -230,6 +231,7 @@ export interface ExtendedFile {
   size: number;
   preview: string;
   progress: number;
+  source?: FileSources;
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

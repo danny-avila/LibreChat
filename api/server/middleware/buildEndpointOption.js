@@ -1,10 +1,10 @@
-const { processFiles } = require('~/server/services/Files');
+const { parseConvo, EModelEndpoint } = require('librechat-data-provider');
+const { processFiles } = require('~/server/services/Files/process');
+const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
+const anthropic = require('~/server/services/Endpoints/anthropic');
 const openAI = require('~/server/services/Endpoints/openAI');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
-const anthropic = require('~/server/services/Endpoints/anthropic');
-const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
-const { parseConvo, EModelEndpoint } = require('librechat-data-provider');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,

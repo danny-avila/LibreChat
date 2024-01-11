@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://discord.gg/NGaa9RPCft"> 
+  <a href="https://discord.librechat.ai"> 
     <img
       src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&logoColor=white&labelColor=000000&color=blueviolet">
   </a>
@@ -23,6 +23,12 @@
   <a aria-label="Sponsors" href="https://github.com/sponsors/danny-avila">
     <img
       src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&logo=github-sponsors&logoColor=white&labelColor=000000&logoWidth=20">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://railway.app/template/b5k2mn?referralCode=HI9hWz">
+    <img src="https://railway.app/button.svg" alt="Deploy on Railway">
   </a>
 </p>
 

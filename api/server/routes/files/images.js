@@ -2,7 +2,7 @@ const { z } = require('zod');
 const fs = require('fs').promises;
 const express = require('express');
 const upload = require('./multer');
-const { localStrategy } = require('~/server/services/Files');
+const { processImageUpload } = require('~/server/services/Files/process');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -34,7 +34,8 @@ router.post('/', upload.single('file'), async (req, res) => {
     uuidSchema.parse(metadata.file_id);
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
-    await localStrategy({ req, res, file, metadata });
+
+    await processImageUpload({ req, res, file, metadata });
   } catch (error) {
     logger.error('[/files/images] Error processing file:', error);
     try {

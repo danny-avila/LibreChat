@@ -52,6 +52,26 @@ export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
 export const extendedModelEndpointSchema = z.union([eModelEndpointSchema, z.string()]);
 
+export enum ImageDetail {
+  low = 'low',
+  auto = 'auto',
+  high = 'high',
+}
+
+export const imageDetailNumeric = {
+  [ImageDetail.low]: 0,
+  [ImageDetail.auto]: 1,
+  [ImageDetail.high]: 2,
+};
+
+export const imageDetailValue = {
+  0: ImageDetail.low,
+  1: ImageDetail.auto,
+  2: ImageDetail.high,
+};
+
+export const eImageDetailSchema = z.nativeEnum(ImageDetail);
+
 export const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
   label: z.string(),
@@ -140,8 +160,8 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   plugin?: TResPlugin | null;
   plugins?: TResPlugin[];
   files?: {
-    type: string;
     file_id: string;
+    type?: string;
     filename?: string;
     preview?: string;
     filepath?: string;
@@ -184,6 +204,9 @@ export const tConversationSchema = z.object({
   toneStyle: z.string().nullable().optional(),
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
+  /* vision */
+  resendImages: z.boolean().optional(),
+  imageDetail: eImageDetailSchema.optional(),
   /* assistant */
   assistant_id: z.string().optional(),
   thread_id: z.string().optional(),
@@ -234,6 +257,8 @@ export const openAISchema = tConversationSchema
     top_p: true,
     presence_penalty: true,
     frequency_penalty: true,
+    resendImages: true,
+    imageDetail: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -244,6 +269,8 @@ export const openAISchema = tConversationSchema
     top_p: obj.top_p ?? 1,
     presence_penalty: obj.presence_penalty ?? 0,
     frequency_penalty: obj.frequency_penalty ?? 0,
+    resendImages: obj.resendImages ?? false,
+    imageDetail: obj.imageDetail ?? ImageDetail.auto,
   }))
   .catch(() => ({
     model: 'gpt-3.5-turbo',
@@ -253,6 +280,8 @@ export const openAISchema = tConversationSchema
     top_p: 1,
     presence_penalty: 0,
     frequency_penalty: 0,
+    resendImages: false,
+    imageDetail: ImageDetail.auto,
   }));
 
 export const googleSchema = tConversationSchema
@@ -455,6 +484,8 @@ export const compactOpenAISchema = tConversationSchema
     top_p: true,
     presence_penalty: true,
     frequency_penalty: true,
+    resendImages: true,
+    imageDetail: true,
   })
   .transform((obj: Partial<TConversation>) => {
     const newObj: Partial<TConversation> = { ...obj };
@@ -472,6 +503,12 @@ export const compactOpenAISchema = tConversationSchema
     }
     if (newObj.frequency_penalty === 0) {
       delete newObj.frequency_penalty;
+    }
+    if (newObj.resendImages !== true) {
+      delete newObj.resendImages;
+    }
+    if (newObj.imageDetail === ImageDetail.auto) {
+      delete newObj.imageDetail;
     }
 
     return removeNullishValues(newObj);
