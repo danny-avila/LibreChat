@@ -26,6 +26,12 @@
   </a>
 </p>
 
+<p align="center">
+  <a href="https://railway.app/template/b5k2mn?referralCode=HI9hWz">
+    <img src="https://railway.app/button.svg" alt="Deploy on Railway">
+  </a>
+</p>
+
 # 📃 Features
  - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
  - 💬 Multimodal Chat:
@@ -55,10 +61,6 @@ With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use f
 
 [![Watch the video](https://img.youtube.com/vi/pNIOs1ovsXw/maxresdefault.jpg)](https://youtu.be/pNIOs1ovsXw)
 Click on the thumbnail to open the video☝️
-
----
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/b5k2mn?referralCode=HI9hWz)
 
 ---
 
