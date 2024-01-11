@@ -10,10 +10,11 @@ if (REDIS_URI && isEnabled(USE_REDIS)) {
   keyvRedis = new KeyvRedis(REDIS_URI, { useRedisSets: false });
   keyvRedis.on('error', (err) => logger.error('KeyvRedis connection error:', err));
   keyvRedis.setMaxListeners(20);
-} else {
   logger.info(
-    '`REDIS_URI` not provided, or `USE_REDIS` not set. Redis module will not be initialized.',
+    '[Optional] Redis initialized. Note: Redis support is experimental. If you have issues, disable it. Cache needs to be flushed for values to refresh.',
   );
+} else {
+  logger.info('[Optional] Redis not initialized. Note: Redis support is experimental.');
 }
 
 module.exports = keyvRedis;
