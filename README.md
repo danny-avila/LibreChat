@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <a href="https://railway.app/template/b5k2mn?referralCode=HI9hWz">
+  <a href="https://railway.app/template/b5k2mn">
     <img src="https://railway.app/button.svg" alt="Deploy on Railway">
   </a>
 </p>
