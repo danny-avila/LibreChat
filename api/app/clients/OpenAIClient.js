@@ -1,6 +1,6 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { getResponseSender } = require('librechat-data-provider');
+const { getResponseSender, ImageDetailCost, ImageDetail } = require('librechat-data-provider');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { encodeAndFormat, validateVisionModel } = require('~/server/services/Files/images');
 const { getModelMaxTokens, genAzureChatCompletion, extractBaseURL } = require('~/utils');
@@ -202,7 +202,7 @@ class OpenAIClient extends BaseClient {
    * - Sets `this.modelOptions.model` to `gpt-4-vision-preview` if the request is a vision request.
    * - Sets `this.isVisionModel` to `true` if vision request.
    * - Deletes `this.modelOptions.stop` if vision request.
-   * @param {Array<Promise<MongoFile> | MongoFile>} attachments
+   * @param {Array<Promise<MongoFile[]> | MongoFile[]> | Record<string, MongoFile[]>} attachments
    */
   checkVisionRequest(attachments) {
     this.isVisionModel = validateVisionModel(this.modelOptions.model);
@@ -301,7 +301,11 @@ class OpenAIClient extends BaseClient {
     tokenizerCallsCount++;
   }
 
-  // Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
+  /**
+   * Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
+   * @param {string} text - The text to get the token count for.
+   * @returns {number} The token count of the given text.
+   */
   getTokenCount(text) {
     this.resetTokenizersIfNecessary();
     try {
@@ -312,6 +316,27 @@ class OpenAIClient extends BaseClient {
       const tokenizer = this.selectTokenizer();
       return tokenizer.encode(text, 'all').length;
     }
+  }
+
+  /**
+   * Calculate the token cost for an image based on its dimensions and detail level.
+   *
+   * @param {Object} image - The image object.
+   * @param {number} image.width - The width of the image.
+   * @param {number} image.height - The height of the image.
+   * @param {'low'|'high'|string|undefined} [image.detail] - The detail level ('low', 'high', or other).
+   * @returns {number} The calculated token cost.
+   */
+  calculateImageTokenCost({ width, height, detail }) {
+    if (detail === 'low') {
+      return ImageDetailCost.LOW;
+    }
+
+    // Calculate the number of 512px squares
+    const numSquares = Math.ceil(width / 512) * Math.ceil(height / 512);
+
+    // Default to high detail cost calculation
+    return numSquares * ImageDetailCost.HIGH + ImageDetailCost.ADDITIONAL;
   }
 
   getSaveOptions() {
@@ -342,34 +367,41 @@ class OpenAIClient extends BaseClient {
       return _messages;
     }
 
-    const requestFiles = [];
-
     /**
      *
      * @param {TMessage} message
      */
     const processMessage = async (message) => {
+      if (!this.message_file_map) {
+        /** @type {Record<string, MongoFile[]> */
+        this.message_file_map = {};
+      }
+
       const fileIds = message.files.map((file) => file.file_id);
       const files = await getFiles({
         file_id: { $in: fileIds },
       });
 
-      requestFiles.push(await this.addImageURLs(message, files));
+      await this.addImageURLs(message, files);
+
+      this.message_file_map[message.messageId] = files;
       return message;
     };
 
     const promises = [];
+
     for (const message of _messages) {
       if (!message.files) {
         promises.push(message);
-      } else {
-        promises.push(processMessage(message));
+        continue;
       }
+
+      promises.push(processMessage(message));
     }
 
     const messages = await Promise.all(promises);
 
-    this.checkVisionRequest(requestFiles);
+    this.checkVisionRequest(this.message_file_map);
     return messages;
   }
 
@@ -429,10 +461,20 @@ class OpenAIClient extends BaseClient {
       const attachments = (await this.options.attachments).filter((file) =>
         file.type.includes('image'),
       );
+
+      if (this.message_file_map) {
+        this.message_file_map[orderedMessages[orderedMessages.length - 1].messageId] = attachments;
+      } else {
+        this.message_file_map = {
+          [orderedMessages[orderedMessages.length - 1].messageId]: attachments,
+        };
+      }
+
       const files = await this.addImageURLs(
         orderedMessages[orderedMessages.length - 1],
         attachments,
       );
+
       this.options.attachments = files;
     }
 
@@ -443,8 +485,23 @@ class OpenAIClient extends BaseClient {
         assistantName: this.options?.chatGptLabel,
       });
 
-      if (this.contextStrategy && !orderedMessages[i].tokenCount) {
+      const needsTokenCount = this.contextStrategy && !orderedMessages[i].tokenCount;
+
+      /* If tokens were never counted, or, is a Vision request and the message has files, count again */
+      if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
         orderedMessages[i].tokenCount = this.getTokenCountForMessage(formattedMessage);
+      }
+
+      /* If message has files, calculate image token cost */
+      if (this.message_file_map && this.message_file_map[message.messageId]) {
+        const attachments = this.message_file_map[message.messageId];
+        for (const file of attachments) {
+          orderedMessages[i].tokenCount += this.calculateImageTokenCost({
+            width: file.width,
+            height: file.height,
+            detail: this.options.imageDetail ?? ImageDetail.auto,
+          });
+        }
       }
 
       return formattedMessage;
@@ -986,6 +1043,8 @@ ${convo}
       if (chatCompletion && typeof clientOptions.addMetadata === 'function') {
         clientOptions.addMetadata({ finish_reason });
       }
+
+      logger.debug('[OpenAIClient] chatCompletion response', chatCompletion);
 
       return message.content;
     } catch (err) {

@@ -188,3 +188,27 @@ export enum AuthKeys {
    */
   GOOGLE_API_KEY = 'GOOGLE_API_KEY',
 }
+
+/**
+ * Enum for Image Detail Cost.
+ *
+ * **Low Res Fixed Cost:** `85`
+ *
+ * **High Res Calculation:**
+ *
+ * Number of `512px` Tiles * `170` + `85` (Additional Cost)
+ */
+export enum ImageDetailCost {
+  /**
+   * Low resolution is a fixed value.
+   */
+  LOW = 85,
+  /**
+   * High resolution Cost Per Tile
+   */
+  HIGH = 170,
+  /**
+   * Additional Cost added to High Resolution Total Cost
+   */
+  ADDITIONAL = 85,
+}
