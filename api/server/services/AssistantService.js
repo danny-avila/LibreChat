@@ -8,7 +8,7 @@ const {
   RunStatus,
   ToolCallTypes,
 } = require('librechat-data-provider');
-const { imageRegex, retrieveAndProcessFile } = require('~/server/services/Files');
+const { imageRegex, retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { RunManager, waitForRun } = require('~/server/services/Runs');
 const { processActions } = require('~/server/services/ToolService');
 const { createOnProgress, sendMessage } = require('~/server/utils');

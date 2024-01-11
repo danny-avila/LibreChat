@@ -1,8 +1,9 @@
 const path = require('path');
 const mime = require('mime/lite');
-const { isEnabled } = require('~/server/utils');
-const { createFile, updateFileUsage } = require('~/models');
+const { FileSources } = require('librechat-data-provider');
 const { convertToWebP } = require('~/server/services/Files/images');
+const { createFile, updateFileUsage } = require('~/models/File');
+const { isEnabled } = require('~/server/utils');
 
 const imageRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
 
@@ -90,7 +91,7 @@ const processImageUpload = async ({ req, res, file, metadata }) => {
 };
 
 /**
- * Retrieves and processes a file based on its type.
+ * Retrieves and processes an OpenAI file based on its type.
  *
  * @param {Object} params - The params passed to the function.
  * @param {OpenAIClient} params.openai - The params passed to the function.
@@ -116,6 +117,7 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
       filepath,
       usage: 1,
       file_id,
+      source: FileSources.openai,
     };
 
     if (save) {
@@ -153,6 +155,7 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
       type: 'image/webp',
       usage: 1,
       file_id,
+      source: FileSources.openai,
     };
     createFile(file, true);
     return file;
