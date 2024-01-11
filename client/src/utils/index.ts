@@ -1,4 +1,5 @@
 export * from './json';
+export * from './files';
 export * from './presets';
 export * from './languages';
 export * from './endpoints';

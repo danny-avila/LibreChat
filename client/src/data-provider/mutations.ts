@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type {
-  FileUploadResponse,
+  TFileUpload,
   UploadMutationOptions,
   FileUploadBody,
   DeleteFilesResponse,
@@ -23,7 +23,7 @@ import store from '~/store';
 export const useUploadImageMutation = (
   options?: UploadMutationOptions,
 ): UseMutationResult<
-  FileUploadResponse, // response data
+  TFileUpload, // response data
   unknown, // error
   FileUploadBody, // request
   unknown // context

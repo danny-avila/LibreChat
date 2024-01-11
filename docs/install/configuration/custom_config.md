@@ -69,20 +69,26 @@ docker-compose up # no need to rebuild
 
 **Note:** Fields not specifically mentioned as required are optional.
 
-### 1. Version
+### Version
 - **Key**: `version`
 - **Type**: String
 - **Description**: Specifies the version of the configuration file.
-- **Example**: `version: 1.0.0`
+- **Example**: `version: 1.0.1`
 - **Required**
 
-### 2. Cache Settings
+### Cache Settings
 - **Key**: `cache`
 - **Type**: Boolean
 - **Description**: Toggles caching on or off. Set to `true` to enable caching.
 - **Example**: `cache: true`
 
-### 3. Endpoints
+### File Strategy
+- **Key**: `fileStrategy`
+- **Type**: String = "local" | ["firebase"](../../features/firebase.md)
+- **Description**: Determines where to save user uploaded/generated files. Defaults to `"local"` if omitted.
+- **Example**: `fileStrategy: "firebase"`
+
+### Endpoints
 - **Key**: `endpoints`
 - **Type**: Object
 - **Description**: Defines custom API endpoints for the application.
@@ -290,7 +296,7 @@ Custom endpoints share logic with the OpenAI endpoint, and thus have default par
 ## Example Config
 
 ```yaml
-version: 1.0.0
+version: 1.0.1
 cache: true
 endpoints:
   custom:

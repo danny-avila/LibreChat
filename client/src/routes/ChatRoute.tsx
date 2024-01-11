@@ -6,7 +6,7 @@ import {
   useGetModelsQuery,
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
-import { TPreset } from 'librechat-data-provider';
+import type { TPreset } from 'librechat-data-provider';
 import { useNewConvo, useConfigOverride } from '~/hooks';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
@@ -15,6 +15,7 @@ import store from '~/store';
 
 export default function ChatRoute() {
   const index = 0;
+
   useConfigOverride();
   const { conversationId } = useParams();
   const { conversation } = store.useCreateConversationAtom(index);

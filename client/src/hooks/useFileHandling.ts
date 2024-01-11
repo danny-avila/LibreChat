@@ -1,6 +1,9 @@
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
+import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
@@ -16,6 +19,7 @@ const totalSizeLimit = maxSize * 1024 * 1024; // 25 MB
 const supportedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 const useFileHandling = () => {
+  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
@@ -116,6 +120,9 @@ const useFileHandling = () => {
         filepath: data.filepath,
       });
 
+      const _files = queryClient.getQueryData<TFile[]>([QueryKeys.files]) ?? [];
+      queryClient.setQueryData([QueryKeys.files], [..._files, data]);
+
       setTimeout(() => {
         updateFileById(data.temp_file_id, {
           progress: 1,
@@ -126,6 +133,7 @@ const useFileHandling = () => {
           height: data.height,
           width: data.width,
           filename: data.filename,
+          source: data.source,
         });
       }, 300);
     },
