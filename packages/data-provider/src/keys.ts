@@ -16,6 +16,7 @@ export enum QueryKeys {
   assistants = 'assistants',
   assistant = 'assistant',
   endpointsConfigOverride = 'endpointsConfigOverride',
+  files = 'files',
 }
 
 export enum MutationKeys {

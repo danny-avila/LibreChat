@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { FileSources } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import {
   useSetRecoilState,
@@ -122,10 +123,11 @@ const useNewConvo = (index = 0) => {
 
       if (conversation.conversationId === 'new' && !modelsData) {
         const filesToDelete = Array.from(files.values())
-          .filter((file) => file.filepath)
+          .filter((file) => file.filepath && file.source)
           .map((file) => ({
             file_id: file.file_id,
             filepath: file.filepath as string,
+            source: file.source as FileSources, // Ensure that the source is of type FileSources
           }));
 
         setFiles(new Map());
