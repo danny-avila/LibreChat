@@ -26,6 +26,12 @@
   </a>
 </p>
 
+<p align="center">
+  <a href="https://railway.app/template/b5k2mn?referralCode=HI9hWz">
+    <img src="https://railway.app/button.svg" alt="Deploy on Railway">
+  </a>
+</p>
+
 # 📃 Features
  - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
  - 💬 Multimodal Chat:
