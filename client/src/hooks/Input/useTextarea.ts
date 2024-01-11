@@ -3,8 +3,8 @@ import { useEffect, useRef } from 'react';
 import { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useChatContext } from '~/Providers/ChatContext';
-import useFileHandling from '~/hooks/useFileHandling';
 import useLocalize from '~/hooks/useLocalize';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;

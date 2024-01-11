@@ -6,10 +6,8 @@ import { useState, useEffect, useCallback } from 'react';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useToastContext } from '~/Providers/ToastContext';
-import { useChatContext } from '~/Providers/ChatContext';
 import { useUploadImageMutation } from '~/data-provider';
-import useSetFilesToDelete from './useSetFilesToDelete';
-import { NotificationSeverity } from '~/common';
+import useUpdateFiles from './useUpdateFiles';
 
 const sizeMB = 20;
 const maxSize = 25;
@@ -23,8 +21,8 @@ const useFileHandling = () => {
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
-  const { files, setFiles, setFilesLoading } = useChatContext();
-  const setFilesToDelete = useSetFilesToDelete();
+  const { files, setFiles, addFile, replaceFile, updateFileById, deleteFileById, setFilesLoading } =
+    useUpdateFiles();
 
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
@@ -33,13 +31,13 @@ const useFileHandling = () => {
         .join('');
       showToast({
         message: errorList,
-        severity: NotificationSeverity.ERROR,
+        status: 'error',
         duration: 5000,
       });
     } else if (errors.length === 1) {
       showToast({
         message: errors[0],
-        severity: NotificationSeverity.ERROR,
+        status: 'error',
         duration: 5000,
       });
     }
@@ -56,61 +54,6 @@ const useFileHandling = () => {
 
     return () => debouncedDisplayToast.cancel();
   }, [errors, debouncedDisplayToast]);
-
-  const addFile = (newFile: ExtendedFile) => {
-    setFiles((currentFiles) => {
-      const updatedFiles = new Map(currentFiles);
-      updatedFiles.set(newFile.file_id, newFile);
-      return updatedFiles;
-    });
-  };
-
-  const replaceFile = (newFile: ExtendedFile) => {
-    setFiles((currentFiles) => {
-      const updatedFiles = new Map(currentFiles);
-      updatedFiles.set(newFile.file_id, newFile);
-      return updatedFiles;
-    });
-  };
-
-  const updateFileById = (fileId: string, updates: Partial<ExtendedFile>) => {
-    setFiles((currentFiles) => {
-      if (!currentFiles.has(fileId)) {
-        console.warn(`File with id ${fileId} not found.`);
-        return currentFiles;
-      }
-
-      const updatedFiles = new Map(currentFiles);
-      const currentFile = updatedFiles.get(fileId);
-      if (!currentFile) {
-        console.warn(`File with id ${fileId} not found.`);
-        return currentFiles;
-      }
-      updatedFiles.set(fileId, { ...currentFile, ...updates });
-
-      if (updates['filepath'] && updates['progress'] !== 1) {
-        const files = Object.fromEntries(updatedFiles);
-        setFilesToDelete(files);
-      }
-
-      return updatedFiles;
-    });
-  };
-
-  const deleteFileById = (fileId: string) => {
-    setFiles((currentFiles) => {
-      const updatedFiles = new Map(currentFiles);
-      if (updatedFiles.has(fileId)) {
-        updatedFiles.delete(fileId);
-      } else {
-        console.warn(`File with id ${fileId} not found.`);
-      }
-
-      const files = Object.fromEntries(updatedFiles);
-      setFilesToDelete(files);
-      return updatedFiles;
-    });
-  };
 
   const uploadImage = useUploadImageMutation({
     onSuccess: (data) => {
