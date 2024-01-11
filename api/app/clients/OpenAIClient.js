@@ -908,7 +908,6 @@ ${convo}
       if (this.isChatCompletion) {
         modelOptions.messages = payload;
       } else {
-        // TODO: unreachable code. Need to implement completions call for non-chat models
         modelOptions.prompt = payload;
       }
 
