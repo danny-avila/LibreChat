@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { resizeImage } = require('../images/resize');
+const { resizeImageBuffer } = require('../images/resize');
 const { saveBufferToFirebase } = require('./crud');
 const { updateFile } = require('~/models/File');
 const { logger } = require('~/config');
@@ -26,7 +26,8 @@ const { logger } = require('~/config');
  */
 async function uploadImageToFirebase(req, file, resolution = 'high') {
   const inputFilePath = file.path;
-  const { buffer: resizedBuffer, width, height } = await resizeImage(inputFilePath, resolution);
+  const inputBuffer = await fs.promises.readFile(inputFilePath);
+  const { buffer: resizedBuffer, width, height } = await resizeImageBuffer(inputBuffer, resolution);
   const extension = path.extname(inputFilePath);
   const userId = req.user.id;
 

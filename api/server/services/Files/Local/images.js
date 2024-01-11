@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { resizeImage } = require('../images/resize');
+const { resizeImageBuffer } = require('../images/resize');
 const { updateFile } = require('~/models/File');
 
 /**
@@ -28,7 +28,8 @@ const { updateFile } = require('~/models/File');
  */
 async function uploadLocalImage(req, file, resolution = 'high') {
   const inputFilePath = file.path;
-  const { buffer: resizedBuffer, width, height } = await resizeImage(inputFilePath, resolution);
+  const inputBuffer = await fs.promises.readFile(inputFilePath);
+  const { buffer: resizedBuffer, width, height } = await resizeImageBuffer(inputBuffer, resolution);
   const extension = path.extname(inputFilePath);
 
   const { imageOutput } = req.app.locals.paths;

@@ -5,7 +5,7 @@ const User = require('~/models/User');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logger } = require('~/config');
 
-async function convertToWebP(inputBuffer) {
+async function resizeAndConvert(inputBuffer) {
   return sharp(inputBuffer).resize({ width: 150 }).toFormat('webp').toBuffer();
 }
 
@@ -66,7 +66,7 @@ async function uploadAvatar({ userId, fileStrategy, input, manual }) {
       })
       .toBuffer();
 
-    const webPBuffer = await convertToWebP(squaredBuffer);
+    const webPBuffer = await resizeAndConvert(squaredBuffer);
     const { processAvatar } = getStrategyFunctions(fileStrategy);
     return await processAvatar({ buffer: webPBuffer, User: oldUser, manual });
   } catch (error) {
