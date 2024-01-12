@@ -57,12 +57,20 @@
  */
 
 /**
- * @exports ImageMetadata
- * @typedef {Object} ImageMetadata
+ * @exports FileMetadata
+ * @typedef {Object} FileMetadata
  * @property {string} file_id - The identifier of the file.
  * @property {string} [temp_file_id] - The temporary identifier of the file.
+ * @property {string} endpoint - The conversation endpoint origin for the file upload.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ImageOnlyMetadata
  * @property {number} width - The width of the image.
  * @property {number} height - The height of the image.
+ *
+ * @typedef {FileMetadata & ImageOnlyMetadata} ImageMetadata
  * @memberof typedefs
  */
 
