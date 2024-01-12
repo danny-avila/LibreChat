@@ -104,6 +104,7 @@ Each endpoint in the `custom` array should have the following structure:
 # Example Endpoint Object Structure
 endpoints:
   custom:
+      # Example using Mistral AI API
     - name: "Mistral"
       apiKey: "${YOUR_ENV_VAR_KEY}"
       baseURL: "https://api.mistral.ai/v1"
@@ -117,7 +118,8 @@ endpoints:
       modelDisplayLabel: "Mistral"
       addParams:
         safe_mode: true
-      dropParams: ["stop", "temperature", "top_p"]
+      # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
+      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
 ```
 
 ### **name**:
@@ -249,7 +251,7 @@ endpoints:
 
   - Type: Array/List of Strings
   - **Description**: Excludes specified [default parameters](#default-parameters). Useful for APIs that do not accept or recognize certain parameters.
-  - **Example**: `dropParams: ["stop", "temperature", "top_p"]`
+  - **Example**: `dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]`
   - **Note**: For a list of default parameters sent with every request, see the ["Default Parameters"](#default-parameters) Section below.
 ## Additional Notes
 - Ensure that all URLs and keys are correctly specified to avoid connectivity issues.
@@ -314,7 +316,8 @@ endpoints:
       modelDisplayLabel: "Mistral"
       addParams:
         safe_mode: true
-      dropParams: ["stop", "temperature", "top_p"]
+      # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
+      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
 
      # OpenRouter.ai API
     - name: "OpenRouter"
