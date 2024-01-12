@@ -11,7 +11,7 @@ const { logger } = require('~/config');
  * resolution.
  *
  *
- * @param {Object} req - The request object from Express. It should have a `user` property with an `id`
+ * @param {Express.Request} req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
  * @param {Express.Multer.File} file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
