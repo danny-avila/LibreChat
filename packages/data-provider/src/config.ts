@@ -1,3 +1,4 @@
+/* eslint-disable max-len */
 import { z } from 'zod';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { FileSources } from './types/files';
@@ -158,6 +159,112 @@ export const supportsBalanceCheck = {
 };
 
 export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision'];
+
+export const fullMimeTypesList = [
+  'text/x-c',
+  'text/x-c++',
+  'application/csv',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/html',
+  'text/x-java',
+  'application/json',
+  'text/markdown',
+  'application/pdf',
+  'text/x-php',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/x-python',
+  'text/x-script.python',
+  'text/x-ruby',
+  'text/x-tex',
+  'text/plain',
+  'text/css',
+  'image/jpeg',
+  'text/javascript',
+  'image/gif',
+  'image/png',
+  'application/x-tar',
+  'application/typescript',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/xml',
+  'application/zip',
+];
+
+export const codeInterpreterMimeTypesList = [
+  'text/x-c',
+  'text/x-c++',
+  'application/csv',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/html',
+  'text/x-java',
+  'application/json',
+  'text/markdown',
+  'application/pdf',
+  'text/x-php',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/x-python',
+  'text/x-script.python',
+  'text/x-ruby',
+  'text/x-tex',
+  'text/plain',
+  'text/css',
+  'image/jpeg',
+  'text/javascript',
+  'image/gif',
+  'image/png',
+  'application/x-tar',
+  'application/typescript',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/xml',
+  'application/zip',
+];
+
+export const retrievalMimeTypesList = [
+  'text/x-c',
+  'text/x-c++',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/html',
+  'text/x-java',
+  'application/json',
+  'text/markdown',
+  'application/pdf',
+  'text/x-php',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/x-python',
+  'text/x-script.python',
+  'text/x-ruby',
+  'text/x-tex',
+  'text/plain',
+];
+
+export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
+
+export const textMimeTypes =
+  /^(text\/(x-c|x-c\+\+|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|javascript))$/;
+
+export const applicationMimeTypes =
+  /^(application\/(csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
+
+export const imageMimeTypes = /^image\/(jpeg|gif|png|webp)$/;
+
+export const supportedMimeTypes = [textMimeTypes, applicationMimeTypes, imageMimeTypes];
+
+export const codeInterpreterMimeTypes = [textMimeTypes, applicationMimeTypes, imageMimeTypes];
+
+export const retrievalMimeTypes = [
+  /^(text\/(x-c|x-c\+\+|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain))$/,
+  /^(application\/(json|pdf|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)))$/,
+];
+
+export const fileConfig = {
+  sizeMB: 20,
+  maxSize: 25,
+  fileLimit: 10,
+  sizeLimit: 20 * 1024 * 1024, // 20 MB
+  totalSizeLimit: 25 * 1024 * 1024, // 25 MB
+  checkType: function (fileType: string) {
+    return supportedMimeTypes.some((regex) => regex.test(fileType));
+  },
+};
 
 /**
  * Enum for cache keys.
