@@ -26,15 +26,10 @@ export type AvatarUploadResponse = {
   url: string;
 };
 
-export type FileUploadBody = {
-  formData: FormData;
-  file_id: string;
-};
-
 export type UploadMutationOptions = {
-  onSuccess?: (data: TFileUpload, variables: FileUploadBody, context?: unknown) => void;
-  onMutate?: (variables: FileUploadBody) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: FileUploadBody, context?: unknown) => void;
+  onSuccess?: (data: TFileUpload, variables: FormData, context?: unknown) => void;
+  onMutate?: (variables: FormData) => void | Promise<unknown>;
+  onError?: (error: unknown, variables: FormData, context?: unknown) => void;
 };
 
 export type UploadAvatarOptions = {

@@ -206,6 +206,10 @@ export const uploadImage = (data: FormData): Promise<f.TFileUpload> => {
   return request.postMultiPart(endpoints.images(), data);
 };
 
+export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
+  return request.postMultiPart(endpoints.files(), data);
+};
+
 export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
   return request.postMultiPart(endpoints.avatar(), data);
 };

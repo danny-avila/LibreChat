@@ -4,7 +4,6 @@ import type t from 'librechat-data-provider';
 import type {
   TFileUpload,
   UploadMutationOptions,
-  FileUploadBody,
   DeleteFilesResponse,
   DeleteFilesBody,
   DeleteMutationOptions,
@@ -108,16 +107,24 @@ export const useDeleteConversationMutation = (
   );
 };
 
-export const useUploadImageMutation = (
+export const useUploadFileMutation = (
   options?: UploadMutationOptions,
 ): UseMutationResult<
   TFileUpload, // response data
   unknown, // error
-  FileUploadBody, // request
+  FormData, // request
   unknown // context
 > => {
-  return useMutation([MutationKeys.imageUpload], {
-    mutationFn: (body: FileUploadBody) => dataService.uploadImage(body.formData),
+  return useMutation([MutationKeys.fileUpload], {
+    mutationFn: (body: FormData) => {
+      const height = body.get('height');
+      const width = body.get('width');
+      if (height && width) {
+        return dataService.uploadImage(body);
+      }
+
+      return dataService.uploadFile(body);
+    },
     ...(options || {}),
   });
 };

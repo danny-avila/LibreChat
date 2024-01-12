@@ -21,7 +21,7 @@ export enum QueryKeys {
 }
 
 export enum MutationKeys {
-  imageUpload = 'imageUpload',
+  fileUpload = 'fileUpload',
   fileDelete = 'fileDelete',
   updatePreset = 'updatePreset',
   deletePreset = 'deletePreset',
