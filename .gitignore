@@ -69,6 +69,7 @@ src/style - official.css
 .DS_Store
 *.code-workspace
 .idea
+*.iml
 *.pem
 config.local.ts
 **/storageState.json
