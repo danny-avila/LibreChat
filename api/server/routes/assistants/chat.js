@@ -57,6 +57,7 @@ router.post('/', setHeaders, async (req, res) => {
     }
 
     // TODO: needs to be initialized with `initializeClient`
+    /** @type {OpenAIClient} */
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
     openai.req = req;
     openai.res = res;
