@@ -1,6 +1,13 @@
 const path = require('path');
 const mime = require('mime/lite');
-const { FileSources, EModelEndpoint, imageExtRegex } = require('librechat-data-provider');
+const {
+  FileSources,
+  EModelEndpoint,
+  imageExtRegex,
+  fileConfig,
+  imageMimeTypes,
+  isUUID,
+} = require('librechat-data-provider');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { convertToWebP } = require('~/server/services/Files/images');
 const { getStrategyFunctions } = require('./strategies');
@@ -255,8 +262,57 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
   }
 }
 
+/**
+ * Filters a file based on its size and the endpoint origin.
+ *
+ * @param {Object} params - The parameters for the function.
+ * @param {Express.Request} params.req - The request object from Express.
+ * @param {Express.Multer.File} params.file - The file uploaded to the server via multer.
+ * @param {boolean} [params.image] - Whether the file expected is an image.
+ * @returns {void}
+ *
+ * @throws {Error} If a file exception is caught (invalid file size or type, lack of metadata).
+ */
+function filterFile({ req, file, image }) {
+  const { endpoint, file_id, width, height } = req.body;
+
+  if (!file_id) {
+    throw new Error('No file_id provided');
+  }
+
+  /* parse to validate api call, throws error on fail */
+  isUUID.parse(file_id);
+
+  if (!endpoint) {
+    throw new Error('No endpoint provided');
+  }
+
+  const { fileSizeLimit, fileMaxSizeMB } = fileConfig[endpoint];
+
+  if (file.size > fileSizeLimit) {
+    throw new Error(`File size limit of ${fileMaxSizeMB} MB exceeded for ${endpoint} endpoint`);
+  }
+
+  if (!image) {
+    return;
+  }
+
+  if (!imageMimeTypes.test(file.mimetype)) {
+    throw new Error('Unsupported file type');
+  }
+
+  if (!width) {
+    throw new Error('No width provided');
+  }
+
+  if (!height) {
+    throw new Error('No height provided');
+  }
+}
+
 module.exports = {
   processImageUpload,
+  filterFile,
   processFiles,
   processFileURL,
   processFileUpload,

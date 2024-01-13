@@ -2,7 +2,11 @@ const axios = require('axios');
 const fs = require('fs').promises;
 const express = require('express');
 const { isUUID } = require('librechat-data-provider');
-const { processFileUpload, processDeleteRequest } = require('~/server/services/Files/process');
+const {
+  filterFile,
+  processFileUpload,
+  processDeleteRequest,
+} = require('~/server/services/Files/process');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
 const upload = require('./multer');
@@ -82,45 +86,35 @@ router.get('/download/:fileId', async (req, res) => {
 router.post('/', upload.single('file'), async (req, res) => {
   const file = req.file;
   const metadata = req.body;
+  let cleanup = true;
 
   try {
-    if (!file) {
-      throw new Error('No file provided');
-    }
+    filterFile({ req, file });
 
-    if (!metadata.endpoint) {
-      throw new Error('No endpoint provided');
-    }
-
-    if (!metadata.file_id) {
-      throw new Error('No file_id provided');
-    }
-
-    /* parse to validate api call */
-    isUUID.parse(metadata.file_id);
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
     await processFileUpload({ req, res, file, metadata });
   } catch (error) {
-    logger.error('[/files/images] Error processing file:', error);
+    logger.error('[/files] Error processing file:', error);
+    cleanup = false;
+
+    // TODO: delete remote file if it exists
     try {
       await fs.unlink(file.path);
     } catch (error) {
-      logger.error('[/files/images] Error deleting file:', error);
+      logger.error('[/files] Error deleting file:', error);
     }
     res.status(500).json({ message: 'Error processing file' });
   }
 
-  // do this if strategy is not local
-  // finally {
-  //   try {
-  //     // await fs.unlink(file.path);
-  //   } catch (error) {
-  //     logger.error('[/files/images] Error deleting file:', error);
-
-  //   }
-  // }
+  if (cleanup) {
+    try {
+      await fs.unlink(file.path);
+    } catch (error) {
+      logger.error('[/files/images] Error deleting file after file processing:', error);
+    }
+  }
 });
 
 module.exports = router;

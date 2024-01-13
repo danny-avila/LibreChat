@@ -6,7 +6,7 @@ const { fileConfig } = require('librechat-data-provider');
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const outputPath = path.join(req.app.locals.paths.imageOutput, 'temp');
+    const outputPath = path.join(req.app.locals.paths.uploads, 'temp', req.user.id);
     if (!fs.existsSync(outputPath)) {
       fs.mkdirSync(outputPath, { recursive: true });
     }
@@ -14,12 +14,15 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     req.file_id = crypto.randomUUID();
-    const fileExt = path.extname(file.originalname);
-    cb(null, `img-${req.file_id}${fileExt}`);
+    cb(null, `${file.originalname}`);
   },
 });
 
 const fileFilter = (req, file, cb) => {
+  if (!file) {
+    return cb(new Error('No file provided'), false);
+  }
+
   if (!fileConfig.checkType(file.mimetype)) {
     return cb(new Error('Unsupported file type: ' + file.mimetype), false);
   }
@@ -27,6 +30,10 @@ const fileFilter = (req, file, cb) => {
   cb(null, true);
 };
 
-const upload = multer({ storage, fileFilter, limits: { fileSize: fileConfig.sizeLimit } });
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: fileConfig.serverFileSizeLimit },
+});
 
 module.exports = upload;
