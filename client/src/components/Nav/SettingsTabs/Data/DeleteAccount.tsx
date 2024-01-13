@@ -79,7 +79,7 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
           <div className="flex-col items-center justify-center">
             <div className="mb-4">
               {renderInput(
-                'Please type your account email.',
+                localize('com_nav_delete_account_email_placeholder'),
                 'email-confirm-input',
                 userEmail || '',
                 (e) => {
@@ -90,7 +90,7 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
             </div>
             <div className="mb-4">
               {renderInput(
-                'To proceed, type "DELETE" in the input field below.',
+                localize('com_nav_delete_account_confirm_placeholder'),
                 'delete-confirm-input',
                 '',
                 (e) => {

@@ -302,6 +302,8 @@ export default {
   com_nav_delete_account: 'Delete account',
   com_nav_delete_account_confirm: 'Delete account - are you sure?',
   com_nav_delete_account_button: 'Permanently delete my account',
+  com_nav_delete_account_email_placeholder: 'Please type your account email',
+  com_nav_delete_account_confirm_placeholder: 'To proceed, type "DELETE" in the input field below',
   com_dialog_delete_warning: 'WARNING: This will permanently delete your account.',
   com_dialog_delete_data_info: 'All your data will be deleted.',
   com_dialog_delete_help_center: 'For more information, please visit our Help Center.',

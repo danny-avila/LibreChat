@@ -56,6 +56,7 @@ export default {
   com_ui_preview: 'Anteprima',
   com_ui_upload: 'Carica',
   com_ui_connect: 'Connetti',
+  com_ui_locked: 'Bloccato',
   com_auth_error_login:
     'Impossibile accedere con le informazioni fornite. Per favore controlla le tue credenziali e riprova.',
   com_auth_error_login_rl:
@@ -299,6 +300,15 @@ export default {
   com_nav_help_faq: 'Aiuto e FAQ',
   com_nav_settings: 'Impostazioni',
   com_nav_search_placeholder: 'Cerca messaggi',
+  com_nav_delete_account: 'Elimina account',
+  com_nav_delete_account_confirm: 'Sei sicuro di voler eliminare il tuo account?',
+  com_nav_delete_account_button: 'Elimina permanentemente il mio account',
+  com_nav_delete_account_email_placeholder: 'Inserisci la tua email',
+  com_nav_delete_account_confirm_placeholder:
+    'Per procedere, digita "DELETE" nel campo di input sottostante',
+  com_dialog_delete_warning: 'ATTENZIONE: Questo cancellerà permanentemente il tuo account.',
+  com_dialog_delete_data_info: 'Tutti i tuoi dati verranno eliminati.',
+  com_dialog_delete_help_center: 'Per piou informazioni, visita il nostro centro assistenza.',
   com_nav_setting_general: 'Generale',
   com_nav_setting_data: 'Controlli dati',
 };
