@@ -1,5 +1,5 @@
 import { ToolCallTypes } from 'librechat-data-provider';
-import type { ContentPart } from 'librechat-data-provider';
+import type { ContentPart, TMessage } from 'librechat-data-provider';
 import type { TDisplayProps } from '~/common';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
@@ -34,8 +34,7 @@ export default function Part({
 }: {
   part: ContentPart;
   showCursor: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  message: any;
+  message: TMessage;
 }) {
   if (isText(part)) {
     // Access the value property
@@ -44,7 +43,7 @@ export default function Part({
         <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-70">
           <DisplayMessage
             text={part.value}
-            isCreatedByUser={true}
+            isCreatedByUser={message.isCreatedByUser}
             message={message}
             showCursor={showCursor}
           />
