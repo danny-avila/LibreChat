@@ -9,6 +9,7 @@ const {
   Session,
   Balance,
   Transaction,
+  deleteFiles,
 } = require('~/models');
 
 const getUserController = async (req, res) => {
@@ -72,6 +73,7 @@ const deleteUserController = async (req, res) => {
     await deleteConvos(user.id); // delete user convos
     await deleteUserPluginAuth(user.id, null, true); // delete user plugin auth
     await User.deleteOne({ _id: user.id }); // delete user
+    await deleteFiles(null, user.id); // delete user files
 
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
