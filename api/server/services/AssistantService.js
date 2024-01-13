@@ -308,7 +308,7 @@ function createInProgressHandler(openai, thread_id, messages) {
  * @param {string} params.thread_id - The ID of the thread associated with the run.
  * @param {RunStep[]} params.accumulatedSteps - The accumulated steps for the run.
  * @param {ThreadMessage[]} params.accumulatedMessages - The accumulated messages for the run.
- * @return {Promise<Object>} A promise that resolves to an object containing the run and managed steps.
+ * @return {Promise<RunResponse>} A promise that resolves to an object containing the run and managed steps.
  */
 async function runAssistant({
   openai,

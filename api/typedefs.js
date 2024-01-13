@@ -586,13 +586,25 @@
  */
 
 /**
- * @exports ResponseMessage
  * @typedef {Object} ResponseMessage
- * @property {string} messageId - The ID of the message.
  * @property {string} conversationId - The ID of the conversation.
+ * @property {string} thread_id - The ID of the thread.
+ * @property {string} messageId - The ID of the message (from LibreChat).
  * @property {string} parentMessageId - The ID of the parent message.
- * @property {'assistant'} role - The role of the sender. Always 'assistant'.
- * @property {ContentPart[]} content - The content of the message.
+ * @property {string} user - The ID of the user.
+ * @property {string} assistant_id - The ID of the assistant.
+ * @property {string} role - The role of the response.
+ * @property {string} model - The model used in the response.
+ * @property {ContentPart[]} content - The content parts accumulated from the run.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} RunResponse
+ * @property {Run} run - The detailed information about the run.
+ * @property {RunStep[]} steps - An array of steps taken during the run.
+ * @property {StepMessage[]} messages - An array of messages related to the run.
+ * @memberof typedefs
  */
 
 // /**

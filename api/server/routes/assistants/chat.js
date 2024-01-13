@@ -2,7 +2,12 @@ const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const express = require('express');
 const { EModelEndpoint, Constants } = require('librechat-data-provider');
-const { initThread, saveUserMessage, saveAssistantMessage } = require('~/server/services/Threads');
+const {
+  initThread,
+  saveUserMessage,
+  saveAssistantMessage,
+  modifyMessages,
+} = require('~/server/services/Threads');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const { createRun } = require('~/server/services/Runs');
 const { getConvo } = require('~/models/Conversation');
@@ -143,6 +148,8 @@ router.post('/', setHeaders, async (req, res) => {
     // todo: retry logic
     const response = await runAssistant({ openai, thread_id, run_id: run.id });
     logger.debug('[/assistants/chat/] response', response);
+
+    /** @type {ResponseMessage} */
     const responseMessage = {
       ...openai.responseMessage,
       parentMessageId: messageId,
@@ -168,6 +175,13 @@ router.post('/', setHeaders, async (req, res) => {
     res.end();
 
     await saveAssistantMessage(responseMessage);
+
+    await modifyMessages({
+      openai,
+      thread_id,
+      messageId: responseMessage.messageId,
+      messages: response.messages,
+    });
   } catch (error) {
     // res.status(500).json({ error: error.message });
     logger.error('[/assistants/chat/]', error);
