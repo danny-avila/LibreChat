@@ -24,7 +24,7 @@ export default function ExportModal({ open, onOpenChange, conversation }) {
 
   const { data: messagesTree = null } = useGetMessagesByConvoId(conversation.conversationId ?? '', {
     select: (data) => {
-      const dataTree = buildTree(data, false);
+      const dataTree = buildTree({ messages: data });
       return dataTree?.length === 0 ? null : dataTree ?? null;
     },
   });

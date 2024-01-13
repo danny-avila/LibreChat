@@ -1,20 +1,13 @@
-const fs = require('fs');
-const path = require('path');
 const OpenAI = require('openai');
 const DALLE3 = require('../DALLE3');
-const {
-  getFirebaseStorage,
-  saveImageToFirebaseStorage,
-} = require('~/server/services/Files/Firebase');
-const saveImageFromUrl = require('../../saveImageFromUrl');
+const { processFileURL } = require('~/server/services/Files/process');
+
 const { logger } = require('~/config');
 
 jest.mock('openai');
 
-jest.mock('~/server/services/Files/Firebase', () => ({
-  getFirebaseStorage: jest.fn(),
-  saveImageToFirebaseStorage: jest.fn(),
-  getFirebaseStorageImageUrl: jest.fn(),
+jest.mock('~/server/services/Files/process', () => ({
+  processFileURL: jest.fn(),
 }));
 
 jest.mock('~/server/services/Files/images', () => ({
@@ -48,10 +41,6 @@ jest.mock('fs', () => {
     existsSync: jest.fn(),
     mkdirSync: jest.fn(),
   };
-});
-
-jest.mock('../../saveImageFromUrl', () => {
-  return jest.fn();
 });
 
 jest.mock('path', () => {
@@ -99,10 +88,8 @@ describe('DALLE3', () => {
 
   it('should generate markdown image URL correctly', () => {
     const imageName = 'test.png';
-    path.join.mockReturnValue('images/test.png');
-    path.relative.mockReturnValue('images/test.png');
-    const markdownImage = dalle.getMarkdownImageUrl(imageName);
-    expect(markdownImage).toBe('![generated image](/images/test.png)');
+    const markdownImage = dalle.wrapInMarkdown(imageName);
+    expect(markdownImage).toBe('![generated image](test.png)');
   });
 
   it('should call OpenAI API with correct parameters', async () => {
@@ -122,11 +109,7 @@ describe('DALLE3', () => {
     };
 
     generate.mockResolvedValue(mockResponse);
-    saveImageFromUrl.mockResolvedValue(true);
-    fs.existsSync.mockReturnValue(true);
-    path.resolve.mockReturnValue('/fakepath/images');
-    path.join.mockReturnValue('/fakepath/images/img-test.png');
-    path.relative.mockReturnValue('images/img-test.png');
+    processFileURL.mockResolvedValue('http://example.com/img-test.png');
 
     const result = await dalle._call(mockData);
 
@@ -138,6 +121,7 @@ describe('DALLE3', () => {
       prompt: mockData.prompt,
       n: 1,
     });
+
     expect(result).toContain('![generated image]');
   });
 
@@ -184,23 +168,6 @@ describe('DALLE3', () => {
     });
   });
 
-  it('should create the directory if it does not exist', async () => {
-    const mockData = {
-      prompt: 'A test prompt',
-    };
-    const mockResponse = {
-      data: [
-        {
-          url: 'http://example.com/img-test.png',
-        },
-      ],
-    };
-    generate.mockResolvedValue(mockResponse);
-    fs.existsSync.mockReturnValue(false); // Simulate directory does not exist
-    await dalle._call(mockData);
-    expect(fs.mkdirSync).toHaveBeenCalledWith(expect.any(String), { recursive: true });
-  });
-
   it('should log an error and return the image URL if there is an error saving the image', async () => {
     const mockData = {
       prompt: 'A test prompt',
@@ -214,29 +181,10 @@ describe('DALLE3', () => {
     };
     const error = new Error('Error while saving the image');
     generate.mockResolvedValue(mockResponse);
-    saveImageFromUrl.mockRejectedValue(error);
+    processFileURL.mockRejectedValue(error);
     const result = await dalle._call(mockData);
-    expect(logger.error).toHaveBeenCalledWith('Error while saving the image locally:', error);
+    expect(logger.error).toHaveBeenCalledWith('Error while saving the image:', error);
     expect(result).toBe('Failed to save the image locally. Error while saving the image');
-  });
-
-  it('should save image to Firebase Storage if Firebase is initialized', async () => {
-    const mockData = {
-      prompt: 'A test prompt',
-    };
-    const mockImageUrl = 'http://example.com/img-test.png';
-    const mockResponse = { data: [{ url: mockImageUrl }] };
-    generate.mockResolvedValue(mockResponse);
-    getFirebaseStorage.mockReturnValue({}); // Simulate Firebase being initialized
-
-    await dalle._call(mockData);
-
-    expect(getFirebaseStorage).toHaveBeenCalled();
-    expect(saveImageToFirebaseStorage).toHaveBeenCalledWith(
-      undefined,
-      mockImageUrl,
-      expect.any(String),
-    );
   });
 
   it('should handle error when saving image to Firebase Storage fails', async () => {
@@ -247,17 +195,11 @@ describe('DALLE3', () => {
     const mockResponse = { data: [{ url: mockImageUrl }] };
     const error = new Error('Error while saving to Firebase');
     generate.mockResolvedValue(mockResponse);
-    getFirebaseStorage.mockReturnValue({}); // Simulate Firebase being initialized
-    saveImageToFirebaseStorage.mockRejectedValue(error);
+    processFileURL.mockRejectedValue(error);
 
     const result = await dalle._call(mockData);
 
-    expect(logger.error).toHaveBeenCalledWith(
-      'Error while saving the image to Firebase Storage:',
-      error,
-    );
-    expect(result).toBe(
-      'Failed to save the image to Firebase Storage. Error while saving to Firebase',
-    );
+    expect(logger.error).toHaveBeenCalledWith('Error while saving the image:', error);
+    expect(result).toContain('Failed to save the image');
   });
 });
