@@ -1,15 +1,13 @@
 const path = require('path');
 const mime = require('mime/lite');
-const { FileSources } = require('librechat-data-provider');
+const { FileSources, EModelEndpoint, imageExtRegex } = require('librechat-data-provider');
+const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { convertToWebP } = require('~/server/services/Files/images');
-const { createFile, updateFileUsage } = require('~/models/File');
+const { getStrategyFunctions } = require('./strategies');
 const { isEnabled } = require('~/server/utils');
-
-const imageRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
+const { logger } = require('~/config');
 
 const { GPTS_DOWNLOAD_IMAGES = 'true' } = process.env;
-const { getStrategyFunctions } = require('./strategies');
-const { logger } = require('~/config');
 
 const processFiles = async (files) => {
   const promises = [];
@@ -20,6 +18,42 @@ const processFiles = async (files) => {
 
   // TODO: calculate token cost when image is first uploaded
   return await Promise.all(promises);
+};
+
+/**
+ * Deletes a list of files from the server filesystem and the database.
+ *
+ * @param {Object} params - The params object.
+ * @param {Express.Request} params.req - The express request object.
+ * @param {MongoFile[]} params.files - The file objects to delete.
+ *
+ * @returns {Promise<void>}
+ */
+const processDeleteRequest = async ({ req, files }) => {
+  const file_ids = files.map((file) => file.file_id);
+
+  const deletionMethods = {};
+  const promises = [];
+  promises.push(await deleteFiles(file_ids));
+
+  for (const file of files) {
+    const source = file.source ?? FileSources.local;
+
+    if (deletionMethods[source]) {
+      promises.push(deletionMethods[source](req, file));
+      continue;
+    }
+
+    const { deleteFile } = getStrategyFunctions(source);
+    if (!deleteFile) {
+      throw new Error(`Delete function not implemented for ${source}`);
+    }
+
+    deletionMethods[source] = deleteFile;
+    promises.push(deleteFile(req, file));
+  }
+
+  await Promise.all(promises);
 };
 
 /**
@@ -84,6 +118,40 @@ const processImageUpload = async ({ req, res, file, metadata }) => {
       type: 'image/webp',
       width,
       height,
+    },
+    true,
+  );
+  res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
+};
+
+/**
+ * Applies the current strategy for file uploads.
+ * Saves file metadata to the database with an expiry TTL.
+ * Files must be deleted from the server filesystem manually.
+ *
+ * @param {Object} params - The parameters object.
+ * @param {Express.Request} params.req - The Express request object.
+ * @param {Express.Response} params.res - The Express response object.
+ * @param {Express.Multer.File} params.file - The uploaded file.
+ * @param {FileMetadata} params.metadata - Additional metadata for the file.
+ * @returns {Promise<void>}
+ */
+const processFileUpload = async ({ req, res, file, metadata }) => {
+  const isAssistantUpload = metadata.endpoint === EModelEndpoint.assistant;
+  const source = isAssistantUpload ? FileSources.openai : req.app.locals.fileStrategy;
+  const { handleFileUpload } = getStrategyFunctions(source);
+  const { file_id, temp_file_id } = metadata;
+  const { id, bytes, filename, filepath } = await handleFileUpload(req, file);
+  const result = await createFile(
+    {
+      user: req.user.id,
+      file_id: id ?? file_id,
+      temp_file_id,
+      bytes,
+      filepath: isAssistantUpload ? `https://api.openai.com/v1/files/${id}` : filepath,
+      filename: filename ?? file.originalname,
+      source,
+      type: file.type,
     },
     true,
   );
@@ -171,7 +239,7 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
   // If the filetype is unknown, inspect the file
   if (unknownType || !path.extname(basename)) {
     const detectedExt = await determineFileType(dataBuffer);
-    if (detectedExt && imageRegex.test('.' + detectedExt)) {
+    if (detectedExt && imageExtRegex.test('.' + detectedExt)) {
       return await processAsImage(dataBuffer, detectedExt);
     } else {
       return await processOtherFileTypes(dataBuffer);
@@ -179,7 +247,7 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
   }
 
   // Existing logic for processing known image types
-  if (downloadImages && basename && path.extname(basename) && imageRegex.test(basename)) {
+  if (downloadImages && basename && path.extname(basename) && imageExtRegex.test(basename)) {
     return await processAsImage(dataBuffer, path.extname(basename));
   } else {
     console.log('Not an image or invalid extension: ', basename);
@@ -189,8 +257,9 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
 
 module.exports = {
   processImageUpload,
-  imageRegex,
   processFiles,
   processFileURL,
+  processFileUpload,
+  processDeleteRequest,
   retrieveAndProcessFile,
 };

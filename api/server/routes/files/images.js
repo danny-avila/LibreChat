@@ -1,23 +1,27 @@
-const { z } = require('zod');
 const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
-const upload = require('./multer');
+const { imageMimeTypes, isUUID } = require('librechat-data-provider');
 const { processImageUpload } = require('~/server/services/Files/process');
 const { logger } = require('~/config');
+const upload = require('./multer');
 
 const router = express.Router();
 
 router.post('/', upload.single('file'), async (req, res) => {
   const file = req.file;
   const metadata = req.body;
-  // TODO: add file size/type validation
-
-  const uuidSchema = z.string().uuid();
 
   try {
     if (!file) {
       throw new Error('No file provided');
+    }
+    if (!imageMimeTypes.test(file.mimetype)) {
+      throw new Error('Unsupported file type');
+    }
+
+    if (!metadata.endpoint) {
+      throw new Error('No endpoint provided');
     }
 
     if (!metadata.file_id) {
@@ -31,8 +35,9 @@ router.post('/', upload.single('file'), async (req, res) => {
     if (!metadata.height) {
       throw new Error('No height provided');
     }
+
     /* parse to validate api call */
-    uuidSchema.parse(metadata.file_id);
+    isUUID.parse(metadata.file_id);
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 

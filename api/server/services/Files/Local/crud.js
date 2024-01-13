@@ -13,7 +13,7 @@ const paths = require('~/config/paths');
  * @returns {Promise<string>} The full path of the saved file.
  * @throws Will throw an error if the file saving process fails.
  */
-async function saveFile(file, outputPath, outputFilename) {
+async function saveLocalFile(file, outputPath, outputFilename) {
   try {
     if (!fs.existsSync(outputPath)) {
       fs.mkdirSync(outputPath, { recursive: true });
@@ -44,8 +44,40 @@ async function saveFile(file, outputPath, outputFilename) {
 const saveLocalImage = async (req, file, filename) => {
   const imagePath = req.app.locals.paths.imageOutput;
   const outputPath = path.join(imagePath, req.user.id ?? '');
-  await saveFile(file, outputPath, filename);
+  await saveLocalFile(file, outputPath, filename);
 };
+
+/**
+ * Saves a buffer to a specified directory on the local file system.
+ *
+ * @param {Object} params - The parameters object.
+ * @param {string} params.userId - The user's unique identifier. This is used to create a user-specific directory.
+ * @param {Buffer} params.buffer - The buffer to be saved.
+ * @param {string} params.fileName - The name of the file to be saved.
+ * @param {string} [params.basePath='images'] - Optional. The base path where the file will be stored.
+ *                                          Defaults to 'images' if not specified.
+ * @returns {Promise<string>} - A promise that resolves to the path of the saved file.
+ */
+async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }) {
+  try {
+    const { publicPath, uploads } = paths;
+
+    const directoryPath = path.join(basePath === 'images' ? publicPath : uploads, basePath, userId);
+
+    if (!fs.existsSync(directoryPath)) {
+      fs.mkdirSync(directoryPath, { recursive: true });
+    }
+
+    fs.writeFileSync(path.join(directoryPath, fileName), buffer);
+
+    const filePath = path.posix.join('/', basePath, userId, fileName);
+
+    return filePath;
+  } catch (error) {
+    logger.error('[saveLocalBuffer] Error while saving the buffer:', error);
+    throw error;
+  }
+}
 
 /**
  * Saves a file from a given URL to a local directory. The function fetches the file using the provided URL,
@@ -171,4 +203,11 @@ const deleteLocalFile = async (req, file) => {
   await fs.promises.unlink(filepath);
 };
 
-module.exports = { saveFile, saveLocalImage, saveFileFromURL, getLocalFileURL, deleteLocalFile };
+module.exports = {
+  saveLocalFile,
+  saveLocalImage,
+  saveLocalBuffer,
+  saveFileFromURL,
+  getLocalFileURL,
+  deleteLocalFile,
+};

@@ -7,8 +7,9 @@ const {
   StepStatus,
   RunStatus,
   ToolCallTypes,
+  imageExtRegex,
 } = require('librechat-data-provider');
-const { imageRegex, retrieveAndProcessFile } = require('~/server/services/Files/process');
+const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { RunManager, waitForRun } = require('~/server/services/Runs');
 const { processActions } = require('~/server/services/ToolService');
 const { createOnProgress, sendMessage } = require('~/server/utils');
@@ -470,7 +471,9 @@ async function processMessages(openai, messages = []) {
           annotation.file_path && !openai.processedFileIds.has(annotation.file_path?.file_id);
 
         if (processFilePath) {
-          const basename = imageRegex.test(annotation.text) ? path.basename(annotation.text) : null;
+          const basename = imageExtRegex.test(annotation.text)
+            ? path.basename(annotation.text)
+            : null;
           file = await retrieveAndProcessFile({
             openai,
             file_id: annotation.file_path.file_id,

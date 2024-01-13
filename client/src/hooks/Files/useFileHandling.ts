@@ -1,27 +1,22 @@
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
-import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
+import { QueryKeys, fileConfig } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
-import { useUploadImageMutation } from '~/data-provider';
+import { useUploadFileMutation } from '~/data-provider';
 import useUpdateFiles from './useUpdateFiles';
 
-const sizeMB = 20;
-const maxSize = 25;
-const fileLimit = 10;
-const sizeLimit = sizeMB * 1024 * 1024; // 20 MB
-const totalSizeLimit = maxSize * 1024 * 1024; // 25 MB
-const supportedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const { sizeMB, maxSize, fileLimit, sizeLimit, totalSizeLimit, checkType } = fileConfig;
 
 const useFileHandling = () => {
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
-  const { files, setFiles, setFilesLoading } = useChatContext();
+  const { files, setFiles, setFilesLoading, conversation } = useChatContext();
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(setFiles);
 
@@ -56,7 +51,7 @@ const useFileHandling = () => {
     return () => debouncedDisplayToast.cancel();
   }, [errors, debouncedDisplayToast]);
 
-  const uploadImage = useUploadImageMutation({
+  const uploadFile = useUploadFileMutation({
     onSuccess: (data) => {
       console.log('upload success', data);
       updateFileById(data.temp_file_id, {
@@ -83,12 +78,18 @@ const useFileHandling = () => {
     },
     onError: (error, body) => {
       console.log('upload error', error);
-      deleteFileById(body.file_id);
+      const file_id = body.get('file_id');
+      deleteFileById(file_id as string);
       setError('An error occurred while uploading the file.');
     },
   });
 
-  const uploadFile = async (extendedFile: ExtendedFile) => {
+  const startUpload = async (extendedFile: ExtendedFile) => {
+    if (!conversation?.endpoint) {
+      setError('An error occurred while uploading the file: Endpoint is undefined');
+      return;
+    }
+
     const formData = new FormData();
     formData.append('file', extendedFile.file);
     formData.append('file_id', extendedFile.file_id);
@@ -99,7 +100,9 @@ const useFileHandling = () => {
       formData.append('height', extendedFile.height?.toString());
     }
 
-    uploadImage.mutate({ formData, file_id: extendedFile.file_id });
+    formData.append('endpoint', conversation.endpoint);
+
+    uploadFile.mutate(formData);
   };
 
   const validateFiles = (fileList: File[]) => {
@@ -114,8 +117,8 @@ const useFileHandling = () => {
 
     for (let i = 0; i < fileList.length; i++) {
       const originalFile = fileList[i];
-      if (!supportedTypes.includes(originalFile.type)) {
-        setError('Currently, only JPEG, JPG, PNG, and WEBP files are supported.');
+      if (!checkType(originalFile.type)) {
+        setError('Currently, unsupported file type: ' + originalFile.type);
         return false;
       }
 
@@ -158,7 +161,7 @@ const useFileHandling = () => {
       };
       replaceFile(extendedFile);
 
-      await uploadFile(extendedFile);
+      await startUpload(extendedFile);
       URL.revokeObjectURL(preview);
     };
     img.src = preview;
@@ -194,9 +197,13 @@ const useFileHandling = () => {
         };
 
         addFile(extendedFile);
+
         if (originalFile.type?.split('/')[0] === 'image') {
           loadImage(extendedFile, preview);
+          return;
         }
+
+        await startUpload(extendedFile);
       } catch (error) {
         deleteFileById(file_id);
         console.log('file handling error', error);

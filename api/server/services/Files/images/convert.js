@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { resizeImageBuffer } = require('./resize');
+const { getStrategyFunctions } = require('../strategies');
 
 /**
  * Converts an image file or buffer to WebP format with specified resolution.
@@ -16,6 +17,8 @@ const { resizeImageBuffer } = require('./resize');
 async function convertToWebP(req, file, resolution = 'high', basename = '') {
   try {
     let inputBuffer;
+    let outputBuffer;
+    let extension = path.extname(file.path ?? basename).toLowerCase();
 
     // Check if the input is a buffer or a file path
     if (Buffer.isBuffer(file)) {
@@ -27,44 +30,36 @@ async function convertToWebP(req, file, resolution = 'high', basename = '') {
       throw new Error('Invalid input: file must be a buffer or contain a valid path.');
     }
 
+    // Resize the image buffer
     const {
       buffer: resizedBuffer,
       width,
       height,
     } = await resizeImageBuffer(inputBuffer, resolution);
 
-    const extension = path.extname(file.path ?? basename); // Default extension if input is a buffer
-    const { imageOutput } = req.app.locals.paths;
-    const userPath = path.join(imageOutput, req.user.id);
-
-    if (!fs.existsSync(userPath)) {
-      fs.mkdirSync(userPath, { recursive: true });
+    // Check if the file is already in WebP format
+    // If it isn't, convert it:
+    if (extension === '.webp') {
+      outputBuffer = resizedBuffer;
+    } else {
+      outputBuffer = await sharp(resizedBuffer).toFormat('webp').toBuffer();
+      extension = '.webp';
     }
 
-    // Generate a new path for the output file
-    const newFileName = path.basename(file.path ?? basename);
-    const newPath = path.join(userPath, newFileName);
+    // Generate a new filename for the output file
+    const newFileName =
+      path.basename(file.path ?? basename, path.extname(file.path ?? basename)) + extension;
 
-    // TODO: implement different save strategies: local, firebase, etc.
-    if (extension.toLowerCase() === '.webp') {
-      const bytes = Buffer.byteLength(resizedBuffer);
-      await fs.promises.writeFile(newPath, resizedBuffer);
-      const filepath = path.posix.join('/', 'images', req.user.id, path.basename(newPath));
-      return { filepath, bytes, width, height };
-    }
+    const { saveBuffer } = getStrategyFunctions(req.app.locals.fileStrategy);
 
-    const outputFilePath = newPath.replace(extension, '.webp');
-    const data = await sharp(resizedBuffer).toFormat('webp').toBuffer();
-    await fs.promises.writeFile(outputFilePath, data);
-    const bytes = Buffer.byteLength(data);
-    const filepath = path.posix.join('/', 'images', req.user.id, path.basename(outputFilePath));
+    const savedFilePath = await saveBuffer({
+      userId: req.user.id,
+      buffer: outputBuffer,
+      fileName: newFileName,
+    });
 
-    if (file.path) {
-      // Delete the original file if it was a file path
-      await fs.promises.unlink(file.path);
-    }
-
-    return { filepath, bytes, width, height };
+    const bytes = Buffer.byteLength(outputBuffer);
+    return { filepath: savedFilePath, bytes, width, height };
   } catch (err) {
     console.error(err);
     throw err;
