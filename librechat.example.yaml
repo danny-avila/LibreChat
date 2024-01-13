@@ -46,7 +46,7 @@ endpoints:
 
       # Add additional parameters to the request. Default params will be overwritten.
       addParams:
-        safe_mode: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
+        safe_prompt: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
         
       # Drop Default params parameters from the request. See default params in guide linked below.
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
