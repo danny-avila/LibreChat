@@ -68,7 +68,17 @@ const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
   }
 };
 
-const deleteUserPluginAuth = async (userId, authField) => {
+const deleteUserPluginAuth = async (userId, authField, all = false) => {
+  if (all) {
+    try {
+      const response = await PluginAuth.deleteMany({ userId });
+      return response;
+    } catch (err) {
+      logger.error('[deleteUserPluginAuth]', err);
+      return err;
+    }
+  }
+
   try {
     const response = await PluginAuth.deleteOne({ userId, authField });
     return response;

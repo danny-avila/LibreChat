@@ -69,19 +69,19 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
               {localize('com_nav_delete_account_confirm')}
             </DialogTitle>
           </DialogHeader>
-          <div className="mb-4 text-sm text-black dark:text-white">
+          <div className="mb-20 text-sm text-black dark:text-white">
             <ul>
               <li>{localize('com_dialog_delete_warning')}</li>
               <li>{localize('com_dialog_delete_data_info')}</li>
               <li>{localize('com_dialog_delete_help_center')}</li>
             </ul>
           </div>
-          <div className="flex flex-col items-center justify-center">
+          <div className="flex-col items-center justify-center">
             <div className="mb-4">
               {renderInput(
                 'Please type your account email.',
                 'email-confirm-input',
-                emailInput,
+                userEmail || '',
                 (e) => {
                   setEmailInput(e.target.value);
                   handleInputChange(e.target.value, deleteInput);
@@ -92,7 +92,7 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
               {renderInput(
                 'To proceed, type "DELETE" in the input field below.',
                 'delete-confirm-input',
-                deleteInput,
+                '',
                 (e) => {
                   setDeleteInput(e.target.value);
                   handleInputChange(emailInput, e.target.value);
@@ -114,7 +114,7 @@ const renderInput = (
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void,
 ) => (
   <div className="mb-4">
-    <label className="block text-sm font-medium text-black dark:text-white">{label}</label>
+    <label className="mb-1 block text-sm font-medium text-black dark:text-white">{label}</label>
     <Input
       id={id}
       onChange={onChange}

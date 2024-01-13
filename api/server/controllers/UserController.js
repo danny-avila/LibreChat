@@ -1,14 +1,15 @@
-const { updateUserPluginsService } = require('~/server/services/UserService');
+const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { logger } = require('~/config');
 const {
-  deleteMessages,
   deleteConvos,
+  deleteMessages,
+  deletePresets,
   User,
   Session,
   Balance,
   Transaction,
-} = require('@librechat/backend/models');
+} = require('~/models');
 
 const getUserController = async (req, res) => {
   res.status(200).send(req.user);
@@ -59,16 +60,19 @@ const updateUserPluginsController = async (req, res) => {
 };
 
 const deleteUserController = async (req, res) => {
-  console.log('user.js');
   const { user } = req;
+
   try {
-    await user.deleteOne({ _id: user._id });
-    await deleteConvos(user, {});
-    await deleteMessages({ user });
-    await Session.deleteAllUserSessions(user);
-    await User.deleteMany({ _id: user });
-    await Balance.deleteMany({ user });
-    await Transaction.deleteMany({ user });
+    await deleteMessages({ user: user.id }); // delete user messages
+    await Session.deleteMany({ user: user.id }); // delete user sessions
+    await Transaction.deleteMany({ user: user.id }); // delete user transactions
+    await deleteUserKey({ userId: user.id, all: true }); // delete user keys
+    await Balance.deleteMany({ user: user._id }); // delete user balances
+    await deletePresets(user.id); // delete user presets
+    await deleteConvos(user.id); // delete user convos
+    await deleteUserPluginAuth(user.id, null, true); // delete user plugin auth
+    await User.deleteOne({ _id: user.id }); // delete user
+
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
     logger.error('[deleteUserController]', err);
