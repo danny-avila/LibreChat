@@ -117,7 +117,7 @@ endpoints:
       forcePrompt: false 
       modelDisplayLabel: "Mistral"
       addParams:
-        safe_mode: true
+        safe_prompt: true
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
 ```
@@ -242,7 +242,7 @@ endpoints:
   - **Example**: 
 ```yaml
     addParams:
-      safe_mode: true
+      safe_prompt: true
 ```
 
 ### **dropParams**:
@@ -315,7 +315,7 @@ endpoints:
       forcePrompt: false 
       modelDisplayLabel: "Mistral"
       addParams:
-        safe_mode: true
+        safe_prompt: true
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
 
