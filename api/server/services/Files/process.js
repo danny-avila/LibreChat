@@ -151,7 +151,7 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
       filepath: isAssistantUpload ? `https://api.openai.com/v1/files/${id}` : filepath,
       filename: filename ?? file.originalname,
       source,
-      type: file.type,
+      type: file.mimetype,
     },
     true,
   );
