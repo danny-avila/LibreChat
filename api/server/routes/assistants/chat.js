@@ -63,17 +63,21 @@ router.post('/', setHeaders, async (req, res) => {
     openai.res = res;
     createOnTextProgress(openai);
 
+    const userMessage = {
+      role: 'user',
+      content: text,
+      metadata: {
+        messageId,
+      },
+    };
+
+    if (files.length) {
+      userMessage.file_ids = files.map(({ file_id }) => file_id);
+    }
+
     // TODO: may allow multiple messages to be created beforehand in a future update
     const initThreadBody = {
-      messages: [
-        {
-          role: 'user',
-          content: text,
-          metadata: {
-            messageId,
-          },
-        },
-      ],
+      messages: [userMessage],
       metadata: {
         user: req.user.id,
         conversationId,
