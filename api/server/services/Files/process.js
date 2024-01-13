@@ -173,9 +173,22 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
  * @param {string} params.file_id - The ID of the file to retrieve.
  * @param {string} params.basename - The basename of the file (if image); e.g., 'image.jpg'.
  * @param {boolean} [params.unknownType] - Whether the file type is unknown.
- * @returns {Promise<{filepath: string, bytes: number, width?: number, height?: number}>} The path, size, and dimensions (if image) of the processed file.
+ * @returns {Promise<{file_id: string, filepath: string, source: string, bytes?: number, width?: number, height?: number} | null>}
+ * - Returns null if `file_id` is not defined; else, the file metadata if successfully retrieved and processed.
  */
 async function retrieveAndProcessFile({ openai, file_id, basename: _basename, unknownType }) {
+  if (!file_id) {
+    return null;
+  }
+
+  if (openai.attachedFileIds?.has(file_id)) {
+    return {
+      file_id,
+      // filepath: TODO: local source filepath?,
+      source: FileSources.openai,
+    };
+  }
+
   let basename = _basename;
   const downloadImages = isEnabled(GPTS_DOWNLOAD_IMAGES);
 

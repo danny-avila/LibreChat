@@ -69,17 +69,19 @@ const conversationPreset = {
   toneStyle: {
     type: String,
   },
+  file_ids: { type: [{ type: String }], default: undefined },
+  // vision
+  resendImages: {
+    type: Boolean,
+  },
+  imageDetail: {
+    type: String,
+  },
   /* assistants */
   assistant_id: {
     type: String,
   },
   instructions: {
-    type: String,
-  },
-  resendImages: {
-    type: Boolean,
-  },
-  imageDetail: {
     type: String,
   },
 };

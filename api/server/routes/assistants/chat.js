@@ -5,6 +5,7 @@ const { EModelEndpoint, Constants } = require('librechat-data-provider');
 const { initThread, saveUserMessage, saveAssistantMessage } = require('~/server/services/Threads');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const { createRun } = require('~/server/services/Runs');
+const { getConvo } = require('~/models/Conversation');
 const { sendMessage } = require('~/server/utils');
 const { logger } = require('~/config');
 
@@ -43,11 +44,22 @@ router.post('/', setHeaders, async (req, res) => {
       parentMessageId = Constants.NO_PARENT,
       // TODO: model is not currently sent from the frontend
       // maybe it should only be sent when changed from the assistant's model?
-      model = defaultModel,
+      model: _model = defaultModel,
     } = req.body;
+
+    // Temporary: Can't use 0613 models
+    const model = _model.replace(/gpt-4.*$/, 'gpt-4-1106-preview');
 
     /** @type {string|undefined} - the current thread id */
     let thread_id = _thread_id;
+
+    let thread_file_ids = [];
+    if (convoId) {
+      const convo = await getConvo(req.user.id, convoId);
+      if (convo && convo.file_ids) {
+        thread_file_ids = convo.file_ids;
+      }
+    }
 
     /** @type {string} - The conversation UUID - created if undefined */
     const conversationId = convoId ?? v4();
@@ -71,8 +83,10 @@ router.post('/', setHeaders, async (req, res) => {
       },
     };
 
-    if (files.length) {
-      userMessage.file_ids = files.map(({ file_id }) => file_id);
+    const file_ids = files.map(({ file_id }) => file_id);
+    if (file_ids.length || thread_file_ids.length) {
+      userMessage.file_ids = file_ids;
+      openai.attachedFileIds = new Set([...file_ids, ...thread_file_ids]);
     }
 
     // TODO: may allow multiple messages to be created beforehand in a future update
@@ -98,12 +112,18 @@ router.post('/', setHeaders, async (req, res) => {
       model,
     };
 
+    if (file_ids.length) {
+      conversation.file_ids = file_ids;
+    }
+
     await saveUserMessage({
       user: req.user.id,
       text,
       messageId,
       parentMessageId,
-      file_ids: files,
+      // TODO: make sure client sends correct format for `files`, use zod
+      files,
+      file_ids,
       conversationId,
       assistant_id,
       thread_id,

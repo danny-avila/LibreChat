@@ -501,8 +501,14 @@ async function processMessages(openai, messages = []) {
           openai.processedFileIds.add(file_id);
         }
 
-        const { filepath } = file;
-        text = text.replace(annotation.text, filepath);
+        if (!file) {
+          continue;
+        }
+
+        if (file.filepath) {
+          text = text.replace(annotation.text, file.filepath);
+        }
+
         message.files.push(file);
       }
     }

@@ -622,6 +622,7 @@
  *
  * @property {Set<string>} processedFileIds - A set of IDs for processed files.
  * @property {Map<string, number>} mappedOrder - A map to maintain the order of individual `tool_calls` and `steps`.
+ * @property {Set<string>} [attachedFileIds] - A set of user attached file ids; necessary to track which files are downloadable.
  * @property {Set<string>} completeToolCallSteps - A set of completed tool call steps.
  * @property {Set<string>} seenCompletedMessages - A set of completed messages that have been seen/processed.
  * @property {Map<string, StepToolCall>} seenToolCalls - A map of tool calls that have been seen/processed.

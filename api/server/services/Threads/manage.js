@@ -44,6 +44,7 @@ async function initThread({ openai, body, thread_id: _thread_id }) {
  * @param {string} [params.instructions] - Optional: from preset for `instructions` field.
  * Overrides the instructions of the assistant.
  * @param {string} [params.promptPrefix] - Optional: from preset for `additional_instructions` field.
+ * @param {import('librechat-data-provider').TFile[]} [params.files] - Optional. List of Attached File Objects.
  * @param {string[]} [params.file_ids] - Optional. List of File IDs attached to the userMessage.
  * @return {Promise<Run>} A promise that resolves to the created run object.
  */
@@ -68,7 +69,7 @@ async function saveUserMessage(params) {
   //   ];
   // }
 
-  const message = await recordMessage({
+  const userMessage = {
     user: params.user,
     endpoint: EModelEndpoint.assistant,
     messageId: params.messageId,
@@ -78,18 +79,25 @@ async function saveUserMessage(params) {
     sender: 'User',
     text: params.text,
     isCreatedByUser: true,
-    files: params.file_ids,
     tokenCount,
-  });
+  };
 
-  await saveConvo(params.user, {
+  const convo = {
     endpoint: EModelEndpoint.assistant,
     conversationId: params.conversationId,
     promptPrefix: params.promptPrefix,
     instructions: params.instructions,
     assistant_id: params.assistant_id,
     model: params.model,
-  });
+  };
+
+  if (params.files?.length) {
+    userMessage.files = params.files.map(({ file_id }) => ({ file_id }));
+    convo.file_ids = params.file_ids;
+  }
+
+  const message = await recordMessage(userMessage);
+  await saveConvo(params.user, convo);
 
   return message;
 }

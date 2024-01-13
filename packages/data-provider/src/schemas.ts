@@ -210,6 +210,7 @@ export const tConversationSchema = z.object({
   toneStyle: z.string().nullable().optional(),
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
+  file_ids: z.array(z.string()).optional(),
   /* vision */
   resendImages: z.boolean().optional(),
   imageDetail: eImageDetailSchema.optional(),
