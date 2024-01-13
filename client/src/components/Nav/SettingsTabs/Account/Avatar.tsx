@@ -1,6 +1,7 @@
 import { FileImage } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import { useState, useEffect } from 'react';
+import { fileConfig } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
 import { useUploadAvatarMutation } from '~/data-provider';
@@ -9,8 +10,6 @@ import { Spinner } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 import store from '~/store';
-
-const sizeLimit = 2 * 1024 * 1024; // 2MB
 
 function Avatar() {
   const setUser = useSetRecoilState(store.user);
@@ -49,7 +48,7 @@ function Avatar() {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
 
-    if (file && file.size <= sizeLimit) {
+    if (file && file.size <= fileConfig.avatarSizeLimit) {
       setinput(file);
       setDialogOpen(true);
     } else {
@@ -96,7 +95,7 @@ function Avatar() {
 
       <Dialog open={isDialogOpen} onOpenChange={() => setDialogOpen(false)}>
         <DialogContent
-          className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:h-[350px] md:w-[450px] ')}
+          className={cn('shadow-2xl md:h-[350px] md:w-[450px] dark:bg-gray-900 dark:text-white ')}
           style={{ borderRadius: '12px' }}
         >
           <DialogHeader>

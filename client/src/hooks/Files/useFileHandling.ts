@@ -10,7 +10,7 @@ import { useChatContext } from '~/Providers/ChatContext';
 import { useUploadFileMutation } from '~/data-provider';
 import useUpdateFiles from './useUpdateFiles';
 
-const { sizeMB, maxSize, fileLimit, sizeLimit, totalSizeLimit, checkType } = fileConfig;
+const { checkType } = fileConfig;
 
 const useFileHandling = () => {
   const queryClient = useQueryClient();
@@ -19,6 +19,11 @@ const useFileHandling = () => {
   const { files, setFiles, setFilesLoading, conversation } = useChatContext();
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(setFiles);
+
+  const endpoint = conversation?.endpointType ?? conversation?.endpoint ?? 'default';
+
+  const { fileLimit, fileMaxSizeMB, totalMaxSizeMB, fileSizeLimit, totalSizeLimit } =
+    fileConfig[endpoint] ?? {};
 
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
@@ -85,7 +90,7 @@ const useFileHandling = () => {
   });
 
   const startUpload = async (extendedFile: ExtendedFile) => {
-    if (!conversation?.endpoint) {
+    if (!endpoint) {
       setError('An error occurred while uploading the file: Endpoint is undefined');
       return;
     }
@@ -100,7 +105,7 @@ const useFileHandling = () => {
       formData.append('height', extendedFile.height?.toString());
     }
 
-    formData.append('endpoint', conversation.endpoint);
+    formData.append('endpoint', endpoint);
 
     uploadFile.mutate(formData);
   };
@@ -122,14 +127,14 @@ const useFileHandling = () => {
         return false;
       }
 
-      if (originalFile.size >= sizeLimit) {
-        setError(`File size exceeds ${sizeMB} MB.`);
+      if (originalFile.size >= fileSizeLimit) {
+        setError(`File size exceeds ${fileMaxSizeMB} MB.`);
         return false;
       }
     }
 
     if (currentTotalSize + incomingTotalSize > totalSizeLimit) {
-      setError(`The total size of the files cannot exceed ${maxSize} MB.`);
+      setError(`The total size of the files cannot exceed ${totalMaxSizeMB} MB.`);
       return false;
     }
 

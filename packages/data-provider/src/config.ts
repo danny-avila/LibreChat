@@ -255,12 +255,25 @@ export const retrievalMimeTypes = [
   /^(application\/(json|pdf|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)))$/,
 ];
 
+export const megabyte = 1024 * 1024;
+
 export const fileConfig = {
-  sizeMB: 20,
-  maxSize: 25,
-  fileLimit: 10,
-  sizeLimit: 20 * 1024 * 1024, // 20 MB
-  totalSizeLimit: 25 * 1024 * 1024, // 25 MB
+  [EModelEndpoint.assistant]: {
+    fileLimit: 10,
+    fileMaxSizeMB: 512,
+    totalMaxSizeMB: 512,
+    fileSizeLimit: 512 * megabyte,
+    totalSizeLimit: 512 * megabyte,
+  },
+  default: {
+    fileLimit: 10,
+    fileMaxSizeMB: 20,
+    totalMaxSizeMB: 25,
+    fileSizeLimit: 20 * megabyte,
+    totalSizeLimit: 25 * megabyte,
+  },
+  serverFileSizeLimit: 512 * megabyte,
+  avatarSizeLimit: 2 * megabyte,
   checkType: function (fileType: string) {
     return supportedMimeTypes.some((regex) => regex.test(fileType));
   },
