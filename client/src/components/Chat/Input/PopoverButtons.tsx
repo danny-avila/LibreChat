@@ -1,9 +1,10 @@
-import { EModelEndpoint } from 'librechat-data-provider';
-import type { ReactNode } from 'react';
+import { ReactNode } from 'react';
 import { MessagesSquared, GPTIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
 import { Button } from '~/components/ui';
 import { cn } from '~/utils/';
+import { useLocalize } from '~/hooks'; // Import the Uselocalize function
+import { EModelEndpoint } from 'librechat-data-provider'; // Amount of the type EModelEndpoint
 
 type TPopoverButton = {
   label: string;
@@ -19,13 +20,8 @@ export default function PopoverButtons({
   buttonClass?: string;
   iconClass?: string;
 }) {
-  const {
-    conversation,
-    optionSettings,
-    setOptionSettings,
-    showAgentSettings,
-    setShowAgentSettings,
-  } = useChatContext();
+  const { conversation, optionSettings, setOptionSettings, showAgentSettings, setShowAgentSettings } = useChatContext();
+  const localize = useLocalize(); // Use the Uselocalize function
 
   const { model, endpoint: _endpoint, endpointType } = conversation ?? {};
   const endpoint = endpointType ?? _endpoint;
@@ -36,13 +32,12 @@ export default function PopoverButtons({
   const { showExamples } = optionSettings;
   const showExamplesButton = !isGenerativeModel && !isTextModel && isChatModel;
 
-  const triggerExamples = () =>
-    setOptionSettings((prev) => ({ ...prev, showExamples: !prev.showExamples }));
+  const triggerExamples = () => setOptionSettings((prev) => ({ ...prev, showExamples: !prev.showExamples }));
 
   const buttons: { [key: string]: TPopoverButton[] } = {
     [EModelEndpoint.google]: [
       {
-        label: (showExamples ? 'Hide' : 'Show') + ' Examples',
+        label: localize(showExamples ? 'com_hide_examples' : 'com_show_examples'), // Use Locate for the label
         buttonClass: isGenerativeModel || isTextModel ? 'disabled' : '',
         handler: triggerExamples,
         icon: <MessagesSquared className={cn('mr-1 w-[14px]', iconClass)} />,
@@ -50,7 +45,7 @@ export default function PopoverButtons({
     ],
     [EModelEndpoint.gptPlugins]: [
       {
-        label: `Show ${showAgentSettings ? 'Completion' : 'Agent'} Settings`,
+        label: localize(showAgentSettings ? 'com_show_completion_settings' : 'com_show_agent_settings'), // Use Locate for the label
         buttonClass: '',
         handler: () => setShowAgentSettings((prev) => !prev),
         icon: <GPTIcon className={cn('mr-1 w-[14px]', iconClass)} size={24} />,
@@ -71,7 +66,7 @@ export default function PopoverButtons({
     <div>
       {endpointButtons.map((button, index) => (
         <Button
-          key={`${endpoint}-button-${index}`}
+          key={`button-${index}`}
           type="button"
           className={cn(
             button.buttonClass,

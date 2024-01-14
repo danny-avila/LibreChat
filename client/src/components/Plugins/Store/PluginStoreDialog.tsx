@@ -34,6 +34,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [searchValue, setSearchValue] = useState<string>('');
   const [searchChanged, setSearchChanged] = useState(false);
 
   const handleInstallError = (error: TError) => {
@@ -122,7 +123,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     },
     [itemsPerPage],
   );
-  const [searchValue, setSearchValue] = useState<string>('');
+
   const filteredPlugins = availablePlugins?.filter((plugin) =>
     plugin.name.toLowerCase().includes(searchValue.toLowerCase()),
   );
@@ -209,28 +210,14 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           )}
           <div className="p-4 sm:p-6 sm:pt-4">
             <div className="mt-4 flex flex-col gap-4">
-              <div style={{ position: 'relative', display: 'inline-block', width: '250px' }}>
+              <div className="flex items-center justify-center space-x-4">
+                <Search className="w-6 h-6 text-gray-500" />
                 <input
                   type="text"
                   value={searchValue}
                   onChange={handleSearch}
                   placeholder={localize('com_nav_plugin_search')}
-                  style={{
-                    width: '100%',
-                    paddingLeft: '30px',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px', // This rounds the corners
-                  }}
-                />
-                <Search
-                  style={{
-                    position: 'absolute',
-                    left: '10px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    width: '16px',
-                    height: '16px',
-                  }}
+                  className="w-64 px-2 py-1 border border-gray-300 rounded dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div
@@ -246,7 +233,6 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                         key={index}
                         plugin={plugin}
                         isInstalled={userPlugins.includes(plugin.pluginKey)}
-                        onInstall={() => onPluginInstall(plugin.pluginKey)}
                         onUninstall={() => onPluginUninstall(plugin.pluginKey)}
                       />
                     ))}

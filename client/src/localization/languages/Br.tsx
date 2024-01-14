@@ -252,6 +252,10 @@ export default {
   com_nav_profile_picture: 'Foto de Perfil',
   com_nav_change_picture: 'Mudar foto',
   com_nav_plugin_store: 'Loja de plugins',
+  com_show_agent_settings: 'Mostrar Definições do Agente',
+  com_show_completion_settings: 'Mostrar Definições de Complemento',
+  com_hide_examples: 'Esconder Exemplos',
+  com_show_examples: 'Mostrar Exemplos',
   com_nav_plugin_search: 'Pesquisar plugins',
   com_nav_plugin_auth_error:
     'Houve um erro ao tentar autenticar este plugin. Por favor, tente novamente.',
