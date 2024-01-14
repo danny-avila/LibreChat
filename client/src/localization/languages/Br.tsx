@@ -114,7 +114,7 @@ export default {
   com_endpoint_bing_context_placeholder: 'O Bing pode usar até 7k tokens para \'contexto\', que ele pode referenciar para a conversa. O limite específico não é conhecido, mas pode ocorrer erros ao exceder 7k tokens',
   com_endpoint_bing_system_message_placeholder: 'AVISO: O uso indevido deste recurso pode fazer com que você seja BANIDO de usar o Bing! Clique em \'System Message\' para obter instruções completas e a mensagem padrão se omitida, que é o preset \'Sydney\' que é considerado seguro.',
   com_endpoint_system_message: 'Mensagem do Sistema',
-  com_endpoint_message: 'Mensagem',
+  com_endpoint_message: 'Conversar com',
   com_endpoint_message_not_appendable: 'Edite sua mensagem ou Regenere.',
   com_endpoint_default_blank: 'padrão: em branco',
   com_endpoint_default_false: 'padrão: falso',
