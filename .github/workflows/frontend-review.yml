@@ -20,9 +20,9 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Use Node.js 20.x
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
@@ -34,4 +34,5 @@ jobs:
         run: npm run frontend:ci
 
       - name: Run unit tests
-        run: cd client && npm run test:ci
+        run: npm run test:ci --verbose
+        working-directory: client

@@ -1,13 +1,12 @@
 import { useState } from 'react';
-import { useRecoilValue } from 'recoil';
 import { Settings } from 'lucide-react';
+import { alternateName } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { DropdownMenuRadioItem } from '~/components';
-import { Icon } from '~/components/Endpoints';
 import { SetKeyDialog } from '../SetKeyDialog';
+import { cn, getEndpointField } from '~/utils';
+import { Icon } from '~/components/Endpoints';
 import { useLocalize } from '~/hooks';
-
-import store from '~/store';
-import { cn, alternateName } from '~/utils';
 
 export default function ModelItem({
   endpoint,
@@ -19,7 +18,7 @@ export default function ModelItem({
   isSelected: boolean;
 }) {
   const [isDialogOpen, setDialogOpen] = useState(false);
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const { data: endpointsConfig } = useGetEndpointsQuery();
 
   const icon = Icon({
     size: 20,
@@ -27,9 +26,14 @@ export default function ModelItem({
     error: false,
     className: 'mr-2',
     message: false,
+    isCreatedByUser: false,
   });
 
-  const userProvidesKey = endpointsConfig?.[endpoint]?.userProvide;
+  const userProvidesKey: boolean | null | undefined = getEndpointField(
+    endpointsConfig,
+    endpoint,
+    'userProvide',
+  );
   const localize = useLocalize();
 
   // regular model

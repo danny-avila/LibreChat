@@ -1,5 +1,6 @@
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const User = require('../models/User');
+const { logger } = require('~/config');
+const User = require('~/models/User');
 
 // JWT strategy
 const jwtLogin = async () =>
@@ -10,11 +11,11 @@ const jwtLogin = async () =>
     },
     async (payload, done) => {
       try {
-        const user = await User.findById(payload.id);
+        const user = await User.findById(payload?.id);
         if (user) {
           done(null, user);
         } else {
-          console.log('JwtStrategy => no user found');
+          logger.warn('[jwtLogin] JwtStrategy => no user found: ' + payload?.id);
           done(null, false);
         }
       } catch (err) {

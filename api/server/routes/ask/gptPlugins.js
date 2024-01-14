@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { getResponseSender } = require('../endpoints/schemas');
-const { validateTools } = require('../../../app');
-const { addTitle } = require('../endpoints/openAI');
-const { initializeClient } = require('../endpoints/gptPlugins');
-const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
-const { sendMessage, createOnProgress } = require('../../utils');
+const { getResponseSender } = require('librechat-data-provider');
+const { validateTools } = require('~/app');
+const { addTitle } = require('~/server/services/Endpoints/openAI');
+const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
+const { saveMessage, getConvoTitle, getConvo } = require('~/models');
+const { sendMessage, createOnProgress } = require('~/server/utils');
 const {
   handleAbort,
   createAbortController,
@@ -13,8 +13,11 @@ const {
   setHeaders,
   validateEndpoint,
   buildEndpointOption,
-} = require('../../middleware');
+  moderateText,
+} = require('~/server/middleware');
+const { logger } = require('~/config');
 
+router.use(moderateText);
 router.post('/abort', handleAbort());
 
 router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, res) => {
@@ -25,26 +28,33 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
-  console.log('ask log');
-  console.dir({ text, conversationId, endpointOption }, { depth: null });
+  logger.debug('[/ask/gptPlugins]', { text, conversationId, ...endpointOption });
   let metadata;
   let userMessage;
+  let promptTokens;
   let userMessageId;
   let responseMessageId;
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
+  const sender = getResponseSender({ ...endpointOption, model: endpointOption.modelOptions.model });
   const newConvo = !conversationId;
   const user = req.user.id;
 
   const plugins = [];
 
   const addMetadata = (data) => (metadata = data);
-  const getIds = (data) => {
-    userMessage = data.userMessage;
-    userMessageId = userMessage.messageId;
-    responseMessageId = data.responseMessageId;
-    if (!conversationId) {
-      conversationId = data.conversationId;
+  const getReqData = (data = {}) => {
+    for (let key in data) {
+      if (key === 'userMessage') {
+        userMessage = data[key];
+        userMessageId = data[key].messageId;
+      } else if (key === 'responseMessageId') {
+        responseMessageId = data[key];
+      } else if (key === 'promptTokens') {
+        promptTokens = data[key];
+      } else if (!conversationId && key === 'conversationId') {
+        conversationId = data[key];
+      }
     }
   };
 
@@ -67,13 +77,12 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
         lastSavedTimestamp = currentTimestamp;
         saveMessage({
           messageId: responseMessageId,
-          sender: getResponseSender(endpointOption),
+          sender,
           conversationId,
           parentMessageId: overrideParentMessageId || userMessageId,
           text: partialText,
           model: endpointOption.modelOptions.model,
           unfinished: true,
-          cancelled: false,
           error: false,
           plugins,
           user,
@@ -135,26 +144,27 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
   };
 
   const getAbortData = () => ({
-    sender: getResponseSender(endpointOption),
+    sender,
     conversationId,
     messageId: responseMessageId,
     parentMessageId: overrideParentMessageId ?? userMessageId,
     text: getPartialText(),
     plugins: plugins.map((p) => ({ ...p, loading: false })),
     userMessage,
+    promptTokens,
   });
   const { abortController, onStart } = createAbortController(req, res, getAbortData);
 
   try {
     endpointOption.tools = await validateTools(user, endpointOption.tools);
-    const { client } = await initializeClient(req, endpointOption);
+    const { client } = await initializeClient({ req, res, endpointOption });
 
     let response = await client.sendMessage(text, {
       user,
       conversationId,
       parentMessageId,
       overrideParentMessageId,
-      getIds,
+      getReqData,
       onAgentAction,
       onChainEnd,
       onToolStart,
@@ -180,8 +190,8 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       response = { ...response, ...metadata };
     }
 
-    console.log('CLIENT RESPONSE');
-    console.dir(response, { depth: null });
+    logger.debug('[/ask/gptPlugins]', response);
+
     response.plugins = plugins.map((p) => ({ ...p, loading: false }));
     await saveMessage({ ...response, user });
 
@@ -194,7 +204,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     });
     res.end();
 
-    if (parentMessageId == '00000000-0000-0000-0000-000000000000' && newConvo) {
+    if (parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
       addTitle(req, {
         text,
         response,
@@ -206,7 +216,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     handleAbortError(res, req, error, {
       partialText,
       conversationId,
-      sender: getResponseSender(endpointOption),
+      sender,
       messageId: responseMessageId,
       parentMessageId: userMessageId ?? parentMessageId,
     });

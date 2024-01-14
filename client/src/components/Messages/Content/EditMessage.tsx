@@ -1,6 +1,6 @@
 import { useRef } from 'react';
-import { useRecoilState } from 'recoil';
-import { useUpdateMessageMutation } from 'librechat-data-provider';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
 import store from '~/store';
 import Container from './Container';
@@ -16,6 +16,7 @@ const EditMessage = ({
   setSiblingIdx,
 }: TEditProps) => {
   const [messages, setMessages] = useRecoilState(store.messages);
+  const conversation = useRecoilValue(store.conversation);
   const textEditor = useRef<HTMLDivElement | null>(null);
   const { conversationId, parentMessageId, messageId } = message;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
@@ -60,6 +61,7 @@ const EditMessage = ({
     const text = textEditor?.current?.innerText ?? '';
     updateMessageMutation.mutate({
       conversationId: conversationId ?? '',
+      model: conversation?.model ?? 'gpt-3.5-turbo',
       messageId,
       text,
     });
@@ -94,7 +96,7 @@ const EditMessage = ({
           disabled={isSubmitting}
           onClick={resubmitMessage}
         >
-          {localize('com_ui_save')} {'&'} {localize('com_ui_submit')}
+          {localize('com_ui_save_submit')}
         </button>
         <button
           className="btn btn-secondary relative mr-2"

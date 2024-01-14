@@ -17,6 +17,7 @@ function renderWithProvidersWrapper(ui, { ...options } = {}) {
             <AuthContextProvider
               authConfig={{
                 loginRedirect: '',
+                test: true,
               }}
             >
               {children}

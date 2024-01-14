@@ -1,7 +1,7 @@
 const crypto = require('crypto');
-const { sendMessage, sendError } = require('../utils');
-const { getResponseSender } = require('../routes/endpoints/schemas');
-const { saveMessage } = require('../../models');
+const { saveMessage } = require('~/models');
+const { sendMessage, sendError } = require('~/server/utils');
+const { getResponseSender } = require('librechat-data-provider');
 
 /**
  * Denies a request by sending an error message and optionally saves the user's message.

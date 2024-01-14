@@ -107,7 +107,7 @@ export default {
     'Top-k ändert, wie das Modell Token für die Ausgabe auswählt. Ein Top-k von 1 bedeutet, dass das ausgewählte Token das wahrscheinlichste unter allen Token im Vokabular des Modells ist (auch gierige Dekodierung genannt), während ein Top-k von 3 bedeutet, dass das nächste Token aus den drei wahrscheinlichsten Token ausgewählt wird (unter Verwendung der Temperatur).',
   com_endpoint_google_maxoutputtokens:
     'Maximale Anzahl von Token, die in der Antwort erzeugt werden können. Geben Sie einen niedrigeren Wert für kürzere Antworten und einen höheren Wert für längere Antworten an.',
-  com_endpoint_google_custom_name_placeholder: 'Benutzerdefinierter Name für PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'Benutzerdefinierter Name für Google',
   com_endpoint_google_prompt_prefix_placeholder:
     'Benutzerdefinierte Anweisungen oder Kontext festlegen. Wird ignoriert, wenn leer.',
   com_endpoint_custom_name: 'Benutzerdefinierter Name',
@@ -168,6 +168,10 @@ export default {
   com_endpoint_func_hover: 'Aktiviere die Plugin Funktion für ChatGPT',
   com_endpoint_skip_hover:
     'Aktivieren Sie das Überspringen des Abschlussschritts, der die endgültige Antwort und die generierten Schritte überprüft.',
+  com_nav_plugin_store: 'Plugin-Store',
+  com_nav_plugin_search: 'Suche nach Plugins',
+  com_nav_plugin_auth_error:
+    'Beim Versuch, dieses Plugin zu authentifizieren, ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.',
   com_nav_export_filename: 'Dateiname',
   com_nav_export_filename_placeholder: 'Lege einen Dateinamen fest',
   com_nav_export_type: 'Typ',
@@ -187,6 +191,7 @@ export default {
   com_nav_confirm_clear: 'Bestätige Löschung aller Chats',
   com_nav_close_sidebar: 'Schließe Seitenleiste',
   com_nav_open_sidebar: 'Öffne Seitenleiste',
+  com_nav_send_message: 'Sende Nachricht',
   com_nav_log_out: 'Ausloggen',
   com_nav_user: 'USER',
   com_nav_clear_conversation: 'Lösche Konversation',
@@ -196,5 +201,4 @@ export default {
   com_nav_settings: 'Einstellungen',
   com_nav_search_placeholder: 'Durchsuche Nachrichten',
   com_nav_setting_general: 'Generell',
-  com_nav_lang_german: 'Deutsch',
 };

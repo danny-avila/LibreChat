@@ -2,7 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ListeningIcon, StopGeneratingIcon } from '~/components';
 import { Settings } from 'lucide-react';
 import { SetKeyDialog } from './SetKeyDialog';
-import { useUserKey, useLocalize } from '~/hooks';
+import { useUserKey, useLocalize, useMediaQuery } from '~/hooks';
+import { SendMessageIcon } from '~/components/svg';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
 
 export default function SubmitButton({
   conversation,
@@ -12,6 +14,7 @@ export default function SubmitButton({
   isSubmitting,
   isListening,
   userProvidesKey,
+  hasText,
 }) {
   const { endpoint } = conversation;
   const [isDialogOpen, setDialogOpen] = useState(false);
@@ -20,14 +23,14 @@ export default function SubmitButton({
   const isKeyActive = checkExpiry();
   const localize = useLocalize();
   const [countdown, setCountdown] = useState(0);
+  const dots = ['·', '··', '···'];
+  const [dotIndex, setDotIndex] = useState(0);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const [isSquareGreen, setIsSquareGreen] = useState(false);
 
-  useEffect(() => {
-    if (userProvidesKey) {
-      setKeyProvided(isKeyActive);
-    } else {
-      setKeyProvided(true);
-    }
-  }, [checkExpiry, endpoint, userProvidesKey, isKeyActive]);
+  const setKey = useCallback(() => {
+    setDialogOpen(true);
+  }, []);
 
   const clickHandler = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -37,9 +40,21 @@ export default function SubmitButton({
     [submitMessage],
   );
 
-  const setKey = useCallback(() => {
-    setDialogOpen(true);
-  }, []);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDotIndex((prevDotIndex) => (prevDotIndex + 1) % dots.length);
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [dots.length]);
+
+  useEffect(() => {
+    if (userProvidesKey) {
+      setKeyProvided(isKeyActive);
+    } else {
+      setKeyProvided(true);
+    }
+  }, [checkExpiry, endpoint, userProvidesKey, isKeyActive]);
 
   useEffect(() => {
     let timer;
@@ -58,83 +73,99 @@ export default function SubmitButton({
     };
   }, [isListening]);
 
+  useEffect(() => {
+    setIsSquareGreen(hasText);
+  }, [hasText]);
+
   if (isSubmitting) {
-    return (
-      <button
-        onClick={handleStopGenerating}
-        type="button"
-        className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
-      >
-        <div className="m-1 mr-0 rounded-md p-2 pb-[10px] pt-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
-          <StopGeneratingIcon />
-        </div>
-      </button>
-    );
-  } else if (!isKeyProvided) {
-    return (
-      <>
-        <button
-          onClick={setKey}
-          type="button"
-          className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-auto items-center justify-center bg-transparent pr-1 text-gray-500"
-        >
-          <div className="flex items-center justify-center rounded-md text-xs group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
-            <div className="m-0 mr-0 flex items-center justify-center rounded-md p-2 sm:p-2">
-              <Settings className="mr-1 inline-block h-auto w-[18px]" />
-              {localize('com_endpoint_config_key_name_placeholder')}
-            </div>
+    const iconContainerClass = `m-1 mr-0 rounded-md pb-[5px] pl-[6px] pr-[4px] pt-[5px] ${
+      hasText ? (isSquareGreen ? 'bg-green-500' : '') : ''
+    } group-hover:bg-19C37D group-disabled:hover:bg-transparent dark:${
+      hasText ? (isSquareGreen ? 'bg-green-500' : '') : ''
+    } dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent`;
+
+    if (isSubmitting && isSmallScreen) {
+      return (
+        <button onClick={handleStopGenerating} type="button">
+          <div className="m-1 mr-0 rounded-md p-2 pb-[10px] pt-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+            <StopGeneratingIcon />
           </div>
         </button>
-        {userProvidesKey && (
-          <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
-        )}
-      </>
-    );
-  } else if (isListening) {
-    return (
-      <button
-        className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
-        disabled={true}
-      >
-        <div className="m-1 mr-0 rounded-md pb-[9px] pl-[9.5px] pr-[7px] pt-[11px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
-          {countdown > 0 ? (
-            <div className="text-xl  text-red-600">{countdown}</div>
-          ) : (
-            <ListeningIcon />
-          )}
-        </div>
-      </button>
-    );
-  } else {
-    return (
-      <button
-        onClick={clickHandler}
-        disabled={disabled}
-        data-testid="submit-button"
-        className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
-      >
-        <div className="m-1 mr-0 rounded-md pb-[9px] pl-[9.5px] pr-[7px] pt-[11px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
-          <svg
-            stroke="currentColor"
-            fill="none"
-            strokeWidth="2"
-            viewBox="0 0 24 24"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="mr-1 h-4 w-4 "
-            height="1em"
-            width="1em"
-            xmlns="http://www.w3.org/2000/svg"
+      );
+    } else if (isSubmitting) {
+      return (
+        <div className="relative flex h-full">
+          <div
+            className="absolute text-2xl"
+            style={{ top: '50%', transform: 'translateY(-20%) translateX(-33px)' }}
           >
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
+            {dots[dotIndex]}
+          </div>
         </div>
-      </button>
-    );
+      );
+    } else if (!isKeyProvided) {
+      return (
+        <>
+          <button
+            onClick={setKey}
+            type="button"
+            className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-auto items-center justify-center bg-transparent pr-1 text-gray-500"
+          >
+            <div className="flex items-center justify-center rounded-md text-xs group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+              <div className="m-0 mr-0 flex items-center justify-center rounded-md p-2 sm:p-2">
+                <Settings className="mr-1 inline-block h-auto w-[18px]" />
+                {localize('com_endpoint_config_key_name_placeholder')}
+              </div>
+            </div>
+          </button>
+          {userProvidesKey && (
+            <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
+          )}
+        </>
+      );
+    } else if (isListening) {
+      return (
+        <button
+          className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
+          disabled={true}
+        >
+          <div className="m-1 mr-0 rounded-md pb-[9px] pl-[9.5px] pr-[7px] pt-[11px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+            {countdown > 0 ? (
+              <div className="text-xl  text-red-600">{countdown}</div>
+            ) : (
+              <ListeningIcon />
+            )}
+          </div>
+        </button>
+      );
+    } else {
+      return (
+        <TooltipProvider delayDuration={50}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={clickHandler}
+                disabled={disabled}
+                data-testid="submit-button"
+                className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
+              >
+                <div className={iconContainerClass}>
+                  {hasText ? (
+                    <div className="bg-19C37D flex h-[24px] w-[24px] items-center justify-center rounded-full text-white">
+                      <SendMessageIcon />
+                    </div>
+                  ) : (
+                    <SendMessageIcon />
+                  )}
+                </div>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={-5}>
+              {localize('com_nav_send_message')}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
   }
-}
-
-{
-  /* <div class="text-2xl"><span class="">·</span><span class="">·</span><span class="invisible">·</span></div> */
 }

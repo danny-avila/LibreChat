@@ -1,19 +1,33 @@
 // From https://platform.openai.com/docs/api-reference/images/create
 // To use this tool, you must pass in a configured OpenAIApi object.
-const fs = require('fs');
-const { Configuration, OpenAIApi } = require('openai');
-// const { genAzureEndpoint } = require('../../../utils/genAzureEndpoints');
+const OpenAI = require('openai');
+// const { genAzureEndpoint } = require('~/utils/genAzureEndpoints');
+const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
-const saveImageFromUrl = require('./saveImageFromUrl');
-const path = require('path');
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const { getImageBasename } = require('~/server/services/Files/images');
+const { processFileURL } = require('~/server/services/Files/process');
+const extractBaseURL = require('~/utils/extractBaseURL');
+const { logger } = require('~/config');
 
+const { DALLE_REVERSE_PROXY, PROXY } = process.env;
 class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
 
+    this.userId = fields.userId;
+    this.fileStrategy = fields.fileStrategy;
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
+
+    const config = { apiKey };
+    if (DALLE_REVERSE_PROXY) {
+      config.baseURL = extractBaseURL(DALLE_REVERSE_PROXY);
+    }
+
+    if (PROXY) {
+      config.httpAgent = new HttpsProxyAgent(PROXY);
+    }
     // let azureKey = fields.AZURE_API_KEY || process.env.AZURE_API_KEY;
-    let config = { apiKey };
 
     // if (azureKey) {
     //   apiKey = azureKey;
@@ -36,7 +50,7 @@ class OpenAICreateImage extends Tool {
     //     }
     //   };
     // }
-    this.openaiApi = new OpenAIApi(new Configuration(config));
+    this.openai = new OpenAI(config);
     this.name = 'dall-e';
     this.description = `You can generate images with 'dall-e'. This tool is exclusively for visual content.
 Guidelines:
@@ -58,20 +72,16 @@ Guidelines:
   replaceUnwantedChars(inputString) {
     return inputString
       .replace(/\r\n|\r|\n/g, ' ')
-      .replace('"', '')
+      .replace(/"/g, '')
       .trim();
   }
 
-  getMarkdownImageUrl(imageName) {
-    const imageUrl = path
-      .join(this.relativeImageUrl, imageName)
-      .replace(/\\/g, '/')
-      .replace('public/', '');
-    return `![generated image](/${imageUrl})`;
+  wrapInMarkdown(imageUrl) {
+    return `![generated image](${imageUrl})`;
   }
 
   async _call(input) {
-    const resp = await this.openaiApi.createImage({
+    const resp = await this.openai.images.generate({
       prompt: this.replaceUnwantedChars(input),
       // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
       n: 1,
@@ -79,38 +89,38 @@ Guidelines:
       size: '512x512',
     });
 
-    const theImageUrl = resp.data.data[0].url;
+    const theImageUrl = resp.data[0].url;
 
     if (!theImageUrl) {
       throw new Error('No image URL returned from OpenAI API.');
     }
 
-    const regex = /img-[\w\d]+.png/;
-    const match = theImageUrl.match(regex);
-    let imageName = '1.png';
+    const imageBasename = getImageBasename(theImageUrl);
+    let imageName = `image_${uuidv4()}.png`;
 
-    if (match) {
-      imageName = match[0];
-      console.log(imageName); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
+    if (imageBasename) {
+      imageName = imageBasename;
+      logger.debug('[DALL-E]', { imageName }); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
     } else {
-      console.log('No image name found in the string.');
-    }
-
-    this.outputPath = path.resolve(__dirname, '..', '..', '..', '..', 'client', 'public', 'images');
-    const appRoot = path.resolve(__dirname, '..', '..', '..', '..', 'client');
-    this.relativeImageUrl = path.relative(appRoot, this.outputPath);
-
-    // Check if directory exists, if not create it
-    if (!fs.existsSync(this.outputPath)) {
-      fs.mkdirSync(this.outputPath, { recursive: true });
+      logger.debug('[DALL-E] No image name found in the string.', {
+        theImageUrl,
+        data: resp.data[0],
+      });
     }
 
     try {
-      await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
-      this.result = this.getMarkdownImageUrl(imageName);
+      const result = await processFileURL({
+        fileStrategy: this.fileStrategy,
+        userId: this.userId,
+        URL: theImageUrl,
+        fileName: imageName,
+        basePath: 'images',
+      });
+
+      this.result = this.wrapInMarkdown(result);
     } catch (error) {
-      console.error('Error while saving the image:', error);
-      this.result = theImageUrl;
+      logger.error('Error while saving the image:', error);
+      this.result = `Failed to save the image locally. ${error.message}`;
     }
 
     return this.result;

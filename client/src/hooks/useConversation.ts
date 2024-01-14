@@ -1,15 +1,25 @@
 import { useCallback } from 'react';
-import { useSetRecoilState, useResetRecoilState, useRecoilCallback, useRecoilValue } from 'recoil';
-import { TConversation, TMessagesAtom, TSubmission, TPreset } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
+import { useSetRecoilState, useResetRecoilState, useRecoilCallback } from 'recoil';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import type {
+  TConversation,
+  TMessagesAtom,
+  TSubmission,
+  TPreset,
+  TModelsConfig,
+  TEndpointsConfig,
+} from 'librechat-data-provider';
+import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
+import useOriginNavigate from './useOriginNavigate';
 import store from '~/store';
 
 const useConversation = () => {
+  const navigate = useOriginNavigate();
   const setConversation = useSetRecoilState(store.conversation);
   const setMessages = useSetRecoilState<TMessagesAtom>(store.messages);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submission);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
-  const endpointsConfig = useRecoilValue(store.endpointsConfig);
+  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
   const switchToConversation = useRecoilCallback(
     ({ snapshot }) =>
@@ -17,8 +27,9 @@ const useConversation = () => {
         conversation: TConversation,
         messages: TMessagesAtom = null,
         preset: TPreset | null = null,
+        modelsData?: TModelsConfig,
       ) => {
-        const modelsConfig = snapshot.getLoadable(store.modelsConfig).contents;
+        const modelsConfig = modelsData ?? snapshot.getLoadable(store.modelsConfig).contents;
         const { endpoint = null } = conversation;
 
         if (endpoint === null) {
@@ -26,6 +37,11 @@ const useConversation = () => {
             convoSetup: preset ?? conversation,
             endpointsConfig,
           });
+
+          const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
+          if (!conversation.endpointType && endpointType) {
+            conversation.endpointType = endpointType;
+          }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];
           conversation = buildDefaultConvo({
@@ -40,12 +56,16 @@ const useConversation = () => {
         setMessages(messages);
         setSubmission({} as TSubmission);
         resetLatestMessage();
+
+        if (conversation.conversationId === 'new' && !modelsData) {
+          navigate('new');
+        }
       },
     [endpointsConfig],
   );
 
   const newConversation = useCallback(
-    (template = {}, preset?: TPreset) => {
+    (template = {}, preset?: TPreset, modelsData?: TModelsConfig) => {
       switchToConversation(
         {
           conversationId: 'new',
@@ -57,6 +77,7 @@ const useConversation = () => {
         },
         [],
         preset,
+        modelsData,
       );
     },
     [switchToConversation],

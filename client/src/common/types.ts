@@ -1,11 +1,13 @@
+import { FileSources } from 'librechat-data-provider';
 import type {
   TConversation,
   TMessage,
   TPreset,
-  TMutation,
   TLoginUser,
   TUser,
+  EModelEndpoint,
 } from 'librechat-data-provider';
+import type { UseMutationResult } from '@tanstack/react-query';
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
 export type TSetExample = (
@@ -21,6 +23,21 @@ export enum ESide {
   Left = 'left',
 }
 
+export enum NotificationSeverity {
+  INFO = 'info',
+  SUCCESS = 'success',
+  WARNING = 'warning',
+  ERROR = 'error',
+}
+
+export type TShowToast = {
+  message: string;
+  severity?: NotificationSeverity;
+  showIcon?: boolean;
+  duration?: number;
+  status?: 'error' | 'success' | 'warning' | 'info';
+};
+
 export type TBaseSettingsProps = {
   conversation: TConversation | TPreset | null;
   className?: string;
@@ -34,6 +51,8 @@ export type TSettingsProps = TBaseSettingsProps & {
 
 export type TModels = {
   models: string[];
+  showAbove?: boolean;
+  popover?: boolean;
 };
 
 export type TModelSelectProps = TSettingsProps & TModels;
@@ -51,7 +70,7 @@ export type TSetOptionsPayload = {
   addExample: () => void;
   removeExample: () => void;
   setAgentOption: TSetOption;
-  getConversation: () => TConversation | TPreset | null;
+  // getConversation: () => TConversation | TPreset | null;
   checkPluginSelection: (value: string) => boolean;
   setTools: (newValue: string) => void;
 };
@@ -96,7 +115,6 @@ export type TMessageProps = {
   isSearchView?: boolean;
   siblingIdx?: number;
   siblingCount?: number;
-  scrollToBottom?: () => void;
   setCurrentEditId?: React.Dispatch<React.SetStateAction<string | number | null>> | null;
   setSiblingIdx?: ((value: number) => void | React.Dispatch<React.SetStateAction<number>>) | null;
 };
@@ -131,7 +149,7 @@ export type TDisplayProps = TText &
 export type TConfigProps = {
   userKey: string;
   setUserKey: React.Dispatch<React.SetStateAction<string>>;
-  endpoint: string;
+  endpoint: EModelEndpoint | string;
 };
 
 export type TDangerButtonProps = {
@@ -140,7 +158,7 @@ export type TDangerButtonProps = {
   className?: string;
   disabled?: boolean;
   showText?: boolean;
-  mutation?: TMutation;
+  mutation?: UseMutationResult<unknown>;
   onClick: () => void;
   infoTextCode: string;
   actionTextCode: string;
@@ -177,13 +195,43 @@ export type TUserContext = {
 
 export type TAuthConfig = {
   loginRedirect: string;
+  test?: boolean;
 };
 
 export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
   Pick<TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
     size?: number;
     button?: boolean;
+    iconURL?: string;
     message?: boolean;
     className?: string;
-    endpoint?: string | null;
+    endpoint?: EModelEndpoint | string | null;
+    endpointType?: EModelEndpoint | null;
   };
+
+export type Option = Record<string, unknown> & {
+  label?: string;
+  value: string | number | null;
+};
+
+export type TOptionSettings = {
+  showExamples?: boolean;
+  isCodeChat?: boolean;
+};
+
+export interface ExtendedFile {
+  file: File;
+  file_id: string;
+  temp_file_id?: string;
+  type?: string;
+  filepath?: string;
+  filename?: string;
+  width?: number;
+  height?: number;
+  size: number;
+  preview: string;
+  progress: number;
+  source?: FileSources;
+}
+
+export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

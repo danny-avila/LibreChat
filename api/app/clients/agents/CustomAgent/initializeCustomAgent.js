@@ -18,7 +18,7 @@ const initializeCustomAgent = async ({
 }) => {
   let prompt = CustomAgent.createPrompt(tools, { currentDateString, model: model.modelName });
 
-  const chatPrompt = ChatPromptTemplate.fromPromptMessages([
+  const chatPrompt = ChatPromptTemplate.fromMessages([
     new SystemMessagePromptTemplate(prompt),
     HumanMessagePromptTemplate.fromTemplate(`{chat_history}
 Query: {input}
@@ -28,6 +28,7 @@ Query: {input}
   const outputParser = new CustomOutputParser({ tools });
 
   const memory = new BufferMemory({
+    llm: model,
     chatHistory: new ChatMessageHistory(pastMessages),
     // returnMessages: true, // commenting this out retains memory
     memoryKey: 'chat_history',

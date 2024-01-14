@@ -1,60 +1,22 @@
-const { availableTools } = require('../../app/clients/tools');
-const { addOpenAPISpecs } = require('../../app/clients/tools/util/addOpenAPISpecs');
-const {
-  openAIApiKey,
-  azureOpenAIApiKey,
-  useAzurePlugins,
-  userProvidedOpenAI,
-  palmKey,
-  openAI,
-  azureOpenAI,
-  bingAI,
-  chatGPTBrowser,
-  anthropic,
-} = require('../services/EndpointService').config;
+const { CacheKeys } = require('librechat-data-provider');
+const { loadDefaultEndpointsConfig, loadConfigEndpoints } = require('~/server/services/Config');
+const { getLogStores } = require('~/cache');
 
-let i = 0;
 async function endpointController(req, res) {
-  let key, palmUser;
-  try {
-    key = require('../../data/auth.json');
-  } catch (e) {
-    if (i === 0) {
-      i++;
-    }
+  const cache = getLogStores(CacheKeys.CONFIG_STORE);
+  const cachedEndpointsConfig = await cache.get(CacheKeys.ENDPOINT_CONFIG);
+  if (cachedEndpointsConfig) {
+    res.send(cachedEndpointsConfig);
+    return;
   }
 
-  if (palmKey === 'user_provided') {
-    palmUser = true;
-    if (i <= 1) {
-      i++;
-    }
-  }
+  const defaultEndpointsConfig = await loadDefaultEndpointsConfig();
+  const customConfigEndpoints = await loadConfigEndpoints();
 
-  const tools = await addOpenAPISpecs(availableTools);
-  function transformToolsToMap(tools) {
-    return tools.reduce((map, obj) => {
-      map[obj.pluginKey] = obj.name;
-      return map;
-    }, {});
-  }
-  const plugins = transformToolsToMap(tools);
+  const endpointsConfig = { ...defaultEndpointsConfig, ...customConfigEndpoints };
 
-  const google = key || palmUser ? { userProvide: palmUser } : false;
-
-  const gptPlugins =
-    openAIApiKey || azureOpenAIApiKey
-      ? {
-        plugins,
-        availableAgents: ['classic', 'functions'],
-        userProvide: userProvidedOpenAI,
-        azure: useAzurePlugins,
-      }
-      : false;
-
-  res.send(
-    JSON.stringify({ azureOpenAI, openAI, google, bingAI, chatGPTBrowser, gptPlugins, anthropic }),
-  );
+  await cache.set(CacheKeys.ENDPOINT_CONFIG, endpointsConfig);
+  res.send(JSON.stringify(endpointsConfig));
 }
 
 module.exports = endpointController;

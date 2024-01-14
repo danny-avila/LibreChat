@@ -1,19 +1,16 @@
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
+export * from './json';
+export * from './files';
+export * from './presets';
 export * from './languages';
+export * from './endpoints';
+export { default as cn } from './cn';
 export { default as buildTree } from './buildTree';
 export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
 export { default as validateIframe } from './validateIframe';
-export { default as getMessageError } from './getMessageError';
 export { default as buildDefaultConvo } from './buildDefaultConvo';
 export { default as getDefaultEndpoint } from './getDefaultEndpoint';
 export { default as getLocalStorageItems } from './getLocalStorageItems';
-
-export function cn(...inputs: string[]) {
-  return twMerge(clsx(inputs));
-}
 
 export const languages = [
   'java',
@@ -44,16 +41,6 @@ export const languages = [
   'perl',
   'pascal',
 ];
-
-export const alternateName = {
-  openAI: 'OpenAI',
-  azureOpenAI: 'Azure OpenAI',
-  bingAI: 'Bing',
-  chatGPTBrowser: 'ChatGPT',
-  gptPlugins: 'Plugins',
-  google: 'PaLM',
-  anthropic: 'Anthropic',
-};
 
 export const removeFocusOutlines =
   'focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0';

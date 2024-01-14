@@ -50,7 +50,7 @@ class ChatGPTClient extends BaseClient {
       stop: modelOptions.stop,
     };
 
-    this.isChatGptModel = this.modelOptions.model.startsWith('gpt-');
+    this.isChatGptModel = this.modelOptions.model.includes('gpt-');
     const { isChatGptModel } = this;
     this.isUnofficialChatGptModel =
       this.modelOptions.model.startsWith('text-chat') ||
@@ -166,6 +166,12 @@ class ChatGPTClient extends BaseClient {
       console.debug(modelOptions);
       console.debug();
     }
+
+    if (this.azure || this.options.azure) {
+      // Azure does not accept `model` in the body, so we need to remove it.
+      delete modelOptions.model;
+    }
+
     const opts = {
       method: 'POST',
       headers: {
@@ -437,9 +443,7 @@ ${botMessage.message}
     return returnData;
   }
 
-  async buildPrompt(messages, parentMessageId, { isChatGptModel = false, promptPrefix = null }) {
-    const orderedMessages = this.constructor.getMessagesForConversation(messages, parentMessageId);
-
+  async buildPrompt(messages, { isChatGptModel = false, promptPrefix = null }) {
     promptPrefix = (promptPrefix || this.options.promptPrefix || '').trim();
     if (promptPrefix) {
       // If the prompt prefix doesn't end with the end token, add it.
@@ -485,8 +489,8 @@ ${botMessage.message}
     // Iterate backwards through the messages, adding them to the prompt until we reach the max token count.
     // Do this within a recursive async function so that it doesn't block the event loop for too long.
     const buildPromptBody = async () => {
-      if (currentTokenCount < maxTokenCount && orderedMessages.length > 0) {
-        const message = orderedMessages.pop();
+      if (currentTokenCount < maxTokenCount && messages.length > 0) {
+        const message = messages.pop();
         const roleLabel =
           message?.isCreatedByUser || message?.role?.toLowerCase() === 'user'
             ? this.userLabel
@@ -550,7 +554,7 @@ ${botMessage.message}
     if (isChatGptModel) {
       return { prompt: [instructionsPayload, messagePayload], context };
     }
-    return { prompt, context };
+    return { prompt, context, promptTokens: currentTokenCount };
   }
 
   getTokenCount(text) {

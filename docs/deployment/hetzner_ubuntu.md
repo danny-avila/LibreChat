@@ -1,27 +1,32 @@
+---
+title: 🏗️ Hetzner
+description: LibreChat Ubuntu installation from scratch on Hetzner.
+weight: -2
+---
 # Hetzner Ubuntu Setup
 
 *These instructions are designed for someone starting from scratch for a Ubuntu Installation. You can skip to any point that is useful for you.*
 
 ## Starting from Zero:
 
-### 1. Login to Hetzner Cloud Console (https://console.hetzner.cloud/projects) and Create a new Ubuntu 20 Project with 4GB Ram. Do not worry about SSH keys *yet*.
+1. Login to Hetzner Cloud Console (**[https://console.hetzner.cloud/projects](https://console.hetzner.cloud/projects)**) and Create a new Ubuntu 20 Project with 4GB Ram. Do not worry about SSH keys *yet*.
 
 Hetzner will email you the root password.
 
-### 2. Once you have that, you can login with any SSH terminal with:
+2. Once you have that, you can login with any SSH terminal with:
 
 ```
 ssh root@<yourserverip>
 ```
 
-### 3. Once you have logged in, immediately create a new, non-root user:
+3. Once you have logged in, immediately create a new, non-root user:
 
 ```
 adduser <yourusername>
 usermod -aG sudo <yourusername>
 ```
 
-### 4. Make sure you have done this correctly by double-checking you have sudo permissions:
+4. Make sure you have done this correctly by double-checking you have sudo permissions:
 
 ```
 getent group sudo | cut -d: -f4
@@ -29,7 +34,7 @@ getent group sudo | cut -d: -f4
 
 Now, quit the terminal connection.
 
-### 5. Create a local ssh key:
+5. Create a local ssh key:
 
 ```
 ssh-keygen -t ed25519
@@ -47,13 +52,13 @@ ssh <yourusername>@<yourserverip>
 
 When you login, now and going forward, it will ask you for the password for your ssh key now, not your user password. Sudo commands will always want your user password.
 
-### 6. Add SSH to the universal server firewall and activate it.
+6. Add SSH to the universal server firewall and activate it.
 
 - Run `sudo ufw allow OpenSSH`
 - Run `sudo ufw enable`
 
 
-### 7. Then, we need to install docker, update the system packages, and reboot the server:
+7. Then, we need to install docker, update the system packages, and reboot the server:
 ```
 sudo apt install docker
 sudo apt install docker-compose
@@ -68,9 +73,11 @@ sudo reboot
 
 ## Tokens/Apis/etc:
 - Make sure you have all the needed variables for the following before moving forward
-### [Get Your API keys and Tokens](../install/apis_and_tokens.md) (Required)
-- You must set up at least one of these tokens or APIs to run the app.
-### [User/Auth System](../install/user_auth_system.md) (Optional)
+
+### [Setup your AI Endpoints](../install/configuration/ai_setup.md) (Required)
+- At least one AI endpoint should be setup for use.
+### [User/Auth System](../install/configuration/user_auth_system.md) (Optional)
+
 - How to set up the user/auth system and Google login.
 ### [Plugins](../features/plugins/introduction.md)
 - Optional plugins available to enhance the application.
@@ -79,7 +86,7 @@ sudo reboot
 
 ## Using Docker to Install the Service
 
-### 1. **Recommended: [Docker Install](../install/docker_compose_install.md)**
+### 1. **Recommended: [Docker Install](../install/installation/docker_compose_install.md)**
 From the *server* commandline (as your user, not root):
 
 ```
@@ -93,8 +100,7 @@ nano docker-compose.yml
 ```
 
 ```
-       VITE_APP_TITLE: LibreChat # default, change to your desired app >
-       VITE_SHOW_GOOGLE_LOGIN_OPTION: 'false'  # default, change to true if you want to show google login
+       APP_TITLE: LibreChat # default, change to your desired app >
 ```
 
 ### 2. Create a global environment file and open it up to begin adding the tokens/keys you prepared in the PreReqs section.
@@ -118,7 +124,6 @@ HOST=<yourserverip>
 ```
 SEARCH=true
 MEILI_HOST=meilisearch
-MEILI_HTTP_ADDR=meilisearch
 ```
 
 ### 5. After everything file has been updated, run  `docker-compose build` then `docker-compose up`
@@ -126,7 +131,7 @@ MEILI_HTTP_ADDR=meilisearch
 
 **NOTE: You may need to run these commands with sudo permissions.**
 
-## Once the app is running, you can access it at http://yourserverip:3080
+## Once the app is running, you can access it at `http://yourserverip:3080`
 
 It is safe to close the terminal -- the docker app will continue to run.
 

@@ -1,9 +1,10 @@
 // Generates image using stable diffusion webui's api (automatic1111)
 const fs = require('fs');
-const { Tool } = require('langchain/tools');
 const path = require('path');
 const axios = require('axios');
 const sharp = require('sharp');
+const { Tool } = require('langchain/tools');
+const { logger } = require('~/config');
 
 class StableDiffusionAPI extends Tool {
   constructor(fields) {
@@ -81,7 +82,7 @@ Guidelines:
         .toFile(this.outputPath + '/' + imageName);
       this.result = this.getMarkdownImageUrl(imageName);
     } catch (error) {
-      console.error('Error while saving the image:', error);
+      logger.error('[StableDiffusion] Error while saving the image:', error);
       // this.result = theImageUrl;
     }
 

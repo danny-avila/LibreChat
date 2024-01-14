@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
+import { EModelEndpoint, alternateName } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
-import { Plugin } from '~/components/svg';
 import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
-import { cn, alternateName } from '~/utils/';
+import { Plugin } from '~/components/svg';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 import store from '~/store';
 
@@ -24,7 +25,7 @@ const MessageHeader = ({ isSearchView = false }) => {
     return null;
   }
 
-  const isNotClickable = endpoint === 'chatGPTBrowser';
+  const isNotClickable = endpoint === EModelEndpoint.chatGPTBrowser;
 
   const plugins = (
     <>
@@ -43,7 +44,7 @@ const MessageHeader = ({ isSearchView = false }) => {
     } else {
       let _title = `${alternateName[endpoint] ?? endpoint}`;
 
-      if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
+      if (endpoint === EModelEndpoint.azureOpenAI || endpoint === EModelEndpoint.openAI) {
         const { chatGptLabel } = conversation;
         if (model) {
           _title += `: ${model}`;
@@ -51,7 +52,7 @@ const MessageHeader = ({ isSearchView = false }) => {
         if (chatGptLabel) {
           _title += ` as ${chatGptLabel}`;
         }
-      } else if (endpoint === 'google') {
+      } else if (endpoint === EModelEndpoint.google) {
         _title = 'PaLM';
         const { modelLabel, model } = conversation;
         if (model) {
@@ -60,7 +61,7 @@ const MessageHeader = ({ isSearchView = false }) => {
         if (modelLabel) {
           _title += ` as ${modelLabel}`;
         }
-      } else if (endpoint === 'bingAI') {
+      } else if (endpoint === EModelEndpoint.bingAI) {
         const { jailbreak, toneStyle } = conversation;
         if (toneStyle) {
           _title += `: ${toneStyle}`;
@@ -68,13 +69,13 @@ const MessageHeader = ({ isSearchView = false }) => {
         if (jailbreak) {
           _title += ' as Sydney';
         }
-      } else if (endpoint === 'chatGPTBrowser') {
+      } else if (endpoint === EModelEndpoint.chatGPTBrowser) {
         if (model) {
           _title += `: ${model}`;
         }
-      } else if (endpoint === 'gptPlugins') {
+      } else if (endpoint === EModelEndpoint.gptPlugins) {
         return plugins;
-      } else if (endpoint === 'anthropic') {
+      } else if (endpoint === EModelEndpoint.anthropic) {
         _title = 'Claude';
       } else if (endpoint === null) {
         null;
@@ -89,8 +90,9 @@ const MessageHeader = ({ isSearchView = false }) => {
     <>
       <div
         className={cn(
-          'flex min-h-[60px] w-full flex-wrap items-center justify-between gap-3 border-b border-black/10 bg-white text-sm text-gray-500 transition-all hover:bg-gray-50 hover:bg-opacity-30 dark:border-gray-900/50 dark:bg-gray-800 dark:hover:bg-gray-700 dark:hover:bg-opacity-100',
-          isNotClickable ? '' : 'cursor-pointer ',
+          'flex min-h-[60px] w-full flex-wrap items-center justify-between gap-3 border-b border-black/10 bg-white text-sm text-gray-500 transition-all hover:bg-gray-50 dark:border-gray-900/50 dark:bg-gray-800 dark:hover:bg-gray-700',
+          isNotClickable ? '' : 'cursor-pointer',
+          'sticky top-0 z-10',
         )}
         onClick={() => (isNotClickable ? null : setSaveAsDialogShow(true))}
       >

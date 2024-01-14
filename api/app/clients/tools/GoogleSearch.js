@@ -1,5 +1,6 @@
-const { Tool } = require('langchain/tools');
 const { google } = require('googleapis');
+const { Tool } = require('langchain/tools');
+const { logger } = require('~/config');
 
 /**
  * Represents a tool that allows an agent to use the Google Custom Search API.
@@ -86,7 +87,7 @@ class GoogleSearchAPI extends Tool {
       });
 
       // return response.data;
-      // console.log(response.data);
+      // logger.debug(response.data);
 
       if (!response.data.items || response.data.items.length === 0) {
         return this.resultsToReadableFormat([
@@ -110,7 +111,7 @@ class GoogleSearchAPI extends Tool {
 
       return this.resultsToReadableFormat(metadataResults);
     } catch (error) {
-      console.log(`Error searching Google: ${error}`);
+      logger.error('[GoogleSearchAPI]', error);
       // throw error;
       return 'There was an error searching Google.';
     }

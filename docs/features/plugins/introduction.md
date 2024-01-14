@@ -1,34 +1,34 @@
+---
+title: 🔌 Introduction
+description: This doc introduces the plugins endpoint, which enables you to use different LLMs and tools with more flexibility and control. You can change your settings and plugins on the fly, and use plugins to access various sources of information and assistance.
+weight: -10
+---
 # Plugins Endpoint
 
-![introduction-1](https://github.com/danny-avila/LibreChat/assets/32828263/7e426681-2bef-4dfc-9b4e-0cf2c09cb1d5)
+![intro-1](https://github.com/danny-avila/LibreChat/assets/32828263/7db788a5-2173-4115-b34b-43ea132dae69)
+
 
 The plugins endpoint opens the door to prompting LLMs in new ways other than traditional input/output prompting.
 
-The first step is using chain-of-thought prompting & ["agency"](https://zapier.com/blog/ai-agent/) for using plugins/tools in a fashion mimicing the official ChatGPT Plugins feature.
+The first step is using chain-of-thought prompting & **["agency"](https://zapier.com/blog/ai-agent/)** for using plugins/tools in a fashion mimicing the official ChatGPT Plugins feature.
 
-More than this, you can use this endpoint for changing your conversation settings mid-conversation. Unlike the official ChatGPT site and all other endpoints, you can switch models, presets, and settings mid-convo, even when you have no plugins selected. This is useful if you first want a creative response from GPT-4, and then a deterministic, lower cost response from GPT-3. Soon, you will be able to use PaLM2 and HuggingFace models, all in this endpoint in the same modular manner.
-
-### Roadmap:
-- More plugins and advanced plugin usage (ongoing)
-- **[ChatGPT Plugins/OpenAPI Specs (complete)](./chatgpt_plugins_openapi.md)**
-- More LLMs to choose from for both Thinking and Completion Phases
-- Alternative prompting methods such as Tree-of-Thought
+More than this, you can use this endpoint for changing your conversation settings mid-conversation. Unlike the official ChatGPT site and all other endpoints, you can switch models, presets, and settings mid-convo, even when you have no plugins selected. This is useful if you first want a creative response from GPT-4, and then a deterministic, lower cost response from GPT-3. Soon, you will be able to use Google, HuggingFace, local models, all in this or a similar endpoint in the same modular manner.
 
 ## Using Plugins 
 
 The LLM process when using Plugins is illustrated below.
 
-![introduction-2](https://github.com/danny-avila/LibreChat/assets/32828263/789406e1-7345-43d2-823b-8aed0588bb78)
+![intro-2](https://github.com/danny-avila/LibreChat/assets/32828263/789406e1-7345-43d2-823b-8aed0588bb78)
 
 **When you open the settings with the Plugins endpoint selected, you will view the default settings for the Completion Phase.**
 
 Clicking on **"Show Agent Settings"** will allow you to modify parameters for the thinking phase
 
-![introduction-3](https://github.com/danny-avila/LibreChat/assets/32828263/f3cf33d0-701f-409d-8ef6-f336993df55d)
+![intro-3](https://github.com/danny-avila/LibreChat/assets/32828263/d9a43517-5b35-4786-a126-0adf62b5b087)
 
 ---
 
-![introduction-4](https://github.com/danny-avila/LibreChat/assets/32828263/c6a33fb2-aa14-4a88-9467-9f2c429e6338)
+![intro-4](https://github.com/danny-avila/LibreChat/assets/32828263/12a51feb-c030-4cf0-8429-16360270988d)
 
 - You can specify which plugins you would like to select from by installing/uninstalling them in the Plugin store
 - See this guide on how to create your own plugins (WIP)
@@ -53,8 +53,8 @@ Clicking on **"Show Agent Settings"** will allow you to modify parameters for th
 - **[Stable Diffusion](./stable_diffusion.md)**
 - **[Wolfram](./wolfram.md)**
 - **DALL-E** - same setup as above, you just need an OpenAI key, and it's made distinct from your main API key to make Chats but it can be the same one
-- **Zapier** - You need a Zapier account. Get your [API key from here](https://nla.zapier.com/credentials/) after you've made an account
-  - Create allowed actions - Follow step 3 in this [getting start guide](https://nla.zapier.com/start/) from Zapier
+- **Zapier** - You need a Zapier account. Get your **[API key from here](https://nla.zapier.com/credentials/)** after you've made an account
+  - Create allowed actions - Follow step 3 in this **[Start Here guide](https://nla.zapier.com/start/)** from Zapier
     - ⚠️ NOTE: zapier is known to be finicky with certain actions. I found that writing email drafts is probably the best use of it
     -  there are improvements that can be made to override the official NLA integration and that is TBD
 - **Browser/Scraper** - This is not to be confused with 'browsing' on chat.openai.com (which is technically a plugin suite or multiple plugins)
@@ -63,7 +63,7 @@ Clicking on **"Show Agent Settings"** will allow you to modify parameters for th
   - A better solution for 'browsing' is planned but can't guarantuee when
   - This plugin is best used in combination with google so it doesn't hallucinate webpages to visit
 - **Serpapi** - an alternative to Google search but not as performant in my opinion
-  - You can get an API key here: https://serpapi.com/dashboard
+  - You can get an API key here: **[https://serpapi.com/dashboard](https://serpapi.com/dashboard)**
   - For free tier, you are limited to 100 queries/month
   - With google, you are limited to 100/day for free, which is a better deal, and any after may cost you a few pennies
 

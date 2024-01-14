@@ -1,23 +1,21 @@
-const {
-  getOpenAIModels,
-  getChatGPTBrowserModels,
-  getAnthropicModels,
-} = require('../services/ModelService');
-
-const { useAzurePlugins } = require('../services/EndpointService').config;
+const { CacheKeys } = require('librechat-data-provider');
+const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
+const { getLogStores } = require('~/cache');
 
 async function modelController(req, res) {
-  const google = ['chat-bison', 'text-bison', 'codechat-bison'];
-  const openAI = await getOpenAIModels();
-  const azureOpenAI = await getOpenAIModels({ azure: true });
-  const gptPlugins = await getOpenAIModels({ azure: useAzurePlugins, plugins: true });
-  const bingAI = ['BingAI', 'Sydney'];
-  const chatGPTBrowser = getChatGPTBrowserModels();
-  const anthropic = getAnthropicModels();
+  const cache = getLogStores(CacheKeys.CONFIG_STORE);
+  const cachedModelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
+  if (cachedModelsConfig) {
+    res.send(cachedModelsConfig);
+    return;
+  }
+  const defaultModelsConfig = await loadDefaultModels();
+  const customModelsConfig = await loadConfigModels();
 
-  res.send(
-    JSON.stringify({ azureOpenAI, openAI, google, bingAI, chatGPTBrowser, gptPlugins, anthropic }),
-  );
+  const modelConfig = { ...defaultModelsConfig, ...customModelsConfig };
+
+  await cache.set(CacheKeys.MODELS_CONFIG, modelConfig);
+  res.send(modelConfig);
 }
 
 module.exports = modelController;

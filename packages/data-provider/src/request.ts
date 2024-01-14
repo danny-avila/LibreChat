@@ -1,70 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios, { AxiosRequestConfig, AxiosError } from 'axios';
-/* TODO: fix dependency cycle */
-// eslint-disable-next-line import/no-cycle
-import { refreshToken } from './data-service';
 import { setTokenHeader } from './headers-helpers';
-
-let isRefreshing = false;
-let failedQueue: { resolve: (value?: any) => void; reject: (reason?: any) => void }[] = [];
-
-const processQueue = (error: AxiosError | null, token: string | null = null) => {
-  failedQueue.forEach((prom) => {
-    if (error) {
-      prom.reject(error);
-    } else {
-      prom.resolve(token);
-    }
-  });
-  failedQueue = [];
-};
-
-axios.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const originalRequest = error.config;
-    if (error.response.status === 401 && !originalRequest._retry) {
-      if (isRefreshing) {
-        return new Promise(function (resolve, reject) {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            originalRequest.headers['Authorization'] = 'Bearer ' + token;
-            return axios(originalRequest);
-          })
-          .catch((err) => {
-            return Promise.reject(err);
-          });
-      }
-
-      originalRequest._retry = true;
-      isRefreshing = true;
-
-      return new Promise(function (resolve, reject) {
-        refreshToken()
-          .then(({ token }) => {
-            if (token) {
-              originalRequest.headers['Authorization'] = 'Bearer ' + token;
-              setTokenHeader(token);
-              window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: token }));
-              processQueue(null, token);
-              resolve(axios(originalRequest));
-            } else {
-              window.location.href = '/login';
-            }
-          })
-          .catch((err) => {
-            processQueue(err, null);
-            reject(err);
-          })
-          .then(() => {
-            isRefreshing = false;
-          });
-      });
-    }
-    return Promise.reject(error);
-  },
-);
+import * as endpoints from './api-endpoints';
 
 async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
   const response = await axios.get(url, { ...options });
@@ -110,6 +47,71 @@ async function _patch(url: string, data?: any) {
   return response.data;
 }
 
+let isRefreshing = false;
+let failedQueue: { resolve: (value?: any) => void; reject: (reason?: any) => void }[] = [];
+
+const refreshToken = (retry?: boolean) => _post(endpoints.refreshToken(retry));
+
+const processQueue = (error: AxiosError | null, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+axios.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    if (error.response.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      if (isRefreshing) {
+        try {
+          const token = await new Promise((resolve, reject) => {
+            failedQueue.push({ resolve, reject });
+          });
+          originalRequest.headers['Authorization'] = 'Bearer ' + token;
+          return await axios(originalRequest);
+        } catch (err) {
+          return Promise.reject(err);
+        }
+      }
+
+      isRefreshing = true;
+
+      try {
+        const { token } = await refreshToken(
+          // Handle edge case where we get a blank screen if the initial 401 error is from a refresh token request
+          originalRequest.url?.includes('api/auth/refresh') ? true : false,
+        );
+
+        if (token) {
+          originalRequest.headers['Authorization'] = 'Bearer ' + token;
+          setTokenHeader(token);
+          window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: token }));
+          processQueue(null, token);
+          return await axios(originalRequest);
+        } else {
+          window.location.href = '/login';
+        }
+      } catch (err) {
+        processQueue(err as AxiosError, null);
+        return Promise.reject(err);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    return Promise.reject(error);
+  },
+);
+
 export default {
   get: _get,
   post: _post,
@@ -118,4 +120,5 @@ export default {
   delete: _delete,
   deleteWithOptions: _deleteWithOptions,
   patch: _patch,
+  refreshToken,
 };

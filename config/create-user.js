@@ -1,34 +1,12 @@
-const connectDb = require('@librechat/backend/lib/db/connectDb');
-const { registerUser } = require('@librechat/backend/server/services/AuthService');
+const path = require('path');
+require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { registerUser } = require('~/server/services/AuthService');
 const { askQuestion, silentExit } = require('./helpers');
-const User = require('@librechat/backend/models/User');
+const User = require('~/models/User');
+const connect = require('./connect');
 
 (async () => {
-  /**
-   * Connect to the database
-   * - If it takes a while, we'll warn the user
-   */
-  // Warn the user if this is taking a while
-  let timeout = setTimeout(() => {
-    console.orange(
-      'This is taking a while... You may need to check your connection if this fails.',
-    );
-    timeout = setTimeout(() => {
-      console.orange('Still going... Might as well assume the connection failed...');
-      timeout = setTimeout(() => {
-        console.orange('Error incoming in 3... 2... 1...');
-      }, 13000);
-    }, 10000);
-  }, 5000);
-  // Attempt to connect to the database
-  try {
-    console.orange('Warming up the engines...');
-    await connectDb();
-    clearTimeout(timeout);
-  } catch (e) {
-    console.error(e);
-    silentExit(1);
-  }
+  await connect();
 
   /**
    * Show the welcome / help menu
@@ -127,6 +105,22 @@ const User = require('@librechat/backend/models/User');
   }
 
   // Done!
-  console.green('User created successfully!');
-  silentExit(0);
+  const userCreated = await User.findOne({ $or: [{ email }, { username }] });
+  if (userCreated) {
+    console.green('User created successfully!');
+    silentExit(0);
+  }
 })();
+
+process.on('uncaughtException', (err) => {
+  if (!err.message.includes('fetch failed')) {
+    console.error('There was an uncaught error:');
+    console.error(err);
+  }
+
+  if (err.message.includes('fetch failed')) {
+    return;
+  } else {
+    process.exit(1);
+  }
+});

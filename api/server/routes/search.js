@@ -1,13 +1,23 @@
+const Keyv = require('keyv');
 const express = require('express');
-const router = express.Router();
 const { MeiliSearch } = require('meilisearch');
-const { Message } = require('../../models/Message');
-const { Conversation, getConvosQueried } = require('../../models/Conversation');
-const { reduceHits } = require('../../lib/utils/reduceHits');
-const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
-const requireJwtAuth = require('../middleware/requireJwtAuth');
+const { Conversation, getConvosQueried } = require('~/models/Conversation');
+const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
+const { reduceHits } = require('~/lib/utils/reduceHits');
+const { isEnabled } = require('~/server/utils');
+const { Message } = require('~/models/Message');
+const keyvRedis = require('~/cache/keyvRedis');
+const { logger } = require('~/config');
 
-const cache = new Map();
+const router = express.Router();
+
+const expiration = 60 * 1000;
+const cache = isEnabled(process.env.USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: 'search', ttl: expiration });
+
+router.use(requireJwtAuth);
 
 router.get('/sync', async function (req, res) {
   await Message.syncWithMeili();
@@ -15,27 +25,22 @@ router.get('/sync', async function (req, res) {
   res.send('synced');
 });
 
-router.get('/', requireJwtAuth, async function (req, res) {
+router.get('/', async function (req, res) {
   try {
-    let user = req.user.id;
-    user = user ?? null;
+    let user = req.user.id ?? '';
     const { q } = req.query;
     const pageNumber = req.query.pageNumber || 1;
-    const key = `${user || ''}${q}`;
-
-    if (cache.has(key)) {
-      console.log('cache hit', key);
-      const cached = cache.get(key);
+    const key = `${user}:search:${q}`;
+    const cached = await cache.get(key);
+    if (cached) {
+      logger.debug('[/search] cache hit: ' + key);
       const { pages, pageSize, messages } = cached;
       res
         .status(200)
         .send({ conversations: cached[pageNumber], pages, pageNumber, pageSize, messages });
       return;
-    } else {
-      cache.clear();
     }
 
-    // const message = await Message.meiliSearch(q);
     const messages = (
       await Message.meiliSearch(
         q,
@@ -57,8 +62,8 @@ router.get('/', requireJwtAuth, async function (req, res) {
     const titles = (await Conversation.meiliSearch(q)).hits;
     const sortedHits = reduceHits(messages, titles);
     // debugging:
-    // console.log('user:', user, 'message hits:', messages.length, 'convo hits:', titles.length);
-    // console.log('sorted hits:', sortedHits.length);
+    // logger.debug('user:', user, 'message hits:', messages.length, 'convo hits:', titles.length);
+    // logger.debug('sorted hits:', sortedHits.length);
     const result = await getConvosQueried(user, sortedHits, pageNumber);
 
     const activeMessages = [];
@@ -67,7 +72,7 @@ router.get('/', requireJwtAuth, async function (req, res) {
       if (message.conversationId.includes('--')) {
         message.conversationId = cleanUpPrimaryKeyValue(message.conversationId);
       }
-      if (result.convoMap[message.conversationId] && !message.error) {
+      if (result.convoMap[message.conversationId]) {
         const convo = result.convoMap[message.conversationId];
         const { title, chatGptLabel, model } = convo;
         message = { ...message, ...{ title, chatGptLabel, model } };
@@ -77,15 +82,15 @@ router.get('/', requireJwtAuth, async function (req, res) {
     result.messages = activeMessages;
     if (result.cache) {
       result.cache.messages = activeMessages;
-      cache.set(key, result.cache);
+      cache.set(key, result.cache, expiration);
       delete result.cache;
     }
     delete result.convoMap;
     // for debugging
-    // console.log(result, messages.length);
+    // logger.debug(result, messages.length);
     res.status(200).send(result);
   } catch (error) {
-    console.log(error);
+    logger.error('[/search] Error while searching messages & conversations', error);
     res.status(500).send({ message: 'Error searching' });
   }
 });
@@ -110,11 +115,9 @@ router.get('/enable', async function (req, res) {
     });
 
     const { status } = await client.health();
-    // console.log(`Meilisearch: ${status}`);
     result = status === 'available' && !!process.env.SEARCH;
     return res.send(result);
   } catch (error) {
-    // console.error(error);
     return res.send(false);
   }
 });

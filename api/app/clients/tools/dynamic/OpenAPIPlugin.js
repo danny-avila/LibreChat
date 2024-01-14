@@ -1,11 +1,12 @@
 require('dotenv').config();
-const { z } = require('zod');
 const fs = require('fs');
-const yaml = require('js-yaml');
+const { z } = require('zod');
 const path = require('path');
-const { DynamicStructuredTool } = require('langchain/tools');
+const yaml = require('js-yaml');
 const { createOpenAPIChain } = require('langchain/chains');
+const { DynamicStructuredTool } = require('langchain/tools');
 const { ChatPromptTemplate, HumanMessagePromptTemplate } = require('langchain/prompts');
+const { logger } = require('~/config');
 
 function addLinePrefix(text, prefix = '// ') {
   return text
@@ -20,8 +21,8 @@ function createPrompt(name, functions) {
     .map((func) => `// - ${func.name}: ${func.description}`)
     .join('\n');
   return `${prefix}\n${functionDescriptions}
-// The user's message will be passed as the function's query.
-// Always provide the function name as such: {{"func": "function_name"}}`;
+// You are an expert manager and scrum master. You must provide a detailed intent to better execute the function.
+// Always format as such: {{"func": "function_name", "intent": "intent and expected result"}}`;
 }
 
 const AuthBearer = z
@@ -52,7 +53,7 @@ async function readSpecFile(filePath) {
     }
     return yaml.load(fileContents);
   } catch (e) {
-    console.error(e);
+    logger.error('[readSpecFile] error', e);
     return false;
   }
 }
@@ -83,60 +84,65 @@ async function getSpec(url) {
   return ValidSpecPath.parse(url);
 }
 
-async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }) {
+async function createOpenAPIPlugin({ data, llm, user, message, memory, signal }) {
   let spec;
   try {
-    spec = await getSpec(data.api.url, verbose);
+    spec = await getSpec(data.api.url);
   } catch (error) {
-    verbose && console.debug('getSpec error', error);
+    logger.error('[createOpenAPIPlugin] getSpec error', error);
     return null;
   }
 
   if (!spec) {
-    verbose && console.debug('No spec found');
+    logger.warn('[createOpenAPIPlugin] No spec found');
     return null;
   }
 
   const headers = {};
   const { auth, name_for_model, description_for_model, description_for_human } = data;
   if (auth && AuthDefinition.parse(auth)) {
-    verbose && console.debug('auth detected', auth);
+    logger.debug('[createOpenAPIPlugin] auth detected', auth);
     const { openai } = auth.verification_tokens;
     if (AuthBearer.parse(auth)) {
       headers.authorization = `Bearer ${openai}`;
-      verbose && console.debug('added auth bearer', headers);
+      logger.debug('[createOpenAPIPlugin] added auth bearer', headers);
     }
   }
 
-  const chainOptions = {
-    llm,
-    verbose,
-  };
+  const chainOptions = { llm };
 
   if (data.headers && data.headers['librechat_user_id']) {
-    verbose && console.debug('id detected', headers);
+    logger.debug('[createOpenAPIPlugin] id detected', headers);
     headers[data.headers['librechat_user_id']] = user;
   }
 
   if (Object.keys(headers).length > 0) {
-    verbose && console.debug('headers detected', headers);
+    logger.debug('[createOpenAPIPlugin] headers detected', headers);
     chainOptions.headers = headers;
   }
 
   if (data.params) {
-    verbose && console.debug('params detected', data.params);
+    logger.debug('[createOpenAPIPlugin] params detected', data.params);
     chainOptions.params = data.params;
   }
 
-  chainOptions.prompt = ChatPromptTemplate.fromPromptMessages([
+  let history = '';
+  if (memory) {
+    logger.debug('[createOpenAPIPlugin] openAPI chain: memory detected', memory);
+    const { history: chat_history } = await memory.loadMemoryVariables({});
+    history = chat_history?.length > 0 ? `\n\n## Chat History:\n${chat_history}\n` : '';
+  }
+
+  chainOptions.prompt = ChatPromptTemplate.fromMessages([
     HumanMessagePromptTemplate.fromTemplate(
       `# Use the provided API's to respond to this query:\n\n{query}\n\n## Instructions:\n${addLinePrefix(
         description_for_model,
-      )}`,
+      )}${history}`,
     ),
   ]);
 
   const chain = await createOpenAPIChain(spec, chainOptions);
+
   const { functions } = chain.chains[0].lc_kwargs.llmKwargs;
 
   return new DynamicStructuredTool({
@@ -154,10 +160,19 @@ async function createOpenAPIPlugin({ data, llm, user, message, verbose = false }
             .map((func) => func.name)
             .join(', ')}`,
         ),
+      intent: z
+        .string()
+        .describe('Describe your intent with the function and your expected result'),
     }),
-    func: async ({ func = '' }) => {
-      const result = await chain.run(`${message}${func?.length > 0 ? `\nUse ${func}` : ''}`);
-      return result;
+    func: async ({ func = '', intent = '' }) => {
+      const filteredFunctions = functions.filter((f) => f.name === func);
+      chain.chains[0].lc_kwargs.llmKwargs.functions = filteredFunctions;
+      const query = `${message}${func?.length > 0 ? `\n// Intent: ${intent}` : ''}`;
+      const result = await chain.call({
+        query,
+        signal,
+      });
+      return result.response;
     },
   });
 }

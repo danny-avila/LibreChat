@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "0.5.9",
+  "version": "0.6.5",
   "description": "",
   "workspaces": [
     "api",
@@ -8,8 +8,9 @@
     "packages/*"
   ],
   "scripts": {
-    "install": "node config/install.js",
     "update": "node config/update.js",
+    "add-balance": "node config/add-balance.js",
+    "list-balances": "node config/list-balances.js",
     "rebuild:package-lock": "node config/packages",
     "reinstall": "node config/update.js -l -g",
     "b:reinstall": "bun config/update.js -b -l -g",
@@ -24,8 +25,10 @@
     "stop:deployed": "docker-compose -f ./deploy-compose.yml down",
     "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
+    "ban-user": "node config/ban-user.js",
+    "delete-user": "node config/delete-user.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
-    "backend:dev": "cross-env NODE_ENV=production npx nodemon api/server/index.js",
+    "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:stop": "node config/stop-backend.js",
     "build:data-provider": "cd packages/data-provider && npm run build",
     "frontend": "npm run build:data-provider && cd client && npm run build",
@@ -46,12 +49,14 @@
     "lint": "eslint \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
     "b:api": "NODE_ENV=production bun run api/server/index.js",
-    "b:api:dev": "NODE_ENV=development bun run --watch api/server/index.js",
+    "b:api:dev": "NODE_ENV=production bun run --watch api/server/index.js",
     "b:data-provider": "cd packages/data-provider && bun run b:build",
     "b:client": "bun --bun run b:data-provider && cd client && bun --bun run b:build",
     "b:client:dev": "cd client && bun run b:dev",
     "b:test:client": "cd client && bun run b:test",
-    "b:test:api": "cd api && bun run b:test"
+    "b:test:api": "cd api && bun run b:test",
+    "b:balance": "bun config/add-balance.js",
+    "b:list-balances": "bun config/list-balances.js"
   },
   "repository": {
     "type": "git",
@@ -64,7 +69,7 @@
   },
   "homepage": "https://github.com/danny-avila/LibreChat#readme",
   "devDependencies": {
-    "@playwright/test": "^1.32.1",
+    "@playwright/test": "^1.38.1",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
     "cross-env": "^7.0.3",

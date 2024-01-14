@@ -1,12 +1,10 @@
 import { useState, forwardRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
-import { cn } from '~/utils/';
-
-import ExportModel from './ExportModel';
-
-import store from '~/store';
+import ExportModal from './ExportModal';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils/';
+import store from '~/store';
 
 const ExportConversation = forwardRef(() => {
   const [open, setOpen] = useState(false);
@@ -38,7 +36,7 @@ const ExportConversation = forwardRef(() => {
         {localize('com_nav_export_conversation')}
       </button>
 
-      <ExportModel open={open} onOpenChange={setOpen} />
+      <ExportModal open={open} onOpenChange={setOpen} />
     </>
   );
 });

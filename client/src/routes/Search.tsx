@@ -24,7 +24,7 @@ export default function Search() {
         searchPlaceholderConversation();
         setSearchQuery(query);
       } else {
-        navigate('/chat/new');
+        navigate('/c/new');
       }
     } else if (conversation?.conversationId === 'search') {
       // jump to search page
