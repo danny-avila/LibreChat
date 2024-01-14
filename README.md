@@ -88,7 +88,8 @@ Please consult the breaking changes before updating.
 ## ✨ Contributions
 Contributions, suggestions, bug reports and fixes are welcome!
 
-For new features, components, or extensions, please open an issue and discuss before sending a PR. 
+For new features, components, or extensions, please open an issue and discuss before sending a PR.
+## I'd like to contibute on this repo and share more information  
 
 ---
 
