@@ -32,9 +32,5 @@ export default function createPayload(submission: TSubmission) {
     conversationId,
   };
 
-  if (endpoint === EModelEndpoint.assistant) {
-    payload.messages = messages;
-  }
-
   return { server, payload };
 }
