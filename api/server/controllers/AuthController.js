@@ -9,33 +9,39 @@ const {
   requestPasswordReset,
 } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
-const allowedDomains = (process.env.ALLOWED_REGISTRATION_DOMAINS || '').split(',');
 
 function isDomainAllowed(email) {
+  if (!process.env.ALLOWED_REGISTRATION_DOMAINS) {
+    return true;
+  }
+
   const domain = email.split('@')[1];
+  const allowedDomains = process.env.ALLOWED_REGISTRATION_DOMAINS.split(',');
   return allowedDomains.includes(domain);
 }
 
+// Controller for user registration
 const registrationController = async (req, res) => {
   try {
-    const response = await registerUser(req.body);
-    const { status, user } = response;
+    const { status, user } = await registerUser(req.body);
 
+    // Check if registration domain is allowed
     if (!isDomainAllowed(user.email)) {
+      const message = 'Registration from this domain is not allowed.';
       logger.error(
         `[registrationController] [Registration not allowed] [Email: ${user.email}] [Request-IP: ${req.ip}]`,
       );
-      const message = 'Registration from this domain is not allowed.';
       return res.status(403).send({ message });
     }
 
+    // Find or create a user in the database
     let newUser = await User.findOne({ _id: user._id });
-
     if (!newUser) {
       newUser = new User(user);
       await newUser.save();
     }
 
+    // Set authentication tokens and send response
     const token = await setAuthTokens(user._id, res);
     res.setHeader('Authorization', `Bearer ${token}`);
     res.status(status).send({ user });
