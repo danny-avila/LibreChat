@@ -52,7 +52,7 @@ router.post('/', setHeaders, async (req, res) => {
       // model: _model = defaultModel,
     } = req.body;
 
-    if (convoId && !thread_id) {
+    if (convoId && !_thread_id) {
       throw new Error('Missing thread_id for existing conversation');
     }
 
