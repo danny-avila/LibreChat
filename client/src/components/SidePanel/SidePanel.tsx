@@ -59,6 +59,7 @@ export default function SidePanel({
           minSize={10}
           maxSize={30}
           ref={panelRef}
+          style={{ overflowY: 'auto' }}
           onExpand={() => {
             setIsCollapsed(false);
             // localStorage.setItem(
