@@ -9,27 +9,39 @@ const {
   requestPasswordReset,
 } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
+const allowedDomains = (process.env.ALLOWED_REGISTRATION_DOMAINS || '').split(',');
+
+function isDomainAllowed(email) {
+  const domain = email.split('@')[1];
+  return allowedDomains.includes(domain);
+}
 
 const registrationController = async (req, res) => {
   try {
     const response = await registerUser(req.body);
-    if (response.status === 200) {
-      const { status, user } = response;
-      let newUser = await User.findOne({ _id: user._id });
-      if (!newUser) {
-        newUser = new User(user);
-        await newUser.save();
-      }
-      const token = await setAuthTokens(user._id, res);
-      res.setHeader('Authorization', `Bearer ${token}`);
-      res.status(status).send({ user });
-    } else {
-      const { status, message } = response;
-      res.status(status).send({ message });
+    const { status, user } = response;
+
+    if (!isDomainAllowed(user.email)) {
+      logger.error(
+        `[registrationController] [Registration not allowed] [Email: ${user.email}] [Request-IP: ${req.ip}]`,
+      );
+      const message = 'Registration from this domain is not allowed.';
+      return res.status(403).send({ message });
     }
+
+    let newUser = await User.findOne({ _id: user._id });
+
+    if (!newUser) {
+      newUser = new User(user);
+      await newUser.save();
+    }
+
+    const token = await setAuthTokens(user._id, res);
+    res.setHeader('Authorization', `Bearer ${token}`);
+    res.status(status).send({ user });
   } catch (err) {
     logger.error('[registrationController]', err);
-    return res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
