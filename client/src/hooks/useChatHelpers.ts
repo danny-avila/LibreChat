@@ -116,23 +116,6 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
 
     const isEditOrContinue = isEdited || isContinued;
 
-    // set the endpoint option
-    const convo = parseCompactConvo({
-      endpoint,
-      endpointType,
-      conversation: conversation ?? {},
-    });
-
-    const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
-    const endpointOption = {
-      ...convo,
-      endpoint,
-      endpointType,
-      modelDisplayLabel,
-      key: getExpiry(),
-    } as TEndpointOption;
-    const responseSender = getSender({ model: conversation?.model, ...endpointOption });
-
     let currentMessages: TMessage[] | null = getMessages() ?? [];
 
     // construct the query message
@@ -151,6 +134,26 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
 
+    const thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+
+    // set the endpoint option
+    const convo = parseCompactConvo({
+      endpoint,
+      endpointType,
+      conversation: conversation ?? {},
+    });
+
+    const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
+    const endpointOption = {
+      ...convo,
+      endpoint,
+      endpointType,
+      modelDisplayLabel,
+      key: getExpiry(),
+      thread_id,
+    } as TEndpointOption;
+    const responseSender = getSender({ model: conversation?.model, ...endpointOption });
+
     const currentMsg: TMessage = {
       text,
       sender: 'User',
@@ -158,7 +161,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       parentMessageId,
       conversationId,
       messageId: isContinued && messageId ? messageId : fakeMessageId,
-      thread_id: parentMessage?.thread_id,
+      thread_id,
       error: false,
     };
 
@@ -190,7 +193,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
-      thread_id: parentMessage?.thread_id,
+      thread_id,
       conversationId,
       unfinished: false,
       isCreatedByUser: false,
