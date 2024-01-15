@@ -8,7 +8,7 @@ import { useChatContext } from '~/Providers';
 import { getEndpointField } from '~/utils';
 
 export default function useMessageHelpers(props: TMessageProps) {
-  const latestText = useRef('');
+  const latestText = useRef<string | number>('');
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { message, currentEditId, setCurrentEditId } = props;
 
@@ -28,15 +28,19 @@ export default function useMessageHelpers(props: TMessageProps) {
   const isLast = !children?.length;
 
   useEffect(() => {
+    let contentChanged = message?.content
+      ? message?.content?.length !== latestText.current
+      : message?.text !== latestText.current;
+
+    if (!isLast) {
+      contentChanged = false;
+    }
+
     if (!message) {
       return;
-    } else if (
-      isLast &&
-      conversation?.conversationId !== 'new' &&
-      latestText.current !== message.text
-    ) {
+    } else if (isLast && conversation?.conversationId !== 'new' && contentChanged) {
       setLatestMessage({ ...message });
-      latestText.current = message.text;
+      latestText.current = message?.content ? message.content.length : message.text;
     }
   }, [isLast, message, setLatestMessage, conversation?.conversationId]);
 
