@@ -15,6 +15,7 @@ import {
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
+import CreationPanel from '~/components/Chat/CreationPanel';
 import { TooltipProvider } from '~/components/ui/Tooltip';
 import { Separator } from '~/components/ui/Separator';
 import { accounts } from './data';
@@ -42,9 +43,9 @@ export default function SidePanel({
     <TooltipProvider delayDuration={0}>
       <ResizablePanelGroup
         direction="horizontal"
-        onLayout={(sizes: number[]) => {
-          localStorage.setItem('react-resizable-panels:layout', JSON.stringify(sizes));
-        }}
+        // onLayout={(sizes: number[]) => {
+        // localStorage.setItem('react-resizable-panels:layout', JSON.stringify(sizes));
+        // }}
         className="h-full items-stretch"
       >
         <ResizablePanel defaultSize={defaultLayout[0]} minSize={30}>
@@ -91,38 +92,34 @@ export default function SidePanel({
             isCollapsed={isCollapsed}
             links={[
               {
-                title: 'Inbox',
-                label: '128',
+                title: 'Assistant Builder',
+                label: '',
                 icon: Inbox,
-                variant: 'default',
                 id: 'inbox',
+                Component: CreationPanel,
               },
               {
                 title: 'Drafts',
                 label: '9',
                 icon: File,
-                variant: 'ghost',
                 id: 'drafts',
               },
               {
                 title: 'Sent',
                 label: '',
                 icon: Send,
-                variant: 'ghost',
                 id: 'sent',
               },
               {
                 title: 'Trash',
                 label: '',
                 icon: Trash2,
-                variant: 'ghost',
                 id: 'trash',
               },
               {
                 title: 'Archive',
                 label: '',
                 icon: Archive,
-                variant: 'ghost',
                 id: 'archive',
               },
             ]}
@@ -135,35 +132,30 @@ export default function SidePanel({
                 title: 'Social',
                 label: '972',
                 icon: Users2,
-                variant: 'ghost',
                 id: 'social',
               },
               {
                 title: 'Updates',
                 label: '342',
                 icon: AlertCircle,
-                variant: 'ghost',
                 id: 'updates',
               },
               {
                 title: 'Forums',
                 label: '128',
                 icon: MessagesSquare,
-                variant: 'ghost',
                 id: 'forums',
               },
               {
                 title: 'Shopping',
                 label: '8',
                 icon: ShoppingCart,
-                variant: 'ghost',
                 id: 'shopping',
               },
               {
                 title: 'Promotions',
                 label: '21',
                 icon: Archive,
-                variant: 'ghost',
                 id: 'promotions',
               },
             ]}

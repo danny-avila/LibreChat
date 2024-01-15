@@ -10,6 +10,7 @@ type NavLink = {
   title: string;
   label?: string;
   icon: LucideIcon;
+  Component?: React.ComponentType;
   variant?: 'default' | 'ghost';
   id: string;
 };
@@ -59,7 +60,11 @@ export default function Nav({ links, isCollapsed, resize }: NavProps) {
               </TooltipContent>
             </Tooltip>
           ) : (
-            <Collapsible key={index} onOpenChange={(open) => !open && setActive(null)}>
+            <Collapsible
+              open={active === link.id}
+              key={index}
+              onOpenChange={(open) => !open && setActive(null)}
+            >
               <CollapsibleTrigger asChild>
                 <button
                   className={cn(
@@ -89,7 +94,7 @@ export default function Nav({ links, isCollapsed, resize }: NavProps) {
                 </button>
               </CollapsibleTrigger>
               <CollapsibleContent className="w-full dark:text-white">
-                Yes. Free to use for personal and commercial projects. No attribution required.
+                {link.Component && <link.Component />}
               </CollapsibleContent>
             </Collapsible>
           );
