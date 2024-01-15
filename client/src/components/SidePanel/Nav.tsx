@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { LucideIcon } from 'lucide-react';
+import * as AccordionPrimitive from '@radix-ui/react-accordion';
 
 import { cn, removeFocusOutlines } from '~/utils';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/Collapsible';
+import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
 import { buttonVariants } from '~/components/ui/Button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/Tooltip';
 
@@ -22,7 +23,7 @@ interface NavProps {
 }
 
 export default function Nav({ links, isCollapsed, resize }: NavProps) {
-  const [active, setActive] = useState<string | null>(links[0].id);
+  const [active, setActive] = useState<string | undefined>();
   const getVariant = (link: NavLink) => (link.id === active ? 'default' : 'ghost');
 
   return (
@@ -60,43 +61,49 @@ export default function Nav({ links, isCollapsed, resize }: NavProps) {
               </TooltipContent>
             </Tooltip>
           ) : (
-            <Collapsible
-              open={active === link.id}
+            <Accordion
               key={index}
-              onOpenChange={(open) => !open && setActive(null)}
+              type="single"
+              value={active}
+              onValueChange={setActive}
+              collapsible
             >
-              <CollapsibleTrigger asChild>
-                <button
-                  className={cn(
-                    buttonVariants({ variant, size: 'sm' }),
-                    removeFocusOutlines,
-                    variant === 'default'
-                      ? 'dark:bg-muted dark:hover:bg-muted dark:text-white dark:hover:text-white'
-                      : '',
-                    'data-[state=open]:bg-gray-900 data-[state=open]:text-white dark:data-[state=open]:bg-gray-800',
-                    'w-full justify-start',
-                  )}
-                  onClick={() => setActive(link.id)}
-                >
-                  <link.icon className="mr-2 h-4 w-4" />
-                  {link.title}
-                  {link.label && (
-                    <span
+              <AccordionItem value={link.id} className="border-none">
+                <AccordionPrimitive.Header asChild>
+                  <AccordionPrimitive.Trigger asChild>
+                    <button
                       className={cn(
-                        'ml-auto transition-all duration-300 ease-in-out',
-                        variant === 'default' ? 'text-background dark:text-white' : '',
-                        isCollapsed ? 'opacity-0' : 'opacity-100',
+                        buttonVariants({ variant, size: 'sm' }),
+                        removeFocusOutlines,
+                        variant === 'default'
+                          ? 'dark:bg-muted dark:hover:bg-muted dark:text-white dark:hover:text-white'
+                          : '',
+                        'data-[state=open]:bg-gray-900 data-[state=open]:text-white dark:data-[state=open]:bg-gray-800',
+                        'w-full justify-start',
                       )}
                     >
-                      {link.label}
-                    </span>
-                  )}
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="w-full dark:text-white">
-                {link.Component && <link.Component />}
-              </CollapsibleContent>
-            </Collapsible>
+                      <link.icon className="mr-2 h-4 w-4" />
+                      {link.title}
+                      {link.label && (
+                        <span
+                          className={cn(
+                            'ml-auto transition-all duration-300 ease-in-out',
+                            variant === 'default' ? 'text-background dark:text-white' : '',
+                            isCollapsed ? 'opacity-0' : 'opacity-100',
+                          )}
+                        >
+                          {link.label}
+                        </span>
+                      )}
+                    </button>
+                  </AccordionPrimitive.Trigger>
+                </AccordionPrimitive.Header>
+
+                <AccordionContent className="w-full dark:text-white">
+                  {link.Component && <link.Component />}
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           );
         })}
       </nav>
