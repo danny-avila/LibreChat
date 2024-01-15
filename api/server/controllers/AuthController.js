@@ -10,44 +10,26 @@ const {
 } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
 
-function isDomainAllowed(email) {
-  if (!process.env.ALLOWED_REGISTRATION_DOMAINS) {
-    return true;
-  }
-
-  const domain = email.split('@')[1];
-  const allowedDomains = process.env.ALLOWED_REGISTRATION_DOMAINS.split(',');
-  return allowedDomains.includes(domain);
-}
-
-// Controller for user registration
 const registrationController = async (req, res) => {
   try {
-    const { status, user } = await registerUser(req.body);
-
-    // Check if registration domain is allowed
-    if (!isDomainAllowed(user.email)) {
-      const message = 'Registration from this domain is not allowed.';
-      logger.error(
-        `[registrationController] [Registration not allowed] [Email: ${user.email}] [Request-IP: ${req.ip}]`,
-      );
-      return res.status(403).send({ message });
+    const response = await registerUser(req.body);
+    if (response.status === 200) {
+      const { status, user } = response;
+      let newUser = await User.findOne({ _id: user._id });
+      if (!newUser) {
+        newUser = new User(user);
+        await newUser.save();
+      }
+      const token = await setAuthTokens(user._id, res);
+      res.setHeader('Authorization', `Bearer ${token}`);
+      res.status(status).send({ user });
+    } else {
+      const { status, message } = response;
+      res.status(status).send({ message });
     }
-
-    // Find or create a user in the database
-    let newUser = await User.findOne({ _id: user._id });
-    if (!newUser) {
-      newUser = new User(user);
-      await newUser.save();
-    }
-
-    // Set authentication tokens and send response
-    const token = await setAuthTokens(user._id, res);
-    res.setHeader('Authorization', `Bearer ${token}`);
-    res.status(status).send({ user });
   } catch (err) {
     logger.error('[registrationController]', err);
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 };
 

@@ -12,6 +12,21 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+function isDomainAllowed(email) {
+  if (!process.env.ALLOWED_REGISTRATION_DOMAINS) {
+    return true;
+  }
+  console.log(email);
+
+  if (!email) {
+    return false;
+  }
+
+  const domain = email.split('@')[1];
+  const allowedDomains = process.env.ALLOWED_REGISTRATION_DOMAINS.split(',');
+  return allowedDomains.includes(domain);
+}
+
 const isProduction = process.env.NODE_ENV === 'production';
 
 /**
@@ -78,6 +93,12 @@ const registerUser = async (user) => {
 
       // TODO: We should change the process to always email and be generic is signup works or fails (user enum)
       return { status: 500, message: 'Something went wrong' };
+    }
+
+    if (!isDomainAllowed(user.email)) {
+      const errorMessage = 'Registration from this domain is not allowed.';
+      logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
+      return { status: 403, message: errorMessage };
     }
 
     //determine if this is the first registered user (not counting anonymous_user)
