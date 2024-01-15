@@ -17,6 +17,7 @@ const messageSchema = mongoose.Schema(
     user: {
       type: String,
       index: true,
+      required: true,
       default: null,
     },
     model: {
@@ -46,12 +47,10 @@ const messageSchema = mongoose.Schema(
     },
     sender: {
       type: String,
-      required: true,
       meiliIndex: true,
     },
     text: {
       type: String,
-      required: true,
       meiliIndex: true,
     },
     summary: {
