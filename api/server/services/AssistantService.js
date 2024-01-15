@@ -1,5 +1,4 @@
 const path = require('path');
-const { v4 } = require('uuid');
 const { klona } = require('klona');
 const {
   ContentTypes,
@@ -18,20 +17,25 @@ const { TextStream } = require('~/app/clients');
 /**
  * Sorts, processes, and flattens messages to a single string.
  *
- * @param {OpenAIClient} openai - The OpenAI client instance.
+ * @param {Object} params - Params for creating the onTextProgress function.
+ * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {OpenAIClient} params.conversationId - The current conversation ID.
+ * @param {OpenAIClient} params.userMessageId - The user message ID; response's `parentMessageId`.
+ * @param {OpenAIClient} params.messageId - The response message ID.
  * @returns {void}
  */
-async function createOnTextProgress(openai) {
+async function createOnTextProgress({ openai, conversationId, userMessageId, messageId }) {
   openai.responseMessage = {
+    conversationId,
+    parentMessageId: userMessageId,
     role: 'assistant',
-    messageId: v4(),
+    messageId,
     content: [],
   };
 
   openai.addContentData = (data) => {
     const { type, index } = data;
-    const part = data[type];
-    openai.responseMessage.content[index] = part;
+    openai.responseMessage.content[index] = { type, [type]: data[type] };
 
     if (type === ContentTypes.TEXT) {
       return;
@@ -39,9 +43,9 @@ async function createOnTextProgress(openai) {
 
     sendMessage(openai.res, {
       index,
-      type: type,
-      [type]: part,
-      messageId: openai.responseMessage.messageId,
+      type,
+      [type]: data[type],
+      messageId,
     });
   };
 }
