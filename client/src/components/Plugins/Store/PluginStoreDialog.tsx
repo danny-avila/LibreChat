@@ -25,16 +25,16 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const { data: availablePlugins } = useAvailablePluginsQuery();
   const { user } = useAuthContext();
   const updateUserPlugins = useUpdateUserPluginsMutation();
-  const [conversation, setConversation] = useRecoilState(store.conversation) || {};
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [itemsPerPage, setItemsPerPage] = useState<number>(1);
-  const [maxPage, setMaxPage] = useState<number>(1);
+  const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(1);
+  const [maxPage, setMaxPage] = useState(1);
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
   const [selectedPlugin, setSelectedPlugin] = useState<TPlugin | undefined>(undefined);
   const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [searchValue, setSearchValue] = useState<string>('');
+  const [searchValue, setSearchValue] = useState('');
   const [searchChanged, setSearchChanged] = useState(false);
 
   const handleInstallError = (error: TError) => {
@@ -233,6 +233,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                         key={index}
                         plugin={plugin}
                         isInstalled={userPlugins.includes(plugin.pluginKey)}
+                        onInstall={() => onPluginInstall(plugin.pluginKey)}
                         onUninstall={() => onPluginUninstall(plugin.pluginKey)}
                       />
                     ))}
