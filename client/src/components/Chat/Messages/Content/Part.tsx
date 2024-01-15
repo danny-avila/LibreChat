@@ -1,11 +1,11 @@
-import { ToolCallTypes } from 'librechat-data-provider';
-import type { ContentPart, TMessage } from 'librechat-data-provider';
+import { ToolCallTypes, ContentTypes } from 'librechat-data-provider';
+import type { TMessageContent, TMessage } from 'librechat-data-provider';
 import type { TDisplayProps } from '~/common';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import Markdown from './Markdown';
 import Image from './Image';
-import { cn, isText, isImageFile, isCodeToolCall } from '~/utils';
+import { cn } from '~/utils';
 
 // import EditMessage from './EditMessage';
 
@@ -32,17 +32,17 @@ export default function Part({
   showCursor,
   message,
 }: {
-  part: ContentPart;
+  part: TMessageContent;
   showCursor: boolean;
   message: TMessage;
 }) {
-  if (isText(part)) {
+  if (part.type === ContentTypes.TEXT) {
     // Access the value property
     return (
       <Container>
         <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-70">
           <DisplayMessage
-            text={part.value}
+            text={part[ContentTypes.TEXT].value}
             isCreatedByUser={message.isCreatedByUser}
             message={message}
             showCursor={showCursor}
@@ -50,22 +50,27 @@ export default function Part({
         </div>
       </Container>
     );
-  } else if (isCodeToolCall(part)) {
-    const code_interpreter = part[ToolCallTypes.CODE_INTERPRETER];
+  } else if (
+    part.type === ContentTypes.TOOL_CALL &&
+    part[ContentTypes.TOOL_CALL].type === ToolCallTypes.CODE_INTERPRETER
+  ) {
+    const toolCall = part[ContentTypes.TOOL_CALL];
+    const code_interpreter = toolCall[ToolCallTypes.CODE_INTERPRETER];
     return (
       <CodeAnalyze
-        initialProgress={part.progress ?? 0.1}
+        initialProgress={toolCall.progress ?? 0.1}
         code={code_interpreter.input}
         outputs={code_interpreter.outputs ?? []}
       />
     );
-  } else if (isImageFile(part)) {
+  } else if (part.type === ContentTypes.IMAGE_FILE) {
+    const imageFile = part[ContentTypes.IMAGE_FILE];
     return (
       <Image
-        imagePath={part.filepath}
-        width={part.width ?? 1080}
-        height={part.height ?? 1920}
-        altText={part.filename ?? 'Uploaded Image'}
+        imagePath={imageFile.filepath}
+        width={imageFile.width ?? 1080}
+        height={imageFile.height ?? 1920}
+        altText={imageFile.filename ?? 'Uploaded Image'}
         // n={imageFiles.length}
         // i={i}
       />

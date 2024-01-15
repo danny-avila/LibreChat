@@ -206,15 +206,24 @@ export enum RunStatus {
 export type PartMetadata = {
   progress?: number;
   asset_pointer?: string;
-  status: string;
+  status?: string;
 };
 
 export type ContentPart = (CodeToolCall | RetrievalToolCall | FunctionToolCall | ImageFile | Text) &
   PartMetadata;
 
-export type TContentData = Record<ContentTypes, ContentPart> & {
-  type: ContentTypes;
+export type TMessageContent =
+  | { type: ContentTypes.TEXT; text: Text & PartMetadata }
+  | {
+      type: ContentTypes.TOOL_CALL;
+      tool_call: (CodeToolCall | RetrievalToolCall | FunctionToolCall) & PartMetadata;
+    }
+  | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata };
+
+export type TContentData = TMessageContent & {
   messageId: string;
+  conversationId: string;
+  userMessageId: string;
   thread_id: string;
   index: number;
   stream?: boolean;
