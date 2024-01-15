@@ -12,7 +12,7 @@ Here's a quick guide on how to use the `docker-compose.override.yml`:
 
 > Note: Please consult the `docker-compose.override.yml.example` for more examples 
 
-See the the official docker documentation for more info:
+See the official docker documentation for more info:
 
 - **[docker docs - understanding-multiple-compose-files](https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files)**
 - **[docker docs - merge-compose-files](https://docs.docker.com/compose/multiple-compose-files/merge/#merge-compose-files)**
