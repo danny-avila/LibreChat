@@ -66,7 +66,7 @@ export default function CreationPanel({ index = 0 }) {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="h-auto w-1/3 flex-shrink-0 overflow-x-hidden"
+      className="h-auto w-full flex-shrink-0 overflow-x-hidden"
     >
       <Controller
         name="assistant"
@@ -80,7 +80,7 @@ export default function CreationPanel({ index = 0 }) {
           />
         )}
       />
-      <div className="h-auto bg-white px-8 pb-8 pt-6">
+      <div className="h-auto bg-white px-4 pb-8 pt-3">
         {/* Name */}
         <div className="mb-4">
           <label className="mb-2 block text-xs font-bold text-gray-700" htmlFor="name">
@@ -94,7 +94,7 @@ export default function CreationPanel({ index = 0 }) {
                 {...field}
                 value={field.value ?? ''}
                 {...{ max: 256 }}
-                className="focus:shadow-outline w-full appearance-none rounded border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
+                className="focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
                 id="name"
                 type="text"
                 placeholder="Optional: The name of the assistant"
@@ -122,7 +122,7 @@ export default function CreationPanel({ index = 0 }) {
                 {...field}
                 value={field.value ?? ''}
                 {...{ max: 512 }}
-                className="focus:shadow-outline w-full appearance-none rounded border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
+                className="focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
                 id="description"
                 type="text"
                 placeholder="Optional: Describe your Assistant here"
@@ -144,7 +144,7 @@ export default function CreationPanel({ index = 0 }) {
                 {...field}
                 value={field.value ?? ''}
                 {...{ max: 32768 }}
-                className="focus:shadow-outline w-full resize-none appearance-none rounded border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
+                className="focus:shadow-outline w-full resize-none appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
                 id="instructions"
                 placeholder="The system instructions that the assistant uses"
                 rows={3}
@@ -164,7 +164,7 @@ export default function CreationPanel({ index = 0 }) {
             render={({ field }) => (
               <select
                 {...field}
-                className="focus:shadow-outline block w-full appearance-none rounded border border-gray-200 bg-white px-4 py-2 pr-8 text-sm leading-tight shadow hover:border-gray-100 focus:border-green-500 focus:outline-none focus:ring-0"
+                className="focus:shadow-outline block w-full appearance-none rounded-md border border-gray-200 bg-white px-4 py-2 pr-8 text-sm leading-tight shadow hover:border-gray-100 focus:border-green-500 focus:outline-none focus:ring-0"
                 id="model"
               >
                 <option value="gpt-3.5-turbo-1106">gpt-3.5-turbo-1106</option>

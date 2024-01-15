@@ -39,7 +39,7 @@ export default function CreationHeader({
   const onSelect = (value: string) => {
     const assistant = assistants.data?.find((assistant) => assistant.id === value);
     if (!assistant) {
-      localStorage.setItem('lastAssistant', '');
+      // localStorage.setItem('lastAssistant', '');
       reset();
       return;
     }
@@ -50,7 +50,7 @@ export default function CreationHeader({
       value: assistant?.id ?? '',
     };
 
-    localStorage.setItem('lastAssistant', JSON.stringify(update));
+    // localStorage.setItem('lastAssistant', JSON.stringify(update));
 
     onChange(update);
     const actions: Actions = {
@@ -101,7 +101,7 @@ export default function CreationHeader({
         value === '' ? 'text-gray-500' : '',
       )}
       className={cn(
-        'rounded-none',
+        'mt-1 rounded-md',
         'z-50 flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer hover:border-green-500 focus:border-green-500',
       )}
       renderOption={() => (
