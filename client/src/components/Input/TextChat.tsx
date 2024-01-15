@@ -6,7 +6,6 @@ import { EndpointMenu } from './EndpointMenu';
 import SubmitButton from './SubmitButton';
 import OptionsBar from './OptionsBar';
 import Footer from './Footer';
-import useSpeechRecognition from './SpeechRecognition';
 import { useMessageHandler, ThemeContext } from '~/hooks';
 import { cn, getEndpointField } from '~/utils';
 import store from '~/store';
@@ -31,16 +30,6 @@ export default function TextChat({ isSearchView = false }: TextChatProps) {
 
   const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
   const { conversationId, jailbreak } = conversation || {};
-  const { isListening, text: speechText } = useSpeechRecognition(ask);
-
-  useEffect(() => {
-    if (isListening && speechText) {
-      setText(speechText);
-    } else {
-      //  Enable below for auto submit
-      // setText('');
-    }
-  }, [speechText, isListening, setText]);
 
   // auto focus to input, when entering a conversation.
   useEffect(() => {
@@ -204,7 +193,6 @@ export default function TextChat({ isSearchView = false }: TextChatProps) {
                   handleStopGenerating={handleStopGenerating}
                   disabled={disabled || isNotAppendable}
                   isSubmitting={isSubmitting}
-                  isListening={isListening}
                   userProvidesKey={
                     conversation?.endpoint
                       ? getEndpointField(endpointsConfig, conversation.endpoint, 'userProvide')

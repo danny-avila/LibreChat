@@ -1,4 +1,5 @@
 import { useRecoilState } from 'recoil';
+import { useEffect } from 'react';
 import type { ChangeEvent } from 'react';
 import { useChatContext } from '~/Providers';
 import { useRequiresKey } from '~/hooks';
@@ -8,6 +9,7 @@ import SendButton from './SendButton';
 import Images from './Files/Images';
 import Textarea from './Textarea';
 import store from '~/store';
+import useSpeechRecognition from './SpeechRecognition';
 
 export default function ChatForm({ index = 0 }) {
   const [text, setText] = useRecoilState(store.textByIndex(index));
@@ -32,6 +34,16 @@ export default function ChatForm({ index = 0 }) {
   const { requiresKey } = useRequiresKey();
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
+  const { isListening, text: speechText } = useSpeechRecognition(ask);
+
+  useEffect(() => {
+    if (isListening && speechText) {
+      setText(speechText);
+    } else {
+      //  Enable below for auto submit
+      // setText('');
+    }
+  }, [speechText, isListening, setText]);
 
   return (
     <form
@@ -60,7 +72,11 @@ export default function ChatForm({ index = 0 }) {
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
               endpoint && (
-                <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
+                <SendButton
+                  text={text}
+                  disabled={filesLoading || isSubmitting || requiresKey}
+                  isListening={isListening}
+                />
               )
             )}
           </div>
