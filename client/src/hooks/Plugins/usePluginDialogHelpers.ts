@@ -1,11 +1,17 @@
 import { useState, useCallback } from 'react';
+import type { TPlugin } from 'librechat-data-provider';
 
 function usePluginDialogHelpers() {
   const [maxPage, setMaxPage] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(1);
   const [searchChanged, setSearchChanged] = useState(false);
+
   const [searchValue, setSearchValue] = useState('');
+  const [error, setError] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
+  const [selectedPlugin, setSelectedPlugin] = useState<TPlugin | undefined>(undefined);
 
   const calculateColumns = (node: HTMLElement) => {
     const width = node.offsetWidth;
@@ -59,6 +65,14 @@ function usePluginDialogHelpers() {
     gridRef,
     handleSearch,
     handleChangePage,
+    error,
+    setError,
+    errorMessage,
+    setErrorMessage,
+    showPluginAuthForm,
+    setShowPluginAuthForm,
+    selectedPlugin,
+    setSelectedPlugin,
   };
 }
 

@@ -8,17 +8,13 @@ import {
   useUpdateUserPluginsMutation,
 } from 'librechat-data-provider/react-query';
 import type { TError, TPlugin, TPluginAction } from 'librechat-data-provider';
+import type { TPluginStoreDialogProps } from '~/common/types';
 import { useLocalize, usePluginDialogHelpers } from '~/hooks';
 import { useAuthContext } from '~/hooks/AuthContext';
 import PluginPagination from './PluginPagination';
 import PluginStoreItem from './PluginStoreItem';
 import PluginAuthForm from './PluginAuthForm';
 import store from '~/store';
-
-type TPluginStoreDialogProps = {
-  isOpen: boolean;
-  setIsOpen: (open: boolean) => void;
-};
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const localize = useLocalize();
@@ -28,11 +24,6 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
 
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
   const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
-  const [selectedPlugin, setSelectedPlugin] = useState<TPlugin | undefined>(undefined);
-
-  const [error, setError] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string>('');
-  const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
 
   const {
     maxPage,
@@ -47,6 +38,14 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     gridRef,
     handleSearch,
     handleChangePage,
+    error,
+    setError,
+    errorMessage,
+    setErrorMessage,
+    showPluginAuthForm,
+    setShowPluginAuthForm,
+    selectedPlugin,
+    setSelectedPlugin,
   } = usePluginDialogHelpers();
 
   const handleInstallError = (error: TError) => {

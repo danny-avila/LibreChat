@@ -172,6 +172,11 @@ export type TDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
+export type TPluginStoreDialogProps = {
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
+};
+
 export type TResError = {
   response: { data: { message: string } };
   message: string;
