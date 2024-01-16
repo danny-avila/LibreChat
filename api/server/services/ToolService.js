@@ -1,6 +1,69 @@
+const fs = require('fs');
+const path = require('path');
+const { StructuredTool } = require('langchain/tools');
 const { ContentTypes } = require('librechat-data-provider');
+const { Calculator } = require('langchain/tools/calculator');
+const { TavilySearchResults } = require('@langchain/community/tools/tavily_search');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { loadTools } = require('~/app/clients/tools/util');
+
+/**
+ * Loads and formats tools from the specified tool directory.
+ *
+ * The directory is scanned for JavaScript files, excluding any files in the filter set.
+ * For each file, it attempts to load the file as a module and instantiate a class, if it's a subclass of `StructuredTool`.
+ * Each tool instance is then formatted to be compatible with the OpenAI Assistant.
+ * Additionally, instances of LangChain Tools are included in the result.
+ *
+ * @param {object} params - The parameters for the function.
+ * @param {string} params.directory - The directory path where the tools are located.
+ * @param {Set<string>} [params.filter=new Set()] - A set of filenames to exclude from loading.
+ * @returns {Record<string, FunctionTool>} An object mapping each tool's plugin key to its instance.
+ */
+function loadAndFormatTools({ directory, filter = new Set() }) {
+  const tools = [];
+  /* Structured Tools Directory */
+  const files = fs.readdirSync(directory);
+
+  for (const file of files) {
+    if (file.endsWith('.js') && !filter.has(file)) {
+      const filePath = path.join(directory, file);
+      let ToolClass = null;
+      try {
+        ToolClass = require(filePath);
+      } catch (error) {
+        console.error(`Error loading tool from ${filePath}:`, error);
+        continue;
+      }
+
+      if (!ToolClass) {
+        continue;
+      }
+
+      if (ToolClass.prototype instanceof StructuredTool) {
+        const toolInstance = new ToolClass({ override: true });
+        const formattedTool = formatToOpenAIAssistantTool(toolInstance);
+        tools.push(formattedTool);
+      }
+    }
+  }
+
+  const basicToolInstances = [new Calculator()];
+
+  if (process.env.TAVILY_API_KEY) {
+    basicToolInstances.push(new TavilySearchResults());
+  }
+
+  for (const toolInstance of basicToolInstances) {
+    const formattedTool = formatToOpenAIAssistantTool(toolInstance);
+    tools.push(formattedTool);
+  }
+
+  return tools.reduce((map, tool) => {
+    map[tool.function.name] = tool;
+    return map;
+  }, {});
+}
 
 /**
  * Formats a `StructuredTool` instance into a format that is compatible
@@ -102,5 +165,6 @@ async function processActions(openai, actions) {
 
 module.exports = {
   formatToOpenAIAssistantTool,
+  loadAndFormatTools,
   processActions,
 };

@@ -12,9 +12,12 @@ const { logger } = require('~/config');
 class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
+    /* Used to initialize the Tool without necessary variables. */
+    this.override = fields.override ?? false;
 
     this.userId = fields.userId;
     this.fileStrategy = fields.fileStrategy;
+
     let apiKey = fields.DALLE3_API_KEY ?? fields.DALLE_API_KEY ?? this.getApiKey();
     const config = { apiKey };
     if (process.env.DALLE_REVERSE_PROXY) {
@@ -81,7 +84,7 @@ class DALLE3 extends Tool {
 
   getApiKey() {
     const apiKey = process.env.DALLE3_API_KEY ?? process.env.DALLE_API_KEY ?? '';
-    if (!apiKey) {
+    if (!apiKey && this.override) {
       throw new Error('Missing DALLE_API_KEY environment variable.');
     }
     return apiKey;

@@ -1,6 +1,7 @@
 const { FileSources } = require('librechat-data-provider');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
+const { loadAndFormatTools } = require('./ToolService');
 const paths = require('~/config/paths');
 
 /**
@@ -26,8 +27,22 @@ const AppService = async (app) => {
     initializeFirebase();
   }
 
+  const availableTools = loadAndFormatTools({
+    directory: paths.structuredTools,
+    filter: new Set([
+      'ChatTool.js',
+      'CodeSherpa.js',
+      'CodeSherpaTools.js',
+      'E2BTools.js',
+      'extractionChain.js',
+    ]),
+  });
+
+  /** @type {Record<string, FunctionTool} */
+
   app.locals = {
     socialLogins,
+    availableTools,
     fileStrategy,
     paths,
   };

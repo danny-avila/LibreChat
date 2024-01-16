@@ -3,6 +3,7 @@ const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
 const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
 const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
+const { TavilySearchResults } = require('@langchain/community/tools/tavily_search');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
@@ -153,6 +154,7 @@ const loadTools = async ({
   options = {},
 }) => {
   const toolConstructors = {
+    tavily_search_results_json: TavilySearchResults,
     calculator: Calculator,
     google: GoogleSearchAPI,
     wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
