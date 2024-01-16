@@ -17,6 +17,9 @@ npm run update:docker
 
 # OR, if you don't have npm
 docker-compose build --no-cache
+
+# OR, if you the latest version of docker with docker compose as a plugin
+docker compose build --no-cache
 ```
 
 Alternatively, you can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`, or modify the default configuration provided by the main `docker-compose.yml`, without the need to directly edit or duplicate the whole file.
