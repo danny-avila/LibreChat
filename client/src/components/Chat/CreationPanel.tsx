@@ -14,6 +14,10 @@ export default function CreationPanel({ index = 0 }) {
   const create = useCreateAssistantMutation();
   const { control, handleSubmit, reset, setValue } = useAssistantsContext();
 
+  const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
+  const inputClass =
+    'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
+
   const onSubmit = (data: CreationForm) => {
     const tools: Tool[] = [];
     console.log(data);
@@ -80,10 +84,10 @@ export default function CreationPanel({ index = 0 }) {
           />
         )}
       />
-      <div className="h-auto bg-white px-4 pb-8 pt-3">
+      <div className="h-auto bg-white px-4 pb-8 pt-3 dark:bg-transparent">
         {/* Name */}
         <div className="mb-4">
-          <label className="mb-2 block text-xs font-bold text-gray-700" htmlFor="name">
+          <label className={labelClass} htmlFor="name">
             Name
           </label>
           <Controller
@@ -94,7 +98,7 @@ export default function CreationPanel({ index = 0 }) {
                 {...field}
                 value={field.value ?? ''}
                 {...{ max: 256 }}
-                className="focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
+                className={inputClass}
                 id="name"
                 type="text"
                 placeholder="Optional: The name of the assistant"
@@ -111,7 +115,7 @@ export default function CreationPanel({ index = 0 }) {
         </div>
         {/* Description */}
         <div className="mb-4">
-          <label className="mb-2 block text-xs font-bold text-gray-700" htmlFor="description">
+          <label className={labelClass} htmlFor="description">
             Description
           </label>
           <Controller
@@ -122,7 +126,7 @@ export default function CreationPanel({ index = 0 }) {
                 {...field}
                 value={field.value ?? ''}
                 {...{ max: 512 }}
-                className="focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
+                className={inputClass}
                 id="description"
                 type="text"
                 placeholder="Optional: Describe your Assistant here"
@@ -133,7 +137,7 @@ export default function CreationPanel({ index = 0 }) {
 
         {/* Instructions */}
         <div className="mb-6">
-          <label className="mb-2 block text-xs font-bold text-gray-700" htmlFor="instructions">
+          <label className={labelClass} htmlFor="instructions">
             Instructions
           </label>
           <Controller
@@ -144,7 +148,7 @@ export default function CreationPanel({ index = 0 }) {
                 {...field}
                 value={field.value ?? ''}
                 {...{ max: 32768 }}
-                className="focus:shadow-outline w-full resize-none appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0"
+                className="focus:shadow-outline w-full resize-none appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700/80 dark:bg-gray-800"
                 id="instructions"
                 placeholder="The system instructions that the assistant uses"
                 rows={3}
@@ -155,7 +159,7 @@ export default function CreationPanel({ index = 0 }) {
 
         {/* Model */}
         <div className="mb-6">
-          <label className="mb-2 block text-xs font-bold text-gray-700" htmlFor="model">
+          <label className={labelClass} htmlFor="model">
             Model
           </label>
           <Controller
@@ -164,7 +168,7 @@ export default function CreationPanel({ index = 0 }) {
             render={({ field }) => (
               <select
                 {...field}
-                className="focus:shadow-outline block w-full appearance-none rounded-md border border-gray-200 bg-white px-4 py-2 pr-8 text-sm leading-tight shadow hover:border-gray-100 focus:border-green-500 focus:outline-none focus:ring-0"
+                className="focus:shadow-outline block w-full appearance-none rounded-md border border-gray-200 bg-white px-4 py-2 pr-8 text-sm leading-tight shadow hover:border-gray-100 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700/80 dark:bg-gray-800 dark:hover:border-gray-500"
                 id="model"
               >
                 <option value="gpt-3.5-turbo-1106">gpt-3.5-turbo-1106</option>
@@ -176,21 +180,27 @@ export default function CreationPanel({ index = 0 }) {
 
         {/* Tools */}
         <div className="mb-6">
-          <label className="mb-2 block text-xs font-bold text-gray-700">Tools</label>
+          <label className={labelClass}>Tools</label>
           <div className="flex flex-col space-y-4">
             <Separator orientation="horizontal" className="bg-gray-100/50" />
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-700">Functions</span>
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                Functions
+              </span>
               {renderSwitch('function')}
             </div>
             <Separator orientation="horizontal" className="bg-gray-100/50" />
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-700">Code Interpreter</span>
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                Code Interpreter
+              </span>
               {renderSwitch('code_interpreter')}
             </div>
             <Separator orientation="horizontal" className="bg-gray-100/50" />
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-700">Retrieval</span>
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+                Retrieval
+              </span>
               {renderSwitch('retrieval')}
             </div>
             <Separator orientation="horizontal" className="bg-gray-100/50" />
