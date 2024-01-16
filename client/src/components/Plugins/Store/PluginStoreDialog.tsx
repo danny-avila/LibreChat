@@ -22,20 +22,23 @@ type TPluginStoreDialogProps = {
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const localize = useLocalize();
-  const { data: availablePlugins } = useAvailablePluginsQuery();
   const { user } = useAuthContext();
+  const { data: availablePlugins } = useAvailablePluginsQuery();
   const updateUserPlugins = useUpdateUserPluginsMutation();
+
   const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
+  const [selectedPlugin, setSelectedPlugin] = useState<TPlugin | undefined>(undefined);
+
+  const [maxPage, setMaxPage] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(1);
-  const [maxPage, setMaxPage] = useState(1);
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
-  const [selectedPlugin, setSelectedPlugin] = useState<TPlugin | undefined>(undefined);
-  const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
+  const [searchChanged, setSearchChanged] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [searchValue, setSearchValue] = useState('');
-  const [searchChanged, setSearchChanged] = useState(false);
+  const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
 
   const handleInstallError = (error: TError) => {
     setError(true);
@@ -211,13 +214,13 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           <div className="p-4 sm:p-6 sm:pt-4">
             <div className="mt-4 flex flex-col gap-4">
               <div className="flex items-center justify-center space-x-4">
-                <Search className="w-6 h-6 text-gray-500" />
+                <Search className="h-6 w-6 text-gray-500" />
                 <input
                   type="text"
                   value={searchValue}
                   onChange={handleSearch}
                   placeholder={localize('com_nav_plugin_search')}
-                  className="w-64 px-2 py-1 border border-gray-300 rounded dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-64 rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
                 />
               </div>
               <div

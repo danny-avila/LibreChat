@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider'; //
 import type { ReactNode } from 'react';
 import { MessagesSquared, GPTIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
@@ -20,7 +20,13 @@ export default function PopoverButtons({
   buttonClass?: string;
   iconClass?: string;
 }) {
-  const { conversation, optionSettings, setOptionSettings, showAgentSettings, setShowAgentSettings } = useChatContext();
+  const {
+    conversation,
+    optionSettings,
+    setOptionSettings,
+    showAgentSettings,
+    setShowAgentSettings,
+  } = useChatContext();
   const localize = useLocalize();
 
   const { model, endpoint: _endpoint, endpointType } = conversation ?? {};
@@ -32,7 +38,8 @@ export default function PopoverButtons({
   const { showExamples } = optionSettings;
   const showExamplesButton = !isGenerativeModel && !isTextModel && isChatModel;
 
-  const triggerExamples = () => setOptionSettings((prev) => ({ ...prev, showExamples: !prev.showExamples }));
+  const triggerExamples = () =>
+    setOptionSettings((prev) => ({ ...prev, showExamples: !prev.showExamples }));
 
   const buttons: { [key: string]: TPopoverButton[] } = {
     [EModelEndpoint.google]: [
@@ -45,7 +52,9 @@ export default function PopoverButtons({
     ],
     [EModelEndpoint.gptPlugins]: [
       {
-        label: localize(showAgentSettings ? 'com_show_completion_settings' : 'com_show_agent_settings'),
+        label: localize(
+          showAgentSettings ? 'com_show_completion_settings' : 'com_show_agent_settings',
+        ),
         buttonClass: '',
         handler: () => setShowAgentSettings((prev) => !prev),
         icon: <GPTIcon className={cn('mr-1 w-[14px]', iconClass)} size={24} />,
