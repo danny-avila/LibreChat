@@ -1,5 +1,6 @@
-// import { useState } from 'react';
 import { Plus } from 'lucide-react';
+
+import { useCallback, useEffect } from 'react';
 import { useListAssistantsQuery } from 'librechat-data-provider/react-query';
 import type { Assistant } from 'librechat-data-provider';
 import type { UseFormReset, UseFormSetValue } from 'react-hook-form';
@@ -16,11 +17,13 @@ export default function CreationHeader({
   value,
   onChange,
   setValue,
+  selectedAssistant,
 }: {
   reset: UseFormReset<CreationForm>;
   value: TAssistantOption;
   onChange: (value: TAssistantOption) => void;
   setValue: UseFormSetValue<CreationForm>;
+  selectedAssistant: string | null;
 }) {
   const assistants = useListAssistantsQuery(
     {
@@ -36,47 +39,56 @@ export default function CreationHeader({
     },
   );
 
-  const onSelect = (value: string) => {
-    const assistant = assistants.data?.find((assistant) => assistant.id === value);
-    if (!assistant) {
-      // localStorage.setItem('lastAssistant', '');
-      reset();
-      return;
-    }
+  const onSelect = useCallback(
+    (value: string) => {
+      const assistant = assistants.data?.find((assistant) => assistant.id === value);
+      if (!assistant) {
+        // localStorage.setItem('lastAssistant', '');
+        reset();
+        return;
+      }
 
-    const update = {
-      ...assistant,
-      label: assistant?.name ?? '',
-      value: assistant?.id ?? '',
-    };
+      const update = {
+        ...assistant,
+        label: assistant?.name ?? '',
+        value: assistant?.id ?? '',
+      };
 
-    // localStorage.setItem('lastAssistant', JSON.stringify(update));
+      // localStorage.setItem('lastAssistant', JSON.stringify(update));
 
-    onChange(update);
-    const actions: Actions = {
-      function: false,
-      code_interpreter: false,
-      retrieval: false,
-    };
-    assistant?.tools
-      ?.map((tool) => tool.type)
-      .forEach((tool) => {
-        actions[tool] = true;
+      onChange(update);
+      const actions: Actions = {
+        function: false,
+        code_interpreter: false,
+        retrieval: false,
+      };
+      assistant?.tools
+        ?.map((tool) => tool.type)
+        .forEach((tool) => {
+          actions[tool] = true;
+        });
+
+      Object.entries(assistant).forEach(([name, value]) => {
+        if (typeof value === 'number') {
+          return;
+        } else if (typeof value === 'object') {
+          return;
+        }
+        if (keys.has(name)) {
+          setValue(name as keyof CreationForm, value);
+        }
       });
 
-    Object.entries(assistant).forEach(([name, value]) => {
-      if (typeof value === 'number') {
-        return;
-      } else if (typeof value === 'object') {
-        return;
-      }
-      if (keys.has(name)) {
-        setValue(name as keyof CreationForm, value);
-      }
-    });
+      Object.entries(actions).forEach(([name, value]) => setValue(name as keyof Actions, value));
+    },
+    [assistants.data, onChange, reset, setValue],
+  );
 
-    Object.entries(actions).forEach(([name, value]) => setValue(name as keyof Actions, value));
-  };
+  useEffect(() => {
+    if (selectedAssistant && assistants.data) {
+      onSelect(selectedAssistant);
+    }
+  }, [selectedAssistant, assistants.data, onSelect]);
 
   return (
     <SelectDropDown

@@ -1,3 +1,4 @@
+import { useRecoilValue } from 'recoil';
 import { Controller, useWatch } from 'react-hook-form';
 import { Tools, EModelEndpoint } from 'librechat-data-provider';
 import { useCreateAssistantMutation } from 'librechat-data-provider/react-query';
@@ -8,10 +9,12 @@ import { useAssistantsContext } from '~/Providers';
 import { Switch } from '~/components/ui/Switch';
 import CreationHeader from './CreationHeader';
 import { useNewConvo } from '~/hooks';
+import store from '~/store';
 
 export default function CreationPanel({ index = 0 }) {
   const { switchToConversation } = useNewConvo(index);
   const create = useCreateAssistantMutation();
+  const selectedAssistant = useRecoilValue(store.assistantByIndex(index));
   const { control, handleSubmit, reset, setValue } = useAssistantsContext();
 
   const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
@@ -81,6 +84,7 @@ export default function CreationPanel({ index = 0 }) {
             value={field.value}
             onChange={field.onChange}
             setValue={setValue}
+            selectedAssistant={selectedAssistant}
           />
         )}
       />

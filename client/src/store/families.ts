@@ -20,6 +20,25 @@ const filesByIndex = atomFamily<Map<string, ExtendedFile>, string | number>({
   default: new Map(),
 });
 
+const assistantByIndex = atomFamily<string | null, string | number>({
+  key: 'assistantByIndex',
+  default: null,
+  effects: [
+    ({ setSelf, onSet, node }) => {
+      const savedValue = localStorage.getItem(node.key);
+      if (savedValue != null) {
+        setSelf(savedValue);
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'string') {
+          localStorage.setItem(node.key, newValue);
+        }
+      });
+    },
+  ] as const,
+});
+
 const conversationKeysAtom = atom<(string | number)[]>({
   key: 'conversationKeys',
   default: [],
@@ -99,6 +118,7 @@ function useCreateConversationAtom(key: string | number) {
 
 export default {
   conversationByIndex,
+  assistantByIndex,
   filesByIndex,
   presetByIndex,
   submissionByIndex,

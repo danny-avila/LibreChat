@@ -18,7 +18,6 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '~/componen
 import CreationPanel from '~/components/Chat/CreationPanel';
 import { TooltipProvider } from '~/components/ui/Tooltip';
 import { Separator } from '~/components/ui/Separator';
-import { accounts } from './data';
 import Switcher from './Switcher';
 import { cn } from '~/utils';
 import Nav from './Nav';
@@ -85,7 +84,7 @@ export default function SidePanel({
               isCollapsed ? 'h-[52px]' : 'px-2',
             )}
           >
-            <Switcher isCollapsed={isCollapsed} accounts={accounts} />
+            <Switcher isCollapsed={isCollapsed} />
           </div>
           <Separator className="bg-gray-100/50" />
           <Nav
