@@ -1,29 +1,25 @@
-import { useRecoilState } from 'recoil';
 import { Search, X } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import { useState, useEffect } from 'react';
-import { tConversationSchema } from 'librechat-data-provider';
 import {
   useAvailablePluginsQuery,
   useUpdateUserPluginsMutation,
 } from 'librechat-data-provider/react-query';
-import type { TError, TPlugin, TPluginAction } from 'librechat-data-provider';
+import type { TError, TPluginAction } from 'librechat-data-provider';
 import type { TPluginStoreDialogProps } from '~/common/types';
-import { useLocalize, usePluginDialogHelpers } from '~/hooks';
-import { useAuthContext } from '~/hooks/AuthContext';
+import { useLocalize, usePluginDialogHelpers, useSetIndexOptions, useAuthContext } from '~/hooks';
 import PluginPagination from './PluginPagination';
 import PluginStoreItem from './PluginStoreItem';
 import PluginAuthForm from './PluginAuthForm';
-import store from '~/store';
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { data: availablePlugins } = useAvailablePluginsQuery();
   const updateUserPlugins = useUpdateUserPluginsMutation();
+  const { setTools } = useSetIndexOptions();
 
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
-  const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
 
   const {
     maxPage,
@@ -76,18 +72,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           handleInstallError(error as TError);
         },
         onSuccess: () => {
-          //@ts-ignore - can't set a default convo or it will break routing
-          let { tools } = conversation;
-          tools = tools.filter((t: TPlugin) => {
-            return t.pluginKey !== plugin;
-          });
-          localStorage.setItem('lastSelectedTools', JSON.stringify(tools));
-          setConversation((prevState) =>
-            tConversationSchema.parse({
-              ...prevState,
-              tools,
-            }),
-          );
+          setTools(plugin, true);
         },
       },
     );

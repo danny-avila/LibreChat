@@ -72,7 +72,7 @@ export type TSetOptionsPayload = {
   setAgentOption: TSetOption;
   // getConversation: () => TConversation | TPreset | null;
   checkPluginSelection: (value: string) => boolean;
-  setTools: (newValue: string) => void;
+  setTools: (newValue: string, remove?: boolean) => void;
 };
 
 export type TPresetItemProps = {
