@@ -17,8 +17,6 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
     ({ onSet, node }) => {
       onSet(async (newValue: TConversation | null) => {
         const index = Number(node.key.split('__')[1]);
-        console.log('onSet index', index);
-
         if (newValue?.assistant_id) {
           localStorage.setItem(`assistant_id__${index}`, newValue.assistant_id);
         }
