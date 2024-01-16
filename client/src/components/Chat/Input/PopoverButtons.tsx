@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider'; //
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { MessagesSquared, GPTIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
