@@ -1,5 +1,7 @@
 const { RunStatus } = require('librechat-data-provider');
 const RunManager = require('./RunManager');
+const { logger } = require('~/config');
+
 /**
  * Creates a run on a thread using the OpenAI API.
  *
@@ -59,9 +61,16 @@ async function waitForRun({
 
   // this runManager will be passed in from the caller
 
+  let lastSeenStatus = null;
   while (timeElapsed < timeout) {
     run = await openai.beta.threads.runs.retrieve(thread_id, run_id);
-    console.log(`Run status: ${run.status}`);
+
+    if (run.status !== lastSeenStatus) {
+      logger.debug(
+        `[waitForRun] user: ${openai.req.user.id} | thread_id: ${thread_id} | run_id: ${run_id} | status: ${run.status}`,
+      );
+      lastSeenStatus = run.status;
+    }
 
     if (![RunStatus.IN_PROGRESS, RunStatus.QUEUED].includes(run.status)) {
       await runManager.fetchRunSteps({

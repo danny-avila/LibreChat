@@ -13,6 +13,7 @@ const { RunManager, waitForRun } = require('~/server/services/Runs');
 const { processActions } = require('~/server/services/ToolService');
 const { createOnProgress, sendMessage } = require('~/server/utils');
 const { TextStream } = require('~/app/clients');
+const { logger } = require('~/config');
 
 /**
  * Sorts, processes, and flattens messages to a single string.
@@ -328,8 +329,7 @@ async function runAssistant({
   const runManager = new RunManager({
     in_progress,
     final: async ({ step, runStatus, stepsByStatus }) => {
-      console.log(`Final step for ${run_id} with status ${runStatus}`);
-      console.dir(step, { depth: null });
+      logger.debug(`[runAssistant] Final step for ${run_id} with status ${runStatus}`, step);
 
       const promises = [];
       // promises.push(
