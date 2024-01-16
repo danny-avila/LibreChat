@@ -97,7 +97,7 @@ export default function CreationHeader({
       optionsClass="hover:bg-gray-20/50"
       optionsListClass="rounded-lg shadow-lg"
       currentValueClass={cn(
-        'text-md font-semibold text-gray-900 dark:text-gray-100',
+        'text-md font-semibold text-gray-900 dark:text-white',
         value === '' ? 'text-gray-500' : '',
       )}
       className={cn(

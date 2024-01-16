@@ -16,7 +16,7 @@ export default function CreationPanel({ index = 0 }) {
 
   const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
   const inputClass =
-    'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
+    'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 dark:text-white shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
 
   const onSubmit = (data: CreationForm) => {
     const tools: Tool[] = [];
@@ -148,7 +148,7 @@ export default function CreationPanel({ index = 0 }) {
                 {...field}
                 value={field.value ?? ''}
                 {...{ max: 32768 }}
-                className="focus:shadow-outline w-full resize-none appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700/80 dark:bg-gray-800"
+                className="focus:shadow-outline w-full resize-none appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700/80 dark:bg-gray-800 dark:text-white"
                 id="instructions"
                 placeholder="The system instructions that the assistant uses"
                 rows={3}
