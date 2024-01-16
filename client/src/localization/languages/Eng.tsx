@@ -1,5 +1,4 @@
 // English phrases
-
 export default {
   com_ui_examples: 'Examples',
   com_ui_new_chat: 'New Chat',
@@ -268,6 +267,10 @@ export default {
   com_nav_profile_picture: 'Profile Picture',
   com_nav_change_picture: 'Change picture',
   com_nav_plugin_store: 'Plugin store',
+  com_show_agent_settings: 'Show Agent Settings',
+  com_show_completion_settings: 'Show Completion Settings',
+  com_hide_examples: 'Hide Examples',
+  com_show_examples: 'Show Examples',
   com_nav_plugin_search: 'Search plugins',
   com_nav_plugin_auth_error:
     'There was an error attempting to authenticate this plugin. Please try again.',

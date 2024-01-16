@@ -1,10 +1,10 @@
 // Portuguese phrases
-
 export default {
   com_ui_examples: 'Exemplos',
   com_ui_new_chat: 'Novo Chat',
   com_ui_example_quantum_computing: 'Explique a computação quântica em termos simples',
-  com_ui_example_10_year_old_b_day: 'Tem alguma ideia criativa para o aniversário de uma criança de 10 anos?',
+  com_ui_example_10_year_old_b_day:
+    'Tem alguma ideia criativa para o aniversário de uma criança de 10 anos?',
   com_ui_example_http_in_js: 'Como faço uma solicitação HTTP em Javascript?',
   com_ui_capabilities: 'Capacidades',
   com_ui_capability_remember: 'Lembra o que o usuário disse anteriormente na conversa',
@@ -12,7 +12,8 @@ export default {
   com_ui_capability_decline_requests: 'Treinado para recusar pedidos inadequados',
   com_ui_limitations: 'Limitações',
   com_ui_limitation_incorrect_info: 'Pode ocasionalmente gerar informações incorretas',
-  com_ui_limitation_harmful_biased: 'Pode ocasionalmente produzir instruções prejudiciais ou conteúdo tendencioso',
+  com_ui_limitation_harmful_biased:
+    'Pode ocasionalmente produzir instruções prejudiciais ou conteúdo tendencioso',
   com_ui_limitation_limited_2021: 'Conhecimento limitado do mundo e eventos após 2021',
   com_ui_experimental: 'Experimental',
   com_ui_input: 'Entrada',
@@ -56,10 +57,14 @@ export default {
   com_ui_preview: 'Visualizar',
   com_ui_upload: 'Carregar',
   com_ui_connect: 'Conectar',
-  com_auth_error_login: 'Não foi possível fazer login com as informações fornecidas. Por favor, verifique suas credenciais e tente novamente.',
-  com_auth_error_login_rl: 'Muitas tentativas de login em um curto período de tempo. Por favor, tente novamente mais tarde.',
-  com_auth_error_login_ban: 'Sua conta foi temporariamente banida devido a violações de nosso serviço.',
-  com_auth_error_login_server: 'Houve um erro interno do servidor. Por favor, aguarde alguns momentos e tente novamente.',
+  com_auth_error_login:
+    'Não foi possível fazer login com as informações fornecidas. Por favor, verifique suas credenciais e tente novamente.',
+  com_auth_error_login_rl:
+    'Muitas tentativas de login em um curto período de tempo. Por favor, tente novamente mais tarde.',
+  com_auth_error_login_ban:
+    'Sua conta foi temporariamente banida devido a violações de nosso serviço.',
+  com_auth_error_login_server:
+    'Houve um erro interno do servidor. Por favor, aguarde alguns momentos e tente novamente.',
   com_auth_no_account: 'Não tem uma conta?',
   com_auth_sign_up: 'Inscrever-se',
   com_auth_sign_in: 'Entrar',
@@ -98,8 +103,10 @@ export default {
   com_auth_here: 'AQUI',
   com_auth_to_reset_your_password: 'para redefinir sua senha.',
   com_auth_reset_password_link_sent: 'Email Enviado',
-  com_auth_reset_password_email_sent: 'Um email foi enviado para você com mais instruções para redefinir sua senha.',
-  com_auth_error_reset_password: 'Houve um problema para redefinir sua senha. Não foi encontrado nenhum usuário com o endereço de email fornecido. Por favor, tente novamente.',
+  com_auth_reset_password_email_sent:
+    'Um email foi enviado para você com mais instruções para redefinir sua senha.',
+  com_auth_error_reset_password:
+    'Houve um problema para redefinir sua senha. Não foi encontrado nenhum usuário com o endereço de email fornecido. Por favor, tente novamente.',
   com_auth_reset_password_success: 'Redefinição de Senha Bem-sucedida',
   com_auth_login_with_new_password: 'Agora você pode fazer login com sua nova senha.',
   com_auth_error_invalid_reset_token: 'Este token de redefinição de senha não é mais válido.',
@@ -111,10 +118,12 @@ export default {
   com_endpoint_bing_enable_sydney: 'Habilitar Sydney',
   com_endpoint_bing_to_enable_sydney: 'Para habilitar Sydney',
   com_endpoint_bing_jailbreak: 'Jailbreak',
-  com_endpoint_bing_context_placeholder: 'O Bing pode usar até 7k tokens para \'contexto\', que ele pode referenciar para a conversa. O limite específico não é conhecido, mas pode ocorrer erros ao exceder 7k tokens',
-  com_endpoint_bing_system_message_placeholder: 'AVISO: O uso indevido deste recurso pode fazer com que você seja BANIDO de usar o Bing! Clique em \'System Message\' para obter instruções completas e a mensagem padrão se omitida, que é o preset \'Sydney\' que é considerado seguro.',
+  com_endpoint_bing_context_placeholder:
+    'O Bing pode usar até 7k tokens para \'contexto\', que ele pode referenciar para a conversa. O limite específico não é conhecido, mas pode ocorrer erros ao exceder 7k tokens',
+  com_endpoint_bing_system_message_placeholder:
+    'AVISO: O uso indevido deste recurso pode fazer com que você seja BANIDO de usar o Bing! Clique em \'System Message\' para obter instruções completas e a mensagem padrão se omitida, que é o preset \'Sydney\' que é considerado seguro.',
   com_endpoint_system_message: 'Mensagem do Sistema',
-  com_endpoint_message: 'Mensagem',
+  com_endpoint_message: 'Conversar com',
   com_endpoint_message_not_appendable: 'Edite sua mensagem ou Regenere.',
   com_endpoint_default_blank: 'padrão: em branco',
   com_endpoint_default_false: 'padrão: falso',
@@ -125,7 +134,8 @@ export default {
   com_endpoint_tone_style: 'Estilo de Tom',
   com_endpoint_token_count: 'Contagem de Tokens',
   com_endpoint_output: 'Saída',
-  com_endpoint_google_temp: 'Valores mais altos = mais aleatório, enquanto valores mais baixos = mais focado e determinístico. Recomendamos alterar isso ou Top P, mas não ambos.',
+  com_endpoint_google_temp:
+    'Valores mais altos = mais aleatório, enquanto valores mais baixos = mais focado e determinístico. Recomendamos alterar isso ou Top P, mas não ambos.',
   com_endpoint_google_topp:
     'Top-p muda como o modelo seleciona tokens para saída. Os tokens são selecionados do mais K (veja o parâmetro topK) provável ao menos até que a soma de suas probabilidades seja igual ao valor de top-p.',
   com_endpoint_google_topk:
@@ -133,7 +143,8 @@ export default {
   com_endpoint_google_maxoutputtokens:
     'Número máximo de tokens que podem ser gerados na resposta. Especifique um valor menor para respostas mais curtas e um valor maior para respostas mais longas.',
   com_endpoint_google_custom_name_placeholder: 'Defina um nome personalizado para o Google',
-  com_endpoint_prompt_prefix_placeholder: 'Defina instruções personalizadas ou contexto. Ignorado se vazio.',
+  com_endpoint_prompt_prefix_placeholder:
+    'Defina instruções personalizadas ou contexto. Ignorado se vazio.',
   com_endpoint_custom_name: 'Nome Personalizado',
   com_endpoint_prompt_prefix: 'Prefixo do Prompt',
   com_endpoint_temperature: 'Temperatura',
@@ -172,13 +183,17 @@ export default {
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Defina instruções personalizadas para incluir na Mensagem do Sistema. Padrão: nenhum',
   com_endpoint_import: 'Importar',
-  com_endpoint_set_custom_name: 'Defina um nome personalizado, caso você possa encontrar este preset',
+  com_endpoint_set_custom_name:
+    'Defina um nome personalizado, caso você possa encontrar este preset',
   com_endpoint_preset_delete_confirm: 'Você tem certeza de que deseja excluir este preset?',
-  com_endpoint_preset_clear_all_confirm: 'Você tem certeza de que deseja excluir todos os seus presets?',
+  com_endpoint_preset_clear_all_confirm:
+    'Você tem certeza de que deseja excluir todos os seus presets?',
   com_endpoint_preset_import: 'Preset Importado!',
-  com_endpoint_preset_import_error: 'Houve um erro ao importar seu preset. Por favor, tente novamente.',
+  com_endpoint_preset_import_error:
+    'Houve um erro ao importar seu preset. Por favor, tente novamente.',
   com_endpoint_preset_save_error: 'Houve um erro ao salvar seu preset. Por favor, tente novamente.',
-  com_endpoint_preset_delete_error: 'Houve um erro ao excluir seu preset. Por favor, tente novamente.',
+  com_endpoint_preset_delete_error:
+    'Houve um erro ao excluir seu preset. Por favor, tente novamente.',
   com_endpoint_preset_default_removed: 'não é mais o preset padrão.',
   com_endpoint_preset_default_item: 'Padrão:',
   com_endpoint_preset_default_none: 'Nenhum preset padrão ativo.',
@@ -227,9 +242,11 @@ export default {
   com_endpoint_config_google_cloud_platform: '(do Google Cloud Platform)',
   com_endpoint_config_google_api_key: 'Chave API do Google',
   com_endpoint_config_google_gemini_api: '(API Gemini)',
-  com_endpoint_config_google_api_info: 'Para obter sua chave API de Linguagem Generativa (para Gemini),',
+  com_endpoint_config_google_api_info:
+    'Para obter sua chave API de Linguagem Generativa (para Gemini),',
   com_endpoint_config_key_import_json_key: 'Importar Chave JSON da Conta de Serviço.',
-  com_endpoint_config_key_import_json_key_success: 'Chave JSON da Conta de Serviço importada com sucesso',
+  com_endpoint_config_key_import_json_key_success:
+    'Chave JSON da Conta de Serviço importada com sucesso',
   com_endpoint_config_key_import_json_key_invalid:
     'Chave JSON da Conta de Serviço inválida, você importou o arquivo correto?',
   com_endpoint_config_key_get_edge_key: 'Para obter seu token de acesso para o Bing, faça login em',
@@ -237,7 +254,8 @@ export default {
     'Use as ferramentas de desenvolvimento ou uma extensão enquanto estiver logado no site para copiar o conteúdo do cookie _U. Se isso falhar, siga estas',
   com_endpoint_config_key_edge_instructions: 'instruções',
   com_endpoint_config_key_edge_full_key_string: 'para fornecer as strings completas do cookie.',
-  com_endpoint_config_key_chatgpt: 'Para obter seu token de acesso para o ChatGPT \'Versão Gratuita\', faça login em',
+  com_endpoint_config_key_chatgpt:
+    'Para obter seu token de acesso para o ChatGPT \'Versão Gratuita\', faça login em',
   com_endpoint_config_key_chatgpt_then_visit: 'então visite',
   com_endpoint_config_key_chatgpt_copy_token: 'Copie o token de acesso.',
   com_endpoint_config_key_google_need_to: 'Você precisa',
@@ -252,6 +270,10 @@ export default {
   com_nav_profile_picture: 'Foto de Perfil',
   com_nav_change_picture: 'Mudar foto',
   com_nav_plugin_store: 'Loja de plugins',
+  com_show_agent_settings: 'Mostrar Definições do Agente',
+  com_show_completion_settings: 'Mostrar Definições de Complemento',
+  com_hide_examples: 'Esconder Exemplos',
+  com_show_examples: 'Mostrar Exemplos',
   com_nav_plugin_search: 'Pesquisar plugins',
   com_nav_plugin_auth_error:
     'Houve um erro ao tentar autenticar este plugin. Por favor, tente novamente.',
