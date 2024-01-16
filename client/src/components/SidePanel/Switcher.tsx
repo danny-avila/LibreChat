@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { useRecoilState } from 'recoil';
 import { useListAssistantsQuery } from 'librechat-data-provider/react-query';
 import {
   Select,
@@ -8,17 +7,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/Select';
+import { useSetIndexOptions } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { cn } from '~/utils';
-import store from '~/store';
 
 interface SwitcherProps {
   isCollapsed: boolean;
 }
 
 export default function Switcher({ isCollapsed }: SwitcherProps) {
-  const { index } = useChatContext();
-  const [selectedAssistant, setSelectedAssistant] = useRecoilState(store.assistantByIndex(index));
+  const { setOption } = useSetIndexOptions();
+  const { index, conversation } = useChatContext();
+  /* `selectedAssistant` must be defined with `null` to cause re-render on update */
+  const { assistant_id: selectedAssistant = null } = conversation ?? {};
+
+  const setAssistant = setOption('assistant_id');
+
   const { data: assistants = [] } = useListAssistantsQuery(
     {
       order: 'asc',
@@ -30,15 +34,13 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
 
   useEffect(() => {
     if (!selectedAssistant && assistants && assistants.length) {
-      setSelectedAssistant(assistants[0].id);
+      const assistant_id = localStorage.getItem(`assistant_id__${index}`) ?? assistants[0].id;
+      setAssistant(assistant_id);
     }
-  }, [assistants, selectedAssistant, setSelectedAssistant]);
+  }, [index, assistants, selectedAssistant, setAssistant]);
 
   return (
-    <Select
-      defaultValue={selectedAssistant as string | undefined}
-      onValueChange={setSelectedAssistant}
-    >
+    <Select defaultValue={selectedAssistant as string | undefined} onValueChange={setAssistant}>
       <SelectTrigger
         className={cn(
           'flex items-center gap-2 [&>span]:line-clamp-1 [&>span]:flex [&>span]:w-full [&>span]:items-center [&>span]:gap-1 [&>span]:truncate [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0',

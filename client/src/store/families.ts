@@ -13,30 +13,23 @@ import { useEffect } from 'react';
 const conversationByIndex = atomFamily<TConversation | null, string | number>({
   key: 'conversationByIndex',
   default: null,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue: TConversation | null) => {
+        const index = Number(node.key.split('__')[1]);
+        console.log('onSet index', index);
+
+        if (newValue?.assistant_id) {
+          localStorage.setItem(`assistant_id__${index}`, newValue.assistant_id);
+        }
+      });
+    },
+  ] as const,
 });
 
 const filesByIndex = atomFamily<Map<string, ExtendedFile>, string | number>({
   key: 'filesByIndex',
   default: new Map(),
-});
-
-const assistantByIndex = atomFamily<string | null, string | number>({
-  key: 'assistantByIndex',
-  default: null,
-  effects: [
-    ({ setSelf, onSet, node }) => {
-      const savedValue = localStorage.getItem(node.key);
-      if (savedValue != null) {
-        setSelf(savedValue);
-      }
-
-      onSet((newValue: unknown) => {
-        if (typeof newValue === 'string') {
-          localStorage.setItem(node.key, newValue);
-        }
-      });
-    },
-  ] as const,
 });
 
 const conversationKeysAtom = atom<(string | number)[]>({
@@ -118,7 +111,6 @@ function useCreateConversationAtom(key: string | number) {
 
 export default {
   conversationByIndex,
-  assistantByIndex,
   filesByIndex,
   presetByIndex,
   submissionByIndex,

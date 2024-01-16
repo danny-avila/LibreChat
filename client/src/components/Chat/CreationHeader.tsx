@@ -43,7 +43,6 @@ export default function CreationHeader({
     (value: string) => {
       const assistant = assistants.data?.find((assistant) => assistant.id === value);
       if (!assistant) {
-        // localStorage.setItem('lastAssistant', '');
         reset();
         return;
       }
@@ -53,8 +52,6 @@ export default function CreationHeader({
         label: assistant?.name ?? '',
         value: assistant?.id ?? '',
       };
-
-      // localStorage.setItem('lastAssistant', JSON.stringify(update));
 
       onChange(update);
       const actions: Actions = {
