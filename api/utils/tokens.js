@@ -40,14 +40,14 @@ const models = [
 ];
 
 const openAIModels = {
-  'gpt-4': 8191,
-  'gpt-4-0613': 8191,
+  'gpt-4': 8187, // -5 from max
+  'gpt-4-0613': 8187, // -5 from max
   'gpt-4-32k': 32767,
   'gpt-4-32k-0314': 32767,
   'gpt-4-32k-0613': 32767,
-  'gpt-3.5-turbo': 4095,
-  'gpt-3.5-turbo-0613': 4095,
-  'gpt-3.5-turbo-0301': 4095,
+  'gpt-3.5-turbo': 4092, // -5 from max
+  'gpt-3.5-turbo-0613': 4092, // -5 from max
+  'gpt-3.5-turbo-0301': 4092, // -5 from max
   'gpt-3.5-turbo-16k': 15999,
   'gpt-3.5-turbo-16k-0613': 15999,
   'gpt-3.5-turbo-1106': 16380, // -5 from max
