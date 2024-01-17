@@ -40,6 +40,7 @@ export default {
   com_ui_cancel: 'Cancelar',
   com_ui_save: 'Salvar',
   com_ui_save_submit: 'Salvar e Enviar',
+  com_user_message: 'Você',
   com_ui_copy_to_clipboard: 'Copiar para a área de transferência',
   com_ui_copied_to_clipboard: 'Copiado para a área de transferência',
   com_ui_regenerate: 'Regenerar',
