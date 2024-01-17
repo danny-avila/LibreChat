@@ -103,7 +103,8 @@ async function processActions(openai, actions) {
     tools,
     functions: true,
     options: {
-      openAIApiKey: process.env.OPENAI_API_KEY,
+      openAIApiKey: openai.apiKey,
+      fileStrategy: openai.req.app.locals.fileStrategy,
     },
   });
 
