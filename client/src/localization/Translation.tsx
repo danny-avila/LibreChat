@@ -1,4 +1,4 @@
-import English from './languages/Eng';
+import English from './languages/Eng'; //
 import Arabic from './languages/Ar';
 import Chinese from './languages/Zh';
 import German from './languages/De';
