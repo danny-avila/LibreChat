@@ -1,4 +1,5 @@
 // Portuguese phrases
+
 export default {
   com_ui_examples: 'Exemplos',
   com_ui_new_chat: 'Novo Chat',
