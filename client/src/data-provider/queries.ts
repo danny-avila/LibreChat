@@ -8,7 +8,7 @@ import type {
 import type t from 'librechat-data-provider';
 import type {
   TPreset,
-  TFile,
+  TFile, TPlugin,
   ConversationListResponse,
   ConversationListParams,
 } from 'librechat-data-provider';
@@ -128,4 +128,12 @@ export const useConversationsInfiniteQuery = (
       ...config,
     },
   );
+};
+
+export const useAvailableToolsQuery = (): QueryObserverResult<TPlugin[]> => {
+  return useQuery<TPlugin[]>([QueryKeys.tools], () => dataService.getAvailableTools(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  });
 };

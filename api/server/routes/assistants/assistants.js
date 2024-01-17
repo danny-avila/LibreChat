@@ -1,8 +1,16 @@
 const OpenAI = require('openai');
 const express = require('express');
 const { logger } = require('~/config');
+const tools = require('./tools');
 
 const router = express.Router();
+
+/**
+ * Create an assistant.
+ * @route GET /assistants/tools
+ * @returns {TPlugin[]} 200 - application/json
+ */
+router.use('/tools', tools);
 
 /**
  * Create an assistant.

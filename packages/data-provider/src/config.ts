@@ -296,6 +296,11 @@ export enum CacheKeys {
    */
   GEN_TITLE = 'genTitle',
   /**
+  /**
+   * Key for the tools cache.
+   */
+  TOOLS = 'tools',
+  /**
    * Key for the model config cache.
    */
   MODELS_CONFIG = 'modelsConfig',

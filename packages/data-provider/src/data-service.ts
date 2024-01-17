@@ -196,6 +196,12 @@ export const listAssistants = (
   return request.get(endpoints.assistants(), { params });
 };
 
+/* Tools */
+
+export const getAvailableTools = (): Promise<s.TPlugin[]> => {
+  return request.get(`${endpoints.assistants()}/tools`);
+};
+
 /* Files */
 
 export const getFiles = (): Promise<f.TFile[]> => {
