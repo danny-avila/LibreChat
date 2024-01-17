@@ -1,4 +1,5 @@
 // English phrases
+
 export default {
   com_ui_examples: 'Examples',
   com_ui_new_chat: 'New Chat',
