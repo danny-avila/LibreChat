@@ -8,9 +8,13 @@ import type {
 import type t from 'librechat-data-provider';
 import type {
   TPreset,
-  TFile, TPlugin,
+  TFile,
+  TPlugin,
   ConversationListResponse,
   ConversationListParams,
+  Assistant,
+  AssistantListParams,
+  AssistantListResponse,
 } from 'librechat-data-provider';
 import { findPageForConversation } from '~/utils';
 
@@ -130,10 +134,82 @@ export const useConversationsInfiniteQuery = (
   );
 };
 
+/**
+ * ASSISTANTS
+ */
+
+/**
+ * Hook for getting all available tools for Assistants
+ */
 export const useAvailableToolsQuery = (): QueryObserverResult<TPlugin[]> => {
   return useQuery<TPlugin[]>([QueryKeys.tools], () => dataService.getAvailableTools(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
   });
+};
+
+/**
+ * Hook for listing all assistants, with optional parameters provided for pagination and sorting
+ */
+export const useListAssistantsQuery = <TData = AssistantListResponse>(
+  params?: AssistantListParams,
+  config?: UseQueryOptions<AssistantListResponse, unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<AssistantListResponse, unknown, TData>(
+    [QueryKeys.assistants, params],
+    () => dataService.listAssistants(params),
+    {
+      // Example selector to sort them by created_at
+      // select: (res) => {
+      //   return res.data.sort((a, b) => a.created_at - b.created_at);
+      // },
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+    },
+  );
+};
+
+export const useListAssistantsInfiniteQuery = (
+  params?: AssistantListParams,
+  config?: UseInfiniteQueryOptions<AssistantListResponse, Error>,
+) => {
+  return useInfiniteQuery<AssistantListResponse, Error>(
+    ['assistantsList', params],
+    ({ pageParam = '' }) => dataService.listAssistants({ ...params, after: pageParam }),
+    {
+      getNextPageParam: (lastPage) => {
+        // lastPage is of type AssistantListResponse, you can use the has_more and last_id from it directly
+        if (lastPage.has_more) {
+          return lastPage.last_id;
+        }
+        return undefined;
+      },
+      ...config,
+    },
+  );
+};
+
+/**
+ * Hook for retrieving details about a single assistant
+ */
+export const useGetAssistantByIdQuery = (
+  assistant_id: string,
+  config?: UseQueryOptions<Assistant>,
+): QueryObserverResult<Assistant> => {
+  return useQuery<Assistant>(
+    [QueryKeys.assistant, assistant_id],
+    () => dataService.getAssistantById(assistant_id),
+    {
+      enabled: !!assistant_id, // Query will not execute until the assistant_id exists
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      ...config,
+    },
+  );
 };

@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { useListAssistantsQuery } from 'librechat-data-provider/react-query';
 import {
   Select,
   SelectContent,
@@ -7,6 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/Select';
+import { useListAssistantsQuery } from '~/data-provider';
 import { useSetIndexOptions } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { cn } from '~/utils';

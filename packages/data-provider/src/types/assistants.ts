@@ -43,7 +43,7 @@ export type AssistantCreateParams = {
   instructions?: string | null;
   metadata?: Metadata | null;
   name?: string | null;
-  tools?: FunctionTool[];
+  tools?: Array<FunctionTool | string>;
 };
 
 export type AssistantUpdateParams = {
@@ -53,7 +53,7 @@ export type AssistantUpdateParams = {
   instructions?: string | null;
   metadata?: Metadata | null;
   name?: string | null;
-  tools?: FunctionTool[];
+  tools?: Array<FunctionTool | string>;
 };
 
 export type AssistantListParams = {

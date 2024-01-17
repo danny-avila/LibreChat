@@ -1,11 +1,11 @@
 import { Plus } from 'lucide-react';
 
 import { useCallback, useEffect } from 'react';
-import { useListAssistantsQuery } from 'librechat-data-provider/react-query';
 import type { Assistant } from 'librechat-data-provider';
 import type { UseFormReset, UseFormSetValue } from 'react-hook-form';
 import type { AssistantForm, Actions, Option } from '~/common';
 import SelectDropDown from '~/components/ui/SelectDropDown';
+import { useListAssistantsQuery } from '~/data-provider';
 import { cn } from '~/utils/';
 
 const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);

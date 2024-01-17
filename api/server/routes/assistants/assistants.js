@@ -1,7 +1,7 @@
 const OpenAI = require('openai');
 const express = require('express');
+const toolsController = require('./tools');
 const { logger } = require('~/config');
-const tools = require('./tools');
 
 const router = express.Router();
 
@@ -10,7 +10,7 @@ const router = express.Router();
  * @route GET /assistants/tools
  * @returns {TPlugin[]} 200 - application/json
  */
-router.use('/tools', tools);
+router.use('/tools', toolsController);
 
 /**
  * Create an assistant.
@@ -59,6 +59,13 @@ router.patch('/:id', async (req, res) => {
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
     const assistant_id = req.params.id;
     const updateData = req.body;
+    updateData.tools = (updateData.tools ?? []).map((tool) => {
+      if (typeof tool !== 'string') {
+        return tool;
+      }
+
+      return req.app.locals.availableTools[tool];
+    });
     const updatedAssistant = await openai.beta.assistants.update(assistant_id, updateData);
     res.json(updatedAssistant);
   } catch (error) {

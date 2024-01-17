@@ -2,10 +2,14 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useWatch } from 'react-hook-form';
 import { Tools, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
-import { useCreateAssistantMutation } from 'librechat-data-provider/react-query';
-import type { AssistantForm, Actions } from '~/common';
 import type { FunctionTool, TPlugin } from 'librechat-data-provider';
+import type { AssistantForm, Actions } from '~/common';
 import { useAssistantsContext, useChatContext } from '~/Providers';
+import {
+  useCreateAssistantMutation,
+  useUpdateAssistantMutation,
+  useDeleteAssistantMutation,
+} from '~/data-provider';
 import { ToolSelectDialog } from '~/components/Tools';
 import { Separator } from '~/components/ui/Separator';
 import { Switch } from '~/components/ui/Switch';
@@ -20,14 +24,22 @@ export default function AssistantPanel({ index = 0 }) {
   const [showToolDialog, setShowToolDialog] = useState(false);
   const { control, handleSubmit, reset, setValue } = useAssistantsContext();
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
+
+  /* Mutations */
   const create = useCreateAssistantMutation();
+  const update = useUpdateAssistantMutation();
+  const deleteAssistant = useDeleteAssistantMutation();
 
   const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
   const inputClass =
     'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 dark:text-white shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
 
+  const assistant_id = useWatch({ control, name: 'id' });
+  const functions = useWatch({ control, name: 'functions' });
+
   const onSubmit = (data: AssistantForm) => {
-    const tools: FunctionTool[] = [];
+    const tools: Array<FunctionTool | string> = [...functions];
+
     console.log(data);
     if (data.code_interpreter) {
       tools.push({ type: Tools.code_interpreter });
@@ -41,8 +53,22 @@ export default function AssistantPanel({ index = 0 }) {
       description,
       instructions,
       model,
-      // file_ids,
+      // file_ids, // TODO: add file handling here
     } = data;
+
+    if (assistant_id) {
+      update.mutate({
+        assistant_id,
+        data: {
+          name,
+          description,
+          instructions,
+          model,
+          tools,
+        },
+      });
+      return;
+    }
 
     create.mutate({
       name,
@@ -52,9 +78,6 @@ export default function AssistantPanel({ index = 0 }) {
       tools,
     });
   };
-
-  const assistant_id = useWatch({ control, name: 'id' });
-  const functions = useWatch({ control, name: 'functions' });
 
   // Render function for the Switch component
   const renderSwitch = (name: keyof Actions) => (
@@ -245,7 +268,8 @@ export default function AssistantPanel({ index = 0 }) {
             className="focus:shadow-outline rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
             type="submit"
           >
-            Save
+            {/* TODO: Add localization */}
+            {assistant_id ? 'Save' : 'Create'}
           </button>
         </div>
       </div>

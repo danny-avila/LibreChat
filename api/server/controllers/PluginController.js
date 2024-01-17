@@ -115,7 +115,7 @@ const getAvailableTools = async (req, res) => {
     );
 
     await cache.set(CacheKeys.TOOLS, tools);
-    res.status(200).json({ tools });
+    res.status(200).json(tools);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
