@@ -6,6 +6,7 @@ const { Calculator } = require('langchain/tools/calculator');
 const { TavilySearchResults } = require('@langchain/community/tools/tavily_search');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { loadTools } = require('~/app/clients/tools/util');
+const { logger } = require('~/config');
 
 /**
  * Loads and formats tools from the specified tool directory.
@@ -32,7 +33,7 @@ function loadAndFormatTools({ directory, filter = new Set() }) {
       try {
         ToolClass = require(filePath);
       } catch (error) {
-        console.error(`Error loading tool from ${filePath}:`, error);
+        logger.error(`[loadAndFormatTools] Error loading tool from ${filePath}:`, error);
         continue;
       }
 
@@ -41,12 +42,31 @@ function loadAndFormatTools({ directory, filter = new Set() }) {
       }
 
       if (ToolClass.prototype instanceof StructuredTool) {
-        const toolInstance = new ToolClass({ override: true });
+        /** @type {StructuredTool | null} */
+        let toolInstance = null;
+        try {
+          toolInstance = new ToolClass({ override: true });
+        } catch (error) {
+          logger.error(
+            `[loadAndFormatTools] Error initializing \`${file}\` tool; if it requires authentication, is the \`override\` field configured?`,
+            error,
+          );
+          continue;
+        }
+
+        if (!toolInstance) {
+          continue;
+        }
+
         const formattedTool = formatToOpenAIAssistantTool(toolInstance);
         tools.push(formattedTool);
       }
     }
   }
+
+  /**
+   * Basic Tools; schema: { input: string }
+   */
 
   const basicToolInstances = [new Calculator()];
 
