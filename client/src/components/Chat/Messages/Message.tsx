@@ -2,7 +2,7 @@ import { Plugin } from '~/components/Messages/Content';
 import MessageContent from './Content/MessageContent';
 import type { TMessageProps } from '~/common';
 import SiblingSwitch from './SiblingSwitch';
-import { useMessageHelpers } from '~/hooks';
+import { useAuthContext, useMessageHelpers } from '~/hooks';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
@@ -29,6 +29,7 @@ export default function Message(props: TMessageProps) {
   } = useMessageHelpers(props);
 
   const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+  const { user } = useAuthContext();
 
   if (!message) {
     return null;
@@ -60,7 +61,7 @@ export default function Message(props: TMessageProps) {
               className={cn('relative flex w-full flex-col', isCreatedByUser ? '' : 'agent-turn')}
             >
               <div className="select-none font-semibold">
-                {isCreatedByUser ? 'You' : message.sender}
+                {isCreatedByUser ? user?.name || 'You' : message.sender}
               </div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
