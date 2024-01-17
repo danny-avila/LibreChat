@@ -42,9 +42,9 @@ const models = [
 const openAIModels = {
   'gpt-4': 8187, // -5 from max
   'gpt-4-0613': 8187, // -5 from max
-  'gpt-4-32k': 32763, // -5 from max
-  'gpt-4-32k-0314': 32763, // -5 from max
-  'gpt-4-32k-0613': 32763, // -5 from max
+  'gpt-4-32k': 32758, // -10 from max
+  'gpt-4-32k-0314': 32758, // -10 from max
+  'gpt-4-32k-0613': 32758, // -10 from max
   'gpt-3.5-turbo': 4092, // -5 from max
   'gpt-3.5-turbo-0613': 4092, // -5 from max
   'gpt-3.5-turbo-0301': 4092, // -5 from max
