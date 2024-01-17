@@ -1,5 +1,5 @@
 import type { Option } from './types';
-import type { Assistant, Tool } from 'librechat-data-provider';
+import type { Assistant } from 'librechat-data-provider';
 
 export type TAssistantOption = string | (Option & Assistant);
 
