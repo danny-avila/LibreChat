@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import ProgressCircle from './ProgressCircle';
+import ProgressText from './ProgressText';
 import MarkdownLite from './MarkdownLite';
 
 export default function CodeAnalyze({
@@ -64,30 +66,13 @@ export default function CodeAnalyze({
             <CodeFinished />
           )}
         </div>
-        <div className="text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5">
-          <div
-            className="absolute left-0 top-0 line-clamp-1 overflow-visible"
-            style={{ opacity: 1, transform: 'none' }}
-            data-projection-id="78"
-          >
-            <button
-              type="button"
-              className="inline-flex items-center gap-1"
-              onClick={() => setShowCode((prev) => !prev)}
-            >
-              {progress < 1 ? 'Analyzing' : 'Finished analyzing'}
-              <svg width="16" height="17" viewBox="0 0 16 17" fill="none">
-                <path
-                  d="M11.3346 7.83203L8.00131 11.1654L4.66797 7.83203"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
+        <ProgressText
+          progress={progress}
+          onClick={() => setShowCode((prev) => !prev)}
+          inProgressText="Analyzing"
+          finishedText="Finished analyzing"
+          hasInput={!!code?.length}
+        />
       </div>
       {showCode && (
         <div className="mb-3 mt-0.5 overflow-hidden rounded-xl bg-black">
@@ -181,32 +166,7 @@ const CodeInProgress = ({
           </g>
         </svg>
       </div>
-      <svg
-        width="120"
-        height="120"
-        viewBox="0 0 120 120"
-        className="absolute left-1/2 top-1/2 h-[23px] w-[23px] -translate-x-1/2 -translate-y-1/2 text-brand-purple"
-      >
-        <circle
-          className="origin-[50%_50%] -rotate-90 stroke-brand-purple/25 dark:stroke-brand-purple/50"
-          strokeWidth="7.826086956521739"
-          fill="transparent"
-          r={radius}
-          cx="60"
-          cy="60"
-        />
-        <circle
-          className="origin-[50%_50%] -rotate-90 transition-[stroke-dashoffset]"
-          stroke="currentColor"
-          strokeWidth="7.826086956521739"
-          strokeDasharray={`${circumference} ${circumference}`}
-          strokeDashoffset={offset}
-          fill="transparent"
-          r={radius}
-          cx="60"
-          cy="60"
-        />
-      </svg>
+      <ProgressCircle radius={radius} circumference={circumference} offset={offset} />
     </div>
   );
 };
