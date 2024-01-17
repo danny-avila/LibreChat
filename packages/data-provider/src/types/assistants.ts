@@ -12,6 +12,17 @@ export type Tool = {
   [type: string]: Tools;
 };
 
+export type FunctionTool = {
+  type: Tools;
+  function?: {
+    description: string;
+    name: string;
+    parameters: {
+      [key: string]: string;
+    };
+  };
+};
+
 export type Assistant = {
   id: string;
   created_at: number;
@@ -22,7 +33,7 @@ export type Assistant = {
   model: string;
   name: string | null;
   object: string;
-  tools: Tool[];
+  tools: FunctionTool[];
 };
 
 export type AssistantCreateParams = {
@@ -32,7 +43,7 @@ export type AssistantCreateParams = {
   instructions?: string | null;
   metadata?: Metadata | null;
   name?: string | null;
-  tools?: Tool[];
+  tools?: FunctionTool[];
 };
 
 export type AssistantUpdateParams = {
@@ -42,7 +53,7 @@ export type AssistantUpdateParams = {
   instructions?: string | null;
   metadata?: Metadata | null;
   name?: string | null;
-  tools?: Tool[];
+  tools?: FunctionTool[];
 };
 
 export type AssistantListParams = {

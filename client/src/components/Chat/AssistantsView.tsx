@@ -6,7 +6,7 @@ import { useChatHelpers, useSSE } from '~/hooks';
 import MessagesView from './Messages/MessagesView';
 import { useGetFiles } from '~/data-provider';
 import { buildTree, mapFiles } from '~/utils';
-import CreationPanel from './CreationPanel';
+import AssistantPanel from '../SidePanel/AssistantPanel';
 import { ChatContext } from '~/Providers';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
@@ -37,7 +37,7 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   return (
     <ChatContext.Provider value={chatHelpers}>
-      <Presentation panel={<CreationPanel />}>
+      <Presentation panel={<AssistantPanel />}>
         {isLoading && conversationId !== 'new' ? (
           <div className="flex h-screen items-center justify-center">
             <Spinner className="opacity-0" />

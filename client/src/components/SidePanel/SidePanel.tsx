@@ -15,9 +15,9 @@ import {
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
-import CreationPanel from '~/components/Chat/CreationPanel';
 import { TooltipProvider } from '~/components/ui/Tooltip';
 import { Separator } from '~/components/ui/Separator';
+import AssistantPanel from './AssistantPanel';
 import Switcher from './Switcher';
 import { cn } from '~/utils';
 import Nav from './Nav';
@@ -96,7 +96,7 @@ export default function SidePanel({
                 label: '',
                 icon: Inbox,
                 id: 'inbox',
-                Component: CreationPanel,
+                Component: AssistantPanel,
               },
               {
                 title: 'Drafts',

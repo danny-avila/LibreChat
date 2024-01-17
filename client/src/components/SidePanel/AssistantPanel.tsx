@@ -1,30 +1,34 @@
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useWatch } from 'react-hook-form';
-import { Tools, EModelEndpoint } from 'librechat-data-provider';
+import { Tools, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import { useCreateAssistantMutation } from 'librechat-data-provider/react-query';
-import type { CreationForm, Actions } from '~/common';
-import type { Tool } from 'librechat-data-provider';
-import { Separator } from '~/components/ui/Separator';
+import type { AssistantForm, Actions } from '~/common';
+import type { FunctionTool, TPlugin } from 'librechat-data-provider';
 import { useAssistantsContext, useChatContext } from '~/Providers';
+import { ToolSelectDialog } from '~/components/Tools';
+import { Separator } from '~/components/ui/Separator';
 import { Switch } from '~/components/ui/Switch';
-import CreationHeader from './CreationHeader';
+import AssistantSelect from './AssistantSelect';
+import AssistantTool from './AssistantTool';
 import { useNewConvo } from '~/hooks';
 
-export default function CreationPanel({ index = 0 }) {
+export default function AssistantPanel({ index = 0 }) {
+  const queryClient = useQueryClient();
   const { conversation } = useChatContext();
   const { switchToConversation } = useNewConvo(index);
-  const create = useCreateAssistantMutation();
+  const [showToolDialog, setShowToolDialog] = useState(false);
   const { control, handleSubmit, reset, setValue } = useAssistantsContext();
+  const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
+  const create = useCreateAssistantMutation();
 
   const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
   const inputClass =
     'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 dark:text-white shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
 
-  const onSubmit = (data: CreationForm) => {
-    const tools: Tool[] = [];
+  const onSubmit = (data: AssistantForm) => {
+    const tools: FunctionTool[] = [];
     console.log(data);
-    if (data.function) {
-      tools.push({ type: Tools.function });
-    }
     if (data.code_interpreter) {
       tools.push({ type: Tools.code_interpreter });
     }
@@ -50,6 +54,7 @@ export default function CreationPanel({ index = 0 }) {
   };
 
   const assistant_id = useWatch({ control, name: 'id' });
+  const functions = useWatch({ control, name: 'functions' });
 
   // Render function for the Switch component
   const renderSwitch = (name: keyof Actions) => (
@@ -77,7 +82,7 @@ export default function CreationPanel({ index = 0 }) {
         name="assistant"
         control={control}
         render={({ field }) => (
-          <CreationHeader
+          <AssistantSelect
             reset={reset}
             value={field.value}
             onChange={field.onChange}
@@ -183,14 +188,22 @@ export default function CreationPanel({ index = 0 }) {
         {/* Tools */}
         <div className="mb-6">
           <label className={labelClass}>Tools</label>
+          <div className="space-y-1">
+            {functions.map((func) => (
+              <AssistantTool key={func} tool={func} allTools={allTools} />
+            ))}
+            <button
+              type="button"
+              onClick={() => setShowToolDialog(true)}
+              className="btn btn-neutral border-token-border-light relative mt-2 h-8 rounded-lg font-medium"
+            >
+              <div className="flex w-full items-center justify-center gap-2">
+                Add Tools {/* TODO: Add localization */}
+              </div>
+            </button>
+          </div>
           <div className="flex flex-col space-y-4">
-            <Separator orientation="horizontal" className="bg-gray-100/50" />
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
-                Functions
-              </span>
-              {renderSwitch('function')}
-            </div>
+            <div className="flex items-center justify-between"></div>
             <Separator orientation="horizontal" className="bg-gray-100/50" />
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
@@ -236,6 +249,7 @@ export default function CreationPanel({ index = 0 }) {
           </button>
         </div>
       </div>
+      <ToolSelectDialog isOpen={showToolDialog} setIsOpen={setShowToolDialog} />
     </form>
   );
 }

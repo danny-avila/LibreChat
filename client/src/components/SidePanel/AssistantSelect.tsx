@@ -4,7 +4,7 @@ import { useCallback, useEffect } from 'react';
 import { useListAssistantsQuery } from 'librechat-data-provider/react-query';
 import type { Assistant } from 'librechat-data-provider';
 import type { UseFormReset, UseFormSetValue } from 'react-hook-form';
-import type { CreationForm, Actions, Option } from '~/common';
+import type { AssistantForm, Actions, Option } from '~/common';
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { cn } from '~/utils/';
 
@@ -12,17 +12,17 @@ const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);
 
 type TAssistantOption = string | (Option & Assistant);
 
-export default function CreationHeader({
+export default function AssistantSelect({
   reset,
   value,
   onChange,
   setValue,
   selectedAssistant,
 }: {
-  reset: UseFormReset<CreationForm>;
+  reset: UseFormReset<AssistantForm>;
   value: TAssistantOption;
   onChange: (value: TAssistantOption) => void;
-  setValue: UseFormSetValue<CreationForm>;
+  setValue: UseFormSetValue<AssistantForm>;
   selectedAssistant: string | null;
 }) {
   const assistants = useListAssistantsQuery(
@@ -55,15 +55,23 @@ export default function CreationHeader({
 
       onChange(update);
       const actions: Actions = {
-        function: false,
         code_interpreter: false,
         retrieval: false,
       };
+
       assistant?.tools
+        ?.filter((tool) => tool.type !== 'function')
         ?.map((tool) => tool.type)
         .forEach((tool) => {
           actions[tool] = true;
         });
+
+      setValue(
+        'functions',
+        assistant?.tools
+          ?.filter((tool) => tool.type === 'function')
+          ?.map((tool) => tool.function?.name ?? '') ?? [],
+      );
 
       Object.entries(assistant).forEach(([name, value]) => {
         if (typeof value === 'number') {
@@ -72,7 +80,7 @@ export default function CreationHeader({
           return;
         }
         if (keys.has(name)) {
-          setValue(name as keyof CreationForm, value);
+          setValue(name as keyof AssistantForm, value);
         }
       });
 
