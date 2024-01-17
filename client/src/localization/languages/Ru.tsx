@@ -4,7 +4,8 @@ export default {
   com_ui_examples: 'Примеры',
   com_ui_new_chat: 'Создать чат',
   com_ui_example_quantum_computing: 'Объясни квантовые вычисления простыми словами',
-  com_ui_example_10_year_old_b_day: 'У тебя есть креативные идеи для дня рождения 10-летнего ребенка?',
+  com_ui_example_10_year_old_b_day:
+    'У тебя есть креативные идеи для дня рождения 10-летнего ребенка?',
   com_ui_example_http_in_js: 'Как мне сделать HTTP-запрос в JavaScript?',
   com_ui_capabilities: 'Возможности',
   com_ui_capability_remember: 'Запоминает, что пользователь говорил ранее в разговоре',
@@ -58,7 +59,7 @@ export default {
   com_ui_delete_conversation_confirm: 'Будет удален следующий чат: ',
   com_auth_error_login:
     'Не удалось войти с предоставленной информацией. Пожалуйста, проверьте ваши учетные данные и попробуйте снова.',
-    com_auth_error_login_rl:
+  com_auth_error_login_rl:
     'Слишком много попыток входа в систему за короткий промежуток времени. Пожалуйста, повторите попытку позже.',
   com_auth_error_login_ban:
     'Ваша учетная запись была временно заблокирована в связи с нарушениями нашего сервиса.',
@@ -143,7 +144,8 @@ export default {
   com_endpoint_google_maxoutputtokens:
     ' 	Максимальное количество токенов, которые могут быть сгенерированы в ответе. Укажите меньшее значение для более коротких ответов и большее значение для более длинных ответов.',
   com_endpoint_google_custom_name_placeholder: 'Задайте кастомное имя для Google',
-  com_endpoint_prompt_prefix_placeholder: 'Задайте пользовательские инструкции или контекст. Игнорируется, если пусто.',
+  com_endpoint_prompt_prefix_placeholder:
+    'Задайте пользовательские инструкции или контекст. Игнорируется, если пусто.',
   com_endpoint_custom_name: 'Кастомное имя',
   com_endpoint_prompt_prefix: 'Префикс промта',
   com_endpoint_temperature: 'Температура',
@@ -172,7 +174,7 @@ export default {
     'Top K изменяет то, как модель выбирает токены для вывода. Top K равное 1 означает, что выбирается наиболее вероятный токен из всего словаря модели (так называемое жадное декодирование), а Top K равное 3 означает, что следующий токен выбирается из трех наиболее вероятных токенов (с использованием температуры).',
   com_endpoint_anthropic_maxoutputtokens:
     'Максимальное количество токенов, которые могут быть сгенерированы в ответе. Укажите меньшее значение для более коротких ответов и большее значение для более длинных ответов.',
-    com_endpoint_anthropic_custom_name_placeholder: 'Задайте кастомное имя для Anthropic',
+  com_endpoint_anthropic_custom_name_placeholder: 'Задайте кастомное имя для Anthropic',
   com_endpoint_frequency_penalty: 'Штраф за частоту',
   com_endpoint_presence_penalty: 'Штраф за присутствие',
   com_endpoint_plug_use_functions: 'Использовать функции',
@@ -182,13 +184,17 @@ export default {
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Задайте кастомные инструкции для включения в системное сообщение. По умолчанию: нет',
   com_endpoint_import: 'Импортировать',
-  com_endpoint_set_custom_name: 'Задайте кастомное имя на случай, если вы сможете найти эту предустановку :)',
+  com_endpoint_set_custom_name:
+    'Задайте кастомное имя на случай, если вы сможете найти эту предустановку :)',
   com_endpoint_preset_delete_confirm: 'Вы уверены, что хотите удалить этот пресет?',
   com_endpoint_preset_clear_all_confirm: 'Вы уверены, что хотите удалить все ваши пресеты?',
   com_endpoint_preset_import: 'Пресет Импортирован!',
-  com_endpoint_preset_import_error: 'Произошла ошибка при импорте вашего пресета. Пожалуйста, попробуйте еще раз.',
-  com_endpoint_preset_save_error: 'Произошла ошибка при сохранении вашего пресета. Пожалуйста, попробуйте еще раз.',
-  com_endpoint_preset_delete_error: 'Произошла ошибка при удалении вашего пресета. Пожалуйста, попробуйте еще раз.',
+  com_endpoint_preset_import_error:
+    'Произошла ошибка при импорте вашего пресета. Пожалуйста, попробуйте еще раз.',
+  com_endpoint_preset_save_error:
+    'Произошла ошибка при сохранении вашего пресета. Пожалуйста, попробуйте еще раз.',
+  com_endpoint_preset_delete_error:
+    'Произошла ошибка при удалении вашего пресета. Пожалуйста, попробуйте еще раз.',
   com_endpoint_preset_default_removed: 'больше не пресет по умолчанию.',
   com_endpoint_preset_default_item: 'По умолчанию:',
   com_endpoint_preset_default_none: 'Нет активных пресетов По умолчанию.',
@@ -238,7 +244,8 @@ export default {
   com_endpoint_config_google_cloud_platform: '(из Google Cloud Platform)',
   com_endpoint_config_google_api_key: 'Google API Key',
   com_endpoint_config_google_gemini_api: '(Gemini API)',
-  com_endpoint_config_google_api_info: 'Чтобы получить ключ к API Generative Language (для Gemini),',
+  com_endpoint_config_google_api_info:
+    'Чтобы получить ключ к API Generative Language (для Gemini),',
   com_endpoint_config_key_import_json_key: 'Импортировать Service Account JSON Key.',
   com_endpoint_config_key_import_json_key_success: 'Успешно Импортирован Service Account JSON Key',
   com_endpoint_config_key_import_json_key_invalid:
@@ -248,7 +255,8 @@ export default {
     'Пока вы на сайте, используйте dev tools или расширение чтобы скопировать содержимое куки _U. Если не получается, следуйте этим',
   com_endpoint_config_key_edge_instructions: 'инструкциям',
   com_endpoint_config_key_edge_full_key_string: 'чтобы получить все строки cookie.',
-  com_endpoint_config_key_chatgpt: 'Чтобы получить токен доступа к "Бесплатной Версии" ChatGPT, войдите в',
+  com_endpoint_config_key_chatgpt:
+    'Чтобы получить токен доступа к "Бесплатной Версии" ChatGPT, войдите в',
   com_endpoint_config_key_chatgpt_then_visit: 'затем посетите',
   com_endpoint_config_key_chatgpt_copy_token: 'Скопируйте токен доступа.',
   com_endpoint_config_key_google_need_to: 'Вам нужно',

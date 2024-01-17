@@ -1,4 +1,5 @@
 // Indonesia phrases
+
 export default {
   com_ui_examples: 'Contoh',
   com_ui_new_chat: 'Chat Baru',
