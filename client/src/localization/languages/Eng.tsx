@@ -15,7 +15,7 @@ export default {
   com_ui_limitation_harmful_biased:
     'May occasionally produce harmful instructions or biased content',
   com_ui_limitation_limited_2021: 'Limited knowledge of world and events after 2021',
-  com_ui_experimental: 'Experimental',
+  com_ui_experimental: 'Experimental Features',
   com_ui_input: 'Input',
   com_ui_close: 'Close',
   com_ui_model: 'Model',
@@ -265,6 +265,8 @@ export default {
   com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
   com_nav_modular_chat: 'Enable switching Endpoints mid-conversation',
+  com_nav_latex_parsing:
+    'Toggle parsing LaTeX in messages. Enabled by default but may affect performance on mobile or longer conversations.',
   com_nav_profile_picture: 'Profile Picture',
   com_nav_change_picture: 'Change picture',
   com_nav_plugin_store: 'Plugin store',
@@ -303,6 +305,7 @@ export default {
   com_nav_settings: 'Settings',
   com_nav_search_placeholder: 'Search messages',
   com_nav_setting_general: 'General',
+  com_nav_setting_beta: 'Beta features',
   com_nav_setting_data: 'Data controls',
   com_nav_setting_account: 'Account',
   com_nav_language: 'Language',

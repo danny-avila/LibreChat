@@ -3,6 +3,7 @@ import {
   useRevokeAllUserKeysMutation,
   useRevokeUserKeyMutation,
 } from 'librechat-data-provider/react-query';
+import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useState, useCallback, useRef } from 'react';
 import { useOnClickOutside } from '~/hooks';
 import DangerButton from '../DangerButton';
@@ -66,7 +67,11 @@ export const RevokeKeysButton = ({
 
 function Data() {
   return (
-    <Tabs.Content value="data" role="tabpanel" className="w-full md:min-h-[300px]">
+    <Tabs.Content
+      value={SettingsTabValues.DATA}
+      role="tabpanel"
+      className="w-full md:min-h-[300px]"
+    >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-300">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <RevokeKeysButton all={true} />

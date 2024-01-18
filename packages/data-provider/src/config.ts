@@ -212,3 +212,25 @@ export enum ImageDetailCost {
    */
   ADDITIONAL = 85,
 }
+
+/**
+ * Tab values for Settings Dialog
+ */
+export enum SettingsTabValues {
+  /**
+   * Tab for General Settings
+   */
+  GENERAL = 'general',
+  /**
+   * Tab for Beta Features
+   */
+  BETA = 'beta',
+  /**
+   * Tab for Data Controls
+   */
+  DATA = 'data',
+  /**
+   * Tab for Account Settings
+   */
+  ACCOUNT = 'account',
+}
