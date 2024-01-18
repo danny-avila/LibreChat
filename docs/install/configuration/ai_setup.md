@@ -301,6 +301,48 @@ As of December 18th, 2023, Vision models seem to have degraded performance with 
 
 > Note: a change will be developed to improve current configuration settings, to allow multiple deployments/model configurations setup with ease: **[#1390](https://github.com/danny-avila/LibreChat/issues/1390)**
 
+### Generate images with Azure OpenAI Service (DALL-E)
+
+| Model ID | Feature Availability | Max Request (characters) |
+|----------|----------------------|-------------------------|
+| dalle2   | East US              | 1000                    |
+| dalle3   | Sweden Central       | 4000                    |
+
+- First you need to create an Azure resource that hosts DALL-E
+    - At the time of writing, dall-e-3 is available in the `SwedenCentral` region, dall-e-2 in the `EastUS` region.
+- Then, you need to deploy the image generation model in one of the above regions.
+    - Read the [Azure OpenAI Image Generation Quickstart Guide](https://learn.microsoft.com/en-us/azure/ai-services/openai/dall-e-quickstart) for further assistance
+- Configure your environment variables based on Azure credentials:
+
+**- For DALL-E-3:**
+
+```bash
+DALLE3_AZURE_API_VERSION=the-api-version # e.g.: 2023-12-01-preview
+DALLE3_BASEURL=https://<AZURE_OPENAI_API_INSTANCE_NAME>.openai.azure.com/openai/deployments/<DALLE3_DEPLOYMENT_NAME>/
+DALLE3_API_KEY=your-azure-api-key-for-dall-e-3
+```
+
+**- For DALL-E-2:**
+
+```bash
+DALLE2_AZURE_API_VERSION=the-api-version # e.g.: 2023-12-01-preview
+DALLE2_BASEURL=https://<AZURE_OPENAI_API_INSTANCE_NAME>.openai.azure.com/openai/deployments/<DALLE2_DEPLOYMENT_NAME>/
+DALLE2_API_KEY=your-azure-api-key-for-dall-e-2
+```
+
+**DALL-E Notes:**
+
+- For DALL-E-3, the default system prompt has the LLM prefer the ["vivid" style](https://platform.openai.com/docs/api-reference/images/create#images-create-style) parameter, which seems to be the preferred setting for ChatGPT as "natural" can sometimes produce lackluster results.
+- See official prompt for reference: **[DALL-E System Prompt](https://github.com/spdustin/ChatGPT-AutoExpert/blob/main/_system-prompts/dall-e.md)**
+- You can adjust the system prompts to your liking:
+
+```bash
+DALLE3_SYSTEM_PROMPT="Your DALL-E-3 System Prompt here"
+DALLE2_SYSTEM_PROMPT="Your DALL-E-2 System Prompt here"
+```
+
+- The `DALLE_REVERSE_PROXY` environment variable is ignored when Azure credentials (DALLEx_AZURE_API_VERSION and DALLEx_BASEURL) for DALL-E are configured.
+
 ### Optional Variables
 
 *These variables are currently not used by LibreChat*
