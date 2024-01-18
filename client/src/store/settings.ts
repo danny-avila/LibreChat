@@ -69,6 +69,25 @@ const modularChat = atom<boolean>({
   ] as const,
 });
 
+const LaTeXParsing = atom<boolean>({
+  key: 'LaTeXParsing',
+  default: true,
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('LaTeXParsing');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('LaTeXParsing', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 export default {
   abortScroll,
   optionSettings,
@@ -78,4 +97,5 @@ export default {
   showPopover,
   autoScroll,
   modularChat,
+  LaTeXParsing,
 };
