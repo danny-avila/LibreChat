@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
-import LatexParsing from './LatexParsing';
+import LaTeXParsing from './LaTeXParsing';
 import ModularChat from './ModularChat';
 
 function Beta() {
@@ -16,7 +16,7 @@ function Beta() {
           <ModularChat />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <LatexParsing />
+          <LaTeXParsing />
         </div>
       </div>
     </Tabs.Content>

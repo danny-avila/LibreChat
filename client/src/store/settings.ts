@@ -69,19 +69,19 @@ const modularChat = atom<boolean>({
   ] as const,
 });
 
-const latexParsing = atom<boolean>({
-  key: 'latexParsing',
+const LaTeXParsing = atom<boolean>({
+  key: 'LaTeXParsing',
   default: true,
   effects: [
     ({ setSelf, onSet }) => {
-      const savedValue = localStorage.getItem('latexParsing');
+      const savedValue = localStorage.getItem('LaTeXParsing');
       if (savedValue != null) {
         setSelf(savedValue === 'true');
       }
 
       onSet((newValue: unknown) => {
         if (typeof newValue === 'boolean') {
-          localStorage.setItem('latexParsing', newValue.toString());
+          localStorage.setItem('LaTeXParsing', newValue.toString());
         }
       });
     },
@@ -97,5 +97,5 @@ export default {
   showPopover,
   autoScroll,
   modularChat,
-  latexParsing,
+  LaTeXParsing,
 };
