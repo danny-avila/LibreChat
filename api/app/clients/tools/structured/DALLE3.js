@@ -16,7 +16,6 @@ const {
   DALLE3_AZURE_API_VERSION,
   DALLE3_BASEURL,
   DALLE3_API_KEY,
-  DALLE_API_KEY,
 } = process.env;
 class DALLE3 extends Tool {
   constructor(fields = {}) {
@@ -86,7 +85,7 @@ class DALLE3 extends Tool {
   }
 
   getApiKey() {
-    const apiKey = DALLE3_API_KEY ?? DALLE_API_KEY ?? '';
+    const apiKey = process.env.DALLE3_API_KEY ?? process.env.DALLE_API_KEY ?? '';
     if (!apiKey) {
       throw new Error('Missing DALLE_API_KEY environment variable.');
     }
