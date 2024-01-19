@@ -85,6 +85,10 @@ Please consult the breaking changes before updating.
 
 ## ⭐ Star History
 
+<p align="center">
+<a href="https://trendshift.io/repositories/4685" target="_blank"><img src="https://trendshift.io/api/badge/repositories/4685" alt="danny-avila%2FLibreChat | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</p>
+
 <a href="https://star-history.com/#danny-avila/LibreChat&Date">
   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
 </a>
