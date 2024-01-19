@@ -293,6 +293,7 @@ export default {
   com_nav_theme_system: 'Sistema',
   com_nav_theme_dark: 'Escuro',
   com_nav_theme_light: 'Claro',
+  com_nav_user_name_display: 'Mostrar nome de usuário nas mensagens',
   com_nav_clear_all_chats: 'Limpar todos os chats',
   com_nav_confirm_clear: 'Confirmar Limpeza',
   com_nav_close_sidebar: 'Fechar barra lateral',
