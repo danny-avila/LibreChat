@@ -267,7 +267,7 @@ export default {
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
   com_nav_modular_chat: 'Enable switching Endpoints mid-conversation',
   com_nav_latex_parsing:
-    'Toggle parsing LaTeX in messages. Enabled by default but may affect performance on mobile or longer conversations.',
+    'Toggle parsing LaTeX in messages. Enabled by default but may affect performance on mobile or longer conversations',
   com_nav_profile_picture: 'Profile Picture',
   com_nav_change_picture: 'Change picture',
   com_nav_plugin_store: 'Plugin store',

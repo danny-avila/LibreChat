@@ -265,7 +265,10 @@ export default {
   com_endpoint_config_key_google_vertex_api_role:
     'Assicurati di fare clic su "Crea e continua" per dare almeno il ruolo "Vertex AI User". Infine, crea una chiave JSON da importare qui.',
   com_nav_welcome_message: 'Come posso aiutarti oggi?',
-  com_nav_auto_scroll: 'Scorri automaticamente al Più recente all\'apertura',
+  com_nav_auto_scroll: 'Scorri automaticamente al messaggio più recente all\'apertura',
+  com_nav_modular_chat: 'Abilita il cambio di endpoint durante la conversazione',
+  com_nav_latex_parsing:
+    'Attiva analisi sintattica LaTeX nei messaggi. Abilitato di default, potrebbe influire sulle prestazioni su dispositivi mobili o in conversazioni più lunghe',
   com_nav_profile_picture: 'Immagine del profilo',
   com_nav_change_picture: 'Cambia immagine',
   com_nav_plugin_store: 'Negozio dei plugin',
@@ -300,5 +303,7 @@ export default {
   com_nav_settings: 'Impostazioni',
   com_nav_search_placeholder: 'Cerca messaggi',
   com_nav_setting_general: 'Generale',
+  com_nav_setting_beta: 'Funzioni Beta',
   com_nav_setting_data: 'Controlli dati',
+  com_nav_setting_account: 'Profilo',
 };

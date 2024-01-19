@@ -270,7 +270,7 @@ export default {
   com_nav_auto_scroll: 'Auto-rolagem para o Mais Novo ao Abrir',
   com_nav_modular_chat: 'Ativar a troca de Endpoints no meio da conversa',
   com_nav_latex_parsing:
-    'Ativar análise de LaTeX nas mensagens. Ativado por padrão, mas pode afetar o desempenho em conversas mais longas ou em dispositivos móveis.',
+    'Ativar análise de LaTeX nas mensagens. Ativado por padrão, mas pode afetar o desempenho em conversas mais longas ou em dispositivos móveis',
   com_nav_profile_picture: 'Foto de Perfil',
   com_nav_change_picture: 'Mudar foto',
   com_nav_plugin_store: 'Loja de plugins',
