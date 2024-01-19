@@ -285,6 +285,13 @@ GOOGLE_MODELS=gemini-pro,gemini-pro-vision,chat-bison,chat-bison-32k,codechat-bi
 OPENAI_API_KEY=user_provided
 ```
 
+- You can specify which organization to use for each API request to OpenAI. However, it is not required if you are only part of a single organization or intend to use your default organization. You can check your [default organization here](https://platform.openai.com/account/api-keys). This can also help you limit your LibreChat instance from allowing API keys outside of your organization to be used, as a mismatch between key and organization will throw an API error.
+
+```bash
+# Optional
+OPENAI_ORGANIZATION=org-Y6rfake63IhVorgqfPQmGmgtId
+```
+
 - Set to true to enable debug mode for the OpenAI endpoint
 
 ```bash
