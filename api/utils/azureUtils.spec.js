@@ -79,7 +79,9 @@ describe('genAzureChatCompletion', () => {
         azureOpenAIApiInstanceName: 'instanceName',
         azureOpenAIApiVersion: 'v1',
       });
-    }).toThrow('Either a model name or a deployment name must be provided.');
+    }).toThrow(
+      'Either a model name with the `AZURE_USE_MODEL_AS_DEPLOYMENT_NAME` setting or a deployment name must be provided if `AZURE_OPENAI_BASEURL` is omitted.',
+    );
   });
 
   // Test with feature disabled but model name provided
