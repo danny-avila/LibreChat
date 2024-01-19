@@ -14,6 +14,8 @@ class DALLE3 extends Tool {
     super();
     /* Used to initialize the Tool without necessary variables. */
     this.override = fields.override ?? false;
+    /* Necessary for output to contain all image metadata. */
+    this.returnMetadata = fields.returnMetadata ?? false;
 
     this.userId = fields.userId;
     this.fileStrategy = fields.fileStrategy;
@@ -156,7 +158,17 @@ Error Message: ${error.message}`;
         basePath: 'images',
       });
 
-      this.result = this.wrapInMarkdown(result);
+      if (this.returnMetadata) {
+        this.result = JSON.stringify({
+          file_id: result.file_id,
+          filename: result.filename,
+          filepath: result.filepath,
+          height: result.height,
+          width: result.width,
+        });
+      } else {
+        this.result = this.wrapInMarkdown(result.filepath);
+      }
     } catch (error) {
       logger.error('Error while saving the image:', error);
       this.result = `Failed to save the image locally. ${error.message}`;

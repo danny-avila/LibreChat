@@ -231,10 +231,16 @@ const loadTools = async ({
     toolConstructors.codesherpa = CodeSherpa;
   }
 
+  const imageGenOptions = {
+    fileStrategy: options.fileStrategy,
+    returnMetadata: options.returnMetadata,
+  };
+
   const toolOptions = {
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
-    dalle: { fileStrategy: options.fileStrategy },
-    'dall-e': { fileStrategy: options.fileStrategy },
+    dalle: imageGenOptions,
+    'dall-e': imageGenOptions,
+    'stable-diffusion': imageGenOptions,
   };
 
   const toolAuthFields = {};

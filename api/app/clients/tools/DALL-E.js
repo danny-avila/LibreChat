@@ -118,7 +118,7 @@ Guidelines:
         basePath: 'images',
       });
 
-      this.result = this.wrapInMarkdown(result);
+      this.result = this.wrapInMarkdown(result.filepath);
     } catch (error) {
       logger.error('Error while saving the image:', error);
       this.result = `Failed to save the image locally. ${error.message}`;

@@ -112,7 +112,9 @@ describe('DALLE3', () => {
     };
 
     generate.mockResolvedValue(mockResponse);
-    processFileURL.mockResolvedValue('http://example.com/img-test.png');
+    processFileURL.mockResolvedValue({
+      filepath: 'http://example.com/img-test.png',
+    });
 
     const result = await dalle._call(mockData);
 
