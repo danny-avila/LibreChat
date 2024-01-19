@@ -183,6 +183,7 @@ export default {
   com_endpoint_presence_penalty: 'Presence Penalty',
   com_endpoint_plug_use_functions: 'Use Functions',
   com_endpoint_plug_resend_images: 'Resend Images',
+  com_endpoint_plug_image_detail: 'Image Detail',
   com_endpoint_plug_skip_completion: 'Skip Completion',
   com_endpoint_disabled_with_tools: 'disabled with tools',
   com_endpoint_disabled_with_tools_placeholder: 'Disabled with Tools Selected',
@@ -266,8 +267,7 @@ export default {
   com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
   com_nav_modular_chat: 'Enable switching Endpoints mid-conversation',
-  com_nav_latex_parsing:
-    'Toggle parsing LaTeX in messages. Enabled by default but may affect performance on mobile or longer conversations.',
+  com_nav_latex_parsing: 'Parsing LaTeX in messages (may affect performance)',
   com_nav_profile_picture: 'Profile Picture',
   com_nav_change_picture: 'Change picture',
   com_nav_plugin_store: 'Plugin store',
