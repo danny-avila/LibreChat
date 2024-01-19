@@ -177,6 +177,20 @@ AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME=
 
 - Identify the available models, separated by commas *without spaces*. The first will be default. Leave it blank or as is to use internal settings.
 
+- **The base URL for Azure OpenAI API requests can be dynamically configured.**
+
+```bash
+# .env file
+AZURE_OPENAI_BASEURL=https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}
+
+# Cloudflare example
+AZURE_OPENAI_BASEURL=https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/${INSTANCE_NAME}/${DEPLOYMENT_NAME}
+```
+- Sets the base URL for Azure OpenAI API requests.
+- Can include `${INSTANCE_NAME}` and `${DEPLOYMENT_NAME}` placeholders or specific credentials.
+- Example: "https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/${INSTANCE_NAME}/${DEPLOYMENT_NAME}"
+- [More info about `AZURE_OPENAI_BASEURL` here](./ai_setup.md#using-a-specified-base-url-with-azure)
+
 > Note: as deployment names can't have periods, they will be removed when the endpoint is generated.
 
 ```bash

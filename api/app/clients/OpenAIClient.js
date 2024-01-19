@@ -2,8 +2,13 @@ const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { getResponseSender, ImageDetailCost, ImageDetail } = require('librechat-data-provider');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
+const {
+  getModelMaxTokens,
+  genAzureChatCompletion,
+  extractBaseURL,
+  constructAzureURL,
+} = require('~/utils');
 const { encodeAndFormat, validateVisionModel } = require('~/server/services/Files/images');
-const { getModelMaxTokens, genAzureChatCompletion, extractBaseURL } = require('~/utils');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
 const { handleOpenAIErrors } = require('./tools/util');
 const spendTokens = require('~/models/spendTokens');
@@ -32,6 +37,7 @@ class OpenAIClient extends BaseClient {
       ? options.contextStrategy.toLowerCase()
       : 'discard';
     this.shouldSummarize = this.contextStrategy === 'summarize';
+    /** @type {AzureOptions} */
     this.azure = options.azure || false;
     this.setOptions(options);
   }
@@ -104,10 +110,10 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.azure && process.env.AZURE_OPENAI_DEFAULT_MODEL) {
-      this.azureEndpoint = genAzureChatCompletion(this.azure, this.modelOptions.model);
+      this.azureEndpoint = genAzureChatCompletion(this.azure, this.modelOptions.model, this);
       this.modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
     } else if (this.azure) {
-      this.azureEndpoint = genAzureChatCompletion(this.azure, this.modelOptions.model);
+      this.azureEndpoint = genAzureChatCompletion(this.azure, this.modelOptions.model, this);
     }
 
     const { model } = this.modelOptions;
@@ -711,7 +717,7 @@ class OpenAIClient extends BaseClient {
 
       if (this.azure) {
         modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL ?? modelOptions.model;
-        this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model);
+        this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
       }
 
       const instructionsPayload = [
@@ -949,7 +955,12 @@ ${convo}
         // Azure does not accept `model` in the body, so we need to remove it.
         delete modelOptions.model;
 
-        opts.baseURL = this.azureEndpoint.split('/chat')[0];
+        opts.baseURL = this.langchainProxy
+          ? constructAzureURL({
+            baseURL: this.langchainProxy,
+            azure: this.azure,
+          })
+          : this.azureEndpoint.split(/\/(chat|completion)/)[0];
         opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
         opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
       }

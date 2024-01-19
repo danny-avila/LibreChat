@@ -4,6 +4,21 @@ description: Comprehensive guide for configuring the `librechat.yaml` file AKA t
 weight: -10
 ---
 
+<!-- # Table of Contents
+
+ - [Intro](#librechat-configuration-guide)
+    - [Setup](#setup)
+    - [Docker Setup](#docker-setup)
+    - [Config Structure](#config-structure)
+        - [1. Version](#1-version)
+        - [2. Cache Settings](#2-cache-settings)
+        - [3. Endpoints](#3-endpoints)
+            - [Endpoint Object Structure](#endpoint-object-structure)
+    - [Additional Notes](#additional-notes)
+    - [Default Parameters](#default-parameters)
+        - [Breakdown of Default Params](#breakdown-of-default-params)
+    - [Example Config](#example-config) -->
+
 # LibreChat Configuration Guide
 
 Welcome to the guide for configuring the **librechat.yaml** file in LibreChat.

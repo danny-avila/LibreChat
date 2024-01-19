@@ -1,11 +1,3 @@
-/**
- * @typedef {Object} AzureCredentials
- * @property {string} azureOpenAIApiKey - The Azure OpenAI API key.
- * @property {string} azureOpenAIApiInstanceName - The Azure OpenAI API instance name.
- * @property {string} azureOpenAIApiDeploymentName - The Azure OpenAI API deployment name.
- * @property {string} azureOpenAIApiVersion - The Azure OpenAI API version.
- */
-
 const { isEnabled } = require('~/server/utils');
 
 /**
@@ -37,22 +29,29 @@ const genAzureEndpoint = ({ azureOpenAIApiInstanceName, azureOpenAIApiDeployment
  * @param {string} [AzureConfig.azureOpenAIApiDeploymentName] - The Azure OpenAI API deployment name (optional).
  * @param {string} AzureConfig.azureOpenAIApiVersion - The Azure OpenAI API version.
  * @param {string} [modelName] - The model name to be included in the deployment name (optional).
+ * @param {Object} [client] - The API Client class for optionally setting properties (optional).
  * @returns {string} The complete chat completion endpoint URL for the Azure OpenAI API.
  * @throws {Error} If neither azureOpenAIApiDeploymentName nor modelName is provided.
  */
 const genAzureChatCompletion = (
   { azureOpenAIApiInstanceName, azureOpenAIApiDeploymentName, azureOpenAIApiVersion },
   modelName,
+  client,
 ) => {
   // Determine the deployment segment of the URL based on provided modelName or azureOpenAIApiDeploymentName
   let deploymentSegment;
   if (isEnabled(process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME) && modelName) {
     const sanitizedModelName = sanitizeModelName(modelName);
     deploymentSegment = `${sanitizedModelName}`;
+    client &&
+      typeof client === 'object' &&
+      (client.azure.azureOpenAIApiDeploymentName = sanitizedModelName);
   } else if (azureOpenAIApiDeploymentName) {
     deploymentSegment = azureOpenAIApiDeploymentName;
-  } else {
-    throw new Error('Either a model name or a deployment name must be provided.');
+  } else if (!process.env.AZURE_OPENAI_BASEURL) {
+    throw new Error(
+      'Either a model name with the `AZURE_USE_MODEL_AS_DEPLOYMENT_NAME` setting or a deployment name must be provided if `AZURE_OPENAI_BASEURL` is omitted.',
+    );
   }
 
   return `https://${azureOpenAIApiInstanceName}.openai.azure.com/openai/deployments/${deploymentSegment}/chat/completions?api-version=${azureOpenAIApiVersion}`;
@@ -60,7 +59,7 @@ const genAzureChatCompletion = (
 
 /**
  * Retrieves the Azure OpenAI API credentials from environment variables.
- * @returns {AzureCredentials} An object containing the Azure OpenAI API credentials.
+ * @returns {AzureOptions} An object containing the Azure OpenAI API credentials.
  */
 const getAzureCredentials = () => {
   return {
@@ -71,9 +70,33 @@ const getAzureCredentials = () => {
   };
 };
 
+/**
+ * Constructs a URL by replacing placeholders in the baseURL with values from the azure object.
+ * It specifically looks for '${INSTANCE_NAME}' and '${DEPLOYMENT_NAME}' within the baseURL and replaces
+ * them with 'azureOpenAIApiInstanceName' and 'azureOpenAIApiDeploymentName' from the azure object.
+ * If the respective azure property is not provided, the placeholder is replaced with an empty string.
+ *
+ * @param {Object} params - The parameters object.
+ * @param {string} params.baseURL - The baseURL to inspect for replacement placeholders.
+ * @param {AzureOptions} params.azure - The baseURL to inspect for replacement placeholders.
+ * @returns {string} The complete baseURL with credentials injected for the Azure OpenAI API.
+ */
+function constructAzureURL({ baseURL, azure }) {
+  let finalURL = baseURL;
+
+  // Replace INSTANCE_NAME and DEPLOYMENT_NAME placeholders with actual values if available
+  if (azure) {
+    finalURL = finalURL.replace('${INSTANCE_NAME}', azure.azureOpenAIApiInstanceName ?? '');
+    finalURL = finalURL.replace('${DEPLOYMENT_NAME}', azure.azureOpenAIApiDeploymentName ?? '');
+  }
+
+  return finalURL;
+}
+
 module.exports = {
   sanitizeModelName,
   genAzureEndpoint,
   genAzureChatCompletion,
   getAzureCredentials,
+  constructAzureURL,
 };
