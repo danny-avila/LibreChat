@@ -954,6 +954,10 @@ ${convo}
         opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
       }
 
+      if (process.env.OPENAI_ORGANIZATION) {
+        opts.organization = process.env.OPENAI_ORGANIZATION;
+      }
+
       let chatCompletion;
       const openai = new OpenAI({
         apiKey: this.apiKey,

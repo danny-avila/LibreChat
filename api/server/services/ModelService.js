@@ -53,6 +53,10 @@ const fetchModels = async ({ apiKey, baseURL, name = 'OpenAI', azure = false }) 
       payload.httpsAgent = new HttpsProxyAgent(PROXY);
     }
 
+    if (process.env.OPENAI_ORGANIZATION && baseURL.includes('openai')) {
+      payload.headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
+    }
+
     const res = await axios.get(`${baseURL}${azure ? '' : '/models'}`, payload);
     models = res.data.data.map((item) => item.id);
   } catch (err) {
