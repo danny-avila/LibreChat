@@ -183,6 +183,7 @@ export default {
   com_endpoint_presence_penalty: 'Presence Penalty',
   com_endpoint_plug_use_functions: 'Use Functions',
   com_endpoint_plug_resend_images: 'Resend Images',
+  com_endpoint_plug_image_detail: 'Image Detail',
   com_endpoint_plug_skip_completion: 'Skip Completion',
   com_endpoint_disabled_with_tools: 'disabled with tools',
   com_endpoint_disabled_with_tools_placeholder: 'Disabled with Tools Selected',
