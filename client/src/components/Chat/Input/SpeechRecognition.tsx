@@ -14,7 +14,6 @@ const useSpeechRecognition = (ask) => {
       setIsSpeechSupported(false);
       return;
     }
-
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
 
@@ -71,7 +70,7 @@ const useSpeechRecognition = (ask) => {
     if (e.shiftKey && e.altKey && e.key === 'L') {
       if (isSpeechSupported) {
         console.log('keydown pressed');
-        toggleListening();
+        toggleListening(event);
       }
     }
   };
@@ -86,11 +85,11 @@ const useSpeechRecognition = (ask) => {
 
   useEffect(() => {
     console.log('Setting up hotkeys');
-    hotkeys('shift+alt+l', function (event, handler) {
+    hotkeys('shift+alt+l', function (event) {
       event.preventDefault();
       if (isSpeechSupported) {
         console.log('hotkeys pressed');
-        toggleListening();
+        toggleListening(event);
       }
     });
     //Cleanup function (runs on unmount)
