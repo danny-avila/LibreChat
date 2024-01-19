@@ -8,8 +8,12 @@ import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
+import { useRecoilState } from 'recoil';
+import store from '~/store';
+import { useEffect } from 'react';
 
 export default function Message(props: TMessageProps) {
+
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
     props;
 
@@ -29,8 +33,19 @@ export default function Message(props: TMessageProps) {
   } = useMessageHelpers(props);
 
   const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+
   const { user } = useAuthContext();
+
   const localize = useLocalize();
+
+  const [UsernameDisplay, setUsernameDisplay] = useRecoilState<boolean>(store.UsernameDisplay);
+
+  useEffect(() => {
+    const savedValue = localStorage.getItem('UsernameDisplay');
+    if (savedValue != null) {
+      setUsernameDisplay(savedValue === 'true');
+    }
+  }, []);
 
   if (!message) {
     return null;
@@ -49,6 +64,7 @@ export default function Message(props: TMessageProps) {
               <div>
                 <div className="pt-0.5">
                   <div className="gizmo-shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+                    {}
                     {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
                       <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
                     ) : (
@@ -58,17 +74,20 @@ export default function Message(props: TMessageProps) {
                 </div>
               </div>
             </div>
+            {}
             <div
               className={cn('relative flex w-full flex-col', isCreatedByUser ? '' : 'agent-turn')}
             >
               <div className="select-none font-semibold">
-                {isCreatedByUser ? (user?.name || localize('com_user_message')) : message.sender}
+                {}
+                {UsernameDisplay ? (isCreatedByUser ? user?.name : message.sender) : (isCreatedByUser ? localize('com_user_message') : message.sender)}
 
               </div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
-                  {/* Legacy Plugins */}
+                  {}
                   {message?.plugin && <Plugin plugin={message?.plugin} />}
+                  {}
                   <MessageContent
                     ask={ask}
                     edit={edit}
@@ -90,6 +109,7 @@ export default function Message(props: TMessageProps) {
                   />
                 </div>
               </div>
+              {}
               {isLast && isSubmitting ? null : (
                 <SubRow classes="text-xs">
                   <SiblingSwitch
@@ -114,6 +134,7 @@ export default function Message(props: TMessageProps) {
           </div>
         </div>
       </div>
+      {}
       <MultiMessage
         key={messageId}
         messageId={messageId}

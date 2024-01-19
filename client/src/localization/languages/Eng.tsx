@@ -290,6 +290,7 @@ export default {
   com_nav_theme_system: 'System',
   com_nav_theme_dark: 'Dark',
   com_nav_theme_light: 'Light',
+  com_nav_user_name_display: 'Display username in messages',
   com_nav_clear_all_chats: 'Clear all chats',
   com_nav_confirm_clear: 'Confirm Clear',
   com_nav_close_sidebar: 'Close sidebar',

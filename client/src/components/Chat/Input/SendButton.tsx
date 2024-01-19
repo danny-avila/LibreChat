@@ -6,8 +6,7 @@ export default function SendButton({ text, disabled }) {
     <button
       disabled={!text || disabled}
       className={cn(
-        'absolute rounded-lg rounded-md border border-black p-0.5 p-1 text-white transition-colors enabled:bg-black enabled:dark:bg-white disabled:bg-black disabled:text-gray-400 disabled:opacity-10 dark:border-white dark:bg-white dark:disabled:bg-white ',
-        'bottom-1.5 right-1.5 md:bottom-2.5 md:right-3 md:p-[2px]',
+        'absolute md:bottom-3 md:right-3 dark:hover:bg-gray-900 dark:disabled:hover:bg-transparent right-2 dark:disabled:bg-white disabled:bg-black disabled:opacity-10 disabled:text-gray-400 enabled:bg-black text-white p-0.5 border border-black rounded-lg dark:border-white dark:bg-white bottom-1.5 transition-colors',
       )}
       data-testid="send-button"
       type="submit"
