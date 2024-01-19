@@ -1,4 +1,5 @@
 const path = require('path');
+const { v4 } = require('uuid');
 const mime = require('mime/lite');
 const {
   FileSources,
@@ -10,8 +11,8 @@ const {
 } = require('librechat-data-provider');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { convertToWebP } = require('~/server/services/Files/images');
+const { isEnabled, determineFileType } = require('~/server/utils');
 const { getStrategyFunctions } = require('./strategies');
-const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const { GPTS_DOWNLOAD_IMAGES = 'true' } = process.env;
@@ -71,25 +72,36 @@ const processDeleteRequest = async ({ req, files }) => {
  * exception with an appropriate message.
  *
  * @param {Object} params - The parameters object.
- * @param {FileSources} params.fileStrategy - The file handling strategy to use. Must be a value from the
- *                                            `FileSources` enum, which defines different file handling
- *                                            strategies (like saving to Firebase, local storage, etc.).
+ * @param {FileSources} params.fileStrategy - The file handling strategy to use.
+ * Must be a value from the `FileSources` enum, which defines different file
+ * handling strategies (like saving to Firebase, local storage, etc.).
  * @param {string} params.userId - The user's unique identifier. Used for creating user-specific paths or
- *                                 references in the file handling process.
+ * references in the file handling process.
  * @param {string} params.URL - The URL of the file to be processed.
- * @param {string} params.fileName - The name that will be used to save the file. This should include the
- *                                   file extension.
+ * @param {string} params.fileName - The name that will be used to save the file (including extension)
  * @param {string} params.basePath - The base path or directory where the file will be saved or retrieved from.
- *
- * @returns {Promise<string>}
- *          A promise that resolves to the URL of the processed file. It throws an error if the file processing
- *          fails at any stage.
+ * @returns {Promise<MongoFile>} A promise that resolves to the DB representation (MongoFile)
+ *  of the processed file. It throws an error if the file processing fails at any stage.
  */
 const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath }) => {
   const { saveURL, getFileURL } = getStrategyFunctions(fileStrategy);
   try {
-    await saveURL({ userId, URL, fileName, basePath });
-    return await getFileURL({ fileName: `${userId}/${fileName}`, basePath });
+    const { bytes, type, dimensions } = await saveURL({ userId, URL, fileName, basePath });
+    const filepath = await getFileURL({ fileName: `${userId}/${fileName}`, basePath });
+    return await createFile(
+      {
+        user: userId,
+        file_id: v4(),
+        bytes,
+        filepath,
+        filename: fileName,
+        source: fileStrategy,
+        type,
+        width: dimensions.width,
+        height: dimensions.height,
+      },
+      true,
+    );
   } catch (error) {
     logger.error(`Error while processing the image with ${fileStrategy}:`, error);
     throw new Error(`Failed to process the image with ${fileStrategy}. ${error.message}`);
@@ -223,13 +235,6 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
   const response = await openai.files.content(file_id);
   const data = await response.arrayBuffer();
   const dataBuffer = Buffer.from(data);
-
-  /** @param {Buffer} dataBuffer */
-  const determineFileType = async (dataBuffer) => {
-    const fileType = await import('file-type');
-    const type = await fileType.fromBuffer(dataBuffer);
-    return type ? type.ext : null; // Returns extension if found, else null
-  };
 
   /**
    * @param {Buffer} dataBuffer

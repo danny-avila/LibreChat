@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const { logger } = require('~/config');
+const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
+const { logger } = require('~/config');
 
 /**
  * Saves a file to a specified output path with a new filename.
@@ -94,20 +95,18 @@ async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }
  * @param {string} [params.basePath='images'] - Optional. The base directory where the file will be saved.
  *                                              Defaults to 'images' if not specified.
  *
- * @returns {Promise<string|null>}
- *          A promise that resolves to the file name if the file is successfully saved, or null if there is an error.
+ * @returns {Promise<{ bytes: number, type: string, dimensions: Record<string, number>} | null>}
+ *          A promise that resolves to the file metadata if the file is successfully saved, or null if there is an error.
  */
 async function saveFileFromURL({ userId, URL, fileName, basePath = 'images' }) {
   try {
-    // Fetch the file from the URL
     const response = await axios({
       url: URL,
-      responseType: 'stream',
+      responseType: 'arraybuffer',
     });
 
-    // Get the content type from the response headers
-    const contentType = response.headers['content-type'];
-    let extension = contentType.split('/').pop();
+    const buffer = Buffer.from(response.data, 'binary');
+    const { bytes, type, dimensions, extension } = await getBufferMetadata(buffer);
 
     // Construct the outputPath based on the basePath and userId
     const outputPath = path.join(paths.publicPath, basePath, userId.toString());
@@ -124,17 +123,15 @@ async function saveFileFromURL({ userId, URL, fileName, basePath = 'images' }) {
       fileName += `.${extension}`;
     }
 
-    // Create a writable stream for the output path
-    const outputFilePath = path.join(outputPath, path.basename(fileName));
-    const writer = fs.createWriteStream(outputFilePath);
+    // Save the file to the output path
+    const outputFilePath = path.join(outputPath, fileName);
+    fs.writeFileSync(outputFilePath, buffer);
 
-    // Pipe the response data to the output file
-    response.data.pipe(writer);
-
-    return new Promise((resolve, reject) => {
-      writer.on('finish', () => resolve(fileName));
-      writer.on('error', reject);
-    });
+    return {
+      bytes,
+      type,
+      dimensions,
+    };
   } catch (error) {
     logger.error('[saveFileFromURL] Error while saving the file:', error);
     return null;
