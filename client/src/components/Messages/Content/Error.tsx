@@ -80,13 +80,16 @@ const Error = ({ text }: { text: string }) => {
   const errorKey = json.code || json.type;
   const keyExists = errorKey && errorMessages[errorKey];
 
+  let formattedError;
   if (keyExists && typeof errorMessages[errorKey] === 'function') {
-    return errorMessages[errorKey](json);
+    formattedError = errorMessages[errorKey](json);
   } else if (keyExists) {
-    return errorMessages[errorKey];
+    formattedError = errorMessages[errorKey];
   } else {
-    return defaultResponse;
+    formattedError = defaultResponse;
   }
+
+  return formattedError;
 };
 
 export default Error;

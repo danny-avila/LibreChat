@@ -1,15 +1,6 @@
 import { useState } from 'react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
-import useSpeechSynthesis from './SpeechSynthesis';
-import {
-  Clipboard,
-  CheckMark,
-  EditIcon,
-  RegenerateIcon,
-  ContinueIcon,
-  VolumeIcon,
-  VolumeMuteIcon,
-} from '~/components/svg';
+import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
 import { useGenerations, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -37,8 +28,6 @@ export default function HoverButtons({
   const localize = useLocalize();
   const { endpoint } = conversation ?? {};
   const [isCopied, setIsCopied] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const { synthesizeSpeech, cancelSpeech } = useSpeechSynthesis();
   const { hideEditButton, regenerateEnabled, continueSupported } = useGenerations({
     isEditing,
     isSubmitting,
@@ -59,29 +48,8 @@ export default function HoverButtons({
     enterEdit();
   };
 
-  const toggleSpeech = () => {
-    if (isSpeaking) {
-      cancelSpeech();
-      setIsSpeaking(!isSpeaking);
-    } else {
-      synthesizeSpeech(message?.text ?? '');
-    }
-    setIsSpeaking(!isSpeaking);
-  };
-
   return (
     <div className="visible mt-2 flex justify-center gap-3 self-end text-gray-400 md:gap-4 lg:absolute lg:right-0 lg:top-0 lg:mt-0 lg:translate-x-full lg:gap-1 lg:self-center lg:pl-2">
-      <button
-        className={cn(
-          'hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',
-          isCreatedByUser ? '' : 'active',
-        )}
-        onClick={toggleSpeech}
-        type="button"
-        title={isSpeaking ? 'Mute' : 'Speak'}
-      >
-        {isSpeaking ? <VolumeMuteIcon /> : <VolumeIcon />}
-      </button>
       <button
         className={cn(
           'hover-button rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible',

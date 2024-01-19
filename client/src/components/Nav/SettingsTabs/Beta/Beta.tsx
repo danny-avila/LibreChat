@@ -3,6 +3,7 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
 import LaTeXParsing from './LaTeXParsing';
 import ModularChat from './ModularChat';
+import TextToSpeech from './TextToSpeech';
 
 function Beta() {
   return (
@@ -17,6 +18,9 @@ function Beta() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <LaTeXParsing />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <TextToSpeech />
         </div>
       </div>
     </Tabs.Content>

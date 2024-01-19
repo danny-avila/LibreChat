@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react';
 import hotkeys from 'hotkeys-js';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 const useSpeechRecognition = (ask) => {
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [text, setText] = useState('');
+  const { data: startupConfig } = useGetStartupConfig();
+
+  // startupConfig?.textToSpeechExternal {
 
   useEffect(() => {
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {

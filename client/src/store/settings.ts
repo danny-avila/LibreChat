@@ -107,6 +107,25 @@ const UsernameDisplay = atom<boolean>({
   ] as const,
 });
 
+const TextToSpeech = atom<boolean>({
+  key: 'TextToSpeech',
+  default: true,
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('TextToSpeech');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('TextToSpeech', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 export default {
   abortScroll,
   optionSettings,
@@ -118,4 +137,5 @@ export default {
   modularChat,
   LaTeXParsing,
   UsernameDisplay,
+  TextToSpeech,
 };

@@ -33,3 +33,5 @@ export { default as useNavigateToConvo } from './useNavigateToConvo';
 export { default as useSetIndexOptions } from './useSetIndexOptions';
 export { default as useSetFilesToDelete } from './useSetFilesToDelete';
 export { default as useGenerationsByLatest } from './useGenerationsByLatest';
+export { default as useSpeechSynthesis } from './useSpeechSynthesis';
+export { default as useSpeechRecognition } from './useSpeechRecognition';

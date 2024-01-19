@@ -9,7 +9,7 @@ import SendButton from './SendButton';
 import Images from './Files/Images';
 import Textarea from './Textarea';
 import store from '~/store';
-import useSpeechRecognition from './SpeechRecognition';
+import { useSpeechRecognition } from '~/hooks';
 
 export default function ChatForm({ index = 0 }) {
   const [text, setText] = useRecoilState(store.textByIndex(index));
