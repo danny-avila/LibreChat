@@ -31,7 +31,7 @@ OPENAI_API_KEY=your-naga-ai-api-key
 # Reverse proxy settings for OpenAI: 
 OPENAI_REVERSE_PROXY=https://api.naga.ac/v1/chat/completions
 
-# OPENAI_MODELS=gpt-3.5-turbo,gpt-3.5-turbo-16k,gpt-3.5-turbo-0301,text-davinci-003,gpt-4,gpt-4-0314,gpt-4-0613
+# OPENAI_MODELS=gpt-3.5-turbo,gpt-3.5-turbo-16k,gpt-3.5-turbo-0301,gpt-4,gpt-4-0314,gpt-4-0613
 ```
 
 **Important**: As of v0.6.6, it's recommend you use the `librechat.yaml` [Configuration file (guide here)](./custom_config.md) to add Reverse Proxies as separate endpoints.
