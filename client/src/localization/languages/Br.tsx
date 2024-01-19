@@ -269,6 +269,8 @@ export default {
   com_nav_welcome_message: 'Como posso ajudá-lo hoje?',
   com_nav_auto_scroll: 'Auto-rolagem para o Mais Novo ao Abrir',
   com_nav_modular_chat: 'Ativar a troca de Endpoints no meio da conversa',
+  com_nav_latex_parsing:
+    'Ativar análise de LaTeX nas mensagens. Ativado por padrão, mas pode afetar o desempenho em conversas mais longas ou em dispositivos móveis.',
   com_nav_profile_picture: 'Foto de Perfil',
   com_nav_change_picture: 'Mudar foto',
   com_nav_plugin_store: 'Loja de plugins',
@@ -308,6 +310,7 @@ export default {
   com_nav_settings: 'Configurações',
   com_nav_search_placeholder: 'Pesquisar mensagens',
   com_nav_setting_general: 'Geral',
+  com_nav_setting_beta: 'Recursos beta',
   com_nav_setting_data: 'Controles de dados',
   com_nav_setting_account: 'Conta',
   com_nav_language: 'Idioma',
