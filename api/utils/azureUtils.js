@@ -48,8 +48,10 @@ const genAzureChatCompletion = (
       (client.azure.azureOpenAIApiDeploymentName = sanitizedModelName);
   } else if (azureOpenAIApiDeploymentName) {
     deploymentSegment = azureOpenAIApiDeploymentName;
-  } else {
-    throw new Error('Either a model name or a deployment name must be provided.');
+  } else if (!process.env.AZURE_OPENAI_BASEURL) {
+    throw new Error(
+      'Either a model name with the `AZURE_USE_MODEL_AS_DEPLOYMENT_NAME` setting or a deployment name must be provided if `AZURE_OPENAI_BASEURL` is omitted.',
+    );
   }
 
   return `https://${azureOpenAIApiInstanceName}.openai.azure.com/openai/deployments/${deploymentSegment}/chat/completions?api-version=${azureOpenAIApiVersion}`;
