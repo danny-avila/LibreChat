@@ -38,6 +38,8 @@ export default {
   com_ui_upload_invalid: 'File non valido per il caricamento',
   com_ui_cancel: 'Annulla',
   com_ui_save: 'Salva',
+  com_ui_save_submit: 'Salva e invia',
+  com_user_message: 'Tú',
   com_ui_copy_to_clipboard: 'Copia negli appunti',
   com_ui_copied_to_clipboard: 'Copiato negli appunti',
   com_ui_regenerate: 'Rigenera',
