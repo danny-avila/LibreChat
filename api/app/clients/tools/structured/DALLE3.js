@@ -1,6 +1,5 @@
-// From https://platform.openai.com/docs/guides/images/usage?context=node
-// To use this tool, you must pass in a configured OpenAIApi object.
 const { z } = require('zod');
+const path = require('path');
 const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
@@ -10,17 +9,31 @@ const { processFileURL } = require('~/server/services/Files/process');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const { logger } = require('~/config');
 
-const { DALLE3_SYSTEM_PROMPT, DALLE_REVERSE_PROXY, PROXY } = process.env;
+const {
+  DALLE3_SYSTEM_PROMPT,
+  DALLE_REVERSE_PROXY,
+  PROXY,
+  DALLE3_AZURE_API_VERSION,
+  DALLE3_BASEURL,
+  DALLE3_API_KEY,
+} = process.env;
 class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
 
     this.userId = fields.userId;
     this.fileStrategy = fields.fileStrategy;
-    let apiKey = fields.DALLE_API_KEY || this.getApiKey();
+    let apiKey = fields.DALLE3_API_KEY ?? fields.DALLE_API_KEY ?? this.getApiKey();
     const config = { apiKey };
     if (DALLE_REVERSE_PROXY) {
       config.baseURL = extractBaseURL(DALLE_REVERSE_PROXY);
+    }
+
+    if (DALLE3_AZURE_API_VERSION && DALLE3_BASEURL) {
+      config.baseURL = DALLE3_BASEURL;
+      config.defaultQuery = { 'api-version': DALLE3_AZURE_API_VERSION };
+      config.defaultHeaders = { 'api-key': DALLE3_API_KEY, 'Content-Type': 'application/json' };
+      config.apiKey = DALLE3_API_KEY;
     }
 
     if (PROXY) {
@@ -46,7 +59,8 @@ class DALLE3 extends Tool {
     // - Use "various" or "diverse" ONLY IF the description refers to groups of more than 3 people. Do not change the number of people requested in the original description.
     // - Don't alter memes, fictional character origins, or unseen people. Maintain the original prompt's intent and prioritize quality.
     // The prompt must intricately describe every part of the image in concrete, objective detail. THINK about what the end goal of the description is, and extrapolate that to what would make satisfying images.
-    // All descriptions sent to dalle should be a paragraph of text that is extremely descriptive and detailed. Each should be more than 3 sentences long.`;
+    // All descriptions sent to dalle should be a paragraph of text that is extremely descriptive and detailed. Each should be more than 3 sentences long.
+    // - The "vivid" style is HIGHLY preferred, but "natural" is also supported.`;
     this.schema = z.object({
       prompt: z
         .string()
@@ -71,7 +85,7 @@ class DALLE3 extends Tool {
   }
 
   getApiKey() {
-    const apiKey = process.env.DALLE_API_KEY || '';
+    const apiKey = process.env.DALLE3_API_KEY ?? process.env.DALLE_API_KEY ?? '';
     if (!apiKey) {
       throw new Error('Missing DALLE_API_KEY environment variable.');
     }
@@ -121,17 +135,19 @@ Error Message: ${error.message}`;
     }
 
     const imageBasename = getImageBasename(theImageUrl);
-    let imageName = `image_${uuidv4()}.png`;
+    const imageExt = path.extname(imageBasename);
 
-    if (imageBasename) {
-      imageName = imageBasename;
-      logger.debug('[DALL-E-3]', { imageName }); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
-    } else {
-      logger.debug('[DALL-E-3] No image name found in the string.', {
-        theImageUrl,
-        data: resp.data[0],
-      });
-    }
+    const extension = imageExt.startsWith('.') ? imageExt.slice(1) : imageExt;
+    const imageName = `img-${uuidv4()}.${extension}`;
+
+    logger.debug('[DALL-E-3]', {
+      imageName,
+      imageBasename,
+      imageExt,
+      extension,
+      theImageUrl,
+      data: resp.data[0],
+    });
 
     try {
       const result = await processFileURL({

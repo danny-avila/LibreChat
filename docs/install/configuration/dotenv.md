@@ -197,6 +197,23 @@ AZURE_USE_MODEL_AS_DEPLOYMENT_NAME=TRUE
 ```bash 
 PLUGINS_USE_AZURE="true"
 ```
+** Generate images with Azure OpenAI Service**
+
+- For DALL-E-3:
+
+```bash
+DALLE3_AZURE_API_VERSION=the-api-version # e.g.: 2023-12-01-preview
+DALLE3_BASEURL=https://<AZURE_OPENAI_API_INSTANCE_NAME>.openai.azure.com/openai/deployments/<DALLE3_DEPLOYMENT_NAME>/
+DALLE3_API_KEY=your-azure-api-key-for-dall-e-3
+```
+
+- For DALL-E-2:
+
+```bash
+DALLE2_AZURE_API_VERSION=the-api-version # e.g.: 2023-12-01-preview
+DALLE2_BASEURL=https://<AZURE_OPENAI_API_INSTANCE_NAME>.openai.azure.com/openai/deployments/<DALLE2_DEPLOYMENT_NAME>/
+DALLE2_API_KEY=your-azure-api-key-for-dall-e-2
+```
 
 ### BingAI
 Bing, also used for Sydney, jailbreak, and Bing Image Creator, see: [Bing Access token](./ai_setup.md#bingai) and [Bing Jailbreak](../../features/bing_jailbreak.md)
@@ -378,35 +395,56 @@ AZURE_AI_SEARCH_SEARCH_OPTION_TOP=
 AZURE_AI_SEARCH_SEARCH_OPTION_SELECT=
 ```
 
-#### DALL-E 3:
-- OpenAI API key for DALL-E / DALL-E-3. Leave commented out to have the user provide their own key when installing the plugin. If you want to provide your own key for all users you can uncomment this line and add your OpenAI API key here.
+#### DALL-E:
+
+**API Keys:**
+- `DALLE_API_KEY`: This environment variable is intended for storing the OpenAI API key that grants access to both DALL-E 2 and DALL-E 3 services. Typically, this key should be kept private. If you are distributing a plugin or software that integrates with DALL-E, you may choose to leave this commented out, requiring the end user to input their own API key. If you have a shared API key you want to distribute with your software (not recommended for security reasons), you can uncomment this and provide the key.
 
 ```bash
 # DALLE_API_KEY=
 ```
 
-- For customization of the DALL-E-3 System prompt, uncomment the following, and provide your own prompt. **(Advanced)** 
-    - See official prompt for reference: **[DALL-E System Prompt](https://github.com/spdustin/ChatGPT-AutoExpert/blob/main/_system-prompts/dall-e.md)**
+- `DALLE3_API_KEY` and `DALLE2_API_KEY`: These are similar to the above but are specific to each version of DALL-E. They allow for separate keys for DALL-E 2 and DALL-E 3, providing flexibility if you have different access credentials or subscription levels for each service.
 
 ```bash
-DALLE3_SYSTEM_PROMPT="Your System Prompt here"
+# DALLE3_API_KEY=
+# DALLE2_API_KEY=
 ```
 
-- DALL-E Proxy settings. This is separate from its OpenAI counterpart for customization purposes **(Advanced)** 
-
-> Reverse proxy settings, changes the baseURL for the DALL-E-3 API Calls
-> The URL must match the "url/v1," pattern, the "openai" suffix is also allowed.
-> ```
-> Examples:
->   - https://open.ai/v1
->   - https://open.ai/v1/ACCOUNT/GATEWAY/openai
->   - https://open.ai/v1/hi/openai
-> ```
+**System Prompts:**
+- `DALLE3_SYSTEM_PROMPT` and `DALLE2_SYSTEM_PROMPT`: These variables allow users to set system prompts that can preconfigure or guide the image generation process for DALL-E 3 and DALL-E 2, respectively. Use these to set default prompts or special instructions that affect how the AI interprets the user's input prompts.
 
 ```bash
-DALLE_REVERSE_PROXY=
+# DALLE3_SYSTEM_PROMPT="Your DALL-E-3 System Prompt here"
+# DALLE2_SYSTEM_PROMPT="Your DALL-E-2 System Prompt here"
 ```
 
+**Reverse Proxy Settings:**
+- `DALLE_REVERSE_PROXY`: This setting enables the specification of a reverse proxy for DALL-E API requests. This can be useful for routing traffic through a specific server, potentially for purposes like caching, logging, or adding additional layers of security. Ensure that the URL follows the required pattern and is appropriately configured to handle DALL-E requests.
+
+```bash
+# DALLE_REVERSE_PROXY=
+```
+
+**Base URLs:**
+- `DALLE3_BASEURL` and `DALLE2_BASEURL`: These variables define the base URLs for DALL-E 3 and DALL-E 2 API endpoints, respectively. These might need to be set if you are using a custom proxy or a specific regional endpoint provided by OpenAI.
+
+```bash
+# DALLE3_BASEURL=
+# DALLE2_BASEURL=
+```
+
+**Azure OpenAI Integration (Optional):**
+- `DALLE3_AZURE_API_VERSION` and `DALLE2_AZURE_API_VERSION`: If you are using Azure's OpenAI service to access DALL-E, these environment variables specify the API version for DALL-E 3 and DALL-E 2, respectively. Azure may have specific API version strings that need to be set to ensure compatibility with their services.
+
+```bash
+# DALLE3_AZURE_API_VERSION=
+# DALLE2_AZURE_API_VERSION=
+```
+
+---
+
+Remember to replace placeholder text such as "Your DALL-E-3 System Prompt here" with actual prompts or instructions and provide your actual API keys if you choose to include them directly in the file (though managing sensitive keys outside of the codebase is a best practice). Always review and respect OpenAI's usage policies when embedding API keys in software.
 > Note: if you have PROXY set, it will be used for DALL-E calls also, which is universal for the app
 
 #### Google Search
