@@ -23,6 +23,7 @@ export const endpointSchema = z.object({
   summaryModel: z.string().optional(),
   forcePrompt: z.boolean().optional(),
   modelDisplayLabel: z.string().optional(),
+  headers: z.record(z.any()).optional(),
 });
 
 export const configSchema = z.object({

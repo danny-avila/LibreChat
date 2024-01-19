@@ -253,6 +253,21 @@ endpoints:
   - **Description**: Excludes specified [default parameters](#default-parameters). Useful for APIs that do not accept or recognize certain parameters.
   - **Example**: `dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]`
   - **Note**: For a list of default parameters sent with every request, see the ["Default Parameters"](#default-parameters) Section below.
+
+### **headers**:
+
+  > Adds additional headers to requests. Can reference an environment variable
+
+  - Type: Object/Dictionary
+  - **Description**: The `headers` object specifies custom headers for requests. Useful for authentication and setting content types.
+  - **Example**: 
+  - **Note**: Supports dynamic environment variable values, which use the format: `"${VARIABLE_NAME}"`
+```yaml
+    headers:
+      x-api-key: "${ENVIRONMENT_VARIABLE}"
+      Content-Type: "application/json"
+```
+
 ## Additional Notes
 - Ensure that all URLs and keys are correctly specified to avoid connectivity issues.
 
