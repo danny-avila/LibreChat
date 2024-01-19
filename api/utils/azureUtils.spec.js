@@ -250,4 +250,17 @@ describe('constructAzureURL', () => {
     });
     expect(url).toBe('https://example.com/my_custom_instance/my_deployment');
   });
+
+  test('returns regular Azure OpenAI baseURL with placeholders set', () => {
+    const baseURL =
+      'https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}';
+    const url = constructAzureURL({
+      baseURL,
+      azure: {
+        azureOpenAIApiInstanceName: 'instance1',
+        azureOpenAIApiDeploymentName: 'deployment1',
+      },
+    });
+    expect(url).toBe('https://instance1.openai.azure.com/openai/deployments/deployment1');
+  });
 });

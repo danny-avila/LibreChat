@@ -71,7 +71,8 @@ describe('extractBaseURL', () => {
     ];
 
     const expected = [
-      'https://api.example.com/v1/azure-openai',
+      /* Note: exception for azure-openai to allow credential injection */
+      'https://api.example.com/v1/azure-openai/something',
       'https://api.example.com/v1/replicate',
       'https://api.example.com/v1/huggingface',
       'https://api.example.com/v1/workers-ai',
@@ -91,5 +92,20 @@ describe('extractBaseURL', () => {
   test('should handle URLs with complex paths after the suffix', () => {
     const url = 'https://api.example.com/v1/replicate/deep/path/segment';
     expect(extractBaseURL(url)).toBe('https://api.example.com/v1/replicate');
+  });
+
+  test('should leave a regular Azure OpenAI baseURL as is', () => {
+    const url = 'https://instance-name.openai.azure.com/openai/deployments/deployment-name';
+    expect(extractBaseURL(url)).toBe(url);
+  });
+
+  test('should leave a regular Azure OpenAI baseURL with placeholders as is', () => {
+    const url = 'https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}';
+    expect(extractBaseURL(url)).toBe(url);
+  });
+
+  test('should leave an alternate Azure OpenAI baseURL with placeholders as is', () => {
+    const url = 'https://${INSTANCE_NAME}.com/resources/deployments/${DEPLOYMENT_NAME}';
+    expect(extractBaseURL(url)).toBe(url);
   });
 });

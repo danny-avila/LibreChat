@@ -37,6 +37,10 @@ function extractBaseURL(url) {
   ];
   const suffixUsed = suffixes.find((suffix) => url.includes(`/${suffix}`));
 
+  if (suffixUsed === 'azure-openai') {
+    return url.split(/\/(chat|completion)/)[0];
+  }
+
   // Check if the URL has '/openai' immediately after '/v1'.
   const openaiIndex = url.indexOf(`/${openai}`, v1Index + 3);
   // Find which suffix is present in the URL, if any.
