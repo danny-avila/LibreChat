@@ -48,6 +48,9 @@ jest.mock('path', () => {
     resolve: jest.fn(),
     join: jest.fn(),
     relative: jest.fn(),
+    extname: jest.fn().mockImplementation((filename) => {
+      return filename.slice(filename.lastIndexOf('.'));
+    }),
   };
 });
 
@@ -148,7 +151,7 @@ describe('DALLE3', () => {
     await expect(dalle._call(mockData)).rejects.toThrow('Missing required field: prompt');
   });
 
-  it('should log to console if no image name is found in the URL', async () => {
+  it('should log appropriate debug values', async () => {
     const mockData = {
       prompt: 'A test prompt',
     };
@@ -162,9 +165,13 @@ describe('DALLE3', () => {
 
     generate.mockResolvedValue(mockResponse);
     await dalle._call(mockData);
-    expect(logger.debug).toHaveBeenCalledWith('[DALL-E-3] No image name found in the string.', {
+    expect(logger.debug).toHaveBeenCalledWith('[DALL-E-3]', {
       data: { url: 'http://example.com/invalid-url' },
       theImageUrl: 'http://example.com/invalid-url',
+      extension: expect.any(String),
+      imageBasename: expect.any(String),
+      imageExt: expect.any(String),
+      imageName: expect.any(String),
     });
   });
 
