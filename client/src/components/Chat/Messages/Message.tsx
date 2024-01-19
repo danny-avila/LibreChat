@@ -1,17 +1,20 @@
+import { useRecoilValue } from 'recoil';
+import { useAuthContext, useMessageHelpers, useLocalize } from '~/hooks';
+import type { TMessageProps } from '~/common';
 import { Plugin } from '~/components/Messages/Content';
 import MessageContent from './Content/MessageContent';
-import type { TMessageProps } from '~/common';
 import SiblingSwitch from './SiblingSwitch';
-import { useMessageHelpers } from '~/hooks';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
+import store from '~/store';
 
 export default function Message(props: TMessageProps) {
-  const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
-    props;
+  const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
+  const { user } = useAuthContext();
+  const localize = useLocalize();
 
   const {
     ask,
@@ -28,10 +31,20 @@ export default function Message(props: TMessageProps) {
     regenerateMessage,
   } = useMessageHelpers(props);
 
-  const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+  const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
+    props;
 
   if (!message) {
     return null;
+  }
+
+  const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+
+  let messageLabel = '';
+  if (isCreatedByUser) {
+    messageLabel = UsernameDisplay ? user?.name : localize('com_user_message');
+  } else {
+    messageLabel = message.sender;
   }
 
   return (
@@ -59,9 +72,7 @@ export default function Message(props: TMessageProps) {
             <div
               className={cn('relative flex w-full flex-col', isCreatedByUser ? '' : 'agent-turn')}
             >
-              <div className="select-none font-semibold">
-                {isCreatedByUser ? 'You' : message.sender}
-              </div>
+              <div className="select-none font-semibold">{messageLabel}</div>
               <div className="flex-col gap-1 md:gap-3">
                 <div className="flex max-w-full flex-grow flex-col gap-0">
                   {/* Legacy Plugins */}
