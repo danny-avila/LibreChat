@@ -1,6 +1,6 @@
 const { ChatOpenAI } = require('langchain/chat_models/openai');
-const { sanitizeModelName } = require('../../../utils');
-const { isEnabled } = require('../../../server/utils');
+const { sanitizeModelName, constructAzureURL } = require('~/utils');
+const { isEnabled } = require('~/server/utils');
 
 /**
  * Creates a new instance of a language model (LLM) for chat interactions.
@@ -36,6 +36,7 @@ function createLLM({
     apiKey: openAIApiKey,
   };
 
+  /**  @type {AzureOptions} */
   let azureOptions = {};
   if (azure) {
     const useModelName = isEnabled(process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME);
@@ -53,8 +54,12 @@ function createLLM({
     modelOptions.modelName = process.env.AZURE_OPENAI_DEFAULT_MODEL;
   }
 
-  // console.debug('createLLM: configOptions');
-  // console.debug(configOptions);
+  if (azure && configOptions.basePath) {
+    configOptions.basePath = constructAzureURL({
+      baseURL: configOptions.basePath,
+      azure: azureOptions,
+    });
+  }
 
   return new ChatOpenAI(
     {
