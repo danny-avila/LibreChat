@@ -1,9 +1,11 @@
-import { ToolCallTypes, ContentTypes } from 'librechat-data-provider';
+import { ToolCallTypes, ContentTypes, imageGenTools } from 'librechat-data-provider';
 import type { TMessageContent, TMessage } from 'librechat-data-provider';
 import type { TDisplayProps } from '~/common';
 import CodeAnalyze from './CodeAnalyze';
+import ActionCall from './ActionCall';
 import Container from './Container';
 import Markdown from './Markdown';
+import ImageGen from './ImageGen';
 import Image from './Image';
 import { cn } from '~/utils';
 
@@ -36,6 +38,9 @@ export default function Part({
   showCursor: boolean;
   message: TMessage;
 }) {
+  if (!part) {
+    return null;
+  }
   if (part.type === ContentTypes.TEXT) {
     // Access the value property
     return (
@@ -62,6 +67,23 @@ export default function Part({
         code={code_interpreter.input}
         outputs={code_interpreter.outputs ?? []}
       />
+    );
+  } else if (
+    part.type === ContentTypes.TOOL_CALL &&
+    part[ContentTypes.TOOL_CALL].type === ToolCallTypes.FUNCTION &&
+    imageGenTools.has(part[ContentTypes.TOOL_CALL].function.name)
+  ) {
+    const toolCall = part[ContentTypes.TOOL_CALL];
+    return (
+      <ImageGen initialProgress={toolCall.progress ?? 0.1} args={toolCall.function.arguments} />
+    );
+  } else if (
+    part.type === ContentTypes.TOOL_CALL &&
+    part[ContentTypes.TOOL_CALL].type === ToolCallTypes.FUNCTION
+  ) {
+    const toolCall = part[ContentTypes.TOOL_CALL];
+    return (
+      <ActionCall initialProgress={toolCall.progress ?? 0.1} args={toolCall.function.arguments} />
     );
   } else if (part.type === ContentTypes.IMAGE_FILE) {
     const imageFile = part[ContentTypes.IMAGE_FILE];

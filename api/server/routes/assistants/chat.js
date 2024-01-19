@@ -5,7 +5,7 @@ const { EModelEndpoint, Constants } = require('librechat-data-provider');
 const {
   initThread,
   saveUserMessage,
-  checkMessageGaps,
+  // checkMessageGaps,
   addThreadMetadata,
   saveAssistantMessage,
 } = require('~/server/services/Threads');
@@ -83,9 +83,9 @@ router.post('/', setHeaders, async (req, res) => {
     /** @type {TMessage[]} */
     let previousMessages = [];
 
-    if (thread_id) {
-      previousMessages = await checkMessageGaps({ openai, thread_id, conversationId });
-    }
+    // if (thread_id) {
+    //   previousMessages = await checkMessageGaps({ openai, thread_id, conversationId });
+    // }
 
     if (previousMessages.length) {
       parentMessageId = previousMessages[previousMessages.length - 1].messageId;
@@ -130,20 +130,20 @@ router.post('/', setHeaders, async (req, res) => {
 
     previousMessages.push(requestMessage);
 
-    sendMessage(res, {
-      sync: true,
-      conversationId,
-      messages: previousMessages,
-      responseMessage: {
-        user: req.user.id,
-        messageId: openai.responseMessage.messageId,
-        parentMessageId: userMessageId,
-        conversationId,
-        assistant_id,
-        thread_id,
-        model: assistant_id,
-      },
-    });
+    // sendMessage(res, {
+    //   sync: true,
+    //   conversationId,
+    //   messages: previousMessages,
+    //   responseMessage: {
+    //     user: req.user.id,
+    //     messageId: openai.responseMessage.messageId,
+    //     parentMessageId: userMessageId,
+    //     conversationId,
+    //     assistant_id,
+    //     thread_id,
+    //     model: assistant_id,
+    //   },
+    // });
 
     // TODO: may allow multiple messages to be created beforehand in a future update
     const initThreadBody = {
@@ -209,6 +209,7 @@ router.post('/', setHeaders, async (req, res) => {
       conversation,
       requestMessage: {
         parentMessageId,
+        thread_id,
       },
     });
     res.end();

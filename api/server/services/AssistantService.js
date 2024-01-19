@@ -7,6 +7,7 @@ const {
   RunStatus,
   ToolCallTypes,
   imageExtRegex,
+  imageGenTools,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { RunManager, waitForRun } = require('~/server/services/Runs');
@@ -241,6 +242,46 @@ function createInProgressHandler(openai, thread_id, messages) {
             openai.processedFileIds.add(file_id);
             openai.index++;
           }
+        } else if (
+          toolCall.type === ToolCallTypes.FUNCTION &&
+          step.status === StepStatus.COMPLETED &&
+          imageGenTools.has(toolCall[toolCall.type].name)
+        ) {
+          const currentToolCall = openai.seenToolCalls.get(toolCall.id);
+          const { output, arguments: toolCallArgs } = currentToolCall[toolCall.type];
+
+          /** @type {ImageFile} */
+          let imageDetails = {};
+          try {
+            imageDetails = JSON.parse(output);
+          } catch (error) {
+            logger.error('Error parsing tool call output', error);
+          }
+          try {
+            const { prompt, ...args } = JSON.parse(toolCallArgs);
+            imageDetails = { ...imageDetails, prompt, metadata: args };
+          } catch (error) {
+            logger.error('Error parsing tool call arguments', error);
+          }
+
+          // Should never meet this condition
+          if (openai.processedFileIds.has(imageDetails.file_id)) {
+            continue;
+          }
+
+          const image_file = {
+            [ContentTypes.IMAGE_FILE]: imageDetails,
+            type: ContentTypes.IMAGE_FILE,
+            // Replace the tool call output with Image file
+            index: toolCallIndex,
+          };
+
+          openai.addContentData(image_file);
+          openai.processedFileIds.add(imageDetails.file_id);
+
+          // Update the stored tool call
+          openai.seenToolCalls.set(toolCall.id, toolCall);
+          continue;
         }
 
         openai.addContentData({
@@ -313,6 +354,7 @@ function createInProgressHandler(openai, thread_id, messages) {
  * @param {string} params.thread_id - The ID of the thread associated with the run.
  * @param {RunStep[]} params.accumulatedSteps - The accumulated steps for the run.
  * @param {ThreadMessage[]} params.accumulatedMessages - The accumulated messages for the run.
+ * @param {InProgressFunction} [params.in_progress] - The `in_progress` function from a previous run.
  * @return {Promise<RunResponse>} A promise that resolves to an object containing the run and managed steps.
  */
 async function runAssistant({
@@ -321,10 +363,11 @@ async function runAssistant({
   thread_id,
   accumulatedSteps = [],
   accumulatedMessages = [],
+  in_progress: inProgress,
 }) {
   let steps = accumulatedSteps;
   let messages = accumulatedMessages;
-  const in_progress = createInProgressHandler(openai, thread_id, messages);
+  const in_progress = inProgress ?? createInProgressHandler(openai, thread_id, messages);
 
   const runManager = new RunManager({
     in_progress,
@@ -408,6 +451,7 @@ async function runAssistant({
     thread_id,
     accumulatedSteps: steps,
     accumulatedMessages: messages,
+    in_progress,
   });
 }
 

@@ -138,6 +138,14 @@ export type ImageFile = {
   filepath: string;
   height: number;
   width: number;
+  /**
+   * Prompt used to generate the image if applicable.
+   */
+  prompt?: string;
+  /**
+   * Additional metadata used to generate or about the image/tool_call.
+   */
+  metadata?: Record<string, unknown>;
 };
 
 // FileCitation.ts

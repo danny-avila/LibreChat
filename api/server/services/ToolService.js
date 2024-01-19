@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { StructuredTool } = require('langchain/tools');
-const { ContentTypes } = require('librechat-data-provider');
 const { Calculator } = require('langchain/tools/calculator');
+const { ContentTypes, imageGenTools } = require('librechat-data-provider');
 const { TavilySearchResults } = require('@langchain/community/tools/tavily_search');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { loadTools } = require('~/app/clients/tools/util');
@@ -114,8 +114,10 @@ function formatToOpenAIAssistantTool(tool) {
  *
  */
 async function processActions(openai, actions) {
-  console.log('Processing actions...');
-  console.dir(actions, { depth: null });
+  logger.debug(
+    `[processActions] user: ${openai.req.user.id} | thread_id: ${actions[0].thread_id} | run_id: ${actions[0].run_id}`,
+    actions,
+  );
   const tools = actions.map((action) => action.tool);
   const loadedTools = await loadTools({
     user: openai.req.user.id,
@@ -125,6 +127,7 @@ async function processActions(openai, actions) {
     options: {
       openAIApiKey: openai.apiKey,
       fileStrategy: openai.req.app.locals.fileStrategy,
+      returnMetadata: true,
     },
   });
 
@@ -162,6 +165,11 @@ async function processActions(openai, actions) {
           // TODO: to append tool properties to stream, pass metadata rest to addContentData
           // result: tool.result,
         });
+
+        if (imageGenTools.has(action.tool)) {
+          output = `${action.tool} displayed 1 images. The images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.`;
+        }
+
         return {
           tool_call_id: action.toolCallId,
           output,
@@ -169,7 +177,10 @@ async function processActions(openai, actions) {
       });
       promises.push(promise);
     } catch (error) {
-      console.error(error);
+      logger.error(
+        `tool_call_id: ${action.toolCallId} | Error processing tool ${action.tool}`,
+        error,
+      );
       promises.push(
         Promise.resolve({
           tool_call_id: action.toolCallId,

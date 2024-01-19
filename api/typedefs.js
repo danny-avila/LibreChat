@@ -63,6 +63,12 @@
  */
 
 /**
+ * @exports ImageFile
+ * @typedef {import('librechat-data-provider').ImageFile} ImageFile
+ * @memberof typedefs
+ */
+
+/**
  * @exports FileMetadata
  * @typedef {Object} FileMetadata
  * @property {string} file_id - The identifier of the file.
