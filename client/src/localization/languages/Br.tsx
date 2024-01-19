@@ -310,6 +310,7 @@ export default {
   com_nav_settings: 'Configurações',
   com_nav_search_placeholder: 'Pesquisar mensagens',
   com_nav_setting_general: 'Geral',
+  com_nav_setting_beta: 'Recursos beta',
   com_nav_setting_data: 'Controles de dados',
   com_nav_setting_account: 'Conta',
   com_nav_language: 'Idioma',
