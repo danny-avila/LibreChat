@@ -100,7 +100,7 @@ const UsernameDisplay = atom<boolean>({
 
       onSet((newValue: unknown) => {
         if (typeof newValue === 'boolean') {
-          localStorage.setItem('autoScroll', newValue.toString());
+          localStorage.setItem('UsernameDisplay', newValue.toString());
         }
       });
     },

@@ -7,13 +7,15 @@ import { useLocalize } from '~/hooks';
 import Avatar from './Avatar';
 import store from '~/store';
 
-function Account() {
+function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => void }) {
   const [UsernameDisplay, setUsernameDisplay] = useRecoilState<boolean>(store.UsernameDisplay);
   const localize = useLocalize();
 
   const handleCheckedChange = (value: boolean) => {
     setUsernameDisplay(value);
-    localStorage.setItem('UsernameDisplay', value.toString());
+    if (onCheckedChange) {
+      onCheckedChange(value);
+    }
   };
 
   return (
