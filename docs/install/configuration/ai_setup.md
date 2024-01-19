@@ -278,6 +278,45 @@ AZURE_OPENAI_DEFAULT_MODEL=gpt-3.5-turbo # do include periods in the model name 
 
 ```
 
+### Using a Specified Base URL with Azure
+
+The base URL for Azure OpenAI API requests can be dynamically configured. This is useful for proxying services such as [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/providers/azureopenai/), or if you wish to explicitly override the baseURL handling of the app.
+
+LibreChat will use the `AZURE_OPENAI_BASEURL` environment variable, which can include placeholders for the Azure OpenAI API instance and deployment names.
+
+In the application's environment configuration, the base URL is set like this:
+
+```bash
+# .env file
+AZURE_OPENAI_BASEURL=https://example.azure-api.net/${INSTANCE_NAME}/${DEPLOYMENT_NAME}
+
+# OR
+AZURE_OPENAI_BASEURL=https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}
+
+# Cloudflare example
+AZURE_OPENAI_BASEURL=https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/${INSTANCE_NAME}/${DEPLOYMENT_NAME}
+```
+
+The application replaces `${INSTANCE_NAME}` and `${DEPLOYMENT_NAME}` in the `AZURE_OPENAI_BASEURL`, processed according to the other settings discussed in the guide.
+
+**You can also omit the placeholders completely and simply construct the baseURL with your credentials:**
+
+```bash
+# .env file
+AZURE_OPENAI_BASEURL=https://instance-1.openai.azure.com/openai/deployments/deployment-1
+
+# Cloudflare example
+AZURE_OPENAI_BASEURL=https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/instance-1/deployment-1
+```
+
+Setting these values will override all of the application's internal handling of the instance and deployment names and use your specified base URL.
+
+**Notes:**
+- You should still provide the `AZURE_OPENAI_API_VERSION` and `AZURE_API_KEY` via the .env file as they are programmatically added to the requests.
+- When specifying instance and deployment names in the `AZURE_OPENAI_BASEURL`, their respective environment variables can be omitted (`AZURE_OPENAI_API_INSTANCE_NAME` and `AZURE_OPENAI_API_DEPLOYMENT_NAME`) except for use with Plugins.
+- Specifying instance and deployment names in the `AZURE_OPENAI_BASEURL` instead of placeholders creates conflicts with "plugins," "vision," "default-model," and "model-as-deployment-name" support.
+- Due to the conflicts that arise with other features, it is recommended to use placeholder for instance and deployment names in the `AZURE_OPENAI_BASEURL`
+
 ### Enabling Auto-Generated Titles with Azure
 
 The default titling model is set to `gpt-3.5-turbo`.
@@ -294,7 +333,10 @@ This will work seamlessly as it does with the [OpenAI endpoint](#openai) (no nee
 
 Alternatively, you can set the [required variables](#required-variables) to explicitly use your vision deployment, but this may limit you to exclusively using your vision deployment for all Azure chat settings.
 
-As of December 18th, 2023, Vision models seem to have degraded performance with Azure OpenAI when compared to [OpenAI](#openai)
+
+**Notes:**
+- If using `AZURE_OPENAI_BASEURL`, you should not specify instance and deployment names instead of placeholders as the vision request will fail.
+- As of December 18th, 2023, Vision models seem to have degraded performance with Azure OpenAI when compared to [OpenAI](#openai)
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/7306185f-c32c-4483-9167-af514cc1c2dd)
 
@@ -360,6 +402,9 @@ To use Azure with the Plugins endpoint, make sure the following environment vari
 
 * `PLUGINS_USE_AZURE`: If set to "true" or any truthy value, this will enable the program to use Azure with the Plugins endpoint.
 * `AZURE_API_KEY`: Your Azure API key must be set with an environment variable.
+
+**Important:**
+- If using `AZURE_OPENAI_BASEURL`, you should not specify instance and deployment names instead of placeholders as the plugin request will fail.
 
 ---
 
