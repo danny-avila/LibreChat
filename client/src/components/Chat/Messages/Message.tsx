@@ -60,7 +60,6 @@ export default function Message(props: TMessageProps) {
               <div>
                 <div className="pt-0.5">
                   <div className="gizmo-shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                    {}
                     {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
                       <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
                     ) : (
@@ -70,7 +69,6 @@ export default function Message(props: TMessageProps) {
                 </div>
               </div>
             </div>
-            {}
             <div
               className={cn('relative flex w-full flex-col', isCreatedByUser ? '' : 'agent-turn')}
             >
