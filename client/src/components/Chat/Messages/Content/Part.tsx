@@ -45,7 +45,7 @@ export default function Part({
     // Access the value property
     return (
       <Container>
-        <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-70">
+        <div className="markdown prose dark:prose-invert light my-1 w-full break-words dark:text-gray-70">
           <DisplayMessage
             text={part[ContentTypes.TEXT].value}
             isCreatedByUser={message.isCreatedByUser}
@@ -87,12 +87,18 @@ export default function Part({
     );
   } else if (part.type === ContentTypes.IMAGE_FILE) {
     const imageFile = part[ContentTypes.IMAGE_FILE];
+    const height = imageFile.height ?? 1920;
+    const width = imageFile.width ?? 1080;
     return (
       <Image
         imagePath={imageFile.filepath}
-        width={imageFile.width ?? 1080}
-        height={imageFile.height ?? 1920}
+        height={height}
+        width={width}
         altText={imageFile.filename ?? 'Uploaded Image'}
+        placeholderDimensions={{
+          height: height + 'px',
+          width: width + 'px',
+        }}
         // n={imageFiles.length}
         // i={i}
       />

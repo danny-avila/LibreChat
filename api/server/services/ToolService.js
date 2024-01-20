@@ -1,11 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const { StructuredTool } = require('langchain/tools');
+const { zodToJsonSchema } = require('zod-to-json-schema');
 const { Calculator } = require('langchain/tools/calculator');
 const { ContentTypes, imageGenTools } = require('librechat-data-provider');
 const { TavilySearchResults } = require('@langchain/community/tools/tavily_search');
-const { zodToJsonSchema } = require('zod-to-json-schema');
 const { loadTools } = require('~/app/clients/tools/util');
+const { sleep } = require('./Runs/handle');
 const { logger } = require('~/config');
 
 /**
@@ -145,8 +146,10 @@ async function processActions(openai, actions) {
     }
 
     try {
-      const promise = tool._call(action.toolInput).then((output) => {
+      const promise = tool._call(action.toolInput).then(async (output) => {
         actions[i].output = output;
+
+        /** @type {FunctionToolCall & PartMetadata} */
         const toolCall = {
           function: {
             name: action.tool,
@@ -157,18 +160,54 @@ async function processActions(openai, actions) {
           type: 'function',
           progress: 1,
         };
+
+        const toolCallIndex = openai.mappedOrder.get(toolCall.id);
+
+        if (imageGenTools.has(action.tool)) {
+          const imageOutput = output;
+          toolCall.function.output = `${action.tool} displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.`;
+
+          // Streams the "Finished" state of the tool call in the UI
+          openai.addContentData({
+            [ContentTypes.TOOL_CALL]: toolCall,
+            index: toolCallIndex,
+            type: ContentTypes.TOOL_CALL,
+          });
+
+          await sleep(500);
+
+          /** @type {ImageFile} */
+          const imageDetails = {
+            ...imageOutput,
+            ...action.toolInput,
+          };
+
+          const image_file = {
+            [ContentTypes.IMAGE_FILE]: imageDetails,
+            type: ContentTypes.IMAGE_FILE,
+            // Replace the tool call output with Image file
+            index: toolCallIndex,
+          };
+
+          openai.addContentData(image_file);
+
+          // Update the stored tool call
+          openai.seenToolCalls.set(toolCall.id, toolCall);
+
+          return {
+            tool_call_id: action.toolCallId,
+            output: toolCall.function.output,
+          };
+        }
+
         openai.seenToolCalls.set(toolCall.id, toolCall);
         openai.addContentData({
           [ContentTypes.TOOL_CALL]: toolCall,
-          index: openai.mappedOrder.get(action.toolCallId),
+          index: toolCallIndex,
           type: ContentTypes.TOOL_CALL,
           // TODO: to append tool properties to stream, pass metadata rest to addContentData
           // result: tool.result,
         });
-
-        if (imageGenTools.has(action.tool)) {
-          output = `${action.tool} displayed 1 images. The images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.`;
-        }
 
         return {
           tool_call_id: action.toolCallId,

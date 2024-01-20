@@ -160,13 +160,13 @@ Error Message: ${error.message}`;
       });
 
       if (this.returnMetadata) {
-        this.result = JSON.stringify({
+        this.result = {
           file_id: result.file_id,
           filename: result.filename,
           filepath: result.filepath,
           height: result.height,
           width: result.width,
-        });
+        };
       } else {
         this.result = this.wrapInMarkdown(result.filepath);
       }

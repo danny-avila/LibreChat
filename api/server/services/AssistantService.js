@@ -10,7 +10,7 @@ const {
   imageGenTools,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
-const { RunManager, waitForRun } = require('~/server/services/Runs');
+const { RunManager, waitForRun, sleep } = require('~/server/services/Runs');
 const { processActions } = require('~/server/services/ToolService');
 const { createOnProgress, sendMessage } = require('~/server/utils');
 const { TextStream } = require('~/app/clients');
@@ -247,39 +247,7 @@ function createInProgressHandler(openai, thread_id, messages) {
           step.status === StepStatus.COMPLETED &&
           imageGenTools.has(toolCall[toolCall.type].name)
         ) {
-          const currentToolCall = openai.seenToolCalls.get(toolCall.id);
-          const { output, arguments: toolCallArgs } = currentToolCall[toolCall.type];
-
-          /** @type {ImageFile} */
-          let imageDetails = {};
-          try {
-            imageDetails = JSON.parse(output);
-          } catch (error) {
-            logger.error('Error parsing tool call output', error);
-          }
-          try {
-            const { prompt, ...args } = JSON.parse(toolCallArgs);
-            imageDetails = { ...imageDetails, prompt, metadata: args };
-          } catch (error) {
-            logger.error('Error parsing tool call arguments', error);
-          }
-
-          // Should never meet this condition
-          if (openai.processedFileIds.has(imageDetails.file_id)) {
-            continue;
-          }
-
-          const image_file = {
-            [ContentTypes.IMAGE_FILE]: imageDetails,
-            type: ContentTypes.IMAGE_FILE,
-            // Replace the tool call output with Image file
-            index: toolCallIndex,
-          };
-
-          openai.addContentData(image_file);
-          openai.processedFileIds.add(imageDetails.file_id);
-
-          // Update the stored tool call
+          /* If a change is detected, skip image generation tools as already processed */
           openai.seenToolCalls.set(toolCall.id, toolCall);
           continue;
         }
@@ -336,6 +304,9 @@ function createInProgressHandler(openai, thread_id, messages) {
         stream: true,
         thread_id,
       });
+
+      // Create a small buffer before streaming begins
+      await sleep(500);
 
       const stream = new TextStream(result.text, { delay: 12 });
       await stream.processTextStream(onProgress);
