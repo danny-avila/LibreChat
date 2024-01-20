@@ -337,7 +337,7 @@ function createInProgressHandler(openai, thread_id, messages) {
         thread_id,
       });
 
-      const stream = new TextStream(result.text, { delay: 5 });
+      const stream = new TextStream(result.text, { delay: 12 });
       await stream.processTextStream(onProgress);
     }
   }

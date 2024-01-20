@@ -43,7 +43,8 @@ type TResData = {
 
 type TSyncData = {
   sync: boolean;
-  messages: TMessage[];
+  messages?: TMessage[];
+  requestMessage: TMessage;
   responseMessage: TMessage;
   conversationId: string;
 };
@@ -151,11 +152,14 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   };
 
   const syncHandler = (data: TSyncData, submission: TSubmission) => {
-    const { messages, conversationId, responseMessage } = data;
-    const { initialResponse, message } = submission;
+    const { conversationId, responseMessage, requestMessage } = data;
+    const { initialResponse, messages: _messages, message } = submission;
+
+    const messages = _messages.filter((msg) => msg.messageId !== message.messageId);
 
     setMessages([
       ...messages,
+      requestMessage,
       {
         ...initialResponse,
         ...responseMessage,
@@ -173,7 +177,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       return update;
     });
 
-    if (message.parentMessageId === Constants.NO_PARENT) {
+    if (requestMessage.parentMessageId === Constants.NO_PARENT) {
       addConvo(update);
     }
 

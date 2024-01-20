@@ -130,20 +130,21 @@ router.post('/', setHeaders, async (req, res) => {
 
     previousMessages.push(requestMessage);
 
-    // sendMessage(res, {
-    //   sync: true,
-    //   conversationId,
-    //   messages: previousMessages,
-    //   responseMessage: {
-    //     user: req.user.id,
-    //     messageId: openai.responseMessage.messageId,
-    //     parentMessageId: userMessageId,
-    //     conversationId,
-    //     assistant_id,
-    //     thread_id,
-    //     model: assistant_id,
-    //   },
-    // });
+    sendMessage(res, {
+      sync: true,
+      conversationId,
+      // messages: previousMessages,
+      requestMessage,
+      responseMessage: {
+        user: req.user.id,
+        messageId: openai.responseMessage.messageId,
+        parentMessageId: userMessageId,
+        conversationId,
+        assistant_id,
+        thread_id,
+        model: assistant_id,
+      },
+    });
 
     // TODO: may allow multiple messages to be created beforehand in a future update
     const initThreadBody = {
