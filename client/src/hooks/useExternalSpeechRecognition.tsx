@@ -29,7 +29,7 @@ const useExternalSpeechRecognition = () => {
   });
 
   const startRecording = () => {
-    setRecordedChunks([]); // Clear recorded chunks when starting a new recording
+    setRecordedChunks([]);
 
     navigator.mediaDevices
       .getUserMedia({ audio: true })
@@ -37,20 +37,22 @@ const useExternalSpeechRecognition = () => {
         const recorder = new MediaRecorder(stream);
         setMediaRecorder(recorder);
 
-        const chunks: Blob[] = [];
+        const chunks = [];
 
         recorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
             chunks.push(event.data);
+            setRecordedChunks([...chunks]);
           }
         };
 
-        recorder.addEventListener('stop', () => {
+        recorder.onstop = () => {
           const audioBlob = new Blob(chunks, { type: 'audio/wav' });
           setAudioData(audioBlob);
-        });
+        };
 
         recorder.start();
+        setTimeout(() => recorder.stop(), 5000);
       })
       .catch((error) => {
         console.error('Error starting recording:', error);
@@ -60,6 +62,16 @@ const useExternalSpeechRecognition = () => {
   const stopRecording = () => {
     if (mediaRecorder) {
       mediaRecorder.stop();
+      console.log('recordedChunks:', recordedChunks);
+      if (recordedChunks.length > 0) {
+        const audioBlob = new Blob(recordedChunks, { type: 'audio/wav' });
+        setAudioData(audioBlob);
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.wav');
+        processAudio(formData);
+      } else {
+        showToast({ message: 'No audio data found', status: 'error' });
+      }
     }
   };
 
@@ -72,16 +84,6 @@ const useExternalSpeechRecognition = () => {
         stopRecording();
         setIsListening(false);
         console.log('stop recording');
-
-        if (recordedChunks.length > 0) {
-          const audioBlob = new Blob(recordedChunks, { type: 'audio/wav' });
-          setAudioData(audioBlob);
-          const formData = new FormData();
-          formData.append('audio', audioBlob, 'recording.wav');
-          processAudio(formData);
-        } else {
-          showToast({ message: 'No audio data found', status: 'error' });
-        }
       } else {
         setRecordedChunks([]); // Clear recorded chunks when starting a new recording
         startRecording();
