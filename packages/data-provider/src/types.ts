@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { TResPlugin, TMessage, TConversation, EModelEndpoint } from './schemas';
+import type { TResPlugin, TMessage, TConversation, EModelEndpoint, ImageDetail } from './schemas';
 
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
@@ -11,10 +11,13 @@ export type TMessages = TMessage[];
 
 export type TMessagesAtom = TMessages | null;
 
+/* TODO: Cleanup EndpointOption types */
 export type TEndpointOption = {
   endpoint: EModelEndpoint;
   endpointType?: EModelEndpoint;
   modelDisplayLabel?: string;
+  resendImages?: boolean;
+  imageDetail?: ImageDetail;
   model?: string | null;
   promptPrefix?: string;
   temperature?: number;

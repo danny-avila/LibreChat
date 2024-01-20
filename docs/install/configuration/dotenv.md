@@ -177,6 +177,20 @@ AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME=
 
 - Identify the available models, separated by commas *without spaces*. The first will be default. Leave it blank or as is to use internal settings.
 
+- **The base URL for Azure OpenAI API requests can be dynamically configured.**
+
+```bash
+# .env file
+AZURE_OPENAI_BASEURL=https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}
+
+# Cloudflare example
+AZURE_OPENAI_BASEURL=https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/${INSTANCE_NAME}/${DEPLOYMENT_NAME}
+```
+- Sets the base URL for Azure OpenAI API requests.
+- Can include `${INSTANCE_NAME}` and `${DEPLOYMENT_NAME}` placeholders or specific credentials.
+- Example: "https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/${INSTANCE_NAME}/${DEPLOYMENT_NAME}"
+- [More info about `AZURE_OPENAI_BASEURL` here](./ai_setup.md#using-a-specified-base-url-with-azure)
+
 > Note: as deployment names can't have periods, they will be removed when the endpoint is generated.
 
 ```bash
@@ -303,7 +317,7 @@ DEBUG_OPENAI=false
     - Leave it blank or commented out to use internal settings.
 
 ```bash
-OPENAI_MODELS=gpt-3.5-turbo-1106,gpt-4-1106-preview,gpt-3.5-turbo,gpt-3.5-turbo-16k,gpt-3.5-turbo-0301,text-davinci-003,gpt-4,gpt-4-0314,gpt-4-0613
+OPENAI_MODELS=gpt-3.5-turbo-1106,gpt-4-1106-preview,gpt-3.5-turbo,gpt-3.5-turbo-16k,gpt-3.5-turbo-0301,gpt-4,gpt-4-0314,gpt-4-0613
 ```
 
 - Titling is enabled by default when initiating a conversation.

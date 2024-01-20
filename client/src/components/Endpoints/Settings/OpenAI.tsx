@@ -266,7 +266,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               htmlFor="image-detail-value"
               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
             >
-              <small>Image Detail</small>
+              <small>{localize('com_endpoint_plug_image_detail')}</small>
             </label>
             <Input
               id="image-detail-value"
