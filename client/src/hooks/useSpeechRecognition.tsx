@@ -2,22 +2,27 @@ import { useState, useEffect } from 'react';
 import hotkeys from 'hotkeys-js';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
-const useSpeechRecognition = (ask) => {
+const useSpeechRecognition = () => {
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [text, setText] = useState('');
+  const [isLoading] = useState(false);
   const { data: startupConfig } = useGetStartupConfig();
-
-  // startupConfig?.textToSpeechExternal {
+  const externalSpeechEnabled = startupConfig?.textToSpeechExternal;
 
   useEffect(() => {
-    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+    if (externalSpeechEnabled === true) {
+      console.log('External Speech Recognition is enabled');
+      setIsSpeechSupported(false);
+      return;
+    } else if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
       setIsSpeechSupported(true);
     } else {
       console.log('Browser does not support SpeechRecognition');
       setIsSpeechSupported(false);
       return;
     }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
 
@@ -36,8 +41,8 @@ const useSpeechRecognition = (ask) => {
 
         if (result.isFinal) {
           setText(transcript);
-          //Enable below code to auto submit
-          //ask({ text: transcript });
+          // Enable below code to auto submit
+          // processAudio({ text: transcript });
         }
       }
 
@@ -74,7 +79,7 @@ const useSpeechRecognition = (ask) => {
     if (e.shiftKey && e.altKey && e.key === 'L') {
       if (isSpeechSupported) {
         console.log('keydown pressed');
-        toggleListening(event);
+        toggleListening(e);
       }
     }
   };
@@ -88,7 +93,6 @@ const useSpeechRecognition = (ask) => {
   });
 
   useEffect(() => {
-    console.log('Setting up hotkeys');
     hotkeys('shift+alt+l', function (event) {
       event.preventDefault();
       if (isSpeechSupported) {
@@ -96,13 +100,13 @@ const useSpeechRecognition = (ask) => {
         toggleListening(event);
       }
     });
-    //Cleanup function (runs on unmount)
+    // Cleanup function (runs on unmount)
     return () => {
       hotkeys.unbind('shift+alt+l');
     };
   }, []);
 
-  return { isSpeechSupported, isListening, text, toggleListening };
+  return { isListening, isLoading, text, isSpeechSupported };
 };
 
 export default useSpeechRecognition;

@@ -26,6 +26,10 @@ export type AvatarUploadResponse = {
   url: string;
 };
 
+export type SpeechToTextResponse = {
+  text: string;
+};
+
 export type FileUploadBody = {
   formData: FormData;
   file_id: string;
@@ -39,6 +43,12 @@ export type UploadMutationOptions = {
 
 export type UploadAvatarOptions = {
   onSuccess?: (data: AvatarUploadResponse, variables: FormData, context?: unknown) => void;
+  onMutate?: (variables: FormData) => void | Promise<unknown>;
+  onError?: (error: unknown, variables: FormData, context?: unknown) => void;
+};
+
+export type SpeechToTextOptions = {
+  onSuccess?: (data: SpeechToTextResponse, variables: FormData, context?: unknown) => void;
   onMutate?: (variables: FormData) => void | Promise<unknown>;
   onError?: (error: unknown, variables: FormData, context?: unknown) => void;
 };

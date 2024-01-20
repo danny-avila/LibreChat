@@ -14,6 +14,8 @@ import type {
   TPreset,
   UploadAvatarOptions,
   AvatarUploadResponse,
+  SpeechToTextOptions,
+  SpeechToTextResponse,
 } from 'librechat-data-provider';
 
 import { dataService, MutationKeys } from 'librechat-data-provider';
@@ -113,6 +115,21 @@ export const useUploadAvatarMutation = (
 > => {
   return useMutation([MutationKeys.avatarUpload], {
     mutationFn: (variables: FormData) => dataService.uploadAvatar(variables),
+    ...(options || {}),
+  });
+};
+
+/* Speech to text */
+export const useSpeechToTextMutation = (
+  options?: SpeechToTextOptions,
+): UseMutationResult<
+  SpeechToTextResponse, // response data
+  unknown, // error
+  FormData, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.speechToText], {
+    mutationFn: (variables: FormData) => dataService.speechToText(variables),
     ...(options || {}),
   });
 };

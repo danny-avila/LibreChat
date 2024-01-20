@@ -1,5 +1,5 @@
 import { useRecoilState } from 'recoil';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { useChatContext } from '~/Providers';
 import { useRequiresKey } from '~/hooks';
@@ -9,7 +9,8 @@ import SendButton from './SendButton';
 import Images from './Files/Images';
 import Textarea from './Textarea';
 import store from '~/store';
-import { useSpeechRecognition } from '~/hooks';
+import { useSpeechRecognition, useExternalSpeechRecognition } from '~/hooks';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 export default function ChatForm({ index = 0 }) {
   const [text, setText] = useRecoilState(store.textByIndex(index));
@@ -34,16 +35,35 @@ export default function ChatForm({ index = 0 }) {
   const { requiresKey } = useRequiresKey();
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
-  const { isListening, text: speechText } = useSpeechRecognition(ask);
+  const { data: startupConfig } = useGetStartupConfig();
+  const useExternalSpeech = startupConfig?.textToSpeechExternal;
+
+  const {
+    isListening: speechIsListening,
+    isLoading: speechIsLoading,
+    text: speechText,
+    isSpeechSupported: speechIsSupported,
+  } = useSpeechRecognition();
+
+  const {
+    isListening: externalIsListening,
+    isLoading: externalIsLoading,
+    text: externalSpeechText,
+    isSpeechSupported: externalIsSupported,
+  } = useExternalSpeechRecognition();
+
+  const isListening = useExternalSpeech ? externalIsListening : speechIsListening;
+  const isLoading = useExternalSpeech ? externalIsLoading : speechIsLoading;
+  const speechTextForm = useExternalSpeech ? externalSpeechText : speechText;
+  const isSpeechSupported = useExternalSpeech ? externalIsSupported : speechIsSupported;
 
   useEffect(() => {
-    if (isListening && speechText) {
-      setText(speechText);
+    if (speechTextForm) {
+      return setText(speechTextForm);
     } else {
-      //  Enable below for auto submit
-      // setText('');
+      return setText(text);
     }
-  }, [speechText, isListening, setText]);
+  }, [isListening, speechText, setText, speechTextForm, text]);
 
   return (
     <form
@@ -76,6 +96,7 @@ export default function ChatForm({ index = 0 }) {
                   text={text}
                   disabled={filesLoading || isSubmitting || requiresKey}
                   isListening={isListening}
+                  isLoading={isLoading}
                 />
               )
             )}

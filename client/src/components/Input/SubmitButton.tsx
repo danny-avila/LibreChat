@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ListeningIcon, StopGeneratingIcon } from '~/components';
+import { StopGeneratingIcon } from '~/components';
 import { Settings } from 'lucide-react';
 import { SetKeyDialog } from './SetKeyDialog';
 import { useUserKey, useLocalize, useMediaQuery } from '~/hooks';
@@ -12,7 +12,6 @@ export default function SubmitButton({
   handleStopGenerating,
   disabled,
   isSubmitting,
-  isListening,
   userProvidesKey,
   hasText,
 }) {
@@ -22,7 +21,6 @@ export default function SubmitButton({
   const [isKeyProvided, setKeyProvided] = useState(userProvidesKey ? checkExpiry() : true);
   const isKeyActive = checkExpiry();
   const localize = useLocalize();
-  const [countdown, setCountdown] = useState(0);
   const dots = ['·', '··', '···'];
   const [dotIndex, setDotIndex] = useState(0);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
@@ -55,23 +53,6 @@ export default function SubmitButton({
       setKeyProvided(true);
     }
   }, [checkExpiry, endpoint, userProvidesKey, isKeyActive]);
-
-  useEffect(() => {
-    let timer;
-    if (isListening) {
-      setCountdown(3);
-      timer = setInterval(() => {
-        setCountdown((prev) => (prev > 1 ? prev - 1 : 0));
-      }, 1000);
-    } else {
-      setCountdown(0);
-    }
-    return () => {
-      if (timer) {
-        clearInterval(timer);
-      }
-    };
-  }, [isListening]);
 
   useEffect(() => {
     setIsSquareGreen(hasText);

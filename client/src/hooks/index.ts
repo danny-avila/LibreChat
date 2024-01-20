@@ -35,3 +35,4 @@ export { default as useSetFilesToDelete } from './useSetFilesToDelete';
 export { default as useGenerationsByLatest } from './useGenerationsByLatest';
 export { default as useSpeechSynthesis } from './useSpeechSynthesis';
 export { default as useSpeechRecognition } from './useSpeechRecognition';
+export { default as useExternalSpeechRecognition } from './useExternalSpeechRecognition';

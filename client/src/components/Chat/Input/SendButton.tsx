@@ -1,8 +1,8 @@
-import { SendIcon, ListeningIcon } from '~/components/svg';
+import { SendIcon, ListeningIcon, Spinner } from '~/components/svg';
 import { cn } from '~/utils';
 import { useEffect, useState } from 'react';
 
-export default function SendButton({ text, disabled, isListening }) {
+export default function SendButton({ text, disabled, isListening, isLoading }) {
   const [countdown, setCountdown] = useState(0);
 
   useEffect(() => {
@@ -35,6 +35,15 @@ export default function SendButton({ text, disabled, isListening }) {
             ) : (
               <ListeningIcon />
             )}
+          </span>
+        </button>
+      ) : isLoading ? (
+        <button
+          className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-[50px] items-center justify-center bg-transparent p-1 text-gray-500"
+          disabled={true}
+        >
+          <span className="" data-state="closed">
+            <Spinner className="icon-sm m-auto text-white" />
           </span>
         </button>
       ) : (
