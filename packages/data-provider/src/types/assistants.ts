@@ -231,7 +231,7 @@ export type PartMetadata = {
 export type ContentPart = (CodeToolCall | RetrievalToolCall | FunctionToolCall | ImageFile | Text) &
   PartMetadata;
 
-export type TMessageContent =
+export type TMessageContentParts =
   | { type: ContentTypes.TEXT; text: Text & PartMetadata }
   | {
       type: ContentTypes.TOOL_CALL;
@@ -239,7 +239,7 @@ export type TMessageContent =
     }
   | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata };
 
-export type TContentData = TMessageContent & {
+export type TContentData = TMessageContentParts & {
   messageId: string;
   conversationId: string;
   userMessageId: string;

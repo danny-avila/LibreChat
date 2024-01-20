@@ -4,7 +4,7 @@ import type {
   TMessage,
   TContentData,
   ContentPart,
-  TMessageContent,
+  TMessageContentParts,
 } from 'librechat-data-provider';
 
 type TUseContentHandler = {
@@ -37,7 +37,6 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
         parentMessageId: userMessage?.messageId,
         messageId,
         thread_id,
-        content: [],
       };
       messageMap.set(messageId, response);
     }
@@ -49,7 +48,13 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
     /* spreading the content array to avoid mutation */
     response.content = [...(response.content ?? [])];
 
-    response.content[index] = { type, [type]: part } as TMessageContent;
+    response.content[index] = { type, [type]: part } as TMessageContentParts;
+
+    // if (type !== ContentTypes.TEXT
+    //   && initialResponse.content
+    //   && response.content[response.content.length - 1].type !== ContentTypes.TEXT) {
+    //   response.content.push(initialResponse.content[0]);
+    // }
 
     response.content = response.content.filter((p) => p !== undefined);
 

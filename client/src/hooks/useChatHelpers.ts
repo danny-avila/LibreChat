@@ -1,7 +1,13 @@
 import { v4 } from 'uuid';
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Constants, QueryKeys, parseCompactConvo } from 'librechat-data-provider';
+import {
+  Constants,
+  EModelEndpoint,
+  QueryKeys,
+  parseCompactConvo,
+  ContentTypes,
+} from 'librechat-data-provider';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { useGetMessagesByConvoId, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type {
@@ -200,6 +206,18 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       isEdited: isEditOrContinue,
       error: false,
     };
+
+    if (endpoint === EModelEndpoint.assistant) {
+      initialResponse.text = '';
+      initialResponse.content = [
+        {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: {
+            value: responseText,
+          },
+        },
+      ];
+    }
 
     if (isContinued) {
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);

@@ -136,7 +136,7 @@ export type TAdditionalProps = {
   setSiblingIdx: (value: number) => void;
 };
 
-export type TMessageContent = TInitialProps & TAdditionalProps;
+export type TMessageContentProps = TInitialProps & TAdditionalProps;
 
 export type TText = Pick<TInitialProps, 'text'>;
 export type TEditProps = Pick<TInitialProps, 'text' | 'isSubmitting'> &

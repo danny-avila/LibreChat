@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { TMessageContent } from './types/assistants';
+import type { TMessageContentParts } from './types/assistants';
 
 export const isUUID = z.string().uuid();
 
@@ -176,7 +176,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
   plugin?: TResPlugin | null;
   plugins?: TResPlugin[];
-  content?: TMessageContent[];
+  content?: TMessageContentParts[];
   files?: {
     file_id: string;
     type?: string;

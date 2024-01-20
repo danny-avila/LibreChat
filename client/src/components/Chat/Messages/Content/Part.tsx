@@ -1,5 +1,5 @@
 import { ToolCallTypes, ContentTypes, imageGenTools } from 'librechat-data-provider';
-import type { TMessageContent, TMessage } from 'librechat-data-provider';
+import type { TMessageContentParts, TMessage } from 'librechat-data-provider';
 import type { TDisplayProps } from '~/common';
 import CodeAnalyze from './CodeAnalyze';
 import ActionCall from './ActionCall';
@@ -34,7 +34,7 @@ export default function Part({
   showCursor,
   message,
 }: {
-  part: TMessageContent;
+  part: TMessageContentParts;
   showCursor: boolean;
   message: TMessage;
 }) {
