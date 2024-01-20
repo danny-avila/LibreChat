@@ -95,7 +95,7 @@ export default function SidePanel({
                 title: 'Assistant Builder',
                 label: '',
                 icon: Inbox,
-                id: 'inbox',
+                id: 'assistants',
                 Component: AssistantPanel,
               },
               {

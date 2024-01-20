@@ -15,6 +15,18 @@ export enum EModelEndpoint {
   custom = 'custom',
 }
 
+export const defaultAssistantFormValues = {
+  assistant: '',
+  id: '',
+  name: '',
+  description: '',
+  instructions: '',
+  model: 'gpt-3.5-turbo-1106',
+  functions: [],
+  code_interpreter: false,
+  retrieval: false,
+};
+
 export const endpointSettings = {
   [EModelEndpoint.google]: {
     model: {

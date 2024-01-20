@@ -1,8 +1,8 @@
 import { Plus } from 'lucide-react';
-
 import { useCallback, useEffect } from 'react';
+import { defaultAssistantFormValues } from 'librechat-data-provider';
 import type { Assistant } from 'librechat-data-provider';
-import type { UseFormReset, UseFormSetValue } from 'react-hook-form';
+import type { UseFormReset } from 'react-hook-form';
 import type { AssistantForm, Actions, Option } from '~/common';
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { useListAssistantsQuery } from '~/data-provider';
@@ -15,14 +15,10 @@ type TAssistantOption = string | (Option & Assistant);
 export default function AssistantSelect({
   reset,
   value,
-  onChange,
-  setValue,
   selectedAssistant,
 }: {
   reset: UseFormReset<AssistantForm>;
   value: TAssistantOption;
-  onChange: (value: TAssistantOption) => void;
-  setValue: UseFormSetValue<AssistantForm>;
   selectedAssistant: string | null;
 }) {
   const assistants = useListAssistantsQuery(
@@ -42,9 +38,9 @@ export default function AssistantSelect({
   const onSelect = useCallback(
     (value: string) => {
       const assistant = assistants.data?.find((assistant) => assistant.id === value);
+
       if (!assistant) {
-        reset();
-        return;
+        return reset(defaultAssistantFormValues);
       }
 
       const update = {
@@ -53,7 +49,6 @@ export default function AssistantSelect({
         value: assistant?.id ?? '',
       };
 
-      onChange(update);
       const actions: Actions = {
         code_interpreter: false,
         retrieval: false,
@@ -66,12 +61,16 @@ export default function AssistantSelect({
           actions[tool] = true;
         });
 
-      setValue(
-        'functions',
+      const functions =
         assistant?.tools
           ?.filter((tool) => tool.type === 'function')
-          ?.map((tool) => tool.function?.name ?? '') ?? [],
-      );
+          ?.map((tool) => tool.function?.name ?? '') ?? [];
+
+      const formValues: Partial<AssistantForm & Actions> = {
+        functions,
+        ...actions,
+        assistant: update,
+      };
 
       Object.entries(assistant).forEach(([name, value]) => {
         if (typeof value === 'number') {
@@ -80,19 +79,29 @@ export default function AssistantSelect({
           return;
         }
         if (keys.has(name)) {
-          setValue(name as keyof AssistantForm, value);
+          formValues[name] = value;
         }
       });
 
-      Object.entries(actions).forEach(([name, value]) => setValue(name as keyof Actions, value));
+      reset(formValues);
     },
-    [assistants.data, onChange, reset, setValue],
+    [assistants.data, reset],
   );
 
   useEffect(() => {
+    let timerId: NodeJS.Timeout | null = null;
+
     if (selectedAssistant && assistants.data) {
-      onSelect(selectedAssistant);
+      timerId = setTimeout(() => {
+        onSelect(selectedAssistant);
+      }, 5);
     }
+
+    return () => {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+    };
   }, [selectedAssistant, assistants.data, onSelect]);
 
   return (
@@ -112,13 +121,13 @@ export default function AssistantSelect({
       showLabel={false}
       emptyTitle={true}
       optionsClass="hover:bg-gray-20/50"
-      optionsListClass="rounded-lg shadow-lg"
+      optionsListClass="rounded-lg shadow-lg dark:bg-black"
       currentValueClass={cn(
         'text-md font-semibold text-gray-900 dark:text-white',
         value === '' ? 'text-gray-500' : '',
       )}
       className={cn(
-        'mt-1 rounded-md',
+        'mt-1 rounded-md dark:bg-black',
         'z-50 flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer hover:border-green-500 focus:border-green-500',
       )}
       renderOption={() => (

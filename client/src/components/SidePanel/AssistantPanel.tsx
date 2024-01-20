@@ -8,7 +8,7 @@ import { useAssistantsContext, useChatContext } from '~/Providers';
 import {
   useCreateAssistantMutation,
   useUpdateAssistantMutation,
-  useDeleteAssistantMutation,
+  // useDeleteAssistantMutation,
 } from '~/data-provider';
 import { ToolSelectDialog } from '~/components/Tools';
 import { Separator } from '~/components/ui/Separator';
@@ -22,13 +22,13 @@ export default function AssistantPanel({ index = 0 }) {
   const { conversation } = useChatContext();
   const { switchToConversation } = useNewConvo(index);
   const [showToolDialog, setShowToolDialog] = useState(false);
-  const { control, handleSubmit, reset, setValue } = useAssistantsContext();
+  const { control, handleSubmit, reset } = useAssistantsContext();
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
 
   /* Mutations */
   const create = useCreateAssistantMutation();
   const update = useUpdateAssistantMutation();
-  const deleteAssistant = useDeleteAssistantMutation();
+  // const deleteAssistant = useDeleteAssistantMutation();
 
   const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
   const inputClass =
@@ -108,8 +108,6 @@ export default function AssistantPanel({ index = 0 }) {
           <AssistantSelect
             reset={reset}
             value={field.value}
-            onChange={field.onChange}
-            setValue={setValue}
             selectedAssistant={conversation?.assistant_id ?? null}
           />
         )}
