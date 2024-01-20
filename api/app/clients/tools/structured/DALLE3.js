@@ -120,6 +120,7 @@ class DALLE3 extends Tool {
         n: 1,
       });
     } catch (error) {
+      logger.error('[DALL-E-3] Problem generating the image:', error);
       return `Something went wrong when trying to generate the image. The DALL-E API may be unavailable:
 Error Message: ${error.message}`;
     }

@@ -80,13 +80,21 @@ Guidelines:
   }
 
   async _call(input) {
-    const resp = await this.openai.images.generate({
-      prompt: this.replaceUnwantedChars(input),
-      // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
-      n: 1,
-      // size: '1024x1024'
-      size: '512x512',
-    });
+    let resp;
+
+    try {
+      resp = await this.openai.images.generate({
+        prompt: this.replaceUnwantedChars(input),
+        // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
+        n: 1,
+        // size: '1024x1024'
+        size: '512x512',
+      });
+    } catch (error) {
+      logger.error('[DALL-E] Problem generating the image:', error);
+      return `Something went wrong when trying to generate the image. The DALL-E API may be unavailable:
+Error Message: ${error.message}`;
+    }
 
     const theImageUrl = resp.data[0].url;
 
