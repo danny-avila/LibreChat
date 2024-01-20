@@ -1,7 +1,7 @@
 const path = require('path');
 const { promises: fs } = require('fs');
+const { CacheKeys } = require('librechat-data-provider');
 const { addOpenAPISpecs } = require('~/app/clients/tools/util/addOpenAPISpecs');
-const { CacheKeys } = require('~/common/enums');
 const { getLogStores } = require('~/cache');
 
 const filterUniquePlugins = (plugins) => {
@@ -29,7 +29,7 @@ const isPluginAuthenticated = (plugin) => {
 
 const getAvailablePluginsController = async (req, res) => {
   try {
-    const cache = getLogStores(CacheKeys.CONFIG);
+    const cache = getLogStores(CacheKeys.CONFIG_STORE);
     const cachedPlugins = await cache.get(CacheKeys.PLUGINS);
     if (cachedPlugins) {
       res.status(200).json(cachedPlugins);

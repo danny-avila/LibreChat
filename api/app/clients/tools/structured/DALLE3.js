@@ -1,12 +1,12 @@
 // From https://platform.openai.com/docs/guides/images/usage?context=node
 // To use this tool, you must pass in a configured OpenAIApi object.
-const fs = require('fs');
-const path = require('path');
 const { z } = require('zod');
 const OpenAI = require('openai');
+const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const saveImageFromUrl = require('../saveImageFromUrl');
+const { getImageBasename } = require('~/server/services/Files/images');
+const { processFileURL } = require('~/server/services/Files/process');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const { logger } = require('~/config');
 
@@ -15,6 +15,8 @@ class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
 
+    this.userId = fields.userId;
+    this.fileStrategy = fields.fileStrategy;
     let apiKey = fields.DALLE_API_KEY || this.getApiKey();
     const config = { apiKey };
     if (DALLE_REVERSE_PROXY) {
@@ -83,12 +85,8 @@ class DALLE3 extends Tool {
       .trim();
   }
 
-  getMarkdownImageUrl(imageName) {
-    const imageUrl = path
-      .join(this.relativeImageUrl, imageName)
-      .replace(/\\/g, '/')
-      .replace('public/', '');
-    return `![generated image](/${imageUrl})`;
+  wrapInMarkdown(imageUrl) {
+    return `![generated image](${imageUrl})`;
   }
 
   async _call(data) {
@@ -108,12 +106,12 @@ class DALLE3 extends Tool {
         n: 1,
       });
     } catch (error) {
-      return `Something went wrong when trying to generate the image. The DALL-E API may unavailable:
+      return `Something went wrong when trying to generate the image. The DALL-E API may be unavailable:
 Error Message: ${error.message}`;
     }
 
     if (!resp) {
-      return 'Something went wrong when trying to generate the image. The DALL-E API may unavailable';
+      return 'Something went wrong when trying to generate the image. The DALL-E API may be unavailable';
     }
 
     const theImageUrl = resp.data[0].url;
@@ -122,12 +120,11 @@ Error Message: ${error.message}`;
       return 'No image URL returned from OpenAI API. There may be a problem with the API or your configuration.';
     }
 
-    const regex = /img-[\w\d]+.png/;
-    const match = theImageUrl.match(regex);
-    let imageName = '1.png';
+    const imageBasename = getImageBasename(theImageUrl);
+    let imageName = `image_${uuidv4()}.png`;
 
-    if (match) {
-      imageName = match[0];
+    if (imageBasename) {
+      imageName = imageBasename;
       logger.debug('[DALL-E-3]', { imageName }); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
     } else {
       logger.debug('[DALL-E-3] No image name found in the string.', {
@@ -136,31 +133,19 @@ Error Message: ${error.message}`;
       });
     }
 
-    this.outputPath = path.resolve(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      '..',
-      '..',
-      'client',
-      'public',
-      'images',
-    );
-    const appRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client');
-    this.relativeImageUrl = path.relative(appRoot, this.outputPath);
-
-    // Check if directory exists, if not create it
-    if (!fs.existsSync(this.outputPath)) {
-      fs.mkdirSync(this.outputPath, { recursive: true });
-    }
-
     try {
-      await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
-      this.result = this.getMarkdownImageUrl(imageName);
+      const result = await processFileURL({
+        fileStrategy: this.fileStrategy,
+        userId: this.userId,
+        URL: theImageUrl,
+        fileName: imageName,
+        basePath: 'images',
+      });
+
+      this.result = this.wrapInMarkdown(result);
     } catch (error) {
       logger.error('Error while saving the image:', error);
-      this.result = theImageUrl;
+      this.result = `Failed to save the image locally. ${error.message}`;
     }
 
     return this.result;

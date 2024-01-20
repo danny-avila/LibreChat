@@ -18,7 +18,7 @@ export default function PopoverButtons({
   buttonClass,
   iconClass = '',
 }: {
-  endpoint: EModelEndpoint;
+  endpoint: EModelEndpoint | string;
   buttonClass?: string;
   iconClass?: string;
 }) {

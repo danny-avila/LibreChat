@@ -6,10 +6,11 @@ const {
   setHeaders,
   validateEndpoint,
   buildEndpointOption,
-} = require('../../middleware');
+  moderateText,
+} = require('~/server/middleware');
 
 const router = express.Router();
-
+router.use(moderateText);
 router.post('/abort', handleAbort());
 
 router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, res, next) => {

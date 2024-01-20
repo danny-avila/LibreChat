@@ -224,8 +224,16 @@ export const listAssistants = (
 
 /* Files */
 
-export const uploadImage = (data: FormData): Promise<f.FileUploadResponse> => {
+export const getFiles = (): Promise<f.TFile[]> => {
+  return request.get(endpoints.files());
+};
+
+export const uploadImage = (data: FormData): Promise<f.TFileUpload> => {
   return request.postMultiPart(endpoints.images(), data);
+};
+
+export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
+  return request.postMultiPart(endpoints.avatar(), data);
 };
 
 export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesResponse> =>

@@ -100,7 +100,6 @@ const ask = async ({
             parentMessageId: overrideParentMessageId || userMessageId,
             text: text,
             unfinished: true,
-            cancelled: false,
             error: false,
             isCreatedByUser: false,
             user,
@@ -156,7 +155,6 @@ const ask = async ({
       text: await handleText(response),
       sender: endpointOption?.chatGptLabel || 'ChatGPT',
       unfinished: false,
-      cancelled: false,
       error: false,
       isCreatedByUser: false,
     };
@@ -227,7 +225,6 @@ const ask = async ({
       conversationId,
       parentMessageId: overrideParentMessageId || userMessageId,
       unfinished: false,
-      cancelled: false,
       error: true,
       isCreatedByUser: false,
       text: `${getPartialMessage() ?? ''}\n\nError message: "${error.message}"`,

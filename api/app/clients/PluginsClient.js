@@ -112,7 +112,7 @@ class PluginsClient extends OpenAIClient {
         signal: this.abortController.signal,
         openAIApiKey: this.openAIApiKey,
         conversationId: this.conversationId,
-        debug: this.options?.debug,
+        fileStrategy: this.options.req.app.locals.fileStrategy,
         message,
       },
     });

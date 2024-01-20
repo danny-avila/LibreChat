@@ -21,6 +21,7 @@ export enum QueryKeys {
   likedConversations = 'likedConversations',
   publicConversatons = 'publicConversatons',
   endpointsConfigOverride = 'endpointsConfigOverride',
+  files = 'files',
 }
 
 export enum MutationKeys {
@@ -29,4 +30,5 @@ export enum MutationKeys {
   updatePreset = 'updatePreset',
   deletePreset = 'deletePreset',
   logoutUser = 'logoutUser',
+  avatarUpload = 'avatarUpload',
 }

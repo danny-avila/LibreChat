@@ -62,8 +62,8 @@ export default {
   com_ui_prompt_templates: 'Modèles de prompt',
   com_ui_hide_prompt_templates: 'Masquer les modèles de prompt',
   com_ui_showing: 'Affichage',
-  com_ui_of: 'de',
-  com_ui_entries: 'Entrées',
+  com_ui_of: 'des',
+  com_ui_entries: 'entrées',
   com_ui_pay_per_call:
     'Toutes les conversations AI en un seul endroit. Payez par appel et non par mois',
   com_ui_writing_assistant: 'Assistant de rédaction',
@@ -72,12 +72,16 @@ export default {
   com_ui_referrals_leaderboard: 'Classement des références',
   com_ui_copied_success: 'Copié',
   com_ui_copy_invitation_link: 'Copier le lien d\'invitation',
+  com_ui_new_footer: 'Toutes les conversations IA au même endroit.',
   com_ui_enter: 'Entrer',
   com_ui_submit: 'Soumettre',
-  com_ui_upload_success: 'Fichier téléchargé avec succès',
-  com_ui_upload_invalid: 'Fichier invalide pour le téléchargement',
+  com_ui_upload_success: 'Fichier téléversé avec succès',
+  com_ui_upload_error: 'Une erreur s\'est produite lors du téléversement de votre fichier',
+  com_ui_upload_invalid:
+    'Fichier invalide pour le téléversement. Doit être une image ne dépassant pas 2 Mo',
   com_ui_cancel: 'Annuler',
   com_ui_save: 'Sauvegarder',
+  com_ui_save_submit: 'Enregistrer & Soumettre',
   com_ui_copy_to_clipboard: 'Copier dans le presse-papier',
   com_ui_copied_to_clipboard: 'Copié dans le presse-papier',
   com_ui_regenerate: 'Régénérer',
@@ -94,6 +98,9 @@ export default {
   com_ui_delete: 'Supprimer',
   com_ui_delete_conversation: 'Supprimer la discussions?',
   com_ui_delete_conversation_confirm: 'Cela supprimera',
+  com_ui_preview: 'Aperçu',
+  com_ui_upload: 'Téléverser',
+  com_ui_connect: 'Connecter',
   com_auth_error_login:
     'Impossible de se connecter avec les informations fournies. Veuillez vérifier vos identifiants et réessayer.',
   com_auth_error_login_rl:
@@ -102,7 +109,7 @@ export default {
     'Votre compte a été temporairement banni en raison de violations de notre service.',
   com_auth_error_login_server:
     'Une erreur interne du serveur s\'est produite. Veuillez patienter quelques instants et réessayer.',
-  com_auth_no_account: 'Vous n\'avez pas de compte ?',
+  com_auth_no_account: 'Vous n\'avez pas de compte?',
   com_auth_sign_up: 'S\'inscrire',
   com_auth_sign_in: 'Se connecter',
   com_auth_google_login: 'Se connecter avec Google',
@@ -120,7 +127,7 @@ export default {
   com_auth_password_required: 'Le mot de passe est obligatoire',
   com_auth_password_min_length: 'Le mot de passe doit comporter au moins 8 caractères',
   com_auth_password_max_length: 'Le mot de passe doit être inférieur à 128 caractères',
-  com_auth_password_forgot: 'Mot de passe oublié ?',
+  com_auth_password_forgot: 'Mot de passe oublié?',
   com_auth_password_confirm: 'Confirmer le mot de passe',
   com_auth_password_not_match: 'Les mots de passe ne correspondent pas',
   com_auth_continue: 'Continuer',
@@ -162,8 +169,10 @@ export default {
   com_endpoint_bing_context_placeholder:
     'Bing peut utiliser jusqu\'à 7k jetons pour le "contexte", qu\'il peut référencer pour la conversation. La limite spécifique n\'est pas connue mais peut entraîner des erreurs dépassant les 7k jetons',
   com_endpoint_bing_system_message_placeholder:
-    'AVERTISSEMENT : L\'abus de cette fonctionnalité peut vous faire BANNIR de l\'utilisation de Bing ! Cliquez sur "Message système" pour obtenir les instructions complètes et le message par défaut si omis, qui est le préréglage "Sydney" qui est considéré comme sûr.',
+    'AVERTISSEMENT : L\'abus de cette fonctionnalité peut vous faire BANNIR de l\'utilisation de Bing! Cliquez sur "Message système" pour obtenir les instructions complètes et le message par défaut si omis, qui est le préréglage "Sydney" qui est considéré comme sûr.',
   com_endpoint_system_message: 'Message système',
+  com_endpoint_message: 'Message',
+  com_endpoint_message_not_appendable: 'Editer votre message ou regénerer.',
   com_endpoint_default_blank: 'par défaut : vide',
   com_endpoint_default_false: 'par défaut : faux',
   com_endpoint_default_creative: 'par défaut : créatif',
@@ -224,8 +233,25 @@ export default {
   com_endpoint_import: 'Importer',
   com_endpoint_set_custom_name:
     'Définir un nom personnalisé, au cas où vous trouveriez ce préréglage',
+  com_endpoint_preset_delete_confirm: 'Êtes-vous sûr de vouloir supprimer ce préréglage?',
+  com_endpoint_preset_clear_all_confirm: 'Êtes-vous sûr de vouloir supprimer tous vos préréglages?',
+  com_endpoint_preset_import: 'Préréglage importé!',
+  com_endpoint_preset_import_error:
+    'Il y a eu une erreur lors de l\'importation de votre préréglage. Veuillez réessayer.',
+  com_endpoint_preset_save_error:
+    'Il y a eu une erreur lors de la sauvegarde de votre préréglage. Veuillez réessayer.',
+  com_endpoint_preset_delete_error:
+    'Il y a eu une erreur lors de la suppression de votre préréglage. Veuillez réessayer.',
+  com_endpoint_preset_default_removed: 'n\'est plus le préréglage par défaut.',
+  com_endpoint_preset_default_item: 'Par défaut :',
+  com_endpoint_preset_default_none: 'Aucun préréglage par défaut actif.',
+  com_endpoint_preset_title: 'Préréglage',
+  com_endpoint_preset_saved: 'Enregistré!',
+  com_endpoint_preset_default: 'est maintenant le préréglage par défaut.',
   com_endpoint_preset: 'préréglage',
   com_endpoint_presets: 'préréglages',
+  com_endpoint_preset_selected: 'Préréglage actif!',
+  com_endpoint_preset_selected_title: 'Actif!',
   com_endpoint_preset_name: 'Nom du préréglage',
   com_endpoint_new_topic: 'Nouveau sujet',
   com_endpoint: 'Endpoint',
@@ -241,7 +267,7 @@ export default {
   com_endpoint_export: 'Exporter',
   com_endpoint_save_as_preset: 'Enregistrer comme préréglage',
   com_endpoint_presets_clear_warning:
-    'Etes-vous sûr de vouloir effacer tous les préréglages ? Cette action est irréversible.',
+    'Etes-vous sûr de vouloir effacer tous les préréglages? Cette action est irréversible.',
   com_endpoint_not_implemented: 'Non implémenté',
   com_endpoint_confirm: 'Confirmer',
   com_endpoint_edit_preset: 'Modifier le préréglage',
@@ -258,12 +284,20 @@ export default {
   com_endpoint_skip_hover:
     'Activer le saut de l\'étape de complétion, qui examine la réponse finale et les étapes générées',
   com_endpoint_config_key: 'Définir la clé API',
+  com_endpoint_config_placeholder: 'Définissez votre clé dans le menu En-tête pour discuter.',
   com_endpoint_config_key_for: 'Définir la clé API pour',
   com_endpoint_config_key_name: 'Clé',
   com_endpoint_config_value: 'Entrez la valeur pour',
   com_endpoint_config_key_name_placeholder: 'Définir d\'abord la clé API',
   com_endpoint_config_key_encryption: 'Votre clé sera cryptée et supprimée à',
-  com_endpoint_config_key_expiry: 'l\'heure d\'expiration',
+  com_endpoint_config_key_expiry: 'le délai d\'expiration',
+  com_endpoint_config_click_here: 'Cliquez ici',
+  com_endpoint_config_google_service_key: 'Clé de compte de service Google',
+  com_endpoint_config_google_cloud_platform: '(de Google Cloud Platform)',
+  com_endpoint_config_google_api_key: 'Clé API Google',
+  com_endpoint_config_google_gemini_api: '(API Gemini)',
+  com_endpoint_config_google_api_info:
+    'Pour obtenir votre clé API de langage génératif (pour Gemini),',
   com_endpoint_config_key_import_json_key: 'Importez la clé JSON du compte de service.',
   com_endpoint_config_key_import_json_key_success:
     'Clé JSON du compte de service importé avec succès',
@@ -285,7 +319,10 @@ export default {
   com_endpoint_config_key_google_service_account: 'Créer un compte de service',
   com_endpoint_config_key_google_vertex_api_role:
     'Assurez-vous de cliquer \'Créer et continuer\' pour donner au moins le role \'Utilisateur de Vertex AI\'. Finalement, créez une clé JSON à importer ici.',
+  com_nav_welcome_message: 'Comment puis-je vous aider aujourd\'hui?',
   com_nav_auto_scroll: 'Défilement automatique jusqu\'au plus récent à l\'ouverture',
+  com_nav_profile_picture: 'Photo de profil',
+  com_nav_change_picture: 'Changer de photo',
   com_nav_plugin_store: 'Boutique de plugins',
   com_nav_plugin_search: 'Rechercher des plugins',
   com_nav_plugin_auth_error:
@@ -371,4 +408,5 @@ export default {
   com_error_unknown:
     'Oups! Quelque chose s\'est mal passé. Veuillez réessayer dans quelques instants. Voici le message d\'erreur spécifique que nous avons rencontré : {0}',
   com_nav_setting_data: 'Contrôles des données',
+  com_nav_setting_account: 'Compte',
 };

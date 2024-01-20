@@ -1,6 +1,11 @@
-import type { TConversation, TPreset, TEndpointsConfig } from 'librechat-data-provider';
+import type {
+  TConversation,
+  TPreset,
+  TEndpointsConfig,
+  EModelEndpoint,
+} from 'librechat-data-provider';
 import getLocalStorageItems from './getLocalStorageItems';
-import mapEndpoints from './mapEndpoints';
+import { mapEndpoints } from './endpoints';
 
 type TConvoSetup = Partial<TPreset> | Partial<TConversation>;
 
@@ -8,7 +13,7 @@ type TDefaultEndpoint = { convoSetup: TConvoSetup; endpointsConfig: TEndpointsCo
 
 const getEndpointFromSetup = (convoSetup: TConvoSetup, endpointsConfig: TEndpointsConfig) => {
   const { endpoint: targetEndpoint } = convoSetup || {};
-  if (targetEndpoint && endpointsConfig?.[targetEndpoint]) {
+  if (targetEndpoint && endpointsConfig?.[targetEndpoint ?? '']) {
     return targetEndpoint;
   } else if (targetEndpoint) {
     console.warn(`Illegal target endpoint ${targetEndpoint} ${endpointsConfig}`);
@@ -30,7 +35,7 @@ const getEndpointFromLocalStorage = (endpointsConfig: TEndpointsConfig) => {
       return endpoint;
     }
 
-    return endpoint && endpointsConfig[endpoint] ? endpoint : null;
+    return endpoint && endpointsConfig?.[endpoint ?? ''] ? endpoint : null;
   } catch (error) {
     console.error(error);
     return null;
@@ -42,7 +47,7 @@ const getDefinedEndpoint = (endpointsConfig: TEndpointsConfig) => {
   return endpoints.find((e) => Object.hasOwn(endpointsConfig ?? {}, e));
 };
 
-const getDefaultEndpoint = ({ convoSetup, endpointsConfig }: TDefaultEndpoint) => {
+const getDefaultEndpoint = ({ convoSetup, endpointsConfig }: TDefaultEndpoint): EModelEndpoint => {
   return (
     getEndpointFromSetup(convoSetup, endpointsConfig) ||
     getEndpointFromLocalStorage(endpointsConfig) ||

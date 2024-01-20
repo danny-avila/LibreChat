@@ -1,12 +1,15 @@
-import { useEffect, useRef } from 'react';
 import copy from 'copy-to-clipboard';
+import { useEffect, useRef } from 'react';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import Icon from '~/components/Endpoints/Icon';
 import { useChatContext } from '~/Providers';
+import { getEndpointField } from '~/utils';
 
 export default function useMessageHelpers(props: TMessageProps) {
   const latestText = useRef('');
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const { message, currentEditId, setCurrentEditId } = props;
 
   const {
@@ -51,6 +54,7 @@ export default function useMessageHelpers(props: TMessageProps) {
   const icon = Icon({
     ...conversation,
     ...(message as TMessage),
+    iconURL: getEndpointField(endpointsConfig, conversation?.endpoint, 'iconURL'),
     model: message?.model ?? conversation?.model,
     size: 28.8,
   });

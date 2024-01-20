@@ -1,9 +1,9 @@
 import * as Tabs from '@radix-ui/react-tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
-import { GearIcon, DataIcon } from '~/components/svg';
-import { useMediaQuery, useLocalize } from '~/hooks';
 import type { TDialogProps } from '~/common';
-import { General, Data } from './SettingsTabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
+import { GearIcon, DataIcon, UserIcon } from '~/components/svg';
+import { General, Data, Account } from './SettingsTabs';
+import { useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
@@ -13,7 +13,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:h-[373px] md:w-[680px]')}
+        className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:min-h-[373px] md:w-[680px]')}
         style={{ borderRadius: '12px' }}
       >
         <DialogHeader>
@@ -39,7 +39,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
             >
               <Tabs.Trigger
                 className={cn(
-                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-gray-500 radix-state-active:bg-gray-800 radix-state-active:text-white',
+                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-gray-100 radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : '',
@@ -51,7 +51,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 className={cn(
-                  'group flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-gray-500 radix-state-active:bg-gray-800 radix-state-active:text-white',
+                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-gray-100 radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : '',
@@ -61,9 +61,22 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                 <DataIcon />
                 {localize('com_nav_setting_data')}
               </Tabs.Trigger>
+              <Tabs.Trigger
+                className={cn(
+                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-gray-100 radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
+                  isSmallScreen
+                    ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
+                    : '',
+                )}
+                value="account"
+              >
+                <UserIcon />
+                {localize('com_nav_setting_account')}
+              </Tabs.Trigger>
             </Tabs.List>
             <General />
             <Data />
+            <Account />
           </Tabs.Root>
         </div>
       </DialogContent>

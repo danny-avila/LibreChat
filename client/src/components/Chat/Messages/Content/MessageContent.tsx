@@ -30,12 +30,12 @@ const ErrorMessage = ({ text }: TText) => {
 // Display Message Component
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
   const imageFiles = message?.files
-    ? message.files.filter((file) => file.type.startsWith('image/'))
+    ? message.files.filter((file) => file.type && file.type.startsWith('image/'))
     : null;
   return (
     <Container>
       {imageFiles &&
-        imageFiles.map((file, i) => (
+        imageFiles.map((file) => (
           <Image
             key={file.file_id}
             imagePath={file.preview ?? file.filepath ?? ''}
@@ -64,7 +64,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 
 // Unfinished Message Component
 const UnfinishedMessage = () => (
-  <ErrorMessage text="This is an unfinished message. The AI may still be generating a response, it was aborted, or a censor was triggered. Refresh or visit later to see more updates." />
+  <ErrorMessage text="The response is incomplete; it's either still processing, was cancelled, or censored. Refresh or try a different prompt." />
 );
 
 // Content Component

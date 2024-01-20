@@ -11,6 +11,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     text,
     endpointOption,
     conversationId,
+    modelDisplayLabel,
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
@@ -24,7 +25,11 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   let responseMessageId;
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
-  const sender = getResponseSender({ ...endpointOption, model: endpointOption.modelOptions.model });
+  const sender = getResponseSender({
+    ...endpointOption,
+    model: endpointOption.modelOptions.model,
+    modelDisplayLabel,
+  });
   const newConvo = !conversationId;
   const user = req.user.id;
 
@@ -64,7 +69,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
             text: partialText,
             model: endpointOption.modelOptions.model,
             unfinished: true,
-            cancelled: false,
             error: false,
             user,
             senderId: req.user.id,
@@ -153,21 +157,26 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       response = { ...response, ...metadata };
     }
 
+    response.endpoint = endpointOption.endpoint;
+
     if (client.options.attachments) {
       userMessage.files = client.options.attachments;
       delete userMessage.image_urls;
     }
 
-    sendMessage(res, {
-      title: await getConvoTitle(user, conversationId),
-      final: true,
-      conversation: await getConvo(user, conversationId),
-      requestMessage: userMessage,
-      responseMessage: response,
-    });
-    res.end();
+    if (!abortController.signal.aborted) {
+      sendMessage(res, {
+        title: await getConvoTitle(user, conversationId),
+        final: true,
+        conversation: await getConvo(user, conversationId),
+        requestMessage: userMessage,
+        responseMessage: response,
+      });
+      res.end();
 
-    await saveMessage({ ...response, user });
+      await saveMessage({ ...response, user });
+    }
+
     await saveMessage(userMessage);
 
     if (addTitle && parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {

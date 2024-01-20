@@ -3,6 +3,7 @@ import { BookCopy } from 'lucide-react';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { EditPresetDialog, PresetItems } from './Presets';
 import { useLocalize, usePresets } from '~/hooks';
+import { useChatContext } from '~/Providers';
 import { cn } from '~/utils';
 
 const PresetsMenu: FC = () => {
@@ -18,6 +19,7 @@ const PresetsMenu: FC = () => {
     submitPreset,
     exportPreset,
   } = usePresets();
+  const { preset } = useChatContext();
 
   const presets = presetsQuery.data || [];
   return (
@@ -27,7 +29,7 @@ const PresetsMenu: FC = () => {
           className={cn(
             'pointer-cursor relative flex flex-col rounded-md border border-black/10 bg-white text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
             'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20',
-            'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
+            'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
           )}
           id="presets-button"
           data-testid="presets-button"
@@ -64,7 +66,7 @@ const PresetsMenu: FC = () => {
           </Content>
         </div>
       </Portal>
-      <EditPresetDialog submitPreset={submitPreset} exportPreset={exportPreset} />
+      {preset && <EditPresetDialog submitPreset={submitPreset} exportPreset={exportPreset} />}
     </Root>
   );
 };

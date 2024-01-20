@@ -1,7 +1,8 @@
 import { useRecoilState } from 'recoil';
 import { Settings2 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { tPresetSchema, EModelEndpoint } from 'librechat-data-provider';
+import { tPresetUpdateSchema, EModelEndpoint } from 'librechat-data-provider';
+import type { TPreset } from 'librechat-data-provider';
 import { PluginStoreDialog } from '~/components';
 import {
   EndpointSettings,
@@ -24,14 +25,8 @@ export default function OptionsBar({ messagesTree }) {
     store.showPluginStoreDialog,
   );
 
-  const {
-    showPopover,
-    conversation,
-    latestMessage,
-    setShowPopover,
-    setShowBingToneSetting,
-    textareaHeight,
-  } = useChatContext();
+  const { showPopover, conversation, latestMessage, setShowPopover, setShowBingToneSetting } =
+    useChatContext();
   const { setOption } = useSetIndexOptions();
 
   const { endpoint, conversationId, jailbreak } = conversation ?? {};
@@ -81,14 +76,7 @@ export default function OptionsBar({ messagesTree }) {
     ? altSettings[endpoint]
     : () => setShowPopover((prev) => !prev);
   return (
-    <div
-      className="absolute left-0 right-0 mx-auto mb-2 last:mb-2 md:mx-4 md:last:mb-6 lg:mx-auto lg:max-w-2xl xl:max-w-3xl"
-      style={{
-        // TODO: option to hide footer and handle this
-        // bottom: `${80 + (textareaHeight - 56)}px`, // without footer
-        bottom: `${85 + (textareaHeight - 56)}px`, // with footer
-      }}
-    >
+    <div className="absolute left-0 right-0 mx-auto mb-2 last:mb-2 md:mx-4 md:last:mb-6 lg:mx-auto lg:max-w-2xl xl:max-w-3xl">
       <GenerationButtons
         endpoint={endpoint}
         showPopover={showPopover}
@@ -139,7 +127,7 @@ export default function OptionsBar({ messagesTree }) {
               type="button"
               className={cn(
                 cardStyle,
-                'min-w-4 z-50 flex h-[40px] flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
+                'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
               )}
               onClick={triggerAdvancedMode}
             >
@@ -151,7 +139,7 @@ export default function OptionsBar({ messagesTree }) {
           visible={showPopover}
           saveAsPreset={saveAsPreset}
           closePopover={() => setShowPopover(false)}
-          PopoverButtons={<PopoverButtons endpoint={endpoint} />}
+          PopoverButtons={<PopoverButtons />}
         >
           <div className="px-4 py-4">
             <EndpointSettings
@@ -164,7 +152,11 @@ export default function OptionsBar({ messagesTree }) {
         <SaveAsPresetDialog
           open={saveAsDialogShow}
           onOpenChange={setSaveAsDialogShow}
-          preset={tPresetSchema.parse({ ...conversation })}
+          preset={
+            tPresetUpdateSchema.parse({
+              ...conversation,
+            }) as TPreset
+          }
         />
         <PluginStoreDialog isOpen={showPluginStoreDialog} setIsOpen={setShowPluginStoreDialog} />
       </span>

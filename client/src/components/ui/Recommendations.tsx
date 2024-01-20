@@ -4,7 +4,8 @@ import { cn } from '~/utils';
 import { CSSTransition } from 'react-transition-group';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import MultiMessage from '../Messages/MultiMessage';
-import buildTree from '~/utils/buildTree';
+import { useGetFiles } from '~/data-provider';
+import { buildTree, mapFiles } from '~/utils';
 import { useScreenshot } from '~/hooks/';
 import { TConversation, TMessage, TUser } from 'librechat-data-provider';
 import { useLikeConversationMutation } from 'librechat-data-provider/react-query';
@@ -44,6 +45,9 @@ export default function Recommendations() {
   const title = localize('com_ui_recommendation');
   const navigate = useNavigate();
 
+  const { data: fileMap } = useGetFiles({
+    select: mapFiles,
+  });
   // createdDate
   const [ConvoCreatedDate, setConvoCreatedDate] = useState<string>('time');
   // Data provider
@@ -229,7 +233,7 @@ export default function Recommendations() {
       saveCache();
       saveIdx();
 
-      setMsgTree(buildTree(messagesResponseObject) || null);
+      setMsgTree(buildTree({ messages: messagesResponseObject, fileMap }) || null);
       setConvoUser(userResponseObject);
     } catch (error) {
       console.log(error);
@@ -311,7 +315,7 @@ export default function Recommendations() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          //   Authorization: `Bearer ${token}`,
         },
       });
       const responseObject = await response.json();

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type {
-  FileUploadResponse,
+  TFileUpload,
   UploadMutationOptions,
   FileUploadBody,
   DeleteFilesResponse,
@@ -12,6 +12,8 @@ import type {
   PresetDeleteResponse,
   LogoutOptions,
   TPreset,
+  UploadAvatarOptions,
+  AvatarUploadResponse,
 } from 'librechat-data-provider';
 
 import { dataService, MutationKeys } from 'librechat-data-provider';
@@ -21,7 +23,7 @@ import store from '~/store';
 export const useUploadImageMutation = (
   options?: UploadMutationOptions,
 ): UseMutationResult<
-  FileUploadResponse, // response data
+  TFileUpload, // response data
   unknown, // error
   FileUploadBody, // request
   unknown // context
@@ -97,5 +99,20 @@ export const useLogoutUserMutation = (
       localStorage.removeItem('lastAssistant');
       options?.onMutate?.(...args);
     },
+  });
+};
+
+/* Avatar upload */
+export const useUploadAvatarMutation = (
+  options?: UploadAvatarOptions,
+): UseMutationResult<
+  AvatarUploadResponse, // response data
+  unknown, // error
+  FormData, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.avatarUpload], {
+    mutationFn: (variables: FormData) => dataService.uploadAvatar(variables),
+    ...(options || {}),
   });
 };

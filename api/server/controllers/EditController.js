@@ -10,6 +10,7 @@ const EditController = async (req, res, next, initializeClient) => {
     generation,
     endpointOption,
     conversationId,
+    modelDisplayLabel,
     responseMessageId,
     isContinued = false,
     parentMessageId = null,
@@ -29,7 +30,11 @@ const EditController = async (req, res, next, initializeClient) => {
   let promptTokens;
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
-  const sender = getResponseSender({ ...endpointOption, model: endpointOption.modelOptions.model });
+  const sender = getResponseSender({
+    ...endpointOption,
+    model: endpointOption.modelOptions.model,
+    modelDisplayLabel,
+  });
   const userMessageId = parentMessageId;
   const user = req.user.id;
 
@@ -61,7 +66,6 @@ const EditController = async (req, res, next, initializeClient) => {
           text: partialText,
           model: endpointOption.modelOptions.model,
           unfinished: true,
-          cancelled: false,
           isEdited: true,
           error: false,
           user,
@@ -113,16 +117,18 @@ const EditController = async (req, res, next, initializeClient) => {
       response = { ...response, ...metadata };
     }
 
-    await saveMessage({ ...response, user });
+    if (!abortController.signal.aborted) {
+      sendMessage(res, {
+        title: await getConvoTitle(user, conversationId),
+        final: true,
+        conversation: await getConvo(user, conversationId),
+        requestMessage: userMessage,
+        responseMessage: response,
+      });
+      res.end();
 
-    sendMessage(res, {
-      title: await getConvoTitle(user, conversationId),
-      final: true,
-      conversation: await getConvo(user, conversationId),
-      requestMessage: userMessage,
-      responseMessage: response,
-    });
-    res.end();
+      await saveMessage({ ...response, user });
+    }
   } catch (error) {
     const partialText = getPartialText();
     handleAbortError(res, req, error, {

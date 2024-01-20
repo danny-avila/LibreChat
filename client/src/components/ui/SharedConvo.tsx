@@ -4,7 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { CSSTransition } from 'react-transition-group';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthContext } from '~/hooks/AuthContext';
-import buildTree from '~/utils/buildTree';
+import { useGetFiles } from '~/data-provider';
+import { buildTree, mapFiles } from '~/utils';
 import { Spinner } from '../svg';
 import MultiMessage from '../Messages/MultiMessage';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
@@ -34,7 +35,9 @@ export default function SharedConvo() {
   const { conversationId } = useParams();
   const likeConversationMutation = useLikeConversationMutation(conversationId || '');
   const navigate = useNavigate();
-
+  const { data: fileMap } = useGetFiles({
+    select: mapFiles,
+  });
   const [viewCount, setViewCount] = useState<number>(0);
 
   const plugins = (
@@ -181,7 +184,7 @@ export default function SharedConvo() {
         },
       });
       const responseObject = await response.json();
-      setMsgTree(buildTree(responseObject));
+      setMsgTree(buildTree({ messages: responseObject, fileMap }));
     } catch (error) {
       console.log(error);
     }

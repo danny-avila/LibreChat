@@ -125,7 +125,6 @@ const ask = async ({
           model,
           text: text,
           unfinished: true,
-          cancelled: false,
           error: false,
           isCreatedByUser: false,
           user,
@@ -193,7 +192,6 @@ const ask = async ({
         response.details.suggestedResponses &&
         response.details.suggestedResponses.map((s) => s.text),
       unfinished,
-      cancelled: false,
       error: false,
       isCreatedByUser: false,
     };
@@ -263,7 +261,6 @@ const ask = async ({
         text: partialText,
         model,
         unfinished: true,
-        cancelled: false,
         error: false,
         isCreatedByUser: false,
       };
@@ -285,7 +282,6 @@ const ask = async ({
         conversationId,
         parentMessageId: overrideParentMessageId || userMessageId,
         unfinished: false,
-        cancelled: false,
         error: true,
         text: error.message,
         model,

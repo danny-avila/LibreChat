@@ -19,7 +19,8 @@ const EditMessage = ({
 
   const textEditor = useRef<HTMLDivElement | null>(null);
   const { conversationId, parentMessageId, messageId } = message;
-  const { endpoint } = conversation ?? { endpoint: null };
+  const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
+  const endpoint = endpointType ?? _endpoint;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
@@ -101,7 +102,7 @@ const EditMessage = ({
           }
           onClick={resubmitMessage}
         >
-          {localize('com_ui_save')} {'&'} {localize('com_ui_submit')}
+          {localize('com_ui_save_submit')}
         </button>
         <button
           className="btn btn-secondary relative mr-2"
