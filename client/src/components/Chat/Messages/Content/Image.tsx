@@ -49,6 +49,7 @@ const Image = ({
                 // loading="lazy"
                 alt={altText}
                 onLoad={handleImageLoad}
+                visibleByDefault={true}
                 className={cn(
                   'max-h-[900px] max-w-full opacity-100 transition-opacity duration-300',
                   // n >= 3 && i < 2 ? 'aspect-square object-cover' : '',
