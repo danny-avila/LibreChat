@@ -20,7 +20,10 @@ const {
 } = require('./Local');
 const { uploadOpenAIFile, deleteOpenAIFile } = require('./OpenAI');
 
-// Firebase Strategy Functions
+/**
+ * Firebase Storage Strategy Functions
+ *
+ * */
 const firebaseStrategy = () => ({
   // saveFile:
   saveURL: saveURLToFirebase,
@@ -32,7 +35,10 @@ const firebaseStrategy = () => ({
   handleImageUpload: uploadImageToFirebase,
 });
 
-// Local Strategy Functions
+/**
+ * Local Server Storage Strategy Functions
+ *
+ * */
 const localStrategy = () => ({
   // saveFile: saveLocalFile,
   saveURL: saveFileFromURL,
@@ -44,13 +50,23 @@ const localStrategy = () => ({
   prepareImagePayload: prepareImagesLocal,
 });
 
-// OpenAI Strategy Functions
+/**
+ * OpenAI Strategy Functions
+ *
+ * Note: null values mean that the strategy is not supported.
+ * */
 const openAIStrategy = () => ({
+  /** @type {typeof saveFileFromURL | null} */
   saveURL: null,
+  /** @type {typeof getLocalFileURL | null} */
   getFileURL: null,
+  /** @type {typeof saveLocalBuffer | null} */
   saveBuffer: null,
+  /** @type {typeof processLocalAvatar | null} */
   processAvatar: null,
+  /** @type {typeof uploadLocalImage | null} */
   handleImageUpload: null,
+  /** @type {typeof prepareImagesLocal | null} */
   prepareImagePayload: null,
   deleteFile: deleteOpenAIFile,
   handleFileUpload: uploadOpenAIFile,
