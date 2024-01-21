@@ -149,18 +149,14 @@ const processImageFile = async ({ req, res, file, metadata }) => {
  * @param {Object} params - The parameters object.
  * @param {Express.Request} params.req - The Express request object.
  * @param {Express.Multer.File} params.file - The uploaded file.
- * @param {ImageMetadata} params.metadata - Additional metadata for the file.
- * @returns {Promise<void>}
+ * @returns {Promise<MongoFile>}
  */
-const uploadImage = async ({ req, file, metadata }) => {
+const uploadImage = async ({ req, file }) => {
   const source = req.app.locals.fileStrategy;
   const { handleImageUpload } = getStrategyFunctions(source);
-  const { file_id, temp_file_id } = metadata;
   const { filepath, bytes, width, height } = await handleImageUpload(req, file);
   return {
     user: req.user.id,
-    file_id,
-    temp_file_id,
     bytes,
     filepath,
     filename: file.originalname,
