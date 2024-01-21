@@ -71,4 +71,4 @@ async function uploadAvatar({ userId, fileStrategy, input, manual }) {
   }
 }
 
-module.exports = uploadAvatar;
+module.exports = { uploadAvatar };

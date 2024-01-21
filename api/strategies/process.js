@@ -1,5 +1,5 @@
 const { FileSources } = require('librechat-data-provider');
-const uploadAvatar = require('~/server/services/Files/images/avatar');
+const { uploadAvatar } = require('~/server/services/Files/images/avatar');
 const User = require('~/models/User');
 
 /**
