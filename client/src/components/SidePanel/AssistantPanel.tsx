@@ -13,6 +13,7 @@ import {
 import { ToolSelectDialog } from '~/components/Tools';
 import { Separator } from '~/components/ui/Separator';
 import { Switch } from '~/components/ui/Switch';
+import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
 import AssistantTool from './AssistantTool';
 import { useNewConvo } from '~/hooks';
@@ -113,8 +114,9 @@ export default function AssistantPanel({ index = 0 }) {
         )}
       />
       <div className="h-auto bg-white px-4 pb-8 pt-3 dark:bg-transparent">
-        {/* Name */}
+        {/* Avatar & Name */}
         <div className="mb-4">
+          <AssistantAvatar assistant_id={assistant_id} />
           <label className={labelClass} htmlFor="name">
             Name
           </label>

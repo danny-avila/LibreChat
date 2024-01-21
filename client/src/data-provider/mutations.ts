@@ -281,3 +281,20 @@ export const useDeleteAssistantMutation = (): UseMutationResult<
     },
   );
 };
+
+/**
+ * Hook for uploading an assistant avatar
+ */
+export const useUploadAssistantAvatarMutation = (
+  options?: UploadAvatarOptions,
+): UseMutationResult<
+  AvatarUploadResponse, // response data
+  unknown, // error
+  FormData, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.assistantAvatarUpload], {
+    mutationFn: (variables: FormData) => dataService.uploadAssistantAvatar(variables),
+    ...(options || {}),
+  });
+};
