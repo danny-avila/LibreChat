@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { resizeImageBuffer } = require('../images/resize');
+const { updateUser } = require('~/models/userMethods');
 const { updateFile } = require('~/models/File');
 
 /**
@@ -97,17 +98,17 @@ async function prepareImagesLocal(req, file) {
 }
 
 /**
- * Uploads a user's avatar to Firebase Storage and returns the URL.
+ * Uploads a user's avatar to local server storage and returns the URL.
  * If the 'manual' flag is set to 'true', it also updates the user's avatar URL in the database.
  *
  * @param {object} params - The parameters object.
  * @param {Buffer} params.buffer - The Buffer containing the avatar image in WebP format.
- * @param {object} params.User - The User document (mongoose); TODO: remove direct use of Model, `User`
+ * @param {string} params.userId - The user ID.
  * @param {string} params.manual - A string flag indicating whether the update is manual ('true' or 'false').
  * @returns {Promise<string>} - A promise that resolves with the URL of the uploaded avatar.
  * @throws {Error} - Throws an error if Firebase is not initialized or if there is an error in uploading.
  */
-async function processLocalAvatar({ buffer, User, manual }) {
+async function processLocalAvatar({ buffer, userId, manual }) {
   const userDir = path.resolve(
     __dirname,
     '..',
@@ -118,10 +119,11 @@ async function processLocalAvatar({ buffer, User, manual }) {
     'client',
     'public',
     'images',
-    User._id.toString(),
+    userId,
   );
+
   const fileName = `avatar-${new Date().getTime()}.png`;
-  const urlRoute = `/images/${User._id.toString()}/${fileName}`;
+  const urlRoute = `/images/${userId}/${fileName}`;
   const avatarPath = path.join(userDir, fileName);
 
   await fs.promises.mkdir(userDir, { recursive: true });
@@ -131,8 +133,7 @@ async function processLocalAvatar({ buffer, User, manual }) {
   let url = `${urlRoute}?manual=${isManual}`;
 
   if (isManual) {
-    User.avatar = url;
-    await User.save();
+    await updateUser(userId, { avatar: url });
   }
 
   return url;

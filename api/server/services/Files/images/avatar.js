@@ -1,7 +1,6 @@
 const sharp = require('sharp');
 const fs = require('fs').promises;
 const fetch = require('node-fetch');
-const User = require('~/models/User');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logger } = require('~/config');
 
@@ -34,9 +33,6 @@ async function uploadAvatar({ userId, fileStrategy, input, manual }) {
     if (userId === undefined) {
       throw new Error('User ID is undefined');
     }
-    const _id = userId;
-    // TODO: remove direct use of Model, `User`
-    const oldUser = await User.findOne({ _id });
 
     let imageBuffer;
     if (typeof input === 'string') {
@@ -68,7 +64,7 @@ async function uploadAvatar({ userId, fileStrategy, input, manual }) {
 
     const webPBuffer = await resizeAndConvert(squaredBuffer);
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    return await processAvatar({ buffer: webPBuffer, User: oldUser, manual });
+    return await processAvatar({ buffer: webPBuffer, userId, manual });
   } catch (error) {
     logger.error('Error uploading the avatar:', error);
     throw error;

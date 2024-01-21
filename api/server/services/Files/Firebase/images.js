@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { resizeImageBuffer } = require('../images/resize');
+const { updateUser } = require('~/models/userMethods');
 const { saveBufferToFirebase } = require('./crud');
 const { updateFile } = require('~/models/File');
 const { logger } = require('~/config');
@@ -74,15 +75,15 @@ async function prepareImageURL(req, file) {
  *
  * @param {object} params - The parameters object.
  * @param {Buffer} params.buffer - The Buffer containing the avatar image in WebP format.
- * @param {object} params.User - The User document (mongoose); TODO: remove direct use of Model, `User`
+ * @param {string} params.userId - The user ID.
  * @param {string} params.manual - A string flag indicating whether the update is manual ('true' or 'false').
  * @returns {Promise<string>} - A promise that resolves with the URL of the uploaded avatar.
  * @throws {Error} - Throws an error if Firebase is not initialized or if there is an error in uploading.
  */
-async function processFirebaseAvatar({ buffer, User, manual }) {
+async function processFirebaseAvatar({ buffer, userId, manual }) {
   try {
     const downloadURL = await saveBufferToFirebase({
-      userId: User._id.toString(),
+      userId,
       buffer,
       fileName: 'avatar.png',
     });
@@ -92,8 +93,7 @@ async function processFirebaseAvatar({ buffer, User, manual }) {
     const url = `${downloadURL}?manual=${isManual}`;
 
     if (isManual) {
-      User.avatar = url;
-      await User.save();
+      await updateUser(userId, { avatar: url });
     }
 
     return url;
