@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
-const { filterFile, processImageUpload } = require('~/server/services/Files/process');
+const { filterFile, processImageFile } = require('~/server/services/Files/process');
 const { logger } = require('~/config');
 const upload = require('./multer');
 
@@ -17,7 +17,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
-    await processImageUpload({ req, res, file, metadata });
+    await processImageFile({ req, res, file, metadata });
   } catch (error) {
     // TODO: delete remote file if it exists
     logger.error('[/files/images] Error processing file:', error);

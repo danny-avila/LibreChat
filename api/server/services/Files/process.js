@@ -111,7 +111,6 @@ const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath })
 /**
  * Applies the current strategy for image uploads.
  * Saves file metadata to the database with an expiry TTL.
- * Files must be deleted from the server filesystem manually.
  *
  * @param {Object} params - The parameters object.
  * @param {Express.Request} params.req - The Express request object.
@@ -120,7 +119,7 @@ const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath })
  * @param {ImageMetadata} params.metadata - Additional metadata for the file.
  * @returns {Promise<void>}
  */
-const processImageUpload = async ({ req, res, file, metadata }) => {
+const processImageFile = async ({ req, res, file, metadata }) => {
   const source = req.app.locals.fileStrategy;
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
@@ -141,6 +140,35 @@ const processImageUpload = async ({ req, res, file, metadata }) => {
     true,
   );
   res.status(200).json({ message: 'File uploaded and processed successfully', ...result });
+};
+
+/**
+ * Applies the current strategy for image uploads and
+ * returns file metadata, without saving to the database.
+ *
+ * @param {Object} params - The parameters object.
+ * @param {Express.Request} params.req - The Express request object.
+ * @param {Express.Multer.File} params.file - The uploaded file.
+ * @param {ImageMetadata} params.metadata - Additional metadata for the file.
+ * @returns {Promise<void>}
+ */
+const uploadImage = async ({ req, file, metadata }) => {
+  const source = req.app.locals.fileStrategy;
+  const { handleImageUpload } = getStrategyFunctions(source);
+  const { file_id, temp_file_id } = metadata;
+  const { filepath, bytes, width, height } = await handleImageUpload(req, file);
+  return {
+    user: req.user.id,
+    file_id,
+    temp_file_id,
+    bytes,
+    filepath,
+    filename: file.originalname,
+    source,
+    type: 'image/webp',
+    width,
+    height,
+  };
 };
 
 /**
@@ -329,10 +357,11 @@ function filterFile({ req, file, image }) {
 }
 
 module.exports = {
-  processImageUpload,
   filterFile,
+  uploadImage,
   processFiles,
   processFileURL,
+  processImageFile,
   processFileUpload,
   processDeleteRequest,
   retrieveAndProcessFile,
