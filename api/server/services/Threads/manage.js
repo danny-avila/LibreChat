@@ -1,5 +1,5 @@
 const { v4 } = require('uuid');
-const { EModelEndpoint, Constants } = require('librechat-data-provider');
+const { EModelEndpoint, Constants, defaultOrderQuery } = require('librechat-data-provider');
 const { recordMessage, getMessages } = require('~/models/Message');
 const { saveConvo } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
@@ -330,9 +330,7 @@ async function syncMessages({ openai, apiMessages, dbMessages, conversationId, t
  * @return {Promise<TMessage[]>} A promise that resolves to the updated messages
  */
 async function checkMessageGaps({ openai, thread_id, conversationId }) {
-  const response = await openai.beta.threads.messages.list(thread_id, {
-    order: 'asc',
-  });
+  const response = await openai.beta.threads.messages.list(thread_id, defaultOrderQuery);
 
   const dbMessages = await getMessages({ conversationId });
   const syncedMessages = await syncMessages({

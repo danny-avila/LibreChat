@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useState, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { fileConfig, QueryKeys } from 'librechat-data-provider';
+import { fileConfig, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import type { Metadata, AssistantListResponse } from 'librechat-data-provider';
 import { useUploadAssistantAvatarMutation } from '~/data-provider';
 import { AssistantAvatar, NoImage, AvatarMenu } from './Images';
@@ -9,10 +9,6 @@ import { useToastContext } from '~/Providers';
 // import { Spinner } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 // import { cn } from '~/utils/';
-
-const params = {
-  order: 'asc',
-};
 
 function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: null | Metadata }) {
   const queryClient = useQueryClient();
@@ -31,7 +27,10 @@ function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: nu
     },
     onSuccess: (data) => {
       showToast({ message: localize('com_ui_upload_success') });
-      const res = queryClient.getQueryData<AssistantListResponse>([QueryKeys.assistants, params]);
+      const res = queryClient.getQueryData<AssistantListResponse>([
+        QueryKeys.assistants,
+        defaultOrderQuery,
+      ]);
 
       if (!res?.data || !res) {
         return;
@@ -48,7 +47,7 @@ function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: nu
           return assistant;
         }) ?? [];
 
-      queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, params], {
+      queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
         ...res,
         data: assistants,
       });

@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
-import { defaultAssistantFormValues } from 'librechat-data-provider';
+import { defaultAssistantFormValues, defaultOrderQuery } from 'librechat-data-provider';
 import type { Assistant } from 'librechat-data-provider';
 import type { UseFormReset } from 'react-hook-form';
 import type { AssistantForm, Actions, Option } from '~/common';
@@ -21,19 +21,14 @@ export default function AssistantSelect({
   value: TAssistantOption;
   selectedAssistant: string | null;
 }) {
-  const assistants = useListAssistantsQuery(
-    {
-      order: 'asc',
-    },
-    {
-      select: (res) =>
-        res.data.map((assistant) => ({
-          ...assistant,
-          label: assistant?.name ?? '',
-          value: assistant.id,
-        })),
-    },
-  );
+  const assistants = useListAssistantsQuery(defaultOrderQuery, {
+    select: (res) =>
+      res.data.map((assistant) => ({
+        ...assistant,
+        label: assistant?.name ?? '',
+        value: assistant.id,
+      })),
+  });
 
   const onSelect = useCallback(
     (value: string) => {

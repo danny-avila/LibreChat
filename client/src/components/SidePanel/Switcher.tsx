@@ -6,6 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/Select';
+import { defaultOrderQuery } from 'librechat-data-provider';
 import { useListAssistantsQuery } from '~/data-provider';
 import { useSetIndexOptions } from '~/hooks';
 import { useChatContext } from '~/Providers';
@@ -23,14 +24,9 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
 
   const setAssistant = setOption('assistant_id');
 
-  const { data: assistants = [] } = useListAssistantsQuery(
-    {
-      order: 'asc',
-    },
-    {
-      select: (res) => res.data.map(({ id, name }) => ({ id, name })),
-    },
-  );
+  const { data: assistants = [] } = useListAssistantsQuery(defaultOrderQuery, {
+    select: (res) => res.data.map(({ id, name }) => ({ id, name })),
+  });
 
   useEffect(() => {
     if (!selectedAssistant && assistants && assistants.length) {

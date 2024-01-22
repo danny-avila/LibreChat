@@ -1,4 +1,4 @@
-const { RunStatus } = require('librechat-data-provider');
+const { RunStatus, defaultOrderQuery } = require('librechat-data-provider');
 const RunManager = require('./RunManager');
 const { logger } = require('~/config');
 
@@ -138,11 +138,7 @@ async function _handleRun({ openai, run_id, thread_id }) {
       console.dir(step, { depth: null });
 
       const promises = [];
-      promises.push(
-        openai.beta.threads.messages.list(thread_id, {
-          order: 'asc',
-        }),
-      );
+      promises.push(openai.beta.threads.messages.list(thread_id, defaultOrderQuery));
 
       // const finalSteps = stepsByStatus[runStatus];
       // for (const stepPromise of finalSteps) {

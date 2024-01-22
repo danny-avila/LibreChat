@@ -8,6 +8,7 @@ const {
   ToolCallTypes,
   imageExtRegex,
   imageGenTools,
+  defaultOrderQuery,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { RunManager, waitForRun, sleep } = require('~/server/services/Runs');
@@ -65,9 +66,7 @@ async function getResponse({ openai, run_id, thread_id }) {
   const run = await waitForRun({ openai, run_id, thread_id, pollIntervalMs: 500 });
 
   if (run.status === RunStatus.COMPLETED) {
-    const messages = await openai.beta.threads.messages.list(thread_id, {
-      order: 'asc',
-    });
+    const messages = await openai.beta.threads.messages.list(thread_id, defaultOrderQuery);
     const newMessages = messages.data.filter((msg) => msg.run_id === run_id);
 
     return newMessages;
@@ -347,9 +346,7 @@ async function runAssistant({
 
       const promises = [];
       // promises.push(
-      //   openai.beta.threads.messages.list(thread_id, {
-      //     order: 'asc',
-      //   }),
+      //   openai.beta.threads.messages.list(thread_id, defaultOrderQuery),
       // );
 
       // const finalSteps = stepsByStatus[runStatus];
