@@ -1,22 +1,10 @@
-'use client';
 import { useState, useRef } from 'react';
-import {
-  AlertCircle,
-  Archive,
-  File,
-  Inbox,
-  MessagesSquare,
-  Send,
-  ShoppingCart,
-  Trash2,
-  Users2,
-} from 'lucide-react';
-
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider } from '~/components/ui/Tooltip';
 import { Separator } from '~/components/ui/Separator';
+import { Blocks } from '~/components/svg';
 import AssistantPanel from './AssistantPanel';
 import Switcher from './Switcher';
 import { cn } from '~/utils';
@@ -94,72 +82,13 @@ export default function SidePanel({
               {
                 title: 'Assistant Builder',
                 label: '',
-                icon: Inbox,
+                icon: Blocks,
                 id: 'assistants',
                 Component: AssistantPanel,
               },
-              {
-                title: 'Drafts',
-                label: '9',
-                icon: File,
-                id: 'drafts',
-              },
-              {
-                title: 'Sent',
-                label: '',
-                icon: Send,
-                id: 'sent',
-              },
-              {
-                title: 'Trash',
-                label: '',
-                icon: Trash2,
-                id: 'trash',
-              },
-              {
-                title: 'Archive',
-                label: '',
-                icon: Archive,
-                id: 'archive',
-              },
             ]}
           />
-          <Separator className="bg-gray-100/50" />
-          <Nav
-            isCollapsed={isCollapsed}
-            links={[
-              {
-                title: 'Social',
-                label: '972',
-                icon: Users2,
-                id: 'social',
-              },
-              {
-                title: 'Updates',
-                label: '342',
-                icon: AlertCircle,
-                id: 'updates',
-              },
-              {
-                title: 'Forums',
-                label: '128',
-                icon: MessagesSquare,
-                id: 'forums',
-              },
-              {
-                title: 'Shopping',
-                label: '8',
-                icon: ShoppingCart,
-                id: 'shopping',
-              },
-              {
-                title: 'Promotions',
-                label: '21',
-                icon: Archive,
-                id: 'promotions',
-              },
-            ]}
-          />
+          {/* <Separator className="bg-gray-100/50" /> */}
         </ResizablePanel>
       </ResizablePanelGroup>
     </TooltipProvider>

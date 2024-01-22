@@ -79,7 +79,7 @@ export default function Nav({ links, isCollapsed, resize }: NavProps) {
                           ? 'dark:bg-muted dark:hover:bg-muted dark:text-white dark:hover:text-white'
                           : '',
                         'data-[state=open]:bg-gray-900 data-[state=open]:text-white dark:data-[state=open]:bg-gray-800',
-                        'w-full justify-start',
+                        'w-full justify-start rounded-md border',
                       )}
                     >
                       <link.icon className="mr-2 h-4 w-4" />
