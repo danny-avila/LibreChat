@@ -5,6 +5,8 @@ const {
   supportedMimeTypes,
   codeInterpreterMimeTypes,
   retrievalMimeTypes,
+  excelFileTypes,
+  excelMimeTypes,
 } = require('librechat-data-provider');
 
 describe('MIME Type Regex Patterns', () => {
@@ -59,5 +61,19 @@ describe('MIME Types Exclusive to Code Interpreter', () => {
       const isSupportedByRetrieval = retrievalMimeTypes.some((regex) => regex.test(mimeType));
       expect(isSupportedByRetrieval).toBeFalsy();
     });
+  });
+});
+
+describe('Testing Excel MIME types', () => {
+  excelFileTypes.forEach((mimeType) => {
+    test(`"${mimeType}" should match one of the supported regex patterns in supportedMimeTypes`, () => {
+      const matches = supportedMimeTypes.some((regex) => regex.test(mimeType));
+      expect(matches).toBeTruthy();
+    });
+  });
+
+  test('Excel MIME types should match the regex pattern in excelMimeTypes', () => {
+    const matches = excelFileTypes.every((mimeType) => excelMimeTypes.test(mimeType));
+    expect(matches).toBeTruthy();
   });
 });
