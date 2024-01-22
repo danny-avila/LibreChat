@@ -1,3 +1,6 @@
+import ProgressCircle from './ProgressCircle';
+import RemoveFile from './RemoveFile';
+
 type styleProps = {
   backgroundImage?: string;
   backgroundSize?: string;
@@ -58,54 +61,15 @@ const Image = ({
             style={style}
           />
           {progress < 1 && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/5 text-white">
-              <svg width="120" height="120" viewBox="0 0 120 120" className="h-6 w-6">
-                <circle
-                  className="origin-[50%_50%] -rotate-90 stroke-gray-400"
-                  strokeWidth="10"
-                  fill="transparent"
-                  r="55"
-                  cx="60"
-                  cy="60"
-                />
-                <circle
-                  className="origin-[50%_50%] -rotate-90 transition-[stroke-dashoffset]"
-                  stroke="currentColor"
-                  strokeWidth="10"
-                  strokeDasharray={`${circumference} ${circumference}`}
-                  strokeDashoffset={offset}
-                  fill="transparent"
-                  r="55"
-                  cx="60"
-                  cy="60"
-                  style={circleCSSProperties}
-                />
-              </svg>
-            </div>
+            <ProgressCircle
+              circumference={circumference}
+              offset={offset}
+              circleCSSProperties={circleCSSProperties}
+            />
           )}
         </div>
       </div>
-      <button
-        type="button"
-        className="absolute right-1 top-1 -translate-y-1/2 translate-x-1/2 rounded-full border border-white bg-gray-500 p-0.5 text-white transition-colors hover:bg-black hover:opacity-100 group-hover:opacity-100 md:opacity-0"
-        onClick={onDelete}
-      >
-        <span>
-          <svg
-            stroke="currentColor"
-            fill="none"
-            strokeWidth="2"
-            viewBox="0 0 24 24"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="icon-sm"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </span>
-      </button>
+      <RemoveFile onRemove={onDelete} />
     </div>
   );
 };
