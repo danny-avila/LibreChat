@@ -203,7 +203,7 @@ export type TAuthConfig = {
   test?: boolean;
 };
 
-export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
+export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model'> &
   Pick<TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
     size?: number;
     button?: boolean;
@@ -213,6 +213,7 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
     endpoint?: EModelEndpoint | string | null;
     endpointType?: EModelEndpoint | null;
     assistantName?: string;
+    error?: boolean;
   };
 
 export type Option = Record<string, unknown> & {
