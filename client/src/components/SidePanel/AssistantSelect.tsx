@@ -131,6 +131,7 @@ export default function AssistantSelect({
             <Plus className="w-[16px]" />
           </span>
           <span className={cn('ml-4 flex h-6 items-center gap-1 text-gray-800 dark:text-gray-100')}>
+            {/* TODO: localize */}
             {'Create Assistant'}
           </span>
         </span>
