@@ -112,7 +112,7 @@
     "postcss": "^8.4.31",
     "postcss-loader": "^7.1.0",
     "postcss-preset-env": "^8.2.0",
-    "tailwindcss": "^3.2.6",
+    "tailwindcss": "^3.4.1",
     "ts-jest": "^29.1.0",
     "typescript": "^5.0.4",
     "vite": "^5.0.7",
