@@ -2,11 +2,9 @@ import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
-import { useChatHelpers, useSSE } from '~/hooks';
-// import GenerationButtons from './Input/GenerationButtons';
-import MessagesView from './Messages/MessagesView';
-// import OptionsBar from './Input/OptionsBar';
 import { useGetFiles } from '~/data-provider';
+import MessagesView from './Messages/MessagesView';
+import { useChatHelpers, useSSE } from '~/hooks';
 import { buildTree, mapFiles } from '~/utils';
 import { Spinner } from '~/components/svg';
 import { ChatContext } from '~/Providers';
@@ -48,9 +46,7 @@ function ChatView({ index = 0 }: { index?: number }) {
         ) : (
           <Landing Header={<Header />} />
         )}
-        {/* <OptionsBar messagesTree={messagesTree} /> */}
-        {/* <GenerationButtons endpoint={chatHelpers.conversation.endpoint ?? ''} /> */}
-        <div className="w-full border-t-0 pl-0 pt-2 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 dark:border-white/20 md:dark:border-transparent">
+        <div className="w-full border-t-0 pl-0 pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
           <ChatForm index={index} />
           <Footer />
         </div>

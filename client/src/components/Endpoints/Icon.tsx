@@ -16,7 +16,15 @@ import { cn } from '~/utils';
 
 const Icon: React.FC<IconProps> = (props) => {
   const { user } = useAuthContext();
-  const { size = 30, isCreatedByUser, button, model = '', endpoint, jailbreak } = props;
+  const {
+    size = 30,
+    isCreatedByUser,
+    button,
+    model = '',
+    endpoint,
+    jailbreak,
+    assistantName,
+  } = props;
 
   if (isCreatedByUser) {
     const username = user?.name || 'User';
@@ -42,6 +50,21 @@ const Icon: React.FC<IconProps> = (props) => {
     );
   } else {
     const endpointIcons = {
+      [EModelEndpoint.assistant]: {
+        icon: (
+          <div
+            title={assistantName}
+            style={{
+              width: size,
+              height: size,
+            }}
+            className={cn('relative flex items-center justify-center', props.className ?? '')}
+          >
+            <img className="rounded-sm" src={props.iconURL} alt={assistantName} />
+          </div>
+        ),
+        name: endpoint,
+      },
       [EModelEndpoint.azureOpenAI]: {
         icon: <AzureMinimalIcon size={size * 0.5555555555555556} />,
         bg: 'linear-gradient(0.375turn, #61bde2, #4389d0)',

@@ -3,8 +3,8 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
+import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import Icon from '~/components/Endpoints/Icon';
-import { useChatContext } from '~/Providers';
 import { getEndpointField } from '~/utils';
 
 export default function useMessageHelpers(props: TMessageProps) {
@@ -22,6 +22,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     handleContinue,
     setLatestMessage,
   } = useChatContext();
+  const assistantMap = useAssistantsMapContext();
 
   const { text, children, messageId = null, isCreatedByUser } = message ?? {};
   const edit = messageId === currentEditId;
@@ -55,11 +56,16 @@ export default function useMessageHelpers(props: TMessageProps) {
     }
   }, [isSubmitting, setAbortScroll]);
 
+  const assistant = conversation?.endpoint === 'assistant' && assistantMap?.[message?.model ?? ''];
+
   const icon = Icon({
     ...conversation,
     ...(message as TMessage),
-    iconURL: getEndpointField(endpointsConfig, conversation?.endpoint, 'iconURL'),
+    iconURL: !assistant
+      ? getEndpointField(endpointsConfig, conversation?.endpoint, 'iconURL')
+      : (assistant?.metadata?.avatar as string | undefined) ?? '',
     model: message?.model ?? conversation?.model,
+    assistantName: assistant ? (assistant.name as string | undefined) : '',
     size: 28.8,
   });
 
@@ -85,6 +91,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     icon,
     edit,
     isLast,
+    assistant,
     enterEdit,
     conversation,
     isSubmitting,
