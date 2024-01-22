@@ -95,6 +95,12 @@ async function waitForRun({
     timeElapsed += pollIntervalMs;
   }
 
+  if (timeElapsed >= timeout) {
+    logger.warn(
+      `[waitForRun] user: ${openai.req.user.id} | thread_id: ${thread_id} | run_id: ${run_id} | status: ${run.status} | timed out after ${timeout} ms`,
+    );
+  }
+
   return run;
 }
 

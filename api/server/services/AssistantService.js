@@ -386,7 +386,7 @@ async function runAssistant({
     thread_id,
     runManager,
     pollIntervalMs: 750, // TODO: make this configurable
-    timeout: 60000,
+    timeout: 60000 * 3,
   });
 
   if (!run.required_action) {
