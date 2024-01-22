@@ -83,4 +83,23 @@ describe('processLaTeX', () => {
     LaTeX is a typesetting system commonly used for mathematical and scientific documents. It provides a wide range of formatting options and symbols for expressing mathematical expressions.`;
     expect(processLaTeX(complexBlockLatex)).toBe(expectedOutput);
   });
+
+  describe('processLaTeX with code block exception', () => {
+    test('ignores dollar signs inside inline code', () => {
+      const content = 'This is inline code: `$100`';
+      expect(processLaTeX(content)).toBe(content);
+    });
+
+    test('ignores dollar signs inside multi-line code blocks', () => {
+      const content = '```\n$100\n# $1000\n```';
+      expect(processLaTeX(content)).toBe(content);
+    });
+
+    test('processes LaTeX outside of code blocks', () => {
+      const content =
+        'Outside \\(x^2 + y^2 = z^2\\) and inside code block: ```\n$100\n# $1000\n```';
+      const expected = 'Outside $x^2 + y^2 = z^2$ and inside code block: ```\n$100\n# $1000\n```';
+      expect(processLaTeX(content)).toBe(expected);
+    });
+  });
 });
