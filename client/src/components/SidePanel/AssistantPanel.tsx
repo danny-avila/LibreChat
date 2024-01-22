@@ -36,6 +36,7 @@ export default function AssistantPanel({ index = 0 }) {
     'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 dark:text-white shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
 
   const assistant_id = useWatch({ control, name: 'id' });
+  const assistant = useWatch({ control, name: 'assistant' });
   const functions = useWatch({ control, name: 'functions' });
 
   const onSubmit = (data: AssistantForm) => {
@@ -116,7 +117,10 @@ export default function AssistantPanel({ index = 0 }) {
       <div className="h-auto bg-white px-4 pb-8 pt-3 dark:bg-transparent">
         {/* Avatar & Name */}
         <div className="mb-4">
-          <AssistantAvatar assistant_id={assistant_id} />
+          <AssistantAvatar
+            assistant_id={assistant_id}
+            metadata={typeof assistant !== 'string' ? assistant.metadata : null}
+          />
           <label className={labelClass} htmlFor="name">
             Name
           </label>

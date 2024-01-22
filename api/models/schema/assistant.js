@@ -14,7 +14,11 @@ const assistantSchema = mongoose.Schema(
       required: true,
     },
     avatar: {
-      type: String,
+      type: {
+        filepath: String,
+        source: String,
+      },
+      default: undefined,
     },
     access_level: {
       type: Number,

@@ -220,8 +220,8 @@ export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> =>
   return request.postMultiPart(endpoints.avatar(), data);
 };
 
-export const uploadAssistantAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
-  return request.postMultiPart(`${endpoints.images()}/assistant`, data);
+export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise<a.Assistant> => {
+  return request.postMultiPart(endpoints.assistants(`avatar/${data.assistant_id}`), data.formData);
 };
 
 export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesResponse> =>

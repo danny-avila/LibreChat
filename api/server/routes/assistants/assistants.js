@@ -1,8 +1,13 @@
+const multer = require('multer');
 const OpenAI = require('openai');
 const express = require('express');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { uploadImageBuffer } = require('~/server/services/Files/process');
+const { updateAssistant } = require('~/models/Assistant');
 const toolsController = require('./tools');
 const { logger } = require('~/config');
 
+const upload = multer();
 const router = express.Router();
 
 /**
@@ -109,6 +114,56 @@ router.get('/', async (req, res) => {
     res.json(assistants);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => {
+  try {
+    const { assistant_id } = req.params;
+    let { metadata: _metadata = '{}' } = req.body;
+    /** @type {OpenAI} */
+    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+    const image = await uploadImageBuffer({ req });
+
+    try {
+      _metadata = JSON.parse(_metadata);
+    } catch (error) {
+      logger.error('[/avatar/:assistant_id] Error parsing metadata', error);
+      _metadata = {};
+    }
+
+    if (_metadata.avatar && _metadata.avatar_source) {
+      const { deleteFile } = getStrategyFunctions(_metadata.avatar_source);
+      try {
+        deleteFile(req, { filepath: _metadata.avatar });
+      } catch (error) {
+        logger.error('[/avatar/:assistant_id] Error deleting old avatar', error);
+      }
+    }
+
+    const metadata = {
+      ..._metadata,
+      avatar: image.filepath,
+      avatar_source: req.app.locals.fileStrategy,
+    };
+
+    const promises = [];
+    promises.push(
+      updateAssistant(assistant_id, {
+        avatar: {
+          filepath: image.filepath,
+          source: req.app.locals.fileStrategy,
+        },
+      }),
+    );
+    promises.push(openai.beta.assistants.update(assistant_id, { metadata }));
+
+    const resolved = await Promise.all(promises);
+    res.json(resolved[1]);
+  } catch (error) {
+    const message = 'An error occurred while updating the Assistant Avatar';
+    logger.error(message, error);
+    res.status(500).json({ message });
   }
 });
 
