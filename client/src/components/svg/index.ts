@@ -46,3 +46,4 @@ export { default as NewChatIcon } from './NewChatIcon';
 export { default as ExperimentIcon } from './ExperimentIcon';
 export { default as GoogleIconChat } from './GoogleIconChat';
 export { default as BirthdayIcon } from './BirthdayIcon';
+export { default as AssistantIcon } from './AssistantIcon';

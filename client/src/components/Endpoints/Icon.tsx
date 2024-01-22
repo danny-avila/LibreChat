@@ -3,12 +3,13 @@ import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
 import {
   Plugin,
   GPTIcon,
-  AnthropicIcon,
-  AzureMinimalIcon,
-  CustomMinimalIcon,
   PaLMIcon,
   CodeyIcon,
   GeminiIcon,
+  AssistantIcon,
+  AnthropicIcon,
+  AzureMinimalIcon,
+  CustomMinimalIcon,
 } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { IconProps } from '~/common';
@@ -51,7 +52,7 @@ const Icon: React.FC<IconProps> = (props) => {
   } else {
     const endpointIcons = {
       [EModelEndpoint.assistant]: {
-        icon: (
+        icon: props.iconURL ? (
           <div
             title={assistantName}
             style={{
@@ -61,6 +62,12 @@ const Icon: React.FC<IconProps> = (props) => {
             className={cn('relative flex items-center justify-center', props.className ?? '')}
           >
             <img className="rounded-sm" src={props.iconURL} alt={assistantName} />
+          </div>
+        ) : (
+          <div className="h-6 w-6">
+            <div className="relative flex h-full items-center justify-center rounded-full bg-white text-black">
+              <AssistantIcon />
+            </div>
           </div>
         ),
         name: endpoint,

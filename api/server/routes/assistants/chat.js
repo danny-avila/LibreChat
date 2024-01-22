@@ -1,7 +1,7 @@
 const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const express = require('express');
-const { EModelEndpoint, Constants } = require('librechat-data-provider');
+const { EModelEndpoint, Constants, RunStatus } = require('librechat-data-provider');
 const {
   initThread,
   saveUserMessage,
@@ -186,8 +186,17 @@ router.post('/', setHeaders, async (req, res) => {
     });
 
     // todo: retry logic
-    const response = await runAssistant({ openai, thread_id, run_id: run.id });
+    let response = await runAssistant({ openai, thread_id, run_id: run.id });
     logger.debug('[/assistants/chat/] response', response);
+
+    if (response.run.status === RunStatus.IN_PROGRESS) {
+      response = await runAssistant({
+        openai,
+        thread_id,
+        run_id: run.id,
+        in_progress: openai.in_progress,
+      });
+    }
 
     /** @type {ResponseMessage} */
     const responseMessage = {

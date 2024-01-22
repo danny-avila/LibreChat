@@ -619,6 +619,14 @@
  * @memberof typedefs
  */
 
+/**
+ * @callback InProgressFunction
+ * @param {Object} params - The parameters for the in progress step.
+ * @param {RunStep} params.step - The step object with details about the message creation.
+ * @returns {Promise<void>} - A promise that resolves when the step is processed.
+ * @memberof typedefs
+ */
+
 // /**
 //  * @typedef {OpenAI & {
 // * req: Express.Request,
@@ -651,6 +659,7 @@
  * @property {Set<string>} seenCompletedMessages - A set of completed messages that have been seen/processed.
  * @property {Map<string, StepToolCall>} seenToolCalls - A map of tool calls that have been seen/processed.
  * @property {(data: TContentData) => void} addContentData - Updates the response message's relevant
+ * @property {InProgressFunction} in_progress - Updates the response message's relevant
  * content array with the part by index & sends intermediate SSE message with content data.
  *
  * Note: does not send intermediate SSE message for messages, which are streamed

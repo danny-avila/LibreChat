@@ -338,6 +338,7 @@ async function runAssistant({
   let steps = accumulatedSteps;
   let messages = accumulatedMessages;
   const in_progress = inProgress ?? createInProgressHandler(openai, thread_id, messages);
+  openai.in_progress = in_progress;
 
   const runManager = new RunManager({
     in_progress,
