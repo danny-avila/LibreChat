@@ -42,7 +42,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
     : null;
   return (
     <Container>
-      {files.length && files.map((file) => <FileContainer key={file.file_id} file={file} />)}
+      {files.length > 0 && files.map((file) => <FileContainer key={file.file_id} file={file} />)}
       {imageFiles &&
         imageFiles.map((file) => (
           <Image
