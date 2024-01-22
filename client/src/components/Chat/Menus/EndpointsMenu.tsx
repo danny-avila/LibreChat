@@ -17,7 +17,7 @@ const EndpointsMenu: FC = () => {
   const assistantMap = useAssistantsMapContext();
 
   const assistant = endpoint === EModelEndpoint.assistant && assistantMap?.[assistant_id ?? ''];
-  const assistantName = (assistant && assistant?.name) || '';
+  const assistantName = (assistant && assistant?.name) || 'Assistant';
 
   if (!endpoint) {
     console.warn('No endpoint selected');
