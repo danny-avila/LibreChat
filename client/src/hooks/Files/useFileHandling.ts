@@ -22,8 +22,14 @@ const useFileHandling = () => {
 
   const endpoint = conversation?.endpointType ?? conversation?.endpoint ?? 'default';
 
-  const { fileLimit, fileMaxSizeMB, totalMaxSizeMB, fileSizeLimit, totalSizeLimit } =
-    fileConfig[endpoint] ?? {};
+  const {
+    fileLimit,
+    fileMaxSizeMB,
+    totalMaxSizeMB,
+    fileSizeLimit,
+    totalSizeLimit,
+    supportedMimeTypes,
+  } = fileConfig[endpoint] ?? fileConfig.default;
 
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
@@ -122,7 +128,7 @@ const useFileHandling = () => {
 
     for (let i = 0; i < fileList.length; i++) {
       const originalFile = fileList[i];
-      if (!checkType(originalFile.type)) {
+      if (!checkType(originalFile.type, supportedMimeTypes)) {
         setError('Currently, unsupported file type: ' + originalFile.type);
         return false;
       }

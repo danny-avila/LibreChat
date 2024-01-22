@@ -6,7 +6,6 @@ const {
   EModelEndpoint,
   imageExtRegex,
   fileConfig,
-  imageMimeTypes,
   isUUID,
 } = require('librechat-data-provider');
 const { convertToWebP, resizeAndConvert } = require('~/server/services/Files/images');
@@ -332,18 +331,21 @@ function filterFile({ req, file, image }) {
     throw new Error('No endpoint provided');
   }
 
-  const { fileSizeLimit, fileMaxSizeMB } = fileConfig[endpoint];
+  const { fileSizeLimit, fileMaxSizeMB, supportedMimeTypes } =
+    fileConfig[endpoint] ?? fileConfig.default;
 
   if (file.size > fileSizeLimit) {
     throw new Error(`File size limit of ${fileMaxSizeMB} MB exceeded for ${endpoint} endpoint`);
   }
 
-  if (!image) {
-    return;
+  const isSupportedMimeType = fileConfig.checkType(file.mimetype, supportedMimeTypes);
+
+  if (!isSupportedMimeType) {
+    throw new Error('Unsupported file type');
   }
 
-  if (!imageMimeTypes.test(file.mimetype)) {
-    throw new Error('Unsupported file type');
+  if (!image) {
+    return;
   }
 
   if (!width) {

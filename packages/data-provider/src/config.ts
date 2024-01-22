@@ -264,6 +264,7 @@ export const fileConfig = {
     totalMaxSizeMB: 512,
     fileSizeLimit: 512 * megabyte,
     totalSizeLimit: 512 * megabyte,
+    supportedMimeTypes,
   },
   default: {
     fileLimit: 10,
@@ -271,11 +272,12 @@ export const fileConfig = {
     totalMaxSizeMB: 25,
     fileSizeLimit: 20 * megabyte,
     totalSizeLimit: 25 * megabyte,
+    supportedMimeTypes: [textMimeTypes, imageMimeTypes],
   },
   serverFileSizeLimit: 512 * megabyte,
   avatarSizeLimit: 2 * megabyte,
-  checkType: function (fileType: string) {
-    return supportedMimeTypes.some((regex) => regex.test(fileType));
+  checkType: function (fileType: string, supportedTypes: RegExp[] = supportedMimeTypes) {
+    return supportedTypes.some((regex) => regex.test(fileType));
   },
 };
 
