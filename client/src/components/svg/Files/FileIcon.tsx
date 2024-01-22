@@ -1,10 +1,11 @@
+import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 
 export default function FileIcon({
   file,
   fileType,
 }: {
-  file: ExtendedFile;
+  file: ExtendedFile | TFile;
   fileType: {
     fill: string;
     paths: React.FC;
@@ -21,7 +22,7 @@ export default function FileIcon({
       height="36"
     >
       <rect width="36" height="36" rx="6" fill={fileType.fill} />
-      {file.progress >= 1 && <>{<fileType.paths />}</>}
+      {(file['progress'] ?? 1) >= 1 && <>{<fileType.paths />}</>}
     </svg>
   );
 }

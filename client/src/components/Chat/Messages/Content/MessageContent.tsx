@@ -1,6 +1,7 @@
 import { Fragment, Suspense } from 'react';
-import type { TResPlugin } from 'librechat-data-provider';
+import type { TResPlugin, TFile } from 'librechat-data-provider';
 import type { TMessageContentProps, TText, TDisplayProps } from '~/common';
+import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
 import { DelayedRender } from '~/components/ui';
@@ -29,16 +30,24 @@ export const ErrorMessage = ({ text }: TText) => {
 
 // Display Message Component
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
+  const files: TFile[] = [];
   const imageFiles = message?.files
-    ? message.files.filter((file) => file.type && file.type.startsWith('image/'))
+    ? message.files.filter((file) => {
+      if (file.type && file.type.startsWith('image/')) {
+        return true;
+      }
+
+      files.push(file);
+    })
     : null;
   return (
     <Container>
+      {files.length && files.map((file) => <FileContainer key={file.file_id} file={file} />)}
       {imageFiles &&
         imageFiles.map((file) => (
           <Image
             key={file.file_id}
-            imagePath={file.preview ?? file.filepath ?? ''}
+            imagePath={file?.preview ?? file.filepath ?? ''}
             height={file.height ?? 1920}
             width={file.width ?? 1080}
             altText={file.filename ?? 'Uploaded Image'}

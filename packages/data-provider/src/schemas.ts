@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { TMessageContentParts } from './types/assistants';
+import type { TFile } from './types/files';
 
 export const isUUID = z.string().uuid();
 
@@ -177,15 +178,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   plugin?: TResPlugin | null;
   plugins?: TResPlugin[];
   content?: TMessageContentParts[];
-  files?: {
-    file_id: string;
-    type?: string;
-    filename?: string;
-    preview?: string;
-    filepath?: string;
-    height?: number;
-    width?: number;
-  }[];
+  files?: TFile[];
 };
 
 export const tConversationSchema = z.object({

@@ -1,13 +1,20 @@
+import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileIcon from '~/components/svg/Files/FileIcon';
 import ProgressCircle from './ProgressCircle';
 import RemoveFile from './RemoveFile';
 import { getFileType } from '~/utils';
 
-const FileContainer = ({ file, onDelete }: { file: ExtendedFile; onDelete: () => void }) => {
+const FileContainer = ({
+  file,
+  onDelete,
+}: {
+  file: ExtendedFile | TFile;
+  onDelete?: () => void;
+}) => {
   const radius = 55; // Radius of the SVG circle
   const circumference = 2 * Math.PI * radius;
-  const progress = file.progress ?? 1;
+  const progress = file['progress'] ?? 1;
 
   // Calculate the offset based on the loading progress
   const offset = circumference - progress * circumference;
@@ -39,7 +46,7 @@ const FileContainer = ({ file, onDelete }: { file: ExtendedFile; onDelete: () =>
           </div>
         </div>
       </div>
-      <RemoveFile onRemove={onDelete} />
+      {onDelete && <RemoveFile onRemove={onDelete} />}
     </div>
   );
 };

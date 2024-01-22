@@ -16,6 +16,7 @@ export type TFile = {
   source?: FileSources;
   height?: number;
   width?: number;
+  preview?: string;
 };
 
 export type TFileUpload = TFile & {
