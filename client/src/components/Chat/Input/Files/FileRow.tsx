@@ -2,12 +2,13 @@ import debounce from 'lodash/debounce';
 import { useState, useEffect, useCallback } from 'react';
 import { FileSources } from 'librechat-data-provider';
 import type { BatchFile } from 'librechat-data-provider';
+import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { useSetFilesToDelete } from '~/hooks';
-import { ExtendedFile } from '~/common';
+import FileContainer from './FileContainer';
 import Image from './Image';
 
-export default function Images({
+export default function FileRow({
   files: _files,
   setFiles,
   setFilesLoading,
@@ -107,9 +108,18 @@ export default function Images({
     <div className="mx-2 mt-2 flex flex-wrap gap-2 px-2.5 md:pl-0 md:pr-4">
       {files.map((file: ExtendedFile, index: number) => {
         const handleDelete = () => deleteFile(file);
-        return (
-          <Image key={index} url={file.preview} onDelete={handleDelete} progress={file.progress} />
-        );
+        if (file.type?.startsWith('image')) {
+          return (
+            <Image
+              key={index}
+              url={file.preview}
+              onDelete={handleDelete}
+              progress={file.progress}
+            />
+          );
+        }
+
+        return <FileContainer key={index} file={file} onDelete={handleDelete} />;
       })}
     </div>
   );

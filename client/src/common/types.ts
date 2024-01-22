@@ -236,7 +236,7 @@ export interface ExtendedFile {
   width?: number;
   height?: number;
   size: number;
-  preview: string;
+  preview?: string;
   progress: number;
   source?: FileSources;
 }
