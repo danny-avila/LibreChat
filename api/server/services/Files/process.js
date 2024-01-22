@@ -9,8 +9,8 @@ const {
   imageMimeTypes,
   isUUID,
 } = require('librechat-data-provider');
+const { convertToWebP, resizeAndConvert } = require('~/server/services/Files/images');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
-const { convertToWebP } = require('~/server/services/Files/images');
 const { isEnabled, determineFileType } = require('~/server/utils');
 const { getStrategyFunctions } = require('./strategies');
 const { logger } = require('~/config');
@@ -28,6 +28,8 @@ const processFiles = async (files) => {
   return await Promise.all(promises);
 };
 
+// TODO: refactor as currently only image files can be deleted this way
+// as other filetypes will not reside in public path
 /**
  * Deletes a list of files from the server filesystem and the database.
  *
@@ -144,26 +146,27 @@ const processImageFile = async ({ req, res, file, metadata }) => {
 
 /**
  * Applies the current strategy for image uploads and
- * returns file metadata, without saving to the database.
+ * returns minimal file metadata, without saving to the database.
  *
  * @param {Object} params - The parameters object.
  * @param {Express.Request} params.req - The Express request object.
- * @param {Express.Multer.File} params.file - The uploaded file.
- * @returns {Promise<MongoFile>}
+ * @returns {Promise<{ filepath: string, filename: string, source: string, type: 'image/webp'}>}
  */
-const uploadImage = async ({ req, file }) => {
+const uploadImageBuffer = async ({ req }) => {
   const source = req.app.locals.fileStrategy;
-  const { handleImageUpload } = getStrategyFunctions(source);
-  const { filepath, bytes, width, height } = await handleImageUpload(req, file);
+  const { saveBuffer } = getStrategyFunctions(source);
+  const buffer = await resizeAndConvert(req.file.buffer);
+
+  const originalExtension = path.extname(req.file.originalname);
+  const fileNameWithoutExtension = path.basename(req.file.originalname, originalExtension);
+  const fileName = `${fileNameWithoutExtension}.webp`;
+
+  const filepath = await saveBuffer({ userId: req.user.id, fileName, buffer });
   return {
-    user: req.user.id,
-    bytes,
     filepath,
-    filename: file.originalname,
+    fileName,
     source,
     type: 'image/webp',
-    width,
-    height,
   };
 };
 
@@ -354,10 +357,10 @@ function filterFile({ req, file, image }) {
 
 module.exports = {
   filterFile,
-  uploadImage,
   processFiles,
   processFileURL,
   processImageFile,
+  uploadImageBuffer,
   processFileUpload,
   processDeleteRequest,
   retrieveAndProcessFile,

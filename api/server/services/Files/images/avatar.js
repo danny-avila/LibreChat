@@ -2,11 +2,8 @@ const sharp = require('sharp');
 const fs = require('fs').promises;
 const fetch = require('node-fetch');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { resizeAndConvert } = require('./resize');
 const { logger } = require('~/config');
-
-async function resizeAndConvert(inputBuffer) {
-  return sharp(inputBuffer).resize({ width: 150 }).toFormat('webp').toBuffer();
-}
 
 /**
  * Uploads an avatar image for a user. This function can handle various types of input (URL, Buffer, or File object),

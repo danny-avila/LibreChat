@@ -59,4 +59,15 @@ async function resizeImageBuffer(inputBuffer, resolution) {
   return { buffer: resizedBuffer, width: resizedMetadata.width, height: resizedMetadata.height };
 }
 
-module.exports = { resizeImageBuffer };
+/**
+ * Resizes an image buffer to webp format as well as reduces 150 px width.
+ *
+ * @param {Buffer} inputBuffer - The buffer of the image to be resized.
+ * @returns {Promise<Buffer>} An object containing the resized image buffer and its dimensions.
+ * @throws Will throw an error if the resolution parameter is invalid.
+ */
+async function resizeAndConvert(inputBuffer) {
+  return sharp(inputBuffer).resize({ width: 150 }).toFormat('webp').toBuffer();
+}
+
+module.exports = { resizeImageBuffer, resizeAndConvert };
