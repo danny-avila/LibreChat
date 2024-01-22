@@ -1,3 +1,4 @@
+export * from './Assistants';
 export * from './Config';
 export * from './Conversations';
 export * from './Nav';

@@ -3,3 +3,4 @@ export { default as AssistantsProvider } from './AssistantsContext';
 export * from './ChatContext';
 export * from './ToastContext';
 export * from './AssistantsContext';
+export * from './AssistantsMapContext';
