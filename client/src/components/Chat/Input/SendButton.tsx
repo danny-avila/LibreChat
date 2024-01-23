@@ -1,27 +1,7 @@
 import { SendIcon, ListeningIcon, Spinner } from '~/components/svg';
 import { cn } from '~/utils';
-import { useEffect, useState } from 'react';
 
 export default function SendButton({ text, disabled, isListening, isLoading }) {
-  const [countdown, setCountdown] = useState(0);
-
-  useEffect(() => {
-    let timer;
-    if (isListening) {
-      setCountdown(3);
-      timer = setInterval(() => {
-        setCountdown((prev) => (prev > 1 ? prev - 1 : 0));
-      }, 1000);
-    } else {
-      setCountdown(0);
-    }
-    return () => {
-      if (timer) {
-        clearInterval(timer);
-      }
-    };
-  }, [isListening]);
-
   return (
     <>
       {isListening ? (
@@ -30,11 +10,7 @@ export default function SendButton({ text, disabled, isListening, isLoading }) {
           disabled={true}
         >
           <span className="" data-state="closed">
-            {countdown > 0 ? (
-              <div className="text-xl  text-white">{countdown}</div>
-            ) : (
-              <ListeningIcon />
-            )}
+            <ListeningIcon />
           </span>
         </button>
       ) : isLoading ? (

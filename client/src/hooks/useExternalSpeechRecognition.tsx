@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useSpeechToTextMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
-import useLocalize from './useLocalize';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 const useExternalSpeechRecognition = () => {
-  const localize = useLocalize();
   const { showToast } = useToastContext();
-  const [isSpeechSupported] = useState(true);
   const [text, setText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [audioData, setAudioData] = useState<Blob | null>(null);
@@ -18,12 +15,10 @@ const useExternalSpeechRecognition = () => {
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
-      console.log('Success:', data);
       const extractedText = data.text;
       setText(extractedText);
     },
-    onError: (error) => {
-      console.error('Error:', error);
+    onError: () => {
       showToast({ message: 'There was an error while uploading your audio', status: 'error' });
     },
   });
@@ -41,7 +36,8 @@ const useExternalSpeechRecognition = () => {
 
         recorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
-            chunks.push(event.data);
+            const chunks: Blob[] = [...recordedChunks, event.data];
+            setRecordedChunks(chunks);
             setRecordedChunks([...chunks]);
           }
         };
@@ -107,7 +103,7 @@ const useExternalSpeechRecognition = () => {
     };
   }, [isListening, audioData]);
 
-  return { isListening, isLoading: isProcessing, text, isSpeechSupported };
+  return { isListening, isLoading: isProcessing, text };
 };
 
 export default useExternalSpeechRecognition;

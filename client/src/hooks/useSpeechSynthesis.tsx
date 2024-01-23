@@ -1,8 +1,13 @@
 function useSpeechSynthesis() {
-  const synthesizeSpeech = (text) => {
+  const synthesizeSpeech = (text, onEnd) => {
     const synth = window.speechSynthesis;
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
+    utterance.onend = () => {
+      if (typeof onEnd === 'function') {
+        onEnd();
+      }
+    };
     synth.speak(utterance);
   };
 

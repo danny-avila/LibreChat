@@ -1,5 +1,5 @@
 import { useRecoilState } from 'recoil';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import type { ChangeEvent } from 'react';
 import { useChatContext } from '~/Providers';
 import { useRequiresKey } from '~/hooks';
@@ -42,20 +42,17 @@ export default function ChatForm({ index = 0 }) {
     isListening: speechIsListening,
     isLoading: speechIsLoading,
     text: speechText,
-    isSpeechSupported: speechIsSupported,
   } = useSpeechRecognition();
 
   const {
     isListening: externalIsListening,
     isLoading: externalIsLoading,
     text: externalSpeechText,
-    isSpeechSupported: externalIsSupported,
   } = useExternalSpeechRecognition();
 
   const isListening = useExternalSpeech ? externalIsListening : speechIsListening;
   const isLoading = useExternalSpeech ? externalIsLoading : speechIsLoading;
   const speechTextForm = useExternalSpeech ? externalSpeechText : speechText;
-  const isSpeechSupported = useExternalSpeech ? externalIsSupported : speechIsSupported;
 
   useEffect(() => {
     if (speechTextForm) {
