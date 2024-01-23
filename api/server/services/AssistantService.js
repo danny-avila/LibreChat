@@ -188,8 +188,8 @@ function createInProgressHandler(openai, thread_id, messages) {
         if (step.status === StepStatus.IN_PROGRESS) {
           toolCall.progress =
             previousCall && previousCall.progress
-              ? Math.min(previousCall.progress + 0.2, 0.6)
-              : 0.3;
+              ? Math.min(previousCall.progress + 0.2, 0.95)
+              : 0.01;
         } else {
           toolCall.progress = 1;
           openai.completeToolCallSteps.add(step.id);
