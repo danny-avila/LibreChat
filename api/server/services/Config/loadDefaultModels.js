@@ -7,10 +7,6 @@ const {
   getChatGPTBrowserModels,
 } = require('~/server/services/ModelService');
 
-const fitlerAssistantModels = (str) => {
-  return /gpt-4|gpt-3\\.5/i.test(str) && !/vision|instruct/i.test(str);
-};
-
 /**
  * Loads the default models for the application.
  * @async
@@ -37,7 +33,7 @@ async function loadDefaultModels(req) {
     [EModelEndpoint.azureOpenAI]: azureOpenAI,
     [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
-    [EModelEndpoint.assistant]: openAI.filter(fitlerAssistantModels),
+    [EModelEndpoint.assistant]: ['gpt-4-1106-preview', 'gpt-3.5-turbo-1106'],
   };
 }
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useWatch } from 'react-hook-form';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { Tools, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import type { FunctionTool, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, Actions } from '~/common';
@@ -12,14 +13,17 @@ import {
 } from '~/data-provider';
 import { ToolSelectDialog } from '~/components/Tools';
 import { Separator } from '~/components/ui/Separator';
+import { SelectDropDown } from '~/components/ui';
 import { Switch } from '~/components/ui/Switch';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
 import AssistantTool from './AssistantTool';
+import { cn, cardStyle } from '~/utils/';
 import { useNewConvo } from '~/hooks';
 
 export default function AssistantPanel({ index = 0 }) {
   const queryClient = useQueryClient();
+  const modelsQuery = useGetModelsQuery();
   const { conversation } = useChatContext();
   const { switchToConversation } = useNewConvo(index);
   const [showToolDialog, setShowToolDialog] = useState(false);
@@ -200,14 +204,18 @@ export default function AssistantPanel({ index = 0 }) {
             name="model"
             control={control}
             render={({ field }) => (
-              <select
-                {...field}
-                className="focus:shadow-outline block w-full appearance-none rounded-md border border-gray-200 bg-white px-4 py-2 pr-8 text-sm leading-tight shadow hover:border-gray-100 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700/80 dark:bg-gray-800 dark:hover:border-gray-500"
-                id="model"
-              >
-                <option value="gpt-3.5-turbo-1106">gpt-3.5-turbo-1106</option>
-                {/* Additional model options here */}
-              </select>
+              <SelectDropDown
+                emptyTitle={true}
+                value={field.value}
+                setValue={field.onChange}
+                availableValues={modelsQuery.data?.[EModelEndpoint.assistant] ?? []}
+                showAbove={false}
+                showLabel={false}
+                className={cn(
+                  cardStyle,
+                  'flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer',
+                )}
+              />
             )}
           />
         </div>
