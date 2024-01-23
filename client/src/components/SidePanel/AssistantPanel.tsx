@@ -18,6 +18,7 @@ import { Switch } from '~/components/ui/Switch';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
 import AssistantTool from './AssistantTool';
+import { Spinner } from '~/components/svg';
 import { cn, cardStyle } from '~/utils/';
 import { useNewConvo } from '~/hooks';
 
@@ -277,11 +278,17 @@ export default function AssistantPanel({ index = 0 }) {
           </button>
           {/* Submit Button */}
           <button
-            className="focus:shadow-outline rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+            className="focus:shadow-outline flex w-1/4 items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
             type="submit"
           >
             {/* TODO: Add localization */}
-            {assistant_id ? 'Save' : 'Create'}
+            {create.isLoading || update.isLoading ? (
+              <Spinner className="icon-md" />
+            ) : assistant_id ? (
+              'Save'
+            ) : (
+              'Create'
+            )}
           </button>
         </div>
       </div>
