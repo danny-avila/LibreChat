@@ -1,5 +1,5 @@
 import copy from 'copy-to-clipboard';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
@@ -43,13 +43,13 @@ export default function useMessageHelpers(props: TMessageProps) {
   const enterEdit = (cancel?: boolean) =>
     setCurrentEditId && setCurrentEditId(cancel ? -1 : messageId);
 
-  const handleScroll = () => {
+  const handleScroll = useCallback(() => {
     if (isSubmitting) {
       setAbortScroll(true);
     } else {
       setAbortScroll(false);
     }
-  };
+  }, [isSubmitting, setAbortScroll]);
 
   const icon = Icon({
     ...conversation,

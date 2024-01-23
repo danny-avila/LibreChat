@@ -48,6 +48,7 @@ export default {
   com_ui_limitation_harmful_biased:
     'Peut occasionnellement produire des instructions nuisibles ou du contenu biaisé',
   com_ui_limitation_limited_2021: 'Connaissance limitée du monde et des événements après 2021',
+  com_ui_experimental: 'Fonctionnalités expérimentales',
   com_ui_input: 'Entrée',
   com_ui_close: 'Fermer',
   com_ui_model: 'Modèle',
@@ -81,7 +82,8 @@ export default {
     'Fichier invalide pour le téléversement. Doit être une image ne dépassant pas 2 Mo',
   com_ui_cancel: 'Annuler',
   com_ui_save: 'Sauvegarder',
-  com_ui_save_submit: 'Enregistrer & Soumettre',
+  com_ui_save_submit: 'Enregistrer et Soumettre',
+  com_user_message: 'Vous',
   com_ui_copy_to_clipboard: 'Copier dans le presse-papier',
   com_ui_copied_to_clipboard: 'Copié dans le presse-papier',
   com_ui_regenerate: 'Régénérer',
@@ -210,6 +212,10 @@ export default {
     'Nombre compris entre -2,0 et 2,0. Les valeurs positives pénalisent les nouveaux jetons en fonction de leur fréquence existante dans le texte jusqu\'à présent, diminuant ainsi la probabilité que le modèle répète la même ligne mot pour mot.',
   com_endpoint_openai_pres:
     'Nombre compris entre -2,0 et 2,0. Les valeurs positives pénalisent les nouveaux jetons en fonction du fait qu\'ils apparaissent ou non dans le texte jusqu\'à présent, augmentant ainsi la probabilité que le modèle parle de nouveaux sujets.',
+  com_endpoint_openai_resend:
+    'Renvoyer toutes les images précédemment jointes. Remarque : cela peut augmenter considérablement le coût en jetons et vous pouvez rencontrer des erreurs avec de nombreuses pièces jointes d\'images.',
+  com_endpoint_openai_detail:
+    'La résolution pour les requêtes Vision. "Low" est moins cher et plus rapide, "High" est plus détaillé et plus cher, et "Auto" choisira automatiquement entre les deux en fonction de la résolution de l\'image.',
   com_endpoint_openai_custom_name_placeholder: 'Définir un nom personnalisé pour ChatGPT',
   com_endpoint_openai_prompt_prefix_placeholder:
     'Définir des instructions personnalisées à inclure dans le message système. Par défaut : aucun',
@@ -225,6 +231,7 @@ export default {
   com_endpoint_frequency_penalty: 'Pénalité de fréquence',
   com_endpoint_presence_penalty: 'Pénalité de présence',
   com_endpoint_plug_use_functions: 'Utiliser les fonctions',
+  com_endpoint_plug_resend_images: 'Renvoyer des images',
   com_endpoint_plug_skip_completion: 'Sauter la complétion',
   com_endpoint_disabled_with_tools: 'désactivé avec les outils',
   com_endpoint_disabled_with_tools_placeholder: 'Désactivé avec les outils sélectionnés',
@@ -321,9 +328,15 @@ export default {
     'Assurez-vous de cliquer \'Créer et continuer\' pour donner au moins le role \'Utilisateur de Vertex AI\'. Finalement, créez une clé JSON à importer ici.',
   com_nav_welcome_message: 'Comment puis-je vous aider aujourd\'hui?',
   com_nav_auto_scroll: 'Défilement automatique jusqu\'au plus récent à l\'ouverture',
+  com_nav_modular_chat: 'Activer le changement de points de terminaison en cours de conversation',
+  com_nav_latex_parsing: 'Analyse LaTeX dans les messages (peut affecter les performances)',
   com_nav_profile_picture: 'Photo de profil',
   com_nav_change_picture: 'Changer de photo',
   com_nav_plugin_store: 'Boutique de plugins',
+  com_show_agent_settings: 'Afficher les paramètres de l\'agent',
+  com_show_completion_settings: 'Afficher les paramètres de complétion',
+  com_hide_examples: 'Masquer les exemples',
+  com_show_examples: 'Afficher les exemples',
   com_nav_plugin_search: 'Rechercher des plugins',
   com_nav_plugin_auth_error:
     'Une erreur s\'est produite lors de la tentative d\'authentification de ce plugin. Veuillez réessayer.',
@@ -366,6 +379,7 @@ export default {
   com_nav_theme_system: 'Système',
   com_nav_theme_dark: 'Sombre',
   com_nav_theme_light: 'Clair',
+  com_nav_user_name_display: 'Afficher le nom d\'utilisateur dans les messages',
   com_nav_clear_all_chats: 'Effacer toutes les conversations',
   com_nav_confirm_clear: 'Confirmer l\'effacement',
   com_nav_close_sidebar: 'Fermer la barre latérale',
@@ -407,6 +421,7 @@ export default {
     'Nous nous excusons pour tout inconvénient causé. La clé API par défaut a atteint sa limite. Pour continuer à utiliser ce service, veuillez configurer votre propre clé API. Vous pouvez le faire en cliquant sur le logo du modèle dans le coin gauche de la zone de texte et en sélectionnant "Set',
   com_error_unknown:
     'Oups! Quelque chose s\'est mal passé. Veuillez réessayer dans quelques instants. Voici le message d\'erreur spécifique que nous avons rencontré : {0}',
+  com_nav_setting_beta: 'Fonctionnalités bêta',
   com_nav_setting_data: 'Contrôles des données',
   com_nav_setting_account: 'Compte',
 };
