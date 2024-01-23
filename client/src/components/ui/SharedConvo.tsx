@@ -184,7 +184,7 @@ export default function SharedConvo() {
         },
       });
       const responseObject = await response.json();
-      setMsgTree(buildTree({ messages: responseObject, fileMap }));
+      setMsgTree(buildTree({ messages: responseObject, fileMap }) || []);
     } catch (error) {
       console.log(error);
     }
