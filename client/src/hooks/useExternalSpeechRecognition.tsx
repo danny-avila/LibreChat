@@ -24,7 +24,7 @@ const useExternalSpeechRecognition = () => {
     },
     onError: (error) => {
       console.error('Error:', error);
-      showToast({ message: localize('com_ui_upload_error'), status: 'error' });
+      showToast({ message: 'There was an error while uploading your audio', status: 'error' });
     },
   });
 
@@ -52,7 +52,7 @@ const useExternalSpeechRecognition = () => {
         };
 
         recorder.start();
-        setTimeout(() => recorder.stop(), 5000);
+        setTimeout(() => recorder.stop(), 3000);
       })
       .catch((error) => {
         console.error('Error starting recording:', error);
@@ -70,7 +70,7 @@ const useExternalSpeechRecognition = () => {
         formData.append('audio', audioBlob, 'recording.wav');
         processAudio(formData);
       } else {
-        showToast({ message: 'No audio data found', status: 'error' });
+        showToast({ message: 'No audio data found', status: 'info' });
       }
     }
   };
