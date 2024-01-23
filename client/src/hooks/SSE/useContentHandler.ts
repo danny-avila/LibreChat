@@ -50,11 +50,15 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
     response.content[index] = { type, [type]: part } as TMessageContentParts;
 
-    // if (type !== ContentTypes.TEXT
-    //   && initialResponse.content
-    //   && response.content[response.content.length - 1].type !== ContentTypes.TEXT) {
-    //   response.content.push(initialResponse.content[0]);
-    // }
+    if (
+      type !== ContentTypes.TEXT &&
+      initialResponse.content &&
+      ((response.content[response.content.length - 1].type === ContentTypes.TOOL_CALL &&
+        response.content[response.content.length - 1][ContentTypes.TOOL_CALL].progress === 1) ||
+        response.content[response.content.length - 1].type === ContentTypes.IMAGE_FILE)
+    ) {
+      response.content.push(initialResponse.content[0]);
+    }
 
     response.content = response.content.filter((p) => p !== undefined);
 
