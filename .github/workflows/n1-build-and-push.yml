@@ -1,0 +1,34 @@
+name: N1 - Build and Push
+
+env:
+    # Azure ACR
+    ACR_HOST: ${{ vars.REGISTRY_LOGIN_SERVER_NONPROD }}
+    ACR_USER: ${{ secrets.REGISTRY_USERNAME_NONPROD }}
+    ACR_PASS: ${{ secrets.REGISTRY_PASSWORD_NONPROD }}
+
+on:
+  workflow_dispatch:
+  #push:
+  #  branches:
+  #    - main
+
+jobs:
+    build_and_push:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+
+            - name: log in to ACR
+              uses: azure/docker-login@v1
+              with:
+                login-server: ${{ env.ACR_HOST }}
+                username: ${{ env.ACR_USER }}
+                password: ${{ env.ACR_PASS }}
+
+            - name: build and push docker container
+              run: |
+                docker build . -t ${{ env.ACR_HOST }}/librechat:n1.${{ github.sha }}
+                docker push ${{ env.ACR_HOST }}/librechat:n1.${{ github.sha }}
+
+                docker build . -t ${{ env.ACR_HOST }}/librechat:n1.latest
+                docker push ${{ env.ACR_HOST }}/librechat:n1.latest
