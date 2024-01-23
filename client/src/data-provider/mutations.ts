@@ -3,6 +3,7 @@ import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import type {
   TFileUpload,
+  AssistantListResponse,
   UploadMutationOptions,
   DeleteFilesResponse,
   DeleteFilesBody,
@@ -20,8 +21,11 @@ import type {
   AssistantUpdateParams,
   UploadAssistantAvatarOptions,
   AssistantAvatarVariables,
+  CreateAssistantMutationOptions,
+  UpdateAssistantMutationOptions,
+  DeleteAssistantMutationOptions,
 } from 'librechat-data-provider';
-import { dataService, MutationKeys, QueryKeys } from 'librechat-data-provider';
+import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import { updateConversation, deleteConversation, updateConvoFields } from '~/utils';
 import { useSetRecoilState } from 'recoil';
 import store from '~/store';
@@ -224,18 +228,33 @@ export const useUploadAvatarMutation = (
 /**
  * Create a new assistant
  */
-export const useCreateAssistantMutation = (): UseMutationResult<
-  Assistant,
-  Error,
-  AssistantCreateParams
-> => {
+export const useCreateAssistantMutation = (
+  options?: CreateAssistantMutationOptions,
+): UseMutationResult<Assistant, Error, AssistantCreateParams> => {
   const queryClient = useQueryClient();
   return useMutation(
     (newAssistantData: AssistantCreateParams) => dataService.createAssistant(newAssistantData),
     {
-      onSuccess: () => {
-        // Invalidate and refetch assistants query to update list
-        queryClient.invalidateQueries([QueryKeys.assistants]);
+      onMutate: (variables) => options?.onMutate?.(variables),
+      onError: (error, variables, context) => options?.onError?.(error, variables, context),
+      onSuccess: (newAssistant, variables, context) => {
+        const listRes = queryClient.getQueryData<AssistantListResponse>([
+          QueryKeys.assistants,
+          defaultOrderQuery,
+        ]);
+
+        if (!listRes) {
+          return options?.onSuccess?.(newAssistant, variables, context);
+        }
+
+        const currentAssistants = listRes.data;
+        currentAssistants.push(newAssistant);
+
+        queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
+          ...listRes,
+          data: currentAssistants,
+        });
+        return options?.onSuccess?.(newAssistant, variables, context);
       },
     },
   );
@@ -244,21 +263,36 @@ export const useCreateAssistantMutation = (): UseMutationResult<
 /**
  * Hook for updating an assistant
  */
-export const useUpdateAssistantMutation = (): UseMutationResult<
-  Assistant,
-  Error,
-  { assistant_id: string; data: AssistantUpdateParams }
-> => {
+export const useUpdateAssistantMutation = (
+  options?: UpdateAssistantMutationOptions,
+): UseMutationResult<Assistant, Error, { assistant_id: string; data: AssistantUpdateParams }> => {
   const queryClient = useQueryClient();
   return useMutation(
     ({ assistant_id, data }: { assistant_id: string; data: AssistantUpdateParams }) =>
       dataService.updateAssistant(assistant_id, data),
     {
-      onSuccess: (_, { assistant_id }) => {
-        // Invalidate and refetch assistant details query
-        queryClient.invalidateQueries([QueryKeys.assistant, assistant_id]);
-        // Optionally invalidate and refetch list of assistants
-        queryClient.invalidateQueries([QueryKeys.assistants]);
+      onMutate: (variables) => options?.onMutate?.(variables),
+      onError: (error, variables, context) => options?.onError?.(error, variables, context),
+      onSuccess: (updatedAssistant, variables, context) => {
+        const listRes = queryClient.getQueryData<AssistantListResponse>([
+          QueryKeys.assistants,
+          defaultOrderQuery,
+        ]);
+
+        if (!listRes) {
+          return options?.onSuccess?.(updatedAssistant, variables, context);
+        }
+
+        queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
+          ...listRes,
+          data: listRes.data.map((assistant) => {
+            if (assistant.id === variables.assistant_id) {
+              return updatedAssistant;
+            }
+            return assistant;
+          }),
+        });
+        return options?.onSuccess?.(updatedAssistant, variables, context);
       },
     },
   );
@@ -267,18 +301,31 @@ export const useUpdateAssistantMutation = (): UseMutationResult<
 /**
  * Hook for deleting an assistant
  */
-export const useDeleteAssistantMutation = (): UseMutationResult<
-  void,
-  Error,
-  { assistant_id: string }
-> => {
+export const useDeleteAssistantMutation = (
+  options?: DeleteAssistantMutationOptions,
+): UseMutationResult<void, Error, { assistant_id: string }> => {
   const queryClient = useQueryClient();
   return useMutation(
     ({ assistant_id }: { assistant_id: string }) => dataService.deleteAssistant(assistant_id),
     {
-      onSuccess: () => {
-        // Invalidate and refetch assistant list query
-        queryClient.invalidateQueries([QueryKeys.assistants]);
+      onMutate: (variables) => options?.onMutate?.(variables),
+      onError: (error, variables, context) => options?.onError?.(error, variables, context),
+      onSuccess: (_data, variables, context) => {
+        const listRes = queryClient.getQueryData<AssistantListResponse>([
+          QueryKeys.assistants,
+          defaultOrderQuery,
+        ]);
+
+        if (!listRes) {
+          return options?.onSuccess?.(_data, variables, context);
+        }
+
+        queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
+          ...listRes,
+          data: listRes.data.filter((assistant) => assistant.id !== variables.assistant_id),
+        });
+
+        return options?.onSuccess?.(_data, variables, context);
       },
     },
   );
