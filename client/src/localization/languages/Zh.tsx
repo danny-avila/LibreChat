@@ -24,6 +24,8 @@ export default {
   com_ui_follow: '关注',
   com_ui_followers: '粉丝',
   com_ui_following: '关注',
+  com_ui_pro_member_expired_at: 'Pro用户. 过期日期',
+  com_ui_free_member: '免费用户',
   com_ui_about_yourself: '关于自己',
   com_ui_profession: '职业',
   com_ui_share_profile: '分享主页',
@@ -393,4 +395,7 @@ export default {
     '对于由此造成的任何不便，我们深表歉意。默认API已达到其极限。要继续使用此服务，请设置您自己的API密钥。您可以通过单击文本框左角的模型徽标并为当前选定的端点选择“设置令牌”来做到这一点。感谢您的理解。',
   com_error_unknown: '哎呀！出了问题。请稍后重试。这是我们遇到的具体错误消息： {0}',
   com_nav_setting_account: '账户',
+  com_msg_playback: '播放',
+  com_msg_playback_pause: '暂停播放',
+  com_msg_playback_stop: '停止播放',
 };

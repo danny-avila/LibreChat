@@ -45,3 +45,6 @@ export { default as BingIcon } from './BingIcon';
 export { default as SendMessageIcon } from './SendMessageIcon';
 export { default as UserIcon } from './UserIcon';
 export { default as ExperimentIcon } from './ExperimentIcon';
+export { default as PlayIcon } from './PlayIcon';
+export { default as PauseIcon } from './PauseIcon';
+export { default as StopIcon } from './StopIcon';

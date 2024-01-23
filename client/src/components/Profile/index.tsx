@@ -24,6 +24,7 @@ function ProfileContent() {
   const [isFollower, setIsFollower] = useState<boolean>(false);
   const [numOfFollowers, setNumOfFollowers] = useState<number>(0);
   const [numOfFollowing, setNumOfFollowing] = useState<number>(0);
+  const [proMemberExpiredAt, setProMemberExpiredAt] = useState<Date>(new Date());
   const [editMode, setEditMode] = useState<boolean>(false);
   const [bio, setBio] = useState(initialBio || '');
   // const [profession, setProfession] = useState(initialProfession || '');
@@ -244,6 +245,12 @@ function ProfileContent() {
       } else {
         setNumOfFollowing(0);
       }
+
+      if (getUserByIdQuery.data.proMemberExpiredAt) {
+        setProMemberExpiredAt(new Date(getUserByIdQuery.data?.proMemberExpiredAt));
+      } else {
+        setProMemberExpiredAt(new Date());
+      }
     }
   }, [getUserByIdQuery.isSuccess, getUserByIdQuery.data, user]);
 
@@ -442,6 +449,24 @@ function ProfileContent() {
             </button>
           )}
         </div>
+        {/* Subscription */}
+        {userId === user?.id ? (
+          proMemberExpiredAt && proMemberExpiredAt > new Date() ? (
+            // Current user: show subscription
+            <div className="w-full rounded-lg p-6 dark:text-gray-200">
+              <div className="pl-7">
+                {localize('com_ui_pro_member_expired_at')}: {proMemberExpiredAt.getFullYear()}-
+                {proMemberExpiredAt.getMonth() + 1}-{proMemberExpiredAt.getDate()}
+              </div>
+            </div>
+          ) : (
+            <div className="w-full rounded-lg p-6 dark:text-gray-200">
+              <div className="pl-7">{localize('com_ui_free_member')}</div>
+            </div>
+          )
+        ) : (
+          <div></div>
+        )}
 
         {/* User bio */}
         {userId === user?.id ? (

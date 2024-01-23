@@ -1,10 +1,22 @@
 import { useState } from 'react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
-import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
-import { useGenerationsByLatest, useLocalize } from '~/hooks';
+// import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
+// import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import {
+  Clipboard,
+  CheckMark,
+  EditIcon,
+  RegenerateIcon,
+  ContinueIcon,
+  PlayIcon,
+  PauseIcon,
+  StopIcon,
+} from '~/components/svg';
+import { useGenerationsByLatest, useGenerations, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 type THoverButtons = {
+  showStopButton: boolean;
   isEditing: boolean;
   enterEdit: (cancel?: boolean) => void;
   copyToClipboard: (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => void;
@@ -14,9 +26,22 @@ type THoverButtons = {
   regenerate: () => void;
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
   latestMessage: TMessage | null;
+  stopPlaybackMessage: (
+    { isPaused, isStopped },
+    setPlaybackStatus: React.Dispatch<
+      React.SetStateAction<{ isPaused: boolean; isStopped: boolean }>
+    >,
+  ) => void;
+  playbackMessage: (
+    { isPaused, isStopped },
+    setPlaybackStatus: React.Dispatch<
+      React.SetStateAction<{ isPaused: boolean; isStopped: boolean }>
+    >,
+  ) => void;
 };
 
 export default function HoverButtons({
+  showStopButton,
   isEditing,
   enterEdit,
   copyToClipboard,
@@ -26,12 +51,15 @@ export default function HoverButtons({
   regenerate,
   handleContinue,
   latestMessage,
+  stopPlaybackMessage,
+  playbackMessage,
 }: THoverButtons) {
   const localize = useLocalize();
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
-  const { hideEditButton, regenerateEnabled, continueSupported } = useGenerationsByLatest({
+  const [playbackStatus, setPlaybackStatus] = useState({ isPaused: false, isStopped: true });
+  const { hideEditButton, regenerateEnabled, continueSupported } = useGenerations({
     isEditing,
     isSubmitting,
     message,
@@ -53,6 +81,35 @@ export default function HoverButtons({
 
   return (
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
+      <button
+        className="hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
+        onClick={() => playbackMessage(playbackStatus, setPlaybackStatus)}
+        type="button"
+        title={
+          playbackStatus.isPaused || playbackStatus.isStopped
+            ? localize('com_msg_playback')
+            : localize('com_msg_playback_pause')
+        }
+      >
+        {(playbackStatus.isStopped && !playbackStatus.isPaused) ||
+        (!playbackStatus.isStopped && playbackStatus.isPaused) ||
+        (playbackStatus.isStopped && !playbackStatus.isPaused) ? (
+            <PlayIcon />
+          ) : (
+            <PauseIcon />
+          )}
+      </button>
+      {showStopButton ? (
+        <button
+          className="hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible"
+          onClick={() => stopPlaybackMessage(playbackStatus, setPlaybackStatus)}
+          type="button"
+          disabled={playbackStatus.isStopped}
+          title={localize('com_msg_playback_stop')}
+        >
+          <StopIcon />
+        </button>
+      ) : null}
       <button
         className={cn(
           'hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
