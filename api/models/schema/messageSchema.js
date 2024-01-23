@@ -23,9 +23,11 @@ const messageSchema = mongoose.Schema(
       type: String,
       default: null,
     },
+    endpoint: {
+      type: String,
+    },
     conversationSignature: {
       type: String,
-      // required: true
     },
     clientId: {
       type: String,
@@ -35,7 +37,6 @@ const messageSchema = mongoose.Schema(
     },
     parentMessageId: {
       type: String,
-      // required: true
     },
     tokenCount: {
       type: Number,
@@ -82,22 +83,26 @@ const messageSchema = mongoose.Schema(
       select: false,
       default: false,
     },
-    files: [{ type: mongoose.Schema.Types.Mixed }],
+    files: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
     plugin: {
-      latest: {
-        type: String,
-        required: false,
+      type: {
+        latest: {
+          type: String,
+          required: false,
+        },
+        inputs: {
+          type: [mongoose.Schema.Types.Mixed],
+          required: false,
+          default: undefined,
+        },
+        outputs: {
+          type: String,
+          required: false,
+        },
       },
-      inputs: {
-        type: [mongoose.Schema.Types.Mixed],
-        required: false,
-      },
-      outputs: {
-        type: String,
-        required: false,
-      },
+      default: undefined,
     },
-    plugins: [{ type: mongoose.Schema.Types.Mixed }],
+    plugins: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
   },
   { timestamps: true },
 );

@@ -100,8 +100,7 @@ nano docker-compose.yml
 ```
 
 ```
-       VITE_APP_TITLE: LibreChat # default, change to your desired app >
-       VITE_SHOW_GOOGLE_LOGIN_OPTION: 'false'  # default, change to true if you want to show google login
+       APP_TITLE: LibreChat # default, change to your desired app >
 ```
 
 ### 2. Create a global environment file and open it up to begin adding the tokens/keys you prepared in the PreReqs section.
@@ -125,7 +124,6 @@ HOST=<yourserverip>
 ```
 SEARCH=true
 MEILI_HOST=meilisearch
-MEILI_HTTP_ADDR=meilisearch
 ```
 
 ### 5. After everything file has been updated, run  `docker-compose build` then `docker-compose up`

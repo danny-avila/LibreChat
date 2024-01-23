@@ -1,34 +1,32 @@
+require('dotenv').config();
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const express = require('express');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
-const { initializeFirebase } = require('~/server/services/Files/Firebase/initialize');
 const errorController = require('./controllers/ErrorController');
+const { jwtLogin, passportLogin } = require('~/strategies');
 const configureSocialLogins = require('./socialLogins');
 const { connectDb, indexSync } = require('~/lib/db');
-const { logger } = require('~/config');
+const AppService = require('./services/AppService');
 const noIndex = require('./middleware/noIndex');
+const { logger } = require('~/config');
 
-const paths = require('~/config/paths');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
 
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
-const projectPath = path.join(__dirname, '..', '..', 'client');
-const { jwtLogin, passportLogin } = require('~/strategies');
 
 const startServer = async () => {
   await connectDb();
   logger.info('Connected to MongoDB');
-  initializeFirebase();
   await indexSync();
 
   const app = express();
-  app.locals.config = paths;
+  await AppService(app);
 
   // Middleware
   app.use(noIndex);
@@ -36,14 +34,14 @@ const startServer = async () => {
   app.use(express.json({ limit: '3mb' }));
   app.use(mongoSanitize());
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
-  app.use(express.static(path.join(projectPath, 'dist')));
-  app.use(express.static(path.join(projectPath, 'public')));
+  app.use(express.static(app.locals.paths.dist));
+  app.use(express.static(app.locals.paths.publicPath));
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
 
   if (!ALLOW_SOCIAL_LOGIN) {
     console.warn(
-      'Social logins are disabled. Set Envrionment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.',
+      'Social logins are disabled. Set Environment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.',
     );
   }
 
@@ -78,7 +76,7 @@ const startServer = async () => {
   app.use('/api/files', routes.files);
 
   app.use((req, res) => {
-    res.status(404).sendFile(path.join(projectPath, 'dist', 'index.html'));
+    res.status(404).sendFile(path.join(app.locals.paths.dist, 'index.html'));
   });
 
   app.listen(port, host, () => {

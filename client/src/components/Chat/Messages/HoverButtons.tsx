@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
-import { useGenerations, useLocalize } from '~/hooks';
+import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 type THoverButtons = {
@@ -28,9 +28,10 @@ export default function HoverButtons({
   latestMessage,
 }: THoverButtons) {
   const localize = useLocalize();
-  const { endpoint } = conversation ?? {};
+  const { endpoint: _endpoint, endpointType } = conversation ?? {};
+  const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
-  const { hideEditButton, regenerateEnabled, continueSupported } = useGenerations({
+  const { hideEditButton, regenerateEnabled, continueSupported } = useGenerationsByLatest({
     isEditing,
     isSubmitting,
     message,

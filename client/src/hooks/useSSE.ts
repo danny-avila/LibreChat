@@ -1,12 +1,15 @@
-import { useEffect } from 'react';
+import { v4 } from 'uuid';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   /* @ts-ignore */
   SSE,
+  EndpointURLs,
   createPayload,
+  tPresetSchema,
   tMessageSchema,
-  tConversationSchema,
   EModelEndpoint,
+  tConvoUpdateSchema,
   removeNullishValues,
 } from 'librechat-data-provider';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
@@ -29,6 +32,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const setStorage = useSetStorage();
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
+  const [completed, setCompleted] = useState(new Set());
   const {
     addConvo,
     setMessages,
@@ -152,10 +156,10 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     let update = {} as TConversation;
     setConversation((prevState) => {
-      update = tConversationSchema.parse({
+      update = tConvoUpdateSchema.parse({
         ...prevState,
         conversationId,
-      });
+      }) as TConversation;
 
       setStorage(update);
       return update;
@@ -169,6 +173,8 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const finalHandler = (data: TResData, submission: TSubmission) => {
     const { requestMessage, responseMessage, conversation } = data;
     const { messages, conversation: submissionConvo, isRegenerate = false } = submission;
+
+    setCompleted((prev) => new Set(prev.add(submission?.initialResponse?.messageId)));
 
     // update the messages
     if (isRegenerate) {
@@ -207,10 +213,53 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     setIsSubmitting(false);
   };
 
-  const errorHandler = (data: TResData, submission: TSubmission) => {
-    const { messages, message } = submission;
+  const errorHandler = ({ data, submission }: { data?: TResData; submission: TSubmission }) => {
+    const { messages, message, initialResponse } = submission;
 
-    if (!data.conversationId) {
+    setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
+
+    const conversationId = message?.conversationId ?? submission?.conversationId;
+
+    const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
+      const metadata = data['responseMessage'] ?? data;
+      const errorMessage = {
+        ...initialResponse,
+        ...metadata,
+        error: true,
+        parentMessageId: message?.messageId,
+      };
+
+      if (!errorMessage.messageId) {
+        errorMessage.messageId = v4();
+      }
+
+      return tMessageSchema.parse(errorMessage);
+    };
+
+    if (!data) {
+      const convoId = conversationId ?? v4();
+      const errorResponse = parseErrorResponse({
+        text: 'Error connecting to server',
+        ...submission,
+        conversationId: convoId,
+      });
+      setMessages([...messages, message, errorResponse]);
+      newConversation({
+        template: { conversationId: convoId },
+        preset: tPresetSchema.parse(submission?.conversation),
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!conversationId && !data.conversationId) {
+      const convoId = v4();
+      const errorResponse = parseErrorResponse(data);
+      setMessages([...messages, message, errorResponse]);
+      newConversation({
+        template: { conversationId: convoId },
+        preset: tPresetSchema.parse(submission?.conversation),
+      });
       setIsSubmitting(false);
       return;
     }
@@ -224,7 +273,10 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     setMessages([...messages, message, errorResponse]);
     if (data.conversationId && paramId === 'new') {
-      newConversation({ template: { conversationId: data.conversationId } });
+      newConversation({
+        template: { conversationId: data.conversationId },
+        preset: tPresetSchema.parse(submission?.conversation),
+      });
     }
 
     setIsSubmitting(false);
@@ -233,10 +285,11 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
   const abortConversation = (conversationId = '', submission: TSubmission) => {
     console.log(submission);
-    const { endpoint } = submission?.conversation || {};
+    const { endpoint: _endpoint, endpointType } = submission?.conversation || {};
+    const endpoint = endpointType ?? _endpoint;
     let res: Response;
 
-    fetch(`/api/ask/${endpoint}/abort`, {
+    fetch(`${EndpointURLs[endpoint ?? '']}/abort`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -248,7 +301,29 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     })
       .then((response) => {
         res = response;
-        return response.json();
+        // Check if the response is JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          return response.json();
+        } else if (response.status === 204) {
+          const responseMessage = {
+            ...submission.initialResponse,
+            text: submission.initialResponse.text.replace(
+              '<span className="result-streaming">█</span>',
+              '',
+            ),
+          };
+
+          return {
+            requestMessage: submission.message,
+            responseMessage: responseMessage,
+            conversation: submission.conversation,
+          };
+        } else {
+          throw new Error(
+            'Unexpected response from server; Status: ' + res.status + ' ' + res.statusText,
+          );
+        }
       })
       .then((data) => {
         console.log('aborted', data);
@@ -260,6 +335,25 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       .catch((error) => {
         console.error('Error aborting request');
         console.error(error);
+        const convoId = conversationId ?? v4();
+
+        const text =
+          submission.initialResponse?.text?.length > 45 ? submission.initialResponse?.text : '';
+
+        const errorMessage = {
+          ...submission,
+          ...submission.initialResponse,
+          text: text ?? error.message ?? 'Error cancelling request',
+          unfinished: !!text.length,
+          error: true,
+        };
+
+        const errorResponse = tMessageSchema.parse(errorMessage);
+        setMessages([...submission.messages, submission.message, errorResponse]);
+        newConversation({
+          template: { conversationId: convoId },
+          preset: tPresetSchema.parse(submission?.conversation),
+        });
         setIsSubmitting(false);
       });
     return;
@@ -314,23 +408,37 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     events.onopen = () => console.log('connection is opened');
 
-    events.oncancel = () =>
-      abortConversation(message?.conversationId ?? submission?.conversationId, submission);
+    events.oncancel = () => {
+      const streamKey = submission?.initialResponse?.messageId;
+      if (completed.has(streamKey)) {
+        setIsSubmitting(false);
+        setCompleted((prev) => {
+          prev.delete(streamKey);
+          return new Set(prev);
+        });
+        return;
+      }
+
+      setCompleted((prev) => new Set(prev.add(streamKey)));
+      return abortConversation(message?.conversationId ?? submission?.conversationId, submission);
+    };
 
     events.onerror = function (e: MessageEvent) {
-      console.log('error in opening conn.');
+      console.log('error in server stream.');
       startupConfig?.checkBalance && balanceQuery.refetch();
       events.close();
 
-      let data = {} as TResData;
+      let data: TResData | undefined = undefined;
       try {
-        data = JSON.parse(e.data);
+        data = JSON.parse(e.data) as TResData;
       } catch (error) {
         console.error(error);
         console.log(e);
+        setIsSubmitting(false);
+        return;
       }
 
-      errorHandler(data, { ...submission, message });
+      errorHandler({ data, submission: { ...submission, message } });
     };
 
     setIsSubmitting(true);

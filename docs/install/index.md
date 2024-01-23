@@ -17,6 +17,7 @@ weight: 1
 ## **[Configuration](./configuration/index.md)**
 
   * ⚙️ [Environment Variables](./configuration/dotenv.md) 
+  * 🖥️ [Custom Endpoints & Config](./configuration/custom_config.md) 
   * 🐋 [Docker Compose Override](./configuration/docker_override.md)
   * 🤖 [AI Setup](./configuration/ai_setup.md)
   * 🚅 [LiteLLM](./configuration/litellm.md)

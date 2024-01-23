@@ -30,7 +30,7 @@ const ErrorMessage = ({ text }: TText) => {
 // Display Message Component
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
   const imageFiles = message?.files
-    ? message.files.filter((file) => file.type.startsWith('image/'))
+    ? message.files.filter((file) => file.type && file.type.startsWith('image/'))
     : null;
   return (
     <Container>

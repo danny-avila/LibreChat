@@ -21,9 +21,9 @@ services:
       - NODE_ENV=production
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       - MEILI_HOST=http://meilisearch:7700
-      - MEILI_HTTP_ADDR=meilisearch:7700
     volumes:
       - ./images:/app/client/public/images
+      - ./librechat.yaml:/app/librechat.yaml
   client:
     build:
       context: .
@@ -56,7 +56,6 @@ services:
       - .env
     environment:
       - MEILI_HOST=http://meilisearch:7700
-      - MEILI_HTTP_ADDR=meilisearch:7700
       - MEILI_NO_ANALYTICS=true
     volumes:
       - ./meili_data:/meili_data

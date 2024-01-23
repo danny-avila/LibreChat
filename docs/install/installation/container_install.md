@@ -55,7 +55,6 @@ Follow [this guide](../configuration/ai_setup.md) to populate the containers wit
 HOST=0.0.0.0
 MONGO_URI=mongodb://librechat-mongodb:27017/LibreChat
 MEILI_HOST=http://librechat-meilisearch:7700
-MEILI_HTTP_ADDR=librechat-meilisearch:7700
 MEILI_NO_ANALYTICS=true
 ```
 
@@ -220,6 +219,42 @@ podman run \
 # Stop the container (if it's confirmed to be running) and restart the service
 podman stop librechat && systemctl --user start container-librechat
 ```
+
+---
+
+## Integrating the Configuration File in Podman Setup
+
+When using Podman for setting up LibreChat, you can also integrate the [`librechat.yaml` configuration file](../configuration/custom_config.md). 
+
+This file allows you to define specific settings and AI endpoints, such as Mistral AI, tailoring the application to your needs.
+
+After creating your `.env` file as detailed in the previous steps, follow these instructions to integrate the `librechat.yaml` configuration:
+
+1. Place your `librechat.yaml` file in your project's root directory.
+2. Modify the Podman run command for the LibreChat container to include a volume argument that maps the `librechat.yaml` file inside the container. This can be done by adding the following line to your Podman run command:
+
+   ```bash
+   -v "./librechat.yaml:/app/librechat.yaml"
+   ```
+
+For example, the modified Podman run command for starting LibreChat will look like this:
+
+```bash
+podman run \
+  --name="librechat" \
+  --network=librechat \
+  --env-file="./.env" \
+  -v "./librechat.yaml:/app/librechat.yaml" \
+  -p 3080:3080 \
+  --detach \
+  librechat:local;
+```
+
+By mapping the `librechat.yaml` file into the container, Podman ensures that your custom configurations are applied to LibreChat, enabling a tailored AI experience.
+
+Ensure that the `librechat.yaml` file is correctly formatted and contains valid settings. 
+
+Any errors in this file might affect the functionality of LibreChat. For more information on configuring `librechat.yaml`, refer to the [configuration guide](../configuration/custom_config.md).
 
 ---
 

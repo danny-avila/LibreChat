@@ -193,7 +193,11 @@ export const listAssistants = (
 
 /* Files */
 
-export const uploadImage = (data: FormData): Promise<f.FileUploadResponse> => {
+export const getFiles = (): Promise<f.TFile[]> => {
+  return request.get(endpoints.files());
+};
+
+export const uploadImage = (data: FormData): Promise<f.TFileUpload> => {
   return request.postMultiPart(endpoints.images(), data);
 };
 

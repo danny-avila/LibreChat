@@ -7,6 +7,7 @@ weight: 2
 # Configuration
 
   * ⚙️ [Environment Variables](./dotenv.md)
+  * 🖥️ [Custom Endpoints & Config](./custom_config.md) 
   * 🐋 [Docker Compose Override](./docker_override.md) 
 ---
   * 🤖 [AI Setup](./ai_setup.md)

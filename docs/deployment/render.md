@@ -82,8 +82,9 @@ Also:
 ## Create and Configure your Database
 
 The last thing you need is to create a MongoDB Atlas Database and get your connection string.
+You can also restrict access to your Mongodb to only the [static outgoing IP addresses](https://docs.render.com/static-outbound-ip-addresses) for your Render hosted web service.
 
-Follow the instructions in this document: [Online MongoDB Database](../install/configuration/mongodb.md)
+Follow the instructions in this document but add each of the outgoing IP addresses to the list instead of all hosts: [Online MongoDB Database](../install/configuration/mongodb.md)
 
 ## Complete the Environment Variables configuration 
 

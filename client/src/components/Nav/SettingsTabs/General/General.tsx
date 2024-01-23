@@ -1,5 +1,6 @@
 import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
+import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useState, useContext, useCallback, useRef } from 'react';
 import { useClearConversationsMutation } from 'librechat-data-provider/react-query';
 import {
@@ -12,9 +13,9 @@ import {
 } from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
 import AutoScrollSwitch from './AutoScrollSwitch';
+import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
 import store from '~/store';
-import { Dropdown } from '~/components/ui';
 
 export const ThemeSelector = ({
   theme,
@@ -101,6 +102,7 @@ export const LangSelector = ({
     { value: 'vi-VN', display: localize('com_nav_lang_vietnamese') },
     { value: 'tr-TR', display: localize('com_nav_lang_turkish') },
     { value: 'nl-NL', display: localize('com_nav_lang_dutch') },
+    { value: 'id-ID', display: localize('com_nav_lang_indonesia') },
   ];
 
   return (
@@ -165,7 +167,7 @@ function General() {
 
   return (
     <Tabs.Content
-      value="general"
+      value={SettingsTabValues.GENERAL}
       role="tabpanel"
       className="w-full md:min-h-[300px]"
       ref={contentRef}
