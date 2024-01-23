@@ -1,5 +1,5 @@
 ---
-title: 🚅 LiteLLM
+title: 🚅 LiteLLM and Ollama
 description: Using LibreChat with LiteLLM Proxy 
 weight: -7
 ---
@@ -102,3 +102,57 @@ Key components and features include:
 - **Proxy CLI Arguments**: A wide range of command-line arguments for customization.
 
 Overall, LiteLLM Server offers a comprehensive suite of tools for managing, deploying, and interacting with a variety of LLMs, making it a versatile choice for large-scale AI applications.
+
+## Ollama
+Use [Ollama](https://ollama.ai/) for
+ * Run large language models on local hardware
+ * Host multiple models
+ * Dynamically load the model upon request
+
+### docker-compose.yaml with GPU
+```yaml
+version: "3.8"
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.18.8
+    volumes:
+      - ./litellm/litellm-config.yaml:/app/config.yaml
+    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
+  ollama:
+    image: ollama/ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [compute, utility]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./ollama:/root/.ollama
+
+```
+
+### Loading Models in Ollama
+1. Browse the available models at [Ollama Library](https://ollama.ai/library)
+2. Run ```docker exec -it ollama /bin/bash```
+3. Copy the text from the Tags tab from the library website. It should begin with 'ollama run'
+4. Check model size. Models that can run in GPU memory perform the best.
+5. Use /bye to exit the terminal
+
+### Litellm Ollama Configuration
+Add the below lines to the config to access the Ollama models
+```yaml
+  - model_name: mixtral
+    litellm_params:
+      model: ollama/mixtral:8x7b-instruct-v0.1-q5_K_M
+      api_base: http://ollama:11434
+      stream: True
+  - model_name: mistral
+    litellm_params:
+      model: ollama/mistral
+      api_base: http://ollama:11434
+      stream: True
+```
+
+
