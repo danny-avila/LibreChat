@@ -99,19 +99,19 @@ router.delete('/:id', async (req, res) => {
  * Returns a list of assistants.
  * @route GET /assistants
  * @param {AssistantListParams} req.query - The assistant list parameters for pagination and sorting.
- * @returns {Array<Assistant>} 200 - success response - application/json
+ * @returns {AssistantListResponse} 200 - success response - application/json
  */
 router.get('/', async (req, res) => {
   try {
     const openai = new OpenAI(process.env.OPENAI_API_KEY);
     const { limit, order, after, before } = req.query;
-    const assistants = await openai.beta.assistants.list({
+    const response = await openai.beta.assistants.list({
       limit,
       order,
       after,
       before,
     });
-    res.json(assistants);
+    res.json(response.body);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
