@@ -18,6 +18,7 @@ export const excelFileTypes = [
   'application/x-dos_ms_excel',
   'application/xls',
   'application/x-xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ];
 
 export const fullMimeTypesList = [
@@ -44,7 +45,6 @@ export const fullMimeTypesList = [
   'image/png',
   'application/x-tar',
   'application/typescript',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/xml',
   'application/zip',
   ...excelFileTypes,
@@ -74,7 +74,6 @@ export const codeInterpreterMimeTypesList = [
   'image/png',
   'application/x-tar',
   'application/typescript',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/xml',
   'application/zip',
   ...excelFileTypes,
@@ -101,7 +100,7 @@ export const retrievalMimeTypesList = [
 export const imageExtRegex = /\.(jpg|jpeg|png|gif|webp)$/i;
 
 export const excelMimeTypes =
-  /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls)$/;
+  /^application\/(vnd\.ms-excel|msexcel|x-msexcel|x-ms-excel|x-excel|x-dos_ms_excel|xls|x-xls|vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/;
 
 export const textMimeTypes =
   /^(text\/(x-c|x-c\+\+|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|javascript))$/;

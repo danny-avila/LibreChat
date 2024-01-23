@@ -198,6 +198,8 @@ router.post('/', setHeaders, async (req, res) => {
       });
     }
 
+    // TODO: failed run handling
+
     /** @type {ResponseMessage} */
     const responseMessage = {
       ...openai.responseMessage,

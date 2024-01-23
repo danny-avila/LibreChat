@@ -1,3 +1,4 @@
+import { excelMimeTypes } from 'librechat-data-provider';
 import SheetPaths from '~/components/svg/Files/SheetPaths';
 import TextPaths from '~/components/svg/Files/TextPaths';
 import FilePaths from '~/components/svg/Files/FilePaths';
@@ -9,6 +10,12 @@ const textDocument = {
   paths: TextPaths,
   fill: '#FF5588',
   title: 'Document',
+};
+
+const spreadsheet = {
+  paths: SheetPaths,
+  fill: '#10A37F',
+  title: 'Spreadsheet',
 };
 
 const codeFile = {
@@ -29,11 +36,7 @@ export const fileTypes = {
   // application:,
 
   /* Partial matches */
-  csv: {
-    paths: SheetPaths,
-    fill: '#10A37F',
-    title: 'Spreadsheet',
-  },
+  csv: spreadsheet,
   pdf: textDocument,
   'text/x-': codeFile,
 
@@ -65,10 +68,20 @@ export const fileTypes = {
 //   return fileType;
 // };
 
-export const getFileType = (type = '') => {
+export const getFileType = (
+  type = '',
+): {
+  paths: React.FC;
+  fill: string;
+  title: string;
+} => {
   // Direct match check
   if (fileTypes[type]) {
     return fileTypes[type];
+  }
+
+  if (excelMimeTypes.test(type)) {
+    return spreadsheet;
   }
 
   // Partial match check
