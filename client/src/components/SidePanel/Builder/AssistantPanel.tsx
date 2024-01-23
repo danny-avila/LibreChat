@@ -6,17 +6,14 @@ import { Tools, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import type { FunctionTool, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, Actions } from '~/common';
 import { useAssistantsContext, useChatContext } from '~/Providers';
-import {
-  useCreateAssistantMutation,
-  useUpdateAssistantMutation,
-  // useDeleteAssistantMutation,
-} from '~/data-provider';
+import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
 import { ToolSelectDialog } from '~/components/Tools';
 import { Separator } from '~/components/ui/Separator';
 import { SelectDropDown } from '~/components/ui';
 import { Switch } from '~/components/ui/Switch';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
+import ContextButton from './ContextButton';
 import AssistantTool from './AssistantTool';
 import { Spinner } from '~/components/svg';
 import { cn, cardStyle } from '~/utils/';
@@ -34,7 +31,6 @@ export default function AssistantPanel({ index = 0 }) {
   /* Mutations */
   const create = useCreateAssistantMutation();
   const update = useUpdateAssistantMutation();
-  // const deleteAssistant = useDeleteAssistantMutation();
 
   const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
   const inputClass =
@@ -258,29 +254,7 @@ export default function AssistantPanel({ index = 0 }) {
           </div>
         </div>
         <div className="flex items-center justify-end">
-          {/* Context Button */}
-          <button
-            className="btn btn-neutral border-token-border-light relative h-8 rounded-lg font-medium"
-            type="button"
-          >
-            <div className="flex w-full items-center justify-center gap-2">
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="icon-md"
-              >
-                <path
-                  fillRule="evenodd"
-                  clipRule="evenodd"
-                  d="M3 12C3 10.8954 3.89543 10 5 10C6.10457 10 7 10.8954 7 12C7 13.1046 6.10457 14 5 14C3.89543 14 3 13.1046 3 12ZM10 12C10 10.8954 10.8954 10 12 10C13.1046 10 14 10.8954 14 12C14 13.1046 13.1046 14 12 14C10.8954 14 10 13.1046 10 12ZM17 12C17 10.8954 17.8954 10 19 10C20.1046 10 21 10.8954 21 12C21 13.1046 20.1046 14 19 14C17.8954 14 17 13.1046 17 12Z"
-                  fill="currentColor"
-                />
-              </svg>
-            </div>
-          </button>
+          <ContextButton assistant_id={assistant_id} />
           {/* Use Button */}
           <button
             className="focus:shadow-outline mx-2 rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"

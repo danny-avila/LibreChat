@@ -55,9 +55,12 @@ export default {
   com_ui_revoke_info: 'Revoke all user provided credentials',
   com_ui_confirm_action: 'Confirm Action',
   com_ui_chats: 'chats',
+  com_ui_assistant: 'Assistant',
   com_ui_delete: 'Delete',
   com_ui_delete_conversation: 'Delete chat?',
   com_ui_delete_conversation_confirm: 'This will delete',
+  com_ui_delete_assistant_confirm:
+    'Are you sure you want to delete this Assistant? This cannot be undone.',
   com_ui_preview: 'Preview',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
