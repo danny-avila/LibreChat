@@ -3,9 +3,10 @@ import { useState, useRef, useCallback } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
-import { TooltipProvider } from '~/components/ui/Tooltip';
+import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
 import { Separator } from '~/components/ui/Separator';
 import AssistantPanel from './Builder/AssistantPanel';
+import NavToggle from '~/components/Nav/NavToggle';
 import { Blocks } from '~/components/svg';
 import Switcher from './Switcher';
 import { cn } from '~/utils';
@@ -24,8 +25,13 @@ export default function SidePanel({
   navCollapsedSize = 3,
   children,
 }: SidePanelProps) {
-  const panelRef = useRef<ImperativePanelHandle>(null);
+  const [isHovering, setIsHovering] = useState(false);
+  const [navVisible, setNavVisible] = useState(defaultCollapsed);
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
+  const [minSize, setMinSize] = useState(13.5);
+
+  const panelRef = useRef<ImperativePanelHandle>(null);
 
   const activePanel = localStorage.getItem('side:active-panel');
   const defaultActive = activePanel ? activePanel : undefined;
@@ -38,6 +44,24 @@ export default function SidePanel({
     [],
   );
 
+  const toggleNavVisible = () => {
+    setNavVisible((prev: boolean) => {
+      if (!prev) {
+        setMinSize(0);
+        setCollapsedSize(0);
+      } else {
+        setMinSize(13.5);
+        setCollapsedSize(3);
+      }
+      return !prev;
+    });
+    if (!navVisible) {
+      panelRef.current?.collapse();
+    } else {
+      panelRef.current?.expand();
+    }
+  };
+
   return (
     <TooltipProvider delayDuration={0}>
       <ResizablePanelGroup
@@ -48,26 +72,52 @@ export default function SidePanel({
         <ResizablePanel defaultSize={defaultLayout[0]} minSize={30}>
           {children}
         </ResizablePanel>
+
+        <TooltipProvider delayDuration={400}>
+          <Tooltip>
+            <div
+              onMouseEnter={() => setIsHovering(true)}
+              onMouseLeave={() => setIsHovering(false)}
+              className="bg-border focus-visible:ring-ring relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-offset-1 data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2 data-[panel-group-direction=vertical]:after:translate-x-0 [&[data-panel-group-direction=vertical]>div]:rotate-90"
+            >
+              <NavToggle
+                navVisible={navVisible}
+                isHovering={isHovering}
+                onToggle={toggleNavVisible}
+                setIsHovering={setIsHovering}
+                className="fixed top-1/2 mr-16"
+                translateX={false}
+                side="left"
+              />
+            </div>
+          </Tooltip>
+        </TooltipProvider>
         <ResizableHandle withHandle className="bg-gray-100 dark:bg-gray-100/20 dark:text-white" />
         <ResizablePanel
-          collapsedSize={navCollapsedSize}
+          collapsedSize={collapsedSize}
           defaultSize={defaultLayout[1]}
           collapsible={true}
-          minSize={13.5}
+          minSize={minSize}
           maxSize={30}
           ref={panelRef}
-          style={{ overflowY: 'auto' }}
+          style={{
+            overflowY: 'auto',
+            transition: 'width 0.2s, visibility 0.2s',
+          }}
           onExpand={() => {
             setIsCollapsed(false);
+            setNavVisible(false);
             localStorage.setItem('react-resizable-panels:collapsed', 'false');
           }}
           onCollapse={() => {
+            setNavVisible(true);
             setIsCollapsed(true);
             localStorage.setItem('react-resizable-panels:collapsed', 'true');
           }}
           className={cn(
             'sidenav dark:bg-black',
-            isCollapsed ? 'min-w-[50px] transition-all duration-300 ease-in-out' : '',
+            isCollapsed ? 'transition-all duration-300 ease-in-out' : '',
+            // isCollapsed ? 'min-w-[50px] transition-all duration-300 ease-in-out' : '',
           )}
         >
           <div
