@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react';
+import throttle from 'lodash/throttle';
+import { useState, useRef, useCallback } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
@@ -18,7 +19,7 @@ interface SidePanelProps {
 }
 
 export default function SidePanel({
-  defaultLayout = [75, 20],
+  defaultLayout = [73, 27],
   defaultCollapsed = false,
   navCollapsedSize = 3,
   children,
@@ -26,13 +27,22 @@ export default function SidePanel({
   const panelRef = useRef<ImperativePanelHandle>(null);
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
 
+  const activePanel = localStorage.getItem('side:active-panel');
+  const defaultActive = activePanel ? activePanel : undefined;
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const throttledSaveLayout = useCallback(
+    throttle((sizes: number[]) => {
+      localStorage.setItem('react-resizable-panels:layout', JSON.stringify(sizes));
+    }, 350),
+    [],
+  );
+
   return (
     <TooltipProvider delayDuration={0}>
       <ResizablePanelGroup
         direction="horizontal"
-        // onLayout={(sizes: number[]) => {
-        // localStorage.setItem('react-resizable-panels:layout', JSON.stringify(sizes));
-        // }}
+        onLayout={(sizes: number[]) => throttledSaveLayout(sizes)}
         className="h-full items-stretch"
       >
         <ResizablePanel defaultSize={defaultLayout[0]} minSize={30}>
@@ -43,23 +53,17 @@ export default function SidePanel({
           collapsedSize={navCollapsedSize}
           defaultSize={defaultLayout[1]}
           collapsible={true}
-          minSize={10}
+          minSize={13.5}
           maxSize={30}
           ref={panelRef}
           style={{ overflowY: 'auto' }}
           onExpand={() => {
             setIsCollapsed(false);
-            // localStorage.setItem(
-            //   'react-resizable-panels:collapsed',
-            //   JSON.stringify(false),
-            // );
+            localStorage.setItem('react-resizable-panels:collapsed', 'false');
           }}
           onCollapse={() => {
             setIsCollapsed(true);
-            // localStorage.setItem(
-            //   'react-resizable-panels:collapsed',
-            //   JSON.stringify(true),
-            // );
+            localStorage.setItem('react-resizable-panels:collapsed', 'true');
           }}
           className={cn(
             'sidenav dark:bg-black',
@@ -78,6 +82,7 @@ export default function SidePanel({
           <Nav
             resize={panelRef.current?.resize}
             isCollapsed={isCollapsed}
+            defaultActive={defaultActive}
             links={[
               {
                 title: 'Assistant Builder',

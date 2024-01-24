@@ -45,6 +45,11 @@ export default function Presentation({
   }, [mutateAsync]);
 
   const isActive = canDrop && isOver;
+  const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
+  const collapsedPanels = localStorage.getItem('react-resizable-panels:collapsed');
+
+  const defaultLayout = resizableLayout ? JSON.parse(resizableLayout) : undefined;
+  const defaultCollapsed = collapsedPanels ? JSON.parse(collapsedPanels) : undefined;
 
   const layout = () => (
     <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-0 dark:bg-gray-800">
@@ -62,7 +67,7 @@ export default function Presentation({
         className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800"
       >
         <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-0 dark:bg-gray-800">
-          <SidePanel>
+          <SidePanel defaultLayout={defaultLayout} defaultCollapsed={defaultCollapsed}>
             <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
               {children}
               {isActive && <DragDropOverlay />}

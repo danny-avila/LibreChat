@@ -20,11 +20,17 @@ interface NavProps {
   isCollapsed: boolean;
   links: NavLink[];
   resize?: (size: number) => void;
+  defaultActive?: string;
 }
 
-export default function Nav({ links, isCollapsed, resize }: NavProps) {
-  const [active, setActive] = useState<string | undefined>();
+export default function Nav({ links, isCollapsed, resize, defaultActive }: NavProps) {
+  const [active, _setActive] = useState<string | undefined>(defaultActive);
   const getVariant = (link: NavLink) => (link.id === active ? 'default' : 'ghost');
+
+  const setActive = (id: string) => {
+    localStorage.setItem('side:active-panel', id + '');
+    _setActive(id);
+  };
 
   return (
     <div
