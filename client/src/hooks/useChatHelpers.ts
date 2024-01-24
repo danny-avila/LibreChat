@@ -11,6 +11,7 @@ import type {
   TConversation,
   TEndpointsConfig,
   TGetConversationsResponse,
+  ConversationListResponse,
 } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
@@ -19,6 +20,7 @@ import { useAuthContext } from './AuthContext';
 import useUserKey from './Input/useUserKey';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
+import { InfiniteData } from '@tanstack/react-query';
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId: string | undefined) {
@@ -64,10 +66,13 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     (convo: TConversation) => {
       const convoData = queryClient.getQueryData<TGetConversationsResponse>([
         QueryKeys.allConversations,
-        { pageNumber: '1', active: true },
+        { pageNumber: '1' },
       ]) ?? { conversations: [] as TConversation[], pageNumber: '1', pages: 1, pageSize: 14 };
-
-      let { conversations: convos, pageSize = 14 } = convoData;
+      const queryKey = [QueryKeys.allConversations, { pageNumber: '1' }];
+      const currentData =
+        queryClient.getQueryData<InfiniteData<TGetConversationsResponse>>(queryKey);
+      let convos = convoData.pages[0].conversations;
+      let pageSize = convoData.pages[0].pageSize || 14; // Default to 14 if pageSize is not set
       pageSize = Number(pageSize);
       convos = convos.filter((c) => c.conversationId !== convo.conversationId);
       convos = convos.length < pageSize ? convos : convos.slice(0, -1);
@@ -82,7 +87,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       ];
 
       queryClient.setQueryData<TGetConversationsResponse>(
-        [QueryKeys.allConversations, { pageNumber: '1', active: true }],
+        [QueryKeys.allConversations, { pageNumber: '1' }],
         {
           ...convoData,
           conversations,
@@ -93,7 +98,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   );
 
   const invalidateConvos = useCallback(() => {
-    queryClient.invalidateQueries([QueryKeys.allConversations, { active: true }]);
+    queryClient.invalidateQueries([QueryKeys.allConversations]);
   }, [queryClient]);
 
   const getMessages = useCallback(() => {

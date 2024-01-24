@@ -1,6 +1,7 @@
 import * as f from './types/files';
 import * as m from './types/mutations';
 import * as a from './types/assistants';
+import * as c from './types/conversations';
 import * as t from './types';
 import * as s from './schemas';
 import request from './request';
@@ -209,3 +210,26 @@ export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesRe
   request.deleteWithOptions(endpoints.files(), {
     data: { files },
   });
+
+/* conversations */
+
+export const listConversations = (
+  params?: c.ConversationListParams,
+): Promise<c.ConversationListResponse> => {
+  // Assuming params has a pageNumber property
+  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
+  return request.get(endpoints.conversations(pageNumber));
+};
+
+export const listConversationsByQuery = (
+  params?: c.ConversationListParams & { searchQuery?: string },
+): Promise<c.ConversationListResponse> => {
+  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
+  const searchQuery = params?.searchQuery || ''; // If no search query is provided, default to an empty string
+  // Update the endpoint to handle a search query
+  if (searchQuery !== '') {
+    return request.get(endpoints.search(searchQuery, pageNumber));
+  } else {
+    return request.get(endpoints.conversations(pageNumber));
+  }
+};
