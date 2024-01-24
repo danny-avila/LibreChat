@@ -25,11 +25,11 @@ export default function SidePanel({
   navCollapsedSize = 3,
   children,
 }: SidePanelProps) {
+  const [minSize, setMinSize] = useState(13.5);
   const [isHovering, setIsHovering] = useState(false);
-  const [navVisible, setNavVisible] = useState(defaultCollapsed);
+  const [navVisible, setNavVisible] = useState(!defaultCollapsed);
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
   const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
-  const [minSize, setMinSize] = useState(13.5);
 
   const panelRef = useRef<ImperativePanelHandle>(null);
 
@@ -72,7 +72,6 @@ export default function SidePanel({
         <ResizablePanel defaultSize={defaultLayout[0]} minSize={30}>
           {children}
         </ResizablePanel>
-
         <TooltipProvider delayDuration={400}>
           <Tooltip>
             <div
@@ -81,18 +80,20 @@ export default function SidePanel({
               className="bg-border focus-visible:ring-ring relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-offset-1 data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2 data-[panel-group-direction=vertical]:after:translate-x-0 [&[data-panel-group-direction=vertical]>div]:rotate-90"
             >
               <NavToggle
-                navVisible={navVisible}
+                navVisible={!isCollapsed}
                 isHovering={isHovering}
                 onToggle={toggleNavVisible}
                 setIsHovering={setIsHovering}
                 className="fixed top-1/2 mr-16"
                 translateX={false}
-                side="left"
+                side="right"
               />
             </div>
           </Tooltip>
         </TooltipProvider>
-        <ResizableHandle withHandle className="bg-gray-100 dark:bg-gray-100/20 dark:text-white" />
+        {(!isCollapsed || minSize > 0) && (
+          <ResizableHandle withHandle className="bg-gray-100 dark:bg-gray-100/20 dark:text-white" />
+        )}
         <ResizablePanel
           collapsedSize={collapsedSize}
           defaultSize={defaultLayout[1]}

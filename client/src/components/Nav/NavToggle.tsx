@@ -61,7 +61,7 @@ export default function NavToggle({
             </div>
             <TooltipContent
               forceMount={newUser ? true : undefined}
-              side={side === 'left' ? 'right' : 'left'}
+              side={side === 'right' ? 'left' : 'right'}
               sideOffset={4}
             >
               {navVisible ? localize('com_nav_close_sidebar') : localize('com_nav_open_sidebar')}
