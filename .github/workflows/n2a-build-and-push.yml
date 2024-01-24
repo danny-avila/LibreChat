@@ -32,11 +32,4 @@ jobs:
 
                 docker build . -t ${{ env.ACR_HOST }}/librechat:n2a.latest
                 docker push ${{ env.ACR_HOST }}/librechat:n2a.latest
-
-            - name: Build and deploy Container App
-              uses: azure/container-apps-deploy-action@v1
-              with:
-                acrName: conpaychexain1001
-                containerAppName: conplayaieastusn2a001
-                resourceGroup: rg-playai-eastus-n2a-001
-                imageToDeploy: ${{ env.ACR_HOST }}/librechat:n2a.${{ github.sha }}
+                
