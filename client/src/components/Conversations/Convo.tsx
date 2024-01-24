@@ -115,7 +115,7 @@ export default function Conversation({
 
   const aProps = {
     className:
-      'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-900 py-3 px-3 pr-14 hover:bg-gray-900',
+      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg bg-gray-800 py-2 px-2',
   };
 
   const activeConvo =
@@ -123,13 +123,13 @@ export default function Conversation({
 
   if (!activeConvo) {
     aProps.className =
-      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-900 hover:pr-4';
+      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg py-2 px-2  hover:bg-gray-800';
   }
 
   return (
     <a data-testid="convo-item" onClick={() => clickHandler()} {...aProps} title={title}>
       {icon}
-      <div className="relative line-clamp-1 max-h-5 flex-1 text-ellipsis break-all">
+      <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">
         {renaming === true ? (
           <input
             ref={inputRef}
@@ -145,6 +145,11 @@ export default function Conversation({
         )}
       </div>
       {activeConvo ? (
+        <div className="absolute bottom-0 right-1 top-0 w-20 bg-gradient-to-l from-gray-800 from-60% to-transparent"></div>
+      ) : (
+        <div className="from--gray-800 absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%"></div>
+      )}
+      {activeConvo ? (
         <div className="visible absolute right-1 z-10 flex text-gray-400">
           <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
           <DeleteButton
@@ -155,7 +160,7 @@ export default function Conversation({
           />
         </div>
       ) : (
-        <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-black group-hover:from-gray-900" />
+        <div className="absolute bottom-0 right-0 top-0 w-20 rounded-lg bg-gradient-to-l from-black from-0% to-transparent  group-hover:from-gray-800" />
       )}
     </a>
   );

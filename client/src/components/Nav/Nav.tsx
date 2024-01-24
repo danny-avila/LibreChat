@@ -200,25 +200,25 @@ export default function Nav({ navVisible, setNavVisible }) {
             <div className="flex h-full min-h-0 flex-col">
               <div
                 className={cn(
-                  'scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20 transition-opacity',
+                  'relative flex h-full w-full flex-1 items-start border-white/20 transition-opacity',
                   isToggleHovering && !isSmallScreen ? 'opacity-50' : 'opacity-100',
                 )}
               >
-                <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
+                <nav className="flex h-full w-full flex-col px-3 pb-3.5">
                   <div className="mb-1 flex h-11 flex-row">
                     <NewChat toggleNav={itemToggleNav} />
                   </div>
                   {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                   <div
-                    className={`flex-1 flex-col overflow-y-auto ${
+                    className={`-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500 ${
                       isHovering ? '' : 'scrollbar-transparent'
                     } border-b border-white/20`}
                     onMouseEnter={() => setIsHovering(true)}
                     onMouseLeave={() => setIsHovering(false)}
                     ref={containerRef}
                   >
-                    <div className="my-2 ml-2 h-px w-7 bg-white/20"></div>
-                    <div className="my-1 ml-1 h-px w-7"></div>
+                    <div className="my-1 ml-1 h-px w-7 bg-white/20"></div>
+
                     <div className={containerClasses}>
                       <Conversations
                         conversations={conversations}
