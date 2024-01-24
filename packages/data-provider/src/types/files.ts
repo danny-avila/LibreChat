@@ -6,17 +6,26 @@ export enum FileSources {
 }
 
 export type TFile = {
-  message: string;
+  _id?: string;
+  __v?: number;
+  user: string;
+  conversationId?: string;
+  message?: string;
   file_id: string;
-  filepath: string;
-  filename: string;
-  type: string;
-  size: number;
   temp_file_id?: string;
-  source?: FileSources;
-  height?: number;
+  bytes: number;
+  filename: string;
+  filepath: string;
+  object: 'file';
+  type: string;
+  usage: number;
+  source?: string;
   width?: number;
+  height?: number;
+  expiresAt?: string | Date;
   preview?: string;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
 };
 
 export type TFileUpload = TFile & {
