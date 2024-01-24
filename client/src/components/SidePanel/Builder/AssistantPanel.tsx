@@ -5,8 +5,8 @@ import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { Tools, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import type { FunctionTool, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, Actions } from '~/common';
-import { useAssistantsContext, useChatContext } from '~/Providers';
 import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
+import { useAssistantsContext, useChatContext } from '~/Providers';
 import { ToolSelectDialog } from '~/components/Tools';
 import { Separator } from '~/components/ui/Separator';
 import { SelectDropDown } from '~/components/ui';
@@ -18,6 +18,10 @@ import AssistantTool from './AssistantTool';
 import { Spinner } from '~/components/svg';
 import { cn, cardStyle } from '~/utils/';
 import { useNewConvo } from '~/hooks';
+
+const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
+const inputClass =
+  'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 dark:text-white shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
 
 export default function AssistantPanel({ index = 0 }) {
   const queryClient = useQueryClient();
@@ -31,11 +35,6 @@ export default function AssistantPanel({ index = 0 }) {
   /* Mutations */
   const create = useCreateAssistantMutation();
   const update = useUpdateAssistantMutation();
-
-  const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
-  const inputClass =
-    'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 dark:text-white shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
-
   const assistant_id = useWatch({ control, name: 'id' });
   const assistant = useWatch({ control, name: 'assistant' });
   const functions = useWatch({ control, name: 'functions' });
@@ -256,23 +255,26 @@ export default function AssistantPanel({ index = 0 }) {
         <div className="flex items-center justify-end">
           <ContextButton assistant_id={assistant_id} />
           {/* Use Button */}
-          <button
-            className="focus:shadow-outline mx-2 rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              switchToConversation({
-                endpoint: EModelEndpoint.assistant,
-                conversationId: 'new',
-                assistant_id,
-                title: null,
-                createdAt: '',
-                updatedAt: '',
-              });
-            }}
-          >
-            Use
-          </button>
+          {assistant_id && (
+            <button
+              className="focus:shadow-outline mx-2 rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+              type="button"
+              disabled={!assistant_id}
+              onClick={(e) => {
+                e.preventDefault();
+                switchToConversation({
+                  endpoint: EModelEndpoint.assistant,
+                  conversationId: 'new',
+                  assistant_id,
+                  title: null,
+                  createdAt: '',
+                  updatedAt: '',
+                });
+              }}
+            >
+              Use
+            </button>
+          )}
           {/* Submit Button */}
           <button
             className="focus:shadow-outline flex w-1/4 items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"

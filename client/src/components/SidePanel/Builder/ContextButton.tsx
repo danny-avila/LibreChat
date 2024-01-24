@@ -8,10 +8,12 @@ import { useLocalize } from '~/hooks';
 
 export default function ContextButton({ assistant_id }: { assistant_id: string }) {
   const localize = useLocalize();
-  const deleteAssistant = useDeleteAssistantMutation({
-    // onSuccess: () => {
-    // }
-  });
+  const deleteAssistant = useDeleteAssistantMutation();
+
+  if (!assistant_id) {
+    return null;
+  }
+
   return (
     <Dialog>
       <Popover.Root>

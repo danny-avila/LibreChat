@@ -57,6 +57,7 @@ export default {
   com_ui_chats: 'chats',
   com_ui_assistant: 'Assistant',
   com_ui_delete: 'Delete',
+  com_ui_create: 'Create',
   com_ui_delete_conversation: 'Delete chat?',
   com_ui_delete_conversation_confirm: 'This will delete',
   com_ui_delete_assistant_confirm:

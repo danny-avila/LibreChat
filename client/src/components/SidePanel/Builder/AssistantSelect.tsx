@@ -6,6 +6,7 @@ import type { UseFormReset } from 'react-hook-form';
 import type { AssistantForm, Actions, Option } from '~/common';
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { useListAssistantsQuery } from '~/data-provider';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 
 const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);
@@ -21,6 +22,8 @@ export default function AssistantSelect({
   value: TAssistantOption;
   selectedAssistant: string | null;
 }) {
+  const localize = useLocalize();
+
   const assistants = useListAssistantsQuery(defaultOrderQuery, {
     select: (res) =>
       res.data.map((assistant) => ({
@@ -99,9 +102,10 @@ export default function AssistantSelect({
     };
   }, [selectedAssistant, assistants.data, onSelect]);
 
+  const createAssistant = localize('com_ui_create') + ' ' + localize('com_ui_assistant');
   return (
     <SelectDropDown
-      value={!value ? 'Create Assistant' : value}
+      value={!value ? createAssistant : value}
       setValue={onSelect}
       availableValues={
         assistants.data ?? [
@@ -131,8 +135,7 @@ export default function AssistantSelect({
             <Plus className="w-[16px]" />
           </span>
           <span className={cn('ml-4 flex h-6 items-center gap-1 text-gray-800 dark:text-gray-100')}>
-            {/* TODO: localize */}
-            {'Create Assistant'}
+            {createAssistant}
           </span>
         </span>
       )}
