@@ -135,7 +135,7 @@ router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => 
     if (_metadata.avatar && _metadata.avatar_source) {
       const { deleteFile } = getStrategyFunctions(_metadata.avatar_source);
       try {
-        deleteFile(req, { filepath: _metadata.avatar });
+        await deleteFile(req, { filepath: _metadata.avatar });
       } catch (error) {
         logger.error('[/avatar/:assistant_id] Error deleting old avatar', error);
       }

@@ -155,10 +155,7 @@ const uploadImageBuffer = async ({ req }) => {
   const source = req.app.locals.fileStrategy;
   const { saveBuffer } = getStrategyFunctions(source);
   const buffer = await resizeAndConvert(req.file.buffer);
-
-  const originalExtension = path.extname(req.file.originalname);
-  const fileNameWithoutExtension = path.basename(req.file.originalname, originalExtension);
-  const fileName = `${fileNameWithoutExtension}.webp`;
+  const fileName = `img-${v4()}.webp`;
 
   const filepath = await saveBuffer({ userId: req.user.id, fileName, buffer });
   return {
