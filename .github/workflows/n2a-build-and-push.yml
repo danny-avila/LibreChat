@@ -14,7 +14,7 @@ on:
 
 jobs:
     build_and_push:
-        runs-on: [self-hosted, nonprod]
+        runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v3
 
@@ -32,10 +32,11 @@ jobs:
 
                 docker build . -t ${{ env.ACR_HOST }}/librechat:n2a.latest
                 docker push ${{ env.ACR_HOST }}/librechat:n2a.latest
-                
-            - name: create new revision and activate
-              uses: azure/CLI@v1
+
+            - name: Build and deploy Container App
+              uses: azure/container-apps-deploy-action@v1
               with:
-                inlineScript: |
-                  az login --identity
-                  az containerapp revision copy -n conplayaieastusn2a001 -g rg-playai-eastus-n2a-001 --image librechat:n2a.${{ github.sha }}
+                acrName: conpaychexain1001
+                containerAppName: conplayaieastusn2a001
+                resourceGroup: rg-playai-eastus-n2a-001
+                imageToDeploy: ${{ env.ACR_HOST }}/librechat:n2a.${{ github.sha }}
