@@ -119,14 +119,14 @@ export default function AssistantSelect({
       showAbove={false}
       showLabel={false}
       emptyTitle={true}
-      optionsClass="hover:bg-gray-20/50"
-      optionsListClass="rounded-lg shadow-lg dark:bg-black"
+      optionsClass="hover:bg-gray-20/50 dark:border-gray-700"
+      optionsListClass="rounded-lg shadow-lg dark:bg-black dark:border-gray-700 dark:last:border"
       currentValueClass={cn(
         'text-md font-semibold text-gray-900 dark:text-white',
         value === '' ? 'text-gray-500' : '',
       )}
       className={cn(
-        'mt-1 rounded-md dark:bg-black',
+        'mt-1 rounded-md dark:border-gray-700 dark:bg-black',
         'z-50 flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer hover:border-green-500 focus:border-green-500',
       )}
       renderOption={() => (

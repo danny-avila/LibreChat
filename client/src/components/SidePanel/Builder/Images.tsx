@@ -98,7 +98,7 @@ export function AvatarMenu({
   return (
     <Popover.Portal>
       <Popover.Content
-        className="flex min-w-[100px] max-w-xs flex-col rounded-xl border border-gray-400 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        className="flex min-w-[100px] max-w-xs flex-col rounded-xl border border-gray-400 bg-white shadow-lg dark:border-gray-700 dark:bg-black dark:text-white"
         sideOffset={5}
       >
         <div
@@ -110,14 +110,14 @@ export function AvatarMenu({
         >
           Upload Photo
         </div>
-        <Popover.Close
+        {/* <Popover.Close
           role="menuitem"
           className="group m-1.5 flex cursor-pointer gap-2 rounded p-2.5 text-sm hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
           tabIndex={-1}
           data-orientation="vertical"
         >
           Use DALL·E
-        </Popover.Close>
+        </Popover.Close> */}
         <input
           accept="image/png,.png,image/jpeg,.jpg,.jpeg,image/gif,.gif,image/webp,.webp"
           multiple={false}

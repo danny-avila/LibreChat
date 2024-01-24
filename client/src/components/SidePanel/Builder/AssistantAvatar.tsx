@@ -1,5 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { fileConfig, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import type { Metadata, AssistantListResponse } from 'librechat-data-provider';
@@ -14,7 +14,6 @@ function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: nu
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const [progress, setProgress] = useState<number>(1);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [input, setinput] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -107,36 +106,18 @@ function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: nu
     setMenuOpen(false);
   };
 
-  const handleButtonClick = () => {
-    // necessary to reset the input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-    fileInputRef.current?.click();
-  };
-
   const url = previewUrl ?? (metadata?.avatar as string | undefined);
 
   return (
     <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
       <div className="flex w-full items-center justify-center gap-4">
         <Popover.Trigger asChild>
-          <button type="button" className="h-20 w-20" onClick={handleButtonClick}>
+          <button type="button" className="h-20 w-20">
             {url ? <AssistantAvatar url={url} progress={progress} /> : <NoImage />}
           </button>
         </Popover.Trigger>
-        <input
-          disabled={!!url}
-          accept="image/png,.png,image/jpeg,.jpg,.jpeg,image/gif,.gif,image/webp,.webp"
-          multiple={false}
-          type="file"
-          style={{ display: 'none' }}
-          tabIndex={-1}
-          onChange={handleFileChange}
-          ref={fileInputRef}
-        />
       </div>
-      {url && <AvatarMenu handleFileChange={handleFileChange} />}
+      {<AvatarMenu handleFileChange={handleFileChange} />}
     </Popover.Root>
   );
 }
