@@ -9,6 +9,8 @@ import type {
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 
+export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
+
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
 export type TSetExample = (
   i: number,
