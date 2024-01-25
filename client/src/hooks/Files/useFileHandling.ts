@@ -202,6 +202,7 @@ const useFileHandling = () => {
         const extendedFile: ExtendedFile = {
           file_id,
           file: originalFile,
+          type: originalFile.type,
           preview,
           progress: 0.2,
           size: originalFile.size,
@@ -211,7 +212,7 @@ const useFileHandling = () => {
 
         if (originalFile.type?.split('/')[0] === 'image') {
           loadImage(extendedFile, preview);
-          return;
+          continue;
         }
 
         await startUpload(extendedFile);
