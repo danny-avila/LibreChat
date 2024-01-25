@@ -12,8 +12,7 @@ export default {
   com_ui_capability_decline_requests: '限制不当信息',
   com_ui_limitations: '局限性',
   com_ui_limitation_incorrect_info: '可能会不时出现错误信息',
-  com_ui_limitation_harmful_biased: 
-    '可能会提供有害指示或者偏见',
+  com_ui_limitation_harmful_biased: '可能会提供有害指示或者偏见',
   com_ui_limitation_limited_2021: '基于2021年以前信息训练',
   com_ui_experimental: '实验性',
   com_ui_input: '输入',

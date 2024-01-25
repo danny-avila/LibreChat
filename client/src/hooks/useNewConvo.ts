@@ -92,6 +92,10 @@ const useNewConvo = (index = 0) => {
         }
 
         if (conversation.conversationId === 'new' && !modelsData) {
+          const appTitle = localStorage.getItem('appTitle');
+          if (appTitle) {
+            document.title = appTitle;
+          }
           navigate('new');
         }
       },

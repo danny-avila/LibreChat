@@ -20,9 +20,7 @@ export default function ModularChatSwitch({
 
   return (
     <div className="flex items-center justify-between">
-      <div>
-        {`[${localize('com_ui_experimental')}]`} {localize('com_nav_modular_chat')}{' '}
-      </div>
+      <div>{localize('com_nav_modular_chat')} </div>
       <Switch
         id="modularChat"
         checked={modularChat}

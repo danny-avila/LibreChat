@@ -23,6 +23,7 @@ export const endpointSchema = z.object({
   summaryModel: z.string().optional(),
   forcePrompt: z.boolean().optional(),
   modelDisplayLabel: z.string().optional(),
+  headers: z.record(z.any()).optional(),
 });
 
 export const configSchema = z.object({
@@ -211,4 +212,26 @@ export enum ImageDetailCost {
    * Additional Cost added to High Resolution Total Cost
    */
   ADDITIONAL = 85,
+}
+
+/**
+ * Tab values for Settings Dialog
+ */
+export enum SettingsTabValues {
+  /**
+   * Tab for General Settings
+   */
+  GENERAL = 'general',
+  /**
+   * Tab for Beta Features
+   */
+  BETA = 'beta',
+  /**
+   * Tab for Data Controls
+   */
+  DATA = 'data',
+  /**
+   * Tab for Account Settings
+   */
+  ACCOUNT = 'account',
 }
