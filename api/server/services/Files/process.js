@@ -46,6 +46,7 @@ function enqueueDeleteOperation(req, file, deleteFile, promises) {
           [],
           (err, result) => {
             if (err) {
+              logger.error('Error deleting file from OpenAI source', err);
               reject(err);
             } else {
               resolve(result);
@@ -56,7 +57,12 @@ function enqueueDeleteOperation(req, file, deleteFile, promises) {
     );
   } else {
     // Add directly to promises
-    promises.push(deleteFile(req, file));
+    promises.push(
+      deleteFile(req, file).catch((err) => {
+        logger.error('Error deleting file', err);
+        return Promise.reject(err);
+      }),
+    );
   }
 }
 
@@ -95,7 +101,7 @@ const processDeleteRequest = async ({ req, files }) => {
     enqueueDeleteOperation(req, file, deleteFile, promises);
   }
 
-  await Promise.all(promises);
+  await Promise.allSettled(promises);
 };
 
 /**
