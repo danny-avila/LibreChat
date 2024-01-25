@@ -89,7 +89,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           placeholder="Filter files..."
           value={(table.getColumn('filename')?.getFilterValue() as string) ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-          className="max-w-sm"
+          className="max-w-sm dark:border-gray-700"
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -98,7 +98,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             </Button>
           </DropdownMenuTrigger>
           {/* Filter Menu */}
-          <DropdownMenuContent align="end" className="z-[1001]">
+          <DropdownMenuContent align="end" className="z-[1001] dark:border-gray-700 dark:bg-black">
             {table
               .getAllColumns()
               .filter((column) => column.getCanHide())
@@ -106,7 +106,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                 return (
                   <DropdownMenuCheckboxItem
                     key={column.id}
-                    className="capitalize"
+                    className="cursor-pointer capitalize dark:text-white dark:hover:bg-gray-800"
                     checked={column.getIsVisible()}
                     onCheckedChange={(value) => column.toggleVisibility(!!value)}
                   >

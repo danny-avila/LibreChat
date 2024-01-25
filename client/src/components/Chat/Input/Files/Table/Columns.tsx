@@ -100,7 +100,7 @@ export const columns: ColumnDef<TFile>[] = [
       }
       return (
         <div className="flex flex-wrap items-center gap-2">
-          <Database className="icon-sm" />
+          <Database className="icon-sm text-cyan-700" />
           {'Host'}
         </div>
       );

@@ -52,12 +52,18 @@ export function SortFilterHeader<TData, TValue>({
             )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[1001]">
-          <DropdownMenuItem onClick={() => column.toggleSorting(false)} className="cursor-pointer">
+        <DropdownMenuContent align="start" className="z-[1001] dark:border-gray-700 dark:bg-black">
+          <DropdownMenuItem
+            onClick={() => column.toggleSorting(false)}
+            className="cursor-pointer dark:text-white dark:hover:bg-gray-800"
+          >
             <ArrowUpIcon className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
             Asc
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => column.toggleSorting(true)} className="cursor-pointer">
+          <DropdownMenuItem
+            onClick={() => column.toggleSorting(true)}
+            className="cursor-pointer dark:text-white dark:hover:bg-gray-800"
+          >
             <ArrowDownIcon className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
             Desc
           </DropdownMenuItem>
@@ -66,7 +72,7 @@ export function SortFilterHeader<TData, TValue>({
             Object.entries(filters).map(([key, values]) =>
               values.map((value: string | number) => (
                 <DropdownMenuItem
-                  className="cursor-pointer"
+                  className="cursor-pointer dark:text-white dark:hover:bg-gray-800"
                   key={`${key}-${value}`}
                   onClick={() => {
                     column.setFilterValue(value);
@@ -80,7 +86,9 @@ export function SortFilterHeader<TData, TValue>({
           {filters && (
             <DropdownMenuItem
               className={
-                column.getIsFiltered() ? 'cursor-pointer' : 'pointer-events-none opacity-30'
+                column.getIsFiltered()
+                  ? 'cursor-pointer dark:text-white dark:hover:bg-gray-800'
+                  : 'pointer-events-none opacity-30'
               }
               onClick={() => {
                 column.setFilterValue(undefined);
