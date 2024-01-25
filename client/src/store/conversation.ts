@@ -32,10 +32,16 @@ const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   default: 0,
 });
 
+export const endpointSelected = atom({
+  key: 'endpointSelected', // unique ID (with respect to other atoms/selectors)
+  default: 'defaultValue', // default value (aka initial value)
+});
+
 export default {
   messages,
   conversation,
   messagesTree,
   latestMessage,
   messagesSiblingIdxFamily,
+  endpointSelected,
 };

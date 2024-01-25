@@ -31,6 +31,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const scrollPositionRef = useRef<number | null>(null);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
+  const endpointSelected = useRecoilValue(store.endpointSelected);
 
   useEffect(() => {
     if (isSmallScreen) {
@@ -102,7 +103,6 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const onSearchSuccess = useCallback((data: ConversationListResponse, expectedPage?: number) => {
     const res = data;
-    console.log('res', res);
     setConversations(res.conversations);
     if (expectedPage) {
       setPageNumber(expectedPage);
@@ -206,7 +206,7 @@ export default function Nav({ navVisible, setNavVisible }) {
               >
                 <nav className="flex h-full w-full flex-col px-3 pb-3.5">
                   <div className="mb-1 flex h-11 flex-row">
-                    <NewChat toggleNav={itemToggleNav} />
+                    <NewChat endpoint={endpointSelected} toggleNav={itemToggleNav} />
                   </div>
                   {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                   <div
@@ -229,6 +229,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                   </div>
 
                   {isFetchingNextPage && <Spinner />}
+
                   <NavLinks />
                 </nav>
               </div>

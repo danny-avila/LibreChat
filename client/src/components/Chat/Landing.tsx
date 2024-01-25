@@ -5,10 +5,13 @@ import { icons } from './Menus/Endpoints/Icons';
 import { useChatContext } from '~/Providers';
 import { getEndpointField } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
+import store from '~/store';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { conversation } = useChatContext();
+  const setEndpointSelected = useSetRecoilState(store.endpointSelected);
   const localize = useLocalize();
   let { endpoint } = conversation ?? {};
   if (
@@ -24,6 +27,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const iconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
   const Icon = icons[iconKey];
+
+  setEndpointSelected(endpoint?.toString() ?? '');
 
   return (
     <div className="relative h-full">
