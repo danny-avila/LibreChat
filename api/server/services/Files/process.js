@@ -11,6 +11,7 @@ const {
 const { convertToWebP, resizeAndConvert } = require('~/server/services/Files/images');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { isEnabled, determineFileType } = require('~/server/utils');
+const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
 const { logger } = require('~/config');
 
@@ -26,6 +27,38 @@ const processFiles = async (files) => {
   // TODO: calculate token cost when image is first uploaded
   return await Promise.all(promises);
 };
+
+/**
+ * Enqueues the delete operation to the leaky bucket queue if necessary, or adds it directly to promises.
+ *
+ * @param {Express.Request} req - The express request object.
+ * @param {MongoFile} file - The file object to delete.
+ * @param {Function} deleteFile - The delete file function.
+ * @param {Promise[]} promises - The array of promises to await.
+ */
+function enqueueDeleteOperation(req, file, deleteFile, promises) {
+  if (file.source === FileSources.openai) {
+    // Enqueue to leaky bucket
+    promises.push(
+      new Promise((resolve, reject) => {
+        LB_QueueAsyncCall(
+          () => deleteFile(req, file),
+          [],
+          (err, result) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(result);
+            }
+          },
+        );
+      }),
+    );
+  } else {
+    // Add directly to promises
+    promises.push(deleteFile(req, file));
+  }
+}
 
 // TODO: refactor as currently only image files can be deleted this way
 // as other filetypes will not reside in public path
@@ -43,13 +76,13 @@ const processDeleteRequest = async ({ req, files }) => {
 
   const deletionMethods = {};
   const promises = [];
-  promises.push(await deleteFiles(file_ids));
+  promises.push(deleteFiles(file_ids));
 
   for (const file of files) {
     const source = file.source ?? FileSources.local;
 
     if (deletionMethods[source]) {
-      promises.push(deletionMethods[source](req, file));
+      enqueueDeleteOperation(req, file, deletionMethods[source], promises);
       continue;
     }
 
@@ -59,7 +92,7 @@ const processDeleteRequest = async ({ req, files }) => {
     }
 
     deletionMethods[source] = deleteFile;
-    promises.push(deleteFile(req, file));
+    enqueueDeleteOperation(req, file, deleteFile, promises);
   }
 
   await Promise.all(promises);
