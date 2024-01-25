@@ -1,4 +1,4 @@
-function useSpeechSynthesis() {
+function useTextToSpeech() {
   const synthesizeSpeech = (text, onEnd) => {
     const synth = window.speechSynthesis;
     synth.cancel();
@@ -19,4 +19,4 @@ function useSpeechSynthesis() {
   return { synthesizeSpeech, cancelSpeech };
 }
 
-export default useSpeechSynthesis;
+export default useTextToSpeech;

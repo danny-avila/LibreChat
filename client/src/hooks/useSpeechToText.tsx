@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useToastContext } from '~/Providers';
 
-const useSpeechRecognition = () => {
+const useSpeechToText = () => {
   const { data: startupConfig } = useGetStartupConfig();
   const externalSpeechEnabled = startupConfig?.textToSpeechExternal;
   const { showToast } = useToastContext();
@@ -88,4 +88,4 @@ const useSpeechRecognition = () => {
   return { isListening, isLoading, text };
 };
 
-export default useSpeechRecognition;
+export default useSpeechToText;

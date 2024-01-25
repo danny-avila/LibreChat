@@ -3,7 +3,7 @@ import { useSpeechToTextMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
-const useExternalSpeechRecognition = () => {
+const useSpeechToTextExternal = () => {
   const { showToast } = useToastContext();
   const [text, setText] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -106,4 +106,4 @@ const useExternalSpeechRecognition = () => {
   return { isListening, isLoading: isProcessing, text };
 };
 
-export default useExternalSpeechRecognition;
+export default useSpeechToTextExternal;
