@@ -1,3 +1,4 @@
+import { FileSources } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
 import { useGetFiles } from '~/data-provider';
@@ -5,7 +6,19 @@ import { DataTable, columns } from './Table';
 import { cn } from '~/utils/';
 
 export default function Files({ open, onOpenChange }) {
-  const { data: files = [] } = useGetFiles<TFile[]>();
+  const { data: files = [] } = useGetFiles<TFile[]>({
+    select: (files) =>
+      files.map((file) => {
+        if (file.source === FileSources.local || file.source === FileSources.openai) {
+          return file;
+        } else {
+          return {
+            ...file,
+            source: FileSources.local,
+          };
+        }
+      }),
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

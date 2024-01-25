@@ -1,19 +1,19 @@
-import { ColumnDef } from '@tanstack/react-table';
-import { ArrowUpDown, MoreHorizontal, Database } from 'lucide-react';
 import { FileSources } from 'librechat-data-provider';
+import { ArrowUpDown, MoreHorizontal, Database } from 'lucide-react';
+import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
 import {
   Button,
   Checkbox,
   DropdownMenu,
-  DataTableColumnHeader,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuSeparator,
 } from '~/components/ui';
 import { OpenAIMinimalIcon } from '~/components/svg';
+import { SortFilterHeader } from './SortFilterHeader';
 import { formatDate } from '~/utils';
 
 export const columns: ColumnDef<TFile>[] = [
@@ -73,13 +73,19 @@ export const columns: ColumnDef<TFile>[] = [
     accessorKey: 'source',
     header: ({ column }) => {
       return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-        >
-          Storage
-          <ArrowUpDown className="ml-2 h-4 w-4" />
-        </Button>
+        <SortFilterHeader
+          column={column}
+          title="Storage"
+          filters={{
+            Storage: Object.values(FileSources).filter(
+              (value) => value === FileSources.local || value === FileSources.openai,
+            ),
+          }}
+          valueMap={{
+            [FileSources.openai]: 'OpenAI',
+            [FileSources.local]: 'Host',
+          }}
+        />
       );
     },
     cell: ({ row }) => {
