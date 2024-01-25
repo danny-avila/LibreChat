@@ -99,3 +99,32 @@ export const getFileType = (
   // Default file type
   return fileTypes.file;
 };
+
+/**
+ * Format a date string to a human readable format
+ * @example
+ * formatDate('2020-01-01T00:00:00.000Z') // '1 Jan 2020'
+ */
+export function formatDate(dateString) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  const date = new Date(dateString);
+
+  const day = date.getDate();
+  const month = months[date.getMonth()];
+  const year = date.getFullYear();
+
+  return `${day} ${month} ${year}`;
+}
