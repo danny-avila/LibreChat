@@ -1,7 +1,12 @@
 import debounce from 'lodash/debounce';
 import { FileSources } from 'librechat-data-provider';
 import { useCallback, useState, useEffect } from 'react';
-import type { BatchFile, DeleteFilesResponse, DeleteFilesBody } from 'librechat-data-provider';
+import type {
+  BatchFile,
+  TFile,
+  DeleteFilesResponse,
+  DeleteFilesBody,
+} from 'librechat-data-provider';
 import type { UseMutateAsyncFunction } from '@tanstack/react-query';
 import type { ExtendedFile, GenericSetter } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
@@ -35,14 +40,11 @@ const useFileDeletion = ({
   }, [debouncedDelete]);
 
   const deleteFile = useCallback(
-    (_file: ExtendedFile, setFiles: FileMapSetter) => {
-      const {
-        file_id,
-        progress,
-        temp_file_id = '',
-        filepath = '',
-        source = FileSources.local,
-      } = _file;
+    ({ file: _file, setFiles }: { file: ExtendedFile | TFile; setFiles?: FileMapSetter }) => {
+      const { file_id, temp_file_id = '', filepath = '', source = FileSources.local } = _file;
+
+      const progress = _file['progress'] ?? 1;
+
       if (progress < 1) {
         return;
       }
@@ -52,14 +54,16 @@ const useFileDeletion = ({
         source,
       };
 
-      setFiles((currentFiles) => {
-        const updatedFiles = new Map(currentFiles);
-        updatedFiles.delete(file_id);
-        updatedFiles.delete(temp_file_id);
-        const files = Object.fromEntries(updatedFiles);
-        setFilesToDelete(files);
-        return updatedFiles;
-      });
+      if (setFiles) {
+        setFiles((currentFiles) => {
+          const updatedFiles = new Map(currentFiles);
+          updatedFiles.delete(file_id);
+          updatedFiles.delete(temp_file_id);
+          const files = Object.fromEntries(updatedFiles);
+          setFilesToDelete(files);
+          return updatedFiles;
+        });
+      }
 
       setFileDeleteBatch((prevBatch) => {
         const newBatch = [...prevBatch, file];
@@ -70,7 +74,40 @@ const useFileDeletion = ({
     [debouncedDelete, setFilesToDelete],
   );
 
-  return { deleteFile };
+  const deleteFiles = useCallback(
+    ({ files, setFiles }: { files: ExtendedFile[] | TFile[]; setFiles?: FileMapSetter }) => {
+      const batchFiles = files.map((_file) => {
+        const { file_id, filepath = '', source = FileSources.local } = _file;
+
+        return {
+          file_id,
+          filepath,
+          source,
+        };
+      });
+
+      if (setFiles) {
+        setFiles((currentFiles) => {
+          const updatedFiles = new Map(currentFiles);
+          batchFiles.forEach((file) => {
+            updatedFiles.delete(file.file_id);
+          });
+          const filesToUpdate = Object.fromEntries(updatedFiles);
+          setFilesToDelete(filesToUpdate);
+          return updatedFiles;
+        });
+      }
+
+      setFileDeleteBatch((prevBatch) => {
+        const newBatch = [...prevBatch, ...batchFiles];
+        debouncedDelete(newBatch);
+        return newBatch;
+      });
+    },
+    [debouncedDelete, setFilesToDelete],
+  );
+
+  return { deleteFile, deleteFiles };
 };
 
 export default useFileDeletion;

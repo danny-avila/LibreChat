@@ -52,7 +52,7 @@ export default function FileRow({
   return (
     <div className="mx-2 mt-2 flex flex-wrap gap-2 px-2.5 md:pl-0 md:pr-4">
       {files.map((file: ExtendedFile, index: number) => {
-        const handleDelete = () => deleteFile(file, setFiles);
+        const handleDelete = () => deleteFile({ file, setFiles });
         if (file.type?.startsWith('image')) {
           return (
             <Image
