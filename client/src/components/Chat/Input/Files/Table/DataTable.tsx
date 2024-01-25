@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ListFilter } from 'lucide-react';
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -11,7 +12,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-
+import type { TFile } from 'librechat-data-provider';
 import {
   Button,
   Input,
@@ -25,9 +26,9 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from '~/components/ui/';
-
-import { ListFilter } from 'lucide-react';
+} from '~/components/ui';
+import { useDeleteFilesFromTable } from '~/hooks/Files';
+import { NewTrashIcon, Spinner } from '~/components/svg';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -35,10 +36,12 @@ interface DataTableProps<TData, TValue> {
 }
 
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
+  const [isDeleting, setIsDeleting] = React.useState(false);
   const [rowSelection, setRowSelection] = React.useState({});
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
+  const { deleteFiles } = useDeleteFilesFromTable(() => setIsDeleting(false));
 
   const table = useReactTable({
     data,
@@ -61,7 +64,27 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
   return (
     <>
-      <div className="flex items-center py-4">
+      <div className="flex items-center gap-4 py-4">
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setIsDeleting(true);
+            const filesToDelete = table
+              .getFilteredSelectedRowModel()
+              .rows.map((row) => row.original);
+            deleteFiles({ files: filesToDelete as TFile[] });
+            setRowSelection({});
+          }}
+          className="gap-2"
+          disabled={!table.getFilteredSelectedRowModel().rows.length || isDeleting}
+        >
+          {isDeleting ? (
+            <Spinner className="ml-2 h-4 w-4" />
+          ) : (
+            <NewTrashIcon className="ml-2 h-4 w-4 text-red-400" />
+          )}
+          Delete
+        </Button>
         <Input
           placeholder="Filter files..."
           value={(table.getColumn('filename')?.getFilterValue() as string) ?? ''}
@@ -145,7 +168,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
       <div className="flex items-center justify-end space-x-2 py-4">
         <div className="text-muted-foreground ml-2 flex-1 text-sm">
           {table.getFilteredSelectedRowModel().rows.length} of{' '}
-          {table.getFilteredRowModel().rows.length} row(s) selected.
+          {table.getFilteredRowModel().rows.length} file(s) selected.
         </div>
         <Button
           variant="outline"
