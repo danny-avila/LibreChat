@@ -15,6 +15,7 @@ import type { TDangerButtonProps } from '~/common';
 import AutoScrollSwitch from './AutoScrollSwitch';
 import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
+import TextToSpeech from './TextToSpeech';
 import store from '~/store';
 
 export const ThemeSelector = ({
@@ -189,6 +190,9 @@ function General() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <AutoScrollSwitch />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <TextToSpeech />
         </div>
       </div>
     </Tabs.Content>

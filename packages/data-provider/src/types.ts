@@ -202,7 +202,7 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   emailEnabled: boolean;
   checkBalance: boolean;
-  textToSpeechExternal: boolean;
+  speechToTextExternal: boolean;
   customFooter?: string;
 };
 

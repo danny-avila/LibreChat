@@ -32,7 +32,7 @@ router.get('/', async function (req, res) {
         !!process.env.EMAIL_PASSWORD &&
         !!process.env.EMAIL_FROM,
       checkBalance: isEnabled(process.env.CHECK_BALANCE),
-      textToSpeechExternal: !!process.env.WHISPER_API_KEY,
+      speechToTextExternal: !!process.env.WHISPER_API_KEY,
     };
 
     if (typeof process.env.CUSTOM_FOOTER === 'string') {

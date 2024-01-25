@@ -11,7 +11,7 @@ const useExternalSpeechRecognition = () => {
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const { data: startupConfig } = useGetStartupConfig();
-  const externalSpeechEnabled = startupConfig?.textToSpeechExternal;
+  const externalSpeechEnabled = startupConfig?.speechToTextExternal;
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
