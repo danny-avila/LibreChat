@@ -1,13 +1,14 @@
 import throttle from 'lodash/throttle';
+import { FileText } from 'lucide-react';
 import { useState, useRef, useCallback } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
-
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
 import { Separator } from '~/components/ui/Separator';
 import AssistantPanel from './Builder/AssistantPanel';
 import NavToggle from '~/components/Nav/NavToggle';
 import { Blocks } from '~/components/svg';
+import FilesPanel from './Files/Panel';
 import Switcher from './Switcher';
 import { cn } from '~/utils';
 import Nav from './Nav';
@@ -141,6 +142,13 @@ export default function SidePanel({
                 icon: Blocks,
                 id: 'assistants',
                 Component: AssistantPanel,
+              },
+              {
+                title: 'Files',
+                label: '',
+                icon: FileText,
+                id: 'files',
+                Component: FilesPanel,
               },
             ]}
           />
