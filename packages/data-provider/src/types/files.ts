@@ -1,13 +1,25 @@
-export type FileUploadResponse = {
+export enum FileSources {
+  local = 'local',
+  firebase = 'firebase',
+  openai = 'openai',
+  s3 = 's3',
+}
+
+export type TFile = {
   message: string;
   file_id: string;
-  temp_file_id: string;
   filepath: string;
   filename: string;
   type: string;
   size: number;
-  height: number;
-  width: number;
+  temp_file_id?: string;
+  source?: FileSources;
+  height?: number;
+  width?: number;
+};
+
+export type TFileUpload = TFile & {
+  temp_file_id: string;
 };
 
 export type AvatarUploadResponse = {
@@ -20,7 +32,7 @@ export type FileUploadBody = {
 };
 
 export type UploadMutationOptions = {
-  onSuccess?: (data: FileUploadResponse, variables: FileUploadBody, context?: unknown) => void;
+  onSuccess?: (data: TFileUpload, variables: FileUploadBody, context?: unknown) => void;
   onMutate?: (variables: FileUploadBody) => void | Promise<unknown>;
   onError?: (error: unknown, variables: FileUploadBody, context?: unknown) => void;
 };
@@ -39,6 +51,7 @@ export type DeleteFilesResponse = {
 export type BatchFile = {
   file_id: string;
   filepath: string;
+  source: FileSources;
 };
 
 export type DeleteFilesBody = {

@@ -161,7 +161,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       conversation: conversation ?? {},
     });
 
-    const { modelDisplayLabel } = endpointsConfig[endpoint ?? ''] ?? {};
+    const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
     const endpointOption = {
       ...convo,
       endpoint,

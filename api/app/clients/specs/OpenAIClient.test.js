@@ -546,6 +546,39 @@ describe('OpenAIClient', () => {
         expect(totalTokens).toBe(testCase.expected);
       });
     });
+
+    const vision_request = [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: 'describe what is in this image?',
+          },
+          {
+            type: 'image_url',
+            image_url: {
+              url: 'https://venturebeat.com/wp-content/uploads/2019/03/openai-1.png',
+              detail: 'high',
+            },
+          },
+        ],
+      },
+    ];
+
+    const expectedTokens = 14;
+    const visionModel = 'gpt-4-vision-preview';
+
+    it(`should return ${expectedTokens} tokens for model ${visionModel} (Vision Request)`, () => {
+      client.modelOptions.model = visionModel;
+      client.selectTokenizer();
+      // 3 tokens for assistant label
+      let totalTokens = 3;
+      for (let message of vision_request) {
+        totalTokens += client.getTokenCountForMessage(message);
+      }
+      expect(totalTokens).toBe(expectedTokens);
+    });
   });
 
   describe('sendMessage/getCompletion/chatCompletion', () => {

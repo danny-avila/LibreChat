@@ -1,3 +1,4 @@
+const { FileSources } = require('librechat-data-provider');
 const mongoose = require('mongoose');
 
 /**
@@ -12,6 +13,7 @@ const mongoose = require('mongoose');
  * @property {'file'} object - Type of object, always 'file'
  * @property {string} type - Type of file
  * @property {number} usage - Number of uses of the file
+ * @property {string} [source] - The source of the file
  * @property {number} [width] - Optional width of the file
  * @property {number} [height] - Optional height of the file
  * @property {Date} [expiresAt] - Optional height of the file
@@ -42,11 +44,6 @@ const fileSchema = mongoose.Schema(
       type: Number,
       required: true,
     },
-    usage: {
-      type: Number,
-      required: true,
-      default: 0,
-    },
     filename: {
       type: String,
       required: true,
@@ -63,6 +60,15 @@ const fileSchema = mongoose.Schema(
     type: {
       type: String,
       required: true,
+    },
+    usage: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    source: {
+      type: String,
+      default: FileSources.local,
     },
     width: Number,
     height: Number,
