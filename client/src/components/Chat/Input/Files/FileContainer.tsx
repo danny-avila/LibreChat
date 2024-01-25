@@ -18,7 +18,7 @@ const FileContainer = ({
       <div className="relative overflow-hidden rounded-xl border border-gray-200 dark:border-gray-600">
         <div className="w-60 p-2 dark:bg-gray-600">
           <div className="flex flex-row items-center gap-2">
-            <FilePreview file={file} fileType={fileType} />
+            <FilePreview file={file} fileType={fileType} className="relative" />
             <div className="overflow-hidden">
               <div className="truncate font-medium">{file.filename}</div>
               <div className="truncate text-gray-300">{fileType.title}</div>
