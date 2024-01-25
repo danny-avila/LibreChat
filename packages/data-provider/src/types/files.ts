@@ -19,7 +19,7 @@ export type TFile = {
   object: 'file';
   type: string;
   usage: number;
-  source?: string;
+  source?: FileSources;
   width?: number;
   height?: number;
   expiresAt?: string | Date;
