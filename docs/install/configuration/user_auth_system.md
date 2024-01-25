@@ -541,7 +541,6 @@ OPENID_ISSUER=https://cognito-idp.[AWS REGION].amazonaws.com/[USER POOL ID]/.wel
 OPENID_SESSION_SECRET=Any random string
 OPENID_SCOPE=openid profile email
 OPENID_CALLBACK_URL=/oauth/openid/callback
-OPENID_REQUIRED_ROLE=You role for access
 ```
 7. Save the .env file
 
