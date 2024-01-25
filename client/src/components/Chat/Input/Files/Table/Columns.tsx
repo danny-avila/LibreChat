@@ -93,7 +93,7 @@ export const columns: ColumnDef<TFile>[] = [
       if (source === FileSources.openai) {
         return (
           <div className="flex flex-wrap items-center gap-2">
-            <OpenAIMinimalIcon className="icon-sm" />
+            <OpenAIMinimalIcon className="icon-sm text-green-600/50" />
             {'OpenAI'}
           </div>
         );
