@@ -1,5 +1,6 @@
-import * as React from 'react';
-// import { ListFilter } from 'lucide-react';
+import { useState } from 'react';
+import { useSetRecoilState } from 'recoil';
+import { LucideArrowUpLeft } from 'lucide-react';
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -28,7 +29,7 @@ import {
   // DropdownMenuTrigger,
 } from '~/components/ui';
 // import { NewTrashIcon, Spinner } from '~/components/svg';
-
+import store from '~/store';
 interface ColumnMeta {
   meta: {
     size: number | string;
@@ -44,11 +45,12 @@ interface DataTableProps<TData, TValue> {
 }
 
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
-  const [paginationState, setPagination] = React.useState({ pageIndex: 0, pageSize: 10 });
-  const [rowSelection, setRowSelection] = React.useState({});
-  const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
-  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
+  const [rowSelection, setRowSelection] = useState({});
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [paginationState, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
+  const setShowFiles = useSetRecoilState(store.showFiles);
 
   const table = useReactTable({
     data,
@@ -140,23 +142,34 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-center space-x-2 py-4">
+      <div className="flex items-center justify-around space-x-2 py-4">
         <Button
           variant="outline"
           size="sm"
-          onClick={() => table.previousPage()}
-          disabled={!table.getCanPreviousPage()}
+          onClick={() => setShowFiles(true)}
+          className="flex gap-2"
         >
-          Previous
+          <LucideArrowUpLeft className="icon-sm" />
+          Manage Files
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => table.nextPage()}
-          disabled={!table.getCanNextPage()}
-        >
-          Next
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            Next
+          </Button>
+        </div>
       </div>
     </>
   );

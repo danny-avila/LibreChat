@@ -6,6 +6,11 @@ const abortScroll = atom<boolean>({
   default: false,
 });
 
+const showFiles = atom<boolean>({
+  key: 'showFiles',
+  default: false,
+});
+
 const optionSettings = atom<TOptionSettings>({
   key: 'optionSettings',
   default: {},
@@ -109,6 +114,7 @@ const UsernameDisplay = atom<boolean>({
 
 export default {
   abortScroll,
+  showFiles,
   optionSettings,
   showPluginStoreDialog,
   showAgentSettings,

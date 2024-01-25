@@ -1,8 +1,8 @@
-import { useRecoilValue } from 'recoil';
 import { useLocation } from 'react-router-dom';
 import { Fragment, useState, memo } from 'react';
 import { Download, FileText } from 'lucide-react';
 import { Menu, Transition } from '@headlessui/react';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TConversation } from 'librechat-data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
@@ -24,9 +24,9 @@ function NavLinks() {
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.checkBalance,
   });
-  const [showFiles, setShowFiles] = useState(false);
   const [showExports, setShowExports] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
 
   let conversation;
   const activeConvo = useRecoilValue(store.conversationByIndex(0));
