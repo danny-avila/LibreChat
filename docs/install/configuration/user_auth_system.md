@@ -604,11 +604,15 @@ OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyon
   - Go to 'Users', select a user, and go to the 'Role Mappings' tab.
   - Assign the appropriate role (that matches `OPENID_REQUIRED_ROLE`) to the user.
 
-7. **Configure Client Scopes (Optional):**
+7. **Get path of roles list inside access token:**
+    - Decode your jwtToken from OpenID provider and determine path for roles list inside access token. For example, if you are using Keycloak, the path is `realm_access.roles`.
+    - Put this path in `OPENID_REQUIRED_ROLE_PARAMETER_PATH` variable in `.env` file.
+   
+8. **Configure Client Scopes (Optional):**
   - If you want to include role information in the token, add a client scope and mapper.
   - Go to 'Client Scopes', create a new scope, and add a mapper to include the role information in the token.
 
-8. **Update Your Project's Configuration:**
+9. **Update Your Project's Configuration:**
   - Open the `.env` file in your project folder and add the following variables:
     ```
     OPENID_ISSUER=http://localhost:8080/auth/realms/[YourRealmName]
@@ -617,6 +621,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyon
     OPENID_CALLBACK_URL=http://localhost:3080/oauth/openid/callback
     OPENID_SCOPE="openid profile email"
     OPENID_REQUIRED_ROLE=[YourRequiredRole]
+    OPENID_REQUIRED_ROLE_PARAMETER_PATH="realm_access.roles"
     ```
 
 

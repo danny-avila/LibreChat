@@ -37,6 +37,8 @@ services:
     image: mongo
     restart: always
     user: "${UID}:${GID}"
+    ports:
+      - 27017:27017
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
@@ -44,6 +46,8 @@ services:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.5
     restart: always
+    ports:
+      - 7700:7700
     env_file:
       - .env
     user: "${UID}:${GID}"

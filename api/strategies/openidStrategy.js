@@ -5,7 +5,7 @@ const passport = require('passport');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const { logger } = require('~/config');
 const User = require('~/models/User');
-const jwtDecode = require('jwt-decode');
+const jwtDecode = require('jsonwebtoken/decode');
 
 let crypto;
 try {
@@ -46,6 +46,7 @@ async function setupOpenId() {
       redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
     });
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
+    const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
 
     const openidLogin = new OpenIDStrategy(
       {
@@ -73,16 +74,17 @@ async function setupOpenId() {
             fullName = userinfo.username || userinfo.email;
           }
 
-          const decodedAccessToken = jwtDecode.jwtDecode(tokenset.access_token);
-          let roles = [];
-          if (decodedAccessToken.roles) {
-            roles = decodedAccessToken.roles;
-          } else if (decodedAccessToken.realm_access && decodedAccessToken.realm_access.roles) {
-            roles = decodedAccessToken.realm_access.roles;
-          }
-          user.roles = roles;
+          const decodedAccessToken = jwtDecode(tokenset.access_token);
+          const pathParts = requiredRoleParameterPath.split('.');
+          user.roles = pathParts.reduce((o, key) => {
+            if (o === null || o === undefined || !(key in o)) {
+              console.error(`Key '${decodedAccessToken}' not found in access token!`);
+              return [];
+            }
+            return o[key];
+          }, decodedAccessToken);
 
-          if (requiredRole && !roles.includes(requiredRole)) {
+          if (requiredRole && !user.roles.includes(requiredRole)) {
             return done(null, false, {
               message: `You must have the "${requiredRole}" role to log in.`,
             });
