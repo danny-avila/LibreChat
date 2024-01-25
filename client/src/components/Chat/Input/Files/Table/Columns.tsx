@@ -1,19 +1,47 @@
 import { ColumnDef } from '@tanstack/react-table';
-import { TFile } from 'librechat-data-provider';
-import { ArrowUpDown, MoreHorizontal } from 'lucide-react';
+import { ArrowUpDown, MoreHorizontal, Database } from 'lucide-react';
+import { FileSources } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
 import {
   Button,
+  Checkbox,
   DropdownMenu,
+  DataTableColumnHeader,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '~/components/ui/';
+} from '~/components/ui';
+import { OpenAIMinimalIcon } from '~/components/svg';
+import { formatDate } from '~/utils';
 
 export const columns: ColumnDef<TFile>[] = [
   {
-    accessorKey: 'name',
+    id: 'select',
+    header: ({ table }) => (
+      <Checkbox
+        checked={
+          table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && 'indeterminate')
+        }
+        onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+        aria-label="Select all"
+        className="flex"
+      />
+    ),
+    cell: ({ row }) => (
+      <Checkbox
+        checked={row.getIsSelected()}
+        onCheckedChange={(value) => row.toggleSelected(!!value)}
+        aria-label="Select row"
+        className="flex"
+      />
+    ),
+    enableSorting: false,
+    enableHiding: false,
+  },
+  {
+    accessorKey: 'filename',
     header: ({ column }) => {
       return (
         <Button
@@ -27,15 +55,69 @@ export const columns: ColumnDef<TFile>[] = [
     },
   },
   {
-    accessorKey: 'date',
-    header: 'Date',
+    accessorKey: 'updatedAt',
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          Date
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      );
+    },
+    cell: ({ row }) => formatDate(row.original.updatedAt),
   },
   {
-    accessorKey: 'size',
-    header: 'Size',
+    accessorKey: 'source',
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          Storage
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      );
+    },
+    cell: ({ row }) => {
+      const { source } = row.original;
+      if (source === FileSources.openai) {
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <OpenAIMinimalIcon className="icon-sm" />
+            {'OpenAI'}
+          </div>
+        );
+      }
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <Database className="icon-sm" />
+          {'Host'}
+        </div>
+      );
+    },
+  },
+  {
+    accessorKey: 'bytes',
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          Size
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      );
+    },
+    cell: ({ row }) => Number((Number(row.original.bytes) / 1024 / 1024).toFixed(2)) + ' MB',
   },
   {
     id: 'actions',
+    header: () => 'Actions',
     cell: ({ row }) => {
       const file = row.original;
 
