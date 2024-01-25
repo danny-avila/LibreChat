@@ -14,7 +14,9 @@ import {
 } from '~/components/ui';
 import { OpenAIMinimalIcon } from '~/components/svg';
 import { SortFilterHeader } from './SortFilterHeader';
-import { formatDate } from '~/utils';
+import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
+import FilePreview from '~/components/Chat/Input/Files/FilePreview';
+import { formatDate, getFileType } from '~/utils';
 
 export const columns: ColumnDef<TFile>[] = [
   {
@@ -51,6 +53,28 @@ export const columns: ColumnDef<TFile>[] = [
           Name
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
+      );
+    },
+    cell: ({ row }) => {
+      const file = row.original;
+      if (file.type?.startsWith('image')) {
+        return (
+          <div className="flex gap-2">
+            <ImagePreview
+              url={file.filepath}
+              className="h-10 w-10 shrink-0 overflow-hidden rounded-md"
+            />
+            <span className="self-center truncate">{file.filename}</span>
+          </div>
+        );
+      }
+
+      const fileType = getFileType(file.type);
+      return (
+        <div className="flex gap-2">
+          {fileType && <FilePreview fileType={fileType} />}
+          <span className="self-center truncate">{file.filename}</span>
+        </div>
       );
     },
   },
@@ -119,7 +143,15 @@ export const columns: ColumnDef<TFile>[] = [
         </Button>
       );
     },
-    cell: ({ row }) => Number((Number(row.original.bytes) / 1024 / 1024).toFixed(2)) + ' MB',
+    cell: ({ row }) => {
+      const suffix = ' MB';
+      const value = Number((Number(row.original.bytes) / 1024 / 1024).toFixed(2));
+      if (value < 0.01) {
+        return '< 0.01 MB';
+      }
+
+      return `${value}${suffix}`;
+    },
   },
   {
     id: 'actions',
