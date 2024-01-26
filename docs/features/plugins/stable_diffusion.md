@@ -89,3 +89,22 @@ However, to use [SDXL Turbo](https://stable-diffusion-art.com/sdxl-turbo/) many 
 SD_WEBUI_DEFAULT_PARAMETERS={"sd_model_name":"sd_xl_turbo_1.0_fp16", "negative_prompt":"", "sampler_name": "Euler a", "cfg_scale": 1, "steps": 1, "width": 512, "height": 512}
 ```
 As Stable Diffusion releases more models, this variable may be changed at any time to take advantage of new functionality.
+
+## 7. Docker option for installing Automatic1111 with SDXL Turbo
+Using the Stable Diffusion WebUI Docker GitHub project: https://github.com/AbdBarho/stable-diffusion-webui-docker
+```bash
+git clone https://github.com/AbdBarho/stable-diffusion-webui-docker.git
+cd stable-diffusion-webui-docker/
+docker compose --profile download up --build
+# For CPU use docker compose --profile auto-cpu up --build
+# For Nvidia GPU use docker compose --profile auto up --build
+
+# Notice: For me I had to comment out the line below in the docker-compose.yaml
+# tty: true
+
+cd data/models/Stable-diffusion
+wget https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors
+
+cd ../../../
+docker compose --profile auto up -d
+```
