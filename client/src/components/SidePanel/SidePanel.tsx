@@ -144,7 +144,7 @@ export default function SidePanel({
                 Component: AssistantPanel,
               },
               {
-                title: 'Files',
+                title: 'Attach Files',
                 label: '',
                 icon: FileText,
                 id: 'files',
