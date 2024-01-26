@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import type {
+  TFile,
+  BatchFile,
   TFileUpload,
   AssistantListResponse,
   UploadMutationOptions,
@@ -139,16 +141,31 @@ export const useUploadFileMutation = (
 };
 
 export const useDeleteFilesMutation = (
-  options?: DeleteMutationOptions,
+  _options?: DeleteMutationOptions,
 ): UseMutationResult<
   DeleteFilesResponse, // response data
   unknown, // error
   DeleteFilesBody, // request
   unknown // context
 > => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileDelete], {
     mutationFn: (body: DeleteFilesBody) => dataService.deleteFiles(body.files),
     ...(options || {}),
+    onSuccess: (data, ...args) => {
+      queryClient.setQueryData<TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
+        const { files: filesDeleted } = args[0];
+
+        const fileMap = filesDeleted.reduce((acc, file) => {
+          acc.set(file.file_id, file);
+          return acc;
+        }, new Map<string, BatchFile>());
+
+        return (cachefiles ?? []).filter((file) => !fileMap.has(file.file_id));
+      });
+      onSuccess?.(data, ...args);
+    },
   });
 };
 
