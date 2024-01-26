@@ -51,21 +51,32 @@ export default function FileRow({
 
   return (
     <div className="mx-2 mt-2 flex flex-wrap gap-2 px-2.5 md:pl-0 md:pr-4">
-      {files.map((file: ExtendedFile, index: number) => {
-        const handleDelete = () => deleteFile({ file, setFiles });
-        if (file.type?.startsWith('image')) {
-          return (
-            <Image
-              key={index}
-              url={file.preview}
-              onDelete={handleDelete}
-              progress={file.progress}
-            />
-          );
-        }
+      {files
+        .reduce(
+          (acc, current) => {
+            if (!acc.map.has(current.file_id)) {
+              acc.map.set(current.file_id, true);
+              acc.uniqueFiles.push(current);
+            }
+            return acc;
+          },
+          { map: new Map(), uniqueFiles: [] as ExtendedFile[] },
+        )
+        .uniqueFiles.map((file: ExtendedFile, index: number) => {
+          const handleDelete = () => deleteFile({ file, setFiles });
+          if (file.type?.startsWith('image')) {
+            return (
+              <Image
+                key={index}
+                url={file.preview}
+                onDelete={handleDelete}
+                progress={file.progress}
+              />
+            );
+          }
 
-        return <FileContainer key={index} file={file} onDelete={handleDelete} />;
-      })}
+          return <FileContainer key={index} file={file} onDelete={handleDelete} />;
+        })}
     </div>
   );
 }
