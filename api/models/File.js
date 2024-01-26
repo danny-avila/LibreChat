@@ -14,12 +14,14 @@ const findFileById = async (file_id, options = {}) => {
 };
 
 /**
- * Retrieves files matching a given filter.
+ * Retrieves files matching a given filter, sorted by the most recently updated.
  * @param {Object} filter - The filter criteria to apply.
+ * @param {Object} [_sortOptions] - Optional sort parameters.
  * @returns {Promise<Array<MongoFile>>} A promise that resolves to an array of file documents.
  */
-const getFiles = async (filter) => {
-  return await File.find(filter).lean();
+const getFiles = async (filter, _sortOptions) => {
+  const sortOptions = { updatedAt: -1, ..._sortOptions };
+  return await File.find(filter).sort(sortOptions).lean();
 };
 
 /**
