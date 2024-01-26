@@ -603,10 +603,12 @@ OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyon
   - Go to 'Users', select a user, and go to the 'Role Mappings' tab.
   - Assign the appropriate role (that matches `OPENID_REQUIRED_ROLE`) to the user.
 
-7. **Get path of roles list inside access token:**
+7. **Get path of roles list inside token:**
+    - Depends on your OpenID provider and how it is configured roles can be inside access token or id token. 
     - Decode your jwtToken from OpenID provider and determine path for roles list inside access token. For example, if you are using Keycloak, the path is `realm_access.roles`.
     - Put this path in `OPENID_REQUIRED_ROLE_PARAMETER_PATH` variable in `.env` file.
-   
+    - By parameter `OPENID_REQUIRED_ROLE_TOKEN_KIND` you can specify which token kind you want to use. Possible values are `access` and `id`.
+
 8. **Configure Client Scopes (Optional):**
   - If you want to include role information in the token, add a client scope and mapper.
   - Go to 'Client Scopes', create a new scope, and add a mapper to include the role information in the token.
@@ -620,6 +622,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyon
     OPENID_CALLBACK_URL=http://localhost:3080/oauth/openid/callback
     OPENID_SCOPE="openid profile email"
     OPENID_REQUIRED_ROLE=[YourRequiredRole]
+    OPENID_REQUIRED_ROLE_TOKEN_KIND=(access|id)
     OPENID_REQUIRED_ROLE_PARAMETER_PATH="realm_access.roles"
     ```
 

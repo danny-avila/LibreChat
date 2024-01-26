@@ -47,7 +47,7 @@ async function setupOpenId() {
     });
     const requiredRole = process.env.OPENID_REQUIRED_ROLE;
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
-
+    const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
     const openidLogin = new OpenIDStrategy(
       {
         client,
@@ -80,25 +80,32 @@ async function setupOpenId() {
             fullName = userinfo.username || userinfo.email;
           }
 
-          const decodedAccessToken = jwtDecode(tokenset.access_token);
-          const pathParts = requiredRoleParameterPath.split('.');
-          let found = true;
-          user.roles = pathParts.reduce((o, key) => {
-            if (o === null || o === undefined || !(key in o)) {
-              found = false;
-              return [];
+          if (requiredRole) {
+            let decodedToken = '';
+            if (requiredRoleTokenKind === 'access') {
+              decodedToken = jwtDecode(tokenset.access_token);
+            } else if (requiredRoleTokenKind === 'id') {
+              decodedToken = jwtDecode(tokenset.id_token);
             }
-            return o[key];
-          }, decodedAccessToken);
+            const pathParts = requiredRoleParameterPath.split('.');
+            let found = true;
+            user.roles = pathParts.reduce((o, key) => {
+              if (o === null || o === undefined || !(key in o)) {
+                found = false;
+                return [];
+              }
+              return o[key];
+            }, decodedToken);
 
-          if (!found) {
-            console.error(`Key '${requiredRoleParameterPath}' not found in access token!`);
-          }
+            if (!found) {
+              console.error(`Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`);
+            }
 
-          if (requiredRole && !user.roles.includes(requiredRole)) {
-            return done(null, false, {
-              message: `You must have the "${requiredRole}" role to log in.`,
-            });
+            if (!user.roles.includes(requiredRole)) {
+              return done(null, false, {
+                message: `You must have the "${requiredRole}" role to log in.`,
+              });
+            }
           }
 
           if (!user) {
