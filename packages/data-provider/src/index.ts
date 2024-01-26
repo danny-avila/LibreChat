@@ -18,4 +18,5 @@ import * as dataService from './data-service';
 export { dataService };
 /* general helpers */
 export * from './sse';
+export * from './actions';
 export { default as createPayload } from './createPayload';
