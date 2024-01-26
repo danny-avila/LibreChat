@@ -70,8 +70,10 @@ const useFileHandling = () => {
         filepath: data.filepath,
       });
 
-      const _files = queryClient.getQueryData<TFile[]>([QueryKeys.files]) ?? [];
-      queryClient.setQueryData([QueryKeys.files], [..._files, data]);
+      queryClient.setQueryData<TFile[] | undefined>([QueryKeys.files], (_files) => [
+        data,
+        ...(_files ?? []),
+      ]);
 
       setTimeout(() => {
         updateFileById(data.temp_file_id, {
