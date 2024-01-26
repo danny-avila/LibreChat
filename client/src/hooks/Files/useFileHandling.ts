@@ -102,7 +102,7 @@ const useFileHandling = () => {
     }
 
     const formData = new FormData();
-    formData.append('file', extendedFile.file);
+    formData.append('file', extendedFile.file as File);
     formData.append('file_id', extendedFile.file_id);
     if (extendedFile.width) {
       formData.append('width', extendedFile.width?.toString());
@@ -146,7 +146,8 @@ const useFileHandling = () => {
 
     const combinedFilesInfo = [
       ...existingFiles.map(
-        (file) => `${file.file.name}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`,
+        (file) =>
+          `${file.file?.name ?? file.filename}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`,
       ),
       ...fileList.map((file) => `${file.name}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`),
     ];

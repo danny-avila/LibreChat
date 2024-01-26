@@ -41,7 +41,13 @@ const useFileDeletion = ({
 
   const deleteFile = useCallback(
     ({ file: _file, setFiles }: { file: ExtendedFile | TFile; setFiles?: FileMapSetter }) => {
-      const { file_id, temp_file_id = '', filepath = '', source = FileSources.local } = _file;
+      const {
+        file_id,
+        temp_file_id = '',
+        filepath = '',
+        source = FileSources.local,
+        attached,
+      } = _file as TFile & { attached?: boolean };
 
       const progress = _file['progress'] ?? 1;
 
@@ -63,6 +69,10 @@ const useFileDeletion = ({
           setFilesToDelete(files);
           return updatedFiles;
         });
+      }
+
+      if (attached) {
+        return;
       }
 
       setFileDeleteBatch((prevBatch) => {

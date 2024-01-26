@@ -238,7 +238,7 @@ export type TOptionSettings = {
 };
 
 export interface ExtendedFile {
-  file: File;
+  file?: File;
   file_id: string;
   temp_file_id?: string;
   type?: string;
@@ -250,6 +250,7 @@ export interface ExtendedFile {
   preview?: string;
   progress: number;
   source?: FileSources;
+  attached?: boolean;
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
