@@ -1,17 +1,8 @@
 import { FileSources } from 'librechat-data-provider';
-import { ArrowUpDown, MoreHorizontal, Database } from 'lucide-react';
+import { ArrowUpDown, Database } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
-import {
-  Button,
-  Checkbox,
-  DropdownMenu,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuSeparator,
-} from '~/components/ui';
+import { Button, Checkbox } from '~/components/ui';
 import { OpenAIMinimalIcon } from '~/components/svg';
 import { SortFilterHeader } from './SortFilterHeader';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
@@ -43,15 +34,19 @@ export const columns: ColumnDef<TFile>[] = [
     enableHiding: false,
   },
   {
+    meta: {
+      size: '150px',
+    },
     accessorKey: 'filename',
     header: ({ column }) => {
       return (
         <Button
           variant="ghost"
+          className="px-0 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           Name
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          <ArrowUpDown className="ml-2 h-3 w-3 sm:h-4 sm:w-4" />
         </Button>
       );
     },
@@ -59,12 +54,12 @@ export const columns: ColumnDef<TFile>[] = [
       const file = row.original;
       if (file.type?.startsWith('image')) {
         return (
-          <div className="flex gap-2">
+          <div className="flex gap-2 ">
             <ImagePreview
               url={file.filepath}
-              className="h-10 w-10 shrink-0 overflow-hidden rounded-md"
+              className="h-10 w-10  shrink-0 overflow-hidden  rounded-md"
             />
-            <span className="self-center truncate">{file.filename}</span>
+            <span className="self-center truncate ">{file.filename}</span>
           </div>
         );
       }
@@ -85,9 +80,10 @@ export const columns: ColumnDef<TFile>[] = [
         <Button
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          className="px-0 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
         >
           Date
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          <ArrowUpDown className="ml-2 h-3 w-3 sm:h-4 sm:w-4" />
         </Button>
       );
     },
@@ -136,10 +132,11 @@ export const columns: ColumnDef<TFile>[] = [
       return (
         <Button
           variant="ghost"
+          className="px-0 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           Size
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          <ArrowUpDown className="ml-2 h-3 w-3 sm:h-4 sm:w-4" />
         </Button>
       );
     },
@@ -151,33 +148,6 @@ export const columns: ColumnDef<TFile>[] = [
       }
 
       return `${value}${suffix}`;
-    },
-  },
-  {
-    id: 'actions',
-    header: () => 'Actions',
-    cell: ({ row }) => {
-      const file = row.original;
-
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="z-[1001]">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => navigator.clipboard.writeText(file.file_id)}>
-              Copy file ID
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>Delete File</DropdownMenuItem>
-            {/* <DropdownMenuItem>View details</DropdownMenuItem> */}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      );
     },
   },
 ];

@@ -28,7 +28,7 @@ export default function Files({ open, onOpenChange }) {
             My Files
           </DialogTitle>
         </DialogHeader>
-        <div className="p-4 sm:p-6 sm:pt-4">
+        <div className="p-0 sm:p-6 sm:pt-4">
           <DataTable columns={columns} data={files} />
           <div className="mt-5 sm:mt-4" />
         </div>

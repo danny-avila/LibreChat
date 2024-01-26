@@ -1,10 +1,6 @@
 import * as React from 'react';
 import { ListFilter } from 'lucide-react';
 import {
-  ColumnDef,
-  ColumnFiltersState,
-  SortingState,
-  VisibilityState,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -12,6 +8,13 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
+import type {
+  ColumnDef,
+  SortingState,
+  VisibilityState,
+  ColumnFiltersState,
+} from '@tanstack/react-table';
+import type { AugmentedColumnDef } from '~/common';
 import type { TFile } from 'librechat-data-provider';
 import {
   Button,
@@ -34,6 +37,8 @@ interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
 }
+
+type Style = { width?: number | string; maxWidth?: number | string };
 
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
   const [isDeleting, setIsDeleting] = React.useState(false);
@@ -117,16 +122,26 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <div className="max-h-[28rem] overflow-y-auto rounded-md border border-black/10 dark:border-white/10">
+      <div className="max-h-[25rem] min-h-0 overflow-y-auto rounded-md border border-black/10 dark:border-white/10 sm:min-h-[28rem]">
         <Table className="w-full border-separate border-spacing-0">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
+                {headerGroup.headers.map((header, index) => {
+                  const style: Style = { maxWidth: '32px' };
+                  if (header.id === 'filename') {
+                    style.maxWidth = '50%';
+                    style.width = '50%';
+                  }
+
+                  if (index === 0) {
+                    style.maxWidth = '20px';
+                  }
                   return (
                     <TableHead
                       key={header.id}
-                      className="sticky top-0 rounded-t border-b border-black/10 bg-white px-4 py-2 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100"
+                      className="sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100 sm:px-4 sm:py-2"
+                      style={style}
                     >
                       {header.isPlaceholder
                         ? null
@@ -145,14 +160,28 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                   data-state={row.getIsSelected() && 'selected'}
                   className="border-b border-black/10 text-left text-gray-600 dark:border-white/10 dark:text-gray-300 [tr:last-child_&]:border-b-0"
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      className="px-4 py-2 [tr[data-disabled=true]_&]:opacity-50"
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
+                  {row.getVisibleCells().map((cell, index) => {
+                    const maxWidth =
+                      (cell.column.columnDef as AugmentedColumnDef<TData, TValue>)?.meta?.size ??
+                      'auto';
+
+                    const style: Style = {};
+                    if (cell.column.id === 'filename') {
+                      style.maxWidth = maxWidth;
+                    } else if (index === 0) {
+                      style.maxWidth = '20px';
+                    }
+
+                    return (
+                      <TableCell
+                        key={cell.id}
+                        className="px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
+                        style={style}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               ))
             ) : (
@@ -165,7 +194,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-end space-x-2 py-4">
+      <div className="ml-4 mr-4 mt-4 flex h-auto items-center justify-end space-x-2 py-4 sm:ml-0 sm:mr-0 sm:h-0">
         <div className="text-muted-foreground ml-2 flex-1 text-sm">
           {table.getFilteredSelectedRowModel().rows.length} of{' '}
           {table.getFilteredRowModel().rows.length} file(s) selected.

@@ -2,10 +2,6 @@ import { useState } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { LucideArrowUpLeft } from 'lucide-react';
 import {
-  ColumnDef,
-  ColumnFiltersState,
-  SortingState,
-  VisibilityState,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -13,7 +9,13 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-// import type { TFile } from 'librechat-data-provider';
+import type {
+  ColumnDef,
+  SortingState,
+  VisibilityState,
+  ColumnFiltersState,
+} from '@tanstack/react-table';
+import type { AugmentedColumnDef } from '~/common';
 import {
   Button,
   Input,
@@ -23,21 +25,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  // DropdownMenu,
-  // DropdownMenuCheckboxItem,
-  // DropdownMenuContent,
-  // DropdownMenuTrigger,
 } from '~/components/ui';
-// import { NewTrashIcon, Spinner } from '~/components/svg';
 import store from '~/store';
-interface ColumnMeta {
-  meta: {
-    size: number | string;
-  };
-}
-
-// Use TypeScript's generic type parameters to define AugmentedColumnDef
-type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];

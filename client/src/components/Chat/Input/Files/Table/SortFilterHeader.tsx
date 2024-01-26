@@ -35,6 +35,7 @@ export function SortFilterHeader<TData, TValue>({
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
+            className="px-0 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
             // className="data-[state=open]:bg-accent -ml-3 h-8"
           >
             <span>{title}</span>

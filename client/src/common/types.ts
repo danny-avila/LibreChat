@@ -1,4 +1,5 @@
 import { FileSources } from 'librechat-data-provider';
+import type { ColumnDef } from '@tanstack/react-table';
 import type {
   TConversation,
   TMessage,
@@ -10,6 +11,14 @@ import type {
 import type { UseMutationResult } from '@tanstack/react-query';
 
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
+
+interface ColumnMeta {
+  meta: {
+    size: number | string;
+  };
+}
+
+export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
 export type TSetExample = (
