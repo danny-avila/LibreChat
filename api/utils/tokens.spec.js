@@ -80,6 +80,20 @@ describe('getModelMaxTokens', () => {
     );
   });
 
+  // 01/25 Update
+  test('should return correct tokens for gpt-4-turbo/0125 matches', () => {
+    expect(getModelMaxTokens('gpt-4-turbo')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4-turbo'],
+    );
+    expect(getModelMaxTokens('gpt-4-turbo-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4-turbo'],
+    );
+    expect(getModelMaxTokens('gpt-4-0125')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-4-0125']);
+    expect(getModelMaxTokens('gpt-4-0125-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4-0125'],
+    );
+  });
+
   test('should return correct tokens for Anthropic models', () => {
     const models = [
       'claude-2.1',
@@ -164,6 +178,16 @@ describe('matchModelName', () => {
     expect(matchModelName('something/gpt-4-1106')).toBe('gpt-4-1106');
     expect(matchModelName('gpt-4-1106-preview')).toBe('gpt-4-1106');
     expect(matchModelName('gpt-4-1106-vision-preview')).toBe('gpt-4-1106');
+  });
+
+  // 01/25 Update
+  it('should return the closest matching key for gpt-4-turbo/0125 matches', () => {
+    expect(matchModelName('openai/gpt-4-0125')).toBe('gpt-4-0125');
+    expect(matchModelName('gpt-4-turbo-preview')).toBe('gpt-4-turbo');
+    expect(matchModelName('gpt-4-turbo-vision-preview')).toBe('gpt-4-turbo');
+    expect(matchModelName('gpt-4-0125')).toBe('gpt-4-0125');
+    expect(matchModelName('gpt-4-0125-preview')).toBe('gpt-4-0125');
+    expect(matchModelName('gpt-4-0125-vision-preview')).toBe('gpt-4-0125');
   });
 
   // Tests for Google models
