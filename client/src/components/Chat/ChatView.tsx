@@ -2,14 +2,13 @@ import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
-import { useGetFiles } from '~/data-provider';
+import { ChatContext, useFileMapContext } from '~/Providers';
 import MessagesView from './Messages/MessagesView';
 import { useChatHelpers, useSSE } from '~/hooks';
-import { buildTree, mapFiles } from '~/utils';
 import { Spinner } from '~/components/svg';
-import { ChatContext } from '~/Providers';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
+import { buildTree } from '~/utils';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
@@ -20,9 +19,7 @@ function ChatView({ index = 0 }: { index?: number }) {
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
   useSSE(submissionAtIndex);
 
-  const { data: fileMap } = useGetFiles({
-    select: mapFiles,
-  });
+  const fileMap = useFileMapContext();
 
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
     select: (data) => {

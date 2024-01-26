@@ -1,19 +1,10 @@
 import { ArrowUpDown } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
-import {
-  Button,
-  // Checkbox,
-  // DropdownMenu,
-  // DropdownMenuItem,
-  // DropdownMenuLabel,
-  // DropdownMenuTrigger,
-  // DropdownMenuContent,
-  // DropdownMenuSeparator,
-} from '~/components/ui';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { formatDate, getFileType } from '~/utils';
+import { Button } from '~/components/ui';
 
 export const columns: ColumnDef<TFile>[] = [
   {
