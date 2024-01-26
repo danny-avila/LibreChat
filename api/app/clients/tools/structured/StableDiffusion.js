@@ -61,15 +61,21 @@ class StableDiffusionAPI extends StructuredTool {
   async _call(data) {
     const url = this.url;
     const { prompt, negative_prompt } = data;
+    const defaultPayload = process.env.SD_WEBUI_DEFAULT_PARAMETERS
+      ? JSON.parse(process.env.SD_WEBUI_DEFAULT_PARAMETERS)
+      : {
+          sampler_name: 'DPM++ 2M Karras',
+          cfg_scale: 4.5,
+          steps: 22,
+          width: 1024,
+          height: 1024,
+        };
     const payload = {
-      prompt,
-      negative_prompt,
-      sampler_index: 'DPM++ 2M Karras',
-      cfg_scale: 4.5,
-      steps: 22,
-      width: 1024,
-      height: 1024,
+      prompt: prompt,
+      negative_prompt: defaultPayload.negative_prompt || negative_prompt,
+      ...defaultPayload,
     };
+    console.log('Payload after parsing SD_WEBUI_DEFAULT_PARAMETERS JSON:', payload);
     const response = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
     const image = response.data.images[0];
     const pngPayload = { image: `data:image/png;base64,${image}` };
