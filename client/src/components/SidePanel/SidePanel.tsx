@@ -78,7 +78,7 @@ export default function SidePanel({
             <div
               onMouseEnter={() => setIsHovering(true)}
               onMouseLeave={() => setIsHovering(false)}
-              className="bg-border focus-visible:ring-ring relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-offset-1 data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2 data-[panel-group-direction=vertical]:after:translate-x-0 [&[data-panel-group-direction=vertical]>div]:rotate-90"
+              className="relative flex w-px items-center justify-center"
             >
               <NavToggle
                 navVisible={!isCollapsed}
@@ -93,7 +93,7 @@ export default function SidePanel({
           </Tooltip>
         </TooltipProvider>
         {(!isCollapsed || minSize > 0) && (
-          <ResizableHandle withHandle className="bg-gray-100 dark:bg-gray-100/20 dark:text-white" />
+          <ResizableHandle withHandle className="bg-transparent dark:text-white" />
         )}
         <ResizablePanel
           collapsedSize={collapsedSize}
