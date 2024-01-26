@@ -220,11 +220,13 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
   return { functionSignatures, requestBuilders };
 }
 
-export function validateAndParseOpenAPISpec(specString: string): {
+export type ValidationResult = {
   status: boolean;
   message: string;
   spec?: OpenAPIV3.Document;
-} {
+};
+
+export function validateAndParseOpenAPISpec(specString: string): ValidationResult {
   try {
     let parsedSpec;
     try {
@@ -239,7 +241,7 @@ export function validateAndParseOpenAPISpec(specString: string): {
       !Array.isArray(parsedSpec.servers) ||
       parsedSpec.servers.length === 0
     ) {
-      return { status: false, message: 'No baseURL found in the OpenAPI spec.' };
+      return { status: false, message: 'Could not find a valid URL in `servers`' };
     }
 
     // Check for paths

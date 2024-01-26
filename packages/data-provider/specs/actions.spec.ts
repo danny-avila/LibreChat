@@ -310,7 +310,7 @@ describe('validateAndParseOpenAPISpec', () => {
 
     const result = validateAndParseOpenAPISpec(noServerSpec);
     expect(result.status).toBe(false);
-    expect(result.message).toBe('No baseURL found in the OpenAPI spec.');
+    expect(result.message).toBe('Could not find a valid URL in `servers`');
   });
 
   it('returns an error for spec with no paths', () => {
@@ -358,6 +358,6 @@ describe('validateAndParseOpenAPISpec', () => {
 
     const result = validateAndParseOpenAPISpec(invalidSpec);
     expect(result.status).toBe(false);
-    expect(result.message).toBe('No baseURL found in the OpenAPI spec.');
+    expect(result.message).toBe('Could not find a valid URL in `servers`');
   });
 });
