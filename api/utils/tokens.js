@@ -45,13 +45,15 @@ const openAIModels = {
   'gpt-4-32k': 32758, // -10 from max
   'gpt-4-32k-0314': 32758, // -10 from max
   'gpt-4-32k-0613': 32758, // -10 from max
+  'gpt-4-1106': 127990, // -10 from max
+  'gpt-4-0125': 127990, // -10 from max
+  'gpt-4-turbo': 127990, // -10 from max
   'gpt-3.5-turbo': 4092, // -5 from max
   'gpt-3.5-turbo-0613': 4092, // -5 from max
   'gpt-3.5-turbo-0301': 4092, // -5 from max
   'gpt-3.5-turbo-16k': 16375, // -10 from max
   'gpt-3.5-turbo-16k-0613': 16375, // -10 from max
   'gpt-3.5-turbo-1106': 16375, // -10 from max
-  'gpt-4-1106': 127990, // -10 from max
   'mistral-': 31990, // -10 from max
 };
 
@@ -145,8 +147,9 @@ function matchModelName(modelName, endpoint = EModelEndpoint.openAI) {
 
   const keys = Object.keys(tokensMap);
   for (let i = keys.length - 1; i >= 0; i--) {
-    if (modelName.includes(keys[i])) {
-      return keys[i];
+    const modelKey = keys[i];
+    if (modelName.includes(modelKey)) {
+      return modelKey;
     }
   }
 
