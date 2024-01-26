@@ -244,6 +244,10 @@ export function validateAndParseOpenAPISpec(specString: string): ValidationResul
       return { status: false, message: 'Could not find a valid URL in `servers`' };
     }
 
+    if (!parsedSpec.servers[0].url) {
+      return { status: false, message: 'Could not find a valid URL in `servers`' };
+    }
+
     // Check for paths
     const paths = parsedSpec.paths;
     if (!paths || typeof paths !== 'object' || Object.keys(paths).length === 0) {

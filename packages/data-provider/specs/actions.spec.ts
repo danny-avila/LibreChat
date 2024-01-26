@@ -285,6 +285,8 @@ describe('openapiToFunction', () => {
   });
 });
 
+const invalidServerURL = 'Could not find a valid URL in `servers`';
+
 describe('validateAndParseOpenAPISpec', () => {
   it('validates a correct OpenAPI spec successfully', () => {
     const validSpec = JSON.stringify({
@@ -310,7 +312,31 @@ describe('validateAndParseOpenAPISpec', () => {
 
     const result = validateAndParseOpenAPISpec(noServerSpec);
     expect(result.status).toBe(false);
-    expect(result.message).toBe('Could not find a valid URL in `servers`');
+    expect(result.message).toBe(invalidServerURL);
+  });
+
+  it('returns an error for spec with empty server URL', () => {
+    const emptyURLSpec = `{
+      "openapi": "3.1.0",
+      "info": {
+        "title": "Untitled",
+        "description": "Your OpenAPI specification",
+        "version": "v1.0.0"
+      },
+      "servers": [
+        {
+          "url": ""
+        }
+      ],
+      "paths": {},
+      "components": {
+        "schemas": {}
+      }
+    }`;
+
+    const result = validateAndParseOpenAPISpec(emptyURLSpec);
+    expect(result.status).toBe(false);
+    expect(result.message).toBe(invalidServerURL);
   });
 
   it('returns an error for spec with no paths', () => {
@@ -358,6 +384,6 @@ describe('validateAndParseOpenAPISpec', () => {
 
     const result = validateAndParseOpenAPISpec(invalidSpec);
     expect(result.status).toBe(false);
-    expect(result.message).toBe('Could not find a valid URL in `servers`');
+    expect(result.message).toBe(invalidServerURL);
   });
 });
