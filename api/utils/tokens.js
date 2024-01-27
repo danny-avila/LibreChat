@@ -57,28 +57,32 @@ const openAIModels = {
   'mistral-': 31990, // -10 from max
 };
 
+const googleModels = {
+  /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
+  gemini: 32750, // -10 from max
+  'text-bison-32k': 32758, // -10 from max
+  'chat-bison-32k': 32758, // -10 from max
+  'code-bison-32k': 32758, // -10 from max
+  'codechat-bison-32k': 32758,
+  /* Codey, -5 from max: 6144 */
+  'code-': 6139,
+  'codechat-': 6139,
+  /* PaLM2, -5 from max: 8192 */
+  'text-': 8187,
+  'chat-': 8187,
+};
+
+const anthropicModels = {
+  'claude-2.1': 200000,
+  'claude-': 100000,
+};
+
 // Order is important here: by model series and context size (gpt-4 then gpt-3, ascending)
 const maxTokensMap = {
   [EModelEndpoint.openAI]: openAIModels,
-  [EModelEndpoint.custom]: openAIModels,
-  [EModelEndpoint.google]: {
-    /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
-    gemini: 32750, // -10 from max
-    'text-bison-32k': 32758, // -10 from max
-    'chat-bison-32k': 32758, // -10 from max
-    'code-bison-32k': 32758, // -10 from max
-    'codechat-bison-32k': 32758,
-    /* Codey, -5 from max: 6144 */
-    'code-': 6139,
-    'codechat-': 6139,
-    /* PaLM2, -5 from max: 8192 */
-    'text-': 8187,
-    'chat-': 8187,
-  },
-  [EModelEndpoint.anthropic]: {
-    'claude-2.1': 200000,
-    'claude-': 100000,
-  },
+  [EModelEndpoint.custom]: { ...openAIModels, ...googleModels, ...anthropicModels },
+  [EModelEndpoint.google]: googleModels,
+  [EModelEndpoint.anthropic]: anthropicModels,
 };
 
 /**
