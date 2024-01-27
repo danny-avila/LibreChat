@@ -51,6 +51,9 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : 'bg-white radix-state-active:bg-gray-100',
+                  isSmallScreen
+                    ? ''
+                    : 'dark:bg-gray-900',
                 )}
                 value={SettingsTabValues.GENERAL}
               >
@@ -63,6 +66,9 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : 'bg-white radix-state-active:bg-gray-100',
+                  isSmallScreen
+                    ? ''
+                    : 'dark:bg-gray-900',
                 )}
                 value={SettingsTabValues.BETA}
               >
@@ -75,6 +81,9 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : 'bg-white radix-state-active:bg-gray-100',
+                  isSmallScreen
+                    ? ''
+                    : 'dark:bg-gray-900',
                 )}
                 value={SettingsTabValues.DATA}
               >
@@ -87,6 +96,9 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : 'bg-white radix-state-active:bg-gray-100',
+                  isSmallScreen
+                    ? ''
+                    : 'dark:bg-gray-900',
                 )}
                 value={SettingsTabValues.ACCOUNT}
               >
