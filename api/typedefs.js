@@ -69,6 +69,24 @@
  */
 
 /**
+ * @exports Action
+ * @typedef {import('librechat-data-provider').Action} Action
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ActionMetadata
+ * @typedef {import('librechat-data-provider').ActionMetadata} ActionMetadata
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ActionAuth
+ * @typedef {import('librechat-data-provider').ActionAuth} ActionAuth
+ * @memberof typedefs
+ */
+
+/**
  * @exports FileMetadata
  * @typedef {Object} FileMetadata
  * @property {string} file_id - The identifier of the file.

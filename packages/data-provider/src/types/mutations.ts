@@ -1,5 +1,13 @@
 import { TPreset } from '../types';
-import { Assistant, AssistantCreateParams, AssistantUpdateParams } from './assistants';
+import {
+  Assistant,
+  AssistantCreateParams,
+  AssistantUpdateParams,
+  ActionMetadata,
+  FunctionTool,
+  AssistantDocument,
+  Action,
+} from './assistants';
 
 export type TGenTitleRequest = {
   conversationId: string;
@@ -41,6 +49,13 @@ export type AssistantAvatarVariables = {
   formData: FormData;
 };
 
+export type UpdateActionVariables = {
+  assistant_id: string;
+  functions: FunctionTool[];
+  metadata: ActionMetadata;
+  action_id?: string;
+};
+
 export type UploadAssistantAvatarOptions = {
   onSuccess?: (data: Assistant, variables: AssistantAvatarVariables, context?: unknown) => void;
   onMutate?: (variables: AssistantAvatarVariables) => void | Promise<unknown>;
@@ -74,4 +89,15 @@ export type DeleteAssistantMutationOptions = {
   onSuccess?: (data: void, variables: { assistant_id: string }, context?: unknown) => void;
   onMutate?: (variables: { assistant_id: string }) => void | Promise<unknown>;
   onError?: (error: unknown, variables: { assistant_id: string }, context?: unknown) => void;
+};
+
+export type UpdateActionResponse = [AssistantDocument, Assistant, Action];
+export type UpdateActionOptions = {
+  onSuccess?: (
+    data: UpdateActionResponse,
+    variables: UpdateActionVariables,
+    context?: unknown,
+  ) => void;
+  onMutate?: (variables: UpdateActionVariables) => void | Promise<unknown>;
+  onError?: (error: unknown, variables: UpdateActionVariables, context?: unknown) => void;
 };

@@ -6,9 +6,9 @@ import { Tools, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import type { FunctionTool, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, Actions, AssistantPanelProps } from '~/common';
 import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
-import { useAssistantsContext, useChatContext } from '~/Providers';
 import { ToolSelectDialog } from '~/components/Tools';
 import { Separator } from '~/components/ui/Separator';
+import { useAssistantsContext } from '~/Providers';
 import { SelectDropDown } from '~/components/ui';
 import { Switch } from '~/components/ui/Switch';
 import AssistantAvatar from './AssistantAvatar';
@@ -24,10 +24,13 @@ const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-40
 const inputClass =
   'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 dark:text-white shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
 
-export default function AssistantPanel({ index = 0, setActivePanel }: AssistantPanelProps) {
+export default function AssistantPanel({
+  index = 0,
+  setActivePanel,
+  assistant_id: current_assistant_id,
+}: AssistantPanelProps) {
   const queryClient = useQueryClient();
   const modelsQuery = useGetModelsQuery();
-  const { conversation } = useChatContext();
   const { switchToConversation } = useNewConvo(index);
   const [showToolDialog, setShowToolDialog] = useState(false);
   const { control, handleSubmit, reset } = useAssistantsContext();
@@ -111,7 +114,7 @@ export default function AssistantPanel({ index = 0, setActivePanel }: AssistantP
           <AssistantSelect
             reset={reset}
             value={field.value}
-            selectedAssistant={conversation?.assistant_id ?? null}
+            selectedAssistant={current_assistant_id ?? null}
           />
         )}
       />

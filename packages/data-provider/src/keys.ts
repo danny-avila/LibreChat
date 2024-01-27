@@ -29,4 +29,5 @@ export enum MutationKeys {
   logoutUser = 'logoutUser',
   avatarUpload = 'avatarUpload',
   assistantAvatarUpload = 'assistantAvatarUpload',
+  updateAction = 'updateAction',
 }

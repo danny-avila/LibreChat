@@ -1,3 +1,8 @@
+import type { OpenAPIV3 } from 'openapi-types';
+
+export type Schema = OpenAPIV3.SchemaObject & { description?: string };
+export type Reference = OpenAPIV3.ReferenceObject & { description?: string };
+
 export type Metadata = {
   [key: string]: unknown;
 };
@@ -17,9 +22,7 @@ export type FunctionTool = {
   function?: {
     description: string;
     name: string;
-    parameters: {
-      [key: string]: string;
-    };
+    parameters: Record<string, unknown>;
   };
 };
 
@@ -246,4 +249,61 @@ export type TContentData = TMessageContentParts & {
   thread_id: string;
   index: number;
   stream?: boolean;
+};
+
+export const actionDelimiter = '_action_';
+
+export enum AuthTypeEnum {
+  ServiceHttp = 'service_http',
+  OAuth = 'oauth',
+  None = 'none',
+}
+
+export enum TokenExchangeMethodEnum {
+  DefaultPost = 'default_post',
+  BasicAuthHeader = 'basic_auth_header',
+}
+
+export type ActionAuth = {
+  authorization_type?: string;
+  custom_auth_header?: string;
+  type?: AuthTypeEnum;
+  authorization_content_type?: string;
+  authorization_url?: string;
+  client_url?: string;
+  scope?: string;
+  token_exchange_method?: TokenExchangeMethodEnum;
+};
+
+export type ActionMetadata = {
+  api_key?: string;
+  auth?: ActionAuth;
+  domain?: string;
+  privacy_policy_url?: string;
+  raw_spec?: string;
+  oauth_client_id?: string;
+  oauth_client_secret?: string;
+};
+
+export type Action = {
+  action_id?: string;
+  type?: string;
+  settings?: Record<string, unknown>;
+  metadata?: ActionMetadata;
+};
+
+export type AssistantAvatar = {
+  filepath: string;
+  source: string;
+};
+
+export type AssistantDocument = {
+  user: string;
+  assistant_id: string;
+  avatar?: AssistantAvatar;
+  access_level?: number;
+  file_ids?: string[];
+  actions?: string[];
+  createdAt?: Date;
+  updatedAt?: Date;
 };

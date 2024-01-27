@@ -224,6 +224,11 @@ export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise
   return request.postMultiPart(endpoints.assistants(`avatar/${data.assistant_id}`), data.formData);
 };
 
+export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
+  const { assistant_id, ...body } = data;
+  return request.post(endpoints.assistants(`action/${assistant_id}`), body);
+};
+
 export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesResponse> =>
   request.deleteWithOptions(endpoints.files(), {
     data: { files },

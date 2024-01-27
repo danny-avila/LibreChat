@@ -2,9 +2,9 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
 import type { OpenAPIV3 } from 'openapi-types';
+import type { FunctionTool, Schema, Reference } from './types/assistants';
+import { Tools } from './types/assistants';
 
-export type Schema = OpenAPIV3.SchemaObject & { description?: string };
-export type Reference = OpenAPIV3.ReferenceObject & { description?: string };
 export type ParametersSchema = {
   type: string;
   properties: Record<string, Reference | Schema>;
@@ -45,17 +45,17 @@ export function sha1(input: string) {
 export class FunctionSignature {
   name: string;
   description: string;
-  parameters: object;
+  parameters: Record<string, unknown>;
 
-  constructor(name: string, description: string, parameters: object) {
+  constructor(name: string, description: string, parameters: Record<string, unknown>) {
     this.name = name;
     this.description = description;
     this.parameters = parameters;
   }
 
-  toObjectTool() {
+  toObjectTool(): FunctionTool {
     return {
-      type: 'function',
+      type: Tools.function,
       function: {
         name: this.name,
         description: this.description,

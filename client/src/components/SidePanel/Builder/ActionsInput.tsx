@@ -1,10 +1,12 @@
 import debounce from 'lodash/debounce';
 import { useState, useEffect } from 'react';
 import { validateAndParseOpenAPISpec, openapiToFunction } from 'librechat-data-provider';
-import type { ValidationResult } from 'librechat-data-provider';
+import type { ValidationResult, Action, FunctionTool } from 'librechat-data-provider';
 import type { Spec } from './ActionsTable';
 import { ActionsTable, columns } from './ActionsTable';
+import { useUpdateAction } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
+import { Spinner } from '~/components/svg';
 
 const debouncedValidation = debounce(
   (input: string, callback: (result: ValidationResult) => void) => {
@@ -14,9 +16,16 @@ const debouncedValidation = debounce(
   800,
 );
 
-export default function ActionsInput() {
-  const [data, setData] = useState<Spec[] | null>(null);
+export default function ActionsInput({
+  action,
+  assistant_id,
+}: {
+  action?: Action;
+  assistant_id?: string;
+}) {
   const [inputValue, setInputValue] = useState('');
+  const [data, setData] = useState<Spec[] | null>(null);
+  const [functions, setFunctions] = useState<FunctionTool[] | null>(null);
   const [validationResult, setValidationResult] = useState<null | ValidationResult>(null);
 
   useEffect(() => {
@@ -24,19 +33,53 @@ export default function ActionsInput() {
       return;
     }
 
-    const { requestBuilders } = openapiToFunction(validationResult.spec);
+    const { functionSignatures, requestBuilders } = openapiToFunction(validationResult.spec);
     const specs = Object.entries(requestBuilders).map(([name, props]) => {
       return {
         name,
         method: props.method,
         path: props.path,
+        domain: props.domain,
       };
     });
+
     setData(specs);
     setValidationResult(null);
+    setFunctions(functionSignatures.map((f) => f.toObjectTool()));
   }, [validationResult]);
 
+  const updateAction = useUpdateAction();
+
+  const saveAction = () => {
+    if (!assistant_id) {
+      // alert user?
+      return;
+    }
+
+    if (!functions) {
+      return;
+    }
+
+    if (!data) {
+      return;
+    }
+
+    const { action_id, metadata = {} } = action ?? {};
+    metadata.raw_spec = inputValue;
+    metadata.domain = data[0].domain;
+    updateAction.mutate({
+      action_id,
+      metadata,
+      functions,
+      assistant_id,
+    });
+  };
+
   const handleResult = (result: ValidationResult) => {
+    if (!result.status) {
+      setData(null);
+      setFunctions(null);
+    }
     setValidationResult(result);
   };
 
@@ -44,6 +87,8 @@ export default function ActionsInput() {
     const newValue = event.target.value;
     setInputValue(newValue);
     if (!newValue) {
+      setData(null);
+      setFunctions(null);
       return setValidationResult(null);
     }
     debouncedValidation(newValue, handleResult);
@@ -58,7 +103,10 @@ export default function ActionsInput() {
             <button className="btn btn-neutral border-token-border-light relative h-8 min-w-[100px] rounded-lg font-medium">
               <div className="flex w-full items-center justify-center text-xs">Import from URL</div>
             </button>
-            <select className="border-token-border-medium h-8 min-w-[100px] rounded-lg border bg-transparent px-2 py-0 text-sm">
+            <select
+              onChange={(e) => console.log(e.target.value)}
+              className="border-token-border-medium h-8 min-w-[100px] rounded-lg border bg-transparent px-2 py-0 text-sm"
+            >
               <option value="label">Examples</option>
               <option value="0">Weather (JSON)</option>
               <option value="1">Pet Store (YAML)</option>
@@ -94,6 +142,45 @@ export default function ActionsInput() {
           <label className="text-token-text-primary block font-medium">Available actions</label>
         </div>
         {data && <ActionsTable columns={columns} data={data} />}
+      </div>
+      <div className="mt-4">
+        <div className="mb-1.5 flex items-center">
+          <span className="" data-state="closed">
+            <label className="text-token-text-primary block font-medium">Privacy policy</label>
+          </span>
+        </div>
+        <div className="rounded-md border border-gray-300 px-3 py-2 shadow-none focus-within:border-gray-800 focus-within:ring-1 focus-within:ring-gray-800 dark:bg-gray-700 dark:focus-within:border-white dark:focus-within:ring-white">
+          <label
+            htmlFor="privacyPolicyUrl"
+            className="block text-xs font-medium text-gray-900 dark:text-gray-100"
+          />
+          <div className="relative">
+            <input
+              name="privacyPolicyUrl"
+              id="privacyPolicyUrl"
+              className="block w-full border-0 p-0 text-gray-900 placeholder-gray-500 shadow-none outline-none focus-within:shadow-none focus-within:outline-none focus-within:ring-0 focus:border-none focus:ring-0 dark:bg-gray-700 dark:text-gray-100 sm:text-sm"
+              placeholder="https://api.example-weather-app.com/privacy"
+              // value=""
+            />
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center justify-end">
+        <button
+          disabled={!functions || !functions.length}
+          onClick={saveAction}
+          className="focus:shadow-outline mt-1 flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0 disabled:bg-green-400"
+          type="button"
+        >
+          {/* TODO: Add localization */}
+          {updateAction.isLoading ? (
+            <Spinner className="icon-md" />
+          ) : action?.action_id ? (
+            'Save'
+          ) : (
+            'Create'
+          )}
+        </button>
       </div>
     </>
   );

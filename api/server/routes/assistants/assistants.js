@@ -1,9 +1,12 @@
+const { v4 } = require('uuid');
 const multer = require('multer');
 const OpenAI = require('openai');
 const express = require('express');
+const { actionDelimiter } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
-const { updateAssistant } = require('~/models/Assistant');
+const { updateAssistant, getAssistant } = require('~/models/Assistant');
+const { updateAction } = require('~/models/Action');
 const toolsController = require('./tools');
 const { logger } = require('~/config');
 
@@ -149,17 +152,92 @@ router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => 
 
     const promises = [];
     promises.push(
-      updateAssistant(assistant_id, {
-        avatar: {
-          filepath: image.filepath,
-          source: req.app.locals.fileStrategy,
+      updateAssistant(
+        { assistant_id, user: req.user.id },
+        {
+          avatar: {
+            filepath: image.filepath,
+            source: req.app.locals.fileStrategy,
+          },
         },
-      }),
+      ),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { metadata }));
 
     const resolved = await Promise.all(promises);
     res.json(resolved[1]);
+  } catch (error) {
+    const message = 'An error occurred while updating the Assistant Avatar';
+    logger.error(message, error);
+    res.status(500).json({ message });
+  }
+});
+
+router.post('/action/:assistant_id', async (req, res) => {
+  try {
+    // TODO: 'Action sets cannot have duplicate domains - websearch.plugsugar.com already exists on another action'
+    const { assistant_id } = req.params;
+
+    /** @type {{ functions: FunctionTool[], action_id: string, metadata: ActionMetadata }} */
+    const { functions, action_id: _action_id, metadata } = req.body;
+    if (!functions.length) {
+      return res.status(400).json({ message: 'No functions provided' });
+    }
+
+    const action_id = _action_id ?? v4();
+    const initialPromises = [];
+
+    /** @type {OpenAI} */
+    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+
+    initialPromises.push(getAssistant({ assistant_id, user: req.user.id }));
+    initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
+    const [assistant_data, assistant] = await Promise.all(initialPromises);
+
+    if (!assistant) {
+      return res.status(404).json({ message: 'Assistant not found' });
+    }
+
+    const mappedFunctions = [];
+
+    for (const func of functions) {
+      const { name } = func.function;
+      mappedFunctions.push(`${name}${actionDelimiter}${action_id}`);
+    }
+    const { actions: _actions = [] } = assistant_data ?? {};
+
+    const toolsToRemove = [];
+    const actions = _actions
+      .filter((action) => {
+        if (action.includes(action_id)) {
+          toolsToRemove.push(action.split(actionDelimiter)[0]);
+          return false;
+        }
+        return true;
+      })
+      .concat(mappedFunctions);
+
+    /** @type {{ tools: FunctionTool[] | { type: 'code_interpreter'|'retrieval'}[]}} */
+    const { tools: _tools = [] } = assistant;
+    const tools = _tools
+      .filter((tool) => !(tool.function && toolsToRemove.includes(tool.function.name)))
+      .concat(functions);
+
+    const promises = [];
+    promises.push(
+      updateAssistant(
+        { assistant_id, user: req.user.id },
+        {
+          actions,
+        },
+      ),
+    );
+    promises.push(openai.beta.assistants.update(assistant_id, { tools }));
+    // TODO: Auth handling
+    promises.push(updateAction({ action_id, user: req.user.id }, { metadata }));
+
+    const resolved = await Promise.all(promises);
+    res.json(resolved);
   } catch (error) {
     const message = 'An error occurred while updating the Assistant Avatar';
     logger.error(message, error);

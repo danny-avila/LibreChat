@@ -7,6 +7,7 @@ import type {
   TLoginUser,
   TUser,
   EModelEndpoint,
+  Action,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 
@@ -25,7 +26,10 @@ export enum Panel {
 
 export type AssistantPanelProps = {
   index?: number;
+  action?: Action;
+  assistant_id?: string;
   activePanel?: string;
+  setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
