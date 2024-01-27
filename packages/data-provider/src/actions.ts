@@ -53,10 +53,14 @@ export class FunctionSignature {
     this.parameters = parameters;
   }
 
-  toJSONTool() {
+  toObjectTool() {
     return {
       type: 'function',
-      function: JSON.stringify(this),
+      function: {
+        name: this.name,
+        description: this.description,
+        parameters: this.parameters,
+      },
     };
   }
 }

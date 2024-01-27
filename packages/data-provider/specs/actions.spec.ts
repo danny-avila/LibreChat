@@ -20,9 +20,15 @@ describe('FunctionSignature', () => {
     });
     expect(signature.name).toBe('testFunction');
     expect(signature.description).toBe('A test function');
-    expect(signature.toJSONTool()).toEqual({
+    expect(signature.toObjectTool()).toEqual({
       type: 'function',
-      function: JSON.stringify(signature),
+      function: {
+        name: 'testFunction',
+        description: 'A test function',
+        parameters: {
+          param1: { type: 'string' },
+        },
+      },
     });
   });
 });
