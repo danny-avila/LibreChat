@@ -18,6 +18,17 @@ interface ColumnMeta {
   };
 }
 
+export enum Panel {
+  builder = 'builder',
+  actions = 'actions',
+}
+
+export type AssistantPanelProps = {
+  index?: number;
+  activePanel?: string;
+  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
+};
+
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;

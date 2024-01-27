@@ -4,7 +4,7 @@ import { Controller, useWatch } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { Tools, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import type { FunctionTool, TPlugin } from 'librechat-data-provider';
-import type { AssistantForm, Actions } from '~/common';
+import type { AssistantForm, Actions, AssistantPanelProps } from '~/common';
 import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
 import { useAssistantsContext, useChatContext } from '~/Providers';
 import { ToolSelectDialog } from '~/components/Tools';
@@ -18,12 +18,13 @@ import AssistantTool from './AssistantTool';
 import { Spinner } from '~/components/svg';
 import { cn, cardStyle } from '~/utils/';
 import { useNewConvo } from '~/hooks';
+import { Panel } from '~/common';
 
 const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
 const inputClass =
   'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 dark:text-white shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
 
-export default function AssistantPanel({ index = 0 }) {
+export default function AssistantPanel({ index = 0, setActivePanel }: AssistantPanelProps) {
   const queryClient = useQueryClient();
   const modelsQuery = useGetModelsQuery();
   const { conversation } = useChatContext();
@@ -250,6 +251,21 @@ export default function AssistantPanel({ index = 0 }) {
               {renderSwitch('retrieval')}
             </div>
             <Separator orientation="horizontal" className="bg-gray-100/50" />
+          </div>
+          <label className={cn(labelClass, 'mt-2')}>Actions</label>
+          <div className="space-y-1">
+            {[].map((func) => (
+              <AssistantTool key={func} tool={func} allTools={allTools} />
+            ))}
+            <button
+              type="button"
+              onClick={() => setActivePanel(Panel.actions)}
+              className="btn btn-neutral border-token-border-light relative mt-2 h-8 rounded-lg font-medium"
+            >
+              <div className="flex w-full items-center justify-center gap-2">
+                Add Actions {/* TODO: Add localization */}
+              </div>
+            </button>
           </div>
         </div>
         <div className="flex items-center justify-end">

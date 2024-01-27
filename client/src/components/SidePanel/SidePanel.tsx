@@ -5,8 +5,8 @@ import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
 import { Separator } from '~/components/ui/Separator';
-import AssistantPanel from './Builder/AssistantPanel';
 import NavToggle from '~/components/Nav/NavToggle';
+import PanelSwitch from './Builder/PanelSwitch';
 import { Blocks } from '~/components/svg';
 import FilesPanel from './Files/Panel';
 import Switcher from './Switcher';
@@ -141,7 +141,7 @@ export default function SidePanel({
                 label: '',
                 icon: Blocks,
                 id: 'assistants',
-                Component: AssistantPanel,
+                Component: PanelSwitch,
               },
               {
                 title: 'Attach Files',
