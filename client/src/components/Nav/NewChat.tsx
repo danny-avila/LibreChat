@@ -50,6 +50,24 @@ export default function NewChat({
       IconComponent = <GoogleIconChat size={19} className="rounded-full bg-white text-black" />;
     } else if (endpoint === 'plugin') {
       IconComponent = <Plugin size={19} className="rounded-full bg-white text-black" />;
+    } else if (endpoint === 'OpenRouter') {
+      IconComponent = (
+        <img
+          src="../../../public/assets/openrouter.png"
+          alt="description"
+          className="rounded-full bg-white text-black"
+          style={{ width: 19, height: 19 }}
+        />
+      );
+    } else if (endpoint === 'Mistral') {
+      IconComponent = (
+        <img
+          src="../../../public/assets/mistral.png"
+          alt="description"
+          className="rounded-full bg-white text-black"
+          style={{ width: 19, height: 19 }}
+        />
+      );
     }
     return <div>{IconComponent}</div>;
   };
