@@ -25,7 +25,8 @@ async function loadCustomConfig() {
     logger.error(`Invalid custom config file at ${configPath}`, result.error);
     return null;
   } else {
-    logger.info('Loaded custom config file');
+    logger.info('Loaded custom config file:');
+    logger.info(JSON.stringify(customConfig, null, 2));
   }
 
   if (customConfig.cache) {
