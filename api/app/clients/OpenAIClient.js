@@ -131,7 +131,8 @@ class OpenAIClient extends BaseClient {
     const { isChatGptModel } = this;
     this.isUnofficialChatGptModel =
       model.startsWith('text-chat') || model.startsWith('text-davinci-002-render');
-    this.maxContextTokens = getModelMaxTokens(model) ?? 4095; // 1 less than maximum
+    this.maxContextTokens =
+      getModelMaxTokens(model, this.options.endpointType ?? this.options.endpoint) ?? 4095; // 1 less than maximum
 
     if (this.shouldSummarize) {
       this.maxContextTokens = Math.floor(this.maxContextTokens / 2);
