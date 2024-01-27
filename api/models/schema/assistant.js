@@ -24,6 +24,7 @@ const assistantSchema = mongoose.Schema(
       type: Number,
     },
     file_ids: { type: [String], default: undefined },
+    actions: { type: [String], default: undefined },
   },
   {
     timestamps: true,
