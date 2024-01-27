@@ -14,14 +14,14 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:min-h-[373px] md:w-[80%]')}
+        className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:min-h-[373px] md:w-[680px]')}
         style={{
           borderRadius: '12px',
           position: 'fixed',
+          margin: 'auto',
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
-          margin: 'auto',
         }}
       >
         <DialogHeader>
@@ -32,8 +32,8 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
         <div className="px-6">
           <Tabs.Root
             defaultValue={SettingsTabValues.GENERAL}
-            className={cn('flex flex-col gap-10 md:flex-row')}
-            orientation={isSmallScreen ? 'horizontal' : 'vertical'}
+            className="flex flex-col gap-10 md:flex-row"
+            orientation="vertical"
           >
             <Tabs.List
               aria-label="Settings"
@@ -50,7 +50,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                    : '',
+                    : 'bg-white radix-state-active:bg-gray-100',
                 )}
                 value={SettingsTabValues.GENERAL}
               >
@@ -62,7 +62,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                    : '',
+                    : 'bg-white radix-state-active:bg-gray-100',
                 )}
                 value={SettingsTabValues.BETA}
               >
@@ -74,7 +74,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                    : '',
+                    : 'bg-white radix-state-active:bg-gray-100',
                 )}
                 value={SettingsTabValues.DATA}
               >
@@ -86,7 +86,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                    : '',
+                    : 'bg-white radix-state-active:bg-gray-100',
                 )}
                 value={SettingsTabValues.ACCOUNT}
               >
