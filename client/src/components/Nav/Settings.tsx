@@ -14,8 +14,15 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:min-h-[373px] md:w-[680px]')}
-        style={{ borderRadius: '12px' }}
+        className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:min-h-[373px] md:w-[80%]')}
+        style={{
+          borderRadius: '12px',
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          margin: 'auto',
+        }}
       >
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
@@ -25,8 +32,8 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
         <div className="px-6">
           <Tabs.Root
             defaultValue={SettingsTabValues.GENERAL}
-            className="flex flex-col gap-10 md:flex-row"
-            orientation="vertical"
+            className={cn('flex flex-col gap-10 md:flex-row')}
+            orientation={isSmallScreen ? 'horizontal' : 'vertical'}
           >
             <Tabs.List
               aria-label="Settings"
@@ -40,7 +47,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
             >
               <Tabs.Trigger
                 className={cn(
-                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-gray-100 radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
+                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : '',
@@ -52,7 +59,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 className={cn(
-                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-gray-100 radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
+                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : '',
@@ -64,7 +71,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 className={cn(
-                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-gray-100 radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
+                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : '',
@@ -76,7 +83,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 className={cn(
-                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-gray-100 radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
+                  'group my-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-800',
                   isSmallScreen
                     ? 'flex-1 items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : '',
