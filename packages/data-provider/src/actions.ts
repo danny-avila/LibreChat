@@ -205,7 +205,11 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
           | OpenAPIV3.SchemaObject;
       }
 
-      const functionSignature = new FunctionSignature(operationId, description, parametersSchema);
+      const functionSignature = new FunctionSignature(
+        operationId,
+        description,
+        parametersSchema.properties['requestBody'] as Record<string, unknown>,
+      );
       functionSignatures.push(functionSignature);
 
       const actionRequest = new ActionRequest(
