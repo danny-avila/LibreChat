@@ -85,7 +85,7 @@ export default function SidePanel({
                 isHovering={isHovering}
                 onToggle={toggleNavVisible}
                 setIsHovering={setIsHovering}
-                className="fixed top-1/2 mr-16"
+                className={cn('fixed top-1/2', isCollapsed && minSize === 0 ? 'mr-9' : 'mr-16')}
                 translateX={false}
                 side="right"
               />
