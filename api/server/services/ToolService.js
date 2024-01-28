@@ -114,9 +114,9 @@ function formatToOpenAIAssistantTool(tool) {
  * @returns {Promise<ToolOutputs>} The outputs of the tools.
  *
  */
-async function processActions(openai, actions) {
+async function processRequiredActions(openai, actions) {
   logger.debug(
-    `[processActions] user: ${openai.req.user.id} | thread_id: ${actions[0].thread_id} | run_id: ${actions[0].run_id}`,
+    `[required actions] user: ${openai.req.user.id} | thread_id: ${actions[0].thread_id} | run_id: ${actions[0].run_id}`,
     actions,
   );
   const tools = actions.map((action) => action.tool);
@@ -237,5 +237,5 @@ async function processActions(openai, actions) {
 module.exports = {
   formatToOpenAIAssistantTool,
   loadAndFormatTools,
-  processActions,
+  processRequiredActions,
 };

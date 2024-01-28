@@ -12,7 +12,7 @@ const {
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { RunManager, waitForRun, sleep } = require('~/server/services/Runs');
-const { processActions } = require('~/server/services/ToolService');
+const { processRequiredActions } = require('~/server/services/ToolService');
 const { createOnProgress, sendMessage } = require('~/server/utils');
 const { TextStream } = require('~/app/clients');
 const { logger } = require('~/config');
@@ -409,7 +409,7 @@ async function runAssistant({
     };
   });
 
-  const outputs = await processActions(openai, actions);
+  const outputs = await processRequiredActions(openai, actions);
 
   const toolRun = await openai.beta.threads.runs.submitToolOutputs(run.thread_id, run.id, outputs);
 
