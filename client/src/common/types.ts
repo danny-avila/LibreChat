@@ -27,6 +27,7 @@ export enum Panel {
 export type AssistantPanelProps = {
   index?: number;
   action?: Action;
+  actions?: Action[];
   assistant_id?: string;
   activePanel?: string;
   setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;

@@ -13,6 +13,7 @@ import { SelectDropDown } from '~/components/ui';
 import { Switch } from '~/components/ui/Switch';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
+import AssistantAction from './AssistantAction';
 import ContextButton from './ContextButton';
 import AssistantTool from './AssistantTool';
 import { Spinner } from '~/components/svg';
@@ -26,8 +27,10 @@ const inputClass =
 
 export default function AssistantPanel({
   index = 0,
+  setAction,
   setActivePanel,
   assistant_id: current_assistant_id,
+  actions = [],
 }: AssistantPanelProps) {
   const queryClient = useQueryClient();
   const modelsQuery = useGetModelsQuery();
@@ -257,9 +260,13 @@ export default function AssistantPanel({
           </div>
           <label className={cn(labelClass, 'mt-2')}>Actions</label>
           <div className="space-y-1">
-            {[].map((func) => (
-              <AssistantTool key={func} tool={func} allTools={allTools} />
-            ))}
+            {actions
+              .filter((action) => action.assistant_id === assistant_id)
+              .map((action, i) => {
+                return (
+                  <AssistantAction key={i} action={action} onClick={() => setAction(action)} />
+                );
+              })}
             <button
               type="button"
               onClick={() => setActivePanel(Panel.actions)}
