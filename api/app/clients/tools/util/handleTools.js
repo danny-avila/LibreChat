@@ -152,6 +152,7 @@ const loadTools = async ({
   returnMap = false,
   tools = [],
   options = {},
+  skipSpecs = false,
 }) => {
   const toolConstructors = {
     tavily_search_results_json: TavilySearchResults,
@@ -279,7 +280,7 @@ const loadTools = async ({
   }
 
   let specs = null;
-  if (functions && remainingTools.length > 0) {
+  if (functions && remainingTools.length > 0 && skipSpecs !== true) {
     specs = await loadSpecs({
       llm: model,
       user,
@@ -306,6 +307,9 @@ const loadTools = async ({
   let result = [];
   for (const tool of tools) {
     const validTool = requestedTools[tool];
+    if (!validTool) {
+      continue;
+    }
     const plugin = await validTool();
 
     if (Array.isArray(plugin)) {
