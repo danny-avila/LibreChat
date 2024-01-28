@@ -8,7 +8,7 @@ export default function ScrollToBottom({ scrollHandler }: Props) {
   return (
     <button
       onClick={scrollHandler}
-      className="cursor-pointer absolute z-10 rounded-full bg-clip-padding border text-gray-600 dark:border-white/10 dark:bg-white/10 dark:text-gray-200 right-1/2 border-black/10 bg-token-surface-primary bottom-5"
+      className="cursor-pointer absolute rounded-full border border-white bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-white/10  bottom-5 right-1/2 dark:text-gray-200"
     >
       <svg
         width="24"
