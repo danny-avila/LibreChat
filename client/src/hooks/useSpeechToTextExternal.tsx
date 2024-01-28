@@ -77,10 +77,14 @@ const useSpeechToTextExternal = () => {
     }
   };
 
-  const startRecording = () => {
+  const startRecording = async () => {
     if (isRequestBeingMade) {
       showToast({ message: 'A request is already being made. Please wait.', status: 'warning' });
       return;
+    }
+
+    if (!audioStream.current) {
+      await getMicrophonePermission();
     }
 
     if (audioStream.current) {
@@ -104,13 +108,15 @@ const useSpeechToTextExternal = () => {
   const stopRecording = () => {
     if (mediaRecorderRef.current && recordingStatus === 'recording') {
       mediaRecorderRef.current.stop();
-      setRecordingStatus('inactive'); // Add this line
+      setRecordingStatus('inactive');
       setIsListening(false);
+
+      audioStream.current?.getTracks().forEach((track) => track.stop());
+      audioStream.current = null;
     } else {
       showToast({ message: 'MediaRecorder is not recording', status: 'error' });
     }
   };
-
   const handleKeyDown = async (e: KeyboardEvent) => {
     if (e.shiftKey && e.altKey && e.key === 'L') {
       if (!window.MediaRecorder) {
@@ -141,7 +147,6 @@ const useSpeechToTextExternal = () => {
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      // Removed the call to cleanup
     };
   }, [isExternalSpeechEnabled, isListening]);
 
