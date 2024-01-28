@@ -110,7 +110,7 @@ function formatToOpenAIAssistantTool(tool) {
  * Processes return required actions from run.
  *
  * @param {OpenAIClient} openai - OpenAI Client.
- * @param {Action[]} actions - The actions to submit outputs for.
+ * @param {RequiredAction[]} actions - The actions to submit outputs for.
  * @returns {Promise<ToolOutputs>} The outputs of the tools.
  *
  */

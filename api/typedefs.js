@@ -536,8 +536,8 @@
  */
 
 /**
- * @exports Action
- * @typedef {Object} Action
+ * @exports RequiredAction
+ * @typedef {Object} RequiredAction
  * @property {string} tool - The name of the function.
  * @property {Object} toolInput - The args to invoke the function with.
  * @property {string} toolCallId - The ID of the tool call.
