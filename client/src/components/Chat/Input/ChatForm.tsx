@@ -53,14 +53,11 @@ export default function ChatForm({ index = 0 }) {
   const isListening = useExternalSpeech ? externalIsListening : speechIsListening;
   const isLoading = useExternalSpeech ? externalIsLoading : speechIsLoading;
   const speechTextForm = useExternalSpeech ? externalSpeechText : speechText;
+  const finalText = speechText || externalSpeechText ? speechTextForm : text;
 
   useEffect(() => {
-    if (speechTextForm) {
-      return setText(speechTextForm);
-    } else {
-      return setText(text);
-    }
-  }, [isListening, speechText, setText, speechTextForm, text]);
+    return setText(finalText);
+  }, [finalText, setText]);
 
   return (
     <form

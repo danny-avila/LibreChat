@@ -30,6 +30,10 @@ export type SpeechToTextResponse = {
   text: string;
 };
 
+export type TextToSpeechResponse = {
+  audio: Blob;
+};
+
 export type FileUploadBody = {
   formData: FormData;
   file_id: string;
@@ -49,6 +53,12 @@ export type UploadAvatarOptions = {
 
 export type SpeechToTextOptions = {
   onSuccess?: (data: SpeechToTextResponse, variables: FormData, context?: unknown) => void;
+  onMutate?: (variables: FormData) => void | Promise<unknown>;
+  onError?: (error: unknown, variables: FormData, context?: unknown) => void;
+};
+
+export type TextToSpeechOptions = {
+  onSuccess?: (data: TextToSpeechResponse, variables: FormData, context?: unknown) => void;
   onMutate?: (variables: FormData) => void | Promise<unknown>;
   onError?: (error: unknown, variables: FormData, context?: unknown) => void;
 };

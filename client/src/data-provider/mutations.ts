@@ -16,6 +16,8 @@ import type {
   AvatarUploadResponse,
   SpeechToTextOptions,
   SpeechToTextResponse,
+  TextToSpeechOptions,
+  TextToSpeechResponse,
 } from 'librechat-data-provider';
 
 import { dataService, MutationKeys } from 'librechat-data-provider';
@@ -130,6 +132,21 @@ export const useSpeechToTextMutation = (
 > => {
   return useMutation([MutationKeys.speechToText], {
     mutationFn: (variables: FormData) => dataService.speechToText(variables),
+    ...(options || {}),
+  });
+};
+
+/* Text to speech */
+export const useTextToSpeechMutation = (
+  options?: TextToSpeechOptions,
+): UseMutationResult<
+  TextToSpeechResponse, // response data
+  unknown, // error
+  FormData, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.textToSpeech], {
+    mutationFn: (variables: FormData) => dataService.textToSpeech(variables),
     ...(options || {}),
   });
 };

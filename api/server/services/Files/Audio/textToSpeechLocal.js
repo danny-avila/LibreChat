@@ -1,6 +1,6 @@
 // const { Buffer }  = require('buffer');
 
-async function generateSpeech(req, res) {
+async function textToSpeechLocal(req, res) {
   const response = 'Test response';
 
   console.log(req);
@@ -12,4 +12,4 @@ async function generateSpeech(req, res) {
   return response;
 }
 
-module.exports = generateSpeech;
+module.exports = textToSpeechLocal;

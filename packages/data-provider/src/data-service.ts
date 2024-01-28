@@ -213,3 +213,7 @@ export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesRe
 export const speechToText = (data: FormData): Promise<f.SpeechToTextResponse> => {
   return request.postMultiPart(endpoints.speechToText(), data);
 };
+
+export const textToSpeech = (data: FormData): Promise<f.TextToSpeechResponse> => {
+  return request.postMultiPart(endpoints.textToSpeech(), data);
+};
