@@ -28,9 +28,10 @@ const inputClass =
 export default function AssistantPanel({
   index = 0,
   setAction,
+  actions = [],
   setActivePanel,
   assistant_id: current_assistant_id,
-  actions = [],
+  setCurrentAssistantId,
 }: AssistantPanelProps) {
   const queryClient = useQueryClient();
   const modelsQuery = useGetModelsQuery();
@@ -39,12 +40,15 @@ export default function AssistantPanel({
   const { control, handleSubmit, reset } = useAssistantsContext();
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
 
-  /* Mutations */
-  const create = useCreateAssistantMutation();
-  const update = useUpdateAssistantMutation();
   const assistant_id = useWatch({ control, name: 'id' });
   const assistant = useWatch({ control, name: 'assistant' });
   const functions = useWatch({ control, name: 'functions' });
+
+  /* Mutations */
+  const update = useUpdateAssistantMutation();
+  const create = useCreateAssistantMutation({
+    onSuccess: (data) => setCurrentAssistantId(data.id),
+  });
 
   const onSubmit = (data: AssistantForm) => {
     const tools: Array<FunctionTool | string> = [...functions];
@@ -117,6 +121,7 @@ export default function AssistantPanel({
           <AssistantSelect
             reset={reset}
             value={field.value}
+            setCurrentAssistantId={setCurrentAssistantId}
             selectedAssistant={current_assistant_id ?? null}
           />
         )}

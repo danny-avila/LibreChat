@@ -17,10 +17,12 @@ export default function AssistantSelect({
   reset,
   value,
   selectedAssistant,
+  setCurrentAssistantId,
 }: {
   reset: UseFormReset<AssistantForm>;
   value: TAssistantOption;
   selectedAssistant: string | null;
+  setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
 }) {
   const localize = useLocalize();
 
@@ -38,6 +40,7 @@ export default function AssistantSelect({
       const assistant = assistants.data?.find((assistant) => assistant.id === value);
 
       if (!assistant) {
+        setCurrentAssistantId(undefined);
         return reset(defaultAssistantFormValues);
       }
 
@@ -82,8 +85,9 @@ export default function AssistantSelect({
       });
 
       reset(formValues);
+      setCurrentAssistantId(assistant?.id);
     },
-    [assistants.data, reset],
+    [assistants.data, reset, setCurrentAssistantId],
   );
 
   useEffect(() => {

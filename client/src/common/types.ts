@@ -31,6 +31,7 @@ export type AssistantPanelProps = {
   assistant_id?: string;
   activePanel?: string;
   setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
+  setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
 };
 
