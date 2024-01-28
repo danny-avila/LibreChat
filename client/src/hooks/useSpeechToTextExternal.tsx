@@ -14,14 +14,17 @@ const useSpeechToTextExternal = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const [recordingStatus, setRecordingStatus] = useState('inactive');
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const [isRequestBeingMade, setIsRequestBeingMade] = useState(false);
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
       const extractedText = data.text;
       setText(extractedText);
+      setIsRequestBeingMade(false);
     },
     onError: (error) => {
       showToast({ message: `Error: ${error}`, status: 'error' });
+      setIsRequestBeingMade(false);
     },
   });
 
@@ -31,10 +34,6 @@ const useSpeechToTextExternal = () => {
       mediaRecorderRef.current.removeEventListener('stop', handleStop);
       mediaRecorderRef.current = null;
       setRecordingStatus('inactive');
-    }
-    if (audioStream.current) {
-      audioStream.current.getTracks().forEach((track) => track.stop());
-      audioStream.current = null;
     }
   };
 
@@ -46,7 +45,6 @@ const useSpeechToTextExternal = () => {
       });
       setPermission(true);
       audioStream.current = streamData ?? null;
-      console.log('Permission granted, audio stream:', audioStream.current);
     } catch (err) {
       console.error('Error getting microphone permission:', err);
       setPermission(false);
@@ -71,14 +69,20 @@ const useSpeechToTextExternal = () => {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.wav');
       console.log('Sending audio for processing');
-      processAudio(formData);
+      setIsRequestBeingMade(true);
       cleanup();
+      processAudio(formData);
     } else {
       showToast({ message: 'No audio chunks available for processing', status: 'warning' });
     }
   };
 
   const startRecording = () => {
+    if (isRequestBeingMade) {
+      showToast({ message: 'A request is already being made. Please wait.', status: 'warning' });
+      return;
+    }
+
     if (audioStream.current) {
       try {
         setAudioChunks([]);
@@ -86,17 +90,22 @@ const useSpeechToTextExternal = () => {
         mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
         mediaRecorderRef.current.addEventListener('stop', handleStop);
         mediaRecorderRef.current.start(100);
+        setIsListening(true);
         setRecordingStatus('recording');
         console.log('MediaRecorder state:', mediaRecorderRef.current?.state);
       } catch (error) {
         showToast({ message: `Error starting recording: ${error}`, status: 'error' });
       }
+    } else {
+      showToast({ message: 'Microphone permission not granted', status: 'error' });
     }
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && recordingStatus === 'recording') {
       mediaRecorderRef.current.stop();
+      setRecordingStatus('inactive'); // Add this line
+      setIsListening(false);
     } else {
       showToast({ message: 'MediaRecorder is not recording', status: 'error' });
     }
@@ -115,10 +124,8 @@ const useSpeechToTextExternal = () => {
 
       if (isListening) {
         stopRecording();
-        setIsListening(false);
       } else {
         startRecording();
-        setIsListening(true);
       }
 
       e.preventDefault();
