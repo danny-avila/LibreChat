@@ -1,6 +1,5 @@
 const axios = require('axios');
 const FormData = require('form-data');
-const { Readable } = require('stream');
 
 async function speechToTextLocal(req, res) {
   if (!req.file || !req.file.buffer) {
@@ -9,20 +8,19 @@ async function speechToTextLocal(req, res) {
   }
 
   const audioBuffer = req.file.buffer;
-
-  // Create a readable stream from the audio buffer
-  const audioReadStream = Readable.from(audioBuffer);
-  // Set the filename for mimeType detection
-  audioReadStream.path = 'audio.wav';
+  const audioBlob = new Blob([audioBuffer], { type: req.file.mimetype });
 
   const formData = new FormData();
-  formData.append('file', audioReadStream, { filename: 'audio.wav', contentType: 'audio/wav' });
-  formData.append('model', 'whisper');
+  formData.append('file', audioBlob);
+  formData.append('model', 'whisper-1');
 
   try {
     // Make the POST request using axios
-    const response = await axios.post('http://localhost:8080/v1/audio/transcriptions', formData, {
-      headers: formData.getHeaders(),
+    const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
+      headers: {
+        Authorization: `Bearer ${process.env.WHISPER_API_KEY}`,
+        'Content-Type': 'multipart/form-data',
+      },
     });
 
     if (response && response.status && response.data && response.data.text) {
