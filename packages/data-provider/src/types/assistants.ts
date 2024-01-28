@@ -286,10 +286,11 @@ export type ActionMetadata = {
 };
 
 export type Action = {
-  action_id?: string;
+  action_id: string;
+  assistant_id: string;
   type?: string;
   settings?: Record<string, unknown>;
-  metadata?: ActionMetadata;
+  metadata: ActionMetadata;
 };
 
 export type AssistantAvatar = {

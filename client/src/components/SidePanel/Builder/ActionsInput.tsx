@@ -66,7 +66,13 @@ export default function ActionsInput({
 
     const { action_id, metadata = {} } = action ?? {};
     metadata.raw_spec = inputValue;
-    metadata.domain = data[0].domain;
+    const parsedUrl = new URL(data[0].domain);
+    const domain = parsedUrl.hostname;
+    if (!domain) {
+      // alert user?
+      return;
+    }
+    metadata.domain = domain;
     updateAction.mutate({
       action_id,
       metadata,

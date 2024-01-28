@@ -20,6 +20,17 @@ const updateAction = async (searchParams, updateData) => {
   }).lean();
 };
 
+/**
+ * Retrieves all actions that match the given search parameters.
+ *
+ * @param {Object} searchParams - The search parameters to find matching actions.
+ * @returns {Promise<Array<Object>>} A promise that resolves to an array of action documents as plain objects.
+ */
+const getActions = async (searchParams) => {
+  return await Action.find(searchParams).lean();
+};
+
 module.exports = {
   updateAction,
+  getActions,
 };

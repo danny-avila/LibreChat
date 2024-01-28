@@ -30,7 +30,18 @@ const updateAssistant = async (searchParams, updateData) => {
  */
 const getAssistant = async (searchParams) => await Assistant.findOne(searchParams).lean();
 
+/**
+ * Retrieves all assistants that match the given search parameters.
+ *
+ * @param {Object} searchParams - The search parameters to find matching assistants.
+ * @returns {Promise<Array<Object>>} A promise that resolves to an array of action documents as plain objects.
+ */
+const getAssistants = async (searchParams) => {
+  return await Assistant.find(searchParams).lean();
+};
+
 module.exports = {
   updateAssistant,
+  getAssistants,
   getAssistant,
 };

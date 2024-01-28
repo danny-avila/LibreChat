@@ -15,6 +15,12 @@
  */
 
 /**
+ * @exports AssistantDocument
+ * @typedef {import('librechat-data-provider').AssistantDocument} AssistantDocument
+ * @memberof typedefs
+ */
+
+/**
  * @exports OpenAIFile
  * @typedef {import('librechat-data-provider').File} OpenAIFile
  * @memberof typedefs

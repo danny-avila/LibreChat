@@ -226,8 +226,16 @@ export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise
 
 export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
   const { assistant_id, ...body } = data;
-  return request.post(endpoints.assistants(`action/${assistant_id}`), body);
+  return request.post(endpoints.assistants(`actions/${assistant_id}`), body);
 };
+
+export function getActions(): Promise<a.Action[]> {
+  return request.get(endpoints.assistants('actions'));
+}
+
+export function getAssistantDocs(): Promise<a.AssistantDocument[]> {
+  return request.get(endpoints.assistants('documents'));
+}
 
 export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesResponse> =>
   request.deleteWithOptions(endpoints.files(), {
