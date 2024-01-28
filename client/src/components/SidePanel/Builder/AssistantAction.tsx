@@ -10,13 +10,15 @@ export default function AssistantAction({
 }) {
   return (
     <div>
-      <div className="border-token-border-medium flex w-full rounded-lg border text-sm hover:cursor-pointer">
+      <div
+        onClick={onClick}
+        className="border-token-border-medium flex w-full rounded-lg border text-sm hover:cursor-pointer"
+      >
         <div className="h-9 grow px-3 py-2">{action.metadata.domain}</div>
         <div className="w-px bg-gray-300 dark:bg-gray-600" />
         <button
           type="button"
           className="flex h-9 w-9 items-center justify-center rounded-lg rounded-l-none"
-          onClick={onClick}
         >
           <GearIcon className="icon-sm" />
         </button>

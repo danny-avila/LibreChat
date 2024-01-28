@@ -23,10 +23,21 @@ export default function ActionsInput({
   action?: Action;
   assistant_id?: string;
 }) {
-  const [inputValue, setInputValue] = useState('');
+  const handleResult = (result: ValidationResult) => {
+    if (!result.status) {
+      setData(null);
+      setFunctions(null);
+    }
+    setValidationResult(result);
+  };
+
+  const [inputValue, setInputValue] = useState(action ? action.metadata?.raw_spec : '');
+  const [validationResult, setValidationResult] = useState<null | ValidationResult>(
+    action ? debouncedValidation(inputValue, handleResult) : null,
+  );
+
   const [data, setData] = useState<Spec[] | null>(null);
   const [functions, setFunctions] = useState<FunctionTool[] | null>(null);
-  const [validationResult, setValidationResult] = useState<null | ValidationResult>(null);
 
   useEffect(() => {
     if (!validationResult || !validationResult.status || !validationResult.spec) {
@@ -79,14 +90,6 @@ export default function ActionsInput({
       functions,
       assistant_id,
     });
-  };
-
-  const handleResult = (result: ValidationResult) => {
-    if (!result.status) {
-      setData(null);
-      setFunctions(null);
-    }
-    setValidationResult(result);
   };
 
   const handleInputChange = (event) => {
@@ -182,7 +185,7 @@ export default function ActionsInput({
           {updateAction.isLoading ? (
             <Spinner className="icon-md" />
           ) : action?.action_id ? (
-            'Save'
+            'Update'
           ) : (
             'Create'
           )}

@@ -12,19 +12,7 @@ export default function PanelSwitch() {
   const [action, setAction] = useState<Action | undefined>(undefined);
   const { data: actions = [] } = useGetActionsQuery();
 
-  if (activePanel === Panel.builder) {
-    return (
-      <AssistantPanel
-        index={index}
-        assistant_id={conversation?.assistant_id}
-        activePanel={activePanel}
-        action={action}
-        actions={actions}
-        setAction={setAction}
-        setActivePanel={setActivePanel}
-      />
-    );
-  } else if (activePanel === Panel.actions) {
+  if (activePanel === Panel.actions || action) {
     return (
       <ActionsPanel
         index={index}
@@ -33,6 +21,18 @@ export default function PanelSwitch() {
         setAction={setAction}
         assistant_id={conversation?.assistant_id}
         activePanel={activePanel}
+        setActivePanel={setActivePanel}
+      />
+    );
+  } else if (activePanel === Panel.builder) {
+    return (
+      <AssistantPanel
+        index={index}
+        assistant_id={conversation?.assistant_id}
+        activePanel={activePanel}
+        action={action}
+        actions={actions}
+        setAction={setAction}
         setActivePanel={setActivePanel}
       />
     );

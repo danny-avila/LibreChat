@@ -5,6 +5,7 @@ import { Panel } from '~/common';
 export default function ActionsPanel({
   // activePanel,
   action,
+  setAction,
   setActivePanel,
   assistant_id,
 }: AssistantPanelProps) {
@@ -15,7 +16,10 @@ export default function ActionsPanel({
           <div className="absolute left-0 top-6">
             <button
               className="btn btn-neutral relative"
-              onClick={() => setActivePanel(Panel.builder)}
+              onClick={() => {
+                setActivePanel(Panel.builder);
+                setAction(undefined);
+              }}
             >
               <div className="flex w-full items-center justify-center gap-2">
                 <svg
@@ -37,7 +41,7 @@ export default function ActionsPanel({
               </div>
             </button>
           </div>
-          <div className="text-xl font-medium">Add actions</div>
+          <div className="text-xl font-medium">{(action ? 'Edit' : 'Add') + ' ' + 'actions'}</div>
           <div className="text-token-text-tertiary text-sm">
             {/* TODO: use App title */}
             Let your Assistant retrieve information or take actions outside of LibreChat.
