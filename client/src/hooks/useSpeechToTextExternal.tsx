@@ -1,98 +1,132 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSpeechToTextMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 const useSpeechToTextExternal = () => {
   const { showToast } = useToastContext();
-  const [text, setText] = useState('');
+  const [text, setText] = useState<string>('');
   const [isListening, setIsListening] = useState(false);
-  const [audioData, setAudioData] = useState<Blob | null>(null);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const { data: startupConfig } = useGetStartupConfig();
-  const externalSpeechEnabled = startupConfig?.speechToTextExternal;
+  const isExternalSpeechEnabled = startupConfig?.speechToTextExternal ?? false;
+  const [permission, setPermission] = useState(false);
+  const audioStream = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const [recordingStatus, setRecordingStatus] = useState('inactive');
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
       const extractedText = data.text;
       setText(extractedText);
     },
-    onError: () => {
-      showToast({ message: 'There was an error while uploading your audio', status: 'error' });
+    onError: (error) => {
+      showToast({ message: `Error: ${error}`, status: 'error' });
     },
   });
 
-  const startRecording = () => {
-    setRecordedChunks([]);
-
-    navigator.mediaDevices
-      .getUserMedia({ audio: true })
-      .then((stream) => {
-        const recorder = new MediaRecorder(stream);
-        setMediaRecorder(recorder);
-
-        const chunks = [];
-
-        recorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            const chunks: Blob[] = [...recordedChunks, event.data];
-            setRecordedChunks(chunks);
-            setRecordedChunks([...chunks]);
-          }
-        };
-
-        recorder.onstop = () => {
-          const audioBlob = new Blob(chunks, { type: 'audio/wav' });
-          setAudioData(audioBlob);
-        };
-
-        recorder.start();
-        setTimeout(() => recorder.stop(), 3000);
-      })
-      .catch((error) => {
-        console.error('Error starting recording:', error);
-      });
+  const cleanup = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.removeEventListener('dataavailable', handleDataAvailable);
+      mediaRecorderRef.current.removeEventListener('stop', handleStop);
+      mediaRecorderRef.current = null;
+      setRecordingStatus('inactive');
+    }
+    if (audioStream.current) {
+      audioStream.current.getTracks().forEach((track) => track.stop());
+      audioStream.current = null;
+    }
   };
 
-  const stopRecording = () => {
-    if (mediaRecorder) {
-      mediaRecorder.stop();
-      console.log('recordedChunks:', recordedChunks);
-      if (recordedChunks.length > 0) {
-        const audioBlob = new Blob(recordedChunks, { type: 'audio/wav' });
-        setAudioData(audioBlob);
-        const formData = new FormData();
-        formData.append('audio', audioBlob, 'recording.wav');
-        processAudio(formData);
-      } else {
-        showToast({ message: 'No audio data found', status: 'info' });
+  const getMicrophonePermission = async () => {
+    try {
+      const streamData = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: false,
+      });
+      setPermission(true);
+      audioStream.current = streamData ?? null;
+      console.log('Permission granted, audio stream:', audioStream.current);
+    } catch (err) {
+      console.error('Error getting microphone permission:', err);
+      setPermission(false);
+    }
+  };
+
+  const handleDataAvailable = (event: BlobEvent) => {
+    if (event.data.size > 0) {
+      audioChunks.push(event.data);
+    } else {
+      showToast({ message: 'No audio data available', status: 'warning' });
+    }
+  };
+
+  const handleStop = () => {
+    if (audioChunks.length > 0) {
+      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+
+      setRecordingStatus('inactive');
+      setAudioChunks([]);
+
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'recording.wav');
+      console.log('Sending audio for processing');
+      processAudio(formData);
+      cleanup();
+    } else {
+      showToast({ message: 'No audio chunks available for processing', status: 'warning' });
+    }
+  };
+
+  const startRecording = () => {
+    if (audioStream.current) {
+      try {
+        setAudioChunks([]);
+        mediaRecorderRef.current = new MediaRecorder(audioStream.current);
+        mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
+        mediaRecorderRef.current.addEventListener('stop', handleStop);
+        mediaRecorderRef.current.start(100);
+        setRecordingStatus('recording');
+        console.log('MediaRecorder state:', mediaRecorderRef.current?.state);
+      } catch (error) {
+        showToast({ message: `Error starting recording: ${error}`, status: 'error' });
       }
     }
   };
 
-  const handleKeyDown = async (e) => {
-    if (e.shiftKey && e.altKey && e.key === 'L') {
-      console.log('keydown pressed');
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && recordingStatus === 'recording') {
+      mediaRecorderRef.current.stop();
+    } else {
+      showToast({ message: 'MediaRecorder is not recording', status: 'error' });
+    }
+  };
 
-      // Toggle between start and stop recording
+  const handleKeyDown = async (e: KeyboardEvent) => {
+    if (e.shiftKey && e.altKey && e.key === 'L') {
+      if (!window.MediaRecorder) {
+        showToast({ message: 'MediaRecorder is not supported in this browser', status: 'error' });
+        return;
+      }
+
+      if (permission === false) {
+        await getMicrophonePermission();
+      }
+
       if (isListening) {
         stopRecording();
         setIsListening(false);
-        console.log('stop recording');
       } else {
-        setRecordedChunks([]); // Clear recorded chunks when starting a new recording
         startRecording();
         setIsListening(true);
       }
 
-      // Prevent default behavior to avoid undesired side effects
       e.preventDefault();
     }
   };
 
   useEffect(() => {
-    if (externalSpeechEnabled === false) {
+    if (isExternalSpeechEnabled === false) {
       return;
     }
 
@@ -100,8 +134,9 @@ const useSpeechToTextExternal = () => {
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      // Removed the call to cleanup
     };
-  }, [isListening, audioData]);
+  }, [isExternalSpeechEnabled, isListening]);
 
   return { isListening, isLoading: isProcessing, text };
 };

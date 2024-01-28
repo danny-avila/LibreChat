@@ -9,7 +9,7 @@ import SendButton from './SendButton';
 import Images from './Files/Images';
 import Textarea from './Textarea';
 import store from '~/store';
-import { useSpeechRecognition, useExternalSpeechRecognition } from '~/hooks';
+import { useSpeechToText, useSpeechToTextExternal } from '~/hooks';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 export default function ChatForm({ index = 0 }) {
@@ -42,13 +42,13 @@ export default function ChatForm({ index = 0 }) {
     isListening: speechIsListening,
     isLoading: speechIsLoading,
     text: speechText,
-  } = useSpeechRecognition();
+  } = useSpeechToText();
 
   const {
     isListening: externalIsListening,
     isLoading: externalIsLoading,
     text: externalSpeechText,
-  } = useExternalSpeechRecognition();
+  } = useSpeechToTextExternal();
 
   const isListening = useExternalSpeech ? externalIsListening : speechIsListening;
   const isLoading = useExternalSpeech ? externalIsLoading : speechIsLoading;

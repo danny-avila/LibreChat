@@ -10,7 +10,7 @@ import {
   VolumeIcon,
   VolumeMuteIcon,
 } from '~/components/svg';
-import { useGenerationsByLatest, useLocalize, useSpeechSynthesis } from '~/hooks';
+import { useGenerationsByLatest, useLocalize, useTextToSpeech } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -42,7 +42,7 @@ export default function HoverButtons({
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const { synthesizeSpeech, cancelSpeech } = useSpeechSynthesis();
+  const { synthesizeSpeech, cancelSpeech } = useTextToSpeech();
   const [TextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
 
   const { hideEditButton, regenerateEnabled, continueSupported } = useGenerationsByLatest({
