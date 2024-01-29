@@ -209,12 +209,14 @@ export default function ActionsInput({
           )}
         </div>
       </div>
-      <div>
-        <div className="mb-1.5 flex items-center">
-          <label className="text-token-text-primary block font-medium">Available actions</label>
+      {!!data && (
+        <div>
+          <div className="mb-1.5 flex items-center">
+            <label className="text-token-text-primary block font-medium">Available actions</label>
+          </div>
+          <ActionsTable columns={columns} data={data} />
         </div>
-        {data && <ActionsTable columns={columns} data={data} />}
-      </div>
+      )}
       <div className="mt-4">
         <div className="mb-1.5 flex items-center">
           <span className="" data-state="closed">
