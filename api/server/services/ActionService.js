@@ -11,7 +11,7 @@ const { getActions } = require('~/models/Action');
  * @returns {Promise<Action[] | null>} A promise that resolves to an array of actions or `null` if no match.
  */
 async function loadActionSets({ user, assistant_id }) {
-  return await getActions({ user, assistant_id });
+  return await getActions({ user, assistant_id }, true);
 }
 
 /**
@@ -22,15 +22,27 @@ async function loadActionSets({ user, assistant_id }) {
  * @param {ActionRequest} params.requestBuilder - The ActionRequest builder class to execute the API call.
  * @returns { { _call: (toolInput: Object) => unknown} } An object with `_call` method to execute the tool input.
  */
-function createActionTool({ requestBuilder }) {
+function createActionTool({ action, requestBuilder }) {
+  action.metadata = decryptMetadata(action.metadata);
   const _call = async (toolInput) => {
-    requestBuilder.setParams(toolInput);
-    // TODO: auth handling
-    const res = await requestBuilder.execute();
-    if (typeof res.data === 'object') {
-      return JSON.stringify(res.data);
+    try {
+      requestBuilder.setParams(toolInput);
+      if (action.metadata.auth.type !== AuthTypeEnum.None) {
+        await requestBuilder.setAuth(action.metadata);
+      }
+      const res = await requestBuilder.execute();
+      if (typeof res.data === 'object') {
+        return JSON.stringify(res.data);
+      }
+      return res.data;
+    } catch (error) {
+      if (error.response) {
+        const { status, data } = error.response;
+        return `API call to ${action.metadata.domain} failed with status ${status}: ${data}`;
+      }
+
+      return `API call to ${action.metadata.domain} failed.`;
     }
-    return res.data;
   };
 
   return {
