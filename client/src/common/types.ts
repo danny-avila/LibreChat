@@ -8,6 +8,9 @@ import type {
   TUser,
   EModelEndpoint,
   Action,
+  AuthTypeEnum,
+  AuthorizationTypeEnum,
+  TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 
@@ -23,6 +26,20 @@ export enum Panel {
   builder = 'builder',
   actions = 'actions',
 }
+
+export type ActionAuthForm = {
+  type: AuthTypeEnum;
+  api_key: string; // not nested
+  authorization_type: AuthorizationTypeEnum;
+  custom_auth_header: string;
+  /* oauth */
+  oauth_client_id: string; // not nested
+  oauth_client_secret: string; // not nested
+  authorization_url: string;
+  client_url: string;
+  scope: string;
+  token_exchange_method: TokenExchangeMethodEnum;
+};
 
 export type AssistantPanelProps = {
   index?: number;

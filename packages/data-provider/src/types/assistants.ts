@@ -259,13 +259,19 @@ export enum AuthTypeEnum {
   None = 'none',
 }
 
+export enum AuthorizationTypeEnum {
+  Bearer = 'bearer',
+  Basic = 'basic',
+  Custom = 'custom',
+}
+
 export enum TokenExchangeMethodEnum {
   DefaultPost = 'default_post',
   BasicAuthHeader = 'basic_auth_header',
 }
 
 export type ActionAuth = {
-  authorization_type?: string;
+  authorization_type?: AuthorizationTypeEnum;
   custom_auth_header?: string;
   type?: AuthTypeEnum;
   authorization_content_type?: string;
