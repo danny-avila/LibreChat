@@ -2,8 +2,8 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
 import type { OpenAPIV3 } from 'openapi-types';
-import type { FunctionTool, Schema, Reference } from './types/assistants';
-import { Tools } from './types/assistants';
+import type { FunctionTool, Schema, Reference, ActionMetadata } from './types/assistants';
+import { Tools, AuthTypeEnum, AuthorizationTypeEnum } from './types/assistants';
 
 export type ParametersSchema = {
   type: string;
@@ -11,18 +11,10 @@ export type ParametersSchema = {
   required: string[];
 };
 
-export type BasicCredentials = {
-  username: string;
-  password: string;
-};
-
-export type BearerCredentials = {
-  token: string;
-};
-
 export type ApiKeyCredentials = {
-  headerName: string;
-  apiKey: string;
+  api_key: string;
+  custom_auth_header?: string;
+  authorization_type?: AuthorizationTypeEnum;
 };
 
 export type OAuthCredentials = {
@@ -32,11 +24,7 @@ export type OAuthCredentials = {
   scope: string;
 };
 
-export type Credentials =
-  | BasicCredentials
-  | BearerCredentials
-  | ApiKeyCredentials
-  | OAuthCredentials;
+export type Credentials = ApiKeyCredentials | OAuthCredentials;
 
 export function sha1(input: string) {
   return crypto.createHash('sha1').update(input).digest('hex');
@@ -99,30 +87,61 @@ export class ActionRequest {
     this.params = params;
   }
 
-  async setAuth(type: 'Basic' | 'Bearer' | 'ApiKey' | 'OAuth', credentials: Credentials) {
-    if (type === 'Basic' && 'username' in credentials && 'password' in credentials) {
-      const basicToken = Buffer.from(`${credentials.username}:${credentials.password}`).toString(
-        'base64',
-      );
+  async setAuth(metadata: ActionMetadata) {
+    if (!metadata.auth) {
+      return;
+    }
+
+    const {
+      type,
+      /* API Key */
+      authorization_type,
+      custom_auth_header,
+      /* OAuth */
+      authorization_url,
+      client_url,
+      scope,
+      token_exchange_method,
+    } = metadata.auth;
+
+    const {
+      /* API Key */
+      api_key,
+      /* OAuth */
+      oauth_client_id,
+      oauth_client_secret,
+    } = metadata;
+
+    const isApiKey = api_key && type === AuthTypeEnum.ServiceHttp;
+    const isOAuth =
+      oauth_client_id &&
+      oauth_client_secret &&
+      type === AuthTypeEnum.OAuth &&
+      authorization_url &&
+      client_url &&
+      scope &&
+      token_exchange_method;
+
+    if (isApiKey && authorization_type === AuthorizationTypeEnum.Basic) {
+      const basicToken = Buffer.from(api_key).toString('base64');
       this.authHeaders['Authorization'] = `Basic ${basicToken}`;
-    } else if (type === 'Bearer' && 'token' in credentials) {
-      this.authHeaders['Authorization'] = `Bearer ${credentials.token}`;
-    } else if (type === 'ApiKey' && 'headerName' in credentials && 'apiKey' in credentials) {
-      this.authHeaders[credentials.headerName] = credentials.apiKey;
+    } else if (isApiKey && authorization_type === AuthorizationTypeEnum.Bearer) {
+      this.authHeaders['Authorization'] = `Bearer ${api_key}`;
     } else if (
-      type === 'OAuth' &&
-      'tokenUrl' in credentials &&
-      'clientId' in credentials &&
-      'clientSecret' in credentials &&
-      'scope' in credentials
+      isApiKey &&
+      authorization_type === AuthorizationTypeEnum.Custom &&
+      custom_auth_header
     ) {
+      this.authHeaders[custom_auth_header] = api_key;
+    } else if (isOAuth) {
+      // TODO: WIP - OAuth support
       if (!this.authToken) {
         const tokenResponse = await axios.post(
-          credentials.tokenUrl,
+          client_url,
           {
-            client_id: credentials.clientId,
-            client_secret: credentials.clientSecret,
-            scope: credentials.scope,
+            client_id: oauth_client_id,
+            client_secret: oauth_client_secret,
+            scope: scope,
             grant_type: 'client_credentials',
           },
           {
