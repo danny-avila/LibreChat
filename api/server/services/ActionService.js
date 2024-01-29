@@ -1,3 +1,5 @@
+import { AuthTypeEnum } from 'librechat-data-provider';
+const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions } = require('~/models/Action');
 
 /**
@@ -36,7 +38,67 @@ function createActionTool({ requestBuilder }) {
   };
 }
 
+/**
+ * Encrypts sensitive metadata values for an action.
+ *
+ * @param {ActionMetadata} metadata - The action metadata to encrypt.
+ * @returns {ActionMetadata} The updated action metadata with encrypted values.
+ */
+function encryptMetadata(metadata) {
+  const encryptedMetadata = { ...metadata };
+
+  // ServiceHttp
+  if (metadata.auth && metadata.auth.type === AuthTypeEnum.ServiceHttp) {
+    if (metadata.api_key) {
+      encryptedMetadata.api_key = encryptV2(metadata.api_key);
+    }
+  }
+
+  // OAuth
+  else if (metadata.auth && metadata.auth.type === AuthTypeEnum.OAuth) {
+    if (metadata.oauth_client_id) {
+      encryptedMetadata.oauth_client_id = encryptV2(metadata.oauth_client_id);
+    }
+    if (metadata.oauth_client_secret) {
+      encryptedMetadata.oauth_client_secret = encryptV2(metadata.oauth_client_secret);
+    }
+  }
+
+  return encryptedMetadata;
+}
+
+/**
+ * Decrypts sensitive metadata values for an action.
+ *
+ * @param {ActionMetadata} metadata - The action metadata to decrypt.
+ * @returns {ActionMetadata} The updated action metadata with decrypted values.
+ */
+function decryptMetadata(metadata) {
+  const decryptedMetadata = { ...metadata };
+
+  // ServiceHttp
+  if (metadata.auth && metadata.auth.type === AuthTypeEnum.ServiceHttp) {
+    if (metadata.api_key) {
+      decryptedMetadata.api_key = decryptV2(metadata.api_key);
+    }
+  }
+
+  // OAuth
+  else if (metadata.auth && metadata.auth.type === AuthTypeEnum.OAuth) {
+    if (metadata.oauth_client_id) {
+      decryptedMetadata.oauth_client_id = decryptV2(metadata.oauth_client_id);
+    }
+    if (metadata.oauth_client_secret) {
+      decryptedMetadata.oauth_client_secret = decryptV2(metadata.oauth_client_secret);
+    }
+  }
+
+  return decryptedMetadata;
+}
+
 module.exports = {
   loadActionSets,
   createActionTool,
+  encryptMetadata,
+  decryptMetadata,
 };
