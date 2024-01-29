@@ -24,10 +24,29 @@ const updateAction = async (searchParams, updateData) => {
  * Retrieves all actions that match the given search parameters.
  *
  * @param {Object} searchParams - The search parameters to find matching actions.
+ * @param {boolean} includeSensitive - Flag to include sensitive data in the metadata.
  * @returns {Promise<Array<Object>>} A promise that resolves to an array of action documents as plain objects.
  */
-const getActions = async (searchParams) => {
-  return await Action.find(searchParams).lean();
+const getActions = async (searchParams, includeSensitive = false) => {
+  const actions = await Action.find(searchParams).lean();
+
+  if (!includeSensitive) {
+    for (let i = 0; i < actions.length; i++) {
+      const metadata = actions[i].metadata;
+      if (!metadata) {
+        continue;
+      }
+
+      const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
+      for (let field of sensitiveFields) {
+        if (metadata[field]) {
+          delete metadata[field];
+        }
+      }
+    }
+  }
+
+  return actions;
 };
 
 module.exports = {
