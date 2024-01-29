@@ -6,11 +6,9 @@ import { Tools, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
 import type { FunctionTool, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, Actions, AssistantPanelProps } from '~/common';
 import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
+import { SelectDropDown, Checkbox, QuestionMark } from '~/components/ui';
 import { ToolSelectDialog } from '~/components/Tools';
-import { Separator } from '~/components/ui/Separator';
 import { useAssistantsContext } from '~/Providers';
-import { SelectDropDown } from '~/components/ui';
-import { Switch } from '~/components/ui/Switch';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
 import AssistantAction from './AssistantAction';
@@ -37,7 +35,7 @@ export default function AssistantPanel({
   const modelsQuery = useGetModelsQuery();
   const { switchToConversation } = useNewConvo(index);
   const [showToolDialog, setShowToolDialog] = useState(false);
-  const { control, handleSubmit, reset } = useAssistantsContext();
+  const { control, handleSubmit, reset, setValue, getValues } = useAssistantsContext();
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
 
   const assistant_id = useWatch({ control, name: 'id' });
@@ -92,17 +90,17 @@ export default function AssistantPanel({
     });
   };
 
-  // Render function for the Switch component
-  const renderSwitch = (name: keyof Actions) => (
+  // Render function for the Checkbox component
+  const renderCheckbox = (name: keyof Actions) => (
     <Controller
       name={name}
       control={control}
       render={({ field }) => (
-        <Switch
+        <Checkbox
           {...field}
           checked={field.value}
           onCheckedChange={field.onChange}
-          className="relative inline-flex h-6 w-11 items-center rounded-full data-[state=checked]:bg-green-500"
+          className="relative float-left  mr-2 inline-flex h-4 w-4 cursor-pointer"
           value={field?.value?.toString()}
         />
       )}
@@ -227,7 +225,45 @@ export default function AssistantPanel({
             )}
           />
         </div>
-
+        {/* Capabilities */}
+        <div className="mb-6">
+          <div className="mb-1.5 flex items-center">
+            <span>
+              <label className="text-token-text-primary block font-medium">Capabilities</label>
+            </span>
+          </div>
+          <div className="flex flex-col items-start gap-2">
+            <div className="flex items-center">
+              {renderCheckbox('code_interpreter')}
+              <label
+                className="form-check-label text-token-text-primary w-full cursor-pointer"
+                htmlFor="code_interpreter"
+                onClick={() =>
+                  setValue('code_interpreter', !getValues('code_interpreter'), {
+                    shouldDirty: true,
+                  })
+                }
+              >
+                <div className="flex items-center">
+                  Code Interpreter
+                  <QuestionMark />
+                </div>
+              </label>
+            </div>
+            <div className="flex items-center">
+              {renderCheckbox('retrieval')}
+              <label
+                className="form-check-label text-token-text-primary w-full cursor-pointer"
+                htmlFor="retrieval"
+                onClick={() =>
+                  setValue('retrieval', !getValues('retrieval'), { shouldDirty: true })
+                }
+              >
+                Retrieval
+              </label>
+            </div>
+          </div>
+        </div>
         {/* Tools */}
         <div className="mb-6">
           <label className={labelClass}>Tools</label>
@@ -244,24 +280,6 @@ export default function AssistantPanel({
                 Add Tools {/* TODO: Add localization */}
               </div>
             </button>
-          </div>
-          <div className="flex flex-col space-y-4">
-            <div className="flex items-center justify-between"></div>
-            <Separator orientation="horizontal" className="bg-gray-100/50" />
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
-                Code Interpreter
-              </span>
-              {renderSwitch('code_interpreter')}
-            </div>
-            <Separator orientation="horizontal" className="bg-gray-100/50" />
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
-                Retrieval
-              </span>
-              {renderSwitch('retrieval')}
-            </div>
-            <Separator orientation="horizontal" className="bg-gray-100/50" />
           </div>
           <label className={cn(labelClass, 'mt-2')}>Actions</label>
           <div className="space-y-1">
