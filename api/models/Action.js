@@ -49,7 +49,20 @@ const getActions = async (searchParams, includeSensitive = false) => {
   return actions;
 };
 
+/**
+ * Deletes an action by its ID.
+ *
+ * @param {Object} searchParams - The search parameters to find the action to update.
+ * @param {string} searchParams.action_id - The ID of the action to update.
+ * @param {string} searchParams.user - The user ID of the action's author.
+ * @returns {Promise<Object>} A promise that resolves to the deleted action document as a plain object, or null if no document was found.
+ */
+const deleteAction = async (searchParams) => {
+  return await Action.findOneAndDelete(searchParams).lean();
+};
+
 module.exports = {
   updateAction,
   getActions,
+  deleteAction,
 };

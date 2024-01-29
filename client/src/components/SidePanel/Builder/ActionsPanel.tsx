@@ -7,6 +7,8 @@ import {
 } from 'librechat-data-provider';
 import type { AssistantPanelProps, ActionAuthForm } from '~/common';
 import { Dialog, DialogTrigger } from '~/components/ui';
+import { useDeleteAction } from '~/data-provider';
+import { NewTrashIcon } from '~/components/svg';
 import ActionsInput from './ActionsInput';
 import ActionsAuth from './ActionsAuth';
 import { Panel } from '~/common';
@@ -19,6 +21,12 @@ export default function ActionsPanel({
   assistant_id,
 }: AssistantPanelProps) {
   const [openAuthDialog, setOpenAuthDialog] = useState(false);
+  const deleteAction = useDeleteAction({
+    onSuccess: () => {
+      setActivePanel(Panel.builder);
+      setAction(undefined);
+    },
+  });
 
   const methods = useForm<ActionAuthForm>({
     defaultValues: {
@@ -93,6 +101,31 @@ export default function ActionsPanel({
                 </div>
               </button>
             </div>
+            {!!action && (
+              <div className="absolute right-0 top-6">
+                <button
+                  type="button"
+                  disabled={!assistant_id || !action.action_id}
+                  className="btn btn-neutral relative text-red-500"
+                  onClick={() => {
+                    if (!assistant_id) {
+                      return prompt('No assistant_id found, is the assistant created?');
+                    }
+                    const confirmed = confirm('Are you sure you want to delete this action?');
+                    if (confirmed) {
+                      deleteAction.mutate({
+                        action_id: action.action_id,
+                        assistant_id,
+                      });
+                    }
+                  }}
+                >
+                  <div className="flex w-full items-center justify-center gap-2">
+                    <NewTrashIcon className="icon-md text-red-500" />
+                  </div>
+                </button>
+              </div>
+            )}
             <div className="text-xl font-medium">{(action ? 'Edit' : 'Add') + ' ' + 'actions'}</div>
             <div className="text-token-text-tertiary text-sm">
               {/* TODO: use App title */}

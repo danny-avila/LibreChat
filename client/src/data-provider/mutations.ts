@@ -29,6 +29,8 @@ import type {
   UpdateActionOptions,
   UpdateActionVariables,
   UpdateActionResponse,
+  DeleteActionOptions,
+  DeleteActionVariables,
   Action,
 } from 'librechat-data-provider';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
@@ -421,6 +423,62 @@ export const useUpdateAction = (
       });
 
       return options?.onSuccess?.(updateActionResponse, variables, context);
+    },
+  });
+};
+
+/**
+ * Hook for deleting an Assistant Action
+ */
+export const useDeleteAction = (
+  options?: DeleteActionOptions,
+): UseMutationResult<
+  void, // response data for a delete operation is typically void
+  Error, // error type
+  DeleteActionVariables, // request variables
+  unknown // context
+> => {
+  const queryClient = useQueryClient();
+  return useMutation([MutationKeys.deleteAction], {
+    mutationFn: (variables: DeleteActionVariables) =>
+      dataService.deleteAction(variables.assistant_id, variables.action_id),
+
+    onMutate: (variables) => options?.onMutate?.(variables),
+    onError: (error, variables, context) => options?.onError?.(error, variables, context),
+    onSuccess: (_data, variables, context) => {
+      let domain: string | undefined = '';
+      queryClient.setQueryData<Action[]>([QueryKeys.actions], (prev) => {
+        return prev?.filter((action) => {
+          domain = action.metadata.domain;
+          return action.action_id !== variables.action_id;
+        });
+      });
+
+      queryClient.setQueryData<AssistantListResponse>(
+        [QueryKeys.assistants, defaultOrderQuery],
+        (prev) => {
+          if (!prev) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            data: prev?.data.map((assistant) => {
+              if (assistant.id === variables.assistant_id) {
+                return {
+                  ...assistant,
+                  tools: assistant.tools.filter(
+                    (tool) => !tool.function?.name.includes(domain ?? ''),
+                  ),
+                };
+              }
+              return assistant;
+            }),
+          };
+        },
+      );
+
+      return options?.onSuccess?.(_data, variables, context);
     },
   });
 };

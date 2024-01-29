@@ -2,9 +2,9 @@ const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const express = require('express');
 const { actionDelimiter } = require('librechat-data-provider');
-const { encryptMetadata } = require('~/server/services/ActionService');
+const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistant, getAssistant } = require('~/models/Assistant');
-const { updateAction, getActions } = require('~/models/Action');
+const { encryptMetadata } = require('~/server/services/ActionService');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -135,6 +135,64 @@ router.post('/:assistant_id', async (req, res) => {
     res.json(resolved);
   } catch (error) {
     const message = 'Trouble updating the Assistant Action';
+    logger.error(message, error);
+    res.status(500).json({ message });
+  }
+});
+
+/**
+ * Deletes an action for a specific assistant.
+ * @route DELETE /actions/:assistant_id/:action_id
+ * @param {string} req.params.assistant_id - The ID of the assistant.
+ * @param {string} req.params.action_id - The ID of the action to delete.
+ * @returns {Object} 200 - success response - application/json
+ */
+router.delete('/:assistant_id/:action_id', async (req, res) => {
+  try {
+    const { assistant_id, action_id } = req.params;
+
+    /** @type {OpenAI} */
+    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+
+    const initialPromises = [];
+    initialPromises.push(getAssistant({ assistant_id, user: req.user.id }));
+    initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
+
+    /** @type {[AssistantDocument, Assistant]} */
+    const [assistant_data, assistant] = await Promise.all(initialPromises);
+
+    const { actions } = assistant_data ?? {};
+    const { tools = [] } = assistant ?? {};
+
+    let domain = '';
+    const updatedActions = actions.filter((action) => {
+      if (action.includes(action_id)) {
+        [domain] = action.split(actionDelimiter);
+        return false;
+      }
+      return true;
+    });
+
+    const updatedTools = tools.filter(
+      (tool) => !(tool.function && tool.function.name.includes(domain)),
+    );
+
+    const promises = [];
+    promises.push(
+      updateAssistant(
+        { assistant_id, user: req.user.id },
+        {
+          actions: updatedActions,
+        },
+      ),
+    );
+    promises.push(openai.beta.assistants.update(assistant_id, { tools: updatedTools }));
+    promises.push(deleteAction({ action_id, user: req.user.id }));
+
+    await Promise.all(promises);
+    res.status(200).json({ message: 'Action deleted successfully' });
+  } catch (error) {
+    const message = 'Trouble deleting the Assistant Action';
     logger.error(message, error);
     res.status(500).json({ message });
   }
