@@ -42,7 +42,7 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(400).json({ message: 'No functions provided' });
     }
 
-    const metadata = encryptMetadata(_metadata);
+    let metadata = encryptMetadata(_metadata);
 
     const { domain } = metadata;
     if (!domain) {
@@ -57,7 +57,15 @@ router.post('/:assistant_id', async (req, res) => {
 
     initialPromises.push(getAssistant({ assistant_id, user: req.user.id }));
     initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
-    const [assistant_data, assistant] = await Promise.all(initialPromises);
+    !!_action_id && initialPromises.push(getActions({ user: req.user.id, action_id }, true));
+
+    /** @type {[AssistantDocument, Assistant, [Action|undefined]]} */
+    const [assistant_data, assistant, actions_result] = await Promise.all(initialPromises);
+
+    if (actions_result && actions_result.length) {
+      const action = actions_result[0];
+      metadata = { ...action.metadata, ...metadata };
+    }
 
     if (!assistant) {
       return res.status(404).json({ message: 'Assistant not found' });
@@ -114,7 +122,6 @@ router.post('/:assistant_id', async (req, res) => {
       ),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { tools }));
-    // TODO: Auth handling
     promises.push(updateAction({ action_id, user: req.user.id }, { metadata, assistant_id }));
 
     /** @type {[AssistantDocument, Assistant, Action]} */

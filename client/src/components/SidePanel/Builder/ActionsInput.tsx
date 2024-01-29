@@ -6,7 +6,12 @@ import {
   openapiToFunction,
   AuthTypeEnum,
 } from 'librechat-data-provider';
-import type { ValidationResult, Action, FunctionTool } from 'librechat-data-provider';
+import type {
+  ValidationResult,
+  Action,
+  FunctionTool,
+  ActionMetadata,
+} from 'librechat-data-provider';
 import type { ActionAuthForm } from '~/common';
 import type { Spec } from './ActionsTable';
 import { ActionsTable, columns } from './ActionsTable';
@@ -101,21 +106,30 @@ export default function ActionsInput({
     }
     metadata.domain = domain;
 
-    if (authFormData.type === AuthTypeEnum.ServiceHttp) {
+    const { type, saved_auth_fields } = authFormData;
+
+    const removeSensitiveFields = (obj: ActionMetadata) => {
+      delete obj.auth;
+      delete obj.api_key;
+      delete obj.oauth_client_id;
+      delete obj.oauth_client_secret;
+    };
+
+    if (saved_auth_fields && type === AuthTypeEnum.ServiceHttp) {
       metadata = {
         ...metadata,
         api_key: authFormData.api_key,
         auth: {
-          type: authFormData.type,
+          type,
           authorization_type: authFormData.authorization_type,
           custom_auth_header: authFormData.custom_auth_header,
         },
       };
-    } else if (authFormData.type === AuthTypeEnum.OAuth) {
+    } else if (saved_auth_fields && type === AuthTypeEnum.OAuth) {
       metadata = {
         ...metadata,
         auth: {
-          type: authFormData.type,
+          type,
           authorization_url: authFormData.authorization_url,
           client_url: authFormData.client_url,
           scope: authFormData.scope,
@@ -124,10 +138,13 @@ export default function ActionsInput({
         oauth_client_id: authFormData.oauth_client_id,
         oauth_client_secret: authFormData.oauth_client_secret,
       };
-    } else {
+    } else if (saved_auth_fields) {
+      removeSensitiveFields(metadata);
       metadata.auth = {
-        type: authFormData.type,
+        type,
       };
+    } else {
+      removeSensitiveFields(metadata);
     }
 
     updateAction.mutate({

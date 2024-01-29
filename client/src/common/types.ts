@@ -28,11 +28,14 @@ export enum Panel {
 }
 
 export type ActionAuthForm = {
+  /* General */
   type: AuthTypeEnum;
+  saved_auth_fields: boolean;
+  /* API key */
   api_key: string; // not nested
   authorization_type: AuthorizationTypeEnum;
   custom_auth_header: string;
-  /* oauth */
+  /* OAuth */
   oauth_client_id: string; // not nested
   oauth_client_secret: string; // not nested
   authorization_url: string;

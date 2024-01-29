@@ -22,11 +22,14 @@ export default function ActionsPanel({
 
   const methods = useForm<ActionAuthForm>({
     defaultValues: {
+      /* General */
       type: AuthTypeEnum.None,
+      saved_auth_fields: false,
+      /* API key */
       api_key: '',
       authorization_type: AuthorizationTypeEnum.Basic,
       custom_auth_header: '',
-      /* oauth */
+      /* OAuth */
       oauth_client_id: '',
       oauth_client_secret: '',
       authorization_url: '',
@@ -43,6 +46,7 @@ export default function ActionsPanel({
     if (action?.metadata?.auth) {
       reset({
         type: action.metadata.auth.type || AuthTypeEnum.None,
+        saved_auth_fields: false,
         api_key: action.metadata.api_key ?? '',
         authorization_type: action.metadata.auth.authorization_type || AuthorizationTypeEnum.Basic,
         oauth_client_id: action.metadata.oauth_client_id ?? '',

@@ -108,6 +108,7 @@ export default function ActionsAuth({
             className="btn btn-dark relative"
             onClick={async () => {
               const result = await trigger(undefined, { shouldFocus: true });
+              setValue('saved_auth_fields', result);
               setOpenAuthDialog(!result);
             }}
           >
