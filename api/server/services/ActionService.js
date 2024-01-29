@@ -1,4 +1,4 @@
-import { AuthTypeEnum } from 'librechat-data-provider';
+const { AuthTypeEnum } = require('librechat-data-provider');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions } = require('~/models/Action');
 
