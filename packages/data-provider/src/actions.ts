@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { URL } from 'url';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
 import type { OpenAPIV3 } from 'openapi-types';
@@ -28,6 +29,11 @@ export type Credentials = ApiKeyCredentials | OAuthCredentials;
 
 export function sha1(input: string) {
   return crypto.createHash('sha1').update(input).digest('hex');
+}
+
+export function createURL(domain: string, path: string) {
+  const myURL = new URL(path, domain);
+  return myURL.toString();
 }
 
 export class FunctionSignature {
@@ -155,7 +161,7 @@ export class ActionRequest {
   }
 
   async execute() {
-    const url = `${this.domain}${this.path}`;
+    const url = createURL(this.domain, this.path);
     const headers = {
       ...this.authHeaders,
       'Content-Type': this.contentType,
