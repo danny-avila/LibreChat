@@ -1,7 +1,13 @@
 import debounce from 'lodash/debounce';
 import { useState, useEffect } from 'react';
-import { validateAndParseOpenAPISpec, openapiToFunction } from 'librechat-data-provider';
+import { useFormContext } from 'react-hook-form';
+import {
+  validateAndParseOpenAPISpec,
+  openapiToFunction,
+  AuthTypeEnum,
+} from 'librechat-data-provider';
 import type { ValidationResult, Action, FunctionTool } from 'librechat-data-provider';
+import type { ActionAuthForm } from '~/common';
 import type { Spec } from './ActionsTable';
 import { ActionsTable, columns } from './ActionsTable';
 import { useUpdateAction } from '~/data-provider';
@@ -19,9 +25,11 @@ const debouncedValidation = debounce(
 export default function ActionsInput({
   action,
   assistant_id,
+  setAction,
 }: {
   action?: Action;
   assistant_id?: string;
+  setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
 }) {
   const handleResult = (result: ValidationResult) => {
     if (!result.status) {
@@ -31,6 +39,7 @@ export default function ActionsInput({
     setValidationResult(result);
   };
 
+  const { handleSubmit, reset } = useFormContext<ActionAuthForm>();
   const [inputValue, setInputValue] = useState(action ? action.metadata?.raw_spec : '');
   const [validationResult, setValidationResult] = useState<null | ValidationResult>(
     action ? debouncedValidation(inputValue, handleResult) : null,
@@ -59,9 +68,15 @@ export default function ActionsInput({
     setFunctions(functionSignatures.map((f) => f.toObjectTool()));
   }, [validationResult]);
 
-  const updateAction = useUpdateAction();
+  const updateAction = useUpdateAction({
+    onSuccess(data) {
+      reset();
+      setAction(data[2]);
+    },
+  });
 
-  const saveAction = () => {
+  const saveAction = handleSubmit((authFormData) => {
+    console.log('authFormData', authFormData);
     if (!assistant_id) {
       // alert user?
       return;
@@ -75,7 +90,8 @@ export default function ActionsInput({
       return;
     }
 
-    const { action_id, metadata = {} } = action ?? {};
+    let { metadata = {} } = action ?? {};
+    const action_id = action?.action_id;
     metadata.raw_spec = inputValue;
     const parsedUrl = new URL(data[0].domain);
     const domain = parsedUrl.hostname;
@@ -84,13 +100,43 @@ export default function ActionsInput({
       return;
     }
     metadata.domain = domain;
+
+    if (authFormData.type === AuthTypeEnum.ServiceHttp) {
+      metadata = {
+        ...metadata,
+        api_key: authFormData.api_key,
+        auth: {
+          type: authFormData.type,
+          authorization_type: authFormData.authorization_type,
+          custom_auth_header: authFormData.custom_auth_header,
+        },
+      };
+    } else if (authFormData.type === AuthTypeEnum.OAuth) {
+      metadata = {
+        ...metadata,
+        auth: {
+          type: authFormData.type,
+          authorization_url: authFormData.authorization_url,
+          client_url: authFormData.client_url,
+          scope: authFormData.scope,
+          token_exchange_method: authFormData.token_exchange_method,
+        },
+        oauth_client_id: authFormData.oauth_client_id,
+        oauth_client_secret: authFormData.oauth_client_secret,
+      };
+    } else {
+      metadata.auth = {
+        type: authFormData.type,
+      };
+    }
+
     updateAction.mutate({
       action_id,
       metadata,
       functions,
       assistant_id,
     });
-  };
+  });
 
   const handleInputChange = (event) => {
     const newValue = event.target.value;

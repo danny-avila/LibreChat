@@ -29,6 +29,7 @@ import type {
   UpdateActionOptions,
   UpdateActionVariables,
   UpdateActionResponse,
+  Action,
 } from 'librechat-data-provider';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import { updateConversation, deleteConversation, updateConvoFields } from '~/utils';
@@ -380,8 +381,46 @@ export const useUpdateAction = (
   UpdateActionVariables, // request
   unknown // context
 > => {
+  const queryClient = useQueryClient();
   return useMutation([MutationKeys.updateAction], {
     mutationFn: (variables: UpdateActionVariables) => dataService.updateAction(variables),
-    ...(options || {}),
+
+    onMutate: (variables) => options?.onMutate?.(variables),
+    onError: (error, variables, context) => options?.onError?.(error, variables, context),
+    onSuccess: (updateActionResponse, variables, context) => {
+      const listRes = queryClient.getQueryData<AssistantListResponse>([
+        QueryKeys.assistants,
+        defaultOrderQuery,
+      ]);
+
+      if (!listRes) {
+        return options?.onSuccess?.(updateActionResponse, variables, context);
+      }
+
+      const updatedAssistant = updateActionResponse[1];
+
+      queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
+        ...listRes,
+        data: listRes.data.map((assistant) => {
+          if (assistant.id === variables.assistant_id) {
+            return updatedAssistant;
+          }
+          return assistant;
+        }),
+      });
+
+      queryClient.setQueryData<Action[]>([QueryKeys.actions], (prev) => {
+        return prev
+          ?.map((action) => {
+            if (action.action_id === variables.action_id) {
+              return updateActionResponse[2];
+            }
+            return action;
+          })
+          .concat(variables.action_id ? [] : [updateActionResponse[2]]);
+      });
+
+      return options?.onSuccess?.(updateActionResponse, variables, context);
+    },
   });
 };
