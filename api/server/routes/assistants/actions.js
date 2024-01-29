@@ -2,6 +2,7 @@ const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const express = require('express');
 const { actionDelimiter } = require('librechat-data-provider');
+const { encryptMetadata } = require('~/server/services/ActionService');
 const { updateAssistant, getAssistant } = require('~/models/Assistant');
 const { updateAction, getActions } = require('~/models/Action');
 const { logger } = require('~/config');
@@ -36,10 +37,12 @@ router.post('/:assistant_id', async (req, res) => {
     const { assistant_id } = req.params;
 
     /** @type {{ functions: FunctionTool[], action_id: string, metadata: ActionMetadata }} */
-    const { functions, action_id: _action_id, metadata } = req.body;
+    const { functions, action_id: _action_id, metadata: _metadata } = req.body;
     if (!functions.length) {
       return res.status(400).json({ message: 'No functions provided' });
     }
+
+    const metadata = encryptMetadata(_metadata);
 
     const { domain } = metadata;
     if (!domain) {
@@ -64,13 +67,11 @@ router.post('/:assistant_id', async (req, res) => {
     const actions = [];
     for (const action of _actions) {
       const [action_domain, current_action_id] = action.split(actionDelimiter);
-      if (action_domain === domain) {
+      if (action_domain === domain && !_action_id) {
         // TODO: dupe check on the frontend
-        return res
-          .status(400)
-          .json({
-            message: `Action sets cannot have duplicate domains - ${domain} already exists on another action`,
-          });
+        return res.status(400).json({
+          message: `Action sets cannot have duplicate domains - ${domain} already exists on another action`,
+        });
       }
 
       if (current_action_id === action_id) {
@@ -98,7 +99,7 @@ router.post('/:assistant_id', async (req, res) => {
           ...tool,
           function: {
             ...tool.function,
-            name: `${tool.function.name}_${domain}`,
+            name: `${tool.function.name}${actionDelimiter}${domain}`,
           },
         })),
       );
@@ -116,7 +117,14 @@ router.post('/:assistant_id', async (req, res) => {
     // TODO: Auth handling
     promises.push(updateAction({ action_id, user: req.user.id }, { metadata, assistant_id }));
 
+    /** @type {[AssistantDocument, Assistant, Action]} */
     const resolved = await Promise.all(promises);
+    const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
+    for (let field of sensitiveFields) {
+      if (resolved[2].metadata[field]) {
+        delete resolved[2].metadata[field];
+      }
+    }
     res.json(resolved);
   } catch (error) {
     const message = 'Trouble updating the Assistant Action';
