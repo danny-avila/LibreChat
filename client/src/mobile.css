@@ -170,3 +170,15 @@
     position: fixed;
   }
 }
+
+@keyframes tuning {
+  0% { transform: rotate(30deg); }
+  25% { transform: rotate(110deg); }
+  50% { transform: rotate(-40deg); }
+  75% { transform: rotate(80deg) }
+  100% { transform: rotate(30deg) }
+}
+
+.rotate {
+  animation: tuning 2.1s 1;
+}

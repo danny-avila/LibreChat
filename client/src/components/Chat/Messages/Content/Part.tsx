@@ -2,7 +2,7 @@ import { ToolCallTypes, ContentTypes, imageGenTools } from 'librechat-data-provi
 import type { TMessageContentParts, TMessage } from 'librechat-data-provider';
 import type { TDisplayProps } from '~/common';
 import CodeAnalyze from './CodeAnalyze';
-import ActionCall from './ActionCall';
+import ToolCall from './ToolCall';
 import Container from './Container';
 import Markdown from './Markdown';
 import ImageGen from './ImageGen';
@@ -83,7 +83,12 @@ export default function Part({
   ) {
     const toolCall = part[ContentTypes.TOOL_CALL];
     return (
-      <ActionCall initialProgress={toolCall.progress ?? 0.1} args={toolCall.function.arguments} />
+      <ToolCall
+        initialProgress={toolCall.progress ?? 0.1}
+        args={toolCall.function.arguments}
+        name={toolCall.function.name}
+        output={toolCall.function.output}
+      />
     );
   } else if (part.type === ContentTypes.IMAGE_FILE) {
     const imageFile = part[ContentTypes.IMAGE_FILE];
