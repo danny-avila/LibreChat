@@ -8,6 +8,7 @@ const {
   imageGenTools,
   openapiToFunction,
   validateAndParseOpenAPISpec,
+  actionDelimiter,
 } = require('librechat-data-provider');
 const { TavilySearchResults } = require('@langchain/community/tools/tavily_search');
 const { loadActionSets, createActionTool } = require('./ActionService');
@@ -145,8 +146,10 @@ async function processRequiredActions(openai, requiredActions) {
   }, {});
 
   const promises = [];
+
   /** @type {Action[]} */
   let actionSets = [];
+  let isActionTool = false;
   const ActionToolMap = {};
   const ActionBuildersMap = {};
 
@@ -167,6 +170,7 @@ async function processRequiredActions(openai, requiredActions) {
         id: currentAction.toolCallId,
         type: 'function',
         progress: 1,
+        action: isActionTool,
       };
 
       const toolCallIndex = openai.mappedOrder.get(toolCall.id);
@@ -258,7 +262,10 @@ async function processRequiredActions(openai, requiredActions) {
         builders = requestBuilders;
       }
 
-      const functionName = currentAction.tool.replace(`_${actionSet.metadata.domain}`, '');
+      const functionName = currentAction.tool.replace(
+        `${actionDelimiter}${actionSet.metadata.domain}`,
+        '',
+      );
       const requestBuilder = builders[functionName];
 
       if (!requestBuilder) {
@@ -267,6 +274,7 @@ async function processRequiredActions(openai, requiredActions) {
       }
 
       tool = createActionTool({ action: actionSet, requestBuilder });
+      isActionTool = !!tool;
       ActionToolMap[currentAction.tool] = tool;
     }
 

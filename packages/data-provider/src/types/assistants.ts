@@ -229,6 +229,7 @@ export type PartMetadata = {
   progress?: number;
   asset_pointer?: string;
   status?: string;
+  action?: boolean;
 };
 
 export type ContentPart = (CodeToolCall | RetrievalToolCall | FunctionToolCall | ImageFile | Text) &
