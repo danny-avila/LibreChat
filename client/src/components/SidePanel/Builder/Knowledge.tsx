@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { EModelEndpoint, retrievalMimeTypes } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
+import { useChatContext } from '~/Providers';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useFileHandling } from '~/hooks/Files';
-import { useChatContext } from '~/Providers';
 
 const CodeInterpreterFiles = ({ children }: { children: React.ReactNode }) => (
   <div>
@@ -15,7 +15,13 @@ const CodeInterpreterFiles = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-export default function Knowledge({ assistant_id }: { assistant_id: string }) {
+export default function Knowledge({
+  assistant_id,
+  files: _files,
+}: {
+  assistant_id: string;
+  files?: [string, ExtendedFile][];
+}) {
   const { setFilesLoading } = useChatContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
@@ -24,6 +30,13 @@ export default function Knowledge({ assistant_id }: { assistant_id: string }) {
     additionalMetadata: { assistant_id },
     fileSetter: setFiles,
   });
+
+  useEffect(() => {
+    if (_files) {
+      console.log('setting files', _files);
+      setFiles(new Map(_files));
+    }
+  }, [_files]);
 
   const handleButtonClick = () => {
     // necessary to reset the input

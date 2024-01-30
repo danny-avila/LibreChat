@@ -1,7 +1,8 @@
+import { useForm, FormProvider } from 'react-hook-form';
 import { createContext, useContext } from 'react';
+import { defaultAssistantFormValues } from 'librechat-data-provider';
 import type { UseFormReturn } from 'react-hook-form';
 import type { AssistantForm } from '~/common';
-import useAssistantForm from './useAssistantForm';
 
 type AssistantsContextType = UseFormReturn<AssistantForm>;
 
@@ -18,7 +19,9 @@ export function useAssistantsContext() {
 }
 
 export default function AssistantsProvider({ children }) {
-  const hookValues = useAssistantForm();
+  const methods = useForm<AssistantForm>({
+    defaultValues: defaultAssistantFormValues,
+  });
 
-  return <AssistantsContext.Provider value={hookValues}>{children}</AssistantsContext.Provider>;
+  return <FormProvider {...methods}>{children}</FormProvider>;
 }

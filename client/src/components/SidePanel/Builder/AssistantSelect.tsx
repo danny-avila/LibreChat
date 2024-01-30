@@ -1,17 +1,19 @@
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
-import { defaultAssistantFormValues, defaultOrderQuery } from 'librechat-data-provider';
-import type { Assistant } from 'librechat-data-provider';
+import { useCallback, useEffect, useRef } from 'react';
+import {
+  defaultAssistantFormValues,
+  defaultOrderQuery,
+  FileSources,
+} from 'librechat-data-provider';
 import type { UseFormReset } from 'react-hook-form';
-import type { AssistantForm, Actions, Option } from '~/common';
+import type { AssistantForm, Actions, TAssistantOption, ExtendedFile } from '~/common';
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { useListAssistantsQuery } from '~/data-provider';
+import { useFileMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 
 const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);
-
-type TAssistantOption = string | (Option & Assistant);
 
 export default function AssistantSelect({
   reset,
@@ -25,14 +27,43 @@ export default function AssistantSelect({
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
 }) {
   const localize = useLocalize();
+  const fileMap = useFileMapContext();
+  const lastSelectedAssistant = useRef<string | null>(null);
 
   const assistants = useListAssistantsQuery(defaultOrderQuery, {
     select: (res) =>
-      res.data.map((assistant) => ({
-        ...assistant,
-        label: assistant?.name ?? '',
-        value: assistant.id,
-      })),
+      res.data.map((_assistant) => {
+        const assistant = {
+          ..._assistant,
+          label: _assistant?.name ?? '',
+          value: _assistant.id,
+          files: _assistant?.file_ids ? ([] as Array<[string, ExtendedFile]>) : undefined,
+        };
+
+        if (assistant.files && _assistant.file_ids) {
+          _assistant.file_ids.forEach((file_id) => {
+            const file = fileMap?.[file_id];
+            if (file) {
+              assistant.files?.push([
+                file_id,
+                {
+                  file_id: file.file_id,
+                  type: file.type,
+                  filepath: file.filepath,
+                  filename: file.filename,
+                  width: file.width,
+                  height: file.height,
+                  size: file.bytes,
+                  preview: file.filepath,
+                  progress: 1,
+                  source: FileSources.openai,
+                },
+              ]);
+            }
+          });
+        }
+        return assistant;
+      }),
   });
 
   const onSelect = useCallback(
@@ -93,7 +124,12 @@ export default function AssistantSelect({
   useEffect(() => {
     let timerId: NodeJS.Timeout | null = null;
 
+    if (selectedAssistant === lastSelectedAssistant.current) {
+      return;
+    }
+
     if (selectedAssistant && assistants.data) {
+      lastSelectedAssistant.current = selectedAssistant;
       timerId = setTimeout(() => {
         onSelect(selectedAssistant);
       }, 5);

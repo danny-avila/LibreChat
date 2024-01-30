@@ -1,7 +1,9 @@
-import type { Option } from './types';
 import type { Assistant } from 'librechat-data-provider';
+import type { Option, ExtendedFile } from './types';
 
-export type TAssistantOption = string | (Option & Assistant);
+export type TAssistantOption =
+  | string
+  | (Option & Assistant & { files?: Array<[string, ExtendedFile]> });
 
 export type Actions = {
   code_interpreter: boolean;
