@@ -74,10 +74,14 @@ const useFileHandling = (params?: UseFileHandling) => {
   const uploadFile = useUploadFileMutation({
     onSuccess: (data) => {
       console.log('upload success', data);
-      updateFileById(data.temp_file_id, {
-        progress: 0.9,
-        filepath: data.filepath,
-      });
+      updateFileById(
+        data.temp_file_id,
+        {
+          progress: 0.9,
+          filepath: data.filepath,
+        },
+        params?.additionalMetadata?.assistant_id ? true : false,
+      );
 
       queryClient.setQueryData<TFile[] | undefined>([QueryKeys.files], (_files) => [
         data,
@@ -85,17 +89,21 @@ const useFileHandling = (params?: UseFileHandling) => {
       ]);
 
       setTimeout(() => {
-        updateFileById(data.temp_file_id, {
-          progress: 1,
-          file_id: data.file_id,
-          temp_file_id: data.temp_file_id,
-          filepath: data.filepath,
-          type: data.type,
-          height: data.height,
-          width: data.width,
-          filename: data.filename,
-          source: data.source,
-        });
+        updateFileById(
+          data.temp_file_id,
+          {
+            progress: 1,
+            file_id: data.file_id,
+            temp_file_id: data.temp_file_id,
+            filepath: data.filepath,
+            type: data.type,
+            height: data.height,
+            width: data.width,
+            filename: data.filename,
+            source: data.source,
+          },
+          params?.additionalMetadata?.assistant_id ? true : false,
+        );
       }, 300);
     },
     onError: (error, body) => {

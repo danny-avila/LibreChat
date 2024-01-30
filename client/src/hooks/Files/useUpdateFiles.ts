@@ -20,7 +20,11 @@ export default function useUpdateFiles(setFiles: FileSetter) {
     });
   };
 
-  const updateFileById = (fileId: string, updates: Partial<ExtendedFile>) => {
+  const updateFileById = (
+    fileId: string,
+    updates: Partial<ExtendedFile>,
+    isAssistantFile?: boolean,
+  ) => {
     setFiles((currentFiles) => {
       if (!currentFiles.has(fileId)) {
         console.warn(`File with id ${fileId} not found.`);
@@ -35,7 +39,7 @@ export default function useUpdateFiles(setFiles: FileSetter) {
       }
       updatedFiles.set(fileId, { ...currentFile, ...updates });
 
-      if (updates['filepath'] && updates['progress'] !== 1) {
+      if (updates['filepath'] && updates['progress'] !== 1 && !isAssistantFile) {
         const files = Object.fromEntries(updatedFiles);
         setFilesToDelete(files);
       }
