@@ -976,7 +976,10 @@ ${convo}
         ...opts,
       });
 
-      /* hacky fix for Mistral AI API not allowing a singular system message anywhere in the payload except as the first element */
+      /* hacky fixes for Mistral AI API:
+      - Re-orders system message to the top of the messages payload, as not allowed anywhere else
+      - If there is only one message and it's a system message, change the role to user
+      */
       if (opts.baseURL.includes('https://api.mistral.ai/v1') && modelOptions.messages) {
         const { messages } = modelOptions;
 
@@ -988,6 +991,10 @@ ${convo}
         }
 
         modelOptions.messages = messages;
+
+        if (messages.length === 1 && messages[0].role === 'system') {
+          modelOptions.messages[0].role = 'user';
+        }
       }
 
       if (this.options.addParams && typeof this.options.addParams === 'object') {
