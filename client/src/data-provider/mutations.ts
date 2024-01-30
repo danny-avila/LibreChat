@@ -157,7 +157,7 @@ export const useDeleteFilesMutation = (
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileDelete], {
-    mutationFn: (body: DeleteFilesBody) => dataService.deleteFiles(body.files),
+    mutationFn: (body: DeleteFilesBody) => dataService.deleteFiles(body.files, body.assistant_id),
     ...(options || {}),
     onSuccess: (data, ...args) => {
       queryClient.setQueryData<TFile[] | undefined>([QueryKeys.files], (cachefiles) => {

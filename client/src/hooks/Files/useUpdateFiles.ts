@@ -1,8 +1,7 @@
-import type { SetterOrUpdater } from 'recoil';
-import type { ExtendedFile } from '~/common';
+import type { ExtendedFile, FileSetter } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
 
-export default function useUpdateFiles(setFiles: SetterOrUpdater<Map<string, ExtendedFile>>) {
+export default function useUpdateFiles(setFiles: FileSetter) {
   const setFilesToDelete = useSetFilesToDelete();
 
   const addFile = (newFile: ExtendedFile) => {

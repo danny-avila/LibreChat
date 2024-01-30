@@ -2,9 +2,9 @@ import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
-import { QueryKeys, fileConfig } from 'librechat-data-provider';
+import { QueryKeys, fileConfig, EModelEndpoint } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
-import type { ExtendedFile } from '~/common';
+import type { ExtendedFile, FileSetter } from '~/common';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
 import { useUploadFileMutation } from '~/data-provider';
@@ -12,15 +12,24 @@ import useUpdateFiles from './useUpdateFiles';
 
 const { checkType } = fileConfig;
 
-const useFileHandling = () => {
+type UseFileHandling = {
+  overrideEndpoint?: EModelEndpoint;
+  fileSetter?: FileSetter;
+  additionalMetadata?: Record<string, string>;
+};
+
+const useFileHandling = (params?: UseFileHandling) => {
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
   const { files, setFiles, setFilesLoading, conversation } = useChatContext();
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
-  const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(setFiles);
+  const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
+    params?.fileSetter ?? setFiles,
+  );
 
-  const endpoint = conversation?.endpointType ?? conversation?.endpoint ?? 'default';
+  const endpoint =
+    params?.overrideEndpoint ?? conversation?.endpointType ?? conversation?.endpoint ?? 'default';
 
   const {
     fileLimit,
@@ -113,6 +122,12 @@ const useFileHandling = () => {
       formData.append('height', extendedFile.height?.toString());
     }
 
+    if (params?.additionalMetadata) {
+      for (const [key, value] of Object.entries(params.additionalMetadata)) {
+        formData.append(key, value);
+      }
+    }
+
     formData.append('endpoint', endpoint);
 
     uploadFile.mutate(formData);
@@ -131,6 +146,7 @@ const useFileHandling = () => {
     for (let i = 0; i < fileList.length; i++) {
       const originalFile = fileList[i];
       if (!checkType(originalFile.type, supportedMimeTypes)) {
+        console.log(originalFile);
         setError('Currently, unsupported file type: ' + originalFile.type);
         return false;
       }

@@ -15,17 +15,19 @@ type FileMapSetter = GenericSetter<Map<string, ExtendedFile>>;
 
 const useFileDeletion = ({
   mutateAsync,
+  assistant_id,
 }: {
   mutateAsync: UseMutateAsyncFunction<DeleteFilesResponse, unknown, DeleteFilesBody, unknown>;
+  assistant_id?: string;
 }) => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_batch, setFileDeleteBatch] = useState<BatchFile[]>([]);
   const setFilesToDelete = useSetFilesToDelete();
 
   const executeBatchDelete = useCallback(
-    (filesToDelete: BatchFile[]) => {
-      console.log('Deleting files:', filesToDelete);
-      mutateAsync({ files: filesToDelete });
+    (filesToDelete: BatchFile[], assistant_id?: string) => {
+      console.log('Deleting files:', filesToDelete, assistant_id);
+      mutateAsync({ files: filesToDelete, assistant_id });
       setFileDeleteBatch([]);
     },
     [mutateAsync],
@@ -77,11 +79,11 @@ const useFileDeletion = ({
 
       setFileDeleteBatch((prevBatch) => {
         const newBatch = [...prevBatch, file];
-        debouncedDelete(newBatch);
+        debouncedDelete(newBatch, assistant_id);
         return newBatch;
       });
     },
-    [debouncedDelete, setFilesToDelete],
+    [debouncedDelete, setFilesToDelete, assistant_id],
   );
 
   const deleteFiles = useCallback(
@@ -110,11 +112,11 @@ const useFileDeletion = ({
 
       setFileDeleteBatch((prevBatch) => {
         const newBatch = [...prevBatch, ...batchFiles];
-        debouncedDelete(newBatch);
+        debouncedDelete(newBatch, assistant_id);
         return newBatch;
       });
     },
-    [debouncedDelete, setFilesToDelete],
+    [debouncedDelete, setFilesToDelete, assistant_id],
   );
 
   return { deleteFile, deleteFiles };

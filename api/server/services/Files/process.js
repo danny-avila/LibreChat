@@ -1,5 +1,6 @@
 const path = require('path');
 const { v4 } = require('uuid');
+const OpenAI = require('openai');
 const mime = require('mime/lite');
 const {
   FileSources,
@@ -72,8 +73,10 @@ function enqueueDeleteOperation(req, file, deleteFile, promises) {
  * Deletes a list of files from the server filesystem and the database.
  *
  * @param {Object} params - The params object.
- * @param {Express.Request} params.req - The express request object.
  * @param {MongoFile[]} params.files - The file objects to delete.
+ * @param {Express.Request} params.req - The express request object.
+ * @param {DeleteFilesBody} params.req.body - The request body.
+ * @param {string} [params.req.body.assistant_id] - The assistant ID if file uploaded is associated to an assistant.
  *
  * @returns {Promise<void>}
  */
@@ -86,6 +89,12 @@ const processDeleteRequest = async ({ req, files }) => {
 
   for (const file of files) {
     const source = file.source ?? FileSources.local;
+
+    if (req.body.assistant_id) {
+      /** @type {OpenAI} */
+      const openai = new OpenAI(process.env.OPENAI_API_KEY);
+      promises.push(openai.beta.assistants.files.del(req.body.assistant_id, file.file_id));
+    }
 
     if (deletionMethods[source]) {
       enqueueDeleteOperation(req, file, deletionMethods[source], promises);
@@ -223,6 +232,15 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
   const { id, bytes, filename, filepath } = await handleFileUpload(req, file);
+
+  if (metadata.assistant_id) {
+    /** @type {OpenAI} */
+    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+    await openai.beta.assistants.files.create(metadata.assistant_id, {
+      file_id: id,
+    });
+  }
+
   const result = await createFile(
     {
       user: req.user.id,

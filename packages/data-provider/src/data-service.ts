@@ -237,9 +237,12 @@ export function getAssistantDocs(): Promise<a.AssistantDocument[]> {
   return request.get(endpoints.assistants('documents'));
 }
 
-export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesResponse> =>
+export const deleteFiles = async (
+  files: f.BatchFile[],
+  assistant_id?: string,
+): Promise<f.DeleteFilesResponse> =>
   request.deleteWithOptions(endpoints.files(), {
-    data: { files },
+    data: { files, assistant_id },
   });
 
 /* conversations */

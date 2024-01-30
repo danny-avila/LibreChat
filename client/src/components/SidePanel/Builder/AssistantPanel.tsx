@@ -17,6 +17,7 @@ import AssistantTool from './AssistantTool';
 import { Spinner } from '~/components/svg';
 import { cn, cardStyle } from '~/utils/';
 import { useNewConvo } from '~/hooks';
+import Knowledge from './Knowledge';
 import { Panel } from '~/common';
 
 const labelClass = 'mb-2 block text-xs font-bold text-gray-700 dark:text-gray-400';
@@ -200,7 +201,6 @@ export default function AssistantPanel({
             )}
           />
         </div>
-
         {/* Model */}
         <div className="mb-6">
           <label className={labelClass} htmlFor="model">
@@ -225,6 +225,8 @@ export default function AssistantPanel({
             )}
           />
         </div>
+        {/* Knowledge */}
+        <Knowledge assistant_id={assistant_id} />
         {/* Capabilities */}
         <div className="mb-6">
           <div className="mb-1.5 flex items-center">

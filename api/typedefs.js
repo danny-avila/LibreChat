@@ -99,11 +99,18 @@
  */
 
 /**
+ * @exports DeleteFilesBody
+ * @typedef {import('librechat-data-provider').DeleteFilesBody} DeleteFilesBody
+ * @memberof typedefs
+ */
+
+/**
  * @exports FileMetadata
  * @typedef {Object} FileMetadata
  * @property {string} file_id - The identifier of the file.
  * @property {string} [temp_file_id] - The temporary identifier of the file.
  * @property {string} endpoint - The conversation endpoint origin for the file upload.
+ * @property {string} [assistant_id] - The assistant ID if file upload is in the `knowledge` context.
  * @memberof typedefs
  */
 

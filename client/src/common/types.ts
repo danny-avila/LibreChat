@@ -1,5 +1,6 @@
 import { FileSources } from 'librechat-data-provider';
 import type { ColumnDef } from '@tanstack/react-table';
+import type { SetterOrUpdater } from 'recoil';
 import type {
   TConversation,
   TMessage,
@@ -26,6 +27,10 @@ export enum Panel {
   builder = 'builder',
   actions = 'actions',
 }
+
+export type FileSetter =
+  | SetterOrUpdater<Map<string, ExtendedFile>>
+  | React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
 
 export type ActionAuthForm = {
   /* General */

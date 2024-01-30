@@ -61,6 +61,7 @@ export type BatchFile = {
 
 export type DeleteFilesBody = {
   files: BatchFile[];
+  assistant_id?: string;
 };
 
 export type DeleteMutationOptions = {
