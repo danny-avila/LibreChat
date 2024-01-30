@@ -125,13 +125,15 @@ export const useDeleteConversationMutation = (
 };
 
 export const useUploadFileMutation = (
-  options?: UploadMutationOptions,
+  _options?: UploadMutationOptions,
 ): UseMutationResult<
   TFileUpload, // response data
   unknown, // error
   FormData, // request
   unknown // context
 > => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileUpload], {
     mutationFn: (body: FormData) => {
       const height = body.get('height');
@@ -143,6 +145,42 @@ export const useUploadFileMutation = (
       return dataService.uploadFile(body);
     },
     ...(options || {}),
+    onSuccess: (data, formData, context) => {
+      queryClient.setQueryData<TFile[] | undefined>([QueryKeys.files], (_files) => [
+        data,
+        ...(_files ?? []),
+      ]);
+
+      const assistant_id = formData.get('assistant_id');
+
+      if (!assistant_id) {
+        onSuccess?.(data, formData, context);
+        return;
+      }
+
+      queryClient.setQueryData<AssistantListResponse>(
+        [QueryKeys.assistants, defaultOrderQuery],
+        (prev) => {
+          if (!prev) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            data: prev?.data.map((assistant) => {
+              if (assistant.id === assistant_id) {
+                return {
+                  ...assistant,
+                  file_ids: [...assistant.file_ids, data.file_id],
+                };
+              }
+              return assistant;
+            }),
+          };
+        },
+      );
+      onSuccess?.(data, formData, context);
+    },
   });
 };
 

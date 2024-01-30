@@ -1,9 +1,7 @@
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
-import { useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useCallback } from 'react';
-import { QueryKeys, fileConfig, EModelEndpoint } from 'librechat-data-provider';
-import type { TFile } from 'librechat-data-provider';
+import { fileConfig, EModelEndpoint } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
@@ -19,7 +17,6 @@ type UseFileHandling = {
 };
 
 const useFileHandling = (params?: UseFileHandling) => {
-  const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
   const { files, setFiles, setFilesLoading, conversation } = useChatContext();
@@ -82,11 +79,6 @@ const useFileHandling = (params?: UseFileHandling) => {
         },
         params?.additionalMetadata?.assistant_id ? true : false,
       );
-
-      queryClient.setQueryData<TFile[] | undefined>([QueryKeys.files], (_files) => [
-        data,
-        ...(_files ?? []),
-      ]);
 
       setTimeout(() => {
         updateFileById(
