@@ -1,4 +1,6 @@
-// English phrases
+// Japanese phrases
+// file deepcode ignore NoHardcodedPasswords: No hardcoded values present in this file
+// file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
   com_ui_examples: '例',
@@ -266,7 +268,8 @@ export default {
   com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'チャットを開いたときに最新まで自動でスクロール',
   com_nav_modular_chat: '会話の途中でのエンドポイント切替を有効化',
-  com_nav_latex_parsing: 'メッセージ内の LaTeX の構文解析 (パフォーマンスに影響する可能性があります。)',
+  com_nav_latex_parsing:
+    'メッセージ内の LaTeX の構文解析 (パフォーマンスに影響する可能性があります。)',
   com_nav_profile_picture: 'プロフィール画像',
   com_nav_change_picture: '画像を変更',
   com_nav_plugin_store: 'プラグインストア',
