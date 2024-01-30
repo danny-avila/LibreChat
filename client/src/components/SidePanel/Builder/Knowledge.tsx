@@ -33,7 +33,6 @@ export default function Knowledge({
 
   useEffect(() => {
     if (_files) {
-      console.log('setting files', _files);
       setFiles(new Map(_files));
     }
   }, [_files]);
