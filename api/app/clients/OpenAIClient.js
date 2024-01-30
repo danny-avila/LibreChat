@@ -976,12 +976,18 @@ ${convo}
         ...opts,
       });
 
-      /* hacky fix for Mistral AI API not allowing a singular system message in payload */
+      /* hacky fix for Mistral AI API not allowing a singular system message anywhere in the payload except as the first element */
       if (opts.baseURL.includes('https://api.mistral.ai/v1') && modelOptions.messages) {
         const { messages } = modelOptions;
-        if (messages.length === 1 && messages[0].role === 'system') {
-          modelOptions.messages[0].role = 'user';
+
+        const systemMessageIndex = messages.findIndex((msg) => msg.role === 'system');
+
+        if (systemMessageIndex > 0) {
+          const [systemMessage] = messages.splice(systemMessageIndex, 1);
+          messages.unshift(systemMessage);
         }
+
+        modelOptions.messages = messages;
       }
 
       if (this.options.addParams && typeof this.options.addParams === 'object') {
