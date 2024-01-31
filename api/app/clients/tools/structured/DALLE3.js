@@ -18,7 +18,9 @@ class DALLE3 extends Tool {
 
     this.userId = fields.userId;
     this.fileStrategy = fields.fileStrategy;
-    this.processFileURL = fields.processFileURL.bind(this);
+    if (fields.processFileURL) {
+      this.processFileURL = fields.processFileURL.bind(this);
+    }
 
     let apiKey = fields.DALLE3_API_KEY ?? fields.DALLE_API_KEY ?? this.getApiKey();
     const config = { apiKey };
