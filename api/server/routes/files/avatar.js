@@ -1,6 +1,7 @@
 const multer = require('multer');
 const express = require('express');
-const { uploadAvatar } = require('~/server/services/Files/images/avatar');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { logger } = require('~/config');
 
 const upload = multer();
@@ -16,12 +17,14 @@ router.post('/', upload.single('input'), async (req, res) => {
       throw new Error('User ID is undefined');
     }
 
-    const url = await uploadAvatar({
-      input,
+    const fileStrategy = req.app.locals.fileStrategy;
+    const webPBuffer = await resizeAvatar({
       userId,
-      manual,
-      fileStrategy: req.app.locals.fileStrategy,
+      input,
     });
+
+    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    const url = await processAvatar({ buffer: webPBuffer, userId, manual });
 
     res.json({ url });
   } catch (error) {

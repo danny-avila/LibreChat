@@ -4,7 +4,6 @@ const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { getImageBasename } = require('~/server/services/Files/images');
-const { processFileURL } = require('~/server/services/Files/process');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const { logger } = require('~/config');
 
@@ -14,6 +13,7 @@ class OpenAICreateImage extends Tool {
 
     this.userId = fields.userId;
     this.fileStrategy = fields.fileStrategy;
+    this.processFileURL = fields.processFileURL.bind(this);
     let apiKey = fields.DALLE2_API_KEY ?? fields.DALLE_API_KEY ?? this.getApiKey();
 
     const config = { apiKey };
@@ -118,7 +118,7 @@ Error Message: ${error.message}`;
     });
 
     try {
-      const result = await processFileURL({
+      const result = await this.processFileURL({
         fileStrategy: this.fileStrategy,
         userId: this.userId,
         URL: theImageUrl,

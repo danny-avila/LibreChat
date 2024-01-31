@@ -1,6 +1,5 @@
 const path = require('path');
 const { v4 } = require('uuid');
-const OpenAI = require('openai');
 const mime = require('mime/lite');
 const {
   FileSources,
@@ -10,6 +9,7 @@ const {
   isUUID,
 } = require('librechat-data-provider');
 const { convertToWebP, resizeAndConvert } = require('~/server/services/Files/images');
+const { initializeClient } = require('~/server/services/Endpoints/assistant');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { isEnabled, determineFileType } = require('~/server/utils');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
@@ -36,14 +36,15 @@ const processFiles = async (files) => {
  * @param {MongoFile} file - The file object to delete.
  * @param {Function} deleteFile - The delete file function.
  * @param {Promise[]} promises - The array of promises to await.
+ * @param {OpenAI | undefined} [openai] - If an OpenAI file, the initialized OpenAI client.
  */
-function enqueueDeleteOperation(req, file, deleteFile, promises) {
+function enqueueDeleteOperation(req, file, deleteFile, promises, openai) {
   if (file.source === FileSources.openai) {
     // Enqueue to leaky bucket
     promises.push(
       new Promise((resolve, reject) => {
         LB_QueueAsyncCall(
-          () => deleteFile(req, file),
+          () => deleteFile(req, file, openai),
           [],
           (err, result) => {
             if (err) {
@@ -87,17 +88,21 @@ const processDeleteRequest = async ({ req, files }) => {
   const promises = [];
   promises.push(deleteFiles(file_ids));
 
+  /** @type {OpenAI | undefined} */
+  let openai;
+  if (req.body.assistant_id) {
+    openai = await initializeClient({ req });
+  }
+
   for (const file of files) {
     const source = file.source ?? FileSources.local;
 
     if (req.body.assistant_id) {
-      /** @type {OpenAI} */
-      const openai = new OpenAI(process.env.OPENAI_API_KEY);
       promises.push(openai.beta.assistants.files.del(req.body.assistant_id, file.file_id));
     }
 
     if (deletionMethods[source]) {
-      enqueueDeleteOperation(req, file, deletionMethods[source], promises);
+      enqueueDeleteOperation(req, file, deletionMethods[source], promises, openai);
       continue;
     }
 
@@ -107,7 +112,7 @@ const processDeleteRequest = async ({ req, files }) => {
     }
 
     deletionMethods[source] = deleteFile;
-    enqueueDeleteOperation(req, file, deleteFile, promises);
+    enqueueDeleteOperation(req, file, deleteFile, promises, openai);
   }
 
   await Promise.allSettled(promises);
@@ -231,11 +236,16 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
   const source = isAssistantUpload ? FileSources.openai : req.app.locals.fileStrategy;
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
-  const { id, bytes, filename, filepath } = await handleFileUpload(req, file);
 
-  if (metadata.assistant_id) {
-    /** @type {OpenAI} */
-    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+  /** @type {OpenAI | undefined} */
+  let openai;
+  if (source === FileSources.openai) {
+    openai = await initializeClient({ req });
+  }
+
+  const { id, bytes, filename, filepath } = await handleFileUpload(req, file, openai);
+
+  if (isAssistantUpload) {
     await openai.beta.assistants.files.create(metadata.assistant_id, {
       file_id: id,
     });

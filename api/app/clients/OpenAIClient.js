@@ -1,14 +1,19 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { getResponseSender, ImageDetailCost, ImageDetail } = require('librechat-data-provider');
+const {
+  getResponseSender,
+  validateVisionModel,
+  ImageDetailCost,
+  ImageDetail,
+} = require('librechat-data-provider');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
-  getModelMaxTokens,
-  genAzureChatCompletion,
   extractBaseURL,
   constructAzureURL,
+  getModelMaxTokens,
+  genAzureChatCompletion,
 } = require('~/utils');
-const { encodeAndFormat, validateVisionModel } = require('~/server/services/Files/images');
+const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
 const { handleOpenAIErrors } = require('./tools/util');
 const spendTokens = require('~/models/spendTokens');

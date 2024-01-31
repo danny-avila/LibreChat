@@ -1,7 +1,7 @@
 const { v4 } = require('uuid');
-const OpenAI = require('openai');
 const express = require('express');
 const { actionDelimiter } = require('librechat-data-provider');
+const { initializeClient } = require('~/server/services/Endpoints/assistant');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistant, getAssistant } = require('~/models/Assistant');
 const { encryptMetadata } = require('~/server/services/ActionService');
@@ -52,8 +52,8 @@ router.post('/:assistant_id', async (req, res) => {
     const action_id = _action_id ?? v4();
     const initialPromises = [];
 
-    /** @type {OpenAI} */
-    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+    /** @type {{ openai: OpenAI }} */
+    const { openai } = await initializeClient({ req, res });
 
     initialPromises.push(getAssistant({ assistant_id, user: req.user.id }));
     initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
@@ -151,8 +151,8 @@ router.delete('/:assistant_id/:action_id', async (req, res) => {
   try {
     const { assistant_id, action_id } = req.params;
 
-    /** @type {OpenAI} */
-    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+    /** @type {{ openai: OpenAI }} */
+    const { openai } = await initializeClient({ req, res });
 
     const initialPromises = [];
     initialPromises.push(getAssistant({ assistant_id, user: req.user.id }));

@@ -1,5 +1,4 @@
 const { v4 } = require('uuid');
-const OpenAI = require('openai');
 const express = require('express');
 const { EModelEndpoint, Constants, RunStatus, CacheKeys } = require('librechat-data-provider');
 const {
@@ -10,6 +9,7 @@ const {
   saveAssistantMessage,
 } = require('~/server/services/Threads');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
+const { initializeClient } = require('~/server/services/Endpoints/assistant');
 const { createRun } = require('~/server/services/Runs');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
@@ -22,7 +22,7 @@ const {
   handleAbort,
   // handleAbortError,
   // validateEndpoint,
-  // buildEndpointOption,
+  buildEndpointOption,
 } = require('~/server/middleware');
 
 router.post('/abort', handleAbort());
@@ -35,7 +35,7 @@ router.post('/abort', handleAbort());
  * @param {express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
-router.post('/', setHeaders, async (req, res) => {
+router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
   try {
     logger.debug('[/assistants/chat/] req.body', req.body);
     const {
@@ -74,11 +74,14 @@ router.post('/', setHeaders, async (req, res) => {
     const responseMessageId = v4();
     const userMessageId = v4();
 
-    // TODO: needs to be initialized with `initializeClient`
-    /** @type {OpenAIClient} */
-    const openai = new OpenAI(process.env.OPENAI_API_KEY);
-    openai.req = req;
-    openai.res = res;
+    /** @type {{ openai: OpenAIClient }} */
+    const { openai } = await initializeClient({
+      req,
+      res,
+      endpointOption: req.body.endpointOption,
+      initAppClient: true,
+    });
+
     createOnTextProgress({ openai, conversationId, userMessageId, messageId: responseMessageId });
 
     /** @type {TMessage[]} */

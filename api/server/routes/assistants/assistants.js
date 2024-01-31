@@ -1,7 +1,7 @@
 const multer = require('multer');
-const OpenAI = require('openai');
 const express = require('express');
 const { updateAssistant, getAssistants } = require('~/models/Assistant');
+const { initializeClient } = require('~/server/services/Endpoints/assistant');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
 const { logger } = require('~/config');
@@ -32,7 +32,9 @@ router.use('/tools', tools);
  */
 router.post('/', async (req, res) => {
   try {
-    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+    /** @type {{ openai: OpenAI }} */
+    const { openai } = await initializeClient({ req, res });
+
     const assistantData = req.body;
     const assistant = await openai.beta.assistants.create(assistantData);
     logger.debug('/assistants/', assistant);
@@ -50,7 +52,9 @@ router.post('/', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
-    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+    /** @type {{ openai: OpenAI }} */
+    const { openai } = await initializeClient({ req, res });
+
     const assistant_id = req.params.id;
     const assistant = await openai.beta.assistants.retrieve(assistant_id);
     res.json(assistant);
@@ -68,7 +72,9 @@ router.get('/:id', async (req, res) => {
  */
 router.patch('/:id', async (req, res) => {
   try {
-    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+    /** @type {{ openai: OpenAI }} */
+    const { openai } = await initializeClient({ req, res });
+
     const assistant_id = req.params.id;
     const updateData = req.body;
     updateData.tools = (updateData.tools ?? []).map((tool) => {
@@ -93,7 +99,9 @@ router.patch('/:id', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+    /** @type {{ openai: OpenAI }} */
+    const { openai } = await initializeClient({ req, res });
+
     const assistant_id = req.params.id;
     const deletionStatus = await openai.beta.assistants.del(assistant_id);
     res.json(deletionStatus);
@@ -110,7 +118,9 @@ router.delete('/:id', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+    /** @type {{ openai: OpenAI }} */
+    const { openai } = await initializeClient({ req, res });
+
     const { limit, order, after, before } = req.query;
     const response = await openai.beta.assistants.list({
       limit,
@@ -149,8 +159,9 @@ router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => 
   try {
     const { assistant_id } = req.params;
     let { metadata: _metadata = '{}' } = req.body;
-    /** @type {OpenAI} */
-    const openai = new OpenAI(process.env.OPENAI_API_KEY);
+    /** @type {{ openai: OpenAI }} */
+    const { openai } = await initializeClient({ req, res });
+
     const image = await uploadImageBuffer({ req });
 
     try {

@@ -152,6 +152,17 @@ export const supportsBalanceCheck = {
 
 export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision'];
 
+export function validateVisionModel(
+  model: string | undefined,
+  additionalModels: string[] | undefined = [],
+) {
+  if (!model) {
+    return false;
+  }
+
+  return visionModels.concat(additionalModels).some((visionModel) => model.includes(visionModel));
+}
+
 export const imageGenTools = new Set(['dalle', 'dall-e', 'stable-diffusion']);
 
 /**

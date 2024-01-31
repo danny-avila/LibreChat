@@ -1,5 +1,5 @@
-const OpenAI = require('openai');
 const { CacheKeys } = require('librechat-data-provider');
+const { initializeClient } = require('~/server/services/Endpoints/assistant');
 const { checkMessageGaps } = require('~/server/services/Threads');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
@@ -26,10 +26,9 @@ async function abortRun(req, res) {
   }
 
   let runMessages = [];
-  // TODO: needs to be initialized with `initializeClient`
-  /** @type {OpenAI} */
-  const openai = new OpenAI(process.env.OPENAI_API_KEY);
-  openai.req = req;
+  /** @type {{ openai: OpenAI }} */
+  const { openai } = await initializeClient({ req, res });
+
   try {
     await cache.set(thread_id, 'cancelled');
     const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
