@@ -39,6 +39,7 @@ type TResData = {
   responseMessage: TMessage;
   conversation: TConversation;
   conversationId?: string;
+  runMessages?: TMessage[];
 };
 
 type TSyncData = {
@@ -235,13 +236,15 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   };
 
   const finalHandler = (data: TResData, submission: TSubmission) => {
-    const { requestMessage, responseMessage, conversation } = data;
+    const { requestMessage, responseMessage, conversation, runMessages } = data;
     const { messages, conversation: submissionConvo, isRegenerate = false } = submission;
 
     setCompleted((prev) => new Set(prev.add(submission?.initialResponse?.messageId)));
 
     // update the messages; if assistants endpoint, client doesn't receive responseMessage
-    if (isRegenerate && responseMessage) {
+    if (runMessages) {
+      setMessages([...messages, ...runMessages]);
+    } else if (isRegenerate && responseMessage) {
       setMessages([...messages, responseMessage]);
     } else if (responseMessage) {
       setMessages([...messages, requestMessage, responseMessage]);
@@ -258,7 +261,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     }
 
     // refresh title
-    if (isNewConvo && requestMessage.parentMessageId == Constants.NO_PARENT) {
+    if (isNewConvo && requestMessage && requestMessage.parentMessageId == Constants.NO_PARENT) {
       setTimeout(() => {
         genTitle.mutate({ conversationId: conversation.conversationId as string });
       }, 2500);
@@ -354,6 +357,9 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
   const abortConversation = (conversationId = '', submission: TSubmission) => {
     console.log(submission);
+    const _messages = getMessages();
+    const latestMessage = _messages?.[_messages?.length - 1];
+    const runAbortKey = `${latestMessage?.thread_id}:${latestMessage?.conversationId}`;
     const { endpoint: _endpoint, endpointType } = submission?.conversation || {};
     const endpoint = endpointType ?? _endpoint;
     let res: Response;
@@ -365,7 +371,8 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        abortKey: conversationId,
+        abortKey: latestMessage ? runAbortKey : conversationId,
+        endpoint,
       }),
     })
       .then((response) => {
@@ -394,6 +401,10 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         console.log('aborted', data);
         if (res.status === 404) {
           return setIsSubmitting(false);
+        }
+        if (data.final) {
+          finalHandler(data, submission);
+          return;
         }
         cancelHandler(data, submission);
       })

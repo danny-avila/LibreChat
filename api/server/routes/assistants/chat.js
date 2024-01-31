@@ -1,7 +1,7 @@
 const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const express = require('express');
-const { EModelEndpoint, Constants, RunStatus } = require('librechat-data-provider');
+const { EModelEndpoint, Constants, RunStatus, CacheKeys } = require('librechat-data-provider');
 const {
   initThread,
   saveUserMessage,
@@ -12,20 +12,21 @@ const {
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const { createRun } = require('~/server/services/Runs');
 const { getConvo } = require('~/models/Conversation');
+const getLogStores = require('~/cache/getLogStores');
 const { sendMessage } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const router = express.Router();
 const {
   setHeaders,
-  // handleAbort,
+  handleAbort,
   // handleAbortError,
   // validateEndpoint,
   // buildEndpointOption,
-  // createAbortController,
 } = require('~/server/middleware');
 
-// const defaultModel = 'gpt-3.5-turbo-1106';
+router.post('/abort', handleAbort());
+
 /**
  * @route POST /
  * @desc Chat with an assistant
@@ -113,6 +114,18 @@ router.post('/', setHeaders, async (req, res) => {
       openai.attachedFileIds = new Set([...file_ids, ...thread_file_ids]);
     }
 
+    // TODO: may allow multiple messages to be created beforehand in a future update
+    const initThreadBody = {
+      messages: [userMessage],
+      metadata: {
+        user: req.user.id,
+        conversationId,
+      },
+    };
+
+    const result = await initThread({ openai, body: initThreadBody, thread_id });
+    thread_id = result.thread_id;
+
     const requestMessage = {
       user: req.user.id,
       text,
@@ -146,17 +159,7 @@ router.post('/', setHeaders, async (req, res) => {
       },
     });
 
-    // TODO: may allow multiple messages to be created beforehand in a future update
-    const initThreadBody = {
-      messages: [userMessage],
-      metadata: {
-        user: req.user.id,
-        conversationId,
-      },
-    };
-
-    const result = await initThread({ openai, body: initThreadBody, thread_id });
-    thread_id = result.thread_id;
+    await saveUserMessage(requestMessage);
 
     const conversation = {
       conversationId,
@@ -173,8 +176,6 @@ router.post('/', setHeaders, async (req, res) => {
       conversation.file_ids = file_ids;
     }
 
-    await saveUserMessage(requestMessage);
-
     /* NOTE:
      * By default, a Run will use the model and tools configuration specified in Assistant object,
      * but you can override most of these when creating the Run for added flexibility:
@@ -184,6 +185,9 @@ router.post('/', setHeaders, async (req, res) => {
       thread_id,
       body: { assistant_id },
     });
+
+    const cache = getLogStores(CacheKeys.ABORT_KEYS);
+    await cache.set(thread_id, run.id);
 
     // todo: retry logic
     let response = await runAssistant({ openai, thread_id, run_id: run.id });
@@ -211,7 +215,7 @@ router.post('/', setHeaders, async (req, res) => {
       model: assistant_id,
     };
 
-    // responseMessage.tokenCount = getTotalTokenCount(responseMessage.content);
+    // TODO: token count from usage returned in run
 
     // TODO: parse responses, save to db, send to user
 
@@ -236,7 +240,9 @@ router.post('/', setHeaders, async (req, res) => {
     });
   } catch (error) {
     // res.status(500).json({ error: error.message });
-    logger.error('[/assistants/chat/]', error);
+    if (error.message !== 'Run cancelled') {
+      logger.error('[/assistants/chat/]', error);
+    }
     res.end();
   }
 });

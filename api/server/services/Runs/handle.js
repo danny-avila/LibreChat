@@ -1,4 +1,5 @@
-const { RunStatus, defaultOrderQuery } = require('librechat-data-provider');
+const { RunStatus, defaultOrderQuery, CacheKeys } = require('librechat-data-provider');
+const getLogStores = require('~/cache/getLogStores');
 const RunManager = require('./RunManager');
 const { logger } = require('~/config');
 
@@ -59,7 +60,7 @@ async function waitForRun({
   let timeElapsed = 0;
   let run;
 
-  // this runManager will be passed in from the caller
+  const cache = getLogStores(CacheKeys.ABORT_KEYS);
 
   let lastSeenStatus = null;
   while (timeElapsed < timeout) {
@@ -70,6 +71,14 @@ async function waitForRun({
         `[waitForRun] user: ${openai.req.user.id} | thread_id: ${thread_id} | run_id: ${run_id} | status: ${run.status}`,
       );
       lastSeenStatus = run.status;
+    }
+
+    const cancelStatus = await cache.get(thread_id);
+    if (cancelStatus === 'cancelled') {
+      logger.warn(
+        `run cancelled | user: ${openai.req.user.id} | thread_id: ${thread_id} | run_id: ${run_id} | status: ${run.status}`,
+      );
+      throw new Error('Run cancelled');
     }
 
     if (![RunStatus.IN_PROGRESS, RunStatus.QUEUED].includes(run.status)) {

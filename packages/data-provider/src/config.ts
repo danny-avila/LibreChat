@@ -196,6 +196,10 @@ export enum CacheKeys {
    */
   CUSTOM_CONFIG = 'customConfig',
   /**
+   * Key for accessing Abort Keys
+   */
+  ABORT_KEYS = 'abortKeys',
+  /**
    * Key for the override config cache.
    */
   OVERRIDE_CONFIG = 'overrideConfig',

@@ -33,7 +33,11 @@ const genTitle = isEnabled(USE_REDIS) // ttl: 2 minutes
 
 const modelQueries = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: 'models' });
+  : new Keyv({ namespace: CacheKeys.MODEL_QUERIES });
+
+const abortKeys = isEnabled(USE_REDIS)
+  ? new Keyv({ store: keyvRedis })
+  : new Keyv({ namespace: CacheKeys.ABORT_KEYS });
 
 const namespaces = {
   [CacheKeys.CONFIG_STORE]: config,
@@ -45,6 +49,7 @@ const namespaces = {
   message_limit: createViolationInstance('message_limit'),
   token_balance: createViolationInstance('token_balance'),
   registrations: createViolationInstance('registrations'),
+  [CacheKeys.ABORT_KEYS]: abortKeys,
   logins: createViolationInstance('logins'),
   [CacheKeys.TOKEN_CONFIG]: tokenConfig,
   [CacheKeys.GEN_TITLE]: genTitle,
