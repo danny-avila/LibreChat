@@ -33,7 +33,7 @@ Future updates will streamline configuration further by migrating some settings 
 
 Stay tuned for ongoing enhancements to customize your LibreChat instance!
 
-# Table of Contents
+<!-- # Table of Contents
 
 - [LibreChat Configuration Guide](#librechat-configuration-guide)
 - [Table of Contents](#table-of-contents)
@@ -63,7 +63,7 @@ Stay tuned for ongoing enhancements to customize your LibreChat instance!
   - [Additional Notes](#additional-notes)
   - [Default Parameters](#default-parameters)
     - [Breakdown of Default Params](#breakdown-of-default-params)
-  - [Example Config](#example-config)
+  - [Example Config](#example-config) -->
 
 ## Setup
 
@@ -75,7 +75,7 @@ The example config file has some options ready to go for Mistral AI and Openrout
 
 ## Docker Setup
 
-For Docker, you need to make use of an [override file](./docker_override), named `docker-compose.override.yml`, to ensure the config file works for you.
+For Docker, you need to make use of an [override file](./docker_override.md), named `docker-compose.override.yml`, to ensure the config file works for you.
 
 - First, make sure your containers stop running with `docker-compose down`
 - Create or edit existing `docker-compose.override.yml` at the root of the project:
