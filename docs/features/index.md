@@ -26,7 +26,6 @@ weight: 2
 * 🔥 [Firebase CDN](./firebase.md)
 * 🍃 [Manage Your Database](./manage_your_database.md)
 * 🪵 [Logging System](./logging_system.md)
-* 📦 [PandoraNext](./pandoranext.md)
 * 😈 [Bing Jailbreak](./bing_jailbreak.md)
 
 ---
