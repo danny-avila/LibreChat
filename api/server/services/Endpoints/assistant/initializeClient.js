@@ -2,7 +2,7 @@ const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { OpenAIClient } = require('~/app/clients/OpenAIClient');
+const OpenAIClient = require('~/app/clients/OpenAIClient');
 
 const initializeClient = async ({ req, res, endpointOption, initAppClient = false }) => {
   const { PROXY, OPENAI_ORGANIZATION, OPENAI_API_KEY, ASSISTANTS_REVERSE_PROXY } = process.env;
