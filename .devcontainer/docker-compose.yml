@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   app:
-    image: node:19-bullseye
+    image: node:20-bookworm
     # restart: always
     links:
       - mongodb
