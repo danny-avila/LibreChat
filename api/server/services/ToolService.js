@@ -12,6 +12,7 @@ const {
 } = require('librechat-data-provider');
 const { TavilySearchResults } = require('@langchain/community/tools/tavily_search');
 const { loadActionSets, createActionTool } = require('./ActionService');
+const { processFileURL } = require('~/server/services/Files/process');
 const { loadTools } = require('~/app/clients/tools/util');
 const { sleep } = require('./Runs/handle');
 const { logger } = require('~/config');
@@ -133,6 +134,7 @@ async function processRequiredActions(openai, requiredActions) {
     tools,
     functions: true,
     options: {
+      processFileURL,
       openAIApiKey: openai.apiKey,
       fileStrategy: openai.req.app.locals.fileStrategy,
       returnMetadata: true,
