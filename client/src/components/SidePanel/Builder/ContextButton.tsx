@@ -1,14 +1,51 @@
 import * as Popover from '@radix-ui/react-popover';
+import type { Assistant } from 'librechat-data-provider';
 import { Dialog, DialogTrigger, Label } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useDeleteAssistantMutation } from '~/data-provider';
+import { useLocalize, useSetIndexOptions } from '~/hooks';
 import { cn, removeFocusOutlines } from '~/utils/';
 import { NewTrashIcon } from '~/components/svg';
-import { useLocalize } from '~/hooks';
+import { useChatContext } from '~/Providers';
 
-export default function ContextButton({ assistant_id }: { assistant_id: string }) {
+export default function ContextButton({
+  assistant_id,
+  setCurrentAssistantId,
+}: {
+  assistant_id: string;
+  setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
+}) {
   const localize = useLocalize();
-  const deleteAssistant = useDeleteAssistantMutation();
+  const { conversation } = useChatContext();
+  const { setOption } = useSetIndexOptions();
+
+  const deleteAssistant = useDeleteAssistantMutation({
+    onSuccess: (_, vars, context) => {
+      const updatedList = context as Assistant[] | undefined;
+      if (!updatedList) {
+        return;
+      }
+
+      const firstAssistant = updatedList[0] as Assistant | undefined;
+      if (!firstAssistant) {
+        return setOption('assistant_id')('');
+      }
+
+      if (vars.assistant_id === conversation?.assistant_id) {
+        return setOption('assistant_id')(firstAssistant.id);
+      }
+
+      const currentAssistant = updatedList?.find(
+        (assistant) => assistant.id === conversation?.assistant_id,
+      );
+
+      if (currentAssistant) {
+        setCurrentAssistantId(currentAssistant.id);
+      }
+
+      setCurrentAssistantId(firstAssistant.id);
+    },
+  });
 
   if (!assistant_id) {
     return null;

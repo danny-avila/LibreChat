@@ -326,7 +326,10 @@ export default function AssistantPanel({
             </div>
           </div>
           <div className="flex items-center justify-end">
-            <ContextButton assistant_id={assistant_id} />
+            <ContextButton
+              assistant_id={assistant_id}
+              setCurrentAssistantId={setCurrentAssistantId}
+            />
             {/* Use Button */}
             {assistant_id && (
               <button

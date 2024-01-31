@@ -381,12 +381,14 @@ export const useDeleteAssistantMutation = (
           return options?.onSuccess?.(_data, variables, context);
         }
 
+        const data = listRes.data.filter((assistant) => assistant.id !== variables.assistant_id);
+
         queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
           ...listRes,
-          data: listRes.data.filter((assistant) => assistant.id !== variables.assistant_id),
+          data,
         });
 
-        return options?.onSuccess?.(_data, variables, context);
+        return options?.onSuccess?.(_data, variables, data);
       },
     },
   );
