@@ -91,7 +91,7 @@ const processDeleteRequest = async ({ req, files }) => {
   /** @type {OpenAI | undefined} */
   let openai;
   if (req.body.assistant_id) {
-    openai = await initializeClient({ req });
+    ({ openai } = await initializeClient({ req }));
   }
 
   for (const file of files) {
@@ -240,7 +240,7 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
   /** @type {OpenAI | undefined} */
   let openai;
   if (source === FileSources.openai) {
-    openai = await initializeClient({ req });
+    ({ openai } = await initializeClient({ req }));
   }
 
   const { id, bytes, filename, filepath } = await handleFileUpload(req, file, openai);
