@@ -26,7 +26,6 @@ In this video, you will learn how to install and run LibreChat, using Docker on 
 
 #### Instructions
 
-Here are the steps to follow:
 - Update the system: `sudo apt update`
 - Clone LibreChat: `git clone https://github.com/danny-avila/LibreChat.git`
 - Install Docker: `sudo apt install docker.io && apt install docker-compose -y`
