@@ -96,8 +96,13 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     await processFileUpload({ req, res, file, metadata });
   } catch (error) {
+    let message = 'Error processing file';
     logger.error('[/files] Error processing file:', error);
     cleanup = false;
+
+    if (error.message?.includes('file_ids')) {
+      message += ': ' + error.message;
+    }
 
     // TODO: delete remote file if it exists
     try {
@@ -105,7 +110,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     } catch (error) {
       logger.error('[/files] Error deleting file:', error);
     }
-    res.status(500).json({ message: 'Error processing file' });
+    res.status(500).json({ message });
   }
 
   if (cleanup) {

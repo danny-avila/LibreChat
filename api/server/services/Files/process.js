@@ -97,6 +97,10 @@ const processDeleteRequest = async ({ req, files }) => {
   for (const file of files) {
     const source = file.source ?? FileSources.local;
 
+    if (source === FileSources.openai && !openai) {
+      ({ openai } = await initializeClient({ req }));
+    }
+
     if (req.body.assistant_id) {
       promises.push(openai.beta.assistants.files.del(req.body.assistant_id, file.file_id));
     }
@@ -245,7 +249,7 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
 
   const { id, bytes, filename, filepath } = await handleFileUpload(req, file, openai);
 
-  if (isAssistantUpload) {
+  if (isAssistantUpload && !metadata.message_file) {
     await openai.beta.assistants.files.create(metadata.assistant_id, {
       file_id: id,
     });

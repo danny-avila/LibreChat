@@ -102,7 +102,10 @@ const useFileHandling = (params?: UseFileHandling) => {
       console.log('upload error', error);
       const file_id = body.get('file_id');
       deleteFileById(file_id as string);
-      setError('An error occurred while uploading the file.');
+      setError(
+        (error as { response: { data: { message?: string } } })?.response?.data?.message ??
+          'An error occurred while uploading the file.',
+      );
     },
   });
 
@@ -126,6 +129,15 @@ const useFileHandling = (params?: UseFileHandling) => {
       for (const [key, value] of Object.entries(params.additionalMetadata)) {
         formData.append(key, value);
       }
+    }
+
+    if (
+      endpoint === EModelEndpoint.assistant &&
+      !formData.get('assistant_id') &&
+      conversation?.assistant_id
+    ) {
+      formData.append('assistant_id', conversation.assistant_id);
+      formData.append('message_file', 'true');
     }
 
     formData.append('endpoint', endpoint);
