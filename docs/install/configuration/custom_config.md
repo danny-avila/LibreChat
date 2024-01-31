@@ -33,20 +33,37 @@ Future updates will streamline configuration further by migrating some settings 
 
 Stay tuned for ongoing enhancements to customize your LibreChat instance!
 
-# Table of Contents
+<!-- # Table of Contents
 
-1. [Intro](#librechat-configuration-guide)
-    - [Setup](#setup)
-    - [Docker Setup](#docker-setup)
-    - [Config Structure](#config-structure)
-        - [1. Version](#1-version)
-        - [2. Cache Settings](#2-cache-settings)
-        - [3. Endpoints](#3-endpoints)
-            - [Endpoint Object Structure](#endpoint-object-structure)
-    - [Additional Notes](#additional-notes)
-    - [Default Parameters](#default-parameters)
-        - [Breakdown of Default Params](#breakdown-of-default-params)
-    - [Example Config](#example-config)
+- [LibreChat Configuration Guide](#librechat-configuration-guide)
+- [Table of Contents](#table-of-contents)
+  - [Setup](#setup)
+  - [Docker Setup](#docker-setup)
+  - [Config Structure](#config-structure)
+    - [Version](#version)
+    - [Cache Settings](#cache-settings)
+    - [File Strategy](#file-strategy)
+    - [Endpoints](#endpoints)
+  - [Endpoint Object Structure](#endpoint-object-structure)
+    - [**name**:](#name)
+    - [**apiKey**:](#apikey)
+    - [**baseURL**:](#baseurl)
+    - [**iconURL**:](#iconurl)
+    - [**models**:](#models)
+    - [**titleConvo**:](#titleconvo)
+    - [**titleMethod**:](#titlemethod)
+    - [**titleModel**:](#titlemodel)
+    - [**summarize**:](#summarize)
+    - [**summaryModel**:](#summarymodel)
+    - [**forcePrompt**:](#forceprompt)
+    - [**modelDisplayLabel**:](#modeldisplaylabel)
+    - [**addParams**:](#addparams)
+    - [**dropParams**:](#dropparams)
+    - [**headers**:](#headers)
+  - [Additional Notes](#additional-notes)
+  - [Default Parameters](#default-parameters)
+    - [Breakdown of Default Params](#breakdown-of-default-params)
+  - [Example Config](#example-config) -->
 
 ## Setup
 
@@ -58,7 +75,7 @@ The example config file has some options ready to go for Mistral AI and Openrout
 
 ## Docker Setup
 
-For Docker, you need to make use of an [override file](./docker_override), named `docker-compose.override.yml`, to ensure the config file works for you.
+For Docker, you need to make use of an [override file](./docker_override.md), named `docker-compose.override.yml`, to ensure the config file works for you.
 
 - First, make sure your containers stop running with `docker-compose down`
 - Create or edit existing `docker-compose.override.yml` at the root of the project:

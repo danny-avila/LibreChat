@@ -9,6 +9,12 @@ weight: -10
 **If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
 Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
 
+## January 30th 2024
+- Since PandoraNext has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
+- For more info:
+    - [https://github.com/danny-avila/LibreChat/discussions/1663](https://github.com/danny-avila/LibreChat/discussions/1663#discussioncomment-8314025)
+    - [https://linux.do/t/topic/1051](https://linux.do/t/topic/1051)
+
 ## v0.6.6
 
 - **DALL-E Update**: user-provided keys for DALL-E are now specific to each DALL-E version, i.e.: `DALLE3_API_KEY` and `DALLE2_API_KEY`
