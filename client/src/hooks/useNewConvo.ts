@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { FileSources } from 'librechat-data-provider';
+import { EModelEndpoint, FileSources, defaultOrderQuery } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import {
   useSetRecoilState,
@@ -16,7 +16,7 @@ import type {
   TEndpointsConfig,
 } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
-import { useDeleteFilesMutation } from '~/data-provider';
+import { useDeleteFilesMutation, useListAssistantsQuery } from '~/data-provider';
 import useOriginNavigate from './useOriginNavigate';
 import useSetStorage from './useSetStorage';
 import store from '~/store';
@@ -30,6 +30,10 @@ const useNewConvo = (index = 0) => {
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+
+  const { data: assistants = [] } = useListAssistantsQuery(defaultOrderQuery, {
+    select: (res) => res.data.map(({ id, name, metadata }) => ({ id, name, metadata })),
+  });
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -75,6 +79,11 @@ const useNewConvo = (index = 0) => {
             conversation.endpointType = endpointType;
           }
 
+          if (!conversation.assistant_id && defaultEndpoint === EModelEndpoint.assistant) {
+            const assistant_id = localStorage.getItem(`assistant_id__${index}`) ?? assistants[0].id;
+            conversation.assistant_id = assistant_id;
+          }
+
           const models = modelsConfig?.[defaultEndpoint] ?? [];
           conversation = buildDefaultConvo({
             conversation,
@@ -99,7 +108,7 @@ const useNewConvo = (index = 0) => {
           navigate('new');
         }
       },
-    [endpointsConfig, defaultPreset],
+    [endpointsConfig, defaultPreset, assistants],
   );
 
   const newConversation = useCallback(
