@@ -34,9 +34,9 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
   useEffect(() => {
     if (!selectedAssistant && assistants && assistants.length) {
       const assistant_id = localStorage.getItem(`assistant_id__${index}`) ?? assistants[0].id;
-      setAssistant(assistant_id);
+      setOption('assistant_id')(assistant_id);
     }
-  }, [index, assistants, selectedAssistant, setAssistant]);
+  }, [index, assistants, selectedAssistant, setOption]);
 
   const currentAssistant = assistantMap?.[selectedAssistant ?? ''];
 
