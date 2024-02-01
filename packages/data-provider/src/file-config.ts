@@ -146,7 +146,7 @@ export const fileConfig = {
     totalMaxSizeMB: 25,
     fileSizeLimit: 20 * megabyte,
     totalSizeLimit: 25 * megabyte,
-    supportedMimeTypes: [textMimeTypes, imageMimeTypes],
+    supportedMimeTypes: [imageMimeTypes],
   },
   serverFileSizeLimit: 512 * megabyte,
   avatarSizeLimit: 2 * megabyte,
