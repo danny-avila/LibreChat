@@ -135,7 +135,7 @@ In this section you can configure the endpoints and models selection, their API 
 - `PROXY` is to be used by all endpoints (leave blank by default)
 
 ```bash
-ENDPOINTS=openAI,azureOpenAI,bingAI,google,gptPlugins,anthropic
+ENDPOINTS=openAI,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
 PROXY=
 ```
 
@@ -243,6 +243,28 @@ Bing, also used for Sydney, jailbreak, and Bing Image Creator, see: [Bing Access
 ```bash
 BINGAI_TOKEN=user_provided
 BINGAI_HOST=
+```
+
+### ChatGPT
+see: [ChatGPT Free Access token](../configuration/ai_setup.md#chatgptbrowser)
+
+> **Warning**: To use this endpoint you'll have to set up your own reverse proxy. Here is the installation guide to deploy your own (based on [Ninja](https://github.com/gngpp/ninja)): **[Ninja Deployment Guide](../../features/ninja.md)**
+
+```bash
+CHATGPT_REVERSE_PROXY=<YOUR-REVERSE-PROXY>
+```
+
+> **Note:** If you're a GPT plus user you can try adding `gpt-4`, `gpt-4-plugins`, `gpt-4-code-interpreter`, and `gpt-4-browsing` to the list above and use the models for these features; **however, the view/display portion of these features are not supported**, but you can use the underlying models, which have higher token context
+
+> This method **might only works** with `text-davinci-002-render-sha` and **might stop working** at any moment.
+
+- Leave `CHATGPT_TOKEN=` blank to disable this endpoint
+- Set `CHATGPT_TOKEN=` to "user_provided" to allow users to provide their own API key from the WebUI
+    - It is not recommended to provide your token in the `.env` file since it expires often and sharing it could get you banned.
+
+```bash
+CHATGPT_TOKEN=
+CHATGPT_MODELS=text-davinci-002-render-sha
 ```
 
 ### Google

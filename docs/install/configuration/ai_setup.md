@@ -446,6 +446,27 @@ OpenRouter is integrated to the LibreChat by overriding the OpenAI endpoint.
 
 **Important:** Stability for Unofficial APIs are not guaranteed. Access methods to these APIs are hacky, prone to errors, and patching, and are marked lowest in priority in LibreChat's development.
 
+### ChatGPTBrowser
+
+**Backend Access to https://chat.openai.com/api**
+
+This is not to be confused with [OpenAI's Official API](#openai)!
+
+> Note that this is disabled by default and requires additional configuration to work. 
+> Also, using this may have your data exposed to 3rd parties if using a proxy, and OpenAI may flag your account.
+> See: [ChatGPT Reverse Proxy](../../features/ninja.md)
+
+To get your Access token for ChatGPT Browser Access, you need to:
+
+- Go to **[https://chat.openai.com](https://chat.openai.com)**
+- Create an account or log in with your existing one
+- Visit **[https://chat.openai.com/api/auth/session](https://chat.openai.com/api/auth/session)**
+- Copy the value of the "accessToken" field and save it in ./.env as CHATGPT_ACCESS_TOKEN
+
+Warning: There may be a chance of your account being banned if you deploy the app to multiple users with this method. Use at your own risk.
+
+---
+
 ### BingAI
 I recommend using Microsoft Edge for this:
 
