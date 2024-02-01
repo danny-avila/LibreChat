@@ -1,4 +1,4 @@
-import { TPreset } from '../types';
+import { TPreset, TDeleteConversationResponse, TDeleteConversationRequest } from '../types';
 import {
   Assistant,
   AssistantCreateParams,
@@ -111,4 +111,14 @@ export type DeleteActionOptions = {
   onSuccess?: (data: void, variables: DeleteActionVariables, context?: unknown) => void;
   onMutate?: (variables: DeleteActionVariables) => void | Promise<unknown>;
   onError?: (error: unknown, variables: DeleteActionVariables, context?: unknown) => void;
+};
+
+export type DeleteConversationOptions = {
+  onSuccess?: (
+    data: TDeleteConversationResponse,
+    variables: TDeleteConversationRequest,
+    context?: unknown,
+  ) => void;
+  onMutate?: (variables: TDeleteConversationRequest) => void | Promise<unknown>;
+  onError?: (error: unknown, variables: TDeleteConversationRequest, context?: unknown) => void;
 };
