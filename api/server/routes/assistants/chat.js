@@ -9,7 +9,7 @@ const {
   saveAssistantMessage,
 } = require('~/server/services/Threads');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
-const { initializeClient } = require('~/server/services/Endpoints/assistant');
+const { addTitle, initializeClient } = require('~/server/services/Endpoints/assistant');
 const { createRun } = require('~/server/services/Runs');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
@@ -75,7 +75,7 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
     const userMessageId = v4();
 
     /** @type {{ openai: OpenAIClient }} */
-    const { openai } = await initializeClient({
+    const { openai, client } = await initializeClient({
       req,
       res,
       endpointOption: req.body.endpointOption,
@@ -234,6 +234,15 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
     res.end();
 
     await saveAssistantMessage(responseMessage);
+
+    if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
+      addTitle(req, {
+        text,
+        responseText: openai.responseText,
+        conversationId,
+        client,
+      });
+    }
 
     await addThreadMetadata({
       openai,
