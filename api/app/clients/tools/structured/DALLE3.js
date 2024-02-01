@@ -88,7 +88,7 @@ class DALLE3 extends Tool {
 
   getApiKey() {
     const apiKey = process.env.DALLE3_API_KEY ?? process.env.DALLE_API_KEY ?? '';
-    if (!apiKey && this.override) {
+    if (!apiKey && !this.override) {
       throw new Error('Missing DALLE_API_KEY environment variable.');
     }
     return apiKey;
