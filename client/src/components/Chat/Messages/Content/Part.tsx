@@ -32,9 +32,11 @@ const DisplayMessage = ({ text, isCreatedByUser = false, message, showCursor }: 
 export default function Part({
   part,
   showCursor,
+  isSubmitting,
   message,
 }: {
   part: TMessageContentParts;
+  isSubmitting: boolean;
   showCursor: boolean;
   message: TMessage;
 }) {
@@ -85,6 +87,7 @@ export default function Part({
     return (
       <ToolCall
         initialProgress={toolCall.progress ?? 0.1}
+        isSubmitting={isSubmitting}
         args={toolCall.function.arguments}
         name={toolCall.function.name}
         output={toolCall.function.output}

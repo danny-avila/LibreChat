@@ -30,6 +30,7 @@ any) => {
             <Part
               key={`display-${messageId}-${idx}`}
               showCursor={idx === content.length - 1 && isLast}
+              isSubmitting={isSubmitting}
               part={part}
               {...props}
             />
