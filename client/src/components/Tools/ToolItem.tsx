@@ -1,5 +1,6 @@
 import { TPlugin } from 'librechat-data-provider';
-import { XCircle, DownloadCloud } from 'lucide-react';
+import { XCircle, PlusCircleIcon } from 'lucide-react';
+import { useLocalize } from '~/hooks';
 
 type ToolItemProps = {
   tool: TPlugin;
@@ -9,6 +10,7 @@ type ToolItemProps = {
 };
 
 function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled }: ToolItemProps) {
+  const localize = useLocalize();
   const handleClick = () => {
     if (isInstalled) {
       onRemoveTool();
@@ -37,22 +39,22 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled }: ToolItemProps)
           {!isInstalled ? (
             <button
               className="btn btn-primary relative"
-              aria-label={`Install ${tool.name}`}
+              aria-label={`${localize('com_nav_tool_add')} ${tool.name}`}
               onClick={handleClick}
             >
               <div className="flex w-full items-center justify-center gap-2">
-                Install
-                <DownloadCloud className="flex h-4 w-4 items-center stroke-2" />
+                {localize('com_nav_tool_add')}
+                <PlusCircleIcon className="flex h-4 w-4 items-center stroke-2" />
               </div>
             </button>
           ) : (
             <button
               className="btn relative bg-gray-300 hover:bg-gray-400 dark:bg-gray-50 dark:hover:bg-gray-200"
               onClick={handleClick}
-              aria-label={`Uninstall ${tool.name}`}
+              aria-label={`${localize('com_nav_tool_remove')} ${tool.name}`}
             >
               <div className="flex w-full items-center justify-center gap-2">
-                Uninstall
+                {localize('com_nav_tool_remove')}
                 <XCircle className="flex h-4 w-4 items-center stroke-2" />
               </div>
             </button>

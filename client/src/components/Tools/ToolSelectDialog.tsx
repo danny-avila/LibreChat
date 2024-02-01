@@ -51,22 +51,29 @@ function ToolSelectDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   };
 
   const handleInstall = (pluginAction: TPluginAction) => {
+    const addFunction = () => {
+      const fns = getValues('functions').slice();
+      fns.push(pluginAction.pluginKey);
+      setValue('functions', fns);
+    };
+
+    if (!pluginAction.auth) {
+      return addFunction();
+    }
+
     updateUserPlugins.mutate(pluginAction, {
       onError: (error: unknown) => {
         handleInstallError(error as TError);
       },
-      onSuccess: () => {
-        const fns = getValues('functions').slice();
-        fns.push(pluginAction.pluginKey);
-        setValue('functions', fns);
-      },
+      onSuccess: addFunction,
     });
+
     setShowPluginAuthForm(false);
   };
 
   const onRemoveTool = (tool: string) => {
     updateUserPlugins.mutate(
-      { pluginKey: tool, action: 'uninstall', auth: null },
+      { pluginKey: tool, action: 'uninstall', auth: null, isAssistantTool: true },
       {
         onError: (error: unknown) => {
           handleInstallError(error as TError);
@@ -137,7 +144,7 @@ function ToolSelectDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
             <div className="flex items-center">
               <div className="text-center sm:text-left">
                 <Dialog.Title className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-                  {localize('com_nav_plugin_store')}
+                  {localize('com_nav_tool_dialog')}
                 </Dialog.Title>
               </div>
             </div>
@@ -169,6 +176,7 @@ function ToolSelectDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
               <PluginAuthForm
                 plugin={selectedPlugin}
                 onSubmit={(installActionData: TPluginAction) => handleInstall(installActionData)}
+                isAssistantTool={true}
               />
             </div>
           )}
@@ -180,7 +188,7 @@ function ToolSelectDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                   type="text"
                   value={searchValue}
                   onChange={handleSearch}
-                  placeholder={localize('com_nav_plugin_search')}
+                  placeholder={localize('com_nav_tool_search')}
                   className="w-64 rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
                 />
               </div>

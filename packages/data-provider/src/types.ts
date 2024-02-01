@@ -47,11 +47,13 @@ export type TPluginAction = {
   pluginKey: string;
   action: 'install' | 'uninstall';
   auth?: unknown;
+  isAssistantTool?: boolean;
 };
 
 export type GroupedConversations = [key: string, TConversation[]][];
 
 export type TUpdateUserPlugins = {
+  isAssistantTool?: boolean;
   pluginKey: string;
   action: string;
   auth?: unknown;
