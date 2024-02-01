@@ -10,9 +10,15 @@ import {
   VolumeIcon,
   VolumeMuteIcon,
 } from '~/components/svg';
-import { useGenerationsByLatest, useLocalize, useTextToSpeech } from '~/hooks';
+import {
+  useGenerationsByLatest,
+  useLocalize,
+  useTextToSpeech,
+  useTextToSpeechExternal,
+} from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 type THoverButtons = {
   isEditing: boolean;
@@ -42,7 +48,18 @@ export default function HoverButtons({
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const { synthesizeSpeech, cancelSpeech } = useTextToSpeech();
+  const { data: startupConfig } = useGetStartupConfig();
+  const useExternalTextToSpeech = startupConfig?.speechToTextExternal;
+
+  const { generateSpeechLocal: generateSpeechLocal, cancelSpeechLocal: cancelSpeechLocal } =
+    useTextToSpeech();
+
+  const { synthesizeSpeech: synthesizeSpeechExternal, cancelSpeech: cancelSpeechExternal } =
+    useTextToSpeechExternal();
+
+  const generateSpeech = useExternalTextToSpeech ? synthesizeSpeechExternal : generateSpeechLocal;
+  const cancelSpeech = useExternalTextToSpeech ? cancelSpeechExternal : cancelSpeechLocal;
+
   const [TextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
 
   const { hideEditButton, regenerateEnabled, continueSupported } = useGenerationsByLatest({
@@ -70,7 +87,7 @@ export default function HoverButtons({
       cancelSpeech();
       setIsSpeaking(false);
     } else {
-      synthesizeSpeech(message?.text ?? '', () => setIsSpeaking(false));
+      generateSpeech(message?.text ?? '', () => setIsSpeaking(false));
     }
     setIsSpeaking(!isSpeaking);
   };

@@ -215,5 +215,7 @@ export const speechToText = (data: FormData): Promise<f.SpeechToTextResponse> =>
 };
 
 export const textToSpeech = (data: FormData): Promise<f.TextToSpeechResponse> => {
-  return request.postMultiPart(endpoints.textToSpeech(), data);
+  return request.postMultiPart(endpoints.textToSpeech(), data, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
 };

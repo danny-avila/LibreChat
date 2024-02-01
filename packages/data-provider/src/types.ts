@@ -203,6 +203,7 @@ export type TStartupConfig = {
   emailEnabled: boolean;
   checkBalance: boolean;
   speechToTextExternal: boolean;
+  textToSpeechExternal: boolean;
   customFooter?: string;
 };
 

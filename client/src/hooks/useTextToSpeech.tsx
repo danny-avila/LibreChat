@@ -1,5 +1,5 @@
 function useTextToSpeech() {
-  const synthesizeSpeech = (text, onEnd) => {
+  const generateSpeechLocal = (text, onEnd) => {
     const synth = window.speechSynthesis;
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
@@ -11,12 +11,12 @@ function useTextToSpeech() {
     synth.speak(utterance);
   };
 
-  const cancelSpeech = () => {
+  const cancelSpeechLocal = () => {
     const synth = window.speechSynthesis;
     synth.cancel();
   };
 
-  return { synthesizeSpeech, cancelSpeech };
+  return { generateSpeechLocal, cancelSpeechLocal };
 }
 
 export default useTextToSpeech;

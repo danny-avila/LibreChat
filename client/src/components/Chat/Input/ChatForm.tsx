@@ -36,7 +36,7 @@ export default function ChatForm({ index = 0 }) {
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
   const { data: startupConfig } = useGetStartupConfig();
-  const useExternalSpeech = startupConfig?.speechToTextExternal;
+  const useExternalSpeech = startupConfig?.textToSpeechExternal;
 
   const {
     isListening: speechIsListening,

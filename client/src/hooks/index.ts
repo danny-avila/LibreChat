@@ -33,6 +33,7 @@ export { default as useNavigateToConvo } from './useNavigateToConvo';
 export { default as useSetIndexOptions } from './useSetIndexOptions';
 export { default as useSetFilesToDelete } from './useSetFilesToDelete';
 export { default as useGenerationsByLatest } from './useGenerationsByLatest';
-export { default as useTextToSpeech } from './useTextToSpeech';
 export { default as useSpeechToText } from './useSpeechToText';
 export { default as useSpeechToTextExternal } from './useSpeechToTextExternal';
+export { default as useTextToSpeech } from './useTextToSpeech';
+export { default as useTextToSpeechExternal } from './useTextToSpeechExternal';
