@@ -28,6 +28,7 @@ async function loadCustomConfig() {
   } else {
     logger.info('Custom config file loaded:');
     logger.info(JSON.stringify(customConfig, null, 2));
+    logger.debug('Custom config:', customConfig);
   }
 
   if (customConfig.cache) {
