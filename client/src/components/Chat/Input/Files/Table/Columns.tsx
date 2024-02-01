@@ -2,11 +2,11 @@ import { FileSources } from 'librechat-data-provider';
 import { ArrowUpDown, Database } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
-import { Button, Checkbox } from '~/components/ui';
-import { OpenAIMinimalIcon } from '~/components/svg';
-import { SortFilterHeader } from './SortFilterHeader';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
+import { SortFilterHeader } from './SortFilterHeader';
+import { OpenAIMinimalIcon } from '~/components/svg';
+import { Button, Checkbox } from '~/components/ui';
 import { formatDate, getFileType } from '~/utils';
 
 export const columns: ColumnDef<TFile>[] = [

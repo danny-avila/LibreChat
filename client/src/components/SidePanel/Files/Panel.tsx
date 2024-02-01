@@ -1,7 +1,7 @@
 import type { TFile } from 'librechat-data-provider';
-import { columns } from '~/components/Chat/Input/Files/Table/PanelColumns';
-import DataTable from '~/components/Chat/Input/Files/Table/PanelTable';
 import { useGetFiles } from '~/data-provider';
+import { columns } from './PanelColumns';
+import DataTable from './PanelTable';
 
 export default function FilesPanel() {
   const { data: files = [] } = useGetFiles<TFile[]>();

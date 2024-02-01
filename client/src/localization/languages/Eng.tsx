@@ -3,6 +3,10 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_ui_attach_error_type: 'Unsupported file type for endpoint:',
+  com_ui_attach_error_size: 'File size limit exceeded for endpoint:',
+  com_ui_attach_error:
+    'Cannot attach file. Create or select a conversation, or try refreshing the page.',
   com_ui_examples: 'Examples',
   com_ui_new_chat: 'New Chat',
   com_ui_happy_birthday: 'It\'s my 1st birthday!',

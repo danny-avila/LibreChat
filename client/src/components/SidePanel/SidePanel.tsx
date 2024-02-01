@@ -1,13 +1,12 @@
 import throttle from 'lodash/throttle';
-import { FileText } from 'lucide-react';
 import { useState, useRef, useCallback } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
+import { Blocks, AttachmentIcon } from '~/components/svg';
 import { Separator } from '~/components/ui/Separator';
 import NavToggle from '~/components/Nav/NavToggle';
 import PanelSwitch from './Builder/PanelSwitch';
-import { Blocks } from '~/components/svg';
 import FilesPanel from './Files/Panel';
 import Switcher from './Switcher';
 import { cn } from '~/utils';
@@ -146,7 +145,7 @@ export default function SidePanel({
               {
                 title: 'Attach Files',
                 label: '',
-                icon: FileText,
+                icon: AttachmentIcon,
                 id: 'files',
                 Component: FilesPanel,
               },

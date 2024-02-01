@@ -1,22 +1,50 @@
 import { useCallback } from 'react';
+import { fileConfig } from 'librechat-data-provider';
 import type { Row } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
+import { useFileMapContext, useChatContext, useToastContext } from '~/Providers';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
-import { useFileMapContext, useChatContext } from '~/Providers';
-import { useUpdateFiles } from '~/hooks/Files';
+import { useUpdateFiles, useLocalize } from '~/hooks';
 import { getFileType } from '~/utils';
 
 export default function PanelFileCell({ row }: { row: Row<TFile> }) {
+  const localize = useLocalize();
   const fileMap = useFileMapContext();
-  const { setFiles } = useChatContext();
+  const { showToast } = useToastContext();
+  const { setFiles, conversation } = useChatContext();
   const { addFile } = useUpdateFiles(setFiles);
 
   const handleFileClick = useCallback(() => {
     const file = row.original;
+    const endpoint = conversation?.endpoint;
     const fileData = fileMap?.[file.file_id];
+
     if (!fileData) {
       return;
+    }
+
+    if (!endpoint) {
+      return showToast({ message: localize('com_ui_attach_error'), status: 'error' });
+    }
+
+    const { fileSizeLimit, fileMaxSizeMB, supportedMimeTypes } =
+      fileConfig[endpoint] ?? fileConfig.default;
+
+    if (fileData.bytes > fileSizeLimit) {
+      return showToast({
+        message: `${localize('com_ui_attach_error_size')} ${fileMaxSizeMB} MB (${endpoint})`,
+        status: 'error',
+      });
+    }
+
+    const isSupportedMimeType = fileConfig.checkType(file.type, supportedMimeTypes);
+
+    if (!isSupportedMimeType) {
+      return showToast({
+        message: `${localize('com_ui_attach_error_type')} ${file.type} (${endpoint})`,
+        status: 'error',
+      });
     }
 
     addFile({
@@ -32,7 +60,7 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
       source: fileData.source,
       size: fileData.bytes,
     });
-  }, [addFile, fileMap, row.original]);
+  }, [addFile, fileMap, row.original, conversation, localize, showToast]);
 
   const file = row.original;
   if (file.type?.startsWith('image')) {
