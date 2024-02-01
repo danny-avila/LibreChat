@@ -172,9 +172,9 @@ export default function ActionsInput({
         <div className="mb-1 flex flex-wrap items-center justify-between gap-4">
           <label className="text-token-text-primary whitespace-nowrap font-medium">Schema</label>
           <div className="flex items-center gap-2">
-            <button className="btn btn-neutral border-token-border-light relative h-8 min-w-[100px] rounded-lg font-medium">
+            {/* <button className="btn btn-neutral border-token-border-light relative h-8 min-w-[100px] rounded-lg font-medium">
               <div className="flex w-full items-center justify-center text-xs">Import from URL</div>
-            </button>
+            </button> */}
             <select
               onChange={(e) => console.log(e.target.value)}
               className="border-token-border-medium h-8 min-w-[100px] rounded-lg border bg-transparent px-2 py-0 text-sm"
