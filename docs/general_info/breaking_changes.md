@@ -9,6 +9,12 @@ weight: -10
 **If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
 Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
 
+## January 31th 2024
+- A new method to use the ChatGPT endpoint is now documented. It uses "Ninja"
+- For more info:
+    - [Ninja Deployment Guide](../features/ninja.md)
+    - [Ninja GitHub repo](https://github.com/gngpp/ninja/tree/main)
+
 ## January 30th 2024
 - Since PandoraNext has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
 - For more info:
