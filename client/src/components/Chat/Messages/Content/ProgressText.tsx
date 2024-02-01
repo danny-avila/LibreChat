@@ -5,12 +5,14 @@ const Wrapper = ({ popover, children }: { popover: boolean; children: React.Reac
   if (popover) {
     return (
       <div className="text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5">
-        <Popover.Trigger
-          className="absolute left-0 top-0 line-clamp-1 overflow-visible"
-          style={{ opacity: 1, transform: 'none' }}
-          data-projection-id="78"
-        >
-          {children}
+        <Popover.Trigger asChild>
+          <div
+            className="absolute left-0 top-0 line-clamp-1 overflow-visible"
+            style={{ opacity: 1, transform: 'none' }}
+            data-projection-id="78"
+          >
+            {children}
+          </div>
         </Popover.Trigger>
       </div>
     );
