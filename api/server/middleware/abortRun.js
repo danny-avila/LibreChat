@@ -32,7 +32,7 @@ async function abortRun(req, res) {
   try {
     await cache.set(thread_id, 'cancelled');
     const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
-    console.dir(cancelledRun, { depth: null });
+    logger.debug('Cancelled run:', cancelledRun);
   } catch (error) {
     logger.error('[abortRun] Error cancelling run', { error });
   }
