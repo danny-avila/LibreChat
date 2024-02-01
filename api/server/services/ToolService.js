@@ -14,6 +14,7 @@ const { TavilySearchResults } = require('@langchain/community/tools/tavily_searc
 const { loadActionSets, createActionTool } = require('./ActionService');
 const { processFileURL } = require('~/server/services/Files/process');
 const { loadTools } = require('~/app/clients/tools/util');
+const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('./Runs/handle');
 const { logger } = require('~/config');
 
@@ -281,7 +282,13 @@ async function processRequiredActions(openai, requiredActions) {
     }
 
     try {
-      const promise = tool._call(currentAction.toolInput).then(handleToolOutput);
+      const promise = tool
+        ._call(currentAction.toolInput)
+        .then(handleToolOutput)
+        .catch((error) => ({
+          tool_call_id: currentAction.toolCallId,
+          output: `Error processing tool ${currentAction.tool}: ${redactMessage(error.message)}`,
+        }));
       promises.push(promise);
     } catch (error) {
       logger.error(
