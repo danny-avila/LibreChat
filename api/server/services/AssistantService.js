@@ -36,11 +36,14 @@ async function createOnTextProgress({ openai, conversationId, userMessageId, mes
     content: [],
   };
 
+  openai.responseText = '';
+
   openai.addContentData = (data) => {
     const { type, index } = data;
     openai.responseMessage.content[index] = { type, [type]: data[type] };
 
     if (type === ContentTypes.TEXT) {
+      openai.responseText += data[type].value;
       return;
     }
 

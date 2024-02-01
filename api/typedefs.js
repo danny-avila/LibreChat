@@ -689,6 +689,7 @@
  *
  * Note: not used until real streaming is implemented by OpenAI.
  *
+ * @property {string} responseText -The accumulated text values for the current run.
  * @property {Set<string>} processedFileIds - A set of IDs for processed files.
  * @property {Map<string, number>} mappedOrder - A map to maintain the order of individual `tool_calls` and `steps`.
  * @property {Set<string>} [attachedFileIds] - A set of user attached file ids; necessary to track which files are downloadable.
