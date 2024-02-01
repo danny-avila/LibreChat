@@ -56,7 +56,7 @@ module.exports = {
         update.files = files;
       }
       // may also need to update the conversation here
-      await Message.findOneAndUpdate({ messageId }, update, { upsert: true, new: true }).lean();
+      await Message.findOneAndUpdate({ messageId }, update, { upsert: true, new: true });
 
       return {
         messageId,
@@ -102,7 +102,7 @@ module.exports = {
       return await Message.findOneAndUpdate({ user, messageId }, message, {
         upsert: true,
         new: true,
-      }).lean();
+      });
     } catch (err) {
       logger.error('Error saving message:', err);
       throw new Error('Failed to save message.');
@@ -114,7 +114,7 @@ module.exports = {
       update.isEdited = true;
       const updatedMessage = await Message.findOneAndUpdate({ messageId }, update, {
         new: true,
-      }).lean();
+      });
 
       if (!updatedMessage) {
         throw new Error('Message not found.');
