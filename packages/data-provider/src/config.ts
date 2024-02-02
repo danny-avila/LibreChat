@@ -169,6 +169,10 @@ export enum CacheKeys {
    */
   ENDPOINT_CONFIG = 'endpointsConfig',
   /**
+   * Key for accessing the model token config cache.
+   */
+  TOKEN_CONFIG = 'tokenConfig',
+  /**
    * Key for the custom config cache.
    */
   CUSTOM_CONFIG = 'customConfig',

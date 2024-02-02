@@ -10,8 +10,8 @@ transactionSchema.methods.calculateTokenValue = function () {
   if (!this.valueKey || !this.tokenType) {
     this.tokenValue = this.rawAmount;
   }
-  const { valueKey, tokenType, model } = this;
-  const multiplier = getMultiplier({ valueKey, tokenType, model });
+  const { valueKey, tokenType, model, endpointTokenConfig } = this;
+  const multiplier = getMultiplier({ valueKey, tokenType, model, endpointTokenConfig });
   this.rate = multiplier;
   this.tokenValue = this.rawAmount * multiplier;
   if (this.context && this.tokenType === 'completion' && this.context === 'incomplete') {
@@ -25,6 +25,7 @@ transactionSchema.statics.create = async function (transactionData) {
   const Transaction = this;
 
   const transaction = new Transaction(transactionData);
+  transaction.endpointTokenConfig = transactionData.endpointTokenConfig;
   transaction.calculateTokenValue();
 
   // Save the transaction

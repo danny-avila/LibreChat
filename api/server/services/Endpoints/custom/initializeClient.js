@@ -1,7 +1,9 @@
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, CacheKeys } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { isUserProvided, extractEnvVariable } = require('~/server/utils');
+const { fetchModels } = require('~/server/services/ModelService');
 const getCustomConfig = require('~/cache/getCustomConfig');
+const getLogStores = require('~/cache/getLogStores');
 const { OpenAIClient } = require('~/app');
 
 const envVarRegex = /^\${(.+)}$/;
@@ -37,6 +39,13 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     throw new Error(`Missing Base URL for ${endpoint}.`);
   }
 
+  const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
+  let endpointTokenConfig = await cache.get(endpoint);
+  if (!endpointTokenConfig) {
+    await fetchModels({ apiKey: CUSTOM_API_KEY, baseURL: CUSTOM_BASE_URL, name: endpoint });
+    endpointTokenConfig = await cache.get(endpoint);
+  }
+
   const customOptions = {
     headers: resolvedHeaders,
     addParams: endpointConfig.addParams,
@@ -48,6 +57,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     modelDisplayLabel: endpointConfig.modelDisplayLabel,
     titleMethod: endpointConfig.titleMethod ?? 'completion',
     contextStrategy: endpointConfig.summarize ? 'summarize' : null,
+    endpointTokenConfig,
   };
 
   const useUserKey = isUserProvided(CUSTOM_API_KEY);
