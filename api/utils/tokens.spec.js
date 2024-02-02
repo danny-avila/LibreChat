@@ -92,6 +92,9 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('gpt-4-0125-preview')).toBe(
       maxTokensMap[EModelEndpoint.openAI]['gpt-4-0125'],
     );
+    expect(getModelMaxTokens('gpt-3.5-turbo-0125')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-3.5-turbo-0125'],
+    );
   });
 
   test('should return correct tokens for Anthropic models', () => {
