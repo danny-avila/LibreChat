@@ -30,7 +30,7 @@ module.exports = {
       return { message: 'Error saving conversation' };
     }
   },
-  getConvosByPage: async (user, pageNumber = 1, pageSize = 14) => {
+  getConvosByPage: async (user, pageNumber = 1, pageSize = 25) => {
     try {
       const totalConvos = (await Conversation.countDocuments({ user })) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
@@ -45,7 +45,7 @@ module.exports = {
       return { message: 'Error getting conversations' };
     }
   },
-  getConvosQueried: async (user, convoIds, pageNumber = 1, pageSize = 14) => {
+  getConvosQueried: async (user, convoIds, pageNumber = 1, pageSize = 25) => {
     try {
       if (!convoIds || convoIds.length === 0) {
         return { conversations: [], pages: 1, pageNumber, pageSize };
