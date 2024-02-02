@@ -57,9 +57,14 @@ const getValueKey = (model, endpoint) => {
  * @param {string} [params.tokenType] - The type of token (e.g., 'prompt' or 'completion').
  * @param {string} [params.model] - The model name to derive the value key from if not provided.
  * @param {string} [params.endpoint] - The endpoint name to derive the value key from if not provided.
+ * @param {EndpointTokenConfig} [params.endpointTokenConfig] - The token configuration for the endpoint.
  * @returns {number} The multiplier for the given parameters, or a default value if not found.
  */
-const getMultiplier = ({ valueKey, tokenType, model, endpoint }) => {
+const getMultiplier = ({ valueKey, tokenType, model, endpoint, endpointTokenConfig }) => {
+  if (endpointTokenConfig) {
+    return endpointTokenConfig?.[model]?.[tokenType] ?? defaultRate;
+  }
+
   if (valueKey && tokenType) {
     return tokenValues[valueKey][tokenType] ?? defaultRate;
   }
