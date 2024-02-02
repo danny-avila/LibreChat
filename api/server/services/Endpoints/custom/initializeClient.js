@@ -1,6 +1,7 @@
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, CacheKeys } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { isUserProvided, extractEnvVariable } = require('~/server/utils');
+const getLogStores = require('~/cache/getLogStores');
 const getCustomConfig = require('~/cache/getCustomConfig');
 const { OpenAIClient } = require('~/app');
 
@@ -14,6 +15,9 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   if (!customConfig) {
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
   }
+
+  const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
+  const endpointTokenConfig = await cache.get(endpoint);
 
   const { endpoints = {} } = customConfig;
   const customEndpoints = endpoints[EModelEndpoint.custom] ?? [];
@@ -48,6 +52,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     modelDisplayLabel: endpointConfig.modelDisplayLabel,
     titleMethod: endpointConfig.titleMethod ?? 'completion',
     contextStrategy: endpointConfig.summarize ? 'summarize' : null,
+    endpointTokenConfig,
   };
 
   const useUserKey = isUserProvided(CUSTOM_API_KEY);
