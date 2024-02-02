@@ -1,11 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import {
-  useSearchInfiniteQuery,
-  useConversationsInfiniteQuery,
-} from 'librechat-data-provider/react-query';
-import type { ConversationListResponse, TConversation } from 'librechat-data-provider';
+import type { ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
   useAuthContext,
@@ -14,6 +10,7 @@ import {
   useNavScrolling,
   useConversations,
 } from '~/hooks';
+import { useSearchInfiniteQuery, useConversationsInfiniteQuery } from '~/data-provider';
 import { TooltipProvider, Tooltip } from '~/components/ui';
 import { Conversations } from '~/components/Conversations';
 import { Spinner } from '~/components/svg';
@@ -42,9 +39,8 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   }, [isSmallScreen]);
 
-  const [, setConversations] = useState<TConversation[]>([]);
-
   const [pageNumber, setPageNumber] = useState(1);
+  const [showLoading, setShowLoading] = useState(false);
 
   const searchQuery = useRecoilValue(store.searchQuery);
   const isSearching = useRecoilValue(store.isSearching);
@@ -55,34 +51,29 @@ export default function Nav({ navVisible, setNavVisible }) {
   const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
   const refreshConversationsHint = useRecoilValue(store.refreshConversationsHint);
 
-  const queryParameters = searchQuery
-    ? { pageNumber: pageNumber.toString(), searchQuery }
-    : { pageNumber: pageNumber.toString() };
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, ...convosQuery } =
+    useConversationsInfiniteQuery(
+      { pageNumber: pageNumber.toString() },
+      { enabled: isAuthenticated },
+    );
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useSearchInfiniteQuery(
+  const searchQueryRes = useSearchInfiniteQuery(
     { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
     { enabled: isAuthenticated },
   );
 
   const { containerRef, moveToTop } = useNavScrolling({
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
+    setShowLoading,
+    hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
+    fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
+    isFetchingNextPage: searchQuery ? searchQueryRes.isFetchingNextPage : isFetchingNextPage,
   });
 
-  const conversations = data?.pages.flatMap((page) => page.conversations) || [];
-
-  const useAppropriateInfiniteQuery = searchQuery
-    ? useSearchInfiniteQuery
-    : useConversationsInfiniteQuery;
-
-  const getConversationsQuery = useAppropriateInfiniteQuery(queryParameters, {
-    enabled: isAuthenticated,
-  });
+  const conversations =
+    (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) || [];
 
   const onSearchSuccess = useCallback((data: ConversationListResponse, expectedPage?: number) => {
     const res = data;
-    setConversations(res.conversations);
     if (expectedPage) {
       setPageNumber(expectedPage);
     }
@@ -94,10 +85,10 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   useEffect(() => {
     //we use isInitialLoading here instead of isLoading because query is disabled by default
-    if (getConversationsQuery.data) {
-      onSearchSuccess(getConversationsQuery.data.pages[0]);
+    if (searchQueryRes.data) {
+      onSearchSuccess(searchQueryRes.data.pages[0]);
     }
-  }, [getConversationsQuery.data, getConversationsQuery.isInitialLoading, onSearchSuccess]);
+  }, [searchQueryRes.data, searchQueryRes.isInitialLoading, onSearchSuccess]);
 
   const clearSearch = () => {
     setPageNumber(1);
@@ -107,36 +98,12 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   };
 
-  useEffect(() => {
-    if (data) {
-      if (isSearching) {
-        return;
-      }
-      let { conversations } = data.pages[0];
-      let { pages } = data.pages[0];
-      pages = Number(pages);
-
-      if (pageNumber > pages) {
-        setPageNumber(pages);
-      } else {
-        if (!isSearching) {
-          conversations = conversations.sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-          );
-        }
-
-        setConversations(conversations);
-        // setPages(pages);
-      }
-    }
-  }, [data, pageNumber, isSearching]);
-
-  useEffect(() => {
-    if (!isSearching) {
-      getConversationsQuery.refetch();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageNumber, conversationId, refreshConversationsHint, data]);
+  // TODO: test effects of this useEffect
+  // useEffect(() => {
+  //   if (!isSearching) {
+  //     convosQuery.refetch();
+  //   }
+  // }, [pageNumber, conversationId, refreshConversationsHint, data, isSearching, convosQuery]);
 
   const toggleNavVisible = () => {
     setNavVisible((prev: boolean) => !prev);
@@ -152,7 +119,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   };
 
   const containerClasses =
-    getConversationsQuery.isLoading && pageNumber === 1
+    (convosQuery.isLoading || searchQueryRes.isLoading) && pageNumber === 1
       ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
       : 'flex flex-col gap-2 text-gray-100 text-sm';
 
@@ -199,9 +166,13 @@ export default function Nav({ navVisible, setNavVisible }) {
                         toggleNav={itemToggleNav}
                       />
                     </div>
+                    <Spinner
+                      className={cn(
+                        'm-1 mx-auto mb-4 h-4 w-4',
+                        isFetchingNextPage || showLoading ? 'opacity-1' : 'opacity-0',
+                      )}
+                    />
                   </div>
-
-                  {isFetchingNextPage && <Spinner />}
 
                   <NavLinks />
                 </nav>
