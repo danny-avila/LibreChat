@@ -1,19 +1,21 @@
+import { useParams } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import {
   useSearchInfiniteQuery,
   useConversationsInfiniteQuery,
 } from 'librechat-data-provider/react-query';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ConversationListResponse, TConversation } from 'librechat-data-provider';
 import {
-  useAuthContext,
   useMediaQuery,
+  useAuthContext,
   useConversation,
-  useConversations,
   useLocalStorage,
+  useNavScrolling,
+  useConversations,
 } from '~/hooks';
 import { TooltipProvider, Tooltip } from '~/components/ui';
-import { Conversations } from '../Conversations';
+import { Conversations } from '~/components/Conversations';
 import { Spinner } from '~/components/svg';
 import SearchBar from './SearchBar';
 import NavToggle from './NavToggle';
@@ -23,15 +25,14 @@ import { cn } from '~/utils';
 import store from '~/store';
 
 export default function Nav({ navVisible, setNavVisible }) {
-  const [isToggleHovering, setIsToggleHovering] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
-  const [navWidth, setNavWidth] = useState('260px');
+  const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const scrollPositionRef = useRef<number | null>(null);
+
+  const [navWidth, setNavWidth] = useState('260px');
+  const [isHovering, setIsHovering] = useState(false);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
-  const endpointSelected = useRecoilValue(store.endpointSelected);
+  const [isToggleHovering, setIsToggleHovering] = useState(false);
 
   useEffect(() => {
     if (isSmallScreen) {
@@ -42,64 +43,42 @@ export default function Nav({ navVisible, setNavVisible }) {
   }, [isSmallScreen]);
 
   const [, setConversations] = useState<TConversation[]>([]);
-  // current page
-  const [pageNumber, setPageNumber] = useState(1);
-  // total pages
 
-  // search
+  const [pageNumber, setPageNumber] = useState(1);
 
   const searchQuery = useRecoilValue(store.searchQuery);
-  const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
   const isSearching = useRecoilValue(store.isSearching);
+  const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
   const { newConversation, searchPlaceholderConversation } = useConversation();
 
-  // current conversation
-  const conversation = useRecoilValue(store.conversation);
-
-  const { conversationId } = conversation || {};
+  const { refreshConversations } = useConversations();
   const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
   const refreshConversationsHint = useRecoilValue(store.refreshConversationsHint);
-  const { refreshConversations } = useConversations();
 
   const queryParameters = searchQuery
     ? { pageNumber: pageNumber.toString(), searchQuery }
     : { pageNumber: pageNumber.toString() };
-
-  // Define as opções de configuração do hook
-  const queryConfig = {
-    enabled: isAuthenticated,
-  };
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useSearchInfiniteQuery(
     { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
     { enabled: isAuthenticated },
   );
 
+  const { containerRef, moveToTop } = useNavScrolling({
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  });
+
   const conversations = data?.pages.flatMap((page) => page.conversations) || [];
 
-  const handleScroll = useCallback(() => {
-    if (containerRef.current) {
-      const { scrollTop, clientHeight, scrollHeight } = containerRef.current;
-      const nearBottomOfList = scrollTop + clientHeight >= scrollHeight * 0.8; // 80% scroll
-
-      if (nearBottomOfList && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-      }
-    }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]); // Adicione outras dependências se necessário
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (container) {
-      container.addEventListener('scroll', handleScroll);
-      return () => container.removeEventListener('scroll', handleScroll);
-    }
-  }, [handleScroll]);
   const useAppropriateInfiniteQuery = searchQuery
     ? useSearchInfiniteQuery
     : useConversationsInfiniteQuery;
 
-  const getConversationsQuery = useAppropriateInfiniteQuery(queryParameters, queryConfig);
+  const getConversationsQuery = useAppropriateInfiniteQuery(queryParameters, {
+    enabled: isAuthenticated,
+  });
 
   const onSearchSuccess = useCallback((data: ConversationListResponse, expectedPage?: number) => {
     const res = data;
@@ -119,6 +98,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       onSearchSuccess(getConversationsQuery.data.pages[0]);
     }
   }, [getConversationsQuery.data, getConversationsQuery.isInitialLoading, onSearchSuccess]);
+
   const clearSearch = () => {
     setPageNumber(1);
     refreshConversations();
@@ -126,13 +106,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       newConversation();
     }
   };
-
-  const moveToTop = useCallback(() => {
-    const container = containerRef.current;
-    if (container) {
-      scrollPositionRef.current = container.scrollTop;
-    }
-  }, [containerRef, scrollPositionRef]);
 
   useEffect(() => {
     if (data) {
@@ -163,7 +136,7 @@ export default function Nav({ navVisible, setNavVisible }) {
       getConversationsQuery.refetch();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageNumber, conversationId, refreshConversationsHint, conversation, data]);
+  }, [pageNumber, conversationId, refreshConversationsHint, data]);
 
   const toggleNavVisible = () => {
     setNavVisible((prev: boolean) => !prev);
@@ -206,7 +179,7 @@ export default function Nav({ navVisible, setNavVisible }) {
               >
                 <nav className="flex h-full w-full flex-col px-3 pb-3.5">
                   <div className="mb-1 flex h-11 flex-row">
-                    <NewChat endpoint={endpointSelected} toggleNav={itemToggleNav} />
+                    <NewChat toggleNav={itemToggleNav} />
                   </div>
                   {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                   <div
