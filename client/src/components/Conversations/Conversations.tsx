@@ -1,59 +1,9 @@
-import Convo from './Convo';
-import Conversation from './Conversation';
+import { parseISO, isToday } from 'date-fns';
 import { useLocation } from 'react-router-dom';
 import { TConversation } from 'librechat-data-provider';
-import { parseISO, isToday, isWithinInterval, subDays, getYear } from 'date-fns';
-
-const getGroupName = (date) => {
-  const now = new Date();
-  if (isToday(date)) {
-    return 'Today';
-  }
-  if (isWithinInterval(date, { start: subDays(now, 7), end: now })) {
-    return 'Last 7 days';
-  }
-  if (isWithinInterval(date, { start: subDays(now, 30), end: now })) {
-    return 'Last 30 days';
-  }
-  return ' ' + getYear(date).toString(); // Returns the year for anything older than 30 days
-};
-
-// Function to group conversations
-const groupConversationsByDate = (conversations) => {
-  if (!Array.isArray(conversations)) {
-    // Handle the case where conversations is not an array
-    return {};
-  }
-  const groups = conversations.reduce((acc, conversation) => {
-    const date = parseISO(conversation.updatedAt);
-    const groupName = getGroupName(date);
-    if (!acc[groupName]) {
-      acc[groupName] = [];
-    }
-    acc[groupName].push(conversation);
-    return acc;
-  }, {});
-
-  // Ensures groups are ordered correctly
-
-  const sortedGroups = {};
-  const dateGroups = ['Today', 'Last 7 days', 'Last 30 days'];
-  dateGroups.forEach((group) => {
-    if (groups[group]) {
-      sortedGroups[group] = groups[group];
-    }
-  });
-
-  Object.keys(groups)
-    .filter((group) => !dateGroups.includes(group))
-    .sort()
-    .reverse()
-    .forEach((year) => {
-      sortedGroups[year] = groups[year];
-    });
-
-  return sortedGroups;
-};
+import { groupConversationsByDate } from '~/utils';
+import Conversation from './Conversation';
+import Convo from './Convo';
 
 export default function Conversations({
   conversations,
@@ -78,11 +28,11 @@ export default function Conversations({
         <div key={groupName}>
           <div
             style={{
-              color: '#aaa', // Cor do texto
-              fontSize: '0.7rem', // Tamanho da fonte
-              marginTop: '20px', // Espaço acima do cabeçalho
-              marginBottom: '5px', // Espaço abaixo do cabeçalho
-              paddingLeft: '10px', // Espaçamento à esquerda para alinhamento com as conversas
+              color: '#aaa',
+              fontSize: '0.7rem',
+              marginTop: '20px',
+              marginBottom: '5px',
+              paddingLeft: '10px',
             }}
           >
             {groupName}
