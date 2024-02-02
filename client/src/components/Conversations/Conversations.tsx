@@ -1,4 +1,3 @@
-import { parseISO, isToday } from 'date-fns';
 import { useLocation } from 'react-router-dom';
 import { TConversation } from 'librechat-data-provider';
 import { groupConversationsByDate } from '~/utils';
@@ -18,9 +17,6 @@ export default function Conversations({
   const { pathname } = location;
   const ConvoItem = pathname.includes('chat') ? Conversation : Convo;
   const groupedConversations = groupConversationsByDate(conversations);
-  const firstTodayConvoId = conversations.find((convo) =>
-    isToday(parseISO(convo.updatedAt)),
-  )?.conversationId;
 
   return (
     <div className="flex-1 flex-col overflow-y-auto">
@@ -40,7 +36,6 @@ export default function Conversations({
           {convos.map((convo, i) => (
             <ConvoItem
               key={convo.conversationId}
-              isFirstTodayConvo={convo.conversationId === firstTodayConvoId}
               conversation={convo}
               retainView={moveToTop}
               toggleNav={toggleNav}

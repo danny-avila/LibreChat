@@ -18,13 +18,7 @@ import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
-export default function Conversation({
-  conversation,
-  retainView,
-  toggleNav,
-  i,
-  isFirstTodayConvo,
-}) {
+export default function Conversation({ conversation, retainView, toggleNav, i }) {
   const { conversationId: currentConvoId } = useParams();
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
@@ -119,7 +113,8 @@ export default function Conversation({
   };
 
   const activeConvo =
-    currentConvoId === conversationId || (isFirstTodayConvo && currentConvoId === 'new');
+    currentConvoId === conversationId ||
+    (i === 0 && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
 
   if (!activeConvo) {
     aProps.className =
