@@ -385,3 +385,18 @@
  * @property {string} [azureOpenAIApiVersion] - The Azure OpenAI API version.
  * @memberof typedefs
  */
+
+/**
+ * @typedef {Object} TokenConfig
+ * A configuration object mapping model keys to their respective prompt, completion rates, and context limit.
+ * @property {number} prompt - The prompt rate
+ * @property {number} completion - The completion rate
+ * @property {number} context - The maximum context length supported by the model.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Record<string, TokenConfig>} EndpointTokenConfig
+ * An endpoint's config object mapping model keys to their respective prompt, completion rates, and context limit.
+ * @memberof typedefs
+ */

@@ -1,10 +1,11 @@
 const Keyv = require('keyv');
 const axios = require('axios');
 const HttpsProxyAgent = require('https-proxy-agent');
-const { EModelEndpoint, defaultModels } = require('librechat-data-provider');
+const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
+const { extractBaseURL, inputSchema, processModelData } = require('~/utils');
+const getLogStores = require('~/cache/getLogStores');
 const { isEnabled } = require('~/server/utils');
 const keyvRedis = require('~/cache/keyvRedis');
-const { extractBaseURL } = require('~/utils');
 const { logger } = require('~/config');
 
 // const { getAzureCredentials, genAzureChatCompletion } = require('~/utils/');
@@ -32,10 +33,17 @@ const {
  * @param {string} params.baseURL - The base path URL for the API.
  * @param {string} [params.name='OpenAI'] - The name of the API; defaults to 'OpenAI'.
  * @param {boolean} [params.azure=false] - Whether to fetch models from Azure.
+ * @param {boolean} [params.createTokenConfig=true] - Whether to create a token configuration from the API response.
  * @returns {Promise<string[]>} A promise that resolves to an array of model identifiers.
  * @async
  */
-const fetchModels = async ({ apiKey, baseURL, name = 'OpenAI', azure = false }) => {
+const fetchModels = async ({
+  apiKey,
+  baseURL,
+  name = 'OpenAI',
+  azure = false,
+  createTokenConfig = true,
+}) => {
   let models = [];
 
   if (!baseURL && !azure) {
@@ -58,7 +66,16 @@ const fetchModels = async ({ apiKey, baseURL, name = 'OpenAI', azure = false }) 
     }
 
     const res = await axios.get(`${baseURL}${azure ? '' : '/models'}`, payload);
-    models = res.data.data.map((item) => item.id);
+    /** @type {z.infer<typeof inputSchema>} */
+    const input = res.data;
+
+    const validationResult = inputSchema.safeParse(input);
+    if (validationResult.success && createTokenConfig) {
+      const endpointTokenConfig = processModelData(input);
+      const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
+      await cache.set(name, endpointTokenConfig);
+    }
+    models = input.data.map((item) => item.id);
   } catch (err) {
     logger.error(`Failed to fetch models from ${azure ? 'Azure ' : ''}${name} API`, err);
   }

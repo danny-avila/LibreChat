@@ -23,6 +23,10 @@ const config = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: CacheKeys.CONFIG_STORE });
 
+const tokenConfig = isEnabled(USE_REDIS) // ttl: 30 minutes
+  ? new Keyv({ store: keyvRedis, ttl: 1800000 })
+  : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: 1800000 });
+
 const namespaces = {
   [CacheKeys.CONFIG_STORE]: config,
   pending_req,
@@ -34,6 +38,7 @@ const namespaces = {
   token_balance: createViolationInstance('token_balance'),
   registrations: createViolationInstance('registrations'),
   logins: createViolationInstance('logins'),
+  [CacheKeys.TOKEN_CONFIG]: tokenConfig,
 };
 
 /**

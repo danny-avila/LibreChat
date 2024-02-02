@@ -131,8 +131,13 @@ class OpenAIClient extends BaseClient {
     const { isChatGptModel } = this;
     this.isUnofficialChatGptModel =
       model.startsWith('text-chat') || model.startsWith('text-davinci-002-render');
+
     this.maxContextTokens =
-      getModelMaxTokens(model, this.options.endpointType ?? this.options.endpoint) ?? 4095; // 1 less than maximum
+      getModelMaxTokens(
+        model,
+        this.options.endpointType ?? this.options.endpoint,
+        this.options.endpointTokenConfig,
+      ) ?? 4095; // 1 less than maximum
 
     if (this.shouldSummarize) {
       this.maxContextTokens = Math.floor(this.maxContextTokens / 2);
@@ -780,7 +785,12 @@ ${convo}
     // TODO: remove the gpt fallback and make it specific to endpoint
     const { OPENAI_SUMMARY_MODEL = 'gpt-3.5-turbo' } = process.env ?? {};
     const model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
-    const maxContextTokens = getModelMaxTokens(model) ?? 4095;
+    const maxContextTokens =
+      getModelMaxTokens(
+        model,
+        this.options.endpointType ?? this.options.endpoint,
+        this.options.endpointTokenConfig,
+      ) ?? 4095; // 1 less than maximum
 
     // 3 tokens for the assistant label, and 98 for the summarizer prompt (101)
     let promptBuffer = 101;
@@ -886,6 +896,7 @@ ${convo}
         model: this.modelOptions.model,
         context: 'message',
         conversationId: this.conversationId,
+        endpointTokenConfig: this.options.endpointTokenConfig,
       },
       { promptTokens, completionTokens },
     );
