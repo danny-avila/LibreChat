@@ -50,7 +50,7 @@ export default {
   com_ui_edit: 'Editar',
   com_ui_success: 'Sucesso',
   com_ui_all: 'todos',
-  com_ui_clear: 'Limpar',
+  com_ui_clear: 'Excluir tudo',
   com_ui_revoke: 'Revogar',
   com_ui_revoke_info: 'Revogar todas as credenciais fornecidas pelo usuário',
   com_ui_confirm_action: 'Confirmar Ação',
@@ -166,6 +166,10 @@ export default {
     'Número entre -2.0 e 2.0. Valores positivos penalizam novos tokens com base em sua frequência existente no texto até agora, diminuindo a probabilidade do modelo de repetir a mesma linha literalmente.',
   com_endpoint_openai_pres:
     'Número entre -2.0 e 2.0. Valores positivos penalizam novos tokens com base em se eles aparecem no texto até agora, aumentando a probabilidade do modelo de falar sobre novos tópicos.',
+  com_endpoint_openai_resend:
+    'Reenviar todas as imagens anteriormente anexadas. Observação: isso pode aumentar significativamente o custo em tokens e você pode enfrentar erros com muitos anexos de imagem.',
+  com_endpoint_openai_detail:
+    'A resolução para solicitações do Vision. "Low" é mais barata e rápida, "High" é mais detalhada e cara, e "Auto" escolherá automaticamente entre as duas com base na resolução da imagem.',
   com_endpoint_openai_custom_name_placeholder: 'Defina um nome personalizado para ChatGPT',
   com_endpoint_openai_prompt_prefix_placeholder:
     'Defina instruções personalizadas para incluir na Mensagem do Sistema. Padrão: nenhum',
@@ -181,6 +185,8 @@ export default {
   com_endpoint_frequency_penalty: 'Penalidade de Frequência',
   com_endpoint_presence_penalty: 'Penalidade de Presença',
   com_endpoint_plug_use_functions: 'Use Funções',
+  com_endpoint_plug_resend_images: 'Reenviar Imagens',
+  com_endpoint_plug_image_detail: 'Detalhes da Imagem',
   com_endpoint_plug_skip_completion: 'Pular Conclusão',
   com_endpoint_disabled_with_tools: 'desativado com ferramentas',
   com_endpoint_disabled_with_tools_placeholder: 'Desativado com Ferramentas Selecionadas',
@@ -298,16 +304,15 @@ export default {
   com_nav_theme_dark: 'Escuro',
   com_nav_theme_light: 'Claro',
   com_nav_user_name_display: 'Mostrar nome de usuário nas mensagens',
-  com_nav_clear_all_chats: 'Limpar todos os chats',
-  com_nav_confirm_clear: 'Confirmar Limpeza',
+  com_nav_clear_all_chats: 'Excluir todas as conversas?',
+  com_nav_confirm_clear: 'Confirmar Exclusão',
   com_nav_close_sidebar: 'Fechar barra lateral',
   com_nav_open_sidebar: 'Abrir barra lateral',
   com_nav_send_message: 'Enviar mensagem',
   com_nav_log_out: 'Sair',
   com_nav_user: 'USUÁRIO',
   com_nav_clear_conversation: 'Limpar conversas',
-  com_nav_clear_conversation_confirm_message:
-    'Tem certeza de que deseja limpar todas as conversas? Isso é irreversível.',
+  com_nav_clear_conversation_confirm_message: 'Limpar seu histórico de conversas- tem certeza?',
   com_nav_help_faq: 'Ajuda & FAQ',
   com_nav_settings: 'Configurações',
   com_nav_search_placeholder: 'Pesquisar mensagens',
