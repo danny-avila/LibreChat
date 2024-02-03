@@ -51,6 +51,15 @@ You can set `OPENAI_API_KEY=user_provided` if you would like the user to add the
 ### Plugins also work with this reverse proxy (OpenAI models). [More info on plugins here](https://docs.librechat.ai/features/plugins/introduction.html)
 ![Screenshot 2023-07-23 202426](https://github.com/danny-avila/LibreChat/assets/110412045/45d0f79f-0963-49c0-9d1c-c292d1c25588)
 
+### Niansuh-HFLLMAPI
+
+Another free API that you can consider using is the Niansuh-HfllmAPI. It provides access to models such as "mixtral-8x7b", "mistral-7b", and "nous-mixtral-8x7b".
+
+```bash
+Base URL: https://niansuh-hfllmapi.hf.space/api/v1
+API Key: abcdefghijklmnopqrstuvwxyx
+```
+
 ---
 
 >⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
