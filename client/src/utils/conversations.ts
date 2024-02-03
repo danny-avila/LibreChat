@@ -94,6 +94,30 @@ export const updateConversation: ConversationUpdater = (data, updatedConversatio
   return newData;
 };
 
+export const updateConvoFields: ConversationUpdater = (
+  data: ConversationData,
+  updatedConversation: Partial<TConversation> & Pick<TConversation, 'conversationId'>,
+): ConversationData => {
+  const newData = JSON.parse(JSON.stringify(data));
+  const { pageIndex, convIndex } = findPageForConversation(
+    newData,
+    updatedConversation as { conversationId: string },
+  );
+
+  if (pageIndex !== -1 && convIndex !== -1) {
+    const deleted = newData.pages[pageIndex].conversations.splice(convIndex, 1);
+    const oldConversation = deleted[0] as TConversation;
+
+    newData.pages[0].conversations.unshift({
+      ...oldConversation,
+      ...updatedConversation,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  return newData;
+};
+
 export const deleteConversation = (
   data: ConversationData,
   conversationId: string,

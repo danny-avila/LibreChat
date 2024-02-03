@@ -23,6 +23,7 @@ import type {
   ConversationData,
 } from 'librechat-data-provider';
 import { addConversation, updateConversation } from '~/utils';
+import { useGenTitleMutation } from '~/data-provider';
 import { useAuthContext } from './AuthContext';
 import useChatHelpers from './useChatHelpers';
 import useSetStorage from './useSetStorage';
@@ -40,6 +41,8 @@ type TResData = {
 export default function useSSE(submission: TSubmission | null, index = 0) {
   const setStorage = useSetStorage();
   const queryClient = useQueryClient();
+  const genTitle = useGenTitleMutation();
+
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
@@ -108,9 +111,9 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     // refresh title
     if (requestMessage?.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      // setTimeout(() => {
-      //   invalidateConvo();
-      // }, 2500);
+      setTimeout(() => {
+        genTitle.mutate({ conversationId: convoUpdate.conversationId as string });
+      }, 2500);
     }
 
     setConversation((prevState) => {
@@ -191,9 +194,9 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     // refresh title
     if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      // setTimeout(() => {
-      //   invalidateConvo();
-      // }, 2500);
+      setTimeout(() => {
+        genTitle.mutate({ conversationId: conversation.conversationId as string });
+      }, 2500);
     }
 
     setConversation((prevState) => {

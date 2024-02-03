@@ -15,13 +15,45 @@ import type {
   TPreset,
   UploadAvatarOptions,
   AvatarUploadResponse,
+  TConversation,
 } from 'librechat-data-provider';
 import { dataService, MutationKeys, QueryKeys } from 'librechat-data-provider';
-import { updateConversation, deleteConversation } from '~/utils';
+import { updateConversation, deleteConversation, updateConvoFields } from '~/utils';
 import { useSetRecoilState } from 'recoil';
 import store from '~/store';
 
 /** Conversations */
+export const useGenTitleMutation = (): UseMutationResult<
+  t.TGenTitleResponse,
+  unknown,
+  t.TGenTitleRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TGenTitleRequest) => dataService.genTitle(payload), {
+    onSuccess: (response, vars) => {
+      queryClient.setQueryData(
+        [QueryKeys.conversation, vars.conversationId],
+        (convo: TConversation | undefined) => {
+          if (!convo) {
+            return convo;
+          }
+          return { ...convo, title: response.title };
+        },
+      );
+      queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+        if (!convoData) {
+          return convoData;
+        }
+        return updateConvoFields(convoData, {
+          conversationId: vars.conversationId,
+          title: response.title,
+        } as TConversation);
+      });
+    },
+  });
+};
+
 export const useUpdateConversationMutation = (
   id: string,
 ): UseMutationResult<

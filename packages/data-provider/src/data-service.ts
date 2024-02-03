@@ -53,6 +53,10 @@ export function updateConversation(
   return request.post(endpoints.updateConversation(), { arg: payload });
 }
 
+export function genTitle(payload: t.TGenTitleRequest): Promise<t.TGenTitleResponse> {
+  return request.post(endpoints.genTitle(), payload);
+}
+
 export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown> {
   const { conversationId, messageId, text } = payload;
   if (!conversationId) {

@@ -97,6 +97,14 @@ export type TUpdateUserKeyRequest = {
   expiresAt: string;
 };
 
+export type TGenTitleRequest = {
+  conversationId: string;
+};
+
+export type TGenTitleResponse = {
+  title: string;
+};
+
 export type TUpdateConversationRequest = {
   conversationId: string;
   title: string;
