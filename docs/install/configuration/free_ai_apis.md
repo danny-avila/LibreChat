@@ -59,6 +59,15 @@ Another free API that you can consider using is the Niansuh-HfllmAPI. It provide
 Base URL: https://niansuh-hfllmapi.hf.space/api/v1
 API Key: abcdefghijklmnopqrstuvwxyx
 ```
+### OpenAI Official Session API Keys Use Unlimited
+
+To obtain OpenAI Session API Keys, you can refer to the following instructional video:
+
+<div align="center">
+
+📹 [Free API Keys Video!](https://cdn-uploads.huggingface.co/production/uploads/64cba00d710645aa7b04f281/pNWucbT-AzBqD9JIl6t-N.webm)
+
+</div>
 
 ---
 
