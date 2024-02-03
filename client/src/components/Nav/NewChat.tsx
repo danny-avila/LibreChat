@@ -11,7 +11,13 @@ import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import { NewChatIcon } from '~/components/svg';
 import { getEndpointField } from '~/utils';
 
-export default function NewChat({ toggleNav }: { toggleNav: () => void }) {
+export default function NewChat({
+  toggleNav,
+  subHeaders,
+}: {
+  toggleNav: () => void;
+  subHeaders?: React.ReactNode;
+}) {
   const { newConversation: newConvo } = useNewConvo();
   const { newConversation } = useConversation();
   const navigate = useOriginNavigate();
@@ -69,6 +75,7 @@ export default function NewChat({ toggleNav }: { toggleNav: () => void }) {
           </div>
         </a>
       </div>
+      {subHeaders ? subHeaders : null}
     </div>
   );
 }

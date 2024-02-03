@@ -43,23 +43,20 @@ export default function Nav({ navVisible, setNavVisible }) {
   const [showLoading, setShowLoading] = useState(false);
 
   const searchQuery = useRecoilValue(store.searchQuery);
-  const isSearching = useRecoilValue(store.isSearching);
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
   const { newConversation, searchPlaceholderConversation } = useConversation();
 
   const { refreshConversations } = useConversations();
   const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
-  const refreshConversationsHint = useRecoilValue(store.refreshConversationsHint);
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, ...convosQuery } =
-    useConversationsInfiniteQuery(
-      { pageNumber: pageNumber.toString() },
-      { enabled: isAuthenticated },
-    );
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
+    { pageNumber: pageNumber.toString() },
+    { enabled: isAuthenticated },
+  );
 
   const searchQueryRes = useSearchInfiniteQuery(
     { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
-    { enabled: isAuthenticated },
+    { enabled: isAuthenticated && !!searchQuery.length },
   );
 
   const { containerRef, moveToTop } = useNavScrolling({
@@ -76,11 +73,8 @@ export default function Nav({ navVisible, setNavVisible }) {
     [data, searchQuery, searchQueryRes?.data],
   );
 
-  const onSearchSuccess = useCallback((data: ConversationListResponse, expectedPage?: number) => {
+  const onSearchSuccess = useCallback(({ data }: { data: ConversationListResponse }) => {
     const res = data;
-    if (expectedPage) {
-      setPageNumber(expectedPage);
-    }
     searchPlaceholderConversation();
     setSearchResultMessages(res.messages);
     /* disabled due recoil methods not recognized as state setters */
@@ -90,7 +84,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   useEffect(() => {
     //we use isInitialLoading here instead of isLoading because query is disabled by default
     if (searchQueryRes.data) {
-      onSearchSuccess(searchQueryRes.data.pages[0]);
+      onSearchSuccess({ data: searchQueryRes.data.pages[0] });
     }
   }, [searchQueryRes.data, searchQueryRes.isInitialLoading, onSearchSuccess]);
 
@@ -101,13 +95,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       newConversation();
     }
   };
-
-  // TODO: test effects of this useEffect
-  // useEffect(() => {
-  //   if (!isSearching) {
-  //     convosQuery.refetch();
-  //   }
-  // }, [pageNumber, conversationId, refreshConversationsHint, data, isSearching, convosQuery]);
 
   const toggleNavVisible = () => {
     setNavVisible((prev: boolean) => !prev);
@@ -121,11 +108,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       toggleNavVisible();
     }
   };
-
-  const containerClasses =
-    (convosQuery.isLoading || searchQueryRes.isLoading) && pageNumber === 1
-      ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
-      : 'flex flex-col gap-2 text-gray-100 text-sm';
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -144,38 +126,44 @@ export default function Nav({ navVisible, setNavVisible }) {
             <div className="flex h-full min-h-0 flex-col">
               <div
                 className={cn(
-                  'relative flex h-full w-full flex-1 items-start border-white/20 transition-opacity',
+                  'flex h-full min-h-0 flex-col transition-opacity',
                   isToggleHovering && !isSmallScreen ? 'opacity-50' : 'opacity-100',
                 )}
               >
-                <nav className="flex h-full w-full flex-col px-3 pb-3.5">
-                  <NewChat toggleNav={itemToggleNav} />
-                  {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
-                  <div
-                    className={`-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500 ${
-                      isHovering ? '' : 'scrollbar-transparent'
-                    } border-b border-white/20`}
-                    onMouseEnter={() => setIsHovering(true)}
-                    onMouseLeave={() => setIsHovering(false)}
-                    ref={containerRef}
-                  >
-                    <div className={containerClasses}>
+                <div
+                  className={cn(
+                    'scrollbar-trigger relative h-full w-full flex-1 items-start border-white/20',
+                  )}
+                >
+                  <nav className="flex h-full w-full flex-col px-3 pb-3.5">
+                    <div
+                      className={cn(
+                        '-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
+                        isHovering ? '' : 'scrollbar-transparent',
+                      )}
+                      onMouseEnter={() => setIsHovering(true)}
+                      onMouseLeave={() => setIsHovering(false)}
+                      ref={containerRef}
+                    >
+                      <NewChat
+                        toggleNav={itemToggleNav}
+                        subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
+                      />
                       <Conversations
                         conversations={conversations}
                         moveToTop={moveToTop}
                         toggleNav={itemToggleNav}
                       />
+                      <Spinner
+                        className={cn(
+                          'm-1 mx-auto mb-4 h-4 w-4',
+                          isFetchingNextPage || showLoading ? 'opacity-1' : 'opacity-0',
+                        )}
+                      />
                     </div>
-                    <Spinner
-                      className={cn(
-                        'm-1 mx-auto mb-4 h-4 w-4',
-                        isFetchingNextPage || showLoading ? 'opacity-1' : 'opacity-0',
-                      )}
-                    />
-                  </div>
-
-                  <NavLinks />
-                </nav>
+                    <NavLinks />
+                  </nav>
+                </div>
               </div>
             </div>
           </div>

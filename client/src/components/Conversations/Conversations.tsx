@@ -27,37 +27,41 @@ export default function Conversations({
   )?.conversationId;
 
   return (
-    <div className="flex-1 flex-col overflow-y-auto">
-      {groupedConversations.map(([groupName, convos]) => (
-        <div key={groupName}>
-          <div
-            style={{
-              color: '#aaa',
-              fontSize: '0.7rem',
-              marginTop: '20px',
-              marginBottom: '5px',
-              paddingLeft: '10px',
-            }}
-          >
-            {groupName}
-          </div>
-          {convos.map((convo, i) => (
-            <ConvoItem
-              key={`${groupName}-${convo.conversationId}-${i}`}
-              isLatestConvo={convo.conversationId === firstTodayConvoId}
-              conversation={convo}
-              retainView={moveToTop}
-              toggleNav={toggleNav}
-            />
+    <div className="text-token-text-primary flex flex-col gap-2 pb-2 text-sm">
+      <div>
+        <span>
+          {groupedConversations.map(([groupName, convos]) => (
+            <div key={groupName}>
+              <div
+                style={{
+                  color: '#aaa',
+                  fontSize: '0.7rem',
+                  marginTop: '20px',
+                  marginBottom: '5px',
+                  paddingLeft: '10px',
+                }}
+              >
+                {groupName}
+              </div>
+              {convos.map((convo, i) => (
+                <ConvoItem
+                  key={`${groupName}-${convo.conversationId}-${i}`}
+                  isLatestConvo={convo.conversationId === firstTodayConvoId}
+                  conversation={convo}
+                  retainView={moveToTop}
+                  toggleNav={toggleNav}
+                />
+              ))}
+              <div
+                style={{
+                  marginTop: '5px',
+                  marginBottom: '5px',
+                }}
+              />
+            </div>
           ))}
-          <div
-            style={{
-              marginTop: '5px',
-              marginBottom: '5px',
-            }}
-          ></div>
-        </div>
-      ))}
+        </span>
+      </div>
     </div>
   );
 }
