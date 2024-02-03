@@ -149,9 +149,7 @@ export default function Nav({ navVisible, setNavVisible }) {
                 )}
               >
                 <nav className="flex h-full w-full flex-col px-3 pb-3.5">
-                  <div className="mb-1 flex h-11 flex-row">
-                    <NewChat toggleNav={itemToggleNav} />
-                  </div>
+                  <NewChat toggleNav={itemToggleNav} />
                   {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                   <div
                     className={`-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500 ${
@@ -161,8 +159,6 @@ export default function Nav({ navVisible, setNavVisible }) {
                     onMouseLeave={() => setIsHovering(false)}
                     ref={containerRef}
                   >
-                    <div className="my-1 ml-1 h-px w-7 bg-white/20"></div>
-
                     <div className={containerClasses}>
                       <Conversations
                         conversations={conversations}
