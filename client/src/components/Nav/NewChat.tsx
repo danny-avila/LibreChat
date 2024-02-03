@@ -42,7 +42,7 @@ export default function NewChat({ toggleNav }: { toggleNav: () => void }) {
           href="/"
           data-testid="nav-new-chat-button"
           onClick={clickHandler}
-          className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium"
+          className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium hover:bg-gray-900"
         >
           <div className="h-7 w-7 flex-shrink-0">
             <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
