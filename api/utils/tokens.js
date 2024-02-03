@@ -81,7 +81,8 @@ const anthropicModels = {
 
 // Order is important here: by model series and context size (gpt-4 then gpt-3, ascending)
 const maxTokensMap = {
-  [EModelEndpoint.openAI]: openAIModels,
+  [EModelEndpoint.azureOpenAI]: openAIModels,
+  [EModelEndpoint.openAI]: { ...openAIModels, ...googleModels, ...anthropicModels },
   [EModelEndpoint.custom]: { ...openAIModels, ...googleModels, ...anthropicModels },
   [EModelEndpoint.google]: googleModels,
   [EModelEndpoint.anthropic]: anthropicModels,

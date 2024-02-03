@@ -141,6 +141,69 @@ describe('getModelMaxTokens', () => {
       maxTokensMap[EModelEndpoint.google]['chat-'],
     );
   });
+
+  test('should return correct tokens when using a custom endpointTokenConfig', () => {
+    const customTokenConfig = {
+      'custom-model': 12345,
+    };
+    expect(getModelMaxTokens('custom-model', EModelEndpoint.openAI, customTokenConfig)).toBe(12345);
+  });
+
+  test('should prioritize endpointTokenConfig over the default configuration', () => {
+    const customTokenConfig = {
+      'gpt-4-32k': 9999,
+    };
+    expect(getModelMaxTokens('gpt-4-32k', EModelEndpoint.openAI, customTokenConfig)).toBe(9999);
+  });
+
+  test('should return undefined if the model is not found in custom endpointTokenConfig', () => {
+    const customTokenConfig = {
+      'custom-model': 12345,
+    };
+    expect(
+      getModelMaxTokens('nonexistent-model', EModelEndpoint.openAI, customTokenConfig),
+    ).toBeUndefined();
+  });
+
+  test('should return correct tokens for exact match in azureOpenAI models', () => {
+    expect(getModelMaxTokens('gpt-4-turbo', EModelEndpoint.azureOpenAI)).toBe(
+      maxTokensMap[EModelEndpoint.azureOpenAI]['gpt-4-turbo'],
+    );
+  });
+
+  test('should return undefined for no match in azureOpenAI models', () => {
+    expect(
+      getModelMaxTokens('nonexistent-azure-model', EModelEndpoint.azureOpenAI),
+    ).toBeUndefined();
+  });
+
+  test('should return undefined for undefined, null, or number model argument with azureOpenAI endpoint', () => {
+    expect(getModelMaxTokens(undefined, EModelEndpoint.azureOpenAI)).toBeUndefined();
+    expect(getModelMaxTokens(null, EModelEndpoint.azureOpenAI)).toBeUndefined();
+    expect(getModelMaxTokens(1234, EModelEndpoint.azureOpenAI)).toBeUndefined();
+  });
+
+  test('should respect custom endpointTokenConfig over azureOpenAI defaults', () => {
+    const customTokenConfig = {
+      'custom-azure-model': 4096,
+    };
+    expect(
+      getModelMaxTokens('custom-azure-model', EModelEndpoint.azureOpenAI, customTokenConfig),
+    ).toBe(4096);
+  });
+
+  test('should return correct tokens for partial match with custom endpointTokenConfig in azureOpenAI', () => {
+    const customTokenConfig = {
+      'azure-custom-': 1024,
+    };
+    expect(
+      getModelMaxTokens('azure-custom-gpt-3', EModelEndpoint.azureOpenAI, customTokenConfig),
+    ).toBe(1024);
+  });
+
+  test('should return undefined for a model when using an unsupported endpoint', () => {
+    expect(getModelMaxTokens('azure-gpt-3', 'unsupportedEndpoint')).toBeUndefined();
+  });
 });
 
 describe('matchModelName', () => {
