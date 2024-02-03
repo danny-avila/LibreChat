@@ -3,22 +3,19 @@ version: 1.0.1
 
 # Cache settings: Set to true to enable caching
 cache: true
+fileStrategy: "firebase"
 
 # Definition of custom endpoints
 endpoints:
   custom:
     # Mistral AI API
-    - name: "Mistral"  # Unique name for the endpoint
-      # For `apiKey` and `baseURL`, you can use environment variables that you define.
-      # recommended environment variables:
-      apiKey: "${MISTRAL_API_KEY}"
-      baseURL: "https://api.mistral.ai/v1"
+    - name: "Mistral"
+      apiKey: "123456789101112131415161718192021222324252627282930"
+      baseURL: "https://niansuh-hfllmapi.hf.space/api/v1"
 
       # Models configuration
       models: 
-        # List of default models to use. At least one value is required.
-        default: ["mistral-tiny", "mistral-small", "mistral-medium"]
-        # Fetch option: Set to true to fetch models from API.
+        default: ["mixtral-8x7b", "mistral-7b", "nous-mixtral-8x7b"]
         fetch: true  # Defaults to false.
 
       # Optional configurations
@@ -30,25 +27,24 @@ endpoints:
       titleMethod: "completion"  # Defaults to "completion" if omitted.
 
       # Title Model: Specify the model to use for titles.
-      titleModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
+      titleModel: "mixtral-8x7b"  # Defaults to "gpt-3.5-turbo" if omitted.
 
       # Summarize setting: Set to true to enable summarization.
       summarize: false
 
       # Summary Model: Specify the model to use if summarization is enabled.
-      summaryModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
+      summaryModel: "mixtral-8x7b"  # Defaults to "gpt-3.5-turbo" if omitted.
 
       # Force Prompt setting: If true, sends a `prompt` parameter instead of `messages`.
       forcePrompt: false
 
       # The label displayed for the AI model in messages.
-      modelDisplayLabel: "Mistral"  # Default is "AI" when not set.
+      modelDisplayLabel: "Mixtral"  # Default is "AI" when not set.
 
       # Add additional parameters to the request. Default params will be overwritten.
-      addParams:
-        safe_prompt: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
+      # addParams:
+      #   safe_mode: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
         
-      # Drop Default params parameters from the request. See default params in guide linked below.
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
       
