@@ -116,7 +116,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
   if (!activeConvo) {
     aProps.className =
-      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg py-2 px-2  hover:bg-gray-800';
+      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg py-2 px-2 hover:bg-gray-900';
   }
 
   return (
