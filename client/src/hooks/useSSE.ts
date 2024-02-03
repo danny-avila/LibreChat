@@ -22,7 +22,7 @@ import type {
   TSubmission,
   ConversationData,
 } from 'librechat-data-provider';
-import { addConversation, updateConversation } from '~/utils';
+import { addConversation, deleteConversation, updateConversation } from '~/utils';
 import { useGenTitleMutation } from '~/data-provider';
 import { useAuthContext } from './AuthContext';
 import useChatHelpers from './useChatHelpers';
@@ -109,8 +109,18 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       setMessages(messagesUpdate);
     }
 
+    const isNewConvo = conversation.conversationId !== submission.conversation.conversationId;
+    if (isNewConvo) {
+      queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
+        if (!convoData) {
+          return convoData;
+        }
+        return deleteConversation(convoData, submission.conversation.conversationId as string);
+      });
+    }
+
     // refresh title
-    if (requestMessage?.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (isNewConvo && requestMessage?.parentMessageId == '00000000-0000-0000-0000-000000000000') {
       setTimeout(() => {
         genTitle.mutate({ conversationId: convoUpdate.conversationId as string });
       }, 2500);
@@ -192,8 +202,18 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       setMessages([...messages, requestMessage, responseMessage]);
     }
 
+    const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
+    if (isNewConvo) {
+      queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
+        if (!convoData) {
+          return convoData;
+        }
+        return deleteConversation(convoData, submissionConvo.conversationId as string);
+      });
+    }
+
     // refresh title
-    if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (isNewConvo && requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
       setTimeout(() => {
         genTitle.mutate({ conversationId: conversation.conversationId as string });
       }, 2500);

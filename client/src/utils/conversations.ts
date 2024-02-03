@@ -1,5 +1,10 @@
 import { parseISO, isToday, isWithinInterval, subDays, getYear } from 'date-fns';
-import type { TConversation, ConversationData, ConversationUpdater } from 'librechat-data-provider';
+import type {
+  TConversation,
+  ConversationData,
+  ConversationUpdater,
+  GroupedConversations,
+} from 'librechat-data-provider';
 
 const getGroupName = (date: Date) => {
   const now = new Date();
@@ -15,13 +20,9 @@ const getGroupName = (date: Date) => {
   return ' ' + getYear(date).toString();
 };
 
-export const groupConversationsByDate = (
-  conversations: TConversation[],
-): {
-  [key: string]: TConversation[];
-} => {
+export const groupConversationsByDate = (conversations: TConversation[]): GroupedConversations => {
   if (!Array.isArray(conversations)) {
-    return {};
+    return [];
   }
   const groups = conversations.reduce((acc, conversation) => {
     const date = parseISO(conversation.updatedAt);
@@ -49,15 +50,21 @@ export const groupConversationsByDate = (
       sortedGroups[year] = groups[year];
     });
 
-  return sortedGroups;
+  return Object.entries(sortedGroups);
 };
 
 export const addConversation: ConversationUpdater = (data, newConversation) => {
   const newData = JSON.parse(JSON.stringify(data)) as ConversationData;
+  const { pageIndex, convIndex } = findPageForConversation(newData, newConversation);
+
+  if (pageIndex !== -1 && convIndex !== -1) {
+    return updateConversation(data, newConversation);
+  }
   newData.pages[0].conversations.unshift({
     ...newConversation,
     updatedAt: new Date().toISOString(),
   });
+
   return newData;
 };
 

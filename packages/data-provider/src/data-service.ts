@@ -53,7 +53,7 @@ export function updateConversation(
   return request.post(endpoints.updateConversation(), { arg: payload });
 }
 
-export function genTitle(payload: t.TGenTitleRequest): Promise<t.TGenTitleResponse> {
+export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
   return request.post(endpoints.genTitle(), payload);
 }
 

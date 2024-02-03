@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { parseISO, isToday } from 'date-fns';
 import { useLocation } from 'react-router-dom';
 import { TConversation } from 'librechat-data-provider';
@@ -17,14 +18,17 @@ export default function Conversations({
   const location = useLocation();
   const { pathname } = location;
   const ConvoItem = pathname.includes('chat') ? Conversation : Convo;
-  const groupedConversations = groupConversationsByDate(conversations);
+  const groupedConversations = useMemo(
+    () => groupConversationsByDate(conversations),
+    [conversations],
+  );
   const firstTodayConvoId = conversations.find((convo) =>
     isToday(parseISO(convo.updatedAt)),
   )?.conversationId;
 
   return (
     <div className="flex-1 flex-col overflow-y-auto">
-      {Object.entries(groupedConversations).map(([groupName, convos]) => (
+      {groupedConversations.map(([groupName, convos]) => (
         <div key={groupName}>
           <div
             style={{

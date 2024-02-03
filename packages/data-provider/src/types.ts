@@ -47,6 +47,8 @@ export type TPluginAction = {
   auth?: unknown;
 };
 
+export type GroupedConversations = [key: string, TConversation[]][];
+
 export type TUpdateUserPlugins = {
   pluginKey: string;
   action: string;
@@ -95,14 +97,6 @@ export type TUpdateUserKeyRequest = {
   name: string;
   value: string;
   expiresAt: string;
-};
-
-export type TGenTitleRequest = {
-  conversationId: string;
-};
-
-export type TGenTitleResponse = {
-  title: string;
 };
 
 export type TUpdateConversationRequest = {
