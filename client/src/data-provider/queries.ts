@@ -1,16 +1,18 @@
 import { QueryKeys, dataService } from 'librechat-data-provider';
-import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   UseInfiniteQueryOptions,
   QueryObserverResult,
   UseQueryOptions,
 } from '@tanstack/react-query';
+import type t from 'librechat-data-provider';
 import type {
   TPreset,
   TFile,
   ConversationListResponse,
   ConversationListParams,
 } from 'librechat-data-provider';
+import { findPageForConversation } from '~/utils';
 
 export const useGetFiles = <TData = TFile[] | boolean>(
   config?: UseQueryOptions<TFile[], unknown, TData>,
@@ -49,6 +51,40 @@ export const useGetEndpointsConfigOverride = <TData = unknown | boolean>(
   );
 };
 
+export const useGetConvoIdQuery = (
+  id: string,
+  config?: UseQueryOptions<t.TConversation>,
+): QueryObserverResult<t.TConversation> => {
+  const queryClient = useQueryClient();
+  return useQuery<t.TConversation>(
+    [QueryKeys.conversation, id],
+    () => {
+      const defaultQuery = () => dataService.getConversationById(id);
+      const convosQuery = queryClient.getQueryData<t.ConversationData>([
+        QueryKeys.allConversations,
+      ]);
+
+      if (!convosQuery) {
+        return defaultQuery();
+      }
+
+      const { pageIndex, convIndex } = findPageForConversation(convosQuery, { conversationId: id });
+
+      if (pageIndex > -1 && convIndex > -1) {
+        return convosQuery.pages[pageIndex].conversations[convIndex];
+      }
+
+      return defaultQuery();
+    },
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
 export const useSearchInfiniteQuery = (
   params?: ConversationListParams & { searchQuery?: string },
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
@@ -76,9 +112,9 @@ export const useConversationsInfiniteQuery = (
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
   return useInfiniteQuery<ConversationListResponse, unknown>(
-    [QueryKeys.allConversations, params],
+    [QueryKeys.allConversations],
     ({ pageParam = '' }) =>
-      dataService.listConversations({ ...params, pageNumber: pageParam.toString() }),
+      dataService.listConversations({ ...params, pageNumber: pageParam?.toString() }),
     {
       getNextPageParam: (lastPage) => {
         const currentPageNumber = Number(lastPage.pageNumber);

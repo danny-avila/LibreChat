@@ -102,9 +102,7 @@ export type TUpdateConversationRequest = {
   title: string;
 };
 
-export type TUpdateConversationResponse = {
-  data: TConversation;
-};
+export type TUpdateConversationResponse = TConversation;
 
 export type TDeleteConversationRequest = {
   conversationId?: string;

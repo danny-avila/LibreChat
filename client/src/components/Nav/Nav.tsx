@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom';
-import { useCallback, useEffect, useState } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
@@ -69,8 +69,12 @@ export default function Nav({ navVisible, setNavVisible }) {
     isFetchingNextPage: searchQuery ? searchQueryRes.isFetchingNextPage : isFetchingNextPage,
   });
 
-  const conversations =
-    (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) || [];
+  const conversations = useMemo(
+    () =>
+      (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
+      [],
+    [data, searchQuery, searchQueryRes?.data],
+  );
 
   const onSearchSuccess = useCallback((data: ConversationListResponse, expectedPage?: number) => {
     const res = data;

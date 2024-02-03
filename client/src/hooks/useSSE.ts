@@ -1,9 +1,11 @@
 import { v4 } from 'uuid';
-import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import {
   /* @ts-ignore */
   SSE,
+  QueryKeys,
   EndpointURLs,
   createPayload,
   tPresetSchema,
@@ -13,7 +15,14 @@ import {
   removeNullishValues,
 } from 'librechat-data-provider';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
-import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
+import type {
+  TResPlugin,
+  TMessage,
+  TConversation,
+  TSubmission,
+  ConversationData,
+} from 'librechat-data-provider';
+import { addConversation, updateConversation } from '~/utils';
 import { useAuthContext } from './AuthContext';
 import useChatHelpers from './useChatHelpers';
 import useSetStorage from './useSetStorage';
@@ -30,18 +39,12 @@ type TResData = {
 
 export default function useSSE(submission: TSubmission | null, index = 0) {
   const setStorage = useSetStorage();
+  const queryClient = useQueryClient();
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
-  const {
-    addConvo,
-    setMessages,
-    setConversation,
-    setIsSubmitting,
-    resetLatestMessage,
-    invalidateConvos,
-    newConversation,
-  } = useChatHelpers(index, paramId);
+  const { setMessages, setConversation, setIsSubmitting, newConversation, resetLatestMessage } =
+    useChatHelpers(index, paramId);
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -105,14 +108,9 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     // refresh title
     if (requestMessage?.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      setTimeout(() => {
-        invalidateConvos();
-      }, 2000);
-
-      // in case it takes too long.
-      setTimeout(() => {
-        invalidateConvos();
-      }, 5000);
+      // setTimeout(() => {
+      //   invalidateConvo();
+      // }, 2500);
     }
 
     setConversation((prevState) => {
@@ -164,9 +162,17 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       setStorage(update);
       return update;
     });
-    if (message.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      addConvo(update);
-    }
+
+    queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
+      if (!convoData) {
+        return convoData;
+      }
+      if (message.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+        return addConversation(convoData, update);
+      } else {
+        return updateConversation(convoData, update);
+      }
+    });
     resetLatestMessage();
   };
 
@@ -185,14 +191,9 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     // refresh title
     if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      setTimeout(() => {
-        invalidateConvos();
-      }, 1500);
-
-      // in case it takes too long.
-      setTimeout(() => {
-        invalidateConvos();
-      }, 5000);
+      // setTimeout(() => {
+      //   invalidateConvo();
+      // }, 2500);
     }
 
     setConversation((prevState) => {

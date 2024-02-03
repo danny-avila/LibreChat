@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
+import type t from 'librechat-data-provider';
 import type {
   TFileUpload,
   UploadMutationOptions,
@@ -15,10 +16,65 @@ import type {
   UploadAvatarOptions,
   AvatarUploadResponse,
 } from 'librechat-data-provider';
-
-import { dataService, MutationKeys } from 'librechat-data-provider';
+import { dataService, MutationKeys, QueryKeys } from 'librechat-data-provider';
+import { updateConversation, deleteConversation } from '~/utils';
 import { useSetRecoilState } from 'recoil';
 import store from '~/store';
+
+/** Conversations */
+export const useUpdateConversationMutation = (
+  id: string,
+): UseMutationResult<
+  t.TUpdateConversationResponse,
+  unknown,
+  t.TUpdateConversationRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TUpdateConversationRequest) => dataService.updateConversation(payload),
+    {
+      onSuccess: (updatedConvo) => {
+        queryClient.setQueryData([QueryKeys.conversation, id], updatedConvo);
+        queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+          if (!convoData) {
+            return convoData;
+          }
+          return updateConversation(convoData, updatedConvo);
+        });
+      },
+    },
+  );
+};
+
+export const useDeleteConversationMutation = (
+  id?: string,
+): UseMutationResult<
+  t.TDeleteConversationResponse,
+  unknown,
+  t.TDeleteConversationRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TDeleteConversationRequest) => dataService.deleteConversation(payload),
+    {
+      onSuccess: () => {
+        if (!id) {
+          return;
+        }
+        queryClient.setQueryData([QueryKeys.conversation, id], null);
+        queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+          if (!convoData) {
+            return convoData;
+          }
+          const update = deleteConversation(convoData, id);
+          return update;
+        });
+      },
+    },
+  );
+};
 
 export const useUploadImageMutation = (
   options?: UploadMutationOptions,

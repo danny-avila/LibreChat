@@ -1,13 +1,11 @@
 import { useRecoilValue } from 'recoil';
 import { useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import {
-  useGetEndpointsQuery,
-  useUpdateConversationMutation,
-} from 'librechat-data-provider/react-query';
 import { EModelEndpoint } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useConversations, useNavigateToConvo } from '~/hooks';
+import { useUpdateConversationMutation } from '~/data-provider';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
@@ -18,7 +16,7 @@ import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
-export default function Conversation({ conversation, retainView, toggleNav, i }) {
+export default function Conversation({ conversation, retainView, toggleNav, isLatestConvo }) {
   const { conversationId: currentConvoId } = useParams();
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
@@ -114,7 +112,7 @@ export default function Conversation({ conversation, retainView, toggleNav, i })
 
   const activeConvo =
     currentConvoId === conversationId ||
-    (i === 0 && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
+    (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
 
   if (!activeConvo) {
     aProps.className =

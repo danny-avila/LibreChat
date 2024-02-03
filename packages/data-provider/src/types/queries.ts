@@ -1,23 +1,11 @@
-// Define a type for individual conversation details
+import type { InfiniteData } from '@tanstack/react-query';
 import type { TMessage, TConversation } from '../schemas';
 export type Conversation = {
   id: string;
   createdAt: number;
-  participants: string[]; // Array of participant identifiers
+  participants: string[];
   lastMessage: string;
   conversations: TConversation[];
-
-  // Additional fields as required by your application...
-};
-
-// Parameters for creating or updating a conversation
-export type ConversationCreateParams = {
-  participants: string[];
-  // Other fields as needed...
-};
-
-export type ConversationUpdateParams = {
-  // Fields that can be updated...
 };
 
 // Parameters for listing conversations (e.g., for pagination)
@@ -39,4 +27,8 @@ export type ConversationListResponse = {
   messages: TMessage[];
 };
 
-// Additional types as needed...
+export type ConversationData = InfiniteData<ConversationListResponse>;
+export type ConversationUpdater = (
+  data: ConversationData,
+  conversation: TConversation,
+) => ConversationData;
