@@ -42,7 +42,7 @@ services:
 
 3. **Security Notice:**
 - a. Before using this configuration, replace `admin` and `password` with a unique username and password for accessing Mongo Express. These credentials should be strong and not easily guessable to prevent unauthorized access.
-- b. You can also add native authentication to your database. See the [`docker-compose.override` guide](../install/configuration/docker_override.md) for instructions on how to do so
+- b. You can also add native authentication to your database. See the [`docker-compose.override` guide](../install/configuration/docker_override.md#mongodb-authentication) for instructions on how to do so
     - After following the guide to authenticate MongoDB, you will need these variables under the environment section for mongo-express:
 
 ```yaml
