@@ -49,7 +49,7 @@ async function loadConfigModels() {
 
     if (models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) {
       fetchPromisesMap[BASE_URL] =
-        fetchPromisesMap[BASE_URL] || fetchModels({ baseURL: BASE_URL, apiKey: API_KEY });
+        fetchPromisesMap[BASE_URL] || fetchModels({ baseURL: BASE_URL, apiKey: API_KEY, name });
       baseUrlToNameMap[BASE_URL] = baseUrlToNameMap[BASE_URL] || [];
       baseUrlToNameMap[BASE_URL].push(name);
       continue;

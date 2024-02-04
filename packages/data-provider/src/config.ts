@@ -91,8 +91,11 @@ export const defaultModels = {
     'claude-instant-1-100k',
   ],
   [EModelEndpoint.openAI]: [
+    'gpt-3.5-turbo-0125',
     'gpt-3.5-turbo-16k-0613',
     'gpt-3.5-turbo-16k',
+    'gpt-4-turbo-preview',
+    'gpt-4-0125-preview',
     'gpt-4-1106-preview',
     'gpt-3.5-turbo',
     'gpt-3.5-turbo-1106',
@@ -159,6 +162,10 @@ export enum CacheKeys {
    */
   PLUGINS = 'plugins',
   /**
+   * Key for the title generation cache.
+   */
+  GEN_TITLE = 'genTitle',
+  /**
    * Key for the model config cache.
    */
   MODELS_CONFIG = 'modelsConfig',
@@ -166,6 +173,10 @@ export enum CacheKeys {
    * Key for the default endpoint config cache.
    */
   ENDPOINT_CONFIG = 'endpointsConfig',
+  /**
+   * Key for accessing the model token config cache.
+   */
+  TOKEN_CONFIG = 'tokenConfig',
   /**
    * Key for the custom config cache.
    */

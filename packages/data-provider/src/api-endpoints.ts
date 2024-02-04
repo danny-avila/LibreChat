@@ -25,6 +25,8 @@ export const conversations = (pageNumber: string) => `/api/convos?pageNumber=${p
 
 export const conversationById = (id: string) => `/api/convos/${id}`;
 
+export const genTitle = () => '/api/convos/gen_title';
+
 export const updateConversation = () => '/api/convos/update';
 
 export const deleteConversation = () => '/api/convos/clear';

@@ -60,8 +60,8 @@ export default function Root() {
   return (
     <>
       <div className="flex h-dvh">
-        <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
         <div className="relative z-0 flex h-full w-full overflow-hidden">
+          <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
           <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
             <MobileNav setNavVisible={setNavVisible} />
             <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
