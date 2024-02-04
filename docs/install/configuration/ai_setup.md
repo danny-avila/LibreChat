@@ -30,7 +30,6 @@ weight: -8
     - [Using Plugins with Azure](#using-plugins-with-azure)
   - [OpenRouter](#openrouter)
   - [Unofficial APIs](#unofficial-apis)
-    - [ChatGPTBrowser](#chatgptbrowser)
     - [BingAI](#bingai)
   - [Conclusion](#conclusion) -->
 
@@ -278,6 +277,45 @@ AZURE_OPENAI_DEFAULT_MODEL=gpt-3.5-turbo # do include periods in the model name 
 
 ```
 
+### Using a Specified Base URL with Azure
+
+The base URL for Azure OpenAI API requests can be dynamically configured. This is useful for proxying services such as [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/providers/azureopenai/), or if you wish to explicitly override the baseURL handling of the app.
+
+LibreChat will use the `AZURE_OPENAI_BASEURL` environment variable, which can include placeholders for the Azure OpenAI API instance and deployment names.
+
+In the application's environment configuration, the base URL is set like this:
+
+```bash
+# .env file
+AZURE_OPENAI_BASEURL=https://example.azure-api.net/${INSTANCE_NAME}/${DEPLOYMENT_NAME}
+
+# OR
+AZURE_OPENAI_BASEURL=https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}
+
+# Cloudflare example
+AZURE_OPENAI_BASEURL=https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/${INSTANCE_NAME}/${DEPLOYMENT_NAME}
+```
+
+The application replaces `${INSTANCE_NAME}` and `${DEPLOYMENT_NAME}` in the `AZURE_OPENAI_BASEURL`, processed according to the other settings discussed in the guide.
+
+**You can also omit the placeholders completely and simply construct the baseURL with your credentials:**
+
+```bash
+# .env file
+AZURE_OPENAI_BASEURL=https://instance-1.openai.azure.com/openai/deployments/deployment-1
+
+# Cloudflare example
+AZURE_OPENAI_BASEURL=https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/instance-1/deployment-1
+```
+
+Setting these values will override all of the application's internal handling of the instance and deployment names and use your specified base URL.
+
+**Notes:**
+- You should still provide the `AZURE_OPENAI_API_VERSION` and `AZURE_API_KEY` via the .env file as they are programmatically added to the requests.
+- When specifying instance and deployment names in the `AZURE_OPENAI_BASEURL`, their respective environment variables can be omitted (`AZURE_OPENAI_API_INSTANCE_NAME` and `AZURE_OPENAI_API_DEPLOYMENT_NAME`) except for use with Plugins.
+- Specifying instance and deployment names in the `AZURE_OPENAI_BASEURL` instead of placeholders creates conflicts with "plugins," "vision," "default-model," and "model-as-deployment-name" support.
+- Due to the conflicts that arise with other features, it is recommended to use placeholder for instance and deployment names in the `AZURE_OPENAI_BASEURL`
+
 ### Enabling Auto-Generated Titles with Azure
 
 The default titling model is set to `gpt-3.5-turbo`.
@@ -294,12 +332,57 @@ This will work seamlessly as it does with the [OpenAI endpoint](#openai) (no nee
 
 Alternatively, you can set the [required variables](#required-variables) to explicitly use your vision deployment, but this may limit you to exclusively using your vision deployment for all Azure chat settings.
 
-As of December 18th, 2023, Vision models seem to have degraded performance with Azure OpenAI when compared to [OpenAI](#openai)
+
+**Notes:**
+- If using `AZURE_OPENAI_BASEURL`, you should not specify instance and deployment names instead of placeholders as the vision request will fail.
+- As of December 18th, 2023, Vision models seem to have degraded performance with Azure OpenAI when compared to [OpenAI](#openai)
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/7306185f-c32c-4483-9167-af514cc1c2dd)
 
 
 > Note: a change will be developed to improve current configuration settings, to allow multiple deployments/model configurations setup with ease: **[#1390](https://github.com/danny-avila/LibreChat/issues/1390)**
+
+### Generate images with Azure OpenAI Service (DALL-E)
+
+| Model ID | Feature Availability | Max Request (characters) |
+|----------|----------------------|-------------------------|
+| dalle2   | East US              | 1000                    |
+| dalle3   | Sweden Central       | 4000                    |
+
+- First you need to create an Azure resource that hosts DALL-E
+    - At the time of writing, dall-e-3 is available in the `SwedenCentral` region, dall-e-2 in the `EastUS` region.
+- Then, you need to deploy the image generation model in one of the above regions.
+    - Read the [Azure OpenAI Image Generation Quickstart Guide](https://learn.microsoft.com/en-us/azure/ai-services/openai/dall-e-quickstart) for further assistance
+- Configure your environment variables based on Azure credentials:
+
+**- For DALL-E-3:**
+
+```bash
+DALLE3_AZURE_API_VERSION=the-api-version # e.g.: 2023-12-01-preview
+DALLE3_BASEURL=https://<AZURE_OPENAI_API_INSTANCE_NAME>.openai.azure.com/openai/deployments/<DALLE3_DEPLOYMENT_NAME>/
+DALLE3_API_KEY=your-azure-api-key-for-dall-e-3
+```
+
+**- For DALL-E-2:**
+
+```bash
+DALLE2_AZURE_API_VERSION=the-api-version # e.g.: 2023-12-01-preview
+DALLE2_BASEURL=https://<AZURE_OPENAI_API_INSTANCE_NAME>.openai.azure.com/openai/deployments/<DALLE2_DEPLOYMENT_NAME>/
+DALLE2_API_KEY=your-azure-api-key-for-dall-e-2
+```
+
+**DALL-E Notes:**
+
+- For DALL-E-3, the default system prompt has the LLM prefer the ["vivid" style](https://platform.openai.com/docs/api-reference/images/create#images-create-style) parameter, which seems to be the preferred setting for ChatGPT as "natural" can sometimes produce lackluster results.
+- See official prompt for reference: **[DALL-E System Prompt](https://github.com/spdustin/ChatGPT-AutoExpert/blob/main/_system-prompts/dall-e.md)**
+- You can adjust the system prompts to your liking:
+
+```bash
+DALLE3_SYSTEM_PROMPT="Your DALL-E-3 System Prompt here"
+DALLE2_SYSTEM_PROMPT="Your DALL-E-2 System Prompt here"
+```
+
+- The `DALLE_REVERSE_PROXY` environment variable is ignored when Azure credentials (DALLEx_AZURE_API_VERSION and DALLEx_BASEURL) for DALL-E are configured.
 
 ### Optional Variables
 
@@ -318,6 +401,9 @@ To use Azure with the Plugins endpoint, make sure the following environment vari
 
 * `PLUGINS_USE_AZURE`: If set to "true" or any truthy value, this will enable the program to use Azure with the Plugins endpoint.
 * `AZURE_API_KEY`: Your Azure API key must be set with an environment variable.
+
+**Important:**
+- If using `AZURE_OPENAI_BASEURL`, you should not specify instance and deployment names instead of placeholders as the plugin request will fail.
 
 ---
 
@@ -368,7 +454,7 @@ This is not to be confused with [OpenAI's Official API](#openai)!
 
 > Note that this is disabled by default and requires additional configuration to work. 
 > Also, using this may have your data exposed to 3rd parties if using a proxy, and OpenAI may flag your account.
-> See: [ChatGPT Reverse Proxy](../../features/pandoranext.md)
+> See: [ChatGPT Reverse Proxy](../../features/ninja.md)
 
 To get your Access token for ChatGPT Browser Access, you need to:
 
@@ -392,10 +478,75 @@ I recommend using Microsoft Edge for this:
 - Look for `lsp.asx` (if it's not there look into the other entries for one with a **very long** cookie) 
 - Copy the whole cookie value. (Yes it's very long 😉)
 - Use this **"full cookie string"** for your "BingAI Token"
-
-<p align="left">
+  - <p align="left">
     <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d4dfd370-eddc-4694-ab16-076f913ff430" width="50%">
 </p>
+
+### copilot-gpt4-service
+For this setup, an additional docker container will need to be setup.
+
+***It is necessary to obtain your token first.***
+
+Follow these instructions provided at **[copilot-gpt4-service#obtaining-token](https://github.com/aaamoon/copilot-gpt4-service#obtaining-copilot-token)** and keep your token for use within the service. Additionally, more detailed instructions for setting copilot-gpt4-service are available at the [GitHub repo](https://github.com/aaamoon/copilot-gpt4-service). 
+
+It is *not* recommended to use the copilot token obtained directly, instead use the `SUPER_TOKEN` variable. (You can generate your own `SUPER_TOKEN` with the OpenSSL command `openssl rand -hex 16` and set the `ENABLE_SUPER_TOKEN` variable to `true`)
+
+1. Once your Docker environment is ready and your tokens are generated, proceed with this Docker run command to start the service:
+    ```
+    docker run -d \
+      --name copilot-gpt4-service \
+      -e HOST=0.0.0.0 \
+      -e COPILOT_TOKEN=ghp_xxxxxxx \
+      -e SUPER_TOKEN=your_super_token \
+      -e ENABLE_SUPER_TOKEN=true \
+      --restart always \
+      -p 8080:8080 \
+      aaamoon/copilot-gpt4-service:latest
+    ```
+
+2. For Docker Compose users, use the equivalent yaml configuration provided below:
+    ```yaml
+    version: '3.8'
+    services:
+      copilot-gpt4-service:
+        image: aaamoon/copilot-gpt4-service:latest
+        environment:
+          - HOST=0.0.0.0
+          - COPILOT_TOKEN=ghp_xxxxxxx # Default GitHub Copilot Token, if this item is set, the Token carried with the request will be ignored. Default is empty.
+          - SUPER_TOKEN=your_super_token # Super Token is a user-defined standalone token that can access COPILOT_TOKEN above. This allows you to share the service without exposing your COPILOT_TOKEN. Multiple tokens are separated by commas. Default is empty.
+          - ENABLE_SUPER_TOKEN=true # Whether to enable SUPER_TOKEN, default is false. If false, but COPILOT_TOKEN is not empty, COPILOT_TOKEN will be used without any authentication for all requests.
+        ports:
+          - 8080:8080
+        restart: unless-stopped
+        container_name: copilot-gpt4-service
+    ```
+
+3. After setting up the Docker container for `copilot-gpt4-service`, you can add it to your `librechat.yaml` configuration. Here is an example configuration:
+    ```yaml
+    version: 1.0.1
+    cache: true
+    endpoints:
+      custom:
+        - name: "OpenAI via Copilot"
+          apiKey: "your_super_token"
+          baseURL: "http://[copilotgpt4service_host_ip]:8080/v1"
+          models:
+            default: ["gpt-4", "gpt-3.5-turbo"] # *See Notes
+          titleConvo: true
+          titleModel: "gpt-3.5-turbo"
+          summarize: true
+          summaryModel: "gpt-3.5-turbo"
+          forcePrompt: false
+          modelDisplayLabel: "OpenAI"
+          dropParams: ["user"]
+    ```
+    Replace `your_super_token` with the token you obtained following the instructions highlighted above and `[copilotgpt4service_host_ip]` with the IP of your Docker host. *****See Notes***
+
+    Restart Librechat after adding the needed configuration, and select `OpenAI via Copilot` to start using!
+
+    >Notes: 
+    > - *Only allowed models are `gpt-4` and `gpt-3.5-turbo`. 
+    > - **Advanced users can add this to their existing docker-compose file/existing docker network and avoid having to expose port 8080 (or any port) to the copilot-gpt4-service container. 
 
 ---
 

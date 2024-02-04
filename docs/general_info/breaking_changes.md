@@ -9,6 +9,23 @@ weight: -10
 **If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
 Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
 
+## January 31th 2024
+- A new method to use the ChatGPT endpoint is now documented. It uses "Ninja"
+- For more info:
+    - [Ninja Deployment Guide](../features/ninja.md)
+    - [Ninja GitHub repo](https://github.com/gngpp/ninja/tree/main)
+
+## January 30th 2024
+- Since PandoraNext has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
+- For more info:
+    - [https://github.com/danny-avila/LibreChat/discussions/1663](https://github.com/danny-avila/LibreChat/discussions/1663#discussioncomment-8314025)
+    - [https://linux.do/t/topic/1051](https://linux.do/t/topic/1051)
+
+## v0.6.6
+
+- **DALL-E Update**: user-provided keys for DALL-E are now specific to each DALL-E version, i.e.: `DALLE3_API_KEY` and `DALLE2_API_KEY`
+- Note: `DALLE_API_KEY` will work for both DALL-E-3 and DALL-E-2 when the admin provides the credential; in other words, this may only affect your users if DALLE_API_KEY is not set in the `.env` file. In this case, they will simply have to "uninstall" the plugin, and provide their API key again.
+
 ## v0.6.x
 
 - **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data` may be present in your root directory. This folder is no longer required and can be **safely deleted** to free up space.
