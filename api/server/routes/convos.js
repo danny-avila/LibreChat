@@ -47,7 +47,11 @@ router.post('/gen_title', async (req, res) => {
     await titleCache.delete(key);
     res.status(200).json({ title });
   } else {
-    res.status(404).end();
+    res
+      .status(404)
+      .json({
+        message: 'Title not found or method not implemented for the conversation\'s endpoint',
+      });
   }
 });
 
