@@ -1,10 +1,10 @@
 export * from './json';
 export * from './files';
 export * from './latex';
+export * from './convos';
 export * from './presets';
 export * from './languages';
 export * from './endpoints';
-export * from './conversations';
 export { default as cn } from './cn';
 export { default as buildTree } from './buildTree';
 export { default as getLoginError } from './getLoginError';

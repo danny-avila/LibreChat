@@ -24,7 +24,14 @@ export const groupConversationsByDate = (conversations: TConversation[]): Groupe
   if (!Array.isArray(conversations)) {
     return [];
   }
+
+  const seenConversationIds = new Set();
   const groups = conversations.reduce((acc, conversation) => {
+    if (seenConversationIds.has(conversation.conversationId)) {
+      return acc;
+    }
+    seenConversationIds.add(conversation.conversationId);
+
     const date = parseISO(conversation.updatedAt);
     const groupName = getGroupName(date);
     if (!acc[groupName]) {
