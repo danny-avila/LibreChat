@@ -1,10 +1,11 @@
 const axios = require('axios');
-const fs = require('fs');
 
 async function textToSpeechLocal(req, res) {
   let text = req.body.text;
 
-  console.log('text', text);
+  if (!text) {
+    return res.status(400).send('Missing text in request body');
+  }
 
   const url = 'https://api.elevenlabs.io/v1/text-to-speech/zvBAbtHEaG9XNBKqbWMi';
   const headers = {
@@ -22,17 +23,13 @@ async function textToSpeechLocal(req, res) {
   };
 
   try {
-    console.log('Sending request');
-    const response = await axios.post(url, data, { headers, responseType: 'stream' });
-    console.log('Request sent');
-    const writer = fs.createWriteStream('output.mp3');
-    console.log('Creating writer');
-    response.data.pipe(writer);
-    console.log('Piping data');
-    console.log(response.data);
-    writer.on('finish', () => {
-      res.send('File saved successfully');
-    });
+    const response = await axios.post(url, data, { headers, responseType: 'arraybuffer' });
+    const buffer = Buffer.from(response.data, 'binary');
+    const blob = new Blob([buffer], { type: 'audio/mpeg' });
+
+    res.set('Content-Disposition', 'attachment; filename="audio.mp3"');
+    res.set('Content-Type', 'audio/mpeg');
+    res.send(blob);
   } catch (error) {
     console.error(error);
     res.status(500).send('An error occurred');

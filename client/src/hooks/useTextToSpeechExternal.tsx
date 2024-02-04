@@ -6,9 +6,25 @@ function useTextToSpeechExternal() {
   const { showToast } = useToastContext();
 
   const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
-    onSuccess: (data) => {
-      const audio = data.audio;
-      console.log('audio', audio);
+    onSuccess: async (data) => {
+      const audioBlob = data.audio;
+
+      try {
+        // Check if audioBlob is a valid instance of Blob
+        if (audioBlob instanceof Blob) {
+          const arrayBuffer = await audioBlob.arrayBuffer();
+          const blobUrl = URL.createObjectURL(new Blob([arrayBuffer]));
+          const audioElement = new Audio(blobUrl);
+          audioElement.play();
+
+          // Optionally, revoke the Blob URL after playing
+          URL.revokeObjectURL(blobUrl);
+        } else {
+          console.error('Invalid audioBlob:', audioBlob);
+        }
+      } catch (error) {
+        console.error('Failed to set audio source:', error);
+      }
     },
     onError: (error) => {
       showToast({ message: `Error: ${error}`, status: 'error' });
