@@ -30,7 +30,13 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const [titleInput, setTitleInput] = useState(title);
   const [renaming, setRenaming] = useState(false);
 
-  const clickHandler = async () => {
+  const clickHandler = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (event.button === 0 && event.ctrlKey) {
+      toggleNav();
+      return;
+    }
+
+    event.preventDefault();
     if (currentConvoId === conversationId) {
       return;
     }
@@ -120,7 +126,13 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   }
 
   return (
-    <a data-testid="convo-item" onClick={() => clickHandler()} {...aProps} title={title}>
+    <a
+      href={`/c/${conversationId}`}
+      data-testid="convo-item"
+      onClick={clickHandler}
+      {...aProps}
+      title={title}
+    >
       {icon}
       <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">
         {renaming === true ? (
