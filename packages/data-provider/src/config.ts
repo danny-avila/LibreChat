@@ -162,6 +162,10 @@ export enum CacheKeys {
    */
   PLUGINS = 'plugins',
   /**
+   * Key for the title generation cache.
+   */
+  GEN_TITLE = 'genTitle',
+  /**
    * Key for the model config cache.
    */
   MODELS_CONFIG = 'modelsConfig',

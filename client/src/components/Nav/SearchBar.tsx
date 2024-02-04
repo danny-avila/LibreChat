@@ -3,6 +3,7 @@ import { Search, X } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import debounce from 'lodash/debounce';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import store from '~/store';
 
 type SearchBarProps = {
@@ -43,7 +44,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   return (
     <div
       ref={ref}
-      className="relative flex w-full cursor-pointer items-center gap-3 rounded-md border border-white/20 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-500/10"
+      className="relative mt-1 flex flex h-10 cursor-pointer items-center gap-3 rounded-lg border-white bg-black px-2 px-3 py-2 text-white transition-colors duration-200 hover:bg-gray-900 focus:bg-gray-900"
     >
       {<Search className="absolute left-3 h-4 w-4" />}
       <input
@@ -58,9 +59,10 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
         onKeyUp={handleKeyUp}
       />
       <X
-        className={`absolute right-3 h-5 w-5 cursor-pointer ${
-          showClearIcon ? 'opacity-100' : 'opacity-0'
-        } transition-opacity duration-1000`}
+        className={cn(
+          'absolute right-[7px] h-5 w-5 cursor-pointer transition-opacity duration-1000',
+          showClearIcon ? 'opacity-100' : 'opacity-0',
+        )}
         onClick={clearText}
       />
     </div>

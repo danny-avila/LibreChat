@@ -1,4 +1,5 @@
 import * as f from './types/files';
+import * as q from './types/queries';
 import * as m from './types/mutations';
 import * as a from './types/assistants';
 import * as t from './types';
@@ -50,6 +51,10 @@ export function updateConversation(
   payload: t.TUpdateConversationRequest,
 ): Promise<t.TUpdateConversationResponse> {
   return request.post(endpoints.updateConversation(), { arg: payload });
+}
+
+export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
+  return request.post(endpoints.genTitle(), payload);
 }
 
 export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown> {
@@ -209,3 +214,26 @@ export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesRe
   request.deleteWithOptions(endpoints.files(), {
     data: { files },
   });
+
+/* conversations */
+
+export const listConversations = (
+  params?: q.ConversationListParams,
+): Promise<q.ConversationListResponse> => {
+  // Assuming params has a pageNumber property
+  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
+  return request.get(endpoints.conversations(pageNumber));
+};
+
+export const listConversationsByQuery = (
+  params?: q.ConversationListParams & { searchQuery?: string },
+): Promise<q.ConversationListResponse> => {
+  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
+  const searchQuery = params?.searchQuery || ''; // If no search query is provided, default to an empty string
+  // Update the endpoint to handle a search query
+  if (searchQuery !== '') {
+    return request.get(endpoints.search(searchQuery, pageNumber));
+  } else {
+    return request.get(endpoints.conversations(pageNumber));
+  }
+};
