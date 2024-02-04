@@ -32,7 +32,7 @@ services:
     user: "${UID}:${GID}"
     volumes:
       - ./data-node:/data/db
-    command: mongod --noauth
+    command: mongod
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.5
