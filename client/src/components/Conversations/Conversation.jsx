@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
-import { useUpdateConversationMutation } from 'librechat-data-provider/react-query';
+import { useUpdateConversationMutation } from '~/data-provider';
 import { useConversations, useConversation } from '~/hooks';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
