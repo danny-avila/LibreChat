@@ -40,7 +40,23 @@ services:
     restart: always
 ```
 
-3. **Security Notice:** Before using this configuration, replace `admin` and `password` with a unique username and password for accessing Mongo Express. These credentials should be strong and not easily guessable to prevent unauthorized access.
+3. **Security Notice:**
+- a. Before using this configuration, replace `admin` and `password` with a unique username and password for accessing Mongo Express. These credentials should be strong and not easily guessable to prevent unauthorized access.
+- b. You can also add native authentication to your database. See the [`docker-compose.override` guide](../install/configuration/docker_override.md#mongodb-authentication) for instructions on how to do so
+    - After following the guide to authenticate MongoDB, you will need these variables under the environment section for mongo-express:
+
+```yaml
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: password
+      # database authentication variables, using example credentials from guide
+      ME_CONFIG_MONGODB_URL: 'mongodb://adminUser:securePassword@mongodb:27017'
+      ME_CONFIG_MONGODB_ADMINUSERNAME: adminUser
+      ME_CONFIG_MONGODB_ADMINPASSWORD: securePassword
+```
+
+- c. If using authentication for your database, make sure the admin user has the "clusterAdmin" and "readAnyDatabase" permissions as detailed in the [`docker-compose.override` guide](../install/configuration/docker_override.md#step-1-creating-an-admin-user)
 
 4. Save the `docker-compose.override.yml` file and run the following command from the directory where your `docker-compose.yml` file is located to start Mongo-Express along with your other Docker services:
 
