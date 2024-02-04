@@ -268,6 +268,7 @@ export default {
   com_nav_welcome_message: 'Чем я могу помочь вам сегодня?',
   com_nav_auto_scroll: 'Автоматически проматывать к самым новым сообщениям при открытии',
   com_nav_modular_chat: 'Разрешить менять точки подключения в середине разговора',
+  com_nav_latex_parsing: 'Обработка LaTeX в сообщениях (может повлиять на производительность)',
   com_nav_plugin_store: 'Магазин плагинов',
   com_nav_plugin_search: 'Поиск плагинов',
   com_nav_plugin_auth_error:
@@ -286,6 +287,7 @@ export default {
   com_nav_theme_system: 'Системная',
   com_nav_theme_dark: 'Темная',
   com_nav_theme_light: 'Светлая',
+  com_nav_user_name_display: 'Отображать имя пользователя в сообщениях',
   com_nav_language: 'Локализация',
   com_nav_setting_account: 'Аккаунт',
   com_nav_profile_picture: 'Изображение профиля',
@@ -306,5 +308,6 @@ export default {
   com_nav_settings: 'Настройки',
   com_nav_search_placeholder: 'Поиск сообщений',
   com_nav_setting_general: 'Общие',
+  com_nav_setting_beta: 'Бета-функции',
   com_nav_setting_data: 'Управление данными',
 };
