@@ -88,11 +88,12 @@ After starting your services with the modified configuration, you can verify tha
 By following these steps and considerations, you can easily and safely modify your Docker Compose configuration without altering the original `docker-compose.yml` file, making it simpler to manage and maintain different environments or local customizations.
 
 
-# MongoDB Authentication
+## MongoDB Authentication
 
 Use of the `docker-compose.override.yml` file allows us to enable explicit authentication for MongoDB.
 
 **Notes:**
+
 - The default configuration is secure by blocking external port access, but we can take it a step further with access credentials.
 - As noted by the developers of MongoDB themselves, authentication in MongoDB is fairly complex. We will be taking a simple approach that will be good enough for most cases, especially for existing configurations of LibreChat. To learn more about how mongodb authentication works with docker, see here: https://hub.docker.com/_/mongo/
 - This guide focuses exclusively on terminal-based setup procedures.
@@ -103,7 +104,7 @@ Use of the `docker-compose.override.yml` file allows us to enable explicit authe
 - Enable authentication and create a "readWrite" user for "LibreChat"
 - Configure the MONGO_URI with newly created user
 
-## Step 1: Creating an Admin User
+### Step 1: Creating an Admin User
 
 First, we must stop the default containers from running, and only run the mongodb container.
 
@@ -206,7 +207,7 @@ And shut down the running container:
 docker-compose down
 ```
 
-## Step 2: Enabling Authentication and Creating a User with `readWrite` Access
+### Step 2: Enabling Authentication and Creating a User with `readWrite` Access
 
 We must now create/edit the `docker-compose.override.yml` file to enable authentication for our mongodb container. You can use this configuration to start or reference:
 
@@ -302,7 +303,7 @@ db.createUser({ user: 'user', pwd: 'userpasswd', roles: [ { role: "readWrite", d
 
 If it's still not persisting, you can try running the commands with all containers running, but note that the `LibreChat` container will be in an error/retrying state.
 
-## Step 3: Update the `MONGO_URI` to Use the New Credentials
+### Step 3: Update the `MONGO_URI` to Use the New Credentials
 
 Finally, we add the new connection string with our newly created credentials to our `docker-compose.override.yml` file under the `api` service:
 
@@ -336,7 +337,7 @@ chat-mongodb      | {"t":{"$date":"2024-02-04T20:59:53.880+00:00"},"s":"I",  "c"
 
 If you're having Authentication errors, run the last part of Step 2 again. I'm not sure why it's finicky but it will work after a few tries.
 
-## TL;DR
+### TL;DR
 
 These are all the necessary commands if you'd like to run through these quickly or for reference:
 
@@ -362,7 +363,7 @@ docker-compose down
 docker-compose up
 ```
 
-# Example
+## Example
 
 Example `docker-compose.override.yml` file using the [`librechat.yaml` config file](./custom_config.md), MongoDB with [authentication](#mongodb-authentication), and `mongo-express` for [managing your MongoDB database](../../features/manage_your_database.md):
 
