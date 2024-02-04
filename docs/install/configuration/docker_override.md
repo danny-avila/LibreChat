@@ -362,3 +362,34 @@ docker-compose down
 docker-compose up
 ```
 
+# Example
+
+Example `docker-compose.override.yml` file using the [`librechat.yaml` config file](./custom_config.md), MongoDB with [authentication](#mongodb-authentication), and `mongo-express` for [managing your MongoDB database](../../features/manage_your_database.md):
+
+```yaml
+version: '3.4'
+
+services:
+  api:
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml
+    environment:
+      - MONGO_URI=mongodb://user:userpasswd@mongodb:27017/LibreChat
+  mongodb:
+    command: mongod --auth
+  mongo-express:
+    image: mongo-express
+    container_name: mongo-express
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: password
+      ME_CONFIG_MONGODB_URL: 'mongodb://adminUser:securePassword@mongodb:27017'
+      ME_CONFIG_MONGODB_ADMINUSERNAME: adminUser
+      ME_CONFIG_MONGODB_ADMINPASSWORD: securePassword
+    ports:
+      - '8081:8081'
+    depends_on:
+      - mongodb
+    restart: always
+```
