@@ -58,9 +58,15 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
-  const { setMessages, setConversation, setIsSubmitting, newConversation, resetLatestMessage } =
-    useChatHelpers(index, paramId);
-  const contentHandler = useContentHandler({ setMessages, setConversation });
+  const {
+    setMessages,
+    setConversation,
+    getMessages,
+    setIsSubmitting,
+    newConversation,
+    resetLatestMessage,
+  } = useChatHelpers(index, paramId);
+  const contentHandler = useContentHandler({ setMessages, getMessages });
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -133,7 +139,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     }
 
     // refresh title
-    if (isNewConvo && requestMessage?.parentMessageId == Constants.NO_PARENT) {
+    if (isNewConvo && requestMessage?.parentMessageId === Constants.NO_PARENT) {
       setTimeout(() => {
         genTitle.mutate({ conversationId: convoUpdate.conversationId as string });
       }, 2500);
@@ -178,9 +184,16 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       return update;
     });
 
-    if (requestMessage.parentMessageId === Constants.NO_PARENT) {
-      addConvo(update);
-    }
+    queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
+      if (!convoData) {
+        return convoData;
+      }
+      if (requestMessage.parentMessageId === Constants.NO_PARENT) {
+        return addConversation(convoData, update);
+      } else {
+        return updateConversation(convoData, update);
+      }
+    });
 
     resetLatestMessage();
   };
@@ -226,7 +239,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       if (!convoData) {
         return convoData;
       }
-      if (message.parentMessageId == Constants.NO_PARENT) {
+      if (message.parentMessageId === Constants.NO_PARENT) {
         return addConversation(convoData, update);
       } else {
         return updateConversation(convoData, update);
@@ -261,7 +274,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     }
 
     // refresh title
-    if (isNewConvo && requestMessage && requestMessage.parentMessageId == Constants.NO_PARENT) {
+    if (isNewConvo && requestMessage && requestMessage.parentMessageId === Constants.NO_PARENT) {
       setTimeout(() => {
         genTitle.mutate({ conversationId: conversation.conversationId as string });
       }, 2500);
