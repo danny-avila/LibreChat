@@ -12,7 +12,7 @@ const paths = require('~/config/paths');
 const AppService = async (app) => {
   /** @type {TCustomConfig}*/
   const config = (await loadCustomConfig()) ?? {};
-  const socialLogins = config.registration.socialLogins ?? [
+  const socialLogins = config?.registration?.socialLogins ?? [
     'google',
     'facebook',
     'openid',
