@@ -75,6 +75,7 @@ export default function ActionsPanel({
           <div className="relative flex flex-col items-center px-16 py-6 text-center">
             <div className="absolute left-0 top-6">
               <button
+                type="button"
                 className="btn btn-neutral relative"
                 onClick={() => {
                   setActivePanel(Panel.builder);
@@ -146,7 +147,7 @@ export default function ActionsPanel({
                 <div className="border-token-border-medium flex rounded-lg border text-sm hover:cursor-pointer">
                   <div className="h-9 grow px-3 py-2">{type}</div>
                   <div className="bg-token-border-medium w-px"></div>
-                  <button color="neutral" className="flex items-center gap-2 px-3">
+                  <button type="button" color="neutral" className="flex items-center gap-2 px-3">
                     <svg
                       width="24"
                       height="24"
