@@ -72,6 +72,7 @@ function ToolSelectDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   };
 
   const onRemoveTool = (tool: string) => {
+    setShowPluginAuthForm(false);
     updateUserPlugins.mutate(
       { pluginKey: tool, action: 'uninstall', auth: null, isAssistantTool: true },
       {
@@ -87,6 +88,7 @@ function ToolSelectDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   };
 
   const onAddTool = (pluginKey: string) => {
+    setShowPluginAuthForm(false);
     const getAvailablePluginFromKey = tools?.find((p) => p.pluginKey === pluginKey);
     setSelectedPlugin(getAvailablePluginFromKey);
 
