@@ -56,7 +56,7 @@ describe.skip('GET /', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
       appTitle: 'Test Title',
-      loginOrder: 'google,facebook,openid,github,discord',
+      socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
       discordLoginEnabled: true,
       facebookLoginEnabled: true,
       githubLoginEnabled: true,

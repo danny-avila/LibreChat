@@ -24,7 +24,71 @@ function Login() {
     return null;
   }
 
-  const socialLoginOrder = startupConfig.loginOrder ? startupConfig.loginOrder.split(',') : [];
+  const socialLogins = startupConfig.socialLogins ?? [];
+
+  const providerComponents = {
+    discord: (
+      <SocialButton
+        key="discord"
+        enabled={startupConfig.discordLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="discord"
+        Icon={DiscordIcon}
+        label={localize('com_auth_discord_login')}
+        id="discord"
+      />
+    ),
+    facebook: (
+      <SocialButton
+        key="facebook"
+        enabled={startupConfig.facebookLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="facebook"
+        Icon={FacebookIcon}
+        label={localize('com_auth_facebook_login')}
+        id="facebook"
+      />
+    ),
+    github: (
+      <SocialButton
+        key="github"
+        enabled={startupConfig.githubLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="github"
+        Icon={GithubIcon}
+        label={localize('com_auth_github_login')}
+        id="github"
+      />
+    ),
+    google: (
+      <SocialButton
+        key="google"
+        enabled={startupConfig.googleLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="google"
+        Icon={GoogleIcon}
+        label={localize('com_auth_google_login')}
+        id="google"
+      />
+    ),
+    openid: (
+      <SocialButton
+        key="openid"
+        enabled={startupConfig.openidLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="openid"
+        Icon={() =>
+          startupConfig.openidImageUrl ? (
+            <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
+          ) : (
+            <OpenIDIcon />
+          )
+        }
+        label={startupConfig.openidLabel}
+        id="openid"
+      />
+    ),
+  };
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
@@ -61,77 +125,7 @@ function Login() {
               </>
             )}
             <div className="mt-2">
-              {socialLoginOrder.map((provider) => {
-                switch (provider) {
-                  case 'discord':
-                    return (
-                      <SocialButton
-                        enabled={startupConfig.discordLoginEnabled}
-                        serverDomain={startupConfig.serverDomain}
-                        oauthPath="discord"
-                        Icon={DiscordIcon}
-                        label={localize('com_auth_discord_login')}
-                        id={undefined}
-                      />
-                    );
-                  case 'facebook':
-                    return (
-                      <SocialButton
-                        enabled={startupConfig.facebookLoginEnabled}
-                        serverDomain={startupConfig.serverDomain}
-                        oauthPath="facebook"
-                        Icon={FacebookIcon}
-                        label={localize('com_auth_facebook_login')}
-                        id={undefined}
-                      />
-                    );
-                  case 'github':
-                    return (
-                      <SocialButton
-                        enabled={startupConfig.githubLoginEnabled}
-                        serverDomain={startupConfig.serverDomain}
-                        oauthPath="github"
-                        Icon={GithubIcon}
-                        label={localize('com_auth_github_login')}
-                        id={undefined}
-                      />
-                    );
-                  case 'google':
-                    return (
-                      <SocialButton
-                        enabled={startupConfig.googleLoginEnabled}
-                        serverDomain={startupConfig.serverDomain}
-                        oauthPath="google"
-                        Icon={GoogleIcon}
-                        label={localize('com_auth_google_login')}
-                        id={undefined}
-                      />
-                    );
-                  case 'openid':
-                    return (
-                      <SocialButton
-                        enabled={startupConfig.openidLoginEnabled}
-                        serverDomain={startupConfig.serverDomain}
-                        oauthPath="openid"
-                        Icon={() =>
-                          startupConfig.openidImageUrl ? (
-                            <img
-                              src={startupConfig.openidImageUrl}
-                              alt="OpenID Logo"
-                              className="h-5 w-5"
-                            />
-                          ) : (
-                            <OpenIDIcon />
-                          )
-                        }
-                        label={startupConfig.openidLabel}
-                        id={undefined}
-                      />
-                    );
-                  default:
-                    return null;
-                }
-              })}
+              {socialLogins.map((provider) => providerComponents[provider] || null)}
             </div>
           </>
         )}

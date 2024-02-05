@@ -32,6 +32,7 @@ export const configSchema = z.object({
   fileStrategy: fileSourceSchema.optional(),
   registration: z
     .object({
+      socialLogins: z.array(z.string()).optional(),
       allowedDomains: z.array(z.string()).optional(),
     })
     .optional(),

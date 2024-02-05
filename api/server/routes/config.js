@@ -10,7 +10,7 @@ router.get('/', async function (req, res) {
   try {
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
-      loginOrder: process.env.SOCIAL_LOGIN_ORDER || 'google,facebook,openid,github,discord',
+      socialLogins: req.app.locals.socialLogins,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       facebookLoginEnabled:
         !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,

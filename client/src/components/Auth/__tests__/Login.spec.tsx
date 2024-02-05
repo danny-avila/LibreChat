@@ -31,7 +31,7 @@ const setup = ({
     isLoading: false,
     isError: false,
     data: {
-      loginOrder: 'google,facebook,openid,github,discord',
+      socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
       discordLoginEnabled: true,
       facebookLoginEnabled: true,
       githubLoginEnabled: true,

@@ -31,6 +31,7 @@ Stay tuned for ongoing enhancements to customize your LibreChat instance!
     - [Registration](#registration)
     - [Endpoints](#endpoints)
   - [Registration Object Structure](#registration-object-structure)
+    - [**socialLogins**:](#socialLogins)
     - [**allowedDomains**:](#allowedDomains)
   - [Custom Endpoint Object Structure](#custom-endpoint-object-structure)
     - [**name**:](#name)
@@ -112,6 +113,9 @@ docker-compose up # no need to rebuild
 - **Key**: `registration`
 - **Type**: Object
 - **Description**: Configures registration-related settings for the application.
+  - **Sub-Key**: `socialLogins`
+  - **Type**: Array of Strings (`"google"`, `"facebook"`, `"openid"`, `"github"`, `"discord"`)
+  - **Description**: Determines both the available social login providers and their arranged order to list on the login/registration page, from top to bottom (first to last values). Note: a login option will not appear even if listed if not [properly configured.](./user_auth_system.md#social-authentication-setup-and-configuration)
   - **Sub-Key**: `allowedDomains`
   - **Type**: Array of Strings
   - **Description**: Specifies a list of allowed email domains for user registration. Users attempting to register with email domains not listed here will be restricted from registering.
@@ -132,10 +136,22 @@ docker-compose up # no need to rebuild
 ```yaml
 # Example Registration Object Structure
 registration:
+  socialLogins: ["google", "facebook", "github", "discord", "openid"]
   allowedDomains:
     - "gmail.com"
     - "protonmail.com"
 ```
+
+### **socialLogins**:
+
+  > Defines the available social login providers and their display order.
+
+  - Type: Array of Strings
+  - Example: 
+    ```yaml
+    socialLogins: ["google", "facebook", "github", "discord", "openid"]
+    ```
+  - **Note**: The order of the providers in the list determines their appearance order on the login/registration page. Each provider listed must be [properly configured](./user_auth_system.md#social-authentication-setup-and-configuration) within the system to be active and available for users. This configuration allows for a tailored authentication experience, emphasizing the most relevant or preferred social login options for your user base.
 
 ### **allowedDomains**:
 
