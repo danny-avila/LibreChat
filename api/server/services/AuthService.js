@@ -14,19 +14,23 @@ const domains = {
 };
 
 async function isDomainAllowed(email) {
-  const customConfig = await getCustomConfig();
-  if (!customConfig) {
-    return true;
-  }
-  if (!customConfig?.registration?.allowedDomains) {
-    return true;
-  }
-
   if (!email) {
     return false;
   }
 
   const domain = email.split('@')[1];
+
+  if (!domain) {
+    return false;
+  }
+
+  const customConfig = await getCustomConfig();
+  if (!customConfig) {
+    return true;
+  } else if (!customConfig?.registration?.allowedDomains) {
+    return true;
+  }
+
   return customConfig.registration.allowedDomains.includes(domain);
 }
 
@@ -263,6 +267,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
 module.exports = {
   registerUser,
   logoutUser,
+  isDomainAllowed,
   requestPasswordReset,
   resetPassword,
   setAuthTokens,
