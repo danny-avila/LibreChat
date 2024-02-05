@@ -26,6 +26,7 @@ import type {
   CreateAssistantMutationOptions,
   UpdateAssistantMutationOptions,
   DeleteAssistantMutationOptions,
+  DeleteConversationOptions,
   UpdateActionOptions,
   UpdateActionVariables,
   UpdateActionResponse,
@@ -96,7 +97,7 @@ export const useUpdateConversationMutation = (
 };
 
 export const useDeleteConversationMutation = (
-  id?: string,
+  options?: DeleteConversationOptions,
 ): UseMutationResult<
   t.TDeleteConversationResponse,
   unknown,
@@ -104,22 +105,25 @@ export const useDeleteConversationMutation = (
   unknown
 > => {
   const queryClient = useQueryClient();
+  const { onSuccess, ..._options } = options || {};
   return useMutation(
     (payload: t.TDeleteConversationRequest) => dataService.deleteConversation(payload),
     {
-      onSuccess: () => {
-        if (!id) {
+      onSuccess: (_data, vars, context) => {
+        if (!vars.conversationId) {
           return;
         }
-        queryClient.setQueryData([QueryKeys.conversation, id], null);
+        queryClient.setQueryData([QueryKeys.conversation, vars.conversationId], null);
         queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
           if (!convoData) {
             return convoData;
           }
-          const update = deleteConversation(convoData, id);
+          const update = deleteConversation(convoData, vars.conversationId as string);
           return update;
         });
+        onSuccess?.(_data, vars, context);
       },
+      ...(_options || {}),
     },
   );
 };
