@@ -1,15 +1,15 @@
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRegisterUserMutation, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TRegisterUser } from 'librechat-data-provider';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 import { useLocalize } from '~/hooks';
+import SocialButton from './SocialButton';
 
-function Registration() {
+const Registration: React.FC = () => {
   const navigate = useNavigate();
   const { data: startupConfig } = useGetStartupConfig();
-
   const localize = useLocalize();
 
   const {
@@ -22,23 +22,20 @@ function Registration() {
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const registerUser = useRegisterUserMutation();
-
   const password = watch('password');
 
-  const onRegisterUserFormSubmit = (data: TRegisterUser) => {
-    registerUser.mutate(data, {
-      onSuccess: () => {
-        navigate('/c/new');
-      },
-      onError: (error) => {
-        setError(true);
+  const onRegisterUserFormSubmit = async (data: TRegisterUser) => {
+    try {
+      await registerUser.mutateAsync(data);
+      navigate('/c/new');
+    } catch (error) {
+      setError(true);
+      //@ts-ignore - error is of type unknown
+      if (error.response?.data?.message) {
         //@ts-ignore - error is of type unknown
-        if (error.response?.data?.message) {
-          //@ts-ignore - error is of type unknown
-          setErrorMessage(error.response?.data?.message);
-        }
-      },
-    });
+        setErrorMessage(error.response?.data?.message);
+      }
+    }
   };
 
   useEffect(() => {
@@ -47,9 +44,111 @@ function Registration() {
     }
   }, [startupConfig, navigate]);
 
+  if (!startupConfig) {
+    return null;
+  }
+
+  const socialLogins = startupConfig.socialLogins ?? [];
+
+  const renderInput = (id: string, label: string, type: string, validation: object) => (
+    <div className="mb-2">
+      <div className="relative">
+        <input
+          id={id}
+          type={type}
+          autoComplete={id}
+          aria-label={localize(label)}
+          {...register(
+            id as 'name' | 'email' | 'username' | 'password' | 'confirm_password',
+            validation,
+          )}
+          aria-invalid={!!errors[id]}
+          className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+          placeholder=" "
+          data-testid={id}
+        ></input>
+        <label
+          htmlFor={id}
+          className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
+        >
+          {localize(label)}
+        </label>
+      </div>
+      {errors[id] && (
+        <span role="alert" className="mt-1 text-sm text-black">
+          {String(errors[id]?.message) ?? ''}
+        </span>
+      )}
+    </div>
+  );
+
+  const providerComponents = {
+    discord: (
+      <SocialButton
+        key="discord"
+        enabled={startupConfig.discordLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="discord"
+        Icon={DiscordIcon}
+        label={localize('com_auth_discord_login')}
+        id="discord"
+      />
+    ),
+    facebook: (
+      <SocialButton
+        key="facebook"
+        enabled={startupConfig.facebookLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="facebook"
+        Icon={FacebookIcon}
+        label={localize('com_auth_facebook_login')}
+        id="facebook"
+      />
+    ),
+    github: (
+      <SocialButton
+        key="github"
+        enabled={startupConfig.githubLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="github"
+        Icon={GithubIcon}
+        label={localize('com_auth_github_login')}
+        id="github"
+      />
+    ),
+    google: (
+      <SocialButton
+        key="google"
+        enabled={startupConfig.googleLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="google"
+        Icon={GoogleIcon}
+        label={localize('com_auth_google_login')}
+        id="google"
+      />
+    ),
+    openid: (
+      <SocialButton
+        key="openid"
+        enabled={startupConfig.openidLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="openid"
+        Icon={() =>
+          startupConfig.openidImageUrl ? (
+            <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
+          ) : (
+            <OpenIDIcon />
+          )
+        }
+        label={startupConfig.openidLabel}
+        id="openid"
+      />
+    ),
+  };
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
-      <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
+      <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
         <h1 className="mb-4 text-center text-3xl font-semibold">
           {localize('com_auth_create_account')}
         </h1>
@@ -66,204 +165,61 @@ function Registration() {
           className="mt-6"
           aria-label="Registration form"
           method="POST"
-          onSubmit={handleSubmit((data) => onRegisterUserFormSubmit(data))}
+          onSubmit={handleSubmit(onRegisterUserFormSubmit)}
         >
-          <div className="mb-2">
-            <div className="relative">
-              <input
-                id="name"
-                type="text"
-                autoComplete="name"
-                aria-label={localize('com_auth_full_name')}
-                {...register('name', {
-                  required: localize('com_auth_name_required'),
-                  minLength: {
-                    value: 3,
-                    message: localize('com_auth_name_min_length'),
-                  },
-                  maxLength: {
-                    value: 80,
-                    message: localize('com_auth_name_max_length'),
-                  },
-                })}
-                aria-invalid={!!errors.name}
-                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
-                placeholder=" "
-              ></input>
-              <label
-                htmlFor="name"
-                className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
-              >
-                {localize('com_auth_full_name')}
-              </label>
-            </div>
-
-            {errors.name && (
-              <span role="alert" className="mt-1 text-sm text-black">
-                {/* @ts-ignore not sure why*/}
-                {errors.name.message}
-              </span>
-            )}
-          </div>
-          <div className="mb-2">
-            <div className="relative">
-              <input
-                type="text"
-                id="username"
-                aria-label={localize('com_auth_username')}
-                {...register('username', {
-                  // required: localize('com_auth_username_required'),
-                  minLength: {
-                    value: 2,
-                    message: localize('com_auth_username_min_length'),
-                  },
-                  maxLength: {
-                    value: 80,
-                    message: localize('com_auth_username_max_length'),
-                  },
-                })}
-                aria-invalid={!!errors.username}
-                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
-                placeholder=" "
-                autoComplete="off"
-              ></input>
-              <label
-                htmlFor="username"
-                className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
-              >
-                {localize('com_auth_username')}
-              </label>
-            </div>
-
-            {errors.username && (
-              <span role="alert" className="mt-1 text-sm text-black">
-                {/* @ts-ignore not sure why */}
-                {errors.username.message}
-              </span>
-            )}
-          </div>
-          <div className="mb-2">
-            <div className="relative">
-              <input
-                type="email"
-                id="email"
-                autoComplete="email"
-                aria-label={localize('com_auth_email')}
-                {...register('email', {
-                  required: localize('com_auth_email_required'),
-                  minLength: {
-                    value: 3,
-                    message: localize('com_auth_email_min_length'),
-                  },
-                  maxLength: {
-                    value: 120,
-                    message: localize('com_auth_email_max_length'),
-                  },
-                  pattern: {
-                    value: /\S+@\S+\.\S+/,
-                    message: localize('com_auth_email_pattern'),
-                  },
-                })}
-                aria-invalid={!!errors.email}
-                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
-                placeholder=" "
-              ></input>
-              <label
-                htmlFor="email"
-                className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
-              >
-                {localize('com_auth_email')}
-              </label>
-            </div>
-            {errors.email && (
-              <span role="alert" className="mt-1 text-sm text-black">
-                {/* @ts-ignore - Type 'string | FieldError | Merge<FieldError, FieldErrorsImpl<any>> | undefined' is not assignable to type 'ReactNode' */}
-                {errors.email.message}
-              </span>
-            )}
-          </div>
-          <div className="mb-2">
-            <div className="relative">
-              <input
-                type="password"
-                id="password"
-                data-testid="password"
-                autoComplete="current-password"
-                aria-label={localize('com_auth_password')}
-                {...register('password', {
-                  required: localize('com_auth_password_required'),
-                  minLength: {
-                    value: 8,
-                    message: localize('com_auth_password_min_length'),
-                  },
-                  maxLength: {
-                    value: 128,
-                    message: localize('com_auth_password_max_length'),
-                  },
-                })}
-                aria-invalid={!!errors.password}
-                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
-                placeholder=" "
-              ></input>
-              <label
-                htmlFor="password"
-                className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
-              >
-                {localize('com_auth_password')}
-              </label>
-            </div>
-
-            {errors.password && (
-              <span role="alert" className="mt-1 text-sm text-black">
-                {/* @ts-ignore not sure why */}
-                {errors.password.message}
-              </span>
-            )}
-          </div>
-          <div className="mb-2">
-            <div className="relative">
-              <input
-                type="password"
-                id="confirm_password"
-                data-testid="confirm_password"
-                aria-label={localize('com_auth_password_confirm')}
-                // uncomment to block pasting in confirm field
-                // onPaste={(e) => {
-                //   e.preventDefault();
-                //   return false;
-                // }}
-                {...register('confirm_password', {
-                  validate: (value) =>
-                    value === password || localize('com_auth_password_not_match'),
-                })}
-                aria-invalid={!!errors.confirm_password}
-                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
-                placeholder=" "
-              ></input>
-              <label
-                htmlFor="confirm_password"
-                className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
-              >
-                {localize('com_auth_password_confirm')}
-              </label>
-            </div>
-
-            {errors.confirm_password && (
-              <span role="alert" className="mt-1 text-sm text-black">
-                {/* @ts-ignore not sure why */}
-                {errors.confirm_password.message}
-              </span>
-            )}
-          </div>
+          {renderInput('name', 'com_auth_full_name', 'text', {
+            required: localize('com_auth_name_required'),
+            minLength: {
+              value: 3,
+              message: localize('com_auth_name_min_length'),
+            },
+            maxLength: {
+              value: 80,
+              message: localize('com_auth_name_max_length'),
+            },
+          })}
+          {renderInput('username', 'com_auth_username', 'text', {
+            minLength: {
+              value: 2,
+              message: localize('com_auth_username_min_length'),
+            },
+            maxLength: {
+              value: 80,
+              message: localize('com_auth_username_max_length'),
+            },
+          })}
+          {renderInput('email', 'com_auth_email', 'email', {
+            required: localize('com_auth_email_required'),
+            minLength: {
+              value: 3,
+              message: localize('com_auth_email_min_length'),
+            },
+            maxLength: {
+              value: 120,
+              message: localize('com_auth_email_max_length'),
+            },
+            pattern: {
+              value: /\S+@\S+\.\S+/,
+              message: localize('com_auth_email_pattern'),
+            },
+          })}
+          {renderInput('password', 'com_auth_password', 'password', {
+            required: localize('com_auth_password_required'),
+            minLength: {
+              value: 8,
+              message: localize('com_auth_password_min_length'),
+            },
+            maxLength: {
+              value: 128,
+              message: localize('com_auth_password_max_length'),
+            },
+          })}
+          {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
+            validate: (value) => value === password || localize('com_auth_password_not_match'),
+          })}
           <div className="mt-6">
             <button
-              disabled={
-                !!errors.email ||
-                !!errors.name ||
-                !!errors.password ||
-                !!errors.username ||
-                !!errors.confirm_password
-              }
+              disabled={Object.keys(errors).length > 0}
               type="submit"
               aria-label="Submit registration"
               className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none disabled:cursor-not-allowed disabled:hover:bg-green-500"
@@ -273,7 +229,6 @@ function Registration() {
           </div>
         </form>
         <p className="my-4 text-center text-sm font-light text-gray-700">
-          {' '}
           {localize('com_auth_already_have_account')}{' '}
           <a
             href="/login"
@@ -283,91 +238,24 @@ function Registration() {
             {localize('com_auth_login')}
           </a>
         </p>
-        {startupConfig?.socialLoginEnabled && (
+        {startupConfig.socialLoginEnabled && (
           <>
-            <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-              <div className="absolute bg-white px-3 text-xs">Or</div>
-            </div>
-            <div className="mt-8" />
-          </>
-        )}
-        {startupConfig?.googleLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with Google"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/google`}
-              >
-                <GoogleIcon />
-                <p>{localize('com_auth_google_login')}</p>
-              </a>
-            </div>
-          </>
-        )}
-        {startupConfig?.facebookLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with Facebook"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/facebook`}
-              >
-                <FacebookIcon />
-                <p>{localize('com_auth_facebook_login')}</p>
-              </a>
-            </div>
-          </>
-        )}
-        {startupConfig?.openidLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with OpenID"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/openid`}
-              >
-                {startupConfig.openidImageUrl ? (
-                  <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
-                ) : (
-                  <OpenIDIcon />
-                )}
-                <p>{startupConfig.openidLabel}</p>
-              </a>
-            </div>
-          </>
-        )}
-        {startupConfig?.githubLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with GitHub"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/github`}
-              >
-                <GithubIcon />
-                <p>{localize('com_auth_github_login')}</p>
-              </a>
-            </div>
-          </>
-        )}
-        {startupConfig?.discordLoginEnabled && startupConfig?.socialLoginEnabled && (
-          <>
-            <div className="mt-2 flex gap-x-2">
-              <a
-                aria-label="Login with Discord"
-                className="justify-left flex w-full items-center space-x-3 rounded-md border border-gray-300 px-5 py-3 hover:bg-gray-50 focus:ring-2 focus:ring-violet-600 focus:ring-offset-1"
-                href={`${startupConfig.serverDomain}/oauth/discord`}
-              >
-                <DiscordIcon />
-                <p>{localize('com_auth_discord_login')}</p>
-              </a>
+            {startupConfig.emailLoginEnabled && (
+              <>
+                <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+                  <div className="absolute bg-white px-3 text-xs">Or</div>
+                </div>
+                <div className="mt-8" />
+              </>
+            )}
+            <div className="mt-2">
+              {socialLogins.map((provider) => providerComponents[provider] || null)}
             </div>
           </>
         )}
       </div>
     </div>
   );
-}
+};
 
 export default Registration;

@@ -10,7 +10,15 @@ const paths = require('~/config/paths');
  * @param {Express.Application} app - The Express application object.
  */
 const AppService = async (app) => {
+  /** @type {TCustomConfig}*/
   const config = (await loadCustomConfig()) ?? {};
+  const socialLogins = config.registration.socialLogins ?? [
+    'google',
+    'facebook',
+    'openid',
+    'github',
+    'discord',
+  ];
   const fileStrategy = config.fileStrategy ?? FileSources.local;
   process.env.CDN_PROVIDER = fileStrategy;
 
@@ -19,6 +27,7 @@ const AppService = async (app) => {
   }
 
   app.locals = {
+    socialLogins,
     fileStrategy,
     paths,
   };
