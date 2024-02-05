@@ -13,6 +13,24 @@ jest.mock('./Config/loadCustomConfig', () => {
 jest.mock('./Files/Firebase/initialize', () => ({
   initializeFirebase: jest.fn(),
 }));
+jest.mock('./ToolService', () => ({
+  loadAndFormatTools: jest.fn().mockReturnValue({
+    ExampleTool: {
+      type: 'function',
+      function: {
+        description: 'Example tool function',
+        name: 'exampleFunction',
+        parameters: {
+          type: 'object',
+          properties: {
+            param1: { type: 'string', description: 'An example parameter' },
+          },
+          required: ['param1'],
+        },
+      },
+    },
+  }),
+}));
 
 describe('AppService', () => {
   let app;
@@ -30,6 +48,20 @@ describe('AppService', () => {
     expect(app.locals).toEqual({
       socialLogins: ['testLogin'],
       fileStrategy: 'testStrategy',
+      availableTools: {
+        ExampleTool: {
+          type: 'function',
+          function: expect.objectContaining({
+            description: 'Example tool function',
+            name: 'exampleFunction',
+            parameters: expect.objectContaining({
+              type: 'object',
+              properties: expect.any(Object),
+              required: expect.arrayContaining(['param1']),
+            }),
+          }),
+        },
+      },
       paths: expect.anything(),
     });
   });
@@ -47,5 +79,31 @@ describe('AppService', () => {
     expect(initializeFirebase).toHaveBeenCalled();
 
     expect(process.env.CDN_PROVIDER).toEqual(FileSources.firebase);
+  });
+
+  it('should load and format tools accurately with defined structure', async () => {
+    const { loadAndFormatTools } = require('./ToolService');
+    await AppService(app);
+
+    expect(loadAndFormatTools).toHaveBeenCalledWith({
+      directory: expect.anything(),
+      filter: expect.anything(),
+    });
+
+    expect(app.locals.availableTools.ExampleTool).toBeDefined();
+    expect(app.locals.availableTools.ExampleTool).toEqual({
+      type: 'function',
+      function: {
+        description: 'Example tool function',
+        name: 'exampleFunction',
+        parameters: {
+          type: 'object',
+          properties: {
+            param1: { type: 'string', description: 'An example parameter' },
+          },
+          required: ['param1'],
+        },
+      },
+    });
   });
 });
