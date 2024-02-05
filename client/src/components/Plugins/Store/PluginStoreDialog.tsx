@@ -22,19 +22,23 @@ type TPluginStoreDialogProps = {
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const localize = useLocalize();
-  const { data: availablePlugins } = useAvailablePluginsQuery();
   const { user } = useAuthContext();
+  const { data: availablePlugins } = useAvailablePluginsQuery();
   const updateUserPlugins = useUpdateUserPluginsMutation();
-  const [conversation, setConversation] = useRecoilState(store.conversation) || {};
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [itemsPerPage, setItemsPerPage] = useState<number>(1);
-  const [maxPage, setMaxPage] = useState<number>(1);
-  const [userPlugins, setUserPlugins] = useState<string[]>([]);
+
+  const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
   const [selectedPlugin, setSelectedPlugin] = useState<TPlugin | undefined>(undefined);
-  const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
+
+  const [maxPage, setMaxPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(1);
+  const [userPlugins, setUserPlugins] = useState<string[]>([]);
+  const [searchChanged, setSearchChanged] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [searchChanged, setSearchChanged] = useState(false);
+  const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
 
   const handleInstallError = (error: TError) => {
     setError(true);
@@ -122,7 +126,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     },
     [itemsPerPage],
   );
-  const [searchValue, setSearchValue] = useState<string>('');
+
   const filteredPlugins = availablePlugins?.filter((plugin) =>
     plugin.name.toLowerCase().includes(searchValue.toLowerCase()),
   );
@@ -209,28 +213,14 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           )}
           <div className="p-4 sm:p-6 sm:pt-4">
             <div className="mt-4 flex flex-col gap-4">
-              <div style={{ position: 'relative', display: 'inline-block', width: '250px' }}>
+              <div className="flex items-center justify-center space-x-4">
+                <Search className="h-6 w-6 text-gray-500" />
                 <input
                   type="text"
                   value={searchValue}
                   onChange={handleSearch}
                   placeholder={localize('com_nav_plugin_search')}
-                  style={{
-                    width: '100%',
-                    paddingLeft: '30px',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px', // This rounds the corners
-                  }}
-                />
-                <Search
-                  style={{
-                    position: 'absolute',
-                    left: '10px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    width: '16px',
-                    height: '16px',
-                  }}
+                  className="w-64 rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
                 />
               </div>
               <div

@@ -95,7 +95,7 @@ function SelectDropDownPop({
             <Content
               side="bottom"
               align="start"
-              className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+              className="mt-2 max-h-[52vh] min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white lg:max-h-[52vh]"
             >
               {availableValues.map((option) => {
                 return (
@@ -105,7 +105,7 @@ function SelectDropDownPop({
                     value={option}
                     selected={!!(value && value === option)}
                     onClick={() => setValue(option)}
-                  ></MenuItem>
+                  />
                 );
               })}
             </Content>

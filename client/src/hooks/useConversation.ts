@@ -9,7 +9,7 @@ import type {
   TModelsConfig,
   TEndpointsConfig,
 } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
+import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
 import useOriginNavigate from './useOriginNavigate';
 import store from '~/store';
 
@@ -38,8 +38,9 @@ const useConversation = () => {
             endpointsConfig,
           });
 
-          if (!conversation.endpointType && endpointsConfig[defaultEndpoint]?.type) {
-            conversation.endpointType = endpointsConfig[defaultEndpoint]?.type;
+          const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
+          if (!conversation.endpointType && endpointType) {
+            conversation.endpointType = endpointType;
           }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];

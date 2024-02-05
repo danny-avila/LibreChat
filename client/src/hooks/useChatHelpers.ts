@@ -8,9 +8,7 @@ import type {
   TMessage,
   TSubmission,
   TEndpointOption,
-  TConversation,
   TEndpointsConfig,
-  TGetConversationsResponse,
 } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
@@ -59,42 +57,6 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     // [conversationId, queryClient],
     [queryParam, queryClient],
   );
-
-  const addConvo = useCallback(
-    (convo: TConversation) => {
-      const convoData = queryClient.getQueryData<TGetConversationsResponse>([
-        QueryKeys.allConversations,
-        { pageNumber: '1', active: true },
-      ]) ?? { conversations: [] as TConversation[], pageNumber: '1', pages: 1, pageSize: 14 };
-
-      let { conversations: convos, pageSize = 14 } = convoData;
-      pageSize = Number(pageSize);
-      convos = convos.filter((c) => c.conversationId !== convo.conversationId);
-      convos = convos.length < pageSize ? convos : convos.slice(0, -1);
-
-      const conversations = [
-        {
-          ...convo,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        ...convos,
-      ];
-
-      queryClient.setQueryData<TGetConversationsResponse>(
-        [QueryKeys.allConversations, { pageNumber: '1', active: true }],
-        {
-          ...convoData,
-          conversations,
-        },
-      );
-    },
-    [queryClient],
-  );
-
-  const invalidateConvos = useCallback(() => {
-    queryClient.invalidateQueries([QueryKeys.allConversations, { active: true }]);
-  }, [queryClient]);
 
   const getMessages = useCallback(() => {
     return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
@@ -161,7 +123,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       conversation: conversation ?? {},
     });
 
-    const { modelDisplayLabel } = endpointsConfig[endpoint ?? ''] ?? {};
+    const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
     const endpointOption = {
       ...convo,
       endpoint,
@@ -225,6 +187,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     const initialResponse: TMessage = {
       sender: responseSender,
       text: responseText,
+      endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
       conversationId,
@@ -340,7 +303,6 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     newConversation,
     conversation,
     setConversation,
-    addConvo,
     // getConvos,
     // setConvos,
     isSubmitting,
@@ -372,7 +334,6 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     setShowAgentSettings,
     files,
     setFiles,
-    invalidateConvos,
     filesLoading,
     setFilesLoading,
     showStopButton,

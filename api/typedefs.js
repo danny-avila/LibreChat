@@ -27,6 +27,24 @@
  */
 
 /**
+ * @exports TCustomConfig
+ * @typedef {import('librechat-data-provider').TCustomConfig} TCustomConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TMessage
+ * @typedef {import('librechat-data-provider').TMessage} TMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports FileSources
+ * @typedef {import('librechat-data-provider').FileSources} FileSources
+ * @memberof typedefs
+ */
+
+/**
  * @exports ImageMetadata
  * @typedef {Object} ImageMetadata
  * @property {string} file_id - The identifier of the file.
@@ -335,5 +353,56 @@
  * @typedef {Object} EndpointWithOrder
  * @property {EndpointConfig} config - The configuration of the endpoint.
  * @property {number} order - The order of the endpoint.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ModelOptions
+ * @property {string} modelName - The name of the model.
+ * @property {number} [temperature] - The temperature setting for the model.
+ * @property {number} [presence_penalty] - The presence penalty setting.
+ * @property {number} [frequency_penalty] - The frequency penalty setting.
+ * @property {number} [max_tokens] - The maximum number of tokens to generate.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ConfigOptions
+ * @property {string} [basePath] - The base path for the API requests.
+ * @property {Object} [baseOptions] - Base options for the API requests, including headers.
+ * @property {Object} [httpAgent] - The HTTP agent for the request.
+ * @property {Object} [httpsAgent] - The HTTPS agent for the request.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} Callbacks
+ * @property {Function} [handleChatModelStart] - A callback function for handleChatModelStart
+ * @property {Function} [handleLLMEnd] - A callback function for handleLLMEnd
+ * @property {Function} [handleLLMError] - A callback function for handleLLMError
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} AzureOptions
+ * @property {string} [azureOpenAIApiKey] - The Azure OpenAI API key.
+ * @property {string} [azureOpenAIApiInstanceName] - The Azure OpenAI API instance name.
+ * @property {string} [azureOpenAIApiDeploymentName] - The Azure OpenAI API deployment name.
+ * @property {string} [azureOpenAIApiVersion] - The Azure OpenAI API version.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} TokenConfig
+ * A configuration object mapping model keys to their respective prompt, completion rates, and context limit.
+ * @property {number} prompt - The prompt rate
+ * @property {number} completion - The completion rate
+ * @property {number} context - The maximum context length supported by the model.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Record<string, TokenConfig>} EndpointTokenConfig
+ * An endpoint's config object mapping model keys to their respective prompt, completion rates, and context limit.
  * @memberof typedefs
  */

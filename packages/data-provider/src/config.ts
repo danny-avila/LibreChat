@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
+import { FileSources } from './types/files';
+
+export const fileSourceSchema = z.nativeEnum(FileSources);
 
 export const endpointSchema = z.object({
   name: z.string().refine((value) => !eModelEndpointSchema.safeParse(value).success, {
@@ -20,17 +23,26 @@ export const endpointSchema = z.object({
   summaryModel: z.string().optional(),
   forcePrompt: z.boolean().optional(),
   modelDisplayLabel: z.string().optional(),
+  headers: z.record(z.any()).optional(),
 });
 
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean(),
+  fileStrategy: fileSourceSchema.optional(),
+  registration: z
+    .object({
+      allowedDomains: z.array(z.string()).optional(),
+    })
+    .optional(),
   endpoints: z
     .object({
       custom: z.array(endpointSchema.partial()),
     })
     .strict(),
 });
+
+export type TCustomConfig = z.infer<typeof configSchema>;
 
 export enum KnownEndpoints {
   mistral = 'mistral',
@@ -86,8 +98,11 @@ export const defaultModels = {
     'claude-instant-1-100k',
   ],
   [EModelEndpoint.openAI]: [
+    'gpt-3.5-turbo-0125',
     'gpt-3.5-turbo-16k-0613',
     'gpt-3.5-turbo-16k',
+    'gpt-4-turbo-preview',
+    'gpt-4-0125-preview',
     'gpt-4-1106-preview',
     'gpt-3.5-turbo',
     'gpt-3.5-turbo-1106',
@@ -154,6 +169,10 @@ export enum CacheKeys {
    */
   PLUGINS = 'plugins',
   /**
+   * Key for the title generation cache.
+   */
+  GEN_TITLE = 'genTitle',
+  /**
    * Key for the model config cache.
    */
   MODELS_CONFIG = 'modelsConfig',
@@ -161,6 +180,10 @@ export enum CacheKeys {
    * Key for the default endpoint config cache.
    */
   ENDPOINT_CONFIG = 'endpointsConfig',
+  /**
+   * Key for accessing the model token config cache.
+   */
+  TOKEN_CONFIG = 'tokenConfig',
   /**
    * Key for the custom config cache.
    */
@@ -183,4 +206,50 @@ export enum AuthKeys {
    * API key to use Google Generative AI.
    */
   GOOGLE_API_KEY = 'GOOGLE_API_KEY',
+}
+
+/**
+ * Enum for Image Detail Cost.
+ *
+ * **Low Res Fixed Cost:** `85`
+ *
+ * **High Res Calculation:**
+ *
+ * Number of `512px` Tiles * `170` + `85` (Additional Cost)
+ */
+export enum ImageDetailCost {
+  /**
+   * Low resolution is a fixed value.
+   */
+  LOW = 85,
+  /**
+   * High resolution Cost Per Tile
+   */
+  HIGH = 170,
+  /**
+   * Additional Cost added to High Resolution Total Cost
+   */
+  ADDITIONAL = 85,
+}
+
+/**
+ * Tab values for Settings Dialog
+ */
+export enum SettingsTabValues {
+  /**
+   * Tab for General Settings
+   */
+  GENERAL = 'general',
+  /**
+   * Tab for Beta Features
+   */
+  BETA = 'beta',
+  /**
+   * Tab for Data Controls
+   */
+  DATA = 'data',
+  /**
+   * Tab for Account Settings
+   */
+  ACCOUNT = 'account',
 }

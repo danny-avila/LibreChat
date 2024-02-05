@@ -8,10 +8,10 @@ import type { TPreset } from 'librechat-data-provider';
 import FileUpload from '~/components/Input/EndpointMenu/FileUpload';
 import { PinIcon, EditIcon, TrashIcon } from '~/components/svg';
 import DialogTemplate from '~/components/ui/DialogTemplate';
+import { getPresetTitle, getEndpointField } from '~/utils';
 import { Dialog, DialogTrigger } from '~/components/ui/';
 import { MenuSeparator, MenuItem } from '../UI';
 import { icons } from '../Endpoints/Icons';
-import { getPresetTitle } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -95,9 +95,10 @@ const PresetItems: FC<{
               return null;
             }
 
-            const iconKey = endpointsConfig?.[preset.endpoint ?? '']?.type
+            const iconKey = getEndpointField(endpointsConfig, preset.endpoint, 'type')
               ? 'unknown'
-              : preset.endpoint ?? 'unknown';
+              : preset.endpointType ?? preset.endpoint ?? 'unknown';
+            const Icon = icons[iconKey];
 
             return (
               <Close asChild key={`preset-${preset.presetId}`}>
@@ -109,12 +110,15 @@ const PresetItems: FC<{
                       title={getPresetTitle(preset)}
                       disableHover={true}
                       onClick={() => onSelectPreset(preset)}
-                      icon={icons[iconKey]({
-                        context: 'menu-item',
-                        iconURL: endpointsConfig?.[preset.endpoint ?? ''].iconURL,
-                        className: 'icon-md mr-1 dark:text-white',
-                        endpoint: preset.endpoint,
-                      })}
+                      icon={
+                        Icon &&
+                        Icon({
+                          context: 'menu-item',
+                          iconURL: getEndpointField(endpointsConfig, preset.endpoint, 'iconURL'),
+                          className: 'icon-md mr-1 dark:text-white',
+                          endpoint: preset.endpoint,
+                        })
+                      }
                       selected={false}
                       data-testid={`preset-item-${preset}`}
                     >

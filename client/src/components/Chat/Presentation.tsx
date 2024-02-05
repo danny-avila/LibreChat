@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { FileSources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
 import DragDropOverlay from './Input/Files/DragDropOverlay';
@@ -25,6 +26,7 @@ export default function Presentation({ children }: { children: React.ReactNode }
       .map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath as string,
+        source: file.source as FileSources,
       }));
 
     if (files.length === 0) {
