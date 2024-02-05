@@ -100,6 +100,7 @@ Use of the `docker-compose.override.yml` file allows us to enable explicit authe
 - While the steps outlined may also be applicable to Docker Desktop environments, or with non-Docker, local MongoDB, or other container setups, details specific to those scenarios are not provided.
 
 **There are 3 basic steps:**
+
 - Create an admin user within your mongodb container
 - Enable authentication and create a "readWrite" user for "LibreChat"
 - Configure the MONGO_URI with newly created user
