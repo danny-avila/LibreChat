@@ -70,6 +70,14 @@ module.exports = {
         'border-medium': 'var(--gray-200)',
         'border-heavy': 'var(--gray-300)',
         'border-xheavy': 'var(--gray-400',
+        
+        'vblue': "#3f5aff",
+        'vnavy': "#192c6b",
+        'vmint': "#19d8ca",
+        'vteal': "#30a9e5",
+        'vpeach': "#ff9688",
+        'vred': "#ee422b",
+        'login-base': '#e0eafc'
       },
     },
   },

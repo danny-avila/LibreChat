@@ -35,11 +35,13 @@ function ChatView({ index = 0 }: { index?: number }) {
   });
 
   const chatHelpers = useChatHelpers(index, conversationId);
+  console.log("chatview")
+  const isLoadingVera = false
 
   return (
     <ChatContext.Provider value={chatHelpers}>
       <Presentation>
-        {isLoading && conversationId !== 'new' ? (
+        {isLoadingVera && conversationId !== 'new' ? (
           <div className="flex h-screen items-center justify-center">
             <Spinner className="opacity-0" />
           </div>

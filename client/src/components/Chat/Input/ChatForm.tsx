@@ -1,15 +1,18 @@
 import { useRecoilState } from 'recoil';
-import type { ChangeEvent } from 'react';
+import { useEffect, type ChangeEvent, useState } from 'react';
 import { useChatContext } from '~/Providers';
-import { useRequiresKey } from '~/hooks';
+import { useAuthContext, useRequiresKey } from '~/hooks';
 import AttachFile from './Files/AttachFile';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import Images from './Files/Images';
 import Textarea from './Textarea';
 import store from '~/store';
+import { fetchEventSource } from '@waylaidwanderer/fetch-event-source'
 
 export default function ChatForm({ index = 0 }) {
+  const {token} = useAuthContext()
+  const [ abortController, setAbortController ] = useState(new AbortController());
   const [text, setText] = useRecoilState(store.textByIndex(index));
   const {
     ask,
@@ -29,8 +32,99 @@ export default function ChatForm({ index = 0 }) {
     setText('');
   };
 
+
+
+  const openStream = async () => {
+    console.log(`[PROTO] ESTABLISHING CONNECTION WITH TOKEN: \n${token}\n and PROMPT: \n${text}`)
+
+    const apiUrl = "https://dev-api.askvera.io/api/v1/chat";
+    const apiKey = token;
+    const payload = {
+      "prompt_text": text,
+      "stream": true
+    }
+    const headers = { 'Content-Type': 'application/json', 'x-vera-api-key': apiKey, }
+  
+
+
+fetchEventSource(apiUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+            async onopen(response) {
+              console.log('[PROTO] OPENED CONNECTION:', response);
+                if (response.ok) {
+                    return; // everything's good
+                } else if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+                    // client-side errors are usually non-retriable:
+                    throw new Error();
+                } else {
+                    throw new Error();
+                }
+            },
+            onmessage(msg) {
+                console.log('[PROTO] NEW EVENT:', msg);
+                if (msg.data) {
+                  console.log('[PROTO] EVENT DATA:', JSON.parse(msg.data));
+                }
+                
+            
+                // Display the event data on the page
+                // var newElement = document.createElement("p");
+                // newElement.textContent = "New event: " + msg.data;
+                // document.getElementById("eventStream").appendChild(newElement);
+                // if the server emits an error message, throw an exception
+                // so it gets handled by the onerror callback below:
+                if (msg.event === 'FatalError') {
+                    throw new Error(msg.data);
+                }
+            },
+            onerror(e) {
+              console.log("[PROTO] ERROR: ", e)
+            },
+            onclose() {
+              console.log("[PROTO] CONNECTION CLOSED")
+            }
+        });
+
+}
+
+  // useEffect(() => {
+  //     const events = new SSE(apiUrl, {
+  //       payload: JSON.stringify(payload),
+  //       headers,
+  //     });
+
+  //     events.onmessage = (e: MessageEvent) => {
+  //       console.log("PROTO EVENTS message: ", e)
+  //       console.log("PROTO EVENTS data: ", JSON.parse(e.data))
+  //     };
+  
+  //     events.onopen = () => console.log('PROTO connection is opened');
+  
+  //     events.oncancel = () => {
+  //       console.log('PROTO EVENTS connection is cancelled')
+  //     };
+  
+  //     events.onerror = function (e: MessageEvent) {
+  //       console.log('PROTO EVENTS error in server stream', e);
+  //     };
+  
+  //     events.stream();
+  
+  //     return () => {
+  //       events.close();
+  //     };
+  // }, [])
+  
+
+  const submitVeraMessage = () => {
+    setText('')
+  }
+
   const { requiresKey } = useRequiresKey();
-  const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
+  // TODO: change back to null after proto
+  const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: "used to be null" };
   const endpoint = endpointType ?? _endpoint;
 
   return (
@@ -60,7 +154,7 @@ export default function ChatForm({ index = 0 }) {
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
               endpoint && (
-                <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
+                <SendButton onClick={async (e) => {e.preventDefault(); await openStream()}} text={text} disabled={filesLoading || isSubmitting || requiresKey} />
               )
             )}
           </div>

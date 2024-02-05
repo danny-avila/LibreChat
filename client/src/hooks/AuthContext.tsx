@@ -93,6 +93,10 @@ const AuthContextProvider = ({
     });
   };
 
+  const loginVera = (data: string) => {
+    setUserContext({token: data, isAuthenticated: true, user: data, redirect: '/c/new'})
+  }
+
   const silentRefresh = useCallback(() => {
     if (authConfig?.test) {
       console.log('Test mode. Skipping silent refresh.');
@@ -171,6 +175,7 @@ const AuthContextProvider = ({
       isAuthenticated,
       error,
       login,
+      loginVera,
       logout,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

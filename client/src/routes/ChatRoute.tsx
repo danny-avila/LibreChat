@@ -7,7 +7,7 @@ import {
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
 import type { TPreset } from 'librechat-data-provider';
-import { useNewConvo, useConfigOverride } from '~/hooks';
+import { useNewConvo, useConfigOverride, useAuthContext } from '~/hooks';
 import { useGetConvoIdQuery } from '~/data-provider';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
@@ -21,7 +21,7 @@ export default function ChatRoute() {
   const { conversationId } = useParams();
   const { data: startupConfig } = useGetStartupConfig();
 
-  const { conversation } = store.useCreateConversationAtom(index);
+  //const { conversation } = store.useCreateConversationAtom(index);
   const modelsQueryEnabled = useRecoilValue(store.modelsQueryEnabled);
   const { isAuthenticated } = useAuthRedirect();
   const { newConversation } = useNewConvo();
@@ -66,26 +66,29 @@ export default function ChatRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConvoQuery.data, modelsQuery.data, endpointsQuery.data]);
 
-  if (endpointsQuery.isLoading || modelsQuery.isLoading) {
-    return <Spinner className="m-auto dark:text-white" />;
-  }
+  // TODO: UNCOMMENT THIS WHEN DONE WITH PROTO
+  // if (endpointsQuery.isLoading || modelsQuery.isLoading) {
+  //   return (<Spinner className="m-auto dark:text-white" />);
+  // }
 
+  console.log('Chat Route', isAuthenticated);
   if (!isAuthenticated) {
     return null;
   }
 
-  // if not a conversation
-  if (conversation?.conversationId === 'search') {
-    return null;
-  }
-  // if conversationId not match
-  if (conversation?.conversationId !== conversationId && !conversation) {
-    return null;
-  }
-  // if conversationId is null
-  if (!conversationId) {
-    return null;
-  }
+  // TODO: UNCOMMENT THIS STUFF WHEN DONE WITH PROTO
+  // // if not a conversation
+  // if (conversation?.conversationId === 'search') {
+  //   return null;
+  // }
+  // // if conversationId not match
+  // if (conversation?.conversationId !== conversationId && !conversation) {
+  //   return null;
+  // }
+  // // if conversationId is null
+  // if (!conversationId) {
+  //   return null;
+  // }
 
   return <ChatView index={index} />;
 }
