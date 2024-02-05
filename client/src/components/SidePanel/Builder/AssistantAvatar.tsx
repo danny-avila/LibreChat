@@ -73,6 +73,12 @@ function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: nu
     }
   }, [input]);
 
+  useEffect(() => {
+    if (metadata?.avatar) {
+      setPreviewUrl(metadata.avatar as string);
+    }
+  }, [metadata?.avatar]);
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
 
@@ -106,14 +112,12 @@ function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: nu
     setMenuOpen(false);
   };
 
-  const url = previewUrl ?? (metadata?.avatar as string | undefined);
-
   return (
     <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
       <div className="flex w-full items-center justify-center gap-4">
         <Popover.Trigger asChild>
           <button type="button" className="h-20 w-20">
-            {url ? <AssistantAvatar url={url} progress={progress} /> : <NoImage />}
+            {previewUrl ? <AssistantAvatar url={previewUrl} progress={progress} /> : <NoImage />}
           </button>
         </Popover.Trigger>
       </div>
