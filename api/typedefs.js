@@ -27,6 +27,12 @@
  */
 
 /**
+ * @exports TCustomConfig
+ * @typedef {import('librechat-data-provider').TCustomConfig} TCustomConfig
+ * @memberof typedefs
+ */
+
+/**
  * @exports TMessage
  * @typedef {import('librechat-data-provider').TMessage} TMessage
  * @memberof typedefs

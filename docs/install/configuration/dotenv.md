@@ -665,7 +665,8 @@ see: **[User/Auth System](../configuration/user_auth_system.md)**
 
 ```bash
 ALLOW_EMAIL_LOGIN=true
-ALLOW_REGISTRATION=true       
+ALLOW_REGISTRATION=true
+ALLOWED_REGISTRATION_DOMAINS=
 ALLOW_SOCIAL_LOGIN=false
 ALLOW_SOCIAL_REGISTRATION=false
 ```

@@ -1,8 +1,13 @@
 # Configuration version (required)
-version: 1.0.1
+version: 1.0.2
 
 # Cache settings: Set to true to enable caching
 cache: true
+
+# Example Registration Object Structure (optional)
+# registration:
+  # allowedDomains:
+    # - "gmail.com"
 
 # Definition of custom endpoints
 endpoints:
