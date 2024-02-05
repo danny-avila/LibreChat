@@ -1,4 +1,5 @@
-const {
+import {
+  fileConfig,
   fullMimeTypesList,
   codeInterpreterMimeTypesList,
   retrievalMimeTypesList,
@@ -7,7 +8,7 @@ const {
   retrievalMimeTypes,
   excelFileTypes,
   excelMimeTypes,
-} = require('librechat-data-provider');
+} from '../src/file-config';
 
 describe('MIME Type Regex Patterns', () => {
   const unsupportedMimeTypes = [
@@ -75,5 +76,25 @@ describe('Testing Excel MIME types', () => {
   test('Excel MIME types should match the regex pattern in excelMimeTypes', () => {
     const matches = excelFileTypes.every((mimeType) => excelMimeTypes.test(mimeType));
     expect(matches).toBeTruthy();
+  });
+});
+
+describe('Testing `fileConfig`', () => {
+  describe('checkType function', () => {
+    test('should return true for supported MIME types', () => {
+      const fileTypes = ['text/csv', 'application/json', 'application/pdf', 'image/jpeg'];
+      fileTypes.forEach((fileType) => {
+        const isSupported = fileConfig.checkType(fileType);
+        expect(isSupported).toBe(true);
+      });
+    });
+
+    test('should return false for unsupported MIME types', () => {
+      const fileTypes = ['text/mamba', 'application/exe', 'no-image', ''];
+      fileTypes.forEach((fileType) => {
+        const isSupported = fileConfig.checkType(fileType);
+        expect(isSupported).toBe(false);
+      });
+    });
   });
 });

@@ -5,6 +5,7 @@ import {
   openapiToFunction,
   validateAndParseOpenAPISpec,
 } from '../src/actions';
+import { AuthorizationTypeEnum, AuthTypeEnum } from '../src/types/assistants';
 import type { ParametersSchema } from '../src/actions';
 import type { OpenAPIV3 } from 'openapi-types';
 
@@ -187,12 +188,23 @@ describe('Authentication Handling', () => {
       false,
       'application/json',
     );
-    actionRequest.setAuth('Basic', { username: 'user', password: 'pass' });
+
+    const api_key = 'user:pass';
+    const encodedCredentials = Buffer.from('user:pass').toString('base64');
+
+    actionRequest.setAuth({
+      auth: {
+        type: AuthTypeEnum.ServiceHttp,
+        authorization_type: AuthorizationTypeEnum.Basic,
+      },
+      api_key,
+    });
+
     await actionRequest.setParams({ param1: 'value1' });
     await actionRequest.execute();
     expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/test', {
       headers: expect.objectContaining({
-        Authorization: expect.stringMatching(/^Basic/),
+        Authorization: `Basic ${encodedCredentials}`,
       }),
       params: expect.anything(),
     });
@@ -207,7 +219,13 @@ describe('Authentication Handling', () => {
       false,
       'application/json',
     );
-    actionRequest.setAuth('Bearer', { token: 'token123' });
+    actionRequest.setAuth({
+      auth: {
+        type: AuthTypeEnum.ServiceHttp,
+        authorization_type: AuthorizationTypeEnum.Bearer,
+      },
+      api_key: 'token123',
+    });
     await actionRequest.setParams({ param1: 'value1' });
     await actionRequest.execute();
     expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/test', {
@@ -227,7 +245,15 @@ describe('Authentication Handling', () => {
       false,
       'application/json',
     );
-    actionRequest.setAuth('ApiKey', { headerName: 'X-API-KEY', apiKey: 'abc123' });
+    // Updated to match ActionMetadata structure
+    actionRequest.setAuth({
+      auth: {
+        type: AuthTypeEnum.ServiceHttp, // Assuming this is a valid enum or value for your context
+        authorization_type: AuthorizationTypeEnum.Custom, // Assuming Custom means using a custom header
+        custom_auth_header: 'X-API-KEY',
+      },
+      api_key: 'abc123',
+    });
     await actionRequest.setParams({ param1: 'value1' });
     await actionRequest.execute();
     expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/test', {
@@ -269,6 +295,49 @@ describe('openapiToFunction', () => {
                 },
               },
             ],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      locations: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            city: {
+                              type: 'string',
+                              example: 'San Francisco',
+                            },
+                            state: {
+                              type: 'string',
+                              example: 'CA',
+                            },
+                            countryCode: {
+                              type: 'string',
+                              description: 'ISO 3166-1 alpha-2 country code',
+                              example: 'US',
+                            },
+                            time: {
+                              type: 'string',
+                              description:
+                                'Optional time for which the weather is requested, in ISO 8601 format.',
+                              example: '2023-12-04T14:00:00Z',
+                            },
+                          },
+                          required: ['city', 'state', 'countryCode'],
+                          description:
+                            'Details of the location for which the weather data is requested.',
+                        },
+                        description: 'A list of locations to retrieve the weather for.',
+                      },
+                    },
+                  },
+                },
+              },
+            },
             deprecated: false,
             responses: {},
           },
@@ -280,12 +349,48 @@ describe('openapiToFunction', () => {
     };
 
     const { functionSignatures, requestBuilders } = openapiToFunction(openapiSpec as OpenAPISpec);
-
     expect(functionSignatures.length).toBe(1);
     expect(functionSignatures[0].name).toBe('GetCurrentWeather');
-    expect(
-      (functionSignatures[0].parameters as ParametersSchema).properties.location.description,
-    ).toBe(openapiSpec.paths['/location'].get.parameters[0].description);
+
+    // Corrected test expectations to match the actual structure
+    const parameters = functionSignatures[0].parameters as ParametersSchema & {
+      properties: {
+        location: {
+          type: 'string';
+        };
+        locations: {
+          type: 'array';
+          items: {
+            type: 'object';
+            properties: {
+              city: {
+                type: 'string';
+              };
+              state: {
+                type: 'string';
+              };
+              countryCode: {
+                type: 'string';
+              };
+              time: {
+                type: 'string';
+              };
+            };
+          };
+        };
+      };
+    };
+
+    expect(parameters).toBeDefined();
+    expect(parameters.properties.locations).toBeDefined();
+    expect(parameters.properties.locations.type).toBe('array');
+    expect(parameters.properties.locations.items.type).toBe('object');
+
+    expect(parameters.properties.locations.items.properties.city.type).toBe('string');
+    expect(parameters.properties.locations.items.properties.state.type).toBe('string');
+    expect(parameters.properties.locations.items.properties.countryCode.type).toBe('string');
+    expect(parameters.properties.locations.items.properties.time.type).toBe('string');
+
     expect(requestBuilders).toHaveProperty('GetCurrentWeather');
     expect(requestBuilders.GetCurrentWeather).toBeInstanceOf(ActionRequest);
   });
