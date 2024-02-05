@@ -2,6 +2,7 @@ const { Strategy: DiscordStrategy } = require('passport-discord');
 const { createNewUser, handleExistingUser } = require('./process');
 const { logger } = require('~/config');
 const User = require('~/models/User');
+const isDomainAllowed = require('~/server/services/isDomainAllowed');
 
 const discordLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -27,7 +28,13 @@ const discordLogin = async (accessToken, refreshToken, profile, cb) => {
       return cb(null, oldUser);
     }
 
-    if (ALLOW_SOCIAL_REGISTRATION) {
+    if (!(await isDomainAllowed(email))) {
+      const errorMessage = 'Registration from this domain is not allowed.';
+      logger.error(`[registerUser] [Registration not allowed] [Email: ${email}]`);
+      return { status: 403, message: errorMessage };
+    }
+
+    if (ALLOW_SOCIAL_REGISTRATION && isDomainAllowed(email)) {
       const newUser = await createNewUser({
         email,
         avatarUrl,
