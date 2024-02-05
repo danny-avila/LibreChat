@@ -47,11 +47,9 @@ router.post('/gen_title', async (req, res) => {
     await titleCache.delete(key);
     res.status(200).json({ title });
   } else {
-    res
-      .status(404)
-      .json({
-        message: 'Title not found or method not implemented for the conversation\'s endpoint',
-      });
+    res.status(404).json({
+      message: 'Title not found or method not implemented for the conversation\'s endpoint',
+    });
   }
 });
 
@@ -60,6 +58,10 @@ router.post('/clear', async (req, res) => {
   const { conversationId, source, thread_id } = req.body.arg;
   if (conversationId) {
     filter = { conversationId };
+  }
+
+  if (source === 'button' && !conversationId) {
+    return res.status(200).send('No conversationId provided');
   }
 
   if (thread_id) {
@@ -71,10 +73,6 @@ router.post('/clear', async (req, res) => {
 
   // for debugging deletion source
   // logger.debug('source:', source);
-
-  if (source === 'button' && !conversationId) {
-    return res.status(200).send('No conversationId provided');
-  }
 
   try {
     const dbResponse = await deleteConvos(req.user.id, filter);
