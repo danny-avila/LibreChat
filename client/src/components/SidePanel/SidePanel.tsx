@@ -1,7 +1,7 @@
 import throttle from 'lodash/throttle';
 import { useState, useRef, useCallback } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
+import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
 import { Blocks, AttachmentIcon } from '~/components/svg';
 import { Separator } from '~/components/ui/Separator';
@@ -92,7 +92,7 @@ export default function SidePanel({
           </Tooltip>
         </TooltipProvider>
         {(!isCollapsed || minSize > 0) && (
-          <ResizableHandle withHandle className="bg-transparent dark:text-white" />
+          <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
         )}
         <ResizablePanel
           collapsedSize={collapsedSize}
