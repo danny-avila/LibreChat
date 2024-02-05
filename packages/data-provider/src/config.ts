@@ -40,7 +40,8 @@ export const configSchema = z.object({
     .object({
       custom: z.array(endpointSchema.partial()),
     })
-    .strict(),
+    .strict()
+    .optional(),
 });
 
 export type TCustomConfig = z.infer<typeof configSchema>;
