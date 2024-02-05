@@ -4,21 +4,6 @@ description: Comprehensive guide for configuring the `librechat.yaml` file AKA t
 weight: -10
 ---
 
-<!-- # Table of Contents
-
- - [Intro](#librechat-configuration-guide)
-    - [Setup](#setup)
-    - [Docker Setup](#docker-setup)
-    - [Config Structure](#config-structure)
-        - [1. Version](#1-version)
-        - [2. Cache Settings](#2-cache-settings)
-        - [3. Endpoints](#3-endpoints)
-            - [Endpoint Object Structure](#endpoint-object-structure)
-    - [Additional Notes](#additional-notes)
-    - [Default Parameters](#default-parameters)
-        - [Breakdown of Default Params](#breakdown-of-default-params)
-    - [Example Config](#example-config) -->
-
 # LibreChat Configuration Guide
 
 Welcome to the guide for configuring the **librechat.yaml** file in LibreChat.
@@ -43,8 +28,11 @@ Stay tuned for ongoing enhancements to customize your LibreChat instance!
     - [Version](#version)
     - [Cache Settings](#cache-settings)
     - [File Strategy](#file-strategy)
+    - [Registration](#registration)
     - [Endpoints](#endpoints)
-  - [Endpoint Object Structure](#endpoint-object-structure)
+  - [Registration Object Structure](#registration-object-structure)
+    - [**allowedDomains**:](#allowedDomains)
+  - [Custom Endpoint Object Structure](#custom-endpoint-object-structure)
     - [**name**:](#name)
     - [**apiKey**:](#apikey)
     - [**baseURL**:](#baseurl)
@@ -120,6 +108,15 @@ docker-compose up # no need to rebuild
 - **Description**: Determines where to save user uploaded/generated files. Defaults to `"local"` if omitted.
 - **Example**: `fileStrategy: "firebase"`
 
+### Registration
+- **Key**: `registration`
+- **Type**: Object
+- **Description**: Configures registration-related settings for the application.
+  - **Sub-Key**: `allowedDomains`
+  - **Type**: Array of Strings
+  - **Description**: Specifies a list of allowed email domains for user registration. Users attempting to register with email domains not listed here will be restricted from registering.
+- [Registration Object Structure](#registration-object-structure)
+
 ### Endpoints
 - **Key**: `endpoints`
 - **Type**: Object
@@ -127,9 +124,34 @@ docker-compose up # no need to rebuild
   - **Sub-Key**: `custom`
   - **Type**: Array of Objects
   - **Description**: Each object in the array represents a unique endpoint configuration.
+  - [Custom Endpoint Object Structure](#custom-endpoint-object-structure)
 - **Required**
 
-## Endpoint Object Structure
+## Registration Object Structure
+
+```yaml
+# Example Registration Object Structure
+registration:
+  allowedDomains:
+    - "gmail.com"
+    - "protonmail.com"
+```
+
+### **allowedDomains**:
+
+  > A list specifying allowed email domains for registration.
+
+  - Type: Array of Strings
+  - Example: 
+    ```yaml
+    allowedDomains:
+      - "gmail.com"
+      - "protonmail.com"
+    ```
+  - **Required**
+  - **Note**: Users with email domains not listed will be restricted from registering.
+
+## Custom Endpoint Object Structure
 Each endpoint in the `custom` array should have the following structure:
 
 ```yaml
@@ -345,8 +367,12 @@ Custom endpoints share logic with the OpenAI endpoint, and thus have default par
 ## Example Config
 
 ```yaml
-version: 1.0.1
+version: 1.0.2
 cache: true
+# Example Registration Object Structure
+registration:
+  allowedDomains:
+    - "gmail.com"
 endpoints:
   custom:
     # Mistral AI API

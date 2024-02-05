@@ -657,7 +657,6 @@ see: **[User/Auth System](../configuration/user_auth_system.md)**
 - General Settings: 
     - `ALLOW_EMAIL_LOGIN`: Email login. Set to `true` or `false` to enable or disable ONLY email login.
     - `ALLOW_REGISTRATION`: Email registration of new users. Set to `true` or `false` to enable or disable Email registration.
-    - `ALLOWED_REGISTRATION_DOMAINS`: Specify a list of allowed email domains for registration. Users with email domains not listed here will be restricted from registering. Example: "domain1.com,domain2.com"
     - `ALLOW_SOCIAL_LOGIN`: Allow users to connect to LibreChat with various social networks, see below. Set to `true` or `false` to enable or disable.
     - `ALLOW_SOCIAL_REGISTRATION`: Enable or disable registration of new user using various social network. Set to `true` or `false` to enable or disable.
 

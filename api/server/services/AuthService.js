@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { registerSchema, errorsToString } = require('~/strategies/validators');
+const getCustomConfig = require('~/cache/getCustomConfig');
 const Token = require('~/models/schema/tokenSchema');
 const { sendEmail } = require('~/server/utils');
 const Session = require('~/models/Session');
@@ -12,19 +13,21 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
-function isDomainAllowed(email) {
-  if (!process.env.ALLOWED_REGISTRATION_DOMAINS) {
+async function isDomainAllowed(email) {
+  const customConfig = await getCustomConfig();
+  if (!customConfig) {
     return true;
   }
-  console.log(email);
+  if (!customConfig?.registration?.allowedDomains) {
+    return true;
+  }
 
   if (!email) {
     return false;
   }
 
   const domain = email.split('@')[1];
-  const allowedDomains = process.env.ALLOWED_REGISTRATION_DOMAINS.split(',');
-  return allowedDomains.includes(domain);
+  return customConfig.registration.allowedDomains.includes(domain);
 }
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -95,7 +98,7 @@ const registerUser = async (user) => {
       return { status: 500, message: 'Something went wrong' };
     }
 
-    if (!isDomainAllowed(user.email)) {
+    if (!(await isDomainAllowed(email))) {
       const errorMessage = 'Registration from this domain is not allowed.';
       logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
       return { status: 403, message: errorMessage };
