@@ -5,7 +5,8 @@ version: 1.0.2
 cache: true
 
 # Example Registration Object Structure (optional)
-# registration:
+registration:
+  socialLogins: ["github", "google", "discord", "openid", "facebook"]
   # allowedDomains:
     # - "gmail.com"
 

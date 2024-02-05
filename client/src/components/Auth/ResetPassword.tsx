@@ -30,7 +30,7 @@ function ResetPassword() {
   if (resetPassword.isSuccess) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
-        <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
+        <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
           <h1 className="mb-4 text-center text-3xl font-semibold">
             {localize('com_auth_reset_password_success')}
           </h1>
@@ -53,7 +53,7 @@ function ResetPassword() {
   } else {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
-        <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
+        <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
           <h1 className="mb-4 text-center text-3xl font-semibold">
             {localize('com_auth_reset_password')}
           </h1>
@@ -176,10 +176,13 @@ function ResetPassword() {
                 disabled={!!errors.password || !!errors.confirm_password}
                 type="submit"
                 aria-label={localize('com_auth_submit_registration')}
-                className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none"
+                className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-all duration-300 hover:bg-green-550 focus:bg-green-550 focus:outline-none"
               >
                 {localize('com_auth_continue')}
               </button>
+              <a href="/login" className="text-sm font-medium text-green-500">
+                {localize('com_auth_back_to_login')}
+              </a>
             </div>
           </form>
         </div>
