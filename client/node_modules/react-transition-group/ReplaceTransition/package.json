@@ -1,6 +1,0 @@
-{
-  "name": "react-transition-group/ReplaceTransition",
-  "private": true,
-  "main": "../cjs/ReplaceTransition.js",
-  "module": "../esm/ReplaceTransition.js"
-}

@@ -1,1 +1,0 @@
-{"version":3,"names":["_development","require"],"sources":["../src/index.ts"],"sourcesContent":["/* eslint-disable @babel/development/plugin-name */\n\nexport { default } from \"@babel/plugin-transform-react-jsx/lib/development\";\n"],"mappings":";;;;;;;;;;;AAEA,IAAAA,YAAA,GAAAC,OAAA"}

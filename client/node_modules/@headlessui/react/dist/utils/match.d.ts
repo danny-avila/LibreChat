@@ -1,1 +1,0 @@
-export declare function match<TValue extends string | number = string, TReturnValue = unknown>(value: TValue, lookup: Record<TValue, TReturnValue | ((...args: any[]) => TReturnValue)>, ...args: any[]): TReturnValue;

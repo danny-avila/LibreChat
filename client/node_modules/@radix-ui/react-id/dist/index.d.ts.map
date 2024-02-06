@@ -1,1 +1,0 @@
-{"mappings":"AAOA,sBAAe,eAAe,CAAC,EAAE,MAAM,GAAG,MAAM,CAO/C","sources":["packages/react/id/src/packages/react/id/src/id.tsx","packages/react/id/src/packages/react/id/src/index.ts","packages/react/id/src/index.ts"],"sourcesContent":[null,null,"export { useId } from './id';\n"],"names":[],"version":3,"file":"index.d.ts.map"}

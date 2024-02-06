@@ -1,1 +1,0 @@
-{"version":3,"file":"reactBatchedUpdates.esm.js","sources":["../../src/reactBatchedUpdates.ts"],"sourcesContent":["'use client'\nimport * as ReactDOM from 'react-dom'\n\nexport const unstable_batchedUpdates = ReactDOM.unstable_batchedUpdates\n"],"names":["unstable_batchedUpdates"],"mappings":";;;AAGaA;;"}

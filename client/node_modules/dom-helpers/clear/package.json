@@ -1,7 +1,0 @@
-{
-  "name": "dom-helpers/clear",
-  "private": true,
-  "main": "../cjs/clear.js",
-  "module": "../esm/clear.js",
-  "types": "../esm/clear.d.ts"
-}

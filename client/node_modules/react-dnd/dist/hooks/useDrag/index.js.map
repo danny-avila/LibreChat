@@ -1,1 +1,0 @@
-{"version":3,"sources":["../../../src/hooks/useDrag/index.ts"],"sourcesContent":["export * from './useDrag.js'\n"],"names":[],"mappings":"AAAA,cAAc,cAAc,CAAA"}

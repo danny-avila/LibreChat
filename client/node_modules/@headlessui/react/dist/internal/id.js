@@ -1,1 +1,0 @@
-import n,{createContext as d,useContext as i}from"react";let e=d(void 0);function u(){return i(e)}function f({id:t,children:r}){return n.createElement(e.Provider,{value:t},r)}export{f as IdProvider,u as useProvidedId};

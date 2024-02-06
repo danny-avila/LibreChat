@@ -1,1 +1,0 @@
-{"version":3,"sources":["../src/types.ts"],"sourcesContent":["export interface Task {\n\tcall(): void\n}\nexport type TaskFn = () => void\n"],"names":[],"mappings":"AAAA,WAG+B"}

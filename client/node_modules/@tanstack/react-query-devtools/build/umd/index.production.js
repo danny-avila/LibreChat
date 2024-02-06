@@ -1,2 +1,0 @@
-!function(e,t){"object"==typeof exports&&"undefined"!=typeof module?t(exports):"function"==typeof define&&define.amd?define(["exports"],t):t((e="undefined"!=typeof globalThis?globalThis:e||self).ReactQueryDevtools={})}(this,(function(e){"use strict";e.ReactQueryDevtools=function(){return null},e.ReactQueryDevtoolsPanel=function(){return null},Object.defineProperty(e,"__esModule",{value:!0})}));
-//# sourceMappingURL=index.production.js.map

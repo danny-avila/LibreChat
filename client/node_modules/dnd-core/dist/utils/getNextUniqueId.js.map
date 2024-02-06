@@ -1,1 +1,0 @@
-{"version":3,"sources":["../../src/utils/getNextUniqueId.ts"],"sourcesContent":["let nextUniqueId = 0\n\nexport function getNextUniqueId(): number {\n\treturn nextUniqueId++\n}\n"],"names":["nextUniqueId","getNextUniqueId"],"mappings":"AAAA,IAAIA,YAAY,GAAG,CAAC;AAEpB,OAAO,SAASC,eAAe,GAAW;IACzC,OAAOD,YAAY,EAAE,CAAA;CACrB"}

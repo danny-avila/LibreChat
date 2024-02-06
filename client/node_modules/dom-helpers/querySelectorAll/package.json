@@ -1,7 +1,0 @@
-{
-  "name": "dom-helpers/querySelectorAll",
-  "private": true,
-  "main": "../cjs/querySelectorAll.js",
-  "module": "../esm/querySelectorAll.js",
-  "types": "../esm/querySelectorAll.d.ts"
-}
