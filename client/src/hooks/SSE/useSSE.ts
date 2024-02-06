@@ -256,7 +256,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     // update the messages; if assistants endpoint, client doesn't receive responseMessage
     if (runMessages) {
-      setMessages([...messages, ...runMessages]);
+      setMessages([...runMessages]);
     } else if (isRegenerate && responseMessage) {
       setMessages([...messages, responseMessage]);
     } else if (responseMessage) {
@@ -385,6 +385,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       },
       body: JSON.stringify({
         abortKey: latestMessage ? runAbortKey : conversationId,
+        latestMessageId: latestMessage?.isCreatedByUser ? null : latestMessage?.messageId,
         endpoint,
       }),
     })

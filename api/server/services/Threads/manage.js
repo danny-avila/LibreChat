@@ -1,5 +1,10 @@
 const { v4 } = require('uuid');
-const { EModelEndpoint, Constants, defaultOrderQuery } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  Constants,
+  defaultOrderQuery,
+  ContentTypes,
+} = require('librechat-data-provider');
 const { recordMessage, getMessages } = require('~/models/Message');
 const { saveConvo } = require('~/models/Conversation');
 const { countTokens } = require('~/server/utils');
@@ -219,6 +224,10 @@ async function syncMessages({ openai, apiMessages, dbMessages, conversationId, t
   const processNewMessage = async ({ dbMessage, apiMessage }) => {
     recordPromises.push(recordMessage({ ...dbMessage, user: openai.req.user.id }));
 
+    if (!apiMessage.id.includes('msg_')) {
+      return;
+    }
+
     if (dbMessage.aggregateMessages?.length > 1) {
       modifyPromises.push(
         addThreadMetadata({
@@ -320,35 +329,123 @@ async function syncMessages({ openai, apiMessages, dbMessages, conversationId, t
 }
 
 /**
+ * Maps messages to their corresponding steps. Steps with message creation will be paired with their messages,
+ * while steps without message creation will be returned as is.
+ *
+ * @param {RunStep[]} steps - An array of steps from the run.
+ * @param {Message[]} messages - An array of message objects.
+ * @returns {(StepMessage | RunStep)[]} An array where each element is either a step with its corresponding message (StepMessage) or a step without a message (RunStep).
+ */
+function mapMessagesToSteps(steps, messages) {
+  // Create a map of messages indexed by their IDs for efficient lookup
+  const messageMap = messages.reduce((acc, msg) => {
+    acc[msg.id] = msg;
+    return acc;
+  }, {});
+
+  // Map each step to its corresponding message, or return the step as is if no message ID is present
+  return steps
+    .sort((a, b) => a.created_at - b.created_at)
+    .map((step) => {
+      const messageId = step.step_details?.message_creation?.message_id;
+
+      if (messageId && messageMap[messageId]) {
+        return { step, message: messageMap[messageId] };
+      }
+      return step;
+    });
+}
+
+/**
  * Checks for any missing messages; if missing,
  * synchronizes LibreChat messages to Thread Messages
  *
  * @param {Object} params - The parameters for initializing a thread.
  * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {string} [params.latestMessageId] - Optional: The latest message ID from LibreChat.
  * @param {string} params.thread_id - Response thread ID.
+ * @param {string} params.run_id - Response Run ID.
  * @param {string} params.conversationId - LibreChat conversation ID.
  * @return {Promise<TMessage[]>} A promise that resolves to the updated messages
  */
-async function checkMessageGaps({ openai, thread_id, conversationId }) {
-  const response = await openai.beta.threads.messages.list(thread_id, defaultOrderQuery);
+async function checkMessageGaps({ openai, latestMessageId, thread_id, run_id, conversationId }) {
+  const promises = [];
+  promises.push(openai.beta.threads.messages.list(thread_id, defaultOrderQuery));
+  promises.push(openai.beta.threads.runs.steps.list(thread_id, run_id));
+  /** @type {[{ data: ThreadMessage[] }, { data: RunStep[] }]} */
+  const [response, stepsResponse] = await Promise.all(promises);
+
+  const steps = mapMessagesToSteps(stepsResponse.data, response.data);
+  const currentMessage = {
+    id: v4(),
+    content: [],
+    assistant_id: null,
+    created_at: Math.floor(new Date().getTime() / 1000),
+    object: 'thread.message',
+    role: 'assistant',
+    run_id,
+    thread_id,
+    metadata: {
+      messageId: latestMessageId,
+    },
+  };
+
+  for (const step of steps) {
+    if (!currentMessage.assistant_id && step.assistant_id) {
+      currentMessage.assistant_id = step.assistant_id;
+    }
+    if (step.message) {
+      currentMessage.id = step.message.id;
+      currentMessage.created_at = step.message.created_at;
+      currentMessage.content = currentMessage.content.concat(step.message.content);
+    } else if (step.step_details?.type === 'tool_calls' && step.step_details?.tool_calls?.length) {
+      currentMessage.content = currentMessage.content.concat(
+        step.step_details?.tool_calls.map((toolCall) => ({
+          [ContentTypes.TOOL_CALL]: {
+            ...toolCall,
+            progress: 2,
+          },
+          type: ContentTypes.TOOL_CALL,
+        })),
+      );
+    }
+  }
+
+  let addedCurrentMessage = false;
+  const apiMessages = response.data.map((msg) => {
+    if (msg.id === currentMessage.id) {
+      addedCurrentMessage = true;
+      return currentMessage;
+    }
+    return msg;
+  });
+
+  if (!addedCurrentMessage) {
+    apiMessages.push(currentMessage);
+  }
 
   const dbMessages = await getMessages({ conversationId });
   const syncedMessages = await syncMessages({
     openai,
     dbMessages,
-    apiMessages: response.data,
+    apiMessages,
     conversationId,
     thread_id,
   });
 
-  // TODO: update UI to include any missing ones
-  return syncedMessages;
+  return Object.values(
+    [...dbMessages, ...syncedMessages].reduce(
+      (acc, message) => ({ ...acc, [message.messageId]: message }),
+      {},
+    ),
+  );
 }
 
 module.exports = {
   initThread,
   saveUserMessage,
-  addThreadMetadata,
-  saveAssistantMessage,
   checkMessageGaps,
+  addThreadMetadata,
+  mapMessagesToSteps,
+  saveAssistantMessage,
 };

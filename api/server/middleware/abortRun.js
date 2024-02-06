@@ -9,7 +9,7 @@ const { logger } = require('~/config');
 
 async function abortRun(req, res) {
   res.setHeader('Content-Type', 'application/json');
-  const { abortKey } = req.body;
+  const { abortKey, latestMessageId } = req.body;
   const [thread_id, conversationId] = abortKey.split(':');
   if (!thread_id || !conversationId) {
     return res.status(400).send({ message: 'Invalid abortKey' });
@@ -36,7 +36,13 @@ async function abortRun(req, res) {
   } catch (error) {
     logger.error('[abortRun] Error cancelling run', { error });
   }
-  runMessages = await checkMessageGaps({ openai, thread_id, conversationId });
+  runMessages = await checkMessageGaps({
+    openai,
+    latestMessageId,
+    thread_id,
+    run_id,
+    conversationId,
+  });
 
   const finalEvent = {
     title: 'New Chat',
