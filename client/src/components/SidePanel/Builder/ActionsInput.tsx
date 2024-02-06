@@ -45,13 +45,19 @@ export default function ActionsInput({
   };
 
   const { handleSubmit, reset } = useFormContext<ActionAuthForm>();
-  const [inputValue, setInputValue] = useState(action ? action.metadata?.raw_spec : '');
-  const [validationResult, setValidationResult] = useState<null | ValidationResult>(
-    action ? debouncedValidation(inputValue, handleResult) : null,
-  );
+  const [validationResult, setValidationResult] = useState<null | ValidationResult>(null);
+  const [inputValue, setInputValue] = useState('');
 
   const [data, setData] = useState<Spec[] | null>(null);
   const [functions, setFunctions] = useState<FunctionTool[] | null>(null);
+
+  useEffect(() => {
+    if (!action?.metadata?.raw_spec) {
+      return;
+    }
+    setInputValue(action.metadata.raw_spec);
+    debouncedValidation(action.metadata.raw_spec, handleResult);
+  }, [action?.metadata?.raw_spec]);
 
   useEffect(() => {
     if (!validationResult || !validationResult.status || !validationResult.spec) {
