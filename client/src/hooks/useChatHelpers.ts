@@ -181,7 +181,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     const generation = editedText ?? latestMessage?.text ?? '';
     const responseText = isEditOrContinue
       ? generation
-      : '<span className="result-streaming">█</span>';
+      : '<span className="result-streaming">⬤</span>';
 
     const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
     const initialResponse: TMessage = {

@@ -1,7 +1,7 @@
 const partialRight = require('lodash/partialRight');
 const { sendMessage } = require('./streamResponse');
 const { getCitations, citeText } = require('./citations');
-const cursor = '<span className="result-streaming">█</span>';
+const cursor = '<span className="result-streaming">⬤</span>';
 const citationRegex = /\[\^\d+?\^]/g;
 
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);

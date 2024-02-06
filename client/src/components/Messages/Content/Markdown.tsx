@@ -41,10 +41,10 @@ const p = React.memo(({ children }: { children: React.ReactNode }) => {
 });
 
 const Markdown = React.memo(({ content, message, showCursor }: TContentProps) => {
-  const [cursor, setCursor] = useState('█');
+  const [cursor, setCursor] = useState('⬤');
   const isSubmitting = useRecoilValue(store.isSubmitting);
   const latestMessage = useRecoilValue(store.latestMessage);
-  const isInitializing = content === '<span className="result-streaming">█</span>';
+  const isInitializing = content === '<span className="result-streaming">⬤</span>';
 
   const { isEdited, messageId } = message ?? {};
   const isLatestMessage = messageId === latestMessage?.messageId;
@@ -62,7 +62,7 @@ const Markdown = React.memo(({ content, message, showCursor }: TContentProps) =>
       timer1 = setInterval(() => {
         setCursor('ㅤ');
         timer2 = setTimeout(() => {
-          setCursor('█');
+          setCursor('⬤');
         }, 200);
       }, 1000);
     } else {

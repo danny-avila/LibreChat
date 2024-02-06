@@ -61,7 +61,7 @@ const run = async () => {
     const emptyBlocks = 50 - filledBlocks; // Total blocks is 50 (each represents 2%), so the rest are empty
     const progressBar =
       '[' +
-      '█'.repeat(filledBlocks) +
+      '⬤'.repeat(filledBlocks) +
       ' '.repeat(emptyBlocks) +
       '] ' +
       percentageUsed.toFixed(2) +

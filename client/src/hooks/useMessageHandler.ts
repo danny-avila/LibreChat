@@ -89,7 +89,7 @@ const useMessageHandler = () => {
     const generation = editedText ?? latestMessage?.text ?? '';
     const responseText = isEditOrContinue
       ? generation
-      : '<span className="result-streaming">█</span>';
+      : '<span className="result-streaming">⬤</span>';
 
     const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
     const initialResponse: TMessage = {

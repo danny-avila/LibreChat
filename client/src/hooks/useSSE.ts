@@ -333,7 +333,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           const responseMessage = {
             ...submission.initialResponse,
             text: submission.initialResponse.text.replace(
-              '<span className="result-streaming">█</span>',
+              '<span className="result-streaming">⬤</span>',
               '',
             ),
           };
