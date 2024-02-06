@@ -443,7 +443,6 @@ describe('validateAndParseOpenAPISpec', () => {
           },
         },
       },
-      // Note: 'components' section intentionally omitted or does not contain 'Missing' schema
     });
 
     const result = validateAndParseOpenAPISpec(missingComponentSpec);
