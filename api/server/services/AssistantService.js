@@ -22,12 +22,19 @@ const { logger } = require('~/config');
  *
  * @param {Object} params - Params for creating the onTextProgress function.
  * @param {OpenAIClient} params.openai - The OpenAI client instance.
- * @param {OpenAIClient} params.conversationId - The current conversation ID.
- * @param {OpenAIClient} params.userMessageId - The user message ID; response's `parentMessageId`.
- * @param {OpenAIClient} params.messageId - The response message ID.
+ * @param {string} params.conversationId - The current conversation ID.
+ * @param {string} params.userMessageId - The user message ID; response's `parentMessageId`.
+ * @param {string} params.messageId - The response message ID.
+ * @param {string} params.thread_id - The current thread ID.
  * @returns {void}
  */
-async function createOnTextProgress({ openai, conversationId, userMessageId, messageId }) {
+async function createOnTextProgress({
+  openai,
+  conversationId,
+  userMessageId,
+  messageId,
+  thread_id,
+}) {
   openai.responseMessage = {
     conversationId,
     parentMessageId: userMessageId,
@@ -52,6 +59,8 @@ async function createOnTextProgress({ openai, conversationId, userMessageId, mes
       type,
       [type]: data[type],
       messageId,
+      thread_id,
+      conversationId,
     });
   };
 }
@@ -258,7 +267,6 @@ function createInProgressHandler(openai, thread_id, messages) {
           [ContentTypes.TOOL_CALL]: toolCall,
           index: toolCallIndex,
           type: ContentTypes.TOOL_CALL,
-          thread_id,
         });
 
         // Update the stored tool call
@@ -428,32 +436,6 @@ async function runAssistant({
 }
 
 /**
- * Maps messages to their corresponding steps. Steps with message creation will be paired with their messages,
- * while steps without message creation will be returned as is.
- *
- * @param {RunStep[]} steps - An array of steps from the run.
- * @param {Message[]} messages - An array of message objects.
- * @returns {(StepMessage | RunStep)[]} An array where each element is either a step with its corresponding message (StepMessage) or a step without a message (RunStep).
- */
-function mapMessagesToSteps(steps, messages) {
-  // Create a map of messages indexed by their IDs for efficient lookup
-  const messageMap = messages.reduce((acc, msg) => {
-    acc[msg.id] = msg;
-    return acc;
-  }, {});
-
-  // Map each step to its corresponding message, or return the step as is if no message ID is present
-  return steps.map((step) => {
-    const messageId = step.step_details?.message_creation?.message_id;
-
-    if (messageId && messageMap[messageId]) {
-      return { step, message: messageMap[messageId] };
-    }
-    return step;
-  });
-}
-
-/**
  * Sorts, processes, and flattens messages to a single string.
  *
  * @param {OpenAIClient} openai - The OpenAI client instance.
@@ -541,6 +523,5 @@ module.exports = {
   getResponse,
   runAssistant,
   processMessages,
-  mapMessagesToSteps,
   createOnTextProgress,
 };
