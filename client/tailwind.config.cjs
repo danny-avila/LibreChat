@@ -15,7 +15,7 @@ module.exports = {
     },
     extend: {
       width: {
-        'authPageWidth': '370px',
+        authPageWidth: '450px',
       },
       keyframes: {
         'accordion-down': {
@@ -33,19 +33,19 @@ module.exports = {
       },
       colors: {
         gray: {
-          '20': '#ececf1',
-          '50': '#f7f7f8',
-          '70': '#d1d5db',
-          '100': '#d9d9e3',
-          '200': '#d9d9e3', // Replacing .bg-gray-200
-          '300': '#c5c5d2',
-          '400': '#acacb1',
-          '500': '#8e8ea0',
-          '600': '#565869',
-          '700': '#40414f', // Replacing .dark .dark:bg-gray-700 and .dark .dark:hover:bg-gray-700:hover
-          '800': '#343541', // Replacing .dark .dark:bg-gray-800, .bg-gray-800, and .dark .dark:hover:bg-gray-800\/90
-          '900': '#202123', // Replacing .dark .dark:bg-gray-900, .bg-gray-900, and .dark .dark:hover:bg-gray-900:hover
-          '1000': '#444654',
+          20: '#ececf1',
+          50: '#f7f7f8',
+          70: '#d1d5db',
+          100: '#d9d9e3',
+          200: '#d9d9e3', // Replacing .bg-gray-200
+          300: '#c5c5d2',
+          400: '#acacb1',
+          500: '#8e8ea0',
+          600: '#565869',
+          700: '#40414f', // Replacing .dark .dark:bg-gray-700 and .dark .dark:hover:bg-gray-700:hover
+          800: '#343541', // Replacing .dark .dark:bg-gray-800, .bg-gray-800, and .dark .dark:hover:bg-gray-800\/90
+          900: '#202123', // Replacing .dark .dark:bg-gray-900, .bg-gray-900, and .dark .dark:hover:bg-gray-900:hover
+          1000: '#444654',
         },
         green: {
           50: '#f1f9f7',
@@ -70,14 +70,14 @@ module.exports = {
         'border-medium': 'var(--gray-200)',
         'border-heavy': 'var(--gray-300)',
         'border-xheavy': 'var(--gray-400',
-        
-        'vblue': "#3f5aff",
-        'vnavy': "#192c6b",
-        'vmint': "#19d8ca",
-        'vteal': "#30a9e5",
-        'vpeach': "#ff9688",
-        'vred': "#ee422b",
-        'login-base': '#e0eafc'
+
+        vblue: '#3f5aff',
+        vnavy: '#192c6b',
+        vmint: '#19d8ca',
+        vteal: '#30a9e5',
+        vpeach: '#ff9688',
+        vred: '#ee422b',
+        'login-base': '#e0eafc',
       },
     },
   },

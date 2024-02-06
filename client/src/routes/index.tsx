@@ -12,6 +12,7 @@ import {
   ApiErrorWatcher,
 } from '~/components/Auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import LoginPage from '~/components/Auth/LoginPage';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -38,7 +39,7 @@ export const router = createBrowserRouter([
     children: [
       {
         path: 'login',
-        element: <Login />,
+        element: <LoginPage />,
       },
       {
         path: '/',

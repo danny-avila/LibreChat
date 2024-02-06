@@ -19,6 +19,8 @@ import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import { useLogoutUserMutation } from '~/data-provider';
 import useTimeout from './useTimeout';
 import store from '~/store';
+import { appLocalStorage as localStorage } from '../services/api/setup';
+import { Auth } from '~/types/auth';
 
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
@@ -94,8 +96,28 @@ const AuthContextProvider = ({
   };
 
   const loginVera = (data: string) => {
-    setUserContext({token: data, isAuthenticated: true, user: data, redirect: '/c/new'})
-  }
+    setUserContext({ token: data, isAuthenticated: true, user: data, redirect: '/c/new' });
+  };
+
+  const signIn = (auth: Auth) => {
+    localStorage.setItem('auth', JSON.stringify(auth));
+    setUserContext({
+      token: auth.access_token,
+      isAuthenticated: true,
+      user: auth,
+      redirect: '/c/new',
+    });
+  };
+
+  const signOut = () => {
+    localStorage.removeItem('auth');
+    setUserContext({
+      token: undefined,
+      isAuthenticated: false,
+      user: undefined,
+      redirect: '/login',
+    });
+  };
 
   const silentRefresh = useCallback(() => {
     if (authConfig?.test) {
@@ -175,8 +197,10 @@ const AuthContextProvider = ({
       isAuthenticated,
       error,
       login,
-      loginVera,
       logout,
+      loginVera,
+      signIn,
+      signOut,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [user, error, isAuthenticated, token],
