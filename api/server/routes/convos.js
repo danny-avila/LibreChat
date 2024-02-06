@@ -67,8 +67,12 @@ router.post('/clear', async (req, res) => {
   if (thread_id) {
     /** @type {{ openai: OpenAI}} */
     const { openai } = await initializeClient({ req, res });
-    const response = await openai.beta.threads.del(thread_id);
-    logger.debug('Deleted OpenAI thread:', response);
+    try {
+      const response = await openai.beta.threads.del(thread_id);
+      logger.debug('Deleted OpenAI thread:', response);
+    } catch (error) {
+      logger.error('Error deleting OpenAI thread:', error);
+    }
   }
 
   // for debugging deletion source
