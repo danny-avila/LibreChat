@@ -40,6 +40,7 @@ router.post('/', async (req, res) => {
     logger.debug('/assistants/', assistant);
     res.status(201).json(assistant);
   } catch (error) {
+    logger.error('[/assistants] Error creating assistant', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -59,6 +60,7 @@ router.get('/:id', async (req, res) => {
     const assistant = await openai.beta.assistants.retrieve(assistant_id);
     res.json(assistant);
   } catch (error) {
+    logger.error('[/assistants/:id] Error retrieving assistant', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -110,6 +112,7 @@ router.delete('/:id', async (req, res) => {
     const deletionStatus = await openai.beta.assistants.del(assistant_id);
     res.json(deletionStatus);
   } catch (error) {
+    logger.error('[/assistants/:id] Error deleting assistant', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -134,6 +137,7 @@ router.get('/', async (req, res) => {
     });
     res.json(response.body);
   } catch (error) {
+    logger.error('[/assistants] Error listing assistants', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -147,6 +151,7 @@ router.get('/documents', async (req, res) => {
   try {
     res.json(await getAssistants({ user: req.user.id }));
   } catch (error) {
+    logger.error('[/assistants/documents] Error listing assistant documents', error);
     res.status(500).json({ error: error.message });
   }
 });
