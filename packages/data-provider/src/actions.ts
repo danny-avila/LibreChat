@@ -185,6 +185,21 @@ export class ActionRequest {
   }
 }
 
+export function resolveRef(
+  schema: OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject | OpenAPIV3.RequestBodyObject,
+  components?: OpenAPIV3.ComponentsObject,
+): OpenAPIV3.SchemaObject {
+  if ('$ref' in schema && components) {
+    const refPath = schema.$ref.replace(/^#\/components\/schemas\//, '');
+    const resolvedSchema = components.schemas?.[refPath];
+    if (!resolvedSchema) {
+      throw new Error(`Reference ${schema.$ref} not found`);
+    }
+    return resolveRef(resolvedSchema, components);
+  }
+  return schema as OpenAPIV3.SchemaObject;
+}
+
 /** Function to convert OpenAPI spec to function signatures and request builders */
 export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
   functionSignatures: FunctionSignature[];
@@ -225,7 +240,9 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
         const requestBody = operationObj.requestBody as OpenAPIV3.RequestBodyObject;
         const content = requestBody.content;
         const contentType = Object.keys(content)[0];
-        parametersSchema.properties['requestBody'] = content[contentType].schema as
+        const schema = content[contentType]?.schema;
+        const resolvedSchema = schema ? resolveRef(schema, openapiSpec.components) : {};
+        parametersSchema.properties['requestBody'] = resolvedSchema as
           | OpenAPIV3.ReferenceObject
           | OpenAPIV3.SchemaObject;
       }

@@ -1,15 +1,16 @@
 import axios from 'axios';
+import { OpenAPIV3 } from 'openapi-types';
 import {
-  FunctionSignature,
+  resolveRef,
   ActionRequest,
   openapiToFunction,
+  FunctionSignature,
   validateAndParseOpenAPISpec,
 } from '../src/actions';
 import { AuthorizationTypeEnum, AuthTypeEnum } from '../src/types/assistants';
+import { getWeatherOpenapiSpec, whimsicalOpenapiSpec } from './openapiSpecs';
+import type { FlowchartSchema } from './openapiSpecs';
 import type { ParametersSchema } from '../src/actions';
-import type { OpenAPIV3 } from 'openapi-types';
-
-type OpenAPISpec = OpenAPIV3.Document;
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -265,94 +266,34 @@ describe('Authentication Handling', () => {
   });
 });
 
+describe('resolveRef', () => {
+  it('correctly resolves $ref references in the OpenAPI spec', () => {
+    const openapiSpec = whimsicalOpenapiSpec;
+    const flowchartRequestRef = (
+      openapiSpec.paths['/ai.chatgpt.render-flowchart']?.post
+        ?.requestBody as OpenAPIV3.RequestBodyObject
+    )?.content['application/json'].schema;
+    expect(flowchartRequestRef).toBeDefined();
+    const resolvedFlowchartRequest = resolveRef(
+      flowchartRequestRef as OpenAPIV3.RequestBodyObject,
+      openapiSpec.components,
+    );
+
+    expect(resolvedFlowchartRequest).toBeDefined();
+    expect(resolvedFlowchartRequest.type).toBe('object');
+    const properties = resolvedFlowchartRequest.properties as FlowchartSchema;
+    expect(properties).toBeDefined();
+    expect(properties.mermaid).toBeDefined();
+    expect(properties.mermaid.type).toBe('string');
+  });
+});
+
 describe('openapiToFunction', () => {
   it('converts OpenAPI spec to function signatures and request builders', () => {
-    const openapiSpec = {
-      openapi: '3.1.0',
-      info: {
-        title: 'Get weather data',
-        description: 'Retrieves current weather data for a location.',
-        version: 'v1.0.0',
-      },
-      servers: [
-        {
-          url: 'https://weather.example.com',
-        },
-      ],
-      paths: {
-        '/location': {
-          get: {
-            description: 'Get temperature for a specific location',
-            operationId: 'GetCurrentWeather',
-            parameters: [
-              {
-                name: 'location',
-                in: 'query',
-                description: 'The city and state to retrieve the weather for',
-                required: true,
-                schema: {
-                  type: 'string',
-                },
-              },
-            ],
-            requestBody: {
-              required: true,
-              content: {
-                'application/json': {
-                  schema: {
-                    type: 'object',
-                    properties: {
-                      locations: {
-                        type: 'array',
-                        items: {
-                          type: 'object',
-                          properties: {
-                            city: {
-                              type: 'string',
-                              example: 'San Francisco',
-                            },
-                            state: {
-                              type: 'string',
-                              example: 'CA',
-                            },
-                            countryCode: {
-                              type: 'string',
-                              description: 'ISO 3166-1 alpha-2 country code',
-                              example: 'US',
-                            },
-                            time: {
-                              type: 'string',
-                              description:
-                                'Optional time for which the weather is requested, in ISO 8601 format.',
-                              example: '2023-12-04T14:00:00Z',
-                            },
-                          },
-                          required: ['city', 'state', 'countryCode'],
-                          description:
-                            'Details of the location for which the weather data is requested.',
-                        },
-                        description: 'A list of locations to retrieve the weather for.',
-                      },
-                    },
-                  },
-                },
-              },
-            },
-            deprecated: false,
-            responses: {},
-          },
-        },
-      },
-      components: {
-        schemas: {},
-      },
-    };
-
-    const { functionSignatures, requestBuilders } = openapiToFunction(openapiSpec as OpenAPISpec);
+    const { functionSignatures, requestBuilders } = openapiToFunction(getWeatherOpenapiSpec);
     expect(functionSignatures.length).toBe(1);
     expect(functionSignatures[0].name).toBe('GetCurrentWeather');
 
-    // Corrected test expectations to match the actual structure
     const parameters = functionSignatures[0].parameters as ParametersSchema & {
       properties: {
         location: {
@@ -393,6 +334,27 @@ describe('openapiToFunction', () => {
 
     expect(requestBuilders).toHaveProperty('GetCurrentWeather');
     expect(requestBuilders.GetCurrentWeather).toBeInstanceOf(ActionRequest);
+  });
+
+  describe('openapiToFunction with $ref resolution', () => {
+    it('correctly converts OpenAPI spec to function signatures and request builders, resolving $ref references', () => {
+      const { functionSignatures, requestBuilders } = openapiToFunction(whimsicalOpenapiSpec);
+
+      expect(functionSignatures.length).toBeGreaterThan(0);
+
+      const postRenderFlowchartSignature = functionSignatures.find(
+        (sig) => sig.name === 'postRenderFlowchart',
+      );
+      expect(postRenderFlowchartSignature).toBeDefined();
+      expect(postRenderFlowchartSignature?.name).toBe('postRenderFlowchart');
+      expect(postRenderFlowchartSignature?.parameters).toBeDefined();
+
+      expect(requestBuilders).toHaveProperty('postRenderFlowchart');
+      const postRenderFlowchartRequestBuilder = requestBuilders['postRenderFlowchart'];
+      expect(postRenderFlowchartRequestBuilder).toBeDefined();
+      expect(postRenderFlowchartRequestBuilder.method).toBe('post');
+      expect(postRenderFlowchartRequestBuilder.path).toBe('/ai.chatgpt.render-flowchart');
+    });
   });
 });
 
