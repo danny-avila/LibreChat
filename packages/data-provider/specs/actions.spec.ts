@@ -7,8 +7,8 @@ import {
   FunctionSignature,
   validateAndParseOpenAPISpec,
 } from '../src/actions';
+import { getWeatherOpenapiSpec, whimsicalOpenapiSpec, scholarAIOpenapiSpec } from './openapiSpecs';
 import { AuthorizationTypeEnum, AuthTypeEnum } from '../src/types/assistants';
-import { getWeatherOpenapiSpec, whimsicalOpenapiSpec } from './openapiSpecs';
 import type { FlowchartSchema } from './openapiSpecs';
 import type { ParametersSchema } from '../src/actions';
 
@@ -19,7 +19,7 @@ describe('FunctionSignature', () => {
   it('creates a function signature and converts to JSON tool', () => {
     const signature = new FunctionSignature('testFunction', 'A test function', {
       param1: { type: 'string' },
-    });
+    } as unknown as ParametersSchema);
     expect(signature.name).toBe('testFunction');
     expect(signature.description).toBe('A test function');
     expect(signature.toObjectTool()).toEqual({
@@ -457,5 +457,19 @@ describe('validateAndParseOpenAPISpec', () => {
     const result = validateAndParseOpenAPISpec(invalidSpec);
     expect(result.status).toBe(false);
     expect(result.message).toBe(invalidServerURL);
+  });
+
+  it('handles YAML spec and correctly converts to Function Signatures', () => {
+    const result = validateAndParseOpenAPISpec(scholarAIOpenapiSpec);
+    expect(result.status).toBe(true);
+
+    const spec = result.spec;
+    expect(spec).toBeDefined();
+
+    const { functionSignatures, requestBuilders } = openapiToFunction(spec as OpenAPIV3.Document);
+    expect(functionSignatures.length).toBe(3);
+    expect(requestBuilders).toHaveProperty('searchAbstracts');
+    expect(requestBuilders).toHaveProperty('getFullText');
+    expect(requestBuilders).toHaveProperty('saveCitation');
   });
 });

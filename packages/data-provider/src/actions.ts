@@ -2,8 +2,8 @@ import axios from 'axios';
 import { URL } from 'url';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
-import type { OpenAPIV3 } from 'openapi-types';
 import type { FunctionTool, Schema, Reference, ActionMetadata } from './types/assistants';
+import type { OpenAPIV3 } from 'openapi-types';
 import { Tools, AuthTypeEnum, AuthorizationTypeEnum } from './types/assistants';
 
 export type ParametersSchema = {
@@ -39,12 +39,16 @@ export function createURL(domain: string, path: string) {
 export class FunctionSignature {
   name: string;
   description: string;
-  parameters: Record<string, unknown>;
+  parameters: ParametersSchema;
 
-  constructor(name: string, description: string, parameters: Record<string, unknown>) {
+  constructor(name: string, description: string, parameters: ParametersSchema) {
     this.name = name;
     this.description = description;
-    this.parameters = parameters;
+    if (parameters.properties?.['requestBody']) {
+      this.parameters = parameters.properties?.['requestBody'] as ParametersSchema;
+    } else {
+      this.parameters = parameters;
+    }
   }
 
   toObjectTool(): FunctionTool {
@@ -223,10 +227,27 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
       const description = operationObj.summary || operationObj.description || '';
 
       const parametersSchema: ParametersSchema = { type: 'object', properties: {}, required: [] };
+
+      if (operationObj.requestBody) {
+        const requestBody = operationObj.requestBody as OpenAPIV3.RequestBodyObject;
+        const content = requestBody.content;
+        const contentType = Object.keys(content)[0];
+        const schema = content[contentType]?.schema;
+        const resolvedSchema = resolveRef(
+          schema as OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject,
+          openapiSpec.components,
+        );
+        parametersSchema.properties['requestBody'] = resolvedSchema;
+      }
+
       if (operationObj.parameters) {
         for (const param of operationObj.parameters) {
           const paramObj = param as OpenAPIV3.ParameterObject;
-          parametersSchema.properties[paramObj.name] = { ...paramObj.schema };
+          const resolvedSchema = resolveRef(
+            { ...paramObj.schema } as OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject,
+            openapiSpec.components,
+          );
+          parametersSchema.properties[paramObj.name] = resolvedSchema;
           if (paramObj.required) {
             parametersSchema.required.push(paramObj.name);
           }
@@ -236,22 +257,7 @@ export function openapiToFunction(openapiSpec: OpenAPIV3.Document): {
         }
       }
 
-      if (operationObj.requestBody) {
-        const requestBody = operationObj.requestBody as OpenAPIV3.RequestBodyObject;
-        const content = requestBody.content;
-        const contentType = Object.keys(content)[0];
-        const schema = content[contentType]?.schema;
-        const resolvedSchema = schema ? resolveRef(schema, openapiSpec.components) : {};
-        parametersSchema.properties['requestBody'] = resolvedSchema as
-          | OpenAPIV3.ReferenceObject
-          | OpenAPIV3.SchemaObject;
-      }
-
-      const functionSignature = new FunctionSignature(
-        operationId,
-        description,
-        parametersSchema.properties['requestBody'] as Record<string, unknown>,
-      );
+      const functionSignature = new FunctionSignature(operationId, description, parametersSchema);
       functionSignatures.push(functionSignature);
 
       const actionRequest = new ActionRequest(
