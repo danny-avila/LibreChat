@@ -1,0 +1,173 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`vite-meta-env not import.meta lookup: not import.meta lookup 1`] = `
+
+const x = import.meta()
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const x = import.meta()
+
+
+`;
+
+exports[`vite-meta-env not import.meta.env: not import.meta.env 1`] = `
+
+const x = import.meta.other
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const x = import.meta.other
+
+
+`;
+
+exports[`vite-meta-env not import.meta: not import.meta 1`] = `
+
+const x = process.env.MODE
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const x = process.env.MODE
+
+
+`;
+
+exports[`vite-meta-env not replaceable: not replaceable 1`] = `
+
+const x = import.meta.env.OTHER
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const x = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([k]) => /^VITE_/.test(k))),
+  NODE_ENV: process.env.NODE_ENV || 'test',
+  MODE: process.env.NODE_ENV || 'test',
+  BASE_URL: '/',
+  DEV: process.env.NODE_ENV !== 'production',
+  PROD: process.env.NODE_ENV === 'production'
+}.OTHER
+
+
+`;
+
+exports[`vite-meta-env replace BASE_URL: replace BASE_URL 1`] = `
+
+const x = import.meta.env.BASE_URL
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const x = '/'
+
+
+`;
+
+exports[`vite-meta-env replace DEV: replace DEV 1`] = `
+
+const x = import.meta.env.DEV
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const x = process.env.NODE_ENV !== 'production'
+
+
+`;
+
+exports[`vite-meta-env replace MODE: replace MODE 1`] = `
+
+const x = import.meta.env.MODE
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const x = process.env.NODE_ENV || 'test'
+
+
+`;
+
+exports[`vite-meta-env replace NODE_ENV: replace NODE_ENV 1`] = `
+
+const x = import.meta.env.NODE_ENV
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const x = process.env.NODE_ENV || 'test'
+
+
+`;
+
+exports[`vite-meta-env replace PROD: replace PROD 1`] = `
+
+const x = import.meta.env.PROD
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const x = process.env.NODE_ENV === 'production'
+
+
+`;
+
+exports[`vite-meta-env replace VITE_* variables: replace VITE_* variables 1`] = `
+
+const x = import.meta.env.VITE_VAR
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const x = process.env.VITE_VAR
+
+
+`;
+
+exports[`vite-meta-env replace env object: replace env object 1`] = `
+
+const env = import.meta.env
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const env = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([k]) => /^VITE_/.test(k))),
+  NODE_ENV: process.env.NODE_ENV || 'test',
+  MODE: process.env.NODE_ENV || 'test',
+  BASE_URL: '/',
+  DEV: process.env.NODE_ENV !== 'production',
+  PROD: process.env.NODE_ENV === 'production'
+}
+
+
+`;
+
+exports[`vite-meta-env replace key access: replace key access 1`] = `
+
+const key = "VITE_VAR"; const x = import.meta.env[key]
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const key = 'VITE_VAR'
+const x = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([k]) => /^VITE_/.test(k))),
+  NODE_ENV: process.env.NODE_ENV || 'test',
+  MODE: process.env.NODE_ENV || 'test',
+  BASE_URL: '/',
+  DEV: process.env.NODE_ENV !== 'production',
+  PROD: process.env.NODE_ENV === 'production'
+}[key]
+
+
+`;
+
+exports[`vite-meta-env replace string access: replace string access 1`] = `
+
+const x = import.meta.env["VITE_VAR"]
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+const x = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([k]) => /^VITE_/.test(k))),
+  NODE_ENV: process.env.NODE_ENV || 'test',
+  MODE: process.env.NODE_ENV || 'test',
+  BASE_URL: '/',
+  DEV: process.env.NODE_ENV !== 'production',
+  PROD: process.env.NODE_ENV === 'production'
+}['VITE_VAR']
+
+
+`;

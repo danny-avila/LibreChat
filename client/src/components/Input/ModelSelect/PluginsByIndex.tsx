@@ -11,9 +11,10 @@ import {
   MultiSelectPop,
   Button,
 } from '~/components/ui';
-import { useSetIndexOptions, useAuthContext, useMediaQuery } from '~/hooks';
+import { useSetIndexOptions, useMediaQuery } from '~/hooks';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 const pluginStore: TPlugin = {
   name: 'Plugin store',
@@ -36,7 +37,7 @@ export default function PluginsByIndex({
   const [visible, setVisibility] = useState<boolean>(true);
   const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
   const { checkPluginSelection, setTools } = useSetIndexOptions();
-  const { user } = useAuthContext();
+  const { user } = useAuthStore();
   const isSmallScreen = useMediaQuery('(max-width: 640px)');
 
   useEffect(() => {

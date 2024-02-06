@@ -13,10 +13,10 @@ import type {
 import type { TAskFunction } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
 import useGetSender from './Conversations/useGetSender';
-import { useAuthContext } from './AuthContext';
 import useUserKey from './Input/useUserKey';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId: string | undefined) {
@@ -28,7 +28,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const getSender = useGetSender();
 
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useAuthContext();
+  const { isAuthenticated } = useAuthStore();
 
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
@@ -40,7 +40,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   /* Messages: here simply to fetch, don't export and use `getMessages()` instead */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { data: _messages } = useGetMessagesByConvoId(conversationId ?? '', {
-    enabled: isAuthenticated,
+    enabled: isAuthenticated(),
   });
 
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));

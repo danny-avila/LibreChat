@@ -1,19 +1,19 @@
 import { Fragment } from 'react';
 import type { TResPlugin } from 'librechat-data-provider';
 import type { TMessageContent, TText, TDisplayProps } from '~/common';
-import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 import EditMessage from './EditMessage';
 import Container from './Container';
 import Markdown from './Markdown';
 import Plugin from './Plugin';
 import Error from './Error';
+import { useLogoutVeraUser } from '~/services/mutations/auth';
 
 const ErrorMessage = ({ text }: TText) => {
-  const { logout } = useAuthContext();
+  const logoutVeraUserMutation = useLogoutVeraUser()
 
   if (text.includes('ban')) {
-    logout();
+    logoutVeraUserMutation.mutate()
     return null;
   }
   return (

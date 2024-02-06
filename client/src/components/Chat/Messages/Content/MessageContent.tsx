@@ -4,18 +4,18 @@ import type { TMessageContent, TText, TDisplayProps } from '~/common';
 import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
 import { DelayedRender } from '~/components/ui';
-import { useAuthContext } from '~/hooks';
 import EditMessage from './EditMessage';
 import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
 import Image from './Image';
+import { useLogoutVeraUser } from '~/services/mutations/auth';
 
 const ErrorMessage = ({ text }: TText) => {
-  const { logout } = useAuthContext();
+  const logoutVeraUserMutation = useLogoutVeraUser()
 
   if (text.includes('ban')) {
-    logout();
+    logoutVeraUserMutation.mutate()
     return null;
   }
   return (

@@ -1,0 +1,204 @@
+{
+  "name": "react-markdown",
+  "version": "8.0.7",
+  "description": "React component to render markdown",
+  "license": "MIT",
+  "keywords": [
+    "remark",
+    "unified",
+    "markdown",
+    "commonmark",
+    "gfm",
+    "ast",
+    "react",
+    "react-component",
+    "component"
+  ],
+  "repository": "remarkjs/react-markdown",
+  "bugs": "https://github.com/remarkjs/react-markdown/issues",
+  "funding": {
+    "type": "opencollective",
+    "url": "https://opencollective.com/unified"
+  },
+  "author": "Espen Hovlandsdal <espen@hovlandsdal.com>",
+  "contributors": [
+    "Espen Hovlandsdal <espen@hovlandsdal.com>",
+    "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)",
+    "Thomas Lindstrøm <t@hom.as>",
+    "Fabian Irsara <info@fabianirsara.com>",
+    "René Kooi <renee@kooi.me>",
+    "Nicolas Venegas <nvenegas@atlassian.com>",
+    "Christian Murphy <christian.murphy.42@gmail.com>",
+    "Linus Unnebäck <linus@folkdatorn.se>",
+    "Peng Guanwen <pg999w@outlook.com>",
+    "mudrz <mudrz@outlook.com>",
+    "Jesse Pinho <jesse@jessepinho.com>",
+    "Florentin Luca Rieger <florentin.rieger@gmail.com>",
+    "Frank <frankieali4@gmail.com>",
+    "Igor Kamyshev <garik.novel@gmail.com>",
+    "Jack Williams <jsw547@gmail.com>",
+    "Jakub Chrzanowski <jakub@chrzanowski.info>",
+    "Jeremy Moseley <jeremy@jeremymoseley.net>",
+    "Kelvin Chan <kchan@securitycompass.com>",
+    "Kohei Asai <me@axross.io>",
+    "Marshall Smith <marshall@radialdevgroup.com>",
+    "Nathan Bierema <nbierema@gmail.com>",
+    "Petr Gazarov <petrgazarov@gmail.com>",
+    "Phil Rajchgot <tophil@outlook.com>",
+    "Rasmus Eneman <rasmus@eneman.eu>",
+    "Riku Rouvila <riku.rouvila@gmail.com>",
+    "Robin Wieruch <wrobin@gmx.net>",
+    "Rostyslav Melnychuk <blackswordgc@gmail.com>",
+    "Ted Piotrowski <tppiotrowski@gmail.com>",
+    "Thibaud Courtoison <do.not.press.enter@gmail.com>",
+    "Tiago Roldão <focus5.6@gmail.com>",
+    "cerkiewny <mstarzycki@gmail.com>",
+    "evoye <rosej@gmx.net>",
+    "gRoberts84 <gavin@gav-roberts.co.uk>",
+    "Alexander Wallin <office@alexanderwallin.com>",
+    "vanchagreen <vanchagreen@gmail.com>",
+    "Alexander Wong <admin@alexander-wong.com>",
+    "André Staltz <andre@staltz.com>",
+    "Angus MacIsaac <angus.macisaac@busbud.com>",
+    "Beau Roberts <beau.roberts@autodesk.com>",
+    "Charlie Chen <doveccl@live.com>",
+    "Christoph Werner <christoph@codepunkt.de>",
+    "Danny <dannyharding10@gmail.com>",
+    "Dennis S <denis.s@svsg.co>",
+    "Evan Hensleigh <futuraprime@gmail.com>"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "unpkg": "react-markdown.min.js",
+  "files": [
+    "lib/",
+    "index.d.ts",
+    "index.js",
+    "react-markdown.min.js"
+  ],
+  "dependencies": {
+    "@types/hast": "^2.0.0",
+    "@types/prop-types": "^15.0.0",
+    "@types/unist": "^2.0.0",
+    "comma-separated-tokens": "^2.0.0",
+    "hast-util-whitespace": "^2.0.0",
+    "prop-types": "^15.0.0",
+    "property-information": "^6.0.0",
+    "react-is": "^18.0.0",
+    "remark-parse": "^10.0.0",
+    "remark-rehype": "^10.0.0",
+    "space-separated-tokens": "^2.0.0",
+    "style-to-object": "^0.4.0",
+    "unified": "^10.0.0",
+    "unist-util-visit": "^4.0.0",
+    "vfile": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@types/react": ">=16",
+    "react": ">=16"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@types/react-is": "^17.0.0",
+    "c8": "^7.0.0",
+    "esbuild": "^0.17.0",
+    "eslint-config-xo-react": "^0.27.0",
+    "eslint-plugin-es": "^4.0.0",
+    "eslint-plugin-react": "^7.0.0",
+    "eslint-plugin-react-hooks": "^4.0.0",
+    "eslint-plugin-security": "^1.0.0",
+    "prettier": "^2.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "rehype-raw": "^6.0.0",
+    "remark-cli": "^11.0.0",
+    "remark-gfm": "^3.0.0",
+    "remark-preset-wooorm": "^9.0.0",
+    "remark-toc": "^8.0.0",
+    "type-coverage": "^2.0.0",
+    "typescript": "^5.0.0",
+    "xo": "^0.54.0"
+  },
+  "scripts": {
+    "prepack": "npm run build && npm run format",
+    "build": "tsc --build --clean && tsc --build && type-coverage && esbuild index.js --bundle --minify --target=es2015 --outfile=react-markdown.min.js --global-name=ReactMarkdown --banner:js=\"(function (g, f) {typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = f() : typeof define === 'function' && define.amd ? define([], f) : (g = typeof globalThis !== 'undefined' ? globalThis : g || self, g.ReactMarkdown = f()); }(this, (function () { 'use strict';\" --footer:js=\"return ReactMarkdown;})));\"",
+    "format": "remark . -qfo --ignore-pattern test/ && prettier . -w --loglevel warn && xo --fix",
+    "test-api": "node --no-warnings --experimental-loader=./test/loader.js --conditions development test/test.jsx",
+    "test-coverage": "c8 --check-coverage --100 --reporter lcov npm run test-api",
+    "test": "npm run build && npm run format && npm run test-coverage"
+  },
+  "remarkConfig": {
+    "plugins": [
+      "remark-preset-wooorm",
+      [
+        "remark-gfm",
+        {
+          "tablePipeAlign": false
+        }
+      ],
+      [
+        "remark-lint-table-pipe-alignment",
+        false
+      ],
+      [
+        "remark-lint-no-html",
+        false
+      ]
+    ]
+  },
+  "typeCoverage": {
+    "atLeast": 100,
+    "detail": true,
+    "strict": true,
+    "ignoreCatch": true,
+    "#": "below is ignored because some proptypes will `any`",
+    "ignoreFiles": [
+      "lib/react-markdown.d.ts",
+      "index.d.ts"
+    ]
+  },
+  "prettier": {
+    "tabWidth": 2,
+    "useTabs": false,
+    "singleQuote": true,
+    "bracketSpacing": false,
+    "semi": false,
+    "trailingComma": "none"
+  },
+  "xo": {
+    "prettier": true,
+    "extends": "xo-react",
+    "envs": [
+      "shared-node-browser"
+    ],
+    "overrides": [
+      {
+        "files": [
+          "lib/**/*.js"
+        ],
+        "extends": [
+          "plugin:es/restrict-to-es2019",
+          "plugin:security/recommended"
+        ],
+        "rules": {
+          "complexity": "off",
+          "security/detect-object-injection": "off"
+        }
+      },
+      {
+        "files": [
+          "test/**/*.jsx"
+        ],
+        "rules": {
+          "n/file-extension-in-import": "off",
+          "react/no-children-prop": "off",
+          "react/prop-types": "off"
+        }
+      }
+    ]
+  }
+}

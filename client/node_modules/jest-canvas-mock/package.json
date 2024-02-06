@@ -1,0 +1,79 @@
+{
+  "name": "jest-canvas-mock",
+  "version": "2.5.2",
+  "description": "Mock a canvas in your jest tests.",
+  "main": "lib/index.js",
+  "types": "types/index.d.ts",
+  "scripts": {
+    "test": "jest --no-cache",
+    "build": "babel src --out-dir lib",
+    "coveralls": "cat ./coverage/lcov.info | coveralls",
+    "prepare": "npm run build",
+    "prettier": "prettier --write ."
+  },
+  "dependencies": {
+    "cssfontparser": "^1.2.1",
+    "moo-color": "^1.0.2"
+  },
+  "devDependencies": {
+    "@antv/g2plot": "^2.3.11",
+    "@babel/cli": "^7.8.4",
+    "@babel/core": "^7.9.0",
+    "@babel/plugin-proposal-class-properties": "^7.8.3",
+    "@babel/preset-env": "^7.9.5",
+    "@commitlint/cli": "^8.3.5",
+    "@commitlint/config-angular": "^8.3.4",
+    "babel-jest": "^25.3.0",
+    "babel-plugin-version": "^0.2.3",
+    "coveralls": "^3.0.11",
+    "husky": "^4.2.5",
+    "jest": "^25.3.0",
+    "prettier": "^2.0.4"
+  },
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-angular"
+    ]
+  },
+  "husky": {
+    "hooks": {
+      "commit-msg": "commitlint -E HUSKY_GIT_PARAMS",
+      "pre-commit": "npm run prettier && npm run test && npm run build"
+    }
+  },
+  "jest": {
+    "collectCoverage": true,
+    "collectCoverageFrom": [
+      "src/classes/**/*.js",
+      "src/mock/**/*.js"
+    ],
+    "setupFiles": [
+      "./src/index.js",
+      "./__mocks__/worker.js"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hustcc/jest-canvas-mock.git"
+  },
+  "keywords": [
+    "mock",
+    "jest",
+    "jest-mock",
+    "echarts",
+    "canvas",
+    "test",
+    "unit"
+  ],
+  "files": [
+    "CHANGELOG.md",
+    "lib/",
+    "types/"
+  ],
+  "author": "hustcc",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/hustcc/jest-canvas-mock/issues"
+  },
+  "homepage": "https://github.com/hustcc/jest-canvas-mock#readme"
+}

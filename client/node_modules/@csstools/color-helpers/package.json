@@ -1,0 +1,73 @@
+{
+	"name": "@csstools/color-helpers",
+	"description": "Color helpers to ease transformation between formats, gamut, etc",
+	"version": "2.1.0",
+	"contributors": [
+		{
+			"name": "Antonio Laguna",
+			"email": "antonio@laguna.es",
+			"url": "https://antonio.laguna.es"
+		},
+		{
+			"name": "Romain Menke ",
+			"email": "romainmenke@gmail.com"
+		}
+	],
+	"license": "CC0-1.0",
+	"funding": [
+		{
+			"type": "github",
+			"url": "https://github.com/sponsors/csstools"
+		},
+		{
+			"type": "opencollective",
+			"url": "https://opencollective.com/csstools"
+		}
+	],
+	"engines": {
+		"node": "^14 || ^16 || >=18"
+	},
+	"main": "dist/index.cjs",
+	"module": "dist/index.mjs",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"files": [
+		"CHANGELOG.md",
+		"LICENSE.md",
+		"README.md",
+		"dist"
+	],
+	"scripts": {
+		"build": "rollup -c ../../rollup/default.mjs",
+		"check-sources-integrity": "node ./scripts/check-changes.mjs",
+		"check-sources-integrity:rewrite": "REWRITE_HASHES=true node ./scripts/check-changes.mjs",
+		"lint": "node ../../.github/bin/format-package-json.mjs",
+		"prepublishOnly": "npm run build && npm run test",
+		"test": "node ./test/_import.mjs && node ./test/_require.cjs"
+	},
+	"homepage": "https://github.com/csstools/postcss-plugins/tree/main/packages/color-helpers#readme",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/csstools/postcss-plugins.git",
+		"directory": "packages/color-helpers"
+	},
+	"bugs": "https://github.com/csstools/postcss-plugins/issues",
+	"keywords": [
+		"colors",
+		"css"
+	],
+	"volta": {
+		"extends": "../../package.json"
+	},
+	"eslintConfig": {
+		"rules": {
+			"@typescript-eslint/no-loss-of-precision": "off"
+		}
+	}
+}

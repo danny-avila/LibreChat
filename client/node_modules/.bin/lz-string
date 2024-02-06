@@ -1,0 +1,1 @@
+../lz-string/bin/bin.js

@@ -18,6 +18,8 @@ import Footer from './Footer';
 import store from '~/store';
 
 function ChatView({ index = 0 }: { index?: number }) {
+  console.log("chatview")
+
   const { conversationId } = useParams();
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
   useSSE(submissionAtIndex);
@@ -35,7 +37,6 @@ function ChatView({ index = 0 }: { index?: number }) {
   });
 
   const chatHelpers = useChatHelpers(index, conversationId);
-  console.log("chatview")
   const isLoadingVera = false
 
   return (

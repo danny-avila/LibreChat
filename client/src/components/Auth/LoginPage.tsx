@@ -1,25 +1,25 @@
 import { ChangeEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuthContext } from '~/hooks/AuthContext';
 import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import PasswordInput from '../Chat/Input/PasswordInput';
 import { LoginForm } from '~/types/auth';
 import { useLoginVeraUser } from '~/services/mutations/auth';
+import { useAuthStore } from '~/zustand';
 
 function Login() {
   const [email, setemail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
-  const { isAuthenticated } = useAuthContext();
+  const { isAuthenticated } = useAuthStore();
   const localize = useLocalize();
   const navigate = useNavigate();
   const loginVeraUserMutation = useLoginVeraUser();
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated()) {
       navigate('/c/new', { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated(), navigate]);
 
   const handleEmailChange = (e: ChangeEvent<HTMLInputElement>) => {
     setemail(e.target.value);
@@ -65,11 +65,11 @@ function Login() {
           onClick={handleSubmit}
           aria-label={localize('com_auth_sign_in')}
           className={`w-full transform rounded-md bg-vteal px-4 py-2 tracking-wide text-white transition-all duration-300 hover:opacity-40 focus:opacity-40 focus:outline-none ${
-            loginVeraUserMutation.isPending ? 'cursor-not-allowed opacity-40' : ''
+            loginVeraUserMutation.isLoading ? 'cursor-not-allowed opacity-40' : ''
           }`}
-          disabled={loginVeraUserMutation.isPending} // Disable the button while loading
+          disabled={loginVeraUserMutation.isLoading} // Disable the button while loading
         >
-          {loginVeraUserMutation.isPending ? 'Loading...' : localize('com_auth_sign_in')}
+          {loginVeraUserMutation.isLoading ? 'Loading...' : localize('com_auth_sign_in')}
         </button>
       </div>
       {/* <p>insert vera auth token</p>

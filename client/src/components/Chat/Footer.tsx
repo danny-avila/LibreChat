@@ -17,9 +17,8 @@ export default function Footer() {
               rel="noreferrer"
               className="underline"
             >
-              {config?.appTitle || 'LibreChat'} v0.6.6
+              {config?.appTitle || 'Vera AI'} v0.6.6
             </a>
-            {' - '} {localize('com_ui_new_footer')}
           </>
         )}
       </span>

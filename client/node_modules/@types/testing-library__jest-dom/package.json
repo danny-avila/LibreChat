@@ -1,0 +1,42 @@
+{
+    "name": "@types/testing-library__jest-dom",
+    "version": "5.14.9",
+    "description": "TypeScript definitions for @testing-library/jest-dom",
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/testing-library__jest-dom",
+    "license": "MIT",
+    "contributors": [
+        {
+            "name": "Ernesto García",
+            "url": "https://github.com/gnapse",
+            "githubUsername": "gnapse"
+        },
+        {
+            "name": "John Gozde",
+            "url": "https://github.com/jgoz",
+            "githubUsername": "jgoz"
+        },
+        {
+            "name": "Seth Macpherson",
+            "url": "https://github.com/smacpherson64",
+            "githubUsername": "smacpherson64"
+        },
+        {
+            "name": "Andrew Leedham",
+            "url": "https://github.com/AndrewLeedham",
+            "githubUsername": "AndrewLeedham"
+        }
+    ],
+    "main": "",
+    "types": "index.d.ts",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+        "directory": "types/testing-library__jest-dom"
+    },
+    "scripts": {},
+    "dependencies": {
+        "@types/jest": "*"
+    },
+    "typesPublisherContentHash": "0eb6526e1a741c563497b720f6563a997eb9919bef8042c6be89e8a7928895c8",
+    "typeScriptVersion": "4.3"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@esbuild/darwin-arm64",
+  "version": "0.19.12",
+  "description": "The macOS ARM 64-bit binary for esbuild, a JavaScript bundler.",
+  "repository": "https://github.com/evanw/esbuild",
+  "license": "MIT",
+  "preferUnplugged": true,
+  "engines": {
+    "node": ">=12"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ]
+}

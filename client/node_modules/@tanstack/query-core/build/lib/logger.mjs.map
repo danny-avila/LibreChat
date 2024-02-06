@@ -1,0 +1,1 @@
+{"version":3,"file":"logger.mjs","sources":["../../src/logger.ts"],"sourcesContent":["export interface Logger {\n  log: LogFunction\n  warn: LogFunction\n  error: LogFunction\n}\n\ntype LogFunction = (...args: any[]) => void\n\nexport const defaultLogger: Logger = console\n"],"names":["defaultLogger","console"],"mappings":"AAQO,MAAMA,aAAqB,GAAGC;;;;"}

@@ -1,0 +1,110 @@
+.rc-input-number {
+  display: inline-block;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 26px;
+  vertical-align: middle;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+.rc-input-number-focused {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+.rc-input-number-out-of-range input {
+  color: red;
+}
+.rc-input-number-handler {
+  display: block;
+  height: 12px;
+  overflow: hidden;
+  line-height: 12px;
+  text-align: center;
+  touch-action: none;
+}
+.rc-input-number-handler-active {
+  background: #ddd;
+}
+.rc-input-number-handler-up-inner,
+.rc-input-number-handler-down-inner {
+  color: #666666;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.rc-input-number:hover {
+  border-color: #1890ff;
+}
+.rc-input-number:hover .rc-input-number-handler-up,
+.rc-input-number:hover .rc-input-number-handler-wrap {
+  border-color: #1890ff;
+}
+.rc-input-number-disabled:hover {
+  border-color: #d9d9d9;
+}
+.rc-input-number-disabled:hover .rc-input-number-handler-up,
+.rc-input-number-disabled:hover .rc-input-number-handler-wrap {
+  border-color: #d9d9d9;
+}
+.rc-input-number-input-wrap {
+  height: 100%;
+  overflow: hidden;
+}
+.rc-input-number-input {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  color: #666666;
+  line-height: 26px;
+  text-align: center;
+  border: 0;
+  border-radius: 4px;
+  outline: 0;
+  transition: all 0.3s ease;
+  transition: all 0.3s;
+  -moz-appearance: textfield;
+}
+.rc-input-number-handler-wrap {
+  float: right;
+  width: 20px;
+  height: 100%;
+  border-left: 1px solid #d9d9d9;
+  transition: all 0.3s;
+}
+.rc-input-number-handler-up {
+  padding-top: 1px;
+  border-bottom: 1px solid #d9d9d9;
+  transition: all 0.3s;
+}
+.rc-input-number-handler-up-inner:after {
+  content: '+';
+}
+.rc-input-number-handler-down {
+  transition: all 0.3s;
+}
+.rc-input-number-handler-down-inner:after {
+  content: '-';
+}
+.rc-input-number-handler-down-disabled,
+.rc-input-number-handler-up-disabled {
+  opacity: 0.3;
+}
+.rc-input-number-handler-down-disabled:hover,
+.rc-input-number-handler-up-disabled:hover {
+  color: #999;
+  border-color: #d9d9d9;
+}
+.rc-input-number-disabled .rc-input-number-input {
+  background-color: #f3f3f3;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+.rc-input-number-disabled .rc-input-number-handler {
+  opacity: 0.3;
+}
+.rc-input-number-disabled .rc-input-number-handler:hover {
+  color: #999;
+  border-color: #d9d9d9;
+}

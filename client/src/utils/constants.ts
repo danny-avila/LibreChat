@@ -10,4 +10,4 @@ export const VERA_PEACH = '#FF9688';
 export const VERA_RED = '#EE422B';
 
 // APP LANDING PATH
-export const LANDING_PATH = '/app/';
+export const LANDING_PATH = '/c/new';

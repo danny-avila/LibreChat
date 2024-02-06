@@ -1,0 +1,37 @@
+{
+  "name": "dnd-core",
+  "version": "16.0.1",
+  "description": "Drag and drop sans the GUI",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "scripts": {
+    "clean": "shx rm -rf dist/",
+    "build_types": "tsc -b .",
+    "build_esm": "swc -C module.type=es6 -d dist src/",
+    "build": "run-s build_types build_esm"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/react-dnd/react-dnd.git"
+  },
+  "dependencies": {
+    "@react-dnd/asap": "^5.0.1",
+    "@react-dnd/invariant": "^4.0.1",
+    "redux": "^4.2.0"
+  },
+  "devDependencies": {
+    "@swc/cli": "^0.1.57",
+    "@swc/core": "^1.2.168",
+    "@types/jest": "^27.4.1",
+    "@types/setimmediate": "^1.0.2",
+    "jest-mock": "^27.5.1",
+    "npm-run-all": "^4.1.5",
+    "react-dnd-test-backend": "portal:../backend-test",
+    "setimmediate": "^1.0.5",
+    "shx": "^0.3.4",
+    "typescript": "^4.6.3"
+  }
+}

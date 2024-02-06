@@ -11,11 +11,13 @@ import Landing from '~/components/ui/Landing';
 import Messages from '~/components/Messages/Messages';
 import TextChat from '~/components/Input/TextChat';
 
-import { useAuthContext, useConversation } from '~/hooks';
+import { useConversation } from '~/hooks';
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 export default function Chat() {
-  const { isAuthenticated } = useAuthContext();
+  console.log("Chat ")
+  const { isAuthenticated } = useAuthStore();
   const [shouldNavigate, setShouldNavigate] = useState(true);
   const searchQuery = useRecoilValue(store.searchQuery);
   const [conversation, setConversation] = useRecoilState(store.conversation);
@@ -33,7 +35,7 @@ export default function Chat() {
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      if (!isAuthenticated) {
+      if (!isAuthenticated()) {
         navigate('/login', { replace: true });
       }
     }, 300);
@@ -41,7 +43,7 @@ export default function Chat() {
     return () => {
       clearTimeout(timeout);
     };
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated(), navigate]);
 
   useEffect(() => {
     if (!isSubmitting && !shouldNavigate) {
@@ -118,7 +120,7 @@ export default function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messagesQuery.data, messagesQuery.isError, setMessages]);
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated()) {
     return null;
   }
 

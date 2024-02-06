@@ -15,23 +15,23 @@ import { useChatContext, useToastContext } from '~/Providers';
 import useNavigateToConvo from '~/hooks/useNavigateToConvo';
 import { cleanupPreset, getEndpointField } from '~/utils';
 import useDefaultConvo from '~/hooks/useDefaultConvo';
-import { useAuthContext } from '~/hooks/AuthContext';
 import { NotificationSeverity } from '~/common';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 export default function usePresets() {
   const localize = useLocalize();
   const hasLoaded = useRef(false);
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
-  const { user, isAuthenticated } = useAuthContext();
+  const { user, isAuthenticated } = useAuthStore();
 
   const modularChat = useRecoilValue(store.modularChat);
   const [_defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
   const setPresetModalVisible = useSetRecoilState(store.presetModalVisible);
   const { preset, conversation, newConversation, setPreset } = useChatContext();
-  const presetsQuery = useGetPresetsQuery({ enabled: !!user && isAuthenticated });
+  const presetsQuery = useGetPresetsQuery({ enabled: !!user && isAuthenticated() });
 
   useEffect(() => {
     const { data: presets } = presetsQuery;

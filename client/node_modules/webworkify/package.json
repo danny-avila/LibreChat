@@ -1,0 +1,32 @@
+{
+  "name": "webworkify",
+  "version": "1.5.0",
+  "description": "launch a web worker that can require() in the browser with browserify",
+  "main": "index.js",
+  "dependencies": {},
+  "devDependencies": {
+    "gamma": "~0.1.0",
+    "tape": "~1.0.4"
+  },
+  "scripts": {
+    "test": "tape test/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/substack/webworkify.git"
+  },
+  "homepage": "https://github.com/substack/webworkify",
+  "keywords": [
+    "web",
+    "worker",
+    "background",
+    "browser",
+    "fork"
+  ],
+  "author": {
+    "name": "James Halliday",
+    "email": "mail@substack.net",
+    "url": "http://substack.net"
+  },
+  "license": "MIT"
+}

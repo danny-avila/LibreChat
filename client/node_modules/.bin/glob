@@ -1,0 +1,1 @@
+../glob/dist/esm/bin.mjs

@@ -1,0 +1,83 @@
+{
+  "name": "babel-plugin-replace-ts-export-assignment",
+  "version": "0.0.2",
+  "description": "Allows export assignment syntax to be used when compiling TypeScript with babel",
+  "keywords": [
+    "Babel",
+    "TypeScript"
+  ],
+  "homepage": "https://github.com/G-Rath/babel-plugin-replace-ts-export-assignment#readme",
+  "bugs": {
+    "url": "https://github.com/G-Rath/babel-plugin-replace-ts-export-assignment/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/G-Rath/babel-plugin-replace-ts-export-assignment.git"
+  },
+  "license": "ISC",
+  "author": "Gareth Jones",
+  "files": [
+    "lib"
+  ],
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.build.json --noEmit",
+    "lint": "npm run lint:all --silent",
+    "lint:all": "eslint \"**/*.{t,j}s\"",
+    "lint:staged": "lint-staged",
+    "test": "jest",
+    "version": "cd scripts && ts-node npm-version.ts"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "ts",
+      "tsx",
+      "js",
+      "json",
+      "jsx",
+      "node"
+    ],
+    "moduleNameMapper": {
+      "^@src/(.*)$": "<rootDir>/src/$1",
+      "^@test/(.*)$": "<rootDir>/test/$1"
+    },
+    "resetMocks": true,
+    "restoreMocks": true,
+    "setupFilesAfterEnv": [
+      "./test/setupExpectEachTestHasAssertions.ts"
+    ],
+    "testRunner": "jest-circus/runner",
+    "transform": {
+      "\\.tsx?": "ts-jest"
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@babel/core": "^7.5.5",
+    "@babel/template": "^7.4.4",
+    "@babel/types": "^7.5.5",
+    "@babel/preset-typescript": "^7.3.3",
+    "@types/dedent": "^0.7.0",
+    "@types/jest": "^24.0.17",
+    "@types/node": "^12.7.1",
+    "@typescript-eslint/eslint-plugin": "^1.13.0",
+    "@typescript-eslint/parser": "^1.13.0",
+    "dedent": "^0.7.0",
+    "eslint": "^6.1.0",
+    "eslint-plugin-jest": "^22.15.0",
+    "husky": "^3.0.3",
+    "jest": "^24.8.0",
+    "jest-circus": "^24.8.0",
+    "jest-junit": "^7.0.0",
+    "lint-staged": "^9.2.1",
+    "ts-jest": "^24.0.2",
+    "ts-node": "^8.3.0",
+    "typescript": "^3.5.3"
+  }
+}

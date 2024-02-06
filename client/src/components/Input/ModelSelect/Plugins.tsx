@@ -5,9 +5,10 @@ import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import { SelectDropDown, MultiSelectDropDown, SelectDropDownPop, Button } from '~/components/ui';
-import { useSetOptions, useAuthContext, useMediaQuery } from '~/hooks';
+import { useSetOptions,  useMediaQuery } from '~/hooks';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 const pluginStore: TPlugin = {
   name: 'Plugin store',
@@ -30,7 +31,7 @@ export default function Plugins({
   const [visible, setVisibility] = useState<boolean>(true);
   const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
   const { checkPluginSelection, setTools } = useSetOptions();
-  const { user } = useAuthContext();
+  const { user } = useAuthStore();
   const isSmallScreen = useMediaQuery('(max-width: 640px)');
   const Menu = popover ? SelectDropDownPop : SelectDropDown;
 

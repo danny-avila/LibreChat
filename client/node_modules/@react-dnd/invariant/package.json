@@ -1,0 +1,30 @@
+{
+  "name": "@react-dnd/invariant",
+  "version": "4.0.2",
+  "description": "invariantx",
+  "keywords": [
+    "test",
+    "invariant"
+  ],
+  "license": "MIT",
+  "author": "Andres Suarez <zertosh@gmail.com>",
+  "repository": "https://github.com/react-dnd/react-dnd",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "clean": "shx rm -rf dist/",
+    "build_types": "tsc -b .",
+    "build_esm": "swc -C module.type=es6 -d dist src/",
+    "build": "run-s build_types build_esm"
+  },
+  "devDependencies": {
+    "@swc/cli": "^0.1.57",
+    "@swc/core": "^1.2.168",
+    "@types/jest": "^27.4.1",
+    "@types/node": "^17.0.25",
+    "npm-run-all": "^4.1.5",
+    "shx": "^0.3.4",
+    "typescript": "^4.6.3"
+  }
+}

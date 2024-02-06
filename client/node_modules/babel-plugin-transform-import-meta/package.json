@@ -1,0 +1,86 @@
+{
+  "name": "babel-plugin-transform-import-meta",
+  "version": "2.2.1",
+  "description": "Transforms import.meta for nodejs environments",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/javiertury/babel-plugin-transform-import-meta"
+  },
+  "license": "BSD",
+  "author": "Javier Garcia <javiertury@gmail.com>",
+  "keywords": [
+    "babel-plugin",
+    "import-meta"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "lib"
+  ],
+  "type": "commonjs",
+  "main": "lib/index.js",
+  "module": "lib/index.esm.mjs",
+  "exports": {
+    "require": "./lib/index.js",
+    "import": "./lib/index.esm.mjs"
+  },
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "prepare": "simple-git-hooks",
+    "clean": "rimraf lib",
+    "build": "rollup -c rollup.config.js",
+    "lint": "eslint --ext ts --max-warnings=0 .",
+    "test": "jest",
+    "prepack": "pnpm run lint && pnpm run clean && pnpm run build",
+    "prepublishOnly": "pnpm run test",
+    "release": "standard-version"
+  },
+  "dependencies": {
+    "@babel/template": "^7.4.4",
+    "tslib": "^2.4.0"
+  },
+  "peerDependencies": {
+    "@babel/core": "^7.10.0"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.17.10",
+    "@babel/core": "^7.18.5",
+    "@babel/types": "^7.18.4",
+    "@commitlint/cli": "^17.0.2",
+    "@commitlint/config-conventional": "^17.0.2",
+    "@rollup/plugin-node-resolve": "^13.3.0",
+    "@types/babel__core": "^7.1.19",
+    "@types/babel__template": "^7.4.1",
+    "@types/jest": "^28.1.2",
+    "@typescript-eslint/eslint-plugin": "^5.29.0",
+    "@typescript-eslint/parser": "^5.29.0",
+    "eslint": "^8.18.0",
+    "eslint-config-standard-with-typescript": "^21.0.1",
+    "eslint-plugin-import": "^2.26.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^6.0.0",
+    "jest": "^28.1.1",
+    "lint-staged": "^13.0.2",
+    "rimraf": "^3.0.2",
+    "rollup": "^2.75.7",
+    "rollup-plugin-typescript2": "^0.32.1",
+    "simple-git-hooks": "^2.8.0",
+    "standard-version": "^9.5.0",
+    "ts-dedent": "^2.2.0",
+    "ts-jest": "^28.0.5",
+    "typescript": "^4.7.4"
+  },
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "lint-staged": {
+    "*.ts": "eslint"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm exec lint-staged",
+    "commit-msg": "pnpm exec commitlint -e"
+  }
+}

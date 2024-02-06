@@ -1,0 +1,66 @@
+{
+  "name": "@rc-component/mini-decimal",
+  "version": "1.1.0",
+  "description": "Lite lib to only support decimal add calculation",
+  "keywords": [
+    "decimal"
+  ],
+  "homepage": "https://github.com/react-component/mini-decimal",
+  "bugs": {
+    "url": "https://github.com/react-component/mini-decimal/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/react-component/mini-decimal.git"
+  },
+  "license": "MIT",
+  "author": "smith3816@gmail.com",
+  "main": "./lib/index",
+  "module": "./es/index",
+  "typings": "es/index.d.ts",
+  "files": [
+    "lib",
+    "es",
+    "dist"
+  ],
+  "scripts": {
+    "compile": "father build",
+    "deploy": "npm run docs:build && npm run docs:deploy",
+    "docs:build": "dumi build",
+    "docs:deploy": "gh-pages -d docs-dist",
+    "lint": "eslint src/ --ext .tsx,.ts",
+    "lint:tsc": "tsc -p tsconfig.json --noEmit",
+    "now-build": "npm run docs:build",
+    "prepublishOnly": "npm run compile && np --no-cleanup --yolo --no-publish",
+    "prettier": "prettier --write \"**/*.{js,jsx,tsx,ts,less,md,json}\"",
+    "start": "dumi dev",
+    "test": "umi-test",
+    "test:coverage": "npm run test --coverage",
+    "watch": "father dev"
+  },
+  "dependencies": {
+    "@babel/runtime": "^7.18.0"
+  },
+  "devDependencies": {
+    "@rc-component/father-plugin": "^1.0.0",
+    "@testing-library/jest-dom": "^5.16.4",
+    "@testing-library/react": "^13.0.0",
+    "@types/jest": "^26.0.20",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@umijs/fabric": "^2.5.2",
+    "dumi": "^1.1.0",
+    "eslint": "^7.18.0",
+    "father": "^4.0.0-rc.8",
+    "gh-pages": "^3.1.0",
+    "np": "^5.0.3",
+    "prettier": "^2.1.2",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "typescript": "^4.6.3",
+    "umi-test": "^1.9.7"
+  },
+  "engines": {
+    "node": ">=8.x"
+  }
+}

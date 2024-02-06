@@ -4,56 +4,58 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useGetModelsQuery, useGetSearchEnabledQuery } from 'librechat-data-provider/react-query';
 import type { ContextType } from '~/common';
-import { useAuthContext, useServerStream, useConversation } from '~/hooks';
+import { useServerStream, useConversation } from '~/hooks';
 import { Nav, MobileNav } from '~/components/Nav';
 import { useGetFiles } from '~/data-provider';
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 export default function Root() {
+  console.log("root")
   const location = useLocation();
   const { newConversation } = useConversation();
-  const { isAuthenticated } = useAuthContext();
+  const { isAuthenticated } = useAuthStore();
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
 
-  const submission = useRecoilValue(store.submission);
-  useServerStream(submission ?? null);
+  // const submission = useRecoilValue(store.submission);
+  // useServerStream(submission ?? null);
 
-  const modelsQueryEnabled = useRecoilValue(store.modelsQueryEnabled);
-  const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
-  const setModelsConfig = useSetRecoilState(store.modelsConfig);
+  // const modelsQueryEnabled = useRecoilValue(store.modelsQueryEnabled);
+  // const setIsSearchEnabled = useSetRecoilState(store.isSearchEnabled);
+  // const setModelsConfig = useSetRecoilState(store.modelsConfig);
 
-  useGetFiles({ enabled: isAuthenticated });
-  const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated });
-  const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated && modelsQueryEnabled });
+  // useGetFiles({ enabled: isAuthenticated() });
+  // const searchEnabledQuery = useGetSearchEnabledQuery({ enabled: isAuthenticated() });
+  // const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated() && modelsQueryEnabled });
 
-  useEffect(() => {
-    localStorage.setItem('navVisible', JSON.stringify(navVisible));
-  }, [navVisible]);
+  // useEffect(() => {
+  //   localStorage.setItem('navVisible', JSON.stringify(navVisible));
+  // }, [navVisible]);
 
-  useEffect(() => {
-    if (modelsQuery.data && location.state?.from?.pathname.includes('/chat')) {
-      setModelsConfig(modelsQuery.data);
-      // Note: passing modelsQuery.data prevents navigation
-      newConversation({}, undefined, modelsQuery.data);
-    } else if (modelsQuery.data) {
-      setModelsConfig(modelsQuery.data);
-    } else if (modelsQuery.isError) {
-      console.error('Failed to get models', modelsQuery.error);
-    }
-  }, [modelsQuery.data, modelsQuery.isError]);
+  // useEffect(() => {
+  //   if (modelsQuery.data && location.state?.from?.pathname.includes('/chat')) {
+  //     setModelsConfig(modelsQuery.data);
+  //     // Note: passing modelsQuery.data prevents navigation
+  //     newConversation({}, undefined, modelsQuery.data);
+  //   } else if (modelsQuery.data) {
+  //     setModelsConfig(modelsQuery.data);
+  //   } else if (modelsQuery.isError) {
+  //     console.error('Failed to get models', modelsQuery.error);
+  //   }
+  // }, [modelsQuery.data, modelsQuery.isError]);
 
-  useEffect(() => {
-    if (searchEnabledQuery.data) {
-      setIsSearchEnabled(searchEnabledQuery.data);
-    } else if (searchEnabledQuery.isError) {
-      console.error('Failed to get search enabled', searchEnabledQuery.error);
-    }
-  }, [searchEnabledQuery.data, searchEnabledQuery.isError]);
+  // useEffect(() => {
+  //   if (searchEnabledQuery.data) {
+  //     setIsSearchEnabled(searchEnabledQuery.data);
+  //   } else if (searchEnabledQuery.isError) {
+  //     console.error('Failed to get search enabled', searchEnabledQuery.error);
+  //   }
+  // }, [searchEnabledQuery.data, searchEnabledQuery.isError]);
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated()) {
     return null;
   }
 

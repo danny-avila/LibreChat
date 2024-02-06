@@ -1,0 +1,57 @@
+# 2023 March 24
+# https://github.com/bevry/base
+
+# VCS Files
+.git
+.svn
+.hg
+
+# System Files
+**/.DS_Store
+
+# Temp Files
+**/.docpad.db
+**/*.log
+**/*.cpuprofile
+**/*.heapsnapshot
+
+# Yarn Files
+.yarn/*
+!.yarn/releases
+!.yarn/plugins
+!.yarn/sdks
+!.yarn/versions
+.pnp.*
+.pnp/
+
+# Build Caches
+build/
+components/
+bower_components/
+node_modules/
+
+# Build Outputs
+**/out.*
+**/*.out.*
+**/out/
+**/output/
+*compiled*
+edition*/
+coffeejs/
+coffee/
+es5/
+es2015/
+esnext/
+docs/
+
+# Development Files
+test/
+**/*fixtures*
+
+# Ecosystem Caches
+.trunk/*/
+
+# =====================================
+# CUSTOM
+
+# None

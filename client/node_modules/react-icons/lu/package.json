@@ -1,0 +1,4 @@
+{
+  "sideEffects": false,
+  "module": "./index.mjs"
+}

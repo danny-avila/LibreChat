@@ -1,0 +1,1 @@
+{"version":3,"sources":["../../src/reducers/stateId.ts"],"sourcesContent":["export type State = number\n\nexport function reduce(state: State = 0): State {\n\treturn state + 1\n}\n"],"names":["reduce","state"],"mappings":"AAEA,OAAO,SAASA,MAAM,CAACC,KAAY,GAAG,CAAC,EAAS;IAC/C,OAAOA,KAAK,GAAG,CAAC,CAAA;CAChB"}

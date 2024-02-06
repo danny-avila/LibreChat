@@ -1,0 +1,88 @@
+import _classCallCheck from "@babel/runtime/helpers/esm/classCallCheck";
+import _createClass from "@babel/runtime/helpers/esm/createClass";
+import _assertThisInitialized from "@babel/runtime/helpers/esm/assertThisInitialized";
+import _inherits from "@babel/runtime/helpers/esm/inherits";
+import _createSuper from "@babel/runtime/helpers/esm/createSuper";
+import _defineProperty from "@babel/runtime/helpers/esm/defineProperty";
+import React from 'react';
+import ReactDOM from 'react-dom';
+
+/**
+ * @deprecated Since we do not need support React15 any more.
+ * Will remove in next major version.
+ */
+var ContainerRender = /*#__PURE__*/function (_React$Component) {
+  _inherits(ContainerRender, _React$Component);
+  var _super = _createSuper(ContainerRender);
+  function ContainerRender() {
+    var _this;
+    _classCallCheck(this, ContainerRender);
+    for (var _len = arguments.length, args = new Array(_len), _key = 0; _key < _len; _key++) {
+      args[_key] = arguments[_key];
+    }
+    _this = _super.call.apply(_super, [this].concat(args));
+    _defineProperty(_assertThisInitialized(_this), "removeContainer", function () {
+      if (_this.container) {
+        ReactDOM.unmountComponentAtNode(_this.container);
+        _this.container.parentNode.removeChild(_this.container);
+        _this.container = null;
+      }
+    });
+    _defineProperty(_assertThisInitialized(_this), "renderComponent", function (props, ready) {
+      var _this$props = _this.props,
+        visible = _this$props.visible,
+        getComponent = _this$props.getComponent,
+        forceRender = _this$props.forceRender,
+        getContainer = _this$props.getContainer,
+        parent = _this$props.parent;
+      if (visible || parent._component || forceRender) {
+        if (!_this.container) {
+          _this.container = getContainer();
+        }
+        ReactDOM.unstable_renderSubtreeIntoContainer(parent, getComponent(props), _this.container, function callback() {
+          if (ready) {
+            ready.call(this);
+          }
+        });
+      }
+    });
+    return _this;
+  }
+  _createClass(ContainerRender, [{
+    key: "componentDidMount",
+    value: function componentDidMount() {
+      if (this.props.autoMount) {
+        this.renderComponent();
+      }
+    }
+  }, {
+    key: "componentDidUpdate",
+    value: function componentDidUpdate() {
+      if (this.props.autoMount) {
+        this.renderComponent();
+      }
+    }
+  }, {
+    key: "componentWillUnmount",
+    value: function componentWillUnmount() {
+      if (this.props.autoDestroy) {
+        this.removeContainer();
+      }
+    }
+  }, {
+    key: "render",
+    value: function render() {
+      return this.props.children({
+        renderComponent: this.renderComponent,
+        removeContainer: this.removeContainer
+      });
+    }
+  }]);
+  return ContainerRender;
+}(React.Component);
+_defineProperty(ContainerRender, "defaultProps", {
+  autoMount: true,
+  autoDestroy: true,
+  forceRender: false
+});
+export { ContainerRender as default };

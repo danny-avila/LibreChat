@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState, useMemo } from 'react';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
-  useAuthContext,
   useConversation,
   useLocalStorage,
   useNavScrolling,
@@ -20,10 +19,11 @@ import NavLinks from './NavLinks';
 import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const { conversationId } = useParams();
-  const { isAuthenticated } = useAuthContext();
+  const { isAuthenticated } = useAuthStore();
 
   const [navWidth, setNavWidth] = useState('260px');
   const [isHovering, setIsHovering] = useState(false);
@@ -51,12 +51,12 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
     { pageNumber: pageNumber.toString() },
-    { enabled: isAuthenticated },
+    { enabled: isAuthenticated() },
   );
 
   const searchQueryRes = useSearchInfiniteQuery(
     { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
-    { enabled: isAuthenticated && !!searchQuery.length },
+    { enabled: isAuthenticated() && !!searchQuery.length },
   );
 
   const { containerRef, moveToTop } = useNavScrolling({

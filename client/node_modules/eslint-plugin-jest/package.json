@@ -1,0 +1,167 @@
+{
+  "name": "eslint-plugin-jest",
+  "version": "27.6.3",
+  "description": "ESLint rules for Jest",
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "eslint-plugin"
+  ],
+  "repository": "jest-community/eslint-plugin-jest",
+  "license": "MIT",
+  "author": {
+    "name": "Jonathan Kim",
+    "email": "hello@jkimbo.com",
+    "url": "jkimbo.com"
+  },
+  "main": "lib/index.js",
+  "files": [
+    "docs/",
+    "lib/"
+  ],
+  "scripts": {
+    "build": "babel --extensions .js,.ts src --out-dir lib --copy-files && rimraf --glob lib/__tests__ 'lib/**/__tests__'",
+    "_postinstall": "is-ci || husky install",
+    "lint": "eslint . --ignore-pattern '!.eslintrc.js' --ext js,ts",
+    "prepack": "rimraf lib && yarn build",
+    "prepublishOnly": "pinst --disable",
+    "prettier:check": "prettier --check 'docs/**/*.md' README.md '.github/**' package.json tsconfig.json src/globals.json .yarnrc.yml",
+    "prettier:write": "prettier --write 'docs/**/*.md' README.md '.github/**' package.json tsconfig.json src/globals.json .yarnrc.yml",
+    "postpublish": "pinst --enable",
+    "test": "jest",
+    "tools:regenerate-docs": "yarn prepack && eslint-doc-generator",
+    "typecheck": "tsc -p ."
+  },
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "lint-staged": {
+    "*.{js,ts}": "eslint --fix",
+    "*.{md,json,yml}": "prettier --write"
+  },
+  "prettier": {
+    "arrowParens": "avoid",
+    "endOfLine": "auto",
+    "proseWrap": "always",
+    "singleQuote": true
+  },
+  "release": {
+    "branches": [
+      "main",
+      {
+        "name": "next",
+        "prerelease": true
+      }
+    ],
+    "plugins": [
+      "@semantic-release/commit-analyzer",
+      "@semantic-release/release-notes-generator",
+      "@semantic-release/changelog",
+      "@semantic-release/npm",
+      "@semantic-release/git",
+      "@semantic-release/github"
+    ]
+  },
+  "jest": {
+    "coverageThreshold": {
+      "global": {
+        "branches": 100,
+        "functions": 100,
+        "lines": 100,
+        "statements": 100
+      }
+    },
+    "projects": [
+      {
+        "displayName": "test",
+        "testPathIgnorePatterns": [
+          "<rootDir>/lib/.*",
+          "<rootDir>/src/rules/__tests__/fixtures/*",
+          "<rootDir>/src/rules/__tests__/test-utils.ts"
+        ]
+      },
+      {
+        "displayName": "lint",
+        "runner": "jest-runner-eslint",
+        "testMatch": [
+          "<rootDir>/**/*.{js,ts}"
+        ],
+        "testPathIgnorePatterns": [
+          "<rootDir>/lib/.*"
+        ]
+      }
+    ]
+  },
+  "dependencies": {
+    "@typescript-eslint/utils": "^5.10.0"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.4.4",
+    "@babel/core": "^7.4.4",
+    "@babel/preset-env": "^7.4.4",
+    "@babel/preset-typescript": "^7.3.3",
+    "@commitlint/cli": "^17.0.3",
+    "@commitlint/config-conventional": "^17.0.3",
+    "@schemastore/package": "^0.0.10",
+    "@semantic-release/changelog": "^6.0.0",
+    "@semantic-release/git": "^10.0.0",
+    "@tsconfig/node14": "^14.1.0",
+    "@types/eslint": "^8.4.6",
+    "@types/jest": "^29.0.0",
+    "@types/node": "^14.18.26",
+    "@typescript-eslint/eslint-plugin": "^5.0.0",
+    "@typescript-eslint/parser": "^5.0.0",
+    "babel-jest": "^29.0.0",
+    "babel-plugin-replace-ts-export-assignment": "^0.0.2",
+    "dedent": "^1.5.0",
+    "eslint": "^7.0.0 || ^8.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-doc-generator": "^1.0.0",
+    "eslint-plugin-eslint-comments": "^3.1.2",
+    "eslint-plugin-eslint-plugin": "^5.0.6",
+    "eslint-plugin-import": "^2.25.1",
+    "eslint-plugin-n": "^15.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "eslint-remote-tester": "^3.0.0",
+    "eslint-remote-tester-repositories": "~1.0.0",
+    "husky": "^8.0.1",
+    "is-ci": "^3.0.0",
+    "jest": "^29.0.0",
+    "jest-runner-eslint": "^2.0.0",
+    "lint-staged": "^13.0.3",
+    "markdown-link-check": "^3.10.2",
+    "pinst": "^3.0.0",
+    "prettier": "^3.0.0",
+    "rimraf": "^5.0.0",
+    "semantic-release": "^22.0.0",
+    "semver": "^7.3.5",
+    "strip-ansi": "^6.0.0",
+    "ts-node": "^10.2.1",
+    "typescript": "^5.0.4"
+  },
+  "peerDependencies": {
+    "@typescript-eslint/eslint-plugin": "^5.0.0 || ^6.0.0",
+    "eslint": "^7.0.0 || ^8.0.0",
+    "jest": "*"
+  },
+  "peerDependenciesMeta": {
+    "@typescript-eslint/eslint-plugin": {
+      "optional": true
+    },
+    "jest": {
+      "optional": true
+    }
+  },
+  "packageManager": "yarn@3.7.0",
+  "engines": {
+    "node": "^14.15.0 || ^16.10.0 || >=18.0.0"
+  },
+  "publishConfig": {
+    "provenance": true
+  },
+  "resolutions": {
+    "typescript": "~5.2.2"
+  }
+}

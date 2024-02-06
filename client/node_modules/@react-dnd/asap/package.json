@@ -1,0 +1,33 @@
+{
+  "name": "@react-dnd/asap",
+  "version": "5.0.2",
+  "description": "High-priority task queue for Node.js and browsers",
+  "keywords": [
+    "event",
+    "task",
+    "queue"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "clean": "shx rm -rf dist/",
+    "build_types": "tsc -b .",
+    "build_esm": "swc -C module.type=es6 -d dist src/",
+    "build": "run-s build_types build_esm"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/react-dnd/react-dnd"
+  },
+  "devDependencies": {
+    "@swc/cli": "^0.1.57",
+    "@swc/core": "^1.2.168",
+    "@types/jest": "^27.4.1",
+    "@types/node": "^17.0.25",
+    "npm-run-all": "^4.1.5",
+    "shx": "^0.3.4",
+    "typescript": "^4.6.3"
+  }
+}

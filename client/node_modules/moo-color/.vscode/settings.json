@@ -1,0 +1,15 @@
+{
+  "markdownlint.config": {
+    "MD001": false,
+    "MD009": false,
+    "MD024": false,
+  },
+  "cSpell.words": [
+    "cmyk",
+    "desaturate",
+    "grayscale",
+    "hsla",
+    "hsva",
+    "hwba"
+  ]
+}

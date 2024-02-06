@@ -1,0 +1,35 @@
+import '../utils/click/isClickableInput.js';
+import '../utils/dataTransfer/Clipboard.js';
+import '../utils/edit/isEditable.js';
+import '../utils/edit/maxLength.js';
+import { getActiveElement } from '../utils/focus/getActiveElement.js';
+import { isFocusable } from '../utils/focus/isFocusable.js';
+import '../utils/keyDef/readNextDescriptor.js';
+import { findClosest } from '../utils/misc/findClosest.js';
+import '../utils/misc/level.js';
+import '../options.js';
+import { updateSelectionOnFocus } from './selection/updateSelectionOnFocus.js';
+import { wrapEvent } from './wrapEvent.js';
+
+/**
+ * Focus closest focusable element.
+ */ function focusElement(element) {
+    const target = findClosest(element, isFocusable);
+    const activeElement = getActiveElement(element.ownerDocument);
+    if ((target !== null && target !== void 0 ? target : element.ownerDocument.body) === activeElement) {
+        return;
+    } else if (target) {
+        wrapEvent(()=>target.focus());
+    } else {
+        wrapEvent(()=>activeElement === null || activeElement === void 0 ? void 0 : activeElement.blur());
+    }
+    updateSelectionOnFocus(target !== null && target !== void 0 ? target : element.ownerDocument.body);
+}
+function blurElement(element) {
+    if (!isFocusable(element)) return;
+    const wasActive = getActiveElement(element.ownerDocument) === element;
+    if (!wasActive) return;
+    wrapEvent(()=>element.blur());
+}
+
+export { blurElement, focusElement };

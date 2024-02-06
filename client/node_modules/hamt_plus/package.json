@@ -1,0 +1,38 @@
+{
+    "name": "hamt_plus",
+    "version": "1.0.2",
+    "description": "Fork of HAMT that adds transient mutation and support for custom key types",
+    "keywords": [
+        "trie",
+        "hamt",
+        "map",
+        "persistent",
+        "data structure",
+        "hash"
+    ],
+    "author": "Matt Bierner",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/mattbierner/hamt_plus.git"
+    },
+    "main": "hamt.js",
+    "files": [
+        "hamt.js",
+        "hamt.js.map"
+    ],
+    "dependencies": {},
+    "devDependencies": {
+        "babel-preset-es2015": "^6.24.0",
+        "gulp": "^3.9.0",
+        "gulp-babel": "^6.1.2",
+        "gulp-plumber": "^1.1.0",
+        "gulp-sourcemaps": "^2.4.0",
+        "chai": "*",
+        "mocha": "*"
+    },
+    "scripts": {
+        "compile": "gulp",
+        "test": "mocha tests"
+    }
+}

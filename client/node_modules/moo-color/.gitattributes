@@ -1,0 +1,18 @@
+# Enforce Unix newlines
+*.js    text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.svg   text eol=lf
+*.ts    text eol=lf
+*.yml   text eol=lf
+.editorconfig   text eol=lf
+.gitattributes  text eol=lf
+.gitignore      text eol=lf
+LICENSE         text eol=lf
+
+# Don't diff or textually merge source maps
+*.map   binary
+
+test/*    linguist-vendored
+dist/*    linguist-vendored
+webpack.config.js linguist-vendored

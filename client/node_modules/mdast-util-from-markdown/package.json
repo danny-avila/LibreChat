@@ -1,0 +1,120 @@
+{
+  "name": "mdast-util-from-markdown",
+  "version": "1.3.1",
+  "description": "mdast utility to parse markdown",
+  "license": "MIT",
+  "keywords": [
+    "unist",
+    "mdast",
+    "mdast-util",
+    "util",
+    "utility",
+    "markdown",
+    "markup",
+    "parse",
+    "syntax",
+    "tree",
+    "ast"
+  ],
+  "repository": "syntax-tree/mdast-util-from-markdown",
+  "bugs": "https://github.com/syntax-tree/mdast-util-from-markdown/issues",
+  "funding": {
+    "type": "opencollective",
+    "url": "https://opencollective.com/unified"
+  },
+  "author": "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)",
+  "contributors": [
+    "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "dev/",
+    "lib/",
+    "index.d.ts",
+    "index.js"
+  ],
+  "exports": {
+    "development": "./dev/index.js",
+    "default": "./index.js"
+  },
+  "dependencies": {
+    "@types/mdast": "^3.0.0",
+    "@types/unist": "^2.0.0",
+    "decode-named-character-reference": "^1.0.0",
+    "mdast-util-to-string": "^3.1.0",
+    "micromark": "^3.0.0",
+    "micromark-util-decode-numeric-character-reference": "^1.0.0",
+    "micromark-util-decode-string": "^1.0.0",
+    "micromark-util-normalize-identifier": "^1.0.0",
+    "micromark-util-symbol": "^1.0.0",
+    "micromark-util-types": "^1.0.0",
+    "unist-util-stringify-position": "^3.0.0",
+    "uvu": "^0.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "c8": "^7.0.0",
+    "commonmark.json": "^0.30.0",
+    "esbuild": "^0.17.0",
+    "gzip-size-cli": "^5.0.0",
+    "hast-util-from-html": "^1.0.0",
+    "hast-util-to-html": "^8.0.0",
+    "mdast-util-to-hast": "^12.0.0",
+    "micromark-build": "^1.0.0",
+    "prettier": "^2.0.0",
+    "remark-cli": "^11.0.0",
+    "remark-preset-wooorm": "^9.0.0",
+    "terser": "^5.0.0",
+    "type-coverage": "^2.0.0",
+    "typescript": "^5.0.0",
+    "xo": "^0.54.0"
+  },
+  "scripts": {
+    "prepack": "npm run build && npm run format",
+    "build": "tsc --build --clean && tsc --build && type-coverage && micromark-build && esbuild . --bundle --minify | terser | gzip-size --raw",
+    "format": "remark . -qfo && prettier . -w --loglevel warn && xo --fix",
+    "test-api": "node --conditions development test/index.js",
+    "test-coverage": "c8 --check-coverage --100 --reporter lcov npm run test-api",
+    "test": "npm run build && npm run format && npm run test-coverage"
+  },
+  "prettier": {
+    "tabWidth": 2,
+    "useTabs": false,
+    "singleQuote": true,
+    "bracketSpacing": false,
+    "semi": false,
+    "trailingComma": "none"
+  },
+  "xo": {
+    "prettier": true,
+    "rules": {
+      "complexity": "off",
+      "n/file-extension-in-import": "off",
+      "unicorn/prefer-code-point": "off",
+      "unicorn/prefer-switch": "off",
+      "unicorn/prefer-node-protocol": "off"
+    },
+    "overrides": [
+      {
+        "files": "test/**/*.js",
+        "rules": {
+          "no-await-in-loop": "off"
+        }
+      }
+    ]
+  },
+  "remarkConfig": {
+    "plugins": [
+      "preset-wooorm"
+    ]
+  },
+  "typeCoverage": {
+    "atLeast": 100,
+    "detail": true,
+    "strict": true,
+    "ignoreCatch": true
+  }
+}

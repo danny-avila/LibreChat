@@ -8,7 +8,6 @@ import {
   useUpdateUserPluginsMutation,
 } from 'librechat-data-provider/react-query';
 import type { TError, TPlugin, TPluginAction } from 'librechat-data-provider';
-import { useAuthContext } from '~/hooks/AuthContext';
 import PluginPagination from './PluginPagination';
 import PluginStoreItem from './PluginStoreItem';
 import PluginAuthForm from './PluginAuthForm';
@@ -22,7 +21,7 @@ type TPluginStoreDialogProps = {
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const localize = useLocalize();
-  const { user } = useAuthContext();
+  const { user } = useAuthStore();
   const { data: availablePlugins } = useAvailablePluginsQuery();
   const updateUserPlugins = useUpdateUserPluginsMutation();
 

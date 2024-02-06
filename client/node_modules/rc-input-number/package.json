@@ -1,0 +1,89 @@
+{
+  "name": "rc-input-number",
+  "version": "7.4.2",
+  "description": "React input-number component",
+  "keywords": [
+    "react",
+    "react-component",
+    "react-input-number",
+    "input-number"
+  ],
+  "homepage": "https://github.com/react-component/input-number",
+  "bugs": {
+    "url": "http://github.com/react-component/input-number/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:react-component/input-number.git"
+  },
+  "license": "MIT",
+  "author": "tsjxyz@gmail.com",
+  "main": "./lib/index",
+  "module": "./es/index",
+  "types": "./es/index.d.ts",
+  "files": [
+    "lib",
+    "es",
+    "assets/*.css"
+  ],
+  "scripts": {
+    "compile": "father build && lessc assets/index.less assets/index.css",
+    "coverage": "rc-test --coverage",
+    "docs:build": "dumi build",
+    "docs:deploy": "gh-pages -d docs-dist",
+    "lint": "eslint src/ --ext .ts,.tsx,.jsx,.js,.md",
+    "now-build": "npm run docs:build",
+    "prepare": "husky install",
+    "prepublishOnly": "npm run compile && np --yolo --no-publish",
+    "prettier": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "start": "dumi dev",
+    "test": "rc-test"
+  },
+  "lint-staged": {
+    "**/*.{js,jsx,tsx,ts,md,json}": [
+      "prettier --write",
+      "git add"
+    ]
+  },
+  "dependencies": {
+    "@babel/runtime": "^7.10.1",
+    "@rc-component/mini-decimal": "^1.0.1",
+    "classnames": "^2.2.5",
+    "rc-util": "^5.28.0"
+  },
+  "devDependencies": {
+    "@rc-component/father-plugin": "^1.0.1",
+    "@swc-node/jest": "^1.5.5",
+    "@testing-library/jest-dom": "^5.16.5",
+    "@testing-library/react": "^13.4.0",
+    "@types/classnames": "^2.2.9",
+    "@types/jest": "^29.2.4",
+    "@types/react": "^18.0.26",
+    "@types/react-dom": "^18.0.9",
+    "@types/responselike": "^1.0.0",
+    "@umijs/fabric": "^2.0.0",
+    "@umijs/test": "^4.0.36",
+    "cross-env": "^7.0.3",
+    "dumi": "^2.0.13",
+    "eslint": "^7.1.0",
+    "expect.js": "~0.3.1",
+    "father": "^4.1.1",
+    "glob": "^7.1.6",
+    "husky": "^8.0.3",
+    "jest-environment-jsdom": "^29.3.1",
+    "less": "^3.12.2",
+    "lint-staged": "^13.1.2",
+    "np": "^7.2.0",
+    "rc-test": "^7.0.14",
+    "rc-tooltip": "^5.0.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "regenerator-runtime": "^0.13.7",
+    "ts-node": "^10.9.1",
+    "typescript": "^4.9.4"
+  },
+  "peerDependencies": {
+    "react": ">=16.9.0",
+    "react-dom": ">=16.9.0"
+  }
+}

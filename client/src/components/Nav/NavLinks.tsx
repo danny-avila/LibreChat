@@ -14,14 +14,15 @@ import NavLink from './NavLink';
 import Logout from './Logout';
 import { cn } from '~/utils/';
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 function NavLinks() {
   const localize = useLocalize();
   const location = useLocation();
-  const { user, isAuthenticated } = useAuthContext();
+  const { user, isAuthenticated } = useAuthStore();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
-    enabled: !!isAuthenticated && startupConfig?.checkBalance,
+    enabled: !!isAuthenticated() && startupConfig?.checkBalance,
   });
   const [showExports, setShowExports] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -71,7 +72,7 @@ function NavLinks() {
                     src={
                       user?.avatar ||
                       `https://api.dicebear.com/6.x/initials/svg?seed=${
-                        user?.name || 'User'
+                        user?.username || 'User'
                       }&fontFamily=Verdana&fontSize=36`
                     }
                     alt=""
@@ -82,7 +83,8 @@ function NavLinks() {
                 className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left font-bold text-white"
                 style={{ marginTop: '-4px', marginLeft: '2px' }}
               >
-                {user?.name || localize('com_nav_user')}
+
+                {user?.username || localize('com_nav_user')}
               </div>
             </Menu.Button>
 

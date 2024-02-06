@@ -1,0 +1,1 @@
+import n,{createContext as r,useContext as i}from"react";let e=r(void 0);function a(){return i(e)}function l({value:t,children:o}){return n.createElement(e.Provider,{value:t},o)}export{l as DisabledProvider,a as useDisabled};

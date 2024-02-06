@@ -10,9 +10,9 @@ import {
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import useConversations from './useConversations';
-import { useAuthContext } from './AuthContext';
 
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 type TResData = {
   plugin: TResPlugin;
@@ -28,12 +28,12 @@ export default function useServerStream(submission: TSubmission | null) {
   const setIsSubmitting = useSetRecoilState(store.isSubmitting);
   const setConversation = useSetRecoilState(store.conversation);
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
-  const { token, isAuthenticated } = useAuthContext();
+  const { token, isAuthenticated } = useAuthStore();
 
   const { data: startupConfig } = useGetStartupConfig();
   const { refreshConversations } = useConversations();
   const balanceQuery = useGetUserBalance({
-    enabled: !!isAuthenticated && startupConfig?.checkBalance,
+    enabled: !!isAuthenticated() && startupConfig?.checkBalance,
   });
 
   const messageHandler = (data: string, submission: TSubmission) => {

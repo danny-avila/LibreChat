@@ -1,0 +1,1 @@
+{"version":3,"sources":["../src/types.ts"],"sourcesContent":["export type HTML5BackendContext = Window | undefined\n\n/**\n * Configuration options for the HTML5Backend\n */\nexport interface HTML5BackendOptions {\n\t/**\n\t * The root DOM node to use for subscribing to events. Default=Window\n\t */\n\trootElement: Node\n}\n"],"names":[],"mappings":"AAAA,WAUC"}

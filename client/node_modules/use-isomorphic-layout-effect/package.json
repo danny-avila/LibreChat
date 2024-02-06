@@ -1,0 +1,51 @@
+{
+  "name": "use-isomorphic-layout-effect",
+  "version": "1.1.2",
+  "description": "A React helper hook for scheduling a layout effect with a fallback to a regular effect for environments where layout effects should not be used (such as server-side rendering).",
+  "main": "dist/use-isomorphic-layout-effect.cjs.js",
+  "module": "dist/use-isomorphic-layout-effect.esm.js",
+  "react-native": "./dist/use-isomorphic-layout-effect.native.esm.js",
+  "browser": {
+    "./dist/use-isomorphic-layout-effect.cjs.js": "./dist/use-isomorphic-layout-effect.browser.cjs.js",
+    "./dist/use-isomorphic-layout-effect.esm.js": "./dist/use-isomorphic-layout-effect.browser.esm.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "test": "echo \"Warning: no test specified\"",
+    "build": "preconstruct build",
+    "postbuild": "cpy 'src/index.native.ts' . --rename=$npm_package_react_native",
+    "prepare": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Andarist/use-isomorphic-layout-effect.git"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Andarist/use-isomorphic-layout-effect/issues"
+  },
+  "homepage": "https://github.com/Andarist/use-isomorphic-layout-effect#readme",
+  "peerDependencies": {
+    "react": "^16.8.0 || ^17.0.0 || ^18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@types/react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@babel/core": "^7.10.4",
+    "@babel/preset-env": "^7.10.4",
+    "@babel/preset-typescript": "^7.10.4",
+    "@preconstruct/cli": "1.1.14",
+    "@types/react": "^16.9.41",
+    "cpy-cli": "^3.1.1",
+    "husky": "^4.2.5",
+    "lint-staged": "^10.2.11",
+    "prettier": "^2.0.5",
+    "react": "^16.13.1",
+    "typescript": "^3.9.5"
+  }
+}

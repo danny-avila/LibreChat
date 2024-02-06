@@ -1,0 +1,24 @@
+{
+  "name": "cssfontparser",
+  "version": "1.2.1",
+  "description": "parse shorthand css font strings\"",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/tmpvar/cssfontparser.git"
+  },
+  "keywords": [
+    "css",
+    "font",
+    "parsing",
+    "parser",
+    "shorthand"
+  ],
+  "author": "Elijah Insua <tmpvar@gmail.com>",
+  "license": "MIT",
+  "gitHead": "58551db8e577de6e4c05ad846cb9ac08aab76fe5",
+  "readmeFilename": "README.md"
+}

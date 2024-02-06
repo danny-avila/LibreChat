@@ -10,7 +10,7 @@ import SocialButton from './SocialButton';
 
 function Login() {
   const [pk, setPk] = useState('')
-  const { login, error, isAuthenticated, loginVera } = useAuthContext();
+  const { login, error, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
   const navigate = useNavigate();

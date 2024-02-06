@@ -2,10 +2,13 @@ import { useMutation } from '@tanstack/react-query';
 import { loginUser, logoutUser, resetPassword } from '../api/auth';
 import { LoginForm } from '../../types/auth';
 import { LANDING_PATH } from '../../utils/constants';
-import { useAuthContext } from '~/hooks';
+import { useAuthStore } from '~/zustand';
+import { useNavigate } from 'react-router-dom';
+
 
 export function useLoginVeraUser() {
-  const { signIn } = useAuthContext();
+  const { signIn } = useAuthStore();
+  const navigate = useNavigate();
 
   return useMutation({
     mutationFn: (data: LoginForm) => loginUser(data),
@@ -14,6 +17,7 @@ export function useLoginVeraUser() {
         console.log(error);
       } else if (data) {
         signIn(data);
+        return navigate(LANDING_PATH, { replace: true });
         // const search: Record<string, unknown> = router.state.location.search;
         // if (search.redirect) {
         //   return router.history.push(search.redirect as string);
@@ -26,7 +30,7 @@ export function useLoginVeraUser() {
 }
 
 export function useLogoutVeraUser() {
-  const { signOut } = useAuthContext();
+  const { signOut } = useAuthStore();
 
   return useMutation({
     mutationFn: () => logoutUser(signOut),

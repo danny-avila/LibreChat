@@ -1,0 +1,80 @@
+{
+  "name": "@testing-library/jest-dom",
+  "version": "5.17.0",
+  "description": "Custom jest matchers to test the state of the DOM",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=8",
+    "npm": ">=6",
+    "yarn": ">=1"
+  },
+  "scripts": {
+    "build": "kcd-scripts build",
+    "format": "kcd-scripts format",
+    "lint": "kcd-scripts lint",
+    "setup": "npm install && npm run validate -s",
+    "test": "kcd-scripts test",
+    "test:update": "npm test -- --updateSnapshot --coverage",
+    "validate": "kcd-scripts validate"
+  },
+  "files": [
+    "dist",
+    "extend-expect.js",
+    "matchers.js"
+  ],
+  "keywords": [
+    "testing",
+    "dom",
+    "jest",
+    "jsdom"
+  ],
+  "author": "Ernesto Garcia <gnapse@gmail.com> (http://gnapse.github.io)",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/runtime": "^7.9.2",
+    "@types/testing-library__jest-dom": "^5.9.1",
+    "aria-query": "^5.0.0",
+    "chalk": "^3.0.0",
+    "@adobe/css-tools": "^4.0.1",
+    "css.escape": "^1.5.1",
+    "dom-accessibility-api": "^0.5.6",
+    "lodash": "^4.17.15",
+    "redent": "^3.0.0"
+  },
+  "devDependencies": {
+    "jest-environment-jsdom-sixteen": "^1.0.3",
+    "jest-watch-select-projects": "^2.0.0",
+    "jsdom": "^16.2.1",
+    "kcd-scripts": "^11.1.0",
+    "pretty-format": "^25.1.0"
+  },
+  "eslintConfig": {
+    "extends": "./node_modules/kcd-scripts/eslint.js",
+    "rules": {
+      "@babel/no-invalid-this": "off"
+    },
+    "overrides": [
+      {
+        "files": [
+          "src/__tests__/*.js"
+        ],
+        "rules": {
+          "max-lines-per-function": "off"
+        }
+      }
+    ]
+  },
+  "eslintIgnore": [
+    "node_modules",
+    "coverage",
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/testing-library/jest-dom"
+  },
+  "bugs": {
+    "url": "https://github.com/testing-library/jest-dom/issues"
+  },
+  "homepage": "https://github.com/testing-library/jest-dom#readme"
+}

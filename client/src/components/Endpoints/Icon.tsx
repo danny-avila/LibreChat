@@ -10,12 +10,12 @@ import {
   CodeyIcon,
   GeminiIcon,
 } from '~/components/svg';
-import { useAuthContext } from '~/hooks/AuthContext';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
+import { useAuthStore } from '~/zustand';
 
 const Icon: React.FC<IconProps> = (props) => {
-  const { user } = useAuthContext();
+  const { user } = useAuthStore();
   const { size = 30, isCreatedByUser, button, model = '', endpoint, jailbreak } = props;
 
   if (isCreatedByUser) {

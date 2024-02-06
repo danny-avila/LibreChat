@@ -1,17 +1,18 @@
 import { useRecoilState } from 'recoil';
 import { useEffect, type ChangeEvent, useState } from 'react';
 import { useChatContext } from '~/Providers';
-import { useAuthContext, useRequiresKey } from '~/hooks';
+import { useRequiresKey } from '~/hooks';
 import AttachFile from './Files/AttachFile';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import Images from './Files/Images';
 import Textarea from './Textarea';
 import store from '~/store';
-import { fetchEventSource } from '@waylaidwanderer/fetch-event-source'
+import { fetchEventSource } from '@microsoft/fetch-event-source'
 
 export default function ChatForm({ index = 0 }) {
-  const {token} = useAuthContext()
+  console.log("chatform")
+  const token = "8414cb31-e6c8-4197-91cf-1f388815429d";
   const [ abortController, setAbortController ] = useState(new AbortController());
   const [text, setText] = useRecoilState(store.textByIndex(index));
   const {

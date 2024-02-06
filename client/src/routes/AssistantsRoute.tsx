@@ -1,11 +1,12 @@
 import { useParams } from 'react-router-dom';
 import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import ChatView from '~/components/Chat/SingleChatView';
-import useAuthRedirect from './useAuthRedirect';
 import { buildTree } from '~/utils';
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 export default function AssistantsRoute() {
+  console.log("assistants route")
   const index = 0;
   const { conversationId } = useParams();
   const { conversation } = store.useCreateConversationAtom(index);
@@ -18,9 +19,9 @@ export default function AssistantsRoute() {
     },
   });
 
-  const { isAuthenticated } = useAuthRedirect();
+  const { isAuthenticated } = useAuthStore();
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated()) {
     return null;
   }
 

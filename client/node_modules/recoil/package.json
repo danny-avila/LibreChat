@@ -1,0 +1,27 @@
+{
+  "name": "recoil",
+  "version": "0.7.7",
+  "description": "Recoil - A state management library for React",
+  "main": "cjs/index.js",
+  "module": "es/index.js",
+  "react-native": "native/index.js",
+  "unpkg": "umd/index.js",
+  "types": "index.d.ts",
+  "files": ["umd", "es", "cjs", "native", "index.d.ts"],
+  "repository": "https://github.com/facebookexperimental/Recoil.git",
+  "license": "MIT",
+  "dependencies": {
+    "hamt_plus": "1.0.2"
+  },
+  "peerDependencies": {
+    "react": ">=16.13.1"
+  },
+  "peerDependenciesMeta": {
+    "react-dom": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    }
+  }
+}

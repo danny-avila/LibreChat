@@ -1,0 +1,69 @@
+{
+	"name": "which-collection",
+	"version": "1.0.1",
+	"description": "Which kind of Collection (Map, Set, WeakMap, WeakSet) is this JavaScript value? Works cross-realm, without `instanceof`, and despite Symbol.toStringTag.",
+	"main": "index.js",
+	"type": "commonjs",
+	"exports": {
+		".": [
+			{
+				"default": "./index.js"
+			},
+			"./index.js"
+		],
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"prepublish": "safe-publish-latest",
+		"lint": "eslint .",
+		"pretest": "npm run lint",
+		"tests-only": "node test",
+		"test": "npm run tests-only",
+		"posttest": "npx aud",
+		"version": "auto-changelog && git add CHANGELOG.md",
+		"postversion": "auto-changelog && git add CHANGELOG.md && git commit --no-edit --amend && git tag -f \"v$(node -e \"console.log(require('./package.json').version)\")\""
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/inspect-js/which-collection.git"
+	},
+	"keywords": [
+		"map",
+		"set",
+		"weakmap",
+		"weakset",
+		"collection.es6",
+		"es2015"
+	],
+	"author": "Jordan Harband <ljharb@gmail.com>",
+	"funding": {
+		"url": "https://github.com/sponsors/ljharb"
+	},
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/inspect-js/which-collection/issues"
+	},
+	"homepage": "https://github.com/inspect-js/which-collection#readme",
+	"devDependencies": {
+		"@ljharb/eslint-config": "^16.0.0",
+		"auto-changelog": "^1.16.2",
+		"eslint": "^6.8.0",
+		"for-each": "^0.3.3",
+		"object-inspect": "^1.7.0",
+		"safe-publish-latest": "^1.1.4",
+		"tape": "^5.0.0-next.4"
+	},
+	"dependencies": {
+		"is-map": "^2.0.1",
+		"is-set": "^2.0.1",
+		"is-weakmap": "^2.0.1",
+		"is-weakset": "^2.0.1"
+	},
+	"auto-changelog": {
+		"output": "CHANGELOG.md",
+		"template": "keepachangelog",
+		"unreleased": false,
+		"commitLimit": false,
+		"backfillLimit": false
+	}
+}

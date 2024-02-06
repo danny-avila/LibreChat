@@ -1,0 +1,74 @@
+{
+  "name": "class-variance-authority",
+  "version": "0.6.1",
+  "description": "Class Variance Authority 🧬",
+  "keywords": [
+    "Class Variance Authority",
+    "class-variance-authority",
+    "classes",
+    "classname",
+    "classnames",
+    "css",
+    "cva",
+    "stitches",
+    "vanilla-extract",
+    "variants"
+  ],
+  "homepage": "https://github.com/joe-bell/cva#readme",
+  "bugs": "https://github.com/joe-bell/cva/issues",
+  "repository": "https://github.com/joe-bell/cva.git",
+  "funding": "https://joebell.co.uk",
+  "license": "Apache-2.0",
+  "author": "Joe Bell (https://joebell.co.uk)",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts"
+    }
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/*.mjs",
+    "dist/*.mjs.map",
+    "dist/*.js",
+    "dist/*.js.map",
+    "dist/*.d.ts"
+  ],
+  "dependencies": {
+    "clsx": "1.2.1"
+  },
+  "devDependencies": {
+    "@jest/types": "28.1.1",
+    "@swc/cli": "0.1.57",
+    "@swc/core": "1.2.198",
+    "@swc/jest": "0.2.21",
+    "@types/jest": "28.1.1",
+    "@types/node": "18.11.18",
+    "@types/react": "18.0.12",
+    "@types/react-dom": "18.0.5",
+    "bundlesize": "0.18.1",
+    "jest": "28.1.1",
+    "npm-run-all": "4.1.5",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "ts-node": "10.8.1",
+    "typescript": "5.1.3"
+  },
+  "scripts": {
+    "build": "run-p build:**",
+    "build:cjs": "swc ./src/index.ts --config-file ./.config/.swcrc -o dist/index.js -C module.type=commonjs",
+    "build:esm": "swc ./src/index.ts --config-file ./.config/.swcrc -o dist/index.mjs -C module.type=es6 ",
+    "build:tsc": "tsc --project .config/tsconfig.build.json",
+    "check": "tsc --project tsconfig.json --noEmit",
+    "dev": "jest --config .config/jest.config.ts --watch",
+    "test": "run-p test:*",
+    "test:jest": "jest --config .config/jest.config.ts --coverage",
+    "test:size": "pnpm build && bundlesize -f 'dist/*.js' -s 850B"
+  }
+}

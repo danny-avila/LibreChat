@@ -1,5 +1,5 @@
 import { useRecoilValue } from 'recoil';
-import { useAuthContext, useMessageHelpers, useLocalize } from '~/hooks';
+import { useMessageHelpers, useLocalize } from '~/hooks';
 import type { TMessageProps } from '~/common';
 import { Plugin } from '~/components/Messages/Content';
 import MessageContent from './Content/MessageContent';
@@ -10,10 +10,11 @@ import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 export default function Message(props: TMessageProps) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
-  const { user } = useAuthContext();
+  const { user } = useAuthStore();
   const localize = useLocalize();
 
   const {

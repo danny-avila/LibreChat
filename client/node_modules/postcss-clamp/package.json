@@ -1,0 +1,26 @@
+{
+  "name": "postcss-clamp",
+  "version": "4.1.0",
+  "description": "PostCSS plugin to transform clamp() to combination of min/max",
+  "keywords": [
+    "postcss",
+    "css",
+    "postcss-plugin",
+    "clamp",
+    "min",
+    "max"
+  ],
+  "main": "index.js",
+  "repository": "polemius/postcss-clamp",
+  "author": "Ivan Menshykov <ivan.menshykov@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "postcss-value-parser": "^4.2.0"
+  },
+  "peerDependencies": {
+    "postcss": "^8.4.6"
+  },
+  "engines": {
+    "node": ">=7.6.0"
+  }
+}
