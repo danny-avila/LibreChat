@@ -403,6 +403,10 @@
  * @property {Tool[]} [tools] - The list of tools used for this run.
  * @property {string[]} [file_ids] - The list of File IDs used for this run.
  * @property {Object} [metadata] - Metadata associated with this run.
+ * @property {Object} [usage] -  Usage statistics related to the run. This value will be `null` if the run is not in a terminal state (i.e. `in_progress`, `queued`, etc.).
+ * @property {number} [usage.completion_tokens] - Number of completion tokens used over the course of the run.
+ * @property {number} [usage.prompt_tokens] - Number of prompt tokens used over the course of the run.
+ * @property {number} [usage.total_tokens] - Total number of tokens used (prompt + completion).
  * @memberof typedefs
  */
 

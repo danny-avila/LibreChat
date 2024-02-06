@@ -376,6 +376,7 @@ async function checkMessageGaps({ openai, latestMessageId, thread_id, run_id, co
   const [response, stepsResponse] = await Promise.all(promises);
 
   const steps = mapMessagesToSteps(stepsResponse.data, response.data);
+  /** @type {ThreadMessage} */
   const currentMessage = {
     id: v4(),
     content: [],
