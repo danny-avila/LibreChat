@@ -1,6 +1,7 @@
 const { AuthTypeEnum } = require('librechat-data-provider');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions } = require('~/models/Action');
+const { logger } = require('~/config');
 
 /**
  * Loads action sets based on the user and assistant ID.
@@ -27,7 +28,7 @@ function createActionTool({ action, requestBuilder }) {
   const _call = async (toolInput) => {
     try {
       requestBuilder.setParams(toolInput);
-      if (action.metadata.auth.type !== AuthTypeEnum.None) {
+      if (action.metadata.auth && action.metadata.auth.type !== AuthTypeEnum.None) {
         await requestBuilder.setAuth(action.metadata);
       }
       const res = await requestBuilder.execute();
@@ -36,6 +37,7 @@ function createActionTool({ action, requestBuilder }) {
       }
       return res.data;
     } catch (error) {
+      logger.error(`API call to ${action.metadata.domain} failed`, error);
       if (error.response) {
         const { status, data } = error.response;
         return `API call to ${action.metadata.domain} failed with status ${status}: ${data}`;
