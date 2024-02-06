@@ -6,7 +6,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from './';
+} from '.';
 import { cn } from '~/utils/';
 import { useLocalize } from '~/hooks';
 

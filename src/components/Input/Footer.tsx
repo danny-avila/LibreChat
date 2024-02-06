@@ -19,6 +19,7 @@ export default function Footer() {
           >
             {config?.appTitle || 'Vera AI'} v0.6.6
           </a>
+          {' - '} {localize('com_ui_new_footer')}
         </>
       )}
     </div>
