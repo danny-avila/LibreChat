@@ -77,16 +77,20 @@ router.patch('/:id', async (req, res) => {
 
     const assistant_id = req.params.id;
     const updateData = req.body;
-    updateData.tools = (updateData.tools ?? []).map((tool) => {
-      if (typeof tool !== 'string') {
-        return tool;
-      }
+    updateData.tools = (updateData.tools ?? [])
+      .map((tool) => {
+        if (typeof tool !== 'string') {
+          return tool;
+        }
 
-      return req.app.locals.availableTools[tool];
-    });
+        return req.app.locals.availableTools[tool];
+      })
+      .filter((tool) => tool);
+
     const updatedAssistant = await openai.beta.assistants.update(assistant_id, updateData);
     res.json(updatedAssistant);
   } catch (error) {
+    logger.error('[/assistants/:id] Error updating assistant', error);
     res.status(500).json({ error: error.message });
   }
 });
