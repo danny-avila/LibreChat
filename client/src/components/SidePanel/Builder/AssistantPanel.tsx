@@ -4,14 +4,16 @@ import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { useForm, FormProvider, Controller, useWatch } from 'react-hook-form';
 import {
   Tools,
-  EModelEndpoint,
   QueryKeys,
+  EModelEndpoint,
+  actionDelimiter,
   defaultAssistantFormValues,
 } from 'librechat-data-provider';
 import type { FunctionTool, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, AssistantPanelProps } from '~/common';
 import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
 import { SelectDropDown, Checkbox, QuestionMark } from '~/components/ui';
+import { useAssistantsMapContext } from '~/Providers';
 import { ToolSelectDialog } from '~/components/Tools';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
@@ -38,6 +40,7 @@ export default function AssistantPanel({
 }: AssistantPanelProps) {
   const queryClient = useQueryClient();
   const modelsQuery = useGetModelsQuery();
+  const assistantMap = useAssistantsMapContext();
   const { switchToConversation } = useNewConvo(index);
   const [showToolDialog, setShowToolDialog] = useState(false);
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
@@ -64,7 +67,18 @@ export default function AssistantPanel({
   }, [assistant]);
 
   const onSubmit = (data: AssistantForm) => {
-    const tools: Array<FunctionTool | string> = [...functions];
+    const tools: Array<FunctionTool | string> = [...functions].map((functionName) => {
+      if (!functionName.includes(actionDelimiter)) {
+        return functionName;
+      }
+
+      const assistant = assistantMap?.[assistant_id];
+      const tool = assistant?.tools?.find((tool) => tool.function?.name === functionName);
+      if (assistant && tool) {
+        return tool;
+      }
+      return functionName;
+    });
 
     console.log(data);
     if (data.code_interpreter) {
