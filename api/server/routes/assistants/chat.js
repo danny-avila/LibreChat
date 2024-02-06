@@ -82,8 +82,6 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
       initAppClient: true,
     });
 
-    createOnTextProgress({ openai, conversationId, userMessageId, messageId: responseMessageId });
-
     /** @type {TMessage[]} */
     let previousMessages = [];
 
@@ -128,6 +126,14 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
 
     const result = await initThread({ openai, body: initThreadBody, thread_id });
     thread_id = result.thread_id;
+
+    createOnTextProgress({
+      openai,
+      conversationId,
+      userMessageId,
+      messageId: responseMessageId,
+      thread_id,
+    });
 
     const requestMessage = {
       user: req.user.id,
