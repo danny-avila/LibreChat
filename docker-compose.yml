@@ -30,8 +30,6 @@ services:
     image: mongo
     restart: always
     user: "${UID}:${GID}"
-    ports:
-      - 27017:27017
     volumes:
       - ./data-node:/data/db
     command: mongod --noauth
@@ -40,8 +38,6 @@ services:
     image: getmeili/meilisearch:v1.5
     restart: always
     user: "${UID}:${GID}"
-    ports:
-      - 7700:7700
     environment:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_NO_ANALYTICS=true
