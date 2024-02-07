@@ -47,6 +47,8 @@ export type TPluginAction = {
   auth?: unknown;
 };
 
+export type GroupedConversations = [key: string, TConversation[]][];
+
 export type TUpdateUserPlugins = {
   pluginKey: string;
   action: string;
@@ -102,9 +104,7 @@ export type TUpdateConversationRequest = {
   title: string;
 };
 
-export type TUpdateConversationResponse = {
-  data: TConversation;
-};
+export type TUpdateConversationResponse = TConversation;
 
 export type TDeleteConversationRequest = {
   conversationId?: string;
@@ -189,13 +189,14 @@ export type TResetPassword = {
 
 export type TStartupConfig = {
   appTitle: string;
-  googleLoginEnabled: boolean;
+  socialLogins?: string[];
+  discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
-  openidLoginEnabled: boolean;
   githubLoginEnabled: boolean;
+  googleLoginEnabled: boolean;
+  openidLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
-  discordLoginEnabled: boolean;
   serverDomain: string;
   emailLoginEnabled: boolean;
   registrationEnabled: boolean;

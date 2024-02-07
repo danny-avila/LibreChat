@@ -30,12 +30,20 @@ export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean(),
   fileStrategy: fileSourceSchema.optional(),
+  registration: z
+    .object({
+      socialLogins: z.array(z.string()).optional(),
+      allowedDomains: z.array(z.string()).optional(),
+    })
+    .optional(),
   endpoints: z
     .object({
       custom: z.array(endpointSchema.partial()),
     })
     .strict(),
 });
+
+export type TCustomConfig = z.infer<typeof configSchema>;
 
 export enum KnownEndpoints {
   mistral = 'mistral',
@@ -161,6 +169,10 @@ export enum CacheKeys {
    * Key for the plugins cache.
    */
   PLUGINS = 'plugins',
+  /**
+   * Key for the title generation cache.
+   */
+  GEN_TITLE = 'genTitle',
   /**
    * Key for the model config cache.
    */

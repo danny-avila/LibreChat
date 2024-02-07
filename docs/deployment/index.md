@@ -16,3 +16,4 @@ weight: 3
   * 🔎 [Meilisearch in Render](meilisearch_in_render.md) 
   * 🏗️ [Hetzner](hetzner_ubuntu.md) 
   * 🌈 [Heroku](heroku.md)
+  * 🦓 [Zeabur](zeabur.md)

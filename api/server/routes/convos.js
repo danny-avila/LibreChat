@@ -1,6 +1,9 @@
 const express = require('express');
+const { CacheKeys } = require('librechat-data-provider');
 const { getConvosByPage, deleteConvos } = require('~/models/Conversation');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { sleep } = require('~/server/services/AssistantService');
+const getLogStores = require('~/cache/getLogStores');
 const { getConvo, saveConvo } = require('~/models');
 const { logger } = require('~/config');
 
@@ -26,6 +29,29 @@ router.get('/:conversationId', async (req, res) => {
     res.status(200).json(convo);
   } else {
     res.status(404).end();
+  }
+});
+
+router.post('/gen_title', async (req, res) => {
+  const { conversationId } = req.body;
+  const titleCache = getLogStores(CacheKeys.GEN_TITLE);
+  const key = `${req.user.id}-${conversationId}`;
+  let title = await titleCache.get(key);
+
+  if (!title) {
+    await sleep(2500);
+    title = await titleCache.get(key);
+  }
+
+  if (title) {
+    await titleCache.delete(key);
+    res.status(200).json({ title });
+  } else {
+    res
+      .status(404)
+      .json({
+        message: 'Title not found or method not implemented for the conversation\'s endpoint',
+      });
   }
 });
 
