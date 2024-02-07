@@ -1,10 +1,11 @@
 const path = require('path');
 const { klona } = require('klona');
 const {
-  ContentTypes,
   StepTypes,
-  StepStatus,
   RunStatus,
+  StepStatus,
+  FilePurpose,
+  ContentTypes,
   ToolCallTypes,
   imageExtRegex,
   imageGenTools,
@@ -467,7 +468,9 @@ async function processMessages(openai, messages = []) {
         continue;
       }
 
+      logger.debug('Processing annotations:', content.text.annotations);
       for (const annotation of content.text.annotations) {
+        logger.debug('Current annotation:', annotation);
         let file;
         const processFilePath =
           annotation.file_path && !openai.processedFileIds.has(annotation.file_path?.file_id);
@@ -507,7 +510,9 @@ async function processMessages(openai, messages = []) {
           continue;
         }
 
-        if (file.filepath) {
+        if (file.purpose && file.purpose === FilePurpose.Assistants) {
+          text = text.replace(annotation.text, file.filename);
+        } else if (file.filepath) {
           text = text.replace(annotation.text, file.filepath);
         }
 

@@ -1,9 +1,10 @@
 import { ToolCallTypes, ContentTypes, imageGenTools } from 'librechat-data-provider';
 import type { TMessageContentParts, TMessage } from 'librechat-data-provider';
 import type { TDisplayProps } from '~/common';
+import RetrievalCall from './RetrievalCall';
 import CodeAnalyze from './CodeAnalyze';
-import ToolCall from './ToolCall';
 import Container from './Container';
+import ToolCall from './ToolCall';
 import Markdown from './Markdown';
 import ImageGen from './ImageGen';
 import Image from './Image';
@@ -70,6 +71,12 @@ export default function Part({
         outputs={code_interpreter.outputs ?? []}
       />
     );
+  } else if (
+    part.type === ContentTypes.TOOL_CALL &&
+    part[ContentTypes.TOOL_CALL].type === ToolCallTypes.RETRIEVAL
+  ) {
+    const toolCall = part[ContentTypes.TOOL_CALL];
+    return <RetrievalCall initialProgress={toolCall.progress ?? 0.1} isSubmitting={isSubmitting} />;
   } else if (
     part.type === ContentTypes.TOOL_CALL &&
     part[ContentTypes.TOOL_CALL].type === ToolCallTypes.FUNCTION &&

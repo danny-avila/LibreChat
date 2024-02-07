@@ -315,7 +315,13 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
     };
 
     if (save) {
-      createFile(file, true);
+      await createFile(file, true);
+    } else {
+      try {
+        await updateFileUsage({ file_id });
+      } catch (error) {
+        logger.error('Error updating file usage', error);
+      }
     }
 
     return file;

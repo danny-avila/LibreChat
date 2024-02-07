@@ -315,3 +315,10 @@ export type AssistantDocument = {
   createdAt?: Date;
   updatedAt?: Date;
 };
+
+export enum FilePurpose {
+  FineTune = 'fine-tune',
+  FineTuneResults = 'fine-tune-results',
+  Assistants = 'assistants',
+  AssistantsOutput = 'assistants_output',
+}
