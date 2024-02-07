@@ -326,8 +326,18 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
     return await retrieveFile(file_id, true);
   }
 
-  const response = await openai.files.content(file_id);
-  const data = await response.arrayBuffer();
+  let data;
+  try {
+    const response = await openai.files.content(file_id);
+    data = await response.arrayBuffer();
+  } catch (error) {
+    logger.error('Error downloading file from OpenAI:', error);
+    return await retrieveFile(file_id);
+  }
+
+  if (!data) {
+    return await retrieveFile(file_id);
+  }
   const dataBuffer = Buffer.from(data);
 
   /**
@@ -351,7 +361,7 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
   /** @param {Buffer} dataBuffer */
   const processOtherFileTypes = async (dataBuffer) => {
     // Logic to handle other file types
-    console.log('Non-image file type detected');
+    logger.debug('[retrieveAndProcessFile] Non-image file type detected');
     return { filepath: `/api/files/download/${file_id}`, bytes: dataBuffer.length };
   };
 
@@ -369,7 +379,7 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
   if (downloadImages && basename && path.extname(basename) && imageExtRegex.test(basename)) {
     return await processAsImage(dataBuffer, path.extname(basename));
   } else {
-    console.log('Not an image or invalid extension: ', basename);
+    logger.debug('[retrieveAndProcessFile] Not an image or invalid extension: ', basename);
     return await processOtherFileTypes(dataBuffer);
   }
 }
