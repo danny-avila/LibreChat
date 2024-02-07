@@ -70,7 +70,7 @@ const useSpeechToText = () => {
   };
 
   const handleKeyDown = (e) => {
-    if (e.shiftKey && e.altKey && e.key === 'L') {
+    if (e.shiftKey && e.altKey && e.code === 'KeyL') {
       if (isSpeechSupported) {
         toggleListening(e);
       }

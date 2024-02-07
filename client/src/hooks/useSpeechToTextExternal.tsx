@@ -118,7 +118,7 @@ const useSpeechToTextExternal = () => {
     }
   };
   const handleKeyDown = async (e: KeyboardEvent) => {
-    if (e.shiftKey && e.altKey && e.key === 'L') {
+    if (e.shiftKey && e.altKey && e.code === 'KeyL') {
       if (!window.MediaRecorder) {
         showToast({ message: 'MediaRecorder is not supported in this browser', status: 'error' });
         return;
