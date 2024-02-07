@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { useForm, FormProvider, Controller, useWatch } from 'react-hook-form';
@@ -7,6 +7,7 @@ import {
   QueryKeys,
   EModelEndpoint,
   actionDelimiter,
+  supportsRetrieval,
   defaultAssistantFormValues,
 } from 'librechat-data-provider';
 import type { FunctionTool, TPlugin } from 'librechat-data-provider';
@@ -52,6 +53,13 @@ export default function AssistantPanel({
   const assistant_id = useWatch({ control, name: 'id' });
   const assistant = useWatch({ control, name: 'assistant' });
   const functions = useWatch({ control, name: 'functions' });
+  const model = useWatch({ control, name: 'model' });
+
+  useEffect(() => {
+    if (model && !supportsRetrieval.has(model)) {
+      setValue('retrieval', false);
+    }
+  }, [model, setValue]);
 
   /* Mutations */
   const update = useUpdateAssistantMutation();
@@ -284,6 +292,7 @@ export default function AssistantPanel({
                     <Checkbox
                       {...field}
                       checked={field.value}
+                      disabled={!supportsRetrieval.has(model)}
                       onCheckedChange={field.onChange}
                       className="relative float-left  mr-2 inline-flex h-4 w-4 cursor-pointer"
                       value={field?.value?.toString()}
@@ -291,9 +300,13 @@ export default function AssistantPanel({
                   )}
                 />
                 <label
-                  className="form-check-label text-token-text-primary w-full cursor-pointer"
+                  className={cn(
+                    'form-check-label text-token-text-primary w-full',
+                    !supportsRetrieval.has(model) ? 'cursor-no-drop opacity-50' : 'cursor-pointer',
+                  )}
                   htmlFor="retrieval"
                   onClick={() =>
+                    supportsRetrieval.has(model) &&
                     setValue('retrieval', !getValues('retrieval'), { shouldDirty: true })
                   }
                 >

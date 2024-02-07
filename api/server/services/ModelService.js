@@ -147,7 +147,11 @@ const fetchOpenAIModels = async (opts, _models = []) => {
  * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
  */
 const getOpenAIModels = async (opts) => {
-  let models = defaultModels.openAI;
+  let models = defaultModels[EModelEndpoint.openAI];
+
+  if (opts.assistants) {
+    models = defaultModels[EModelEndpoint.assistant];
+  }
 
   if (opts.plugins) {
     models = models.filter(
@@ -161,7 +165,9 @@ const getOpenAIModels = async (opts) => {
   }
 
   let key;
-  if (opts.azure) {
+  if (opts.assistants) {
+    key = 'ASSISTANTS_MODELS';
+  } else if (opts.azure) {
     key = 'AZURE_OPENAI_MODELS';
   } else if (opts.plugins) {
     key = 'PLUGIN_MODELS';
@@ -175,6 +181,10 @@ const getOpenAIModels = async (opts) => {
   }
 
   if (userProvidedOpenAI && !process.env.OPENROUTER_API_KEY) {
+    return models;
+  }
+
+  if (opts.assistants) {
     return models;
   }
 

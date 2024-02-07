@@ -5,7 +5,7 @@ const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserServic
 const OpenAIClient = require('~/app/clients/OpenAIClient');
 
 const initializeClient = async ({ req, res, endpointOption, initAppClient = false }) => {
-  const { PROXY, OPENAI_ORGANIZATION, OPENAI_API_KEY, ASSISTANTS_REVERSE_PROXY } = process.env;
+  const { PROXY, OPENAI_ORGANIZATION, ASSISTANTS_API_KEY, ASSISTANTS_REVERSE_PROXY } = process.env;
   const { key: expiresAt } = req.body;
 
   const opts = {};
@@ -23,7 +23,7 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
     opts.organization = OPENAI_ORGANIZATION;
   }
 
-  const credentials = OPENAI_API_KEY;
+  const credentials = ASSISTANTS_API_KEY;
 
   const isUserProvided = credentials === 'user_provided';
 
