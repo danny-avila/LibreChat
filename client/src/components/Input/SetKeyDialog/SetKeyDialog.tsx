@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { EModelEndpoint, alternateName } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TDialogProps } from '~/common';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { RevokeKeysButton } from '~/components/Nav';
@@ -54,6 +55,7 @@ const SetKeyDialog = ({
   });
 
   const [userKey, setUserKey] = useState('');
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const [expiresAtLabel, setExpiresAtLabel] = useState(EXPIRY.TWELVE_HOURS.display);
   const { getExpiry, saveUserKey } = useUserKey(endpoint);
   const { showToast } = useToastContext();
@@ -105,6 +107,7 @@ const SetKeyDialog = ({
   const EndpointComponent =
     endpointComponents[endpointType ?? endpoint] ?? endpointComponents['default'];
   const expiryTime = getExpiry();
+  const config = endpointsConfig?.[endpoint];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -131,7 +134,11 @@ const SetKeyDialog = ({
               <EndpointComponent
                 userKey={userKey}
                 setUserKey={setUserKey}
-                endpoint={endpoint}
+                endpoint={
+                  endpoint === EModelEndpoint.gptPlugins && config?.azure
+                    ? EModelEndpoint.azureOpenAI
+                    : endpoint
+                }
                 userProvideURL={userProvideURL}
               />
             </FormProvider>

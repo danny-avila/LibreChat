@@ -26,7 +26,6 @@ In this video, you will learn how to install and run LibreChat, using Docker on 
 
 #### Instructions
 
-Here are the steps to follow:
 - Update the system: `sudo apt update`
 - Clone LibreChat: `git clone https://github.com/danny-avila/LibreChat.git`
 - Install Docker: `sudo apt install docker.io && apt install docker-compose -y`
@@ -107,13 +106,14 @@ sudo apt-get install -y nodejs
 
 ### Using the command line (in the root directory)
 Setup the app:
+
 1. Run `npm ci`
 2. Run `npm run frontend`
 
 ## Start the app:
 1. Run `npm run backend`
 2. Run `meilisearch --master-key put_your_meilesearch_Master_Key_here` (Only if SEARCH=TRUE)
-3. Visit http://localhost:3080 (default port) & enjoy
+3. Visit [http://localhost:3080](http://localhost:3080) (default port) & enjoy
 
 ### Using a shell script
 

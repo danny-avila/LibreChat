@@ -10,8 +10,9 @@ balanceSchema.statics.check = async function ({
   valueKey,
   tokenType,
   amount,
+  endpointTokenConfig,
 }) {
-  const multiplier = getMultiplier({ valueKey, tokenType, model, endpoint });
+  const multiplier = getMultiplier({ valueKey, tokenType, model, endpoint, endpointTokenConfig });
   const tokenCost = amount * multiplier;
   const { tokenCredits: balance } = (await this.findOne({ user }, 'tokenCredits').lean()) ?? {};
 
@@ -24,6 +25,7 @@ balanceSchema.statics.check = async function ({
     amount,
     balance,
     multiplier,
+    endpointTokenConfig: !!endpointTokenConfig,
   });
 
   if (!balance) {

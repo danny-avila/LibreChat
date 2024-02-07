@@ -1,6 +1,7 @@
 export enum QueryKeys {
   messages = 'messages',
   allConversations = 'allConversations',
+  searchConversations = 'searchConversations',
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   user = 'user',
