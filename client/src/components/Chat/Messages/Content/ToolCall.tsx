@@ -64,7 +64,7 @@ export default function ToolCall({
           hasInput={!!args?.length}
           popover={true}
         />
-        {!!args?.length && <ToolPopover input={args} output={output} />}
+        {!!args?.length && domain && <ToolPopover input={args} output={output} domain={domain} />}
       </div>
     </Popover.Root>
   );
