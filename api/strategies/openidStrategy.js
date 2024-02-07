@@ -60,12 +60,6 @@ async function setupOpenId() {
           let user = await User.findOne({ openidId: userinfo.sub });
 
           if (!user) {
-            if (!userinfo.email) {
-              console.error('User does not have an email address! Check OpenID token scopes on the OpenID provider side.');
-              return done(null, false, {
-                message: 'You must have an email address to log in',
-              });
-            }
             user = await User.findOne({email: userinfo.email});
           }
 
@@ -89,7 +83,7 @@ async function setupOpenId() {
             }
             const pathParts = requiredRoleParameterPath.split('.');
             let found = true;
-            user.roles = pathParts.reduce((o, key) => {
+            let roles = pathParts.reduce((o, key) => {
               if (o === null || o === undefined || !(key in o)) {
                 found = false;
                 return [];
@@ -101,7 +95,7 @@ async function setupOpenId() {
               console.error(`Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`);
             }
 
-            if (!user.roles.includes(requiredRole)) {
+            if (!roles.includes(requiredRole)) {
               return done(null, false, {
                 message: `You must have the "${requiredRole}" role to log in.`,
               });

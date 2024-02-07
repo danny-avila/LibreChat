@@ -51,6 +51,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyon
 # If you want to restrict access by groups
 OPENID_REQUIRED_ROLE_TOKEN_KIND=id
 OPENID_REQUIRED_ROLE_PARAMETER_PATH = "roles"
+OPENID_REQUIRED_ROLE = "Your Group Name"
 ```
 11. Save the .env file
 
