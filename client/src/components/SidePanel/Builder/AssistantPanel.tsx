@@ -369,6 +369,7 @@ export default function AssistantPanel({
                     endpoint: EModelEndpoint.assistant,
                     conversationId: 'new',
                     assistant_id,
+                    model,
                     title: null,
                     createdAt: '',
                     updatedAt: '',
