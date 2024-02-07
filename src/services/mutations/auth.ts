@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { loginUser, logoutUser, resetPassword } from '../api/auth';
 import { LoginForm } from '../../types/auth';
 import { LANDING_PATH } from '../../utils/constants';
@@ -30,6 +30,7 @@ export function useLoginVeraUser() {
 }
 
 export function useLogoutVeraUser() {
+  const queryClient = useQueryClient();
   const { signOut } = useAuthStore();
 
   return useMutation({
@@ -38,6 +39,7 @@ export function useLogoutVeraUser() {
       if (error) {
         console.log(error);
       } else {
+        queryClient.removeQueries();
         window.location.href = 'login';
       }
     },

@@ -17,9 +17,11 @@ import useUserKey from './Input/useUserKey';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
 import { useAuthStore } from '~/zustand';
+import { fetchEventSource } from '@microsoft/fetch-event-source';
+import { VERA_HEADER } from '~/utils/constants';
 
 // this to be set somewhere else
-export default function useChatHelpers(index = 0, paramId: string | undefined) {
+export default function useVeraChat(index = 0, paramId: string | undefined) {
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const [showStopButton, setShowStopButton] = useState(true);
@@ -28,7 +30,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const getSender = useGetSender();
 
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, token } = useAuthStore();
 
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
@@ -93,141 +95,63 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       isEdited = false,
     } = {},
   ) => {
-    debugger;
     setShowStopButton(true);
-    if (!!isSubmitting || text === '') {
-      return;
-    }
 
-    if (endpoint === null) {
-      console.error('No endpoint available');
-      return;
-    }
+    console.log(`[PROTO] ESTABLISHING CONNECTION WITH TOKEN: \n${token}\n and PROMPT: \n${text}`);
+    const apiUrl = 'https://dev-app.askvera.io/api/v1/chat';
+    const apiKey = token!;
+    const payload = {
+      prompt_text: text.trim(),
+    };
+    const headers = { 'Content-Type': 'application/json', [VERA_HEADER]: apiKey };
 
-    conversationId = conversationId ?? conversation?.conversationId ?? null;
-    if (conversationId == 'search') {
-      console.error('cannot send any message under search view!');
-      return;
-    }
+    fetchEventSource(apiUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      async onopen(response) {
+        console.log('[PROTO] OPENED CONNECTION:', response);
+        if (response.ok) {
+          return; // everything's good
+        } else if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+          // client-side errors are usually non-retriable:
+          throw new Error();
+        } else {
+          throw new Error();
+        }
+      },
+      onmessage(msg) {
+        console.log('[PROTO] NEW EVENT:', msg);
+        if (msg.data) {
+          console.log('[PROTO] EVENT DATA:', JSON.parse(msg.data));
+          const fakeMessageId = v4();
+          let currentMessages: TMessage[] | null = getMessages() ?? [];
 
-    if (isContinued && !latestMessage) {
-      console.error('cannot continue AI message without latestMessage!');
-      return;
-    }
-
-    const isEditOrContinue = isEdited || isContinued;
-
-    // set the endpoint option
-    const convo = parseCompactConvo({
-      endpoint,
-      endpointType,
-      conversation: conversation ?? {},
+          const msgObject = {
+            text: msg.data,
+            sender: 'User',
+            isCreatedByUser: true,
+            parentMessageId,
+            conversationId,
+            messageId: isContinued && messageId ? messageId : fakeMessageId,
+            error: false,
+          };
+          console.log('[PROTO] Current msgs: ', currentMessages);
+          setMessages([...currentMessages, msgObject]);
+          setLatestMessage(msg);
+        }
+        if (msg.event === 'FatalError') {
+          throw new Error(msg.data);
+        }
+      },
+      onerror(e) {
+        console.log('[PROTO] ERROR: ', e);
+        throw Error(e);
+      },
+      onclose() {
+        console.log('[PROTO] CONNECTION CLOSED');
+      },
     });
-
-    const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
-    const endpointOption = {
-      ...convo,
-      endpoint,
-      endpointType,
-      modelDisplayLabel,
-      key: getExpiry(),
-    } as TEndpointOption;
-    const responseSender = getSender({ model: conversation?.model, ...endpointOption });
-
-    let currentMessages: TMessage[] | null = getMessages() ?? [];
-
-    // construct the query message
-    // this is not a real messageId, it is used as placeholder before real messageId returned
-    text = text.trim();
-    const fakeMessageId = v4();
-    parentMessageId =
-      parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
-
-    if (conversationId == 'new') {
-      parentMessageId = '00000000-0000-0000-0000-000000000000';
-      currentMessages = [];
-      conversationId = null;
-    }
-    const currentMsg: TMessage = {
-      text,
-      sender: 'User',
-      isCreatedByUser: true,
-      parentMessageId,
-      conversationId,
-      messageId: isContinued && messageId ? messageId : fakeMessageId,
-      error: false,
-    };
-
-    const parentMessage = currentMessages?.find(
-      (msg) => msg.messageId === latestMessage?.parentMessageId,
-    );
-    const reuseFiles = isRegenerate && parentMessage?.files;
-    if (reuseFiles && parentMessage.files?.length) {
-      currentMsg.files = parentMessage.files;
-      setFiles(new Map());
-      setFilesToDelete({});
-    } else if (files.size > 0) {
-      currentMsg.files = Array.from(files.values()).map((file) => ({
-        file_id: file.file_id,
-        filepath: file.filepath,
-        type: file.type || '', // Ensure type is not undefined
-        height: file.height,
-        width: file.width,
-      }));
-      setFiles(new Map());
-      setFilesToDelete({});
-    }
-
-    // construct the placeholder response message
-    const generation = editedText ?? latestMessage?.text ?? '';
-    const responseText = isEditOrContinue
-      ? generation
-      : '<span className="result-streaming">█</span>';
-
-    const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
-    const initialResponse: TMessage = {
-      sender: responseSender,
-      text: responseText,
-      endpoint: endpoint ?? '',
-      parentMessageId: isRegenerate ? messageId : fakeMessageId,
-      messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
-      conversationId,
-      unfinished: false,
-      isCreatedByUser: false,
-      isEdited: isEditOrContinue,
-      error: false,
-    };
-
-    if (isContinued) {
-      currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
-    }
-
-    const submission: TSubmission = {
-      conversation: {
-        ...conversation,
-        conversationId,
-      },
-      endpointOption,
-      message: {
-        ...currentMsg,
-        generation,
-        responseMessageId,
-        overrideParentMessageId: isRegenerate ? messageId : null,
-      },
-      messages: currentMessages,
-      isEdited: isEditOrContinue,
-      isContinued,
-      isRegenerate,
-      initialResponse,
-    };
-
-    if (isRegenerate) {
-      setMessages([...submission.messages, initialResponse]);
-    } else {
-      setMessages([...submission.messages, currentMsg, initialResponse]);
-    }
-    setLatestMessage(initialResponse);
-    setSubmission(submission);
   };
 
   const regenerate = ({ parentMessageId }) => {

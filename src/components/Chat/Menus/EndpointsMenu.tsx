@@ -7,6 +7,8 @@ import { useChatContext } from '~/Providers';
 import TitleButton from './UI/TitleButton';
 import { mapEndpoints } from '~/utils';
 
+// ! This will be where we place the models
+
 const EndpointsMenu: FC = () => {
   const { data: endpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,

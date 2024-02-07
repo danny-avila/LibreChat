@@ -16,5 +16,4 @@ module.exports = {
   rangeStart: 0,
   endOfLine: 'auto',
   jsxSingleQuote: false,
-  plugins: ['prettier-plugin-tailwindcss'],
 };

@@ -18,12 +18,12 @@
     "declaration": true,
     "declarationDir": "./types",
     "jsx": "preserve",
-    "baseUrl": "..",
+    "baseUrl": ".",
     "paths": {
-      "~/*": ["src/*"],
-      "test/*": ["./client/test/*"],
-      "*": ["./client/*", "../node_modules/*"],
-      "librechat-data-provider/*": ["./packages/data-provider/*"]
+      "~/*": ["./src/*"],
+      //"test/*": ["./client/test/*"],
+      //"*": ["./client/*", "../node_modules/*"],
+      //"librechat-data-provider/*": ["./packages/data-provider/*"]
     }
   },
   "types": ["node", "jest", "@testing-library/jest-dom"],

@@ -4,7 +4,6 @@ import { EndpointsMenu, PresetsMenu, HeaderNewChat } from './Menus';
 import HeaderOptions from './Input/HeaderOptions';
 
 export default function Header() {
-  console.log("header")
   const { navVisible } = useOutletContext<ContextType>();
   return (
     <div className="sticky top-0 z-10 flex h-14 w-full items-center justify-between bg-white/95 p-2 font-semibold dark:bg-gray-800/90 dark:text-white ">

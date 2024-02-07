@@ -24,9 +24,9 @@ import type {
 } from 'librechat-data-provider';
 import { addConversation, deleteConversation, updateConversation } from '~/utils';
 import { useGenTitleMutation } from '~/data-provider';
-import useChatHelpers from './useChatHelpers';
 import useSetStorage from './useSetStorage';
 import { useAuthStore } from '~/zustand';
+import useVeraChat from './useVeraChat';
 
 type TResData = {
   plugin?: TResPlugin;
@@ -47,7 +47,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const { token, isAuthenticated } = useAuthStore();
   const [completed, setCompleted] = useState(new Set());
   const { setMessages, setConversation, setIsSubmitting, newConversation, resetLatestMessage } =
-    useChatHelpers(index, paramId);
+    useVeraChat(index, paramId);
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({

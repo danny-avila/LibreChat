@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
-import { useChatHelpers, useSSE } from '~/hooks';
+import { useVeraChat, useSSE } from '~/hooks';
 // import GenerationButtons from './Input/GenerationButtons';
 import MessagesView from './Messages/MessagesView';
 // import OptionsBar from './Input/OptionsBar';
@@ -18,7 +18,7 @@ import Footer from './Footer';
 import store from '~/store';
 
 function ChatView({ index = 0 }: { index?: number }) {
-  console.log("chatview")
+  console.log('chatview');
 
   const { conversationId } = useParams();
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
@@ -36,13 +36,12 @@ function ChatView({ index = 0 }: { index?: number }) {
     enabled: !!fileMap,
   });
 
-  const chatHelpers = useChatHelpers(index, conversationId);
-  const isLoadingVera = false
+  const chatHelpers = useVeraChat(index, conversationId);
 
   return (
     <ChatContext.Provider value={chatHelpers}>
       <Presentation>
-        {isLoadingVera && conversationId !== 'new' ? (
+        {conversationId !== 'new' ? (
           <div className="flex h-screen items-center justify-center">
             <Spinner className="opacity-0" />
           </div>

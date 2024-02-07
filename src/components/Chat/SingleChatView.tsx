@@ -4,7 +4,7 @@ import MessagesView from './Messages/MessagesView';
 import OptionsBar from './Input/OptionsBar';
 import CreationPanel from './CreationPanel';
 import { ChatContext } from '~/Providers';
-import { useChatHelpers } from '~/hooks';
+import { useVeraChat } from '~/hooks';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
@@ -17,7 +17,7 @@ function ChatView({
   index?: number;
 }) {
   return (
-    <ChatContext.Provider value={useChatHelpers(index)}>
+    <ChatContext.Provider value={useVeraChat(index)}>
       <div className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800">
         <CreationPanel index={index} />
         <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-10 dark:bg-gray-800 md:pt-0">
