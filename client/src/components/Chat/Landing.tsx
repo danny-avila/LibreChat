@@ -7,8 +7,9 @@ import { getEndpointField } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const { conversation } = useChatContext();
+  const { data: endpointsConfig } = useGetEndpointsQuery();
+
   const localize = useLocalize();
   let { endpoint } = conversation ?? {};
   if (

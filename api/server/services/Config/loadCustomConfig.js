@@ -11,7 +11,7 @@ const configPath = path.resolve(projectRoot, 'librechat.yaml');
  * Load custom configuration files and caches the object if the `cache` field at root is true.
  * Validation via parsing the config file with the config schema.
  * @function loadCustomConfig
- * @returns {Promise<null | Object>} A promise that resolves to null or the custom config object.
+ * @returns {Promise<TCustomConfig | null>} A promise that resolves to null or the custom config object.
  * */
 
 async function loadCustomConfig() {
@@ -25,7 +25,8 @@ async function loadCustomConfig() {
     logger.error(`Invalid custom config file at ${configPath}`, result.error);
     return null;
   } else {
-    logger.info('Loaded custom config file');
+    logger.info('Loaded custom config file:');
+    logger.info(JSON.stringify(customConfig, null, 2));
   }
 
   if (customConfig.cache) {
