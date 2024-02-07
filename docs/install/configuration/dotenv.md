@@ -9,18 +9,7 @@ Welcome to the comprehensive guide for configuring your application's environmen
 
 While the default settings provide a solid foundation for a standard `docker` installation, delving into this guide will unveil the full potential of LibreChat. This guide empowers you to tailor LibreChat to your precise needs. Discover how to adjust language model availability, integrate social logins, manage the automatic moderation system, and much more. It's all about giving you the control to fine-tune LibreChat for an optimal user experience.
 
-**If you use docker, you should rebuild the docker image each time you update your environment variables**
-
-Rebuild command:
-```bash
-npm run update:docker
-
-# OR, if you don't have npm
-docker-compose build --no-cache
-
-# OR, if you the latest version of docker with docker compose as a plugin
-docker compose build --no-cache
-```
+> **Reminder: Please restart LibreChat for the configuration changes to take effect**
 
 Alternatively, you can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`, or modify the default configuration provided by the main `docker-compose.yml`, without the need to directly edit or duplicate the whole file.
 
