@@ -19,13 +19,15 @@ interface SidePanelProps {
   children: React.ReactNode;
 }
 
+const defaultMinSize = 20;
+
 export default function SidePanel({
   defaultLayout = [73, 27],
   defaultCollapsed = false,
   navCollapsedSize = 3,
   children,
 }: SidePanelProps) {
-  const [minSize, setMinSize] = useState(13.5);
+  const [minSize, setMinSize] = useState(defaultMinSize);
   const [isHovering, setIsHovering] = useState(false);
   const [navVisible, setNavVisible] = useState(!defaultCollapsed);
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
@@ -50,7 +52,7 @@ export default function SidePanel({
         setMinSize(0);
         setCollapsedSize(0);
       } else {
-        setMinSize(13.5);
+        setMinSize(defaultMinSize);
         setCollapsedSize(3);
       }
       return !prev;
@@ -99,7 +101,7 @@ export default function SidePanel({
           defaultSize={defaultLayout[1]}
           collapsible={true}
           minSize={minSize}
-          maxSize={30}
+          maxSize={40}
           ref={panelRef}
           style={{
             overflowY: 'auto',
@@ -116,7 +118,7 @@ export default function SidePanel({
             localStorage.setItem('react-resizable-panels:collapsed', 'true');
           }}
           className={cn(
-            'sidenav dark:bg-black',
+            'sidenav border-l border-gray-200 dark:border-gray-800/50 dark:bg-black',
             isCollapsed ? 'transition-all duration-300 ease-in-out' : '',
             // isCollapsed ? 'min-w-[50px] transition-all duration-300 ease-in-out' : '',
           )}
