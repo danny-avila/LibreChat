@@ -4,6 +4,7 @@ const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { FileContext } = require('librechat-data-provider');
 const { getImageBasename } = require('~/server/services/Files/images');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const { logger } = require('~/config');
@@ -159,6 +160,7 @@ Error Message: ${error.message}`;
         URL: theImageUrl,
         fileName: imageName,
         basePath: 'images',
+        context: FileContext.image_generation,
       });
 
       if (this.returnMetadata) {

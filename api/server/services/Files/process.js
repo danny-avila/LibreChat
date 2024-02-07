@@ -2,11 +2,12 @@ const path = require('path');
 const { v4 } = require('uuid');
 const mime = require('mime/lite');
 const {
-  FileSources,
-  EModelEndpoint,
-  imageExtRegex,
-  fileConfig,
   isUUID,
+  fileConfig,
+  FileContext,
+  FileSources,
+  imageExtRegex,
+  EModelEndpoint,
 } = require('librechat-data-provider');
 const { convertToWebP, resizeAndConvert } = require('~/server/services/Files/images');
 const { initializeClient } = require('~/server/services/Endpoints/assistant');
@@ -138,10 +139,11 @@ const processDeleteRequest = async ({ req, files }) => {
  * @param {string} params.URL - The URL of the file to be processed.
  * @param {string} params.fileName - The name that will be used to save the file (including extension)
  * @param {string} params.basePath - The base path or directory where the file will be saved or retrieved from.
+ * @param {FileContext} params.context - The context of the file (e.g., 'avatar', 'image_generation', etc.)
  * @returns {Promise<MongoFile>} A promise that resolves to the DB representation (MongoFile)
  *  of the processed file. It throws an error if the file processing fails at any stage.
  */
-const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath }) => {
+const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath, context }) => {
   const { saveURL, getFileURL } = getStrategyFunctions(fileStrategy);
   try {
     const { bytes, type, dimensions } = await saveURL({ userId, URL, fileName, basePath });
@@ -155,6 +157,7 @@ const processFileURL = async ({ fileStrategy, userId, URL, fileName, basePath })
         filename: fileName,
         source: fileStrategy,
         type,
+        context,
         width: dimensions.width,
         height: dimensions.height,
       },
@@ -190,6 +193,7 @@ const processImageFile = async ({ req, res, file, metadata }) => {
       bytes,
       filepath,
       filename: file.originalname,
+      context: FileContext.message_attachment,
       source,
       type: 'image/webp',
       width,
@@ -263,6 +267,7 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
       bytes,
       filepath: isAssistantUpload ? `https://api.openai.com/v1/files/${id}` : filepath,
       filename: filename ?? file.originalname,
+      context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       source,
       type: file.mimetype,
     },
@@ -311,6 +316,7 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
       filepath,
       usage: 1,
       file_id,
+      context: _file.purpose ?? FileContext.message_attachment,
       source: FileSources.openai,
     };
 

@@ -65,6 +65,10 @@ const fileSchema = mongoose.Schema(
       type: String,
       required: true,
     },
+    context: {
+      type: String,
+      // required: true,
+    },
     usage: {
       type: Number,
       required: true,

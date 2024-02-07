@@ -5,6 +5,14 @@ export enum FileSources {
   s3 = 's3',
 }
 
+export enum FileContext {
+  avatar = 'avatar',
+  assistants = 'assistants',
+  image_generation = 'image_generation',
+  assistants_output = 'assistants_output',
+  message_attachment = 'message_attachment',
+}
+
 export type TFile = {
   _id?: string;
   __v?: number;
