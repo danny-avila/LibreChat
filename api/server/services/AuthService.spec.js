@@ -1,7 +1,7 @@
-const getCustomConfig = require('~/cache/getCustomConfig');
+const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { isDomainAllowed } = require('./AuthService');
 
-jest.mock('~/cache/getCustomConfig', () => jest.fn());
+jest.mock('~/server/services/Config/getCustomConfig', () => jest.fn());
 
 describe('isDomainAllowed', () => {
   it('should allow domain when customConfig is not available', async () => {
