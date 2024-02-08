@@ -80,7 +80,8 @@ const useNewConvo = (index = 0) => {
           }
 
           if (!conversation.assistant_id && defaultEndpoint === EModelEndpoint.assistant) {
-            const assistant_id = localStorage.getItem(`assistant_id__${index}`) ?? assistants[0].id;
+            const assistant_id =
+              localStorage.getItem(`assistant_id__${index}`) ?? assistants[0]?.id;
             conversation.assistant_id = assistant_id;
           }
 
