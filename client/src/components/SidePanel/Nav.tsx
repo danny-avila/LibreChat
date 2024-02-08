@@ -74,7 +74,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
               onValueChange={setActive}
               collapsible
             >
-              <AccordionItem value={link.id} className="border-none">
+              <AccordionItem value={link.id} className="w-full border-none">
                 <AccordionPrimitive.Header asChild>
                   <AccordionPrimitive.Trigger asChild>
                     <button

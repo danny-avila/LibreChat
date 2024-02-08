@@ -133,10 +133,10 @@
 
 @media (max-width: 767px) {
   .sidenav {
-    width: calc(100% - 10px)  ;
+    /* width: calc(100% - 10px)  ; */
     transition: all 0.15s;
     position: fixed;
-    z-index: 64;
+    z-index: 66;
     top: 0;
     max-width: 320px;
   
@@ -148,7 +148,7 @@
   }
   .sidenav-mask {
     position: fixed;
-    z-index: 63;
+    z-index: 65;
     left: 0;
     right: 0;
     top: 0;

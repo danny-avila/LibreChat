@@ -55,7 +55,7 @@ export default function Knowledge({
       <div className="flex flex-col gap-4">
         <div className="text-token-text-tertiary rounded-lg">
           If you upload files under Knowledge, conversations with your Assistant may include file
-          contents. Files can be downloaded when Code Interpreter is enabled
+          contents.
         </div>
         {/* Files available to both tools */}
         <FileRow
