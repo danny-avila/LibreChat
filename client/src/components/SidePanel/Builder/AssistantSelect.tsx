@@ -159,6 +159,7 @@ export default function AssistantSelect({
       showAbove={false}
       showLabel={false}
       emptyTitle={true}
+      containerClassName="flex-grow"
       optionsClass="hover:bg-gray-20/50 dark:border-gray-700"
       optionsListClass="rounded-lg shadow-lg dark:bg-black dark:border-gray-700 dark:last:border"
       currentValueClass={cn(

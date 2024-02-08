@@ -8,9 +8,9 @@ import {
 } from '~/components/ui/Select';
 import { EModelEndpoint, defaultOrderQuery } from 'librechat-data-provider';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import { useSetIndexOptions, useSelectAssistant } from '~/hooks';
 import { useListAssistantsQuery } from '~/data-provider';
 import Icon from '~/components/Endpoints/Icon';
-import { useSetIndexOptions } from '~/hooks';
 import { cn } from '~/utils';
 
 interface SwitcherProps {
@@ -20,17 +20,16 @@ interface SwitcherProps {
 export default function Switcher({ isCollapsed }: SwitcherProps) {
   const { setOption } = useSetIndexOptions();
   const { index, conversation } = useChatContext();
+
   /* `selectedAssistant` must be defined with `null` to cause re-render on update */
   const { assistant_id: selectedAssistant = null } = conversation ?? {};
-
-  const setModel = setOption('model');
-  const setAssistant = setOption('assistant_id');
 
   const { data: assistants = [] } = useListAssistantsQuery(defaultOrderQuery, {
     select: (res) => res.data.map(({ id, name, metadata }) => ({ id, name, metadata })),
   });
 
   const assistantMap = useAssistantsMapContext();
+  const { onSelect } = useSelectAssistant({ assistantMap });
 
   useEffect(() => {
     if (!selectedAssistant && assistants && assistants.length && assistantMap) {
@@ -44,17 +43,7 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
   const currentAssistant = assistantMap?.[selectedAssistant ?? ''];
 
   return (
-    <Select
-      defaultValue={selectedAssistant as string | undefined}
-      onValueChange={(value) => {
-        const assistant = assistantMap?.[value];
-        if (!assistant) {
-          return;
-        }
-        setModel(assistant.model);
-        setAssistant(value);
-      }}
-    >
+    <Select defaultValue={selectedAssistant as string | undefined} onValueChange={onSelect}>
       <SelectTrigger
         className={cn(
           'flex items-center gap-2 [&>span]:line-clamp-1 [&>span]:flex [&>span]:w-full [&>span]:items-center [&>span]:gap-1 [&>span]:truncate [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0',
@@ -83,7 +72,7 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
         {assistants.map((assistant) => (
           <SelectItem key={assistant.id} value={assistant.id}>
             <div className="[&_svg]:text-foreground flex items-center justify-center gap-3 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ">
-              <div className="assistant-item overflow-hidden rounded-full">
+              <div className="assistant-item overflow-hidden rounded-full ">
                 <Icon
                   isCreatedByUser={false}
                   endpoint={EModelEndpoint.assistant}

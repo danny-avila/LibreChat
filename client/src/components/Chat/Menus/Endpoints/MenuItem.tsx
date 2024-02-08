@@ -3,8 +3,8 @@ import { Settings } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import type { TPreset, TConversation } from 'librechat-data-provider';
 import type { FC } from 'react';
-import type { TPreset } from 'librechat-data-provider';
 import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 import { cn, getEndpointField } from '~/utils';
@@ -62,7 +62,7 @@ const MenuItem: FC<MenuItemProps> = ({
         newConversation({ template: currentConvo, keepLatestMessage: true });
         return;
       }
-      newConversation({ template });
+      newConversation({ template: { ...(template as Partial<TConversation>) } });
     }
   };
 

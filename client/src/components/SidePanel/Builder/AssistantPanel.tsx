@@ -19,11 +19,11 @@ import { ToolSelectDialog } from '~/components/Tools';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
 import AssistantAction from './AssistantAction';
+import { useSelectAssistant } from '~/hooks';
 import ContextButton from './ContextButton';
 import AssistantTool from './AssistantTool';
 import { Spinner } from '~/components/svg';
 import { cn, cardStyle } from '~/utils/';
-import { useNewConvo } from '~/hooks';
 import Knowledge from './Knowledge';
 import { Panel } from '~/common';
 
@@ -32,7 +32,7 @@ const inputClass =
   'focus:shadow-outline w-full appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 dark:text-white shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:bg-gray-800 dark:border-gray-700/80';
 
 export default function AssistantPanel({
-  index = 0,
+  // index = 0,
   setAction,
   actions = [],
   setActivePanel,
@@ -42,9 +42,9 @@ export default function AssistantPanel({
   const queryClient = useQueryClient();
   const modelsQuery = useGetModelsQuery();
   const assistantMap = useAssistantsMapContext();
-  const { switchToConversation } = useNewConvo(index);
   const [showToolDialog, setShowToolDialog] = useState(false);
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
+  const { onSelect: onSelectAssistant } = useSelectAssistant({ assistantMap });
 
   const methods = useForm<AssistantForm>({
     defaultValues: defaultAssistantFormValues,
@@ -133,18 +133,34 @@ export default function AssistantPanel({
         onSubmit={handleSubmit(onSubmit)}
         className="h-auto w-full flex-shrink-0 overflow-x-hidden"
       >
-        <Controller
-          name="assistant"
-          control={control}
-          render={({ field }) => (
-            <AssistantSelect
-              reset={reset}
-              value={field.value}
-              setCurrentAssistantId={setCurrentAssistantId}
-              selectedAssistant={current_assistant_id ?? null}
-            />
+        <div className="flex w-full flex-wrap">
+          <Controller
+            name="assistant"
+            control={control}
+            render={({ field }) => (
+              <AssistantSelect
+                reset={reset}
+                value={field.value}
+                setCurrentAssistantId={setCurrentAssistantId}
+                selectedAssistant={current_assistant_id ?? null}
+              />
+            )}
+          />
+          {/* Select Button */}
+          {assistant_id && (
+            <button
+              className="focus:shadow-outline mx-2 mt-1 h-[40px]  rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+              type="button"
+              disabled={!assistant_id}
+              onClick={(e) => {
+                e.preventDefault();
+                onSelectAssistant(assistant_id);
+              }}
+            >
+              Select
+            </button>
           )}
-        />
+        </div>
         <div className="h-auto bg-white px-4 pb-8 pt-3 dark:bg-transparent">
           {/* Avatar & Name */}
           <div className="mb-4">
@@ -357,31 +373,9 @@ export default function AssistantPanel({
               assistant_id={assistant_id}
               setCurrentAssistantId={setCurrentAssistantId}
             />
-            {/* Use Button */}
-            {assistant_id && (
-              <button
-                className="focus:shadow-outline mx-2 rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
-                type="button"
-                disabled={!assistant_id}
-                onClick={(e) => {
-                  e.preventDefault();
-                  switchToConversation({
-                    endpoint: EModelEndpoint.assistant,
-                    conversationId: 'new',
-                    assistant_id,
-                    model,
-                    title: null,
-                    createdAt: '',
-                    updatedAt: '',
-                  });
-                }}
-              >
-                Use
-              </button>
-            )}
             {/* Submit Button */}
             <button
-              className="focus:shadow-outline flex w-1/4 items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+              className="focus:shadow-outline mx-2 flex w-[90px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
               type="submit"
             >
               {/* TODO: Add localization */}
