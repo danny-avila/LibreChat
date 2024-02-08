@@ -242,6 +242,9 @@ endpoints:
     - Type: Boolean
     - Example: `fetch: true`
     - **Note**: May cause slowdowns during initial use of the app if the response is delayed. Defaults to `false`.
+  - **userIdQuery**: When set to `true`, adds the LibreChat user ID as a query parameter to the API models request.
+    - Type: Boolean
+    - Example: `userIdQuery: true`
 
 ### **titleConvo**:
 
