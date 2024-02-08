@@ -364,26 +364,6 @@ export default function AssistantPanel({
                 </div>
               </button>
             </div>
-            {/* <label className={cn(labelClass, 'mt-2')}>Actions</label>
-            <div className="space-y-1">
-              {actions
-                .filter((action) => action.assistant_id === assistant_id)
-                .map((action, i) => {
-                  return (
-                    <AssistantAction key={i} action={action} onClick={() => setAction(action)} />
-                  );
-                })}
-              <button
-                type="button"
-                onClick={() => setActivePanel(Panel.actions)}
-                className="btn btn-neutral border-token-border-light relative mt-2 h-8 rounded-lg font-medium"
-              >
-                <div className="flex w-full items-center justify-center gap-2">
-                  Add Actions  TODO: Add localization
-                </div>
-              </button>
-            </div>
-            */}
           </div>
           <div className="flex items-center justify-end">
             <ContextButton

@@ -95,7 +95,7 @@ export default function ContextButton({
           <Popover.Content
             side="top"
             role="menu"
-            className="bg-token-surface-primary min-w-[180px] max-w-xs rounded-lg border border-gray-100 shadow-lg dark:border-gray-700 dark:bg-black"
+            className="bg-token-surface-primary min-w-[180px] max-w-xs rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-black"
             style={{ outline: 'none', pointerEvents: 'auto' }}
             sideOffset={8}
             tabIndex={-1}
