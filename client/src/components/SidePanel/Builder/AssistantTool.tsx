@@ -19,11 +19,16 @@ export default function AssistantTool({ tool, allTools }: { tool: string; allToo
             />
           </div>
         )}
-        <div className="h-9 grow px-3 py-2">{currentTool.name}</div>
+        <div
+          className="h-9 grow px-3 py-2"
+          style={{ textOverflow: 'ellipsis', wordBreak: 'break-all', overflow: 'hidden' }}
+        >
+          {currentTool.name}
+        </div>
         <div className="w-px bg-gray-300 dark:bg-gray-600" />
         <button
           type="button"
-          className="flex h-9 w-9 items-center justify-center rounded-lg rounded-l-none"
+          className="flex h-9 w-9 min-w-9 items-center justify-center rounded-lg rounded-l-none"
         >
           <GearIcon className="icon-sm" />
         </button>
