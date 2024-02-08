@@ -4,7 +4,7 @@ export default function RenameIcon() {
       stroke="currentColor"
       fill="none"
       strokeWidth="2"
-      viewBox="0 0 24 24"
+      viewBox="0 0 23 23"
       strokeLinecap="round"
       strokeLinejoin="round"
       className="h-4 w-4"

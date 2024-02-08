@@ -1,4 +1,3 @@
-import { useRecoilValue } from 'recoil';
 import { useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { EModelEndpoint } from 'librechat-data-provider';
@@ -13,6 +12,7 @@ import DeleteButton from './NewDeleteButton';
 import { getEndpointField } from '~/utils';
 import RenameButton from './RenameButton';
 import store from '~/store';
+import { useRecoilValue } from 'recoil';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
@@ -24,6 +24,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const { refreshConversations } = useConversations();
   const { navigateToConvo } = useNavigateToConvo();
   const { showToast } = useToastContext();
+  const [hovering, setHovering] = useState(false);
 
   const { conversationId, title } = conversation;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -113,7 +114,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
   const aProps = {
     className:
-      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg bg-gray-800 py-2 px-2',
+      'group relative rounded-lg active:opacity-90 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg bg-gray-800 py-2 px-2',
   };
 
   const activeConvo =
@@ -122,7 +123,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
   if (!activeConvo) {
     aProps.className =
-      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg py-2 px-2 hover:bg-gray-900';
+      'group relative rounded-lg active:opacity-90 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg py-2 px-2 hover:bg-gray-900';
   }
 
   return (
@@ -130,11 +131,13 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       href={`/c/${conversationId}`}
       data-testid="convo-item"
       onClick={clickHandler}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
       {...aProps}
       title={title}
     >
       {icon}
-      <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">
+      <div className="relative mr-8 line-clamp-1 max-h-5 flex-1 grow overflow-hidden">
         {renaming === true ? (
           <input
             ref={inputRef}
@@ -146,16 +149,17 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             onKeyDown={handleKeyDown}
           />
         ) : (
-          title
+          <span className={`${activeConvo ? 'text-white' : 'text-white'} text-sm`}>{title}</span>
         )}
       </div>
-      {activeConvo ? (
-        <div className="absolute bottom-0 right-1 top-0 w-20 bg-gradient-to-l from-gray-800 from-60% to-transparent"></div>
-      ) : (
-        <div className="from--gray-900 absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%"></div>
-      )}
-      {activeConvo ? (
-        <div className="visible absolute right-1 z-10 flex text-gray-400">
+      <div
+        className={`absolute bottom-0 top-0 ${
+          activeConvo ? `w-${title.length * 5}` : 'w-20'
+        } from-bg-black to-bg-gray-900 z-0 h-full rounded-r-lg bg-gradient-to-l transition-all`}
+      />
+
+      {hovering || activeConvo ? (
+        <div className="visible absolute bottom-0 right-1 top-0 z-10 flex items-center gap-0">
           <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
           <DeleteButton
             conversationId={conversationId}
@@ -165,7 +169,11 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           />
         </div>
       ) : (
-        <div className="absolute bottom-0 right-0 top-0 w-20 rounded-lg bg-gradient-to-l from-black from-0% to-transparent  group-hover:from-gray-900" />
+        <div
+          className={`absolute bottom-0 right-${
+            hovering || activeConvo ? 10 : 0
+          } top-0 w-20 rounded-lg bg-gradient-to-l from-black from-0% to-transparent group-hover:from-gray-900`}
+        />
       )}
     </a>
   );
