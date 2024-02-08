@@ -9,8 +9,8 @@ async function modelController(req, res) {
     res.send(cachedModelsConfig);
     return;
   }
-  const defaultModelsConfig = await loadDefaultModels();
-  const customModelsConfig = await loadConfigModels();
+  const defaultModelsConfig = await loadDefaultModels(req);
+  const customModelsConfig = await loadConfigModels(req);
 
   const modelConfig = { ...defaultModelsConfig, ...customModelsConfig };
 

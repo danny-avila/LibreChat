@@ -6,8 +6,10 @@ const { getLogStores } = require('~/cache');
 
 /**
  * Load config endpoints from the cached configuration object
- * @function loadConfigModels */
-async function loadConfigModels() {
+ * @function loadConfigModels
+ * @param {Express.Request} req - The Express request object.
+ */
+async function loadConfigModels(req) {
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
   let customConfig = await cache.get(CacheKeys.CUSTOM_CONFIG);
 
@@ -49,7 +51,8 @@ async function loadConfigModels() {
 
     if (models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) {
       fetchPromisesMap[BASE_URL] =
-        fetchPromisesMap[BASE_URL] || fetchModels({ baseURL: BASE_URL, apiKey: API_KEY, name });
+        fetchPromisesMap[BASE_URL] ||
+        fetchModels({ user: req.user.id, baseURL: BASE_URL, apiKey: API_KEY, name });
       baseUrlToNameMap[BASE_URL] = baseUrlToNameMap[BASE_URL] || [];
       baseUrlToNameMap[BASE_URL].push(name);
       continue;

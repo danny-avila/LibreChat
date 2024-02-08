@@ -29,6 +29,7 @@ const {
  * Fetches OpenAI models from the specified base API path or Azure, based on the provided configuration.
  *
  * @param {Object} params - The parameters for fetching the models.
+ * @param {Object} params.user - The user ID to send to the API.
  * @param {string} params.apiKey - The API key for authentication with the API.
  * @param {string} params.baseURL - The base path URL for the API.
  * @param {string} [params.name='OpenAI'] - The name of the API; defaults to 'OpenAI'.
@@ -38,6 +39,7 @@ const {
  * @async
  */
 const fetchModels = async ({
+  user,
   apiKey,
   baseURL,
   name = 'OpenAI',
@@ -51,21 +53,26 @@ const fetchModels = async ({
   }
 
   try {
-    const payload = {
+    const options = {
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },
     };
 
     if (PROXY) {
-      payload.httpsAgent = new HttpsProxyAgent(PROXY);
+      options.httpsAgent = new HttpsProxyAgent(PROXY);
     }
 
     if (process.env.OPENAI_ORGANIZATION && baseURL.includes('openai')) {
-      payload.headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
+      options.headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
     }
 
-    const res = await axios.get(`${baseURL}${azure ? '' : '/models'}`, payload);
+    const url = new URL(`${baseURL}${azure ? '' : '/models'}`);
+    if (user) {
+      url.searchParams.append('user', user);
+    }
+    const res = await axios.get(url.toString(), options);
+
     /** @type {z.infer<typeof inputSchema>} */
     const input = res.data;
 
@@ -83,7 +90,17 @@ const fetchModels = async ({
   return models;
 };
 
-const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _models = []) => {
+/**
+ * Fetches models from the specified API path or Azure, based on the provided options.
+ * @async
+ * @function
+ * @param {object} opts - The options for fetching the models.
+ * @param {string} opts.user - The user ID to send to the API.
+ * @param {boolean} [opts.azure=false] - Whether to fetch models from Azure.
+ * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
+ * @param {string[]} [_models=[]] - The models to use as a fallback.
+ */
+const fetchOpenAIModels = async (opts, _models = []) => {
   let models = _models.slice() ?? [];
   let apiKey = openAIApiKey;
   let baseURL = 'https://api.openai.com/v1';
@@ -114,6 +131,7 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
       apiKey,
       baseURL,
       azure: opts.azure,
+      user: opts.user,
     });
   }
 
@@ -126,7 +144,16 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
   return models;
 };
 
-const getOpenAIModels = async (opts = { azure: false, plugins: false }) => {
+/**
+ * Loads the default models for the application.
+ * @async
+ * @function
+ * @param {object} opts - The options for fetching the models.
+ * @param {string} opts.user - The user ID to send to the API.
+ * @param {boolean} [opts.azure=false] - Whether to fetch models from Azure.
+ * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
+ */
+const getOpenAIModels = async (opts) => {
   let models = [
     'gpt-4',
     'gpt-4-0613',
