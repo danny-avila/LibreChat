@@ -85,7 +85,7 @@ export default function SidePanel({
         <ResizablePanelGroup
           direction="horizontal"
           onLayout={(sizes: number[]) => throttledSaveLayout(sizes)}
-          className="h-full items-stretch"
+          className="transition-width relative h-full w-full flex-1 overflow-auto bg-white dark:bg-gray-800"
         >
           <ResizablePanel defaultSize={defaultLayout[0]} minSize={30}>
             {children}

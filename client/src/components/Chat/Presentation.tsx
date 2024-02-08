@@ -66,14 +66,12 @@ export default function Presentation({
         ref={drop}
         className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800"
       >
-        <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-0 dark:bg-gray-800">
-          <SidePanel defaultLayout={defaultLayout} defaultCollapsed={defaultCollapsed}>
-            <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
-              {children}
-              {isActive && <DragDropOverlay />}
-            </div>
-          </SidePanel>
-        </div>
+        <SidePanel defaultLayout={defaultLayout} defaultCollapsed={defaultCollapsed}>
+          <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
+            {children}
+            {isActive && <DragDropOverlay />}
+          </div>
+        </SidePanel>
       </div>
     );
   }
