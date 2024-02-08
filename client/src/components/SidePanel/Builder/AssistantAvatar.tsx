@@ -74,9 +74,7 @@ function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: nu
   }, [input]);
 
   useEffect(() => {
-    if (metadata?.avatar) {
-      setPreviewUrl(metadata.avatar as string);
-    }
+    setPreviewUrl((metadata?.avatar as string | undefined) ?? null);
   }, [metadata?.avatar]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
