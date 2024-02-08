@@ -35,7 +35,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
   const Cancel = localize('com_ui_cancel');
 
   const defaultSelect =
-    'bg-gray-900 text-white transition-colors hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900';
+    'bg-gray-900 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200';
   return (
     <DialogContent
       ref={ref}
@@ -56,7 +56,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
       <DialogFooter>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex h-auto gap-2">
-          <DialogClose className="dark:hover:gray-400 border-gray-700">{Cancel}</DialogClose>
+          <DialogClose className="hover:gray-600 dark:hover:gray-200">{Cancel}</DialogClose>
           {buttons ? buttons : null}
           {selection ? (
             <DialogClose

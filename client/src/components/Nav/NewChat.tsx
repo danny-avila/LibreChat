@@ -51,7 +51,7 @@ export default function NewChat({
           className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium hover:bg-gray-100 dark:hover:bg-gray-900"
         >
           <div className="h-7 w-7 flex-shrink-0">
-            <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-black text-black dark:bg-white dark:text-white">
+            <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black dark:bg-white">
               {endpoint &&
                 Icon &&
                 Icon({
