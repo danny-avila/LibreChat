@@ -17,6 +17,7 @@ const configPath = path.resolve(projectRoot, 'librechat.yaml');
 async function loadCustomConfig() {
   const customConfig = loadYaml(configPath);
   if (!customConfig) {
+    logger.info('Custom config file missing or YAML format invalid.');
     return null;
   }
 
@@ -25,7 +26,7 @@ async function loadCustomConfig() {
     logger.error(`Invalid custom config file at ${configPath}`, result.error);
     return null;
   } else {
-    logger.info('Loaded custom config file:');
+    logger.info('Custom config file loaded:');
     logger.info(JSON.stringify(customConfig, null, 2));
   }
 

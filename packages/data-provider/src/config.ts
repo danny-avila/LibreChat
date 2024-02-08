@@ -15,6 +15,7 @@ export const endpointSchema = z.object({
   models: z.object({
     default: z.array(z.string()).min(1),
     fetch: z.boolean().optional(),
+    userIdQuery: z.boolean().optional(),
   }),
   titleConvo: z.boolean().optional(),
   titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
@@ -40,7 +41,8 @@ export const configSchema = z.object({
     .object({
       custom: z.array(endpointSchema.partial()),
     })
-    .strict(),
+    .strict()
+    .optional(),
 });
 
 export type TCustomConfig = z.infer<typeof configSchema>;
@@ -177,6 +179,10 @@ export enum CacheKeys {
    * Key for the model config cache.
    */
   MODELS_CONFIG = 'modelsConfig',
+  /**
+   * Key for the model queries cache.
+   */
+  MODEL_QUERIES = 'modelQueries',
   /**
    * Key for the default endpoint config cache.
    */
