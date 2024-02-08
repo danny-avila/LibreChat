@@ -1,5 +1,5 @@
 const axios = require('axios');
-const HttpsProxyAgent = require('https-proxy-agent');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
 const { extractBaseURL, inputSchema, processModelData } = require('~/utils');
 const getLogStores = require('~/cache/getLogStores');
@@ -8,15 +8,6 @@ const { logger } = require('~/config');
 // const { getAzureCredentials, genAzureChatCompletion } = require('~/utils/');
 
 const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
-
-const {
-  OPENROUTER_API_KEY,
-  OPENAI_REVERSE_PROXY,
-  CHATGPT_MODELS,
-  ANTHROPIC_MODELS,
-  GOOGLE_MODELS,
-  PROXY,
-} = process.env ?? {};
 
 /**
  * Fetches OpenAI models from the specified base API path or Azure, based on the provided configuration.
@@ -54,8 +45,8 @@ const fetchModels = async ({
       },
     };
 
-    if (PROXY) {
-      options.httpsAgent = new HttpsProxyAgent(PROXY);
+    if (process.env.PROXY) {
+      options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
     }
 
     if (process.env.OPENAI_ORGANIZATION && baseURL.includes('openai')) {
@@ -98,8 +89,9 @@ const fetchModels = async ({
 const fetchOpenAIModels = async (opts, _models = []) => {
   let models = _models.slice() ?? [];
   let apiKey = openAIApiKey;
-  let baseURL = 'https://api.openai.com/v1';
-  let reverseProxyUrl = OPENAI_REVERSE_PROXY;
+  const openaiBaseURL = 'https://api.openai.com/v1';
+  let baseURL = openaiBaseURL;
+  let reverseProxyUrl = process.env.OPENAI_REVERSE_PROXY;
   if (opts.azure) {
     return models;
     // const azure = getAzureCredentials();
@@ -107,9 +99,9 @@ const fetchOpenAIModels = async (opts, _models = []) => {
     //   .split('/deployments')[0]
     //   .concat(`/models?api-version=${azure.azureOpenAIApiVersion}`);
     // apiKey = azureOpenAIApiKey;
-  } else if (OPENROUTER_API_KEY) {
+  } else if (process.env.OPENROUTER_API_KEY) {
     reverseProxyUrl = 'https://openrouter.ai/api/v1';
-    apiKey = OPENROUTER_API_KEY;
+    apiKey = process.env.OPENROUTER_API_KEY;
   }
 
   if (reverseProxyUrl) {
@@ -132,7 +124,11 @@ const fetchOpenAIModels = async (opts, _models = []) => {
     });
   }
 
-  if (!reverseProxyUrl) {
+  if (models.length === 0) {
+    return _models;
+  }
+
+  if (baseURL === openaiBaseURL) {
     const regex = /(text-davinci-003|gpt-)/;
     models = models.filter((model) => regex.test(model));
   }
@@ -151,17 +147,17 @@ const fetchOpenAIModels = async (opts, _models = []) => {
  * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
  */
 const getOpenAIModels = async (opts) => {
-  let models = [
-    'gpt-4',
-    'gpt-4-0613',
-    'gpt-3.5-turbo',
-    'gpt-3.5-turbo-16k',
-    'gpt-3.5-turbo-0613',
-    'gpt-3.5-turbo-0301',
-  ];
+  let models = defaultModels.openAI;
 
-  if (!opts.plugins) {
-    models.push('text-davinci-003');
+  if (opts.plugins) {
+    models = models.filter(
+      (model) =>
+        !model.includes('text-davinci') &&
+        !model.includes('instruct') &&
+        !model.includes('0613') &&
+        !model.includes('0314') &&
+        !model.includes('0301'),
+    );
   }
 
   let key;
@@ -178,7 +174,7 @@ const getOpenAIModels = async (opts) => {
     return models;
   }
 
-  if (userProvidedOpenAI && !OPENROUTER_API_KEY) {
+  if (userProvidedOpenAI && !process.env.OPENROUTER_API_KEY) {
     return models;
   }
 
@@ -187,8 +183,8 @@ const getOpenAIModels = async (opts) => {
 
 const getChatGPTBrowserModels = () => {
   let models = ['text-davinci-002-render-sha', 'gpt-4'];
-  if (CHATGPT_MODELS) {
-    models = String(CHATGPT_MODELS).split(',');
+  if (process.env.CHATGPT_MODELS) {
+    models = String(process.env.CHATGPT_MODELS).split(',');
   }
 
   return models;
@@ -196,8 +192,8 @@ const getChatGPTBrowserModels = () => {
 
 const getAnthropicModels = () => {
   let models = defaultModels[EModelEndpoint.anthropic];
-  if (ANTHROPIC_MODELS) {
-    models = String(ANTHROPIC_MODELS).split(',');
+  if (process.env.ANTHROPIC_MODELS) {
+    models = String(process.env.ANTHROPIC_MODELS).split(',');
   }
 
   return models;
@@ -205,8 +201,8 @@ const getAnthropicModels = () => {
 
 const getGoogleModels = () => {
   let models = defaultModels[EModelEndpoint.google];
-  if (GOOGLE_MODELS) {
-    models = String(GOOGLE_MODELS).split(',');
+  if (process.env.GOOGLE_MODELS) {
+    models = String(process.env.GOOGLE_MODELS).split(',');
   }
 
   return models;
