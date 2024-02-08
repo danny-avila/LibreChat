@@ -29,7 +29,7 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
   });
 
   const assistantMap = useAssistantsMapContext();
-  const { onSelect } = useSelectAssistant({ assistantMap });
+  const { onSelect } = useSelectAssistant();
 
   useEffect(() => {
     if (!selectedAssistant && assistants && assistants.length && assistantMap) {

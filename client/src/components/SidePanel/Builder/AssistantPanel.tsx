@@ -44,7 +44,7 @@ export default function AssistantPanel({
   const assistantMap = useAssistantsMapContext();
   const [showToolDialog, setShowToolDialog] = useState(false);
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
-  const { onSelect: onSelectAssistant } = useSelectAssistant({ assistantMap });
+  const { onSelect: onSelectAssistant } = useSelectAssistant();
 
   const methods = useForm<AssistantForm>({
     defaultValues: defaultAssistantFormValues,
