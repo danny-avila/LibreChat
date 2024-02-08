@@ -128,21 +128,22 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header, index) => {
-                  const style: Style = { maxWidth: '32px' };
+                  const style: Style = { maxWidth: '32px', minWidth: '125px' };
                   if (header.id === 'filename') {
                     style.maxWidth = '50%';
                     style.width = '50%';
                     style.minWidth = '300px';
                   }
 
-                  if (index === 0) {
+                  if (index === 0 && header.id === 'select') {
+                    style.width = '25px';
                     style.maxWidth = '25px';
-                    style.minWidth = '25px';
+                    style.minWidth = '35px';
                   }
                   return (
                     <TableHead
                       key={header.id}
-                      className="sticky top-0 min-w-[125px] rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100 sm:px-4 sm:py-2"
+                      className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100 sm:px-4 sm:py-2"
                       style={style}
                     >
                       {header.isPlaceholder
@@ -177,7 +178,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                     return (
                       <TableCell
                         key={cell.id}
-                        className="overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
+                        className="align-start overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
                         style={style}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
