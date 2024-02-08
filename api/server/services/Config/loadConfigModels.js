@@ -46,7 +46,13 @@ async function loadConfigModels(req) {
     if (models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) {
       fetchPromisesMap[BASE_URL] =
         fetchPromisesMap[BASE_URL] ||
-        fetchModels({ user: req.user.id, baseURL: BASE_URL, apiKey: API_KEY, name });
+        fetchModels({
+          user: req.user.id,
+          baseURL: BASE_URL,
+          apiKey: API_KEY,
+          name,
+          userIdQuery: models.userIdQuery,
+        });
       baseUrlToNameMap[BASE_URL] = baseUrlToNameMap[BASE_URL] || [];
       baseUrlToNameMap[BASE_URL].push(name);
       continue;

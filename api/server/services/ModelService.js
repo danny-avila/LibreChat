@@ -1,20 +1,13 @@
-const Keyv = require('keyv');
 const axios = require('axios');
 const HttpsProxyAgent = require('https-proxy-agent');
 const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
 const { extractBaseURL, inputSchema, processModelData } = require('~/utils');
 const getLogStores = require('~/cache/getLogStores');
-const { isEnabled } = require('~/server/utils');
-const keyvRedis = require('~/cache/keyvRedis');
 const { logger } = require('~/config');
 
 // const { getAzureCredentials, genAzureChatCompletion } = require('~/utils/');
 
 const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
-
-const modelsCache = isEnabled(process.env.USE_REDIS)
-  ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: 'models' });
 
 const {
   OPENROUTER_API_KEY,
@@ -34,6 +27,7 @@ const {
  * @param {string} params.baseURL - The base path URL for the API.
  * @param {string} [params.name='OpenAI'] - The name of the API; defaults to 'OpenAI'.
  * @param {boolean} [params.azure=false] - Whether to fetch models from Azure.
+ * @param {boolean} [params.userIdQuery=false] - Whether to send the user ID as a query parameter.
  * @param {boolean} [params.createTokenConfig=true] - Whether to create a token configuration from the API response.
  * @returns {Promise<string[]>} A promise that resolves to an array of model identifiers.
  * @async
@@ -44,6 +38,7 @@ const fetchModels = async ({
   baseURL,
   name = 'OpenAI',
   azure = false,
+  userIdQuery = false,
   createTokenConfig = true,
 }) => {
   let models = [];
@@ -68,7 +63,7 @@ const fetchModels = async ({
     }
 
     const url = new URL(`${baseURL}${azure ? '' : '/models'}`);
-    if (user) {
+    if (user && userIdQuery) {
       url.searchParams.append('user', user);
     }
     const res = await axios.get(url.toString(), options);
@@ -120,6 +115,8 @@ const fetchOpenAIModels = async (opts, _models = []) => {
   if (reverseProxyUrl) {
     baseURL = extractBaseURL(reverseProxyUrl);
   }
+
+  const modelsCache = getLogStores(CacheKeys.MODEL_QUERIES);
 
   const cachedModels = await modelsCache.get(baseURL);
   if (cachedModels) {
