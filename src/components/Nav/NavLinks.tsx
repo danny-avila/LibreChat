@@ -3,7 +3,6 @@ import { useRecoilValue } from 'recoil';
 import { Fragment, useState, memo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Menu, Transition } from '@headlessui/react';
-import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TConversation } from 'librechat-data-provider';
 import { ExportModal } from './ExportConversation';
 import { LinkIcon, GearIcon } from '~/components';
@@ -20,10 +19,6 @@ function NavLinks() {
   const localize = useLocalize();
   const location = useLocation();
   const { user, isAuthenticated } = useAuthStore();
-  const { data: startupConfig } = useGetStartupConfig();
-  const balanceQuery = useGetUserBalance({
-    enabled: !!isAuthenticated() && startupConfig?.checkBalance,
-  });
   const [showExports, setShowExports] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -53,11 +48,10 @@ function NavLinks() {
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
-            {startupConfig?.checkBalance && balanceQuery.data && (
-              <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-gray-100">
-                {`Balance: ${balanceQuery.data}`}
-              </div>
-            )}
+            {/* <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-gray-100">
+              {`Balance: hi`}
+            </div> */}
+
             <Menu.Button
               className={cn(
                 'group-ui-open:bg-[#202123] duration-350 mt-text-sm mb-1 flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-[#202123]',
@@ -83,7 +77,6 @@ function NavLinks() {
                 className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left font-bold text-white"
                 style={{ marginTop: '-4px', marginLeft: '2px' }}
               >
-
                 {user?.username || localize('com_nav_user')}
               </div>
             </Menu.Button>

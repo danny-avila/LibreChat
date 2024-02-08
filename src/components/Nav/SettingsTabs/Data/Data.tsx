@@ -1,8 +1,4 @@
 import * as Tabs from '@radix-ui/react-tabs';
-import {
-  useRevokeAllUserKeysMutation,
-  useRevokeUserKeyMutation,
-} from 'librechat-data-provider/react-query';
 import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useState, useCallback, useRef } from 'react';
 import { useOnClickOutside } from '~/hooks';
@@ -20,31 +16,27 @@ export const RevokeKeysButton = ({
   disabled?: boolean;
 }) => {
   const [confirmClear, setConfirmClear] = useState(false);
-  const revokeKeyMutation = useRevokeUserKeyMutation(endpoint);
-  const revokeKeysMutation = useRevokeAllUserKeysMutation();
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
 
   const revokeAllUserKeys = useCallback(() => {
     if (confirmClear) {
-      revokeKeysMutation.mutate({});
       setConfirmClear(false);
     } else {
       setConfirmClear(true);
     }
-  }, [confirmClear, revokeKeysMutation]);
+  }, [confirmClear]);
 
   const revokeUserKey = useCallback(() => {
     if (!endpoint) {
       return;
     } else if (confirmClear) {
-      revokeKeyMutation.mutate({});
       setConfirmClear(false);
     } else {
       setConfirmClear(true);
     }
-  }, [confirmClear, revokeKeyMutation, endpoint]);
+  }, [confirmClear, endpoint]);
 
   const onClick = all ? revokeAllUserKeys : revokeUserKey;
 
@@ -60,7 +52,6 @@ export const RevokeKeysButton = ({
       infoTextCode={'com_ui_revoke_info'}
       dataTestIdInitial={'revoke-all-keys-initial'}
       dataTestIdConfirm={'revoke-all-keys-confirm'}
-      mutation={all ? revokeKeysMutation : revokeKeyMutation}
     />
   );
 };

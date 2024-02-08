@@ -3,16 +3,13 @@ import { Search, X } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import { useState, useEffect, useCallback } from 'react';
 import { tConversationSchema } from 'librechat-data-provider';
-import {
-  useAvailablePluginsQuery,
-  useUpdateUserPluginsMutation,
-} from 'librechat-data-provider/react-query';
 import type { TError, TPlugin, TPluginAction } from 'librechat-data-provider';
 import PluginPagination from './PluginPagination';
 import PluginStoreItem from './PluginStoreItem';
 import PluginAuthForm from './PluginAuthForm';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+import { useAuthStore } from '~/zustand';
 
 type TPluginStoreDialogProps = {
   isOpen: boolean;
@@ -22,19 +19,16 @@ type TPluginStoreDialogProps = {
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const localize = useLocalize();
   const { user } = useAuthStore();
-  const { data: availablePlugins } = useAvailablePluginsQuery();
-  const updateUserPlugins = useUpdateUserPluginsMutation();
 
   const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
   const [selectedPlugin, setSelectedPlugin] = useState<TPlugin | undefined>(undefined);
-
+  const availablePlugins = [];
   const [maxPage, setMaxPage] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(1);
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
   const [searchChanged, setSearchChanged] = useState(false);
   const [searchValue, setSearchValue] = useState('');
-
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
@@ -51,38 +45,10 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   };
 
   const handleInstall = (pluginAction: TPluginAction) => {
-    updateUserPlugins.mutate(pluginAction, {
-      onError: (error: unknown) => {
-        handleInstallError(error as TError);
-      },
-    });
     setShowPluginAuthForm(false);
   };
 
-  const onPluginUninstall = (plugin: string) => {
-    updateUserPlugins.mutate(
-      { pluginKey: plugin, action: 'uninstall', auth: null },
-      {
-        onError: (error: unknown) => {
-          handleInstallError(error as TError);
-        },
-        onSuccess: () => {
-          //@ts-ignore - can't set a default convo or it will break routing
-          let { tools } = conversation;
-          tools = tools.filter((t: TPlugin) => {
-            return t.pluginKey !== plugin;
-          });
-          localStorage.setItem('lastSelectedTools', JSON.stringify(tools));
-          setConversation((prevState) =>
-            tConversationSchema.parse({
-              ...prevState,
-              tools,
-            }),
-          );
-        },
-      },
-    );
-  };
+  const onPluginUninstall = (plugin: string) => {};
 
   const onPluginInstall = (pluginKey: string) => {
     const getAvailablePluginFromKey = availablePlugins?.find((p) => p.pluginKey === pluginKey);

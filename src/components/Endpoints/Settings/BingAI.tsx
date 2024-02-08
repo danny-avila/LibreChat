@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { useUpdateTokenCountMutation } from 'librechat-data-provider/react-query';
 import type { TUpdateTokenCountResponse } from 'librechat-data-provider';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils/';
 import { Label, Checkbox, SelectDropDown } from '~/components/ui';
@@ -11,7 +10,6 @@ export default function Settings({ conversation, setOption, readonly }: TSetting
   const localize = useLocalize();
   const [tokenCount, setTokenCount] = useState(0);
   const debouncedContext = useDebounce(conversation?.context?.trim() ?? '', 250);
-  const updateTokenCountMutation = useUpdateTokenCountMutation();
 
   useEffect(() => {
     if (!debouncedContext || debouncedContext === '') {
@@ -20,14 +18,14 @@ export default function Settings({ conversation, setOption, readonly }: TSetting
     }
 
     const handleTextChange = (context: string) => {
-      updateTokenCountMutation.mutate(
-        { text: context },
-        {
-          onSuccess: (data: TUpdateTokenCountResponse) => {
-            setTokenCount(data.count);
-          },
-        },
-      );
+      // updateTokenCountMutation.mutate(
+      //   { text: context },
+      //   {
+      //     onSuccess: (data: TUpdateTokenCountResponse) => {
+      //       setTokenCount(data.count);
+      //     },
+      //   },
+      // );
     };
 
     handleTextChange(debouncedContext);

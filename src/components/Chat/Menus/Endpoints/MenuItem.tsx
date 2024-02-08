@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import type { TPreset } from 'librechat-data-provider';
 import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
@@ -32,7 +31,6 @@ const MenuItem: FC<MenuItemProps> = ({
 }) => {
   const modularChat = useRecoilValue(store.modularChat);
   const [isDialogOpen, setDialogOpen] = useState(false);
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const { conversation, newConversation } = useChatContext();
   const getDefaultConversation = useDefaultConvo();
 
@@ -66,8 +64,7 @@ const MenuItem: FC<MenuItemProps> = ({
     }
   };
 
-  const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-  const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
+  const iconKey = 'unknown';
   const Icon = icons[iconKey];
 
   return (
@@ -88,7 +85,7 @@ const MenuItem: FC<MenuItemProps> = ({
                   endpoint={endpoint}
                   context={'menu-item'}
                   className="icon-md shrink-0 dark:text-white"
-                  iconURL={getEndpointField(endpointsConfig, endpoint, 'iconURL')}
+                  iconURL={'https://cdn4.iconfinder.com/data/icons/ionicons/512/icon-image-512.png'}
                 />
               )}
               <div>

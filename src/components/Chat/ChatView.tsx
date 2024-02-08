@@ -30,6 +30,7 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
     select: (data) => {
+      console.log('yooo', data);
       const dataTree = buildTree({ messages: data, fileMap });
       return dataTree?.length === 0 ? null : dataTree ?? null;
     },

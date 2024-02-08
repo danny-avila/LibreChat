@@ -3,7 +3,6 @@ import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, parseCompactConvo } from 'librechat-data-provider';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { useGetMessagesByConvoId, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type {
   TMessage,
   TSubmission,
@@ -13,7 +12,6 @@ import type {
 import type { TAskFunction } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
 import useGetSender from './Conversations/useGetSender';
-import useUserKey from './Input/useUserKey';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
 import { useAuthStore } from '~/zustand';
@@ -22,28 +20,19 @@ import { VERA_HEADER } from '~/utils/constants';
 
 // this to be set somewhere else
 export default function useVeraChat(index = 0, paramId: string | undefined) {
-  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const [showStopButton, setShowStopButton] = useState(true);
   const [filesLoading, setFilesLoading] = useState(false);
-  const setFilesToDelete = useSetFilesToDelete();
-  const getSender = useGetSender();
 
   const queryClient = useQueryClient();
-  const { isAuthenticated, token } = useAuthStore();
+  const { token, user } = useAuthStore();
 
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
-  const { conversationId, endpoint, endpointType } = conversation ?? {};
+  const { conversationId } = conversation ?? {};
 
   const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
-
-  /* Messages: here simply to fetch, don't export and use `getMessages()` instead */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { data: _messages } = useGetMessagesByConvoId(conversationId ?? '', {
-    enabled: isAuthenticated(),
-  });
 
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
   const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
@@ -56,7 +45,6 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     (messages: TMessage[]) => {
       queryClient.setQueryData<TMessage[]>([QueryKeys.messages, queryParam], messages);
     },
-    // [conversationId, queryClient],
     [queryParam, queryClient],
   );
 
@@ -64,25 +52,6 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
   }, [queryParam, queryClient]);
 
-  /* Conversation */
-  // const setActiveConvos = useSetRecoilState(store.activeConversations);
-
-  // const setConversation = useCallback(
-  //   (convoUpdate: TConversation) => {
-  //     _setConversation(prev => {
-  //       const { conversationId: convoId } = prev ?? { conversationId: null };
-  //       const { conversationId: currentId } = convoUpdate;
-  //       if (currentId && convoId && convoId !== 'new' && convoId !== currentId) {
-  //         // for now, we delete the prev convoId from activeConversations
-  //         const newActiveConvos = { [currentId]: true };
-  //         setActiveConvos(newActiveConvos);
-  //       }
-  //       return convoUpdate;
-  //     });
-  //   },
-  //   [_setConversation, setActiveConvos],
-  // );
-  const { getExpiry } = useUserKey(endpoint ?? '');
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
 
   const ask: TAskFunction = (
@@ -105,6 +74,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     };
     const headers = { 'Content-Type': 'application/json', [VERA_HEADER]: apiKey };
 
+    let count = 0;
     fetchEventSource(apiUrl, {
       method: 'POST',
       headers,
@@ -123,22 +93,24 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
       onmessage(msg) {
         console.log('[PROTO] NEW EVENT:', msg);
         if (msg.data) {
+          const data = JSON.parse(msg.data);
           console.log('[PROTO] EVENT DATA:', JSON.parse(msg.data));
           const fakeMessageId = v4();
           let currentMessages: TMessage[] | null = getMessages() ?? [];
 
           const msgObject = {
             text: msg.data,
-            sender: 'User',
-            isCreatedByUser: true,
-            parentMessageId,
+            sender: count % 2 === 0 ? user?.username : 'Model',
+            isCreatedByUser: count % 2 === 0,
+            parentMessageId: count - 1 >= 0 ? count - 1 : null,
             conversationId,
-            messageId: isContinued && messageId ? messageId : fakeMessageId,
+            messageId: count,
             error: false,
           };
           console.log('[PROTO] Current msgs: ', currentMessages);
           setMessages([...currentMessages, msgObject]);
-          setLatestMessage(msg);
+          setLatestMessage(msgObject);
+          count++;
         }
         if (msg.event === 'FatalError') {
           throw new Error(msg.data);

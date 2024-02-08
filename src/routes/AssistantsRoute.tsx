@@ -1,23 +1,13 @@
 import { useParams } from 'react-router-dom';
-import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import ChatView from '~/components/Chat/SingleChatView';
-import { buildTree } from '~/utils';
 import store from '~/store';
 import { useAuthStore } from '~/zustand';
 
 export default function AssistantsRoute() {
-  console.log("assistants route")
+  console.log('assistants route');
   const index = 0;
   const { conversationId } = useParams();
   const { conversation } = store.useCreateConversationAtom(index);
-
-  const { data: messagesTree = null } = useGetMessagesByConvoId(conversationId ?? '', {
-    enabled: !!(conversationId && conversationId !== 'new'),
-    select: (data) => {
-      const dataTree = buildTree(data, false);
-      return dataTree?.length === 0 ? null : dataTree ?? null;
-    },
-  });
 
   const { isAuthenticated } = useAuthStore();
 
@@ -38,5 +28,5 @@ export default function AssistantsRoute() {
     return null;
   }
 
-  return <ChatView index={index} messagesTree={messagesTree} />;
+  return <ChatView index={index} />;
 }

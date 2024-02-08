@@ -6,11 +6,7 @@ import { QueryKeys, modularEndpoints } from 'librechat-data-provider';
 import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
 import { useCreatePresetMutation } from 'librechat-data-provider/react-query';
 import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
-import {
-  useUpdatePresetMutation,
-  useDeletePresetMutation,
-  useGetPresetsQuery,
-} from '~/data-provider';
+import { useUpdatePresetMutation, useDeletePresetMutation } from '~/data-provider';
 import { useChatContext, useToastContext } from '~/Providers';
 import useNavigateToConvo from '~/hooks/useNavigateToConvo';
 import { cleanupPreset, getEndpointField } from '~/utils';
@@ -31,7 +27,7 @@ export default function usePresets() {
   const [_defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
   const setPresetModalVisible = useSetRecoilState(store.presetModalVisible);
   const { preset, conversation, newConversation, setPreset } = useChatContext();
-  const presetsQuery = useGetPresetsQuery({ enabled: !!user && isAuthenticated() });
+  const presetsQuery = { data: [] };
 
   useEffect(() => {
     const { data: presets } = presetsQuery;

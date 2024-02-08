@@ -1,6 +1,5 @@
 import React from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import LightningIcon from '~/components/svg/LightningIcon';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import CautionIcon from '~/components/svg/CautionIcon';
@@ -9,7 +8,6 @@ import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 export default function Landing() {
-  const { data: config } = useGetStartupConfig();
   const setText = useSetRecoilState(store.text);
   const conversation = useRecoilValue(store.conversation);
   const localize = useLocalize();
@@ -32,7 +30,7 @@ export default function Landing() {
           data-testid="landing-title"
           className="mb-10 ml-auto mr-auto mt-6 flex items-center justify-center gap-2 text-center text-4xl font-semibold sm:mb-16 md:mt-[10vh]"
         >
-          {config?.appTitle || 'LibreChat'}
+          Vera AI
         </h1>
         <div className="items-start gap-3.5 text-center md:flex">
           <div className="mb-8 flex flex-1 flex-col gap-3.5 md:mb-auto">

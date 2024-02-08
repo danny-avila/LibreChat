@@ -1,6 +1,5 @@
 import { useRef } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import Container from '~/components/Messages/Content/Container';
 import { useChatContext } from '~/Providers';
 import type { TEditProps } from '~/common';
@@ -21,7 +20,6 @@ const EditMessage = ({
   const { conversationId, parentMessageId, messageId } = message;
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
-  const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
   const resubmitMessage = () => {
@@ -63,20 +61,20 @@ const EditMessage = ({
       return;
     }
     const text = textEditor?.current?.innerText ?? '';
-    updateMessageMutation.mutate({
-      conversationId: conversationId ?? '',
-      model: conversation?.model ?? 'gpt-3.5-turbo',
-      messageId,
-      text,
-    });
+    // updateMessageMutation.mutate({
+    //   conversationId: conversationId ?? '',
+    //   model: conversation?.model ?? 'gpt-3.5-turbo',
+    //   messageId,
+    //   text,
+    // });
     setMessages(
       messages.map((msg) =>
         msg.messageId === messageId
           ? {
-            ...msg,
-            text,
-            isEdited: true,
-          }
+              ...msg,
+              text,
+              isEdited: true,
+            }
           : msg,
       ),
     );

@@ -14,7 +14,6 @@ import {
   tConvoUpdateSchema,
   removeNullishValues,
 } from 'librechat-data-provider';
-import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type {
   TResPlugin,
   TMessage,
@@ -48,11 +47,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const [completed, setCompleted] = useState(new Set());
   const { setMessages, setConversation, setIsSubmitting, newConversation, resetLatestMessage } =
     useVeraChat(index, paramId);
-
-  const { data: startupConfig } = useGetStartupConfig();
-  const balanceQuery = useGetUserBalance({
-    enabled: !!isAuthenticated() && startupConfig?.checkBalance,
-  });
 
   const messageHandler = (data: string, submission: TSubmission) => {
     const {
@@ -410,7 +404,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       if (data.final) {
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins, message });
-        startupConfig?.checkBalance && balanceQuery.refetch();
         console.log('final', data);
       }
       if (data.created) {
@@ -449,7 +442,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     events.onerror = function (e: MessageEvent) {
       console.log('error in server stream.');
-      startupConfig?.checkBalance && balanceQuery.refetch();
       events.close();
 
       let data: TResData | undefined = undefined;

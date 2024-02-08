@@ -7,7 +7,6 @@ import {
   tMessageSchema,
   tConversationSchema,
 } from 'librechat-data-provider';
-import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import useConversations from './useConversations';
 
@@ -30,11 +29,7 @@ export default function useServerStream(submission: TSubmission | null) {
   const resetLatestMessage = useResetRecoilState(store.latestMessage);
   const { token, isAuthenticated } = useAuthStore();
 
-  const { data: startupConfig } = useGetStartupConfig();
   const { refreshConversations } = useConversations();
-  const balanceQuery = useGetUserBalance({
-    enabled: !!isAuthenticated() && startupConfig?.checkBalance,
-  });
 
   const messageHandler = (data: string, submission: TSubmission) => {
     const {
@@ -238,7 +233,6 @@ export default function useServerStream(submission: TSubmission | null) {
       if (data.final) {
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins, message });
-        startupConfig?.checkBalance && balanceQuery.refetch();
         console.log('final', data);
       }
       if (data.created) {
@@ -264,7 +258,6 @@ export default function useServerStream(submission: TSubmission | null) {
 
     events.onerror = function (e: MessageEvent) {
       console.log('error in opening conn.');
-      startupConfig?.checkBalance && balanceQuery.refetch();
       events.close();
 
       const data = JSON.parse(e.data);

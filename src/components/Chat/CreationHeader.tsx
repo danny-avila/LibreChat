@@ -1,6 +1,5 @@
 // import { useState } from 'react';
 import { Plus } from 'lucide-react';
-import { useListAssistantsQuery } from 'librechat-data-provider/react-query';
 import type { Assistant } from 'librechat-data-provider';
 import type { UseFormReset, UseFormSetValue } from 'react-hook-form';
 import type { CreationForm, Actions, Option } from '~/common';
@@ -22,19 +21,7 @@ export default function CreationHeader({
   onChange: (value: TAssistantOption) => void;
   setValue: UseFormSetValue<CreationForm>;
 }) {
-  const assistants = useListAssistantsQuery(
-    {
-      order: 'asc',
-    },
-    {
-      select: (res) =>
-        res.data.map((assistant) => ({
-          ...assistant,
-          label: assistant?.name ?? '',
-          value: assistant.id,
-        })),
-    },
-  );
+  const assistants: any = { data: [] };
 
   const onSelect = (value: string) => {
     const assistant = assistants.data?.find((assistant) => assistant.id === value);

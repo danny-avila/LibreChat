@@ -3,7 +3,6 @@ import { useEffect } from 'react';
 import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import { useSetRecoilState, useRecoilState } from 'recoil';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TEditPresetProps } from '~/common';
 import { useSetOptions, useLocalize } from '~/hooks';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
@@ -16,9 +15,7 @@ import store from '~/store';
 const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditPresetProps) => {
   const [preset, setPreset] = useRecoilState(store.preset);
   const setPresets = useSetRecoilState(store.presets);
-  const { data: availableEndpoints = [] } = useGetEndpointsQuery({
-    select: mapEndpoints,
-  });
+
   const { setOption } = useSetOptions(_preset);
   const localize = useLocalize();
 
@@ -92,7 +89,7 @@ const EditPresetDialog = ({ open, onOpenChange, preset: _preset, title }: TEditP
                   <Dropdown
                     value={endpoint || ''}
                     onChange={(value) => setOption('endpoint')(value)}
-                    options={availableEndpoints}
+                    options={[]}
                     className={cn()}
                   />
                 </div>

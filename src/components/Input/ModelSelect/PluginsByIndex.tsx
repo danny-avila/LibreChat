@@ -1,7 +1,6 @@
 import { useRecoilState } from 'recoil';
 import { useState, useEffect } from 'react';
 import { ChevronDownIcon } from 'lucide-react';
-import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import {
@@ -33,7 +32,6 @@ export default function PluginsByIndex({
   showAbove,
   popover = false,
 }: TModelSelectProps) {
-  const { data: allPlugins } = useAvailablePluginsQuery();
   const [visible, setVisibility] = useState<boolean>(true);
   const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
   const { checkPluginSelection, setTools } = useSetIndexOptions();
@@ -51,16 +49,9 @@ export default function PluginsByIndex({
       return;
     }
 
-    if (!allPlugins) {
-      return;
-    }
+    const allPlugins = [];
 
-    if (!user.plugins || user.plugins.length === 0) {
-      setAvailableTools([pluginStore]);
-      return;
-    }
-
-    const tools = [...user.plugins]
+    const tools = []
       .map((el) => allPlugins.find((plugin: TPlugin) => plugin.pluginKey === el))
       .filter((el): el is TPlugin => el !== undefined);
 
@@ -78,7 +69,7 @@ export default function PluginsByIndex({
     setAvailableTools([...tools, pluginStore]);
     // setAvailableTools is a recoil state setter, so it's safe to use it in useEffect
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allPlugins, user]);
+  }, [user]);
 
   if (!conversation) {
     return null;

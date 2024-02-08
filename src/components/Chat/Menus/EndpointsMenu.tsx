@@ -1,19 +1,13 @@
 import { alternateName } from 'librechat-data-provider';
 import { Content, Portal, Root } from '@radix-ui/react-popover';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import EndpointItems from './Endpoints/MenuItems';
 import { useChatContext } from '~/Providers';
 import TitleButton from './UI/TitleButton';
-import { mapEndpoints } from '~/utils';
 
 // ! This will be where we place the models
 
 const EndpointsMenu: FC = () => {
-  const { data: endpoints = [] } = useGetEndpointsQuery({
-    select: mapEndpoints,
-  });
-
   const { conversation } = useChatContext();
   const selected = conversation?.endpoint ?? '';
 
@@ -40,7 +34,7 @@ const EndpointsMenu: FC = () => {
             align="start"
             className="mt-2 max-h-[65vh] min-w-[340px] overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white lg:max-h-[75vh]"
           >
-            <EndpointItems endpoints={endpoints} selected={selected} />
+            <EndpointItems endpoints={[]} selected={selected} />
           </Content>
         </div>
       </Portal>

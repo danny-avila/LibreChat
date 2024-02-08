@@ -1,5 +1,4 @@
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import {
   useLocalize,
   useConversation,
@@ -23,12 +22,10 @@ export default function NewChat({
   const navigate = useOriginNavigate();
   const localize = useLocalize();
 
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const [convo] = useLocalStorage('lastConversationSetup', { endpoint: EModelEndpoint.openAI });
   const { endpoint } = convo;
-  const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-  const iconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
-  const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
+  const iconURL = 'https://cdn4.iconfinder.com/data/icons/ionicons/512/icon-image-512.png';
+  const iconKey = 'unknown';
   const Icon = icons[iconKey];
 
   const clickHandler = (event: React.MouseEvent<HTMLAnchorElement>) => {

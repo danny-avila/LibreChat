@@ -8,15 +8,8 @@ import SendButton from './SendButton';
 import Images from './Files/Images';
 import Textarea from './Textarea';
 import store from '~/store';
-import { fetchEventSource } from '@microsoft/fetch-event-source';
-import { useAuthStore } from '~/zustand';
-import { VERA_HEADER } from '~/utils/constants';
-import useVeraChat from '~/hooks/useVeraChat';
 
 export default function ChatForm({ index = 0 }) {
-  console.log('chatform');
-  const [abortController, setAbortController] = useState(new AbortController());
-  const { token } = useAuthStore();
   const [text, setText] = useRecoilState(store.textByIndex(index));
   const {
     ask,

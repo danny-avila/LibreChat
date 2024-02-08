@@ -2,7 +2,6 @@ import { Trash2 } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Close } from '@radix-ui/react-popover';
 import { Flipper, Flipped } from 'react-flip-toolkit';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import type { TPreset } from 'librechat-data-provider';
 import FileUpload from '~/components/Input/EndpointMenu/FileUpload';
@@ -32,7 +31,6 @@ const PresetItems: FC<{
   clearAllPresets,
   onFileSelected,
 }) => {
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const localize = useLocalize();
   return (
@@ -95,9 +93,7 @@ const PresetItems: FC<{
               return null;
             }
 
-            const iconKey = getEndpointField(endpointsConfig, preset.endpoint, 'type')
-              ? 'unknown'
-              : preset.endpointType ?? preset.endpoint ?? 'unknown';
+            const iconKey = 'unknown';
             const Icon = icons[iconKey];
 
             return (
@@ -114,7 +110,8 @@ const PresetItems: FC<{
                         Icon &&
                         Icon({
                           context: 'menu-item',
-                          iconURL: getEndpointField(endpointsConfig, preset.endpoint, 'iconURL'),
+                          iconURL:
+                            'https://cdn4.iconfinder.com/data/icons/ionicons/512/icon-image-512.png',
                           className: 'icon-md mr-1 dark:text-white',
                           endpoint: preset.endpoint,
                         })
