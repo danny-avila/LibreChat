@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import { FileSources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
 import DragDropOverlay from './Input/Files/DragDropOverlay';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { SidePanel } from '~/components/SidePanel';
+import store from '~/store';
 
 export default function Presentation({
   children,
@@ -15,6 +17,7 @@ export default function Presentation({
   panel?: React.ReactNode;
   useSidePanel?: boolean;
 }) {
+  const hideSidePanel = useRecoilValue(store.hideSidePanel);
   const { isOver, canDrop, drop } = useDragHelpers();
   const setFilesToDelete = useSetFilesToDelete();
   const { mutateAsync } = useDeleteFilesMutation({
@@ -60,7 +63,7 @@ export default function Presentation({
     </div>
   );
 
-  if (useSidePanel) {
+  if (useSidePanel && !hideSidePanel) {
     return (
       <div
         ref={drop}
