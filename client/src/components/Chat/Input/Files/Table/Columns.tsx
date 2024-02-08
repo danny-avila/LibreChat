@@ -1,5 +1,5 @@
-import { FileSources } from 'librechat-data-provider';
 import { ArrowUpDown, Database } from 'lucide-react';
+import { FileSources, FileContext } from 'librechat-data-provider';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
@@ -8,6 +8,15 @@ import { SortFilterHeader } from './SortFilterHeader';
 import { OpenAIMinimalIcon } from '~/components/svg';
 import { Button, Checkbox } from '~/components/ui';
 import { formatDate, getFileType } from '~/utils';
+
+const contextMap = {
+  [FileContext.avatar]: 'Avatar',
+  [FileContext.unknown]: 'Unknown',
+  [FileContext.assistants]: 'Assistants',
+  [FileContext.image_generation]: 'Image Gen',
+  [FileContext.assistants_output]: 'Assistant Output',
+  [FileContext.message_attachment]: 'Attachment',
+};
 
 export const columns: ColumnDef<TFile>[] = [
   {
@@ -122,6 +131,31 @@ export const columns: ColumnDef<TFile>[] = [
         <div className="flex flex-wrap items-center gap-2">
           <Database className="icon-sm text-cyan-700" />
           {'Host'}
+        </div>
+      );
+    },
+  },
+  {
+    accessorKey: 'context',
+    header: ({ column }) => {
+      return (
+        <SortFilterHeader
+          column={column}
+          title="Context"
+          filters={{
+            Context: Object.values(FileContext).filter(
+              (value) => value === FileContext[value ?? ''],
+            ),
+          }}
+          valueMap={contextMap}
+        />
+      );
+    },
+    cell: ({ row }) => {
+      const { context } = row.original;
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          {contextMap[context ?? FileContext.unknown] ?? 'Unknown'}
         </div>
       );
     },

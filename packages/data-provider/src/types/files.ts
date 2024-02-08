@@ -7,6 +7,7 @@ export enum FileSources {
 
 export enum FileContext {
   avatar = 'avatar',
+  unknown = 'unknown',
   assistants = 'assistants',
   image_generation = 'image_generation',
   assistants_output = 'assistants_output',
@@ -27,6 +28,7 @@ export type TFile = {
   object: 'file';
   type: string;
   usage: number;
+  context?: FileContext;
   source?: FileSources;
   width?: number;
   height?: number;

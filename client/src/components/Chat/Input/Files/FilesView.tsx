@@ -1,4 +1,4 @@
-import { FileSources } from 'librechat-data-provider';
+import { FileSources, FileContext } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
 import { useGetFiles } from '~/data-provider';
@@ -10,10 +10,12 @@ export default function Files({ open, onOpenChange }) {
     select: (files) =>
       files.map((file) => {
         if (file.source === FileSources.local || file.source === FileSources.openai) {
+          file.context = file.context ?? FileContext.unknown;
           return file;
         } else {
           return {
             ...file,
+            context: file.context ?? FileContext.unknown,
             source: FileSources.local,
           };
         }
