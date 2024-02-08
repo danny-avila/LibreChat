@@ -38,7 +38,7 @@ interface DataTableProps<TData, TValue> {
   data: TData[];
 }
 
-type Style = { width?: number | string; maxWidth?: number | string };
+type Style = { width?: number | string; maxWidth?: number | string; minWidth?: number | string };
 
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
   const [isDeleting, setIsDeleting] = React.useState(false);
@@ -122,8 +122,8 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <div className="max-h-[25rem] min-h-0 overflow-y-auto rounded-md border border-black/10 dark:border-white/10 sm:min-h-[28rem]">
-        <Table className="w-full border-separate border-spacing-0">
+      <div className="relative max-h-[25rem] min-h-0 overflow-y-auto rounded-md border border-black/10 pb-4 dark:border-white/10 sm:min-h-[28rem]">
+        <Table className="w-full min-w-[600px] border-separate border-spacing-0">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -132,15 +132,17 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                   if (header.id === 'filename') {
                     style.maxWidth = '50%';
                     style.width = '50%';
+                    style.minWidth = '300px';
                   }
 
                   if (index === 0) {
-                    style.maxWidth = '20px';
+                    style.maxWidth = '25px';
+                    style.minWidth = '25px';
                   }
                   return (
                     <TableHead
                       key={header.id}
-                      className="sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100 sm:px-4 sm:py-2"
+                      className="sticky top-0 min-w-[125px] rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100 sm:px-4 sm:py-2"
                       style={style}
                     >
                       {header.isPlaceholder
@@ -175,7 +177,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                     return (
                       <TableCell
                         key={cell.id}
-                        className="px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
+                        className="overflow-x-auto px-2 py-1 text-xs sm:px-4 sm:py-2 sm:text-sm [tr[data-disabled=true]_&]:opacity-50"
                         style={style}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}

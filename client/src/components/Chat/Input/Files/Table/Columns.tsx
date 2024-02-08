@@ -51,11 +51,11 @@ export const columns: ColumnDef<TFile>[] = [
       return (
         <Button
           variant="ghost"
-          className="px-0 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
+          className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           Name
-          <ArrowUpDown className="ml-2 h-3 w-3 sm:h-4 sm:w-4" />
+          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
         </Button>
       );
     },
@@ -89,10 +89,10 @@ export const columns: ColumnDef<TFile>[] = [
         <Button
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          className="px-0 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
+          className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
         >
           Date
-          <ArrowUpDown className="ml-2 h-3 w-3 sm:h-4 sm:w-4" />
+          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
         </Button>
       );
     },
@@ -166,11 +166,11 @@ export const columns: ColumnDef<TFile>[] = [
       return (
         <Button
           variant="ghost"
-          className="px-0 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
+          className="px-2 py-0 text-xs sm:px-2 sm:py-2 sm:text-sm"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           Size
-          <ArrowUpDown className="ml-2 h-3 w-3 sm:h-4 sm:w-4" />
+          <ArrowUpDown className="ml-2 h-3 w-4 sm:h-4 sm:w-4" />
         </Button>
       );
     },
