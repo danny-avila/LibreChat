@@ -9,18 +9,7 @@ Welcome to the comprehensive guide for configuring your application's environmen
 
 While the default settings provide a solid foundation for a standard `docker` installation, delving into this guide will unveil the full potential of LibreChat. This guide empowers you to tailor LibreChat to your precise needs. Discover how to adjust language model availability, integrate social logins, manage the automatic moderation system, and much more. It's all about giving you the control to fine-tune LibreChat for an optimal user experience.
 
-**If you use docker, you should rebuild the docker image each time you update your environment variables**
-
-Rebuild command:
-```bash
-npm run update:docker
-
-# OR, if you don't have npm
-docker-compose build --no-cache
-
-# OR, if you the latest version of docker with docker compose as a plugin
-docker compose build --no-cache
-```
+> **Reminder: Please restart LibreChat for the configuration changes to take effect**
 
 Alternatively, you can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`, or modify the default configuration provided by the main `docker-compose.yml`, without the need to directly edit or duplicate the whole file.
 
@@ -248,7 +237,7 @@ BINGAI_HOST=
 ### ChatGPT
 see: [ChatGPT Free Access token](../configuration/ai_setup.md#chatgptbrowser)
 
-> **Warning**: To use this endpoint you'll have to set up your own reverse proxy. Here is the installation guide to deploy your own (based on [PandoraNext](https://github.com/pandora-next/deploy)): **[PandoraNext Deployment Guide](../../features/pandoranext.md)**
+> **Warning**: To use this endpoint you'll have to set up your own reverse proxy. Here is the installation guide to deploy your own (based on [Ninja](https://github.com/gngpp/ninja)): **[Ninja Deployment Guide](../../features/ninja.md)**
 
 ```bash
 CHATGPT_REVERSE_PROXY=<YOUR-REVERSE-PROXY>
@@ -317,7 +306,7 @@ DEBUG_OPENAI=false
     - Leave it blank or commented out to use internal settings.
 
 ```bash
-OPENAI_MODELS=gpt-3.5-turbo-1106,gpt-4-1106-preview,gpt-3.5-turbo,gpt-3.5-turbo-16k,gpt-3.5-turbo-0301,gpt-4,gpt-4-0314,gpt-4-0613
+OPENAI_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k
 ```
 
 - Titling is enabled by default when initiating a conversation.
@@ -383,7 +372,7 @@ Here are some useful documentation about plugins:
 - Identify the available models, separated by commas **without spaces**. The first model in the list will be set as default. Leave it blank or commented out to use internal settings.
 
 ```bash
-PLUGIN_MODELS=gpt-3.5-turbo,gpt-3.5-turbo-16k,gpt-3.5-turbo-0301,gpt-4,gpt-4-0314,gpt-4-0613
+PLUGIN_MODELS=gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
 ```
 
 - Set to false or comment out to disable debug mode for plugins
@@ -422,45 +411,45 @@ AZURE_AI_SEARCH_SEARCH_OPTION_SELECT=
 - `DALLE_API_KEY`: This environment variable is intended for storing the OpenAI API key that grants access to both DALL-E 2 and DALL-E 3 services. Typically, this key should be kept private. If you are distributing a plugin or software that integrates with DALL-E, you may choose to leave this commented out, requiring the end user to input their own API key. If you have a shared API key you want to distribute with your software (not recommended for security reasons), you can uncomment this and provide the key.
 
 ```bash
-# DALLE_API_KEY=
+DALLE_API_KEY=
 ```
 
 - `DALLE3_API_KEY` and `DALLE2_API_KEY`: These are similar to the above but are specific to each version of DALL-E. They allow for separate keys for DALL-E 2 and DALL-E 3, providing flexibility if you have different access credentials or subscription levels for each service.
 
 ```bash
-# DALLE3_API_KEY=
-# DALLE2_API_KEY=
+DALLE3_API_KEY=
+DALLE2_API_KEY=
 ```
 
 **System Prompts:**
 - `DALLE3_SYSTEM_PROMPT` and `DALLE2_SYSTEM_PROMPT`: These variables allow users to set system prompts that can preconfigure or guide the image generation process for DALL-E 3 and DALL-E 2, respectively. Use these to set default prompts or special instructions that affect how the AI interprets the user's input prompts.
 
 ```bash
-# DALLE3_SYSTEM_PROMPT="Your DALL-E-3 System Prompt here"
-# DALLE2_SYSTEM_PROMPT="Your DALL-E-2 System Prompt here"
+DALLE3_SYSTEM_PROMPT="Your DALL-E-3 System Prompt here"
+DALLE2_SYSTEM_PROMPT="Your DALL-E-2 System Prompt here"
 ```
 
 **Reverse Proxy Settings:**
 - `DALLE_REVERSE_PROXY`: This setting enables the specification of a reverse proxy for DALL-E API requests. This can be useful for routing traffic through a specific server, potentially for purposes like caching, logging, or adding additional layers of security. Ensure that the URL follows the required pattern and is appropriately configured to handle DALL-E requests.
 
 ```bash
-# DALLE_REVERSE_PROXY=
+DALLE_REVERSE_PROXY=
 ```
 
 **Base URLs:**
 - `DALLE3_BASEURL` and `DALLE2_BASEURL`: These variables define the base URLs for DALL-E 3 and DALL-E 2 API endpoints, respectively. These might need to be set if you are using a custom proxy or a specific regional endpoint provided by OpenAI.
 
 ```bash
-# DALLE3_BASEURL=
-# DALLE2_BASEURL=
+DALLE3_BASEURL=
+DALLE2_BASEURL=
 ```
 
 **Azure OpenAI Integration (Optional):**
 - `DALLE3_AZURE_API_VERSION` and `DALLE2_AZURE_API_VERSION`: If you are using Azure's OpenAI service to access DALL-E, these environment variables specify the API version for DALL-E 3 and DALL-E 2, respectively. Azure may have specific API version strings that need to be set to ensure compatibility with their services.
 
 ```bash
-# DALLE3_AZURE_API_VERSION=
-# DALLE2_AZURE_API_VERSION=
+DALLE3_AZURE_API_VERSION=
+DALLE2_AZURE_API_VERSION=
 ```
 
 ---
@@ -665,7 +654,7 @@ see: **[User/Auth System](../configuration/user_auth_system.md)**
 
 ```bash
 ALLOW_EMAIL_LOGIN=true
-ALLOW_REGISTRATION=true       
+ALLOW_REGISTRATION=true
 ALLOW_SOCIAL_LOGIN=false
 ALLOW_SOCIAL_REGISTRATION=false
 ```

@@ -105,9 +105,9 @@ Overall, LiteLLM Server offers a comprehensive suite of tools for managing, depl
 
 ## Ollama
 Use [Ollama](https://ollama.ai/) for
- * Run large language models on local hardware
- * Host multiple models
- * Dynamically load the model upon request
+* Run large language models on local hardware
+* Host multiple models
+* Dynamically load the model upon request
 
 ### docker-compose.yaml with GPU
 ```yaml
@@ -155,4 +155,101 @@ Add the below lines to the config to access the Ollama models
       stream: True
 ```
 
+## Caching with Redis
+Litellm supports in-memory, redis, and s3 caching. Note: Caching currently only works with exact matching.
 
+### Update docker-compose.yaml to enable Redis
+Add the below service to your docker-compose.yaml
+```yaml
+  redis:
+    image: redis:7-alpine
+    command:
+    - sh
+    - -c # this is to evaluate the $REDIS_PASSWORD from the env
+    - redis-server --appendonly yes --requirepass $$REDIS_PASSWORD ## $$ because of docker-compose
+    environment:
+      REDIS_PASSWORD: RedisChangeMe
+    volumes:
+    - ./redis:/data
+```
+
+Add the following to the environment variables in the litellm service inside the docker-compose.yaml
+```yaml
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    volumes:
+      - ./litellm/litellm-config.yaml:/app/config.yaml
+    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: RedisChangeMe
+```
+
+### Update Litellm Config File
+Add the below options to the litellm config file
+```yaml
+litellm_settings: # module level litellm settings - https://github.com/BerriAI/litellm/blob/main/litellm/__init__.py
+  cache: True          # set cache responses to True, litellm defaults to using a redis cache
+  cache_params:         # cache_params are optional
+    type: "redis"  # The type of cache to initialize. Can be "local" or "redis". Defaults to "local".
+
+    # Optional configurations
+    supported_call_types: ["acompletion", "completion", "embedding", "aembedding"] # defaults to all litellm call types
+```
+
+
+## Performance Monitoring with Langfuse
+Litellm supports various logging and observability options.  The settings below will enable Langfuse which will provide a cache_hit tag showing which conversations used cache.
+
+### Update docker-compose.yaml to enable Langfuse
+Langfuse requires a postgres database, so add both postgres and langfuse services to the docker-compose.yaml
+```yaml
+  langfuse-server:
+    image: ghcr.io/langfuse/langfuse:latest
+    depends_on:
+      - db
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:PostgresChangeMe@db:5432/postgres
+      - NEXTAUTH_SECRET=ChangeMe
+      - SALT=ChangeMe
+      - NEXTAUTH_URL=http://localhost:3000
+      - TELEMETRY_ENABLED=${TELEMETRY_ENABLED:-true}
+      - NEXT_PUBLIC_SIGN_UP_DISABLED=${NEXT_PUBLIC_SIGN_UP_DISABLED:-false}
+      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+
+  db:
+    image: postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=PostgresChangeMe
+      - POSTGRES_DB=postgres
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+```
+
+Once Langfuse is running, create an account by accessing the web interface on port 3000. Create a new project to obtain the needed public and private key used by the litellm config
+Add environement variable within the litellm service within docker-compose.yaml
+```yaml
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - /srv/litellm/config/litellm-config.yaml:/app/config.yaml
+    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
+    environment:
+      LANGFUSE_PUBLIC_KEY: pk-lf-RandomStringFromLangfuseWebInterface
+      LANGFUSE_SECRET_KEY: sk-lf-RandomStringFromLangfuseWebInterface
+      LANGFUSE_HOST: http://langfuse-server:3000
+```
+
+### Update litellm config file
+```yaml
+litellm_settings:
+  success_callback: ["langfuse"]
+```

@@ -80,6 +80,23 @@ describe('getModelMaxTokens', () => {
     );
   });
 
+  // 01/25 Update
+  test('should return correct tokens for gpt-4-turbo/0125 matches', () => {
+    expect(getModelMaxTokens('gpt-4-turbo')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4-turbo'],
+    );
+    expect(getModelMaxTokens('gpt-4-turbo-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4-turbo'],
+    );
+    expect(getModelMaxTokens('gpt-4-0125')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-4-0125']);
+    expect(getModelMaxTokens('gpt-4-0125-preview')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4-0125'],
+    );
+    expect(getModelMaxTokens('gpt-3.5-turbo-0125')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-3.5-turbo-0125'],
+    );
+  });
+
   test('should return correct tokens for Anthropic models', () => {
     const models = [
       'claude-2.1',
@@ -124,6 +141,69 @@ describe('getModelMaxTokens', () => {
       maxTokensMap[EModelEndpoint.google]['chat-'],
     );
   });
+
+  test('should return correct tokens when using a custom endpointTokenConfig', () => {
+    const customTokenConfig = {
+      'custom-model': 12345,
+    };
+    expect(getModelMaxTokens('custom-model', EModelEndpoint.openAI, customTokenConfig)).toBe(12345);
+  });
+
+  test('should prioritize endpointTokenConfig over the default configuration', () => {
+    const customTokenConfig = {
+      'gpt-4-32k': 9999,
+    };
+    expect(getModelMaxTokens('gpt-4-32k', EModelEndpoint.openAI, customTokenConfig)).toBe(9999);
+  });
+
+  test('should return undefined if the model is not found in custom endpointTokenConfig', () => {
+    const customTokenConfig = {
+      'custom-model': 12345,
+    };
+    expect(
+      getModelMaxTokens('nonexistent-model', EModelEndpoint.openAI, customTokenConfig),
+    ).toBeUndefined();
+  });
+
+  test('should return correct tokens for exact match in azureOpenAI models', () => {
+    expect(getModelMaxTokens('gpt-4-turbo', EModelEndpoint.azureOpenAI)).toBe(
+      maxTokensMap[EModelEndpoint.azureOpenAI]['gpt-4-turbo'],
+    );
+  });
+
+  test('should return undefined for no match in azureOpenAI models', () => {
+    expect(
+      getModelMaxTokens('nonexistent-azure-model', EModelEndpoint.azureOpenAI),
+    ).toBeUndefined();
+  });
+
+  test('should return undefined for undefined, null, or number model argument with azureOpenAI endpoint', () => {
+    expect(getModelMaxTokens(undefined, EModelEndpoint.azureOpenAI)).toBeUndefined();
+    expect(getModelMaxTokens(null, EModelEndpoint.azureOpenAI)).toBeUndefined();
+    expect(getModelMaxTokens(1234, EModelEndpoint.azureOpenAI)).toBeUndefined();
+  });
+
+  test('should respect custom endpointTokenConfig over azureOpenAI defaults', () => {
+    const customTokenConfig = {
+      'custom-azure-model': 4096,
+    };
+    expect(
+      getModelMaxTokens('custom-azure-model', EModelEndpoint.azureOpenAI, customTokenConfig),
+    ).toBe(4096);
+  });
+
+  test('should return correct tokens for partial match with custom endpointTokenConfig in azureOpenAI', () => {
+    const customTokenConfig = {
+      'azure-custom-': 1024,
+    };
+    expect(
+      getModelMaxTokens('azure-custom-gpt-3', EModelEndpoint.azureOpenAI, customTokenConfig),
+    ).toBe(1024);
+  });
+
+  test('should return undefined for a model when using an unsupported endpoint', () => {
+    expect(getModelMaxTokens('azure-gpt-3', 'unsupportedEndpoint')).toBeUndefined();
+  });
 });
 
 describe('matchModelName', () => {
@@ -164,6 +244,16 @@ describe('matchModelName', () => {
     expect(matchModelName('something/gpt-4-1106')).toBe('gpt-4-1106');
     expect(matchModelName('gpt-4-1106-preview')).toBe('gpt-4-1106');
     expect(matchModelName('gpt-4-1106-vision-preview')).toBe('gpt-4-1106');
+  });
+
+  // 01/25 Update
+  it('should return the closest matching key for gpt-4-turbo/0125 matches', () => {
+    expect(matchModelName('openai/gpt-4-0125')).toBe('gpt-4-0125');
+    expect(matchModelName('gpt-4-turbo-preview')).toBe('gpt-4-turbo');
+    expect(matchModelName('gpt-4-turbo-vision-preview')).toBe('gpt-4-turbo');
+    expect(matchModelName('gpt-4-0125')).toBe('gpt-4-0125');
+    expect(matchModelName('gpt-4-0125-preview')).toBe('gpt-4-0125');
+    expect(matchModelName('gpt-4-0125-vision-preview')).toBe('gpt-4-0125');
   });
 
   // Tests for Google models
