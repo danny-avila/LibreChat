@@ -1,8 +1,7 @@
-const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { isUserProvided, extractEnvVariable } = require('~/server/utils');
 const { fetchModels } = require('~/server/services/ModelService');
-const loadCustomConfig = require('./loadCustomConfig');
-const { getLogStores } = require('~/cache');
+const getCustomConfig = require('./getCustomConfig');
 
 /**
  * Load config endpoints from the cached configuration object
@@ -10,12 +9,7 @@ const { getLogStores } = require('~/cache');
  * @param {Express.Request} req - The Express request object.
  */
 async function loadConfigModels(req) {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  let customConfig = await cache.get(CacheKeys.CUSTOM_CONFIG);
-
-  if (!customConfig) {
-    customConfig = await loadCustomConfig();
-  }
+  const customConfig = await getCustomConfig();
 
   if (!customConfig) {
     return {};

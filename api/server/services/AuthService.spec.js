@@ -1,4 +1,4 @@
-const getCustomConfig = require('~/cache/getCustomConfig');
+const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { isDomainAllowed } = require('./AuthService');
 
 jest.mock('~/cache/getCustomConfig', () => jest.fn());
