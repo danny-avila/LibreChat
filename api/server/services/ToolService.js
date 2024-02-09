@@ -10,7 +10,6 @@ const {
   validateAndParseOpenAPISpec,
   actionDelimiter,
 } = require('librechat-data-provider');
-const { TavilySearchResults } = require('@langchain/community/tools/tavily_search');
 const { loadActionSets, createActionTool } = require('./ActionService');
 const { processFileURL } = require('~/server/services/Files/process');
 const { loadTools } = require('~/app/clients/tools/util');
@@ -77,12 +76,7 @@ function loadAndFormatTools({ directory, filter = new Set() }) {
   /**
    * Basic Tools; schema: { input: string }
    */
-
   const basicToolInstances = [new Calculator()];
-
-  if (process.env.TAVILY_API_KEY) {
-    basicToolInstances.push(new TavilySearchResults());
-  }
 
   for (const toolInstance of basicToolInstances) {
     const formattedTool = formatToOpenAIAssistantTool(toolInstance);
@@ -285,10 +279,13 @@ async function processRequiredActions(openai, requiredActions) {
       const promise = tool
         ._call(currentAction.toolInput)
         .then(handleToolOutput)
-        .catch((error) => ({
-          tool_call_id: currentAction.toolCallId,
-          output: `Error processing tool ${currentAction.tool}: ${redactMessage(error.message)}`,
-        }));
+        .catch((error) => {
+          logger.error(`Error processing tool ${currentAction.tool}`, error);
+          return {
+            tool_call_id: currentAction.toolCallId,
+            output: `Error processing tool ${currentAction.tool}: ${redactMessage(error.message)}`,
+          };
+        });
       promises.push(promise);
     } catch (error) {
       logger.error(
