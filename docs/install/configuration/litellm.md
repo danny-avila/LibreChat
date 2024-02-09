@@ -180,7 +180,7 @@ Add the below service to your docker-compose.override.yml
     - ./redis:/data
 ```
 
-Add the following to the environment variables in the litellm service inside the docker-compose.yaml
+Add the following to the environment variables in the litellm service inside the docker-compose.override.yml
 ```yaml
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
