@@ -18,19 +18,14 @@ import Footer from './Footer';
 import store from '~/store';
 
 function ChatView({ index = 0 }: { index?: number }) {
-  console.log('chatview');
-
   const { conversationId } = useParams();
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
   useSSE(submissionAtIndex);
 
-  const { data: fileMap } = useGetFiles({
-    select: mapFiles,
-  });
+  const fileMap = {};
 
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
     select: (data) => {
-      console.log('yooo', data);
       const dataTree = buildTree({ messages: data, fileMap });
       return dataTree?.length === 0 ? null : dataTree ?? null;
     },

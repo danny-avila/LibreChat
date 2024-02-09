@@ -1,6 +1,6 @@
 import { Disclosure } from '@headlessui/react';
 import { useCallback, memo, ReactNode } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+// import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TResPlugin, TInput } from 'librechat-data-provider';
 import { ChevronDownIcon, LucideProps } from 'lucide-react';
 import { cn, formatJSON } from '~/utils';
@@ -31,9 +31,11 @@ type PluginProps = {
 };
 
 const Plugin: React.FC<PluginProps> = ({ plugin }) => {
-  const { data: plugins = {} } = useGetEndpointsQuery({
-    select: (data) => data?.gptPlugins?.plugins,
-  });
+  // const { data: plugins = {} } = useGetEndpointsQuery({
+  //   select: (data) => data?.gptPlugins?.plugins,
+  // });
+
+  const plugins = {};
 
   const getPluginName = useCallback(
     (pluginKey: string) => {
@@ -63,7 +65,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
     if (!plugin.loading && latestPlugin === 'self reflection') {
       return 'Finished';
     } else if (latestPlugin === 'self reflection') {
-      return 'I\'m  thinking...';
+      return "I'm  thinking...";
     } else {
       return (
         <>

@@ -11,10 +11,6 @@ const EndpointsMenu: FC = () => {
   const { conversation } = useChatContext();
   const selected = conversation?.endpoint ?? '';
 
-  if (!selected) {
-    console.warn('No endpoint selected');
-    return null;
-  }
   return (
     <Root>
       <TitleButton primaryText={(alternateName[selected] ?? selected ?? '') + ' '} />

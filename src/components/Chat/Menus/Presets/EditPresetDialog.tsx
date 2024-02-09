@@ -1,5 +1,5 @@
 import { useRecoilState } from 'recoil';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+//import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { cn, defaultTextProps, removeFocusOutlines, mapEndpoints } from '~/utils';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import PopoverButtons from '~/components/Chat/Input/PopoverButtons';
@@ -21,9 +21,9 @@ const EditPresetDialog = ({
   const { setOption } = useSetIndexOptions(preset);
   const [presetModalVisible, setPresetModalVisible] = useRecoilState(store.presetModalVisible);
 
-  const { data: availableEndpoints = [] } = useGetEndpointsQuery({
-    select: mapEndpoints,
-  });
+  // const { data: availableEndpoints = [] } = useGetEndpointsQuery({
+  //   select: mapEndpoints,
+  // });
 
   const { endpoint } = preset || {};
   if (!endpoint) {
@@ -61,11 +61,11 @@ const EditPresetDialog = ({
                   <Label htmlFor="endpoint" className="mb-1 text-left text-sm font-medium">
                     {localize('com_endpoint')}
                   </Label>
-                  <Dropdown
+                  {/* <Dropdown
                     value={endpoint || ''}
                     onChange={(value) => setOption('endpoint')(value)}
                     options={availableEndpoints}
-                  />
+                  /> */}
                 </div>
               </div>
               <div className="col-span-2 flex items-start justify-start gap-4 sm:col-span-1">

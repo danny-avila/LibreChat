@@ -2,12 +2,13 @@ import { useMemo, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import {
   useUserKeyQuery,
-  useGetEndpointsQuery,
+  // useGetEndpointsQuery,
   useUpdateUserKeysMutation,
 } from 'librechat-data-provider/react-query';
 
 const useUserKey = (endpoint: string) => {
-  const { data: endpointsConfig } = useGetEndpointsQuery();
+  //const { data: endpointsConfig } = useGetEndpointsQuery();
+  const endpointsConfig = {};
   const config = endpointsConfig?.[endpoint ?? ''];
 
   const { azure } = config ?? {};

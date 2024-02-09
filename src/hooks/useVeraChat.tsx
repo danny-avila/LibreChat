@@ -1,17 +1,10 @@
 import { v4 } from 'uuid';
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, parseCompactConvo } from 'librechat-data-provider';
+import { QueryKeys } from 'librechat-data-provider';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import type {
-  TMessage,
-  TSubmission,
-  TEndpointOption,
-  TEndpointsConfig,
-} from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
-import useSetFilesToDelete from './useSetFilesToDelete';
-import useGetSender from './Conversations/useGetSender';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
 import { useAuthStore } from '~/zustand';
@@ -20,12 +13,13 @@ import { VERA_HEADER } from '~/utils/constants';
 
 // this to be set somewhere else
 export default function useVeraChat(index = 0, paramId: string | undefined) {
+  const queryClient = useQueryClient();
+  const { token, user } = useAuthStore();
+
+  const [abortController, setAbortController] = useState(new AbortController());
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const [showStopButton, setShowStopButton] = useState(true);
   const [filesLoading, setFilesLoading] = useState(false);
-
-  const queryClient = useQueryClient();
-  const { token, user } = useAuthStore();
 
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
@@ -65,7 +59,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     } = {},
   ) => {
     setShowStopButton(true);
-
+    setIsSubmitting(true);
     console.log(`[PROTO] ESTABLISHING CONNECTION WITH TOKEN: \n${token}\n and PROMPT: \n${text}`);
     const apiUrl = 'https://dev-app.askvera.io/api/v1/chat';
     const apiKey = token!;
@@ -79,6 +73,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
+      signal: abortController.signal,
       async onopen(response) {
         console.log('[PROTO] OPENED CONNECTION:', response);
         if (response.ok) {
@@ -117,10 +112,16 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         }
       },
       onerror(e) {
+        abortController.abort();
+        setAbortController(new AbortController());
+        setShowStopButton(false);
+        setIsSubmitting(false);
         console.log('[PROTO] ERROR: ', e);
         throw Error(e);
       },
       onclose() {
+        setShowStopButton(false);
+        setIsSubmitting(false);
         console.log('[PROTO] CONNECTION CLOSED');
       },
     });
@@ -161,6 +162,8 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
   };
 
   const stopGenerating = () => {
+    abortController.abort();
+    setAbortController(new AbortController());
     setSubmission(null);
   };
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+//import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { icons } from './Menus/Endpoints/Icons';
 import { useChatContext } from '~/Providers';
@@ -8,7 +8,7 @@ import { useLocalize } from '~/hooks';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();
-  const { data: endpointsConfig } = useGetEndpointsQuery();
+  //const { data: endpointsConfig } = useGetEndpointsQuery();
 
   const localize = useLocalize();
   let { endpoint } = conversation ?? {};
@@ -21,8 +21,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
     endpoint = EModelEndpoint.openAI;
   }
 
-  const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-  const iconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
+  const endpointType = undefined; // getEndpointField(endpointsConfig, endpoint, 'type');
+  const iconURL = ''; //getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
   const Icon = icons[iconKey];
 

@@ -49,29 +49,29 @@ export default function Nav({ navVisible, setNavVisible }) {
   const { refreshConversations } = useConversations();
   const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
-    { pageNumber: pageNumber.toString() },
-    { enabled: isAuthenticated() },
-  );
+  // const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
+  //   { pageNumber: pageNumber.toString() },
+  //   { enabled: isAuthenticated() },
+  // );
 
-  const searchQueryRes = useSearchInfiniteQuery(
-    { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
-    { enabled: isAuthenticated() && !!searchQuery.length },
-  );
+  // const searchQueryRes = useSearchInfiniteQuery(
+  //   { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
+  //   { enabled: isAuthenticated() && !!searchQuery.length },
+  // );
 
-  const { containerRef, moveToTop } = useNavScrolling({
-    setShowLoading,
-    hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
-    fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
-    isFetchingNextPage: searchQuery ? searchQueryRes.isFetchingNextPage : isFetchingNextPage,
-  });
+  // const { containerRef, moveToTop } = useNavScrolling({
+  //   setShowLoading,
+  //   hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
+  //   fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
+  //   isFetchingNextPage: searchQuery ? searchQueryRes.isFetchingNextPage : isFetchingNextPage,
+  // });
 
-  const conversations = useMemo(
-    () =>
-      (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
-      [],
-    [data, searchQuery, searchQueryRes?.data],
-  );
+  // const conversations = useMemo(
+  //   () =>
+  //     (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
+  //     [],
+  //   [data, searchQuery, searchQueryRes?.data],
+  // );
 
   const onSearchSuccess = useCallback(({ data }: { data: ConversationListResponse }) => {
     const res = data;
@@ -81,12 +81,12 @@ export default function Nav({ navVisible, setNavVisible }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty dependency array
 
-  useEffect(() => {
-    //we use isInitialLoading here instead of isLoading because query is disabled by default
-    if (searchQueryRes.data) {
-      onSearchSuccess({ data: searchQueryRes.data.pages[0] });
-    }
-  }, [searchQueryRes.data, searchQueryRes.isInitialLoading, onSearchSuccess]);
+  // useEffect(() => {
+  //   //we use isInitialLoading here instead of isLoading because query is disabled by default
+  //   if (searchQueryRes.data) {
+  //     onSearchSuccess({ data: searchQueryRes.data.pages[0] });
+  //   }
+  // }, [searchQueryRes.data, searchQueryRes.isInitialLoading, onSearchSuccess]);
 
   const clearSearch = () => {
     setPageNumber(1);
@@ -143,21 +143,21 @@ export default function Nav({ navVisible, setNavVisible }) {
                       )}
                       onMouseEnter={() => setIsHovering(true)}
                       onMouseLeave={() => setIsHovering(false)}
-                      ref={containerRef}
+                      //ref={containerRef}
                     >
                       <NewChat
                         toggleNav={itemToggleNav}
                         subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                       />
-                      <Conversations
+                      {/* <Conversations
                         conversations={conversations}
                         moveToTop={moveToTop}
                         toggleNav={itemToggleNav}
-                      />
+                      /> */}
                       <Spinner
                         className={cn(
                           'm-1 mx-auto mb-4 h-4 w-4',
-                          isFetchingNextPage || showLoading ? 'opacity-1' : 'opacity-0',
+                          /*isFetchingNextPage ||*/ showLoading ? 'opacity-1' : 'opacity-0',
                         )}
                       />
                     </div>

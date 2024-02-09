@@ -7,7 +7,7 @@ import SubmitButton from './SubmitButton';
 import OptionsBar from './OptionsBar';
 import Footer from './Footer';
 
-import { useMessageHandler, ThemeContext } from '~/hooks';
+import { ThemeContext, useVeraChat } from '~/hooks';
 import { cn, getEndpointField } from '~/utils';
 import store from '~/store';
 
@@ -16,8 +16,7 @@ interface TextChatProps {
 }
 
 export default function TextChat({ isSearchView = false }: TextChatProps) {
-  const { ask, isSubmitting, handleStopGenerating, latestMessage, endpointsConfig } =
-    useMessageHandler();
+  const { ask, isSubmitting, handleStopGenerating, latestMessage, endpointsConfig } = useVeraChat();
   const conversation = useRecoilValue(store.conversation);
   const setShowBingToneSetting = useSetRecoilState(store.showBingToneSetting);
   const [text, setText] = useRecoilState(store.text);

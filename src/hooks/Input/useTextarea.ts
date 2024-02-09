@@ -2,7 +2,6 @@ import debounce from 'lodash/debounce';
 import { useEffect, useRef } from 'react';
 import { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
-import useGetSender from '~/hooks/Conversations/useGetSender';
 import { useChatContext } from '~/Providers/ChatContext';
 import useFileHandling from '~/hooks/useFileHandling';
 import useLocalize from '~/hooks/useLocalize';
@@ -15,7 +14,6 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
   const isComposing = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const { handleFiles } = useFileHandling();
-  const getSender = useGetSender();
   const localize = useLocalize();
 
   const { conversationId, jailbreak } = conversation || {};
@@ -61,7 +59,7 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
         return localize('com_endpoint_message_not_appendable');
       }
 
-      const sender = getSender(conversation as TEndpointOption);
+      const sender = ''; //getSender(conversation as TEndpointOption);
 
       return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
     };
@@ -84,7 +82,7 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
     debouncedSetPlaceholder();
 
     return () => debouncedSetPlaceholder.cancel();
-  }, [conversation, disabled, latestMessage, isNotAppendable, localize, getSender]);
+  }, [conversation, disabled, latestMessage, isNotAppendable, localize /*getSender*/]);
 
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Enter' && isSubmitting) {

@@ -5,7 +5,6 @@ import { LANDING_PATH } from '../../utils/constants';
 import { useAuthStore } from '~/zustand';
 import { useNavigate } from 'react-router-dom';
 
-
 export function useLoginVeraUser() {
   const { signIn } = useAuthStore();
   const navigate = useNavigate();
@@ -32,6 +31,7 @@ export function useLoginVeraUser() {
 export function useLogoutVeraUser() {
   const queryClient = useQueryClient();
   const { signOut } = useAuthStore();
+  const navigate = useNavigate();
 
   return useMutation({
     mutationFn: () => logoutUser(signOut),
@@ -40,7 +40,7 @@ export function useLogoutVeraUser() {
         console.log(error);
       } else {
         queryClient.removeQueries();
-        window.location.href = 'login';
+        return navigate('/login', { replace: true });
       }
     },
   });

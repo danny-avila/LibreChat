@@ -6,7 +6,7 @@ import { Menu, Transition } from '@headlessui/react';
 import type { TConversation } from 'librechat-data-provider';
 import { ExportModal } from './ExportConversation';
 import { LinkIcon, GearIcon } from '~/components';
-import { useAuthContext } from '~/hooks/AuthContext';
+//import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import NavLink from './NavLink';

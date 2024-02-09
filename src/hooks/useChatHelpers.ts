@@ -12,7 +12,6 @@ import type {
 } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
-import useGetSender from './Conversations/useGetSender';
 import useUserKey from './Input/useUserKey';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
@@ -25,7 +24,6 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const [showStopButton, setShowStopButton] = useState(true);
   const [filesLoading, setFilesLoading] = useState(false);
   const setFilesToDelete = useSetFilesToDelete();
-  const getSender = useGetSender();
 
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthStore();
@@ -132,7 +130,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       modelDisplayLabel,
       key: getExpiry(),
     } as TEndpointOption;
-    const responseSender = getSender({ model: conversation?.model, ...endpointOption });
+    const responseSender = ''; //getSender({ model: conversation?.model, ...endpointOption });
 
     let currentMessages: TMessage[] | null = getMessages() ?? [];
 

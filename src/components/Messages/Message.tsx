@@ -9,7 +9,7 @@ import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SiblingSwitch from './SiblingSwitch';
 import { Icon } from '~/components/Endpoints';
-import { useMessageHandler, useConversation } from '~/hooks';
+import { useMessageHandler, useConversation, useVeraChat } from '~/hooks';
 import type { TMessageProps } from '~/common';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -29,7 +29,7 @@ export default function Message(props: TMessageProps) {
 
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScroll);
-  const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
+  const { isSubmitting, ask, regenerate, handleContinue } = useVeraChat();
   const { switchToConversation } = useConversation();
   const { conversationId } = useParams();
   const isSearching = useRecoilValue(store.isSearching);

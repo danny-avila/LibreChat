@@ -12,7 +12,6 @@ export default function MultiMessage({
   currentEditId,
   setCurrentEditId,
 }: TMessageProps) {
-  console.log('messagesTree: ', messagesTree);
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
 
   const setSiblingIdxRev = (value: number) => {
@@ -36,8 +35,6 @@ export default function MultiMessage({
   }
 
   const message = messagesTree[messagesTree.length - siblingIdx - 1];
-
-  console.log('message: ', message);
 
   if (!message) {
     return null;

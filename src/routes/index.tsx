@@ -15,10 +15,10 @@ import { AuthContextProvider } from '~/hooks/AuthContext';
 import LoginPage from '~/components/Auth/LoginPage';
 
 const AuthLayout = () => (
-  <AuthContextProvider>
+  <>
     <Outlet />
     <ApiErrorWatcher />
-  </AuthContextProvider>
+  </>
 );
 
 export const router = createBrowserRouter([

@@ -18,7 +18,7 @@ export default function ModelItem({
   isSelected: boolean;
 }) {
   const [isDialogOpen, setDialogOpen] = useState(false);
-  const { data: endpointsConfig } = useGetEndpointsQuery();
+  //const { data: endpointsConfig } = useGetEndpointsQuery();
 
   const icon = Icon({
     size: 20,
@@ -29,11 +29,11 @@ export default function ModelItem({
     isCreatedByUser: false,
   });
 
-  const userProvidesKey: boolean | null | undefined = getEndpointField(
-    endpointsConfig,
-    endpoint,
-    'userProvide',
-  );
+  // const userProvidesKey: boolean | null | undefined = getEndpointField(
+  //   endpointsConfig,
+  //   endpoint,
+  //   'userProvide',
+  // );
   const localize = useLocalize();
 
   // regular model
@@ -56,7 +56,7 @@ export default function ModelItem({
           </span>
         )}
         <div className="flex w-4 flex-1" />
-        {userProvidesKey ? (
+        {true ? (
           <button
             className={cn(
               'invisible m-0 mr-1 flex-initial rounded-md p-0 text-xs font-medium text-gray-400 hover:text-gray-700 group-hover:visible dark:font-normal dark:text-gray-400 dark:hover:text-gray-200',
@@ -72,7 +72,7 @@ export default function ModelItem({
           </button>
         ) : null}
       </DropdownMenuRadioItem>
-      {userProvidesKey && (
+      {true && (
         <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
       )}
     </>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { TMessage } from 'librechat-data-provider';
-import { useMessageHandler, useMediaQuery, useGenerations } from '~/hooks';
+import { useMessageHandler, useMediaQuery, useGenerations, useVeraChat } from '~/hooks';
 import { cn } from '~/utils';
 import Regenerate from './Regenerate';
 import Continue from './Continue';
@@ -24,7 +24,7 @@ export default function GenerationButtons({
     handleContinue,
     handleRegenerate,
     handleStopGenerating,
-  } = useMessageHandler();
+  } = useVeraChat();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { continueSupported, regenerateEnabled } = useGenerations({
     endpoint,

@@ -20,7 +20,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const { conversationId: currentConvoId } = useParams();
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
-  const { data: endpointsConfig } = useGetEndpointsQuery();
+  // const { data: endpointsConfig } = useGetEndpointsQuery();
   const { refreshConversations } = useConversations();
   const { navigateToConvo } = useNavigateToConvo();
   const { showToast } = useToastContext();
@@ -96,7 +96,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
   const icon = MinimalIcon({
     size: 20,
-    iconURL: getEndpointField(endpointsConfig, conversation.endpoint, 'iconURL'),
+    iconURL: '', //getEndpointField(endpointsConfig, conversation.endpoint, 'iconURL'),
     endpoint: conversation.endpoint,
     endpointType: conversation.endpointType,
     model: conversation.model,

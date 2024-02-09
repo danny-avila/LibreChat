@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
-import { useAuthContext } from '~/hooks/AuthContext';
+//import { useAuthContext } from '~/hooks/AuthContext';
 import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
@@ -10,7 +10,7 @@ import SocialButton from './SocialButton';
 
 function Login() {
   const [pk, setPk] = useState('');
-  const { login, error, isAuthenticated } = useAuthContext();
+  //const { login, error, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
   const navigate = useNavigate();
@@ -91,8 +91,6 @@ function Login() {
     ),
   };
 
-  console.log('hi', isAuthenticated);
-
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-login-base pt-6 sm:pt-0">
       <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-8 py-10 sm:max-w-md sm:rounded-lg">
@@ -169,13 +167,7 @@ function Login() {
       </div>
       <p>insert vera auth token</p>
       <input style={{ background: 'cyan' }} onChange={(e) => setPk(e.target.value)}></input>
-      <button
-        className="ml-2 border"
-        onClick={(e) => {
-          console.log(pk);
-          loginVera(pk);
-        }}
-      >
+      <button className="ml-2 border" onClick={(e) => {}}>
         {' '}
         Submit
       </button>

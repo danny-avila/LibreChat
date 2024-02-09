@@ -42,9 +42,11 @@ export default function NewConversationMenu() {
   const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
   const [messages, setMessages] = useRecoilState(store.messages);
 
-  const { data: availableEndpoints = [] } = useGetEndpointsQuery({
-    select: mapEndpoints,
-  });
+  // const { data: availableEndpoints = [] } = useGetEndpointsQuery({
+  //   select: mapEndpoints,
+  // });
+
+  const availableEndpoints = [];
 
   const [presets, setPresets] = useRecoilState(store.presets);
   const modularEndpoints = new Set(['gptPlugins', 'anthropic', 'google', 'openAI']);

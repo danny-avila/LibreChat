@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { FileSources } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+//import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import {
   useSetRecoilState,
   useResetRecoilState,
@@ -29,7 +29,8 @@ const useNewConvo = (index = 0) => {
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
-  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  //const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const endpointsConfig = {};
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {

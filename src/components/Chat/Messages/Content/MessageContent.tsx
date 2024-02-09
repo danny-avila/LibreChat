@@ -9,15 +9,8 @@ import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
 import Image from './Image';
-import { useLogoutVeraUser } from '~/services/mutations/auth';
 
 const ErrorMessage = ({ text }: TText) => {
-  const logoutVeraUserMutation = useLogoutVeraUser()
-
-  if (text.includes('ban')) {
-    logoutVeraUserMutation.mutate()
-    return null;
-  }
   return (
     <Container>
       <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">

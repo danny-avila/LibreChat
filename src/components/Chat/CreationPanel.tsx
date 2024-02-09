@@ -16,7 +16,6 @@ export default function CreationPanel({ index = 0 }) {
 
   const onSubmit = (data: CreationForm) => {
     const tools: Tool[] = [];
-    console.log(data);
     if (data.function) {
       tools.push({ type: Tools.function });
     }

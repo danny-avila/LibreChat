@@ -19,7 +19,7 @@ const Icon: React.FC<IconProps> = (props) => {
   const { size = 30, isCreatedByUser, button, model = '', endpoint, jailbreak } = props;
 
   if (isCreatedByUser) {
-    const username = user?.name || 'User';
+    const username = user?.username || 'User';
 
     return (
       <div
@@ -71,8 +71,8 @@ const Icon: React.FC<IconProps> = (props) => {
         name: model?.toLowerCase()?.includes('code')
           ? 'Codey'
           : model?.toLowerCase()?.includes('gemini')
-            ? 'Gemini'
-            : 'PaLM2',
+          ? 'Gemini'
+          : 'PaLM2',
       },
       [EModelEndpoint.anthropic]: {
         icon: <AnthropicIcon size={size * 0.5555555555555556} />,
