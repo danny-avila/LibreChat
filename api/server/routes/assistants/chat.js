@@ -40,15 +40,15 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
     logger.debug('[/assistants/chat/] req.body', req.body);
     const {
       text,
-      messageId: _messageId,
+      model,
       files = [],
       promptPrefix,
       assistant_id,
       instructions,
       thread_id: _thread_id,
+      messageId: _messageId,
       conversationId: convoId,
       parentMessageId: _parentId = Constants.NO_PARENT,
-      model: _model,
     } = req.body;
 
     if (convoId && !_thread_id) {
@@ -183,6 +183,20 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
       conversation.file_ids = file_ids;
     }
 
+    /** @type {CreateRunBody} */
+    const body = {
+      assistant_id,
+      model,
+    };
+
+    if (promptPrefix) {
+      body.additional_instructions = promptPrefix;
+    }
+
+    if (instructions) {
+      body.instructions = instructions;
+    }
+
     /* NOTE:
      * By default, a Run will use the model and tools configuration specified in Assistant object,
      * but you can override most of these when creating the Run for added flexibility:
@@ -190,7 +204,7 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
     const run = await createRun({
       openai,
       thread_id,
-      body: { assistant_id },
+      body,
     });
 
     const cache = getLogStores(CacheKeys.ABORT_KEYS);
