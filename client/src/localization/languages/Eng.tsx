@@ -158,8 +158,11 @@ export default {
     ' 	Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
   com_endpoint_google_custom_name_placeholder: 'Set a custom name for Google',
   com_endpoint_prompt_prefix_placeholder: 'Set custom instructions or context. Ignored if empty.',
+  com_endpoint_prompt_prefix_assistants_placeholder:
+    'Set additional instructions or context on top of the Assistant\'s main instructions. Ignored if empty.',
   com_endpoint_custom_name: 'Custom Name',
   com_endpoint_prompt_prefix: 'Custom Instructions',
+  com_endpoint_prompt_prefix_assistants: 'Additional Instructions',
   com_endpoint_temperature: 'Temperature',
   com_endpoint_default: 'default',
   com_endpoint_top_p: 'Top P',
@@ -230,6 +233,9 @@ export default {
   com_endpoint_show_what_settings: 'Show {0} Settings',
   com_endpoint_save: 'Save',
   com_endpoint_export: 'Export',
+  com_endpoint_assistant: 'Assistant',
+  com_endpoint_use_active_assistant: 'Use Active Assistant',
+  com_endpoint_assistant_model: 'Assistant Model',
   com_endpoint_save_as_preset: 'Save As Preset',
   com_endpoint_presets_clear_warning:
     'Are you sure you want to clear all presets? This is irreversible.',
