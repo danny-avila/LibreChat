@@ -22,7 +22,7 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
   const { index, conversation } = useChatContext();
 
   /* `selectedAssistant` must be defined with `null` to cause re-render on update */
-  const { assistant_id: selectedAssistant = null } = conversation ?? {};
+  const { assistant_id: selectedAssistant = null, endpoint } = conversation ?? {};
 
   const { data: assistants = [] } = useListAssistantsQuery(defaultOrderQuery, {
     select: (res) => res.data.map(({ id, name, metadata }) => ({ id, name, metadata })),
@@ -39,10 +39,14 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
       if (!assistant) {
         return;
       }
+
+      if (endpoint !== EModelEndpoint.assistant) {
+        return;
+      }
       setOption('model')(assistant.model);
       setOption('assistant_id')(assistant_id);
     }
-  }, [index, assistants, selectedAssistant, assistantMap, setOption]);
+  }, [index, assistants, selectedAssistant, assistantMap, endpoint, setOption]);
 
   const currentAssistant = assistantMap?.[selectedAssistant ?? ''];
 
@@ -68,7 +72,8 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
             />
           </div>
           <span className={cn('ml-2', isCollapsed ? 'hidden' : '')}>
-            {assistants.find((assistant) => assistant.id === selectedAssistant)?.name}
+            {assistants.find((assistant) => assistant.id === selectedAssistant)?.name ??
+              'Select an Assistant'}
           </span>
         </SelectValue>
       </SelectTrigger>
