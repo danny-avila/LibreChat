@@ -86,7 +86,7 @@ height: 1024
 ### SDXL Turbo
 However, to use [SDXL Turbo](https://stable-diffusion-art.com/sdxl-turbo/) many of the paramters need to be changed for images to be generated in a much shorter period of time. For example, SDXL does not need a negative prompt or more than 1 step. To set these settings set the below variable.
 ```bash
-SD_WEBUI_DEFAULT_PARAMETERS={"sd_model_name":"sd_xl_turbo_1.0_fp16", "negative_prompt":"", "sampler_name": "Euler a", "cfg_scale": 1, "steps": 1, "width": 512, "height": 512}
+SD_WEBUI_DEFAULT_PARAMETERS={"sd_model_name":"sd_xl_turbo_1.0_fp16.safetensors", "negative_prompt":"", "sampler_name": "Euler a", "cfg_scale": 1, "steps": 1, "width": 512, "height": 512}
 ```
 As Stable Diffusion releases more models, this variable may be changed at any time to take advantage of new functionality.
 
