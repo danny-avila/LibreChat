@@ -1,14 +1,13 @@
-import { useState, useEffect } from 'react';
+// import { useState, useEffect } from 'react';
 import { actionDelimiter } from 'librechat-data-provider';
 import * as Popover from '@radix-ui/react-popover';
 import ProgressCircle from './ProgressCircle';
 import InProgressCall from './InProgressCall';
-import RetrievalIcon from './RetrievalIcon';
 import CancelledIcon from './CancelledIcon';
 import ProgressText from './ProgressText';
 import FinishedIcon from './FinishedIcon';
 import ToolPopover from './ToolPopover';
-import ActionIcon from './ActionIcon';
+// import ActionIcon from './ActionIcon';
 import WrenchIcon from './WrenchIcon';
 import { useProgress } from '~/hooks';
 
@@ -64,7 +63,9 @@ export default function ToolCall({
           hasInput={!!args?.length}
           popover={true}
         />
-        {!!args?.length && domain && <ToolPopover input={args} output={output} domain={domain} />}
+        {!!args?.length && (
+          <ToolPopover input={args} output={output} domain={domain} function_name={function_name} />
+        )}
       </div>
     </Popover.Root>
   );
