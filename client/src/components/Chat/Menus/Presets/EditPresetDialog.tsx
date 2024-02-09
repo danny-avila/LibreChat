@@ -1,14 +1,12 @@
 import { useRecoilState } from 'recoil';
-import { useCallback, useState } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { cn, defaultTextProps, removeFocusOutlines, mapEndpoints } from '~/utils';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import PopoverButtons from '~/components/Chat/Input/PopoverButtons';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { useSetIndexOptions, useLocalize } from '~/hooks';
+import { useSetIndexOptions, useLocalize, useDebouncedInput } from '~/hooks';
 import { EndpointSettings } from '~/components/Endpoints';
 import { useChatContext } from '~/Providers';
-import debounce from 'lodash/debounce';
 import store from '~/store';
 
 const EditPresetDialog = ({
@@ -21,9 +19,8 @@ const EditPresetDialog = ({
   const localize = useLocalize();
   const { preset, setPreset } = useChatContext();
   const { setOption } = useSetIndexOptions(preset);
-  const debouncedSetTitle = useCallback(debounce(setOption('title'), 650), []);
+  const [onTitleChange, title] = useDebouncedInput(setOption, 'title', preset?.title);
   const [presetModalVisible, setPresetModalVisible] = useRecoilState(store.presetModalVisible);
-  const [title, setTitle] = useState(preset?.title ?? '');
 
   const { data: availableEndpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
@@ -33,11 +30,6 @@ const EditPresetDialog = ({
   if (!endpoint) {
     return null;
   }
-
-  const onChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    setTitle(e.target.value);
-    debouncedSetTitle(e.target.value ?? '');
-  };
 
   return (
     <Dialog
@@ -64,8 +56,8 @@ const EditPresetDialog = ({
                   </Label>
                   <Input
                     id="preset-name"
-                    value={title}
-                    onChange={onChange}
+                    value={(title as string | undefined) ?? ''}
+                    onChange={onTitleChange}
                     placeholder={localize('com_endpoint_set_custom_name')}
                     className={cn(
                       defaultTextProps,

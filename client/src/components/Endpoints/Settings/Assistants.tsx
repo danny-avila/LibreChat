@@ -4,9 +4,9 @@ import { TPreset, defaultOrderQuery } from 'librechat-data-provider';
 import type { TModelSelectProps, Option } from '~/common';
 import { Label, HoverCard, SelectDropDown, HoverCardTrigger } from '~/components/ui';
 import { cn, defaultTextProps, removeFocusOutlines, mapAssistants } from '~/utils';
+import { useLocalize, useDebouncedInput } from '~/hooks';
 import { useListAssistantsQuery } from '~/data-provider';
 import OptionHover from './OptionHover';
-import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
 export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
@@ -32,6 +32,11 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   });
 
   const { model, endpoint, assistant_id, endpointType, promptPrefix } = conversation ?? {};
+  const [onPromptPrefixChange, promptPrefixValue] = useDebouncedInput(
+    setOption,
+    'promptPrefix',
+    promptPrefix,
+  );
 
   const activeAssistant = useMemo(() => {
     if (assistant_id) {
@@ -55,6 +60,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     activeAssistant ? { label: activeAssistant.name, value: activeAssistant.id } : defaultOption,
   );
 
+  console.log('render check (outside effect)', assistantValue);
   useEffect(() => {
     if (assistantValue && assistantValue.value === '') {
       console.log('render check', assistantValue);
@@ -72,7 +78,6 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   }
 
   const setModel = setOption('model');
-  const setPromptPrefix = setOption('promptPrefix');
   const setAssistant = (value: string) => {
     if (!value) {
       setAssistantValue(defaultOption);
@@ -135,8 +140,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
           <TextareaAutosize
             id="promptPrefix"
             disabled={readonly}
-            value={promptPrefix || ''}
-            onChange={(e) => setPromptPrefix(e.target.value ?? null)}
+            value={promptPrefixValue as string | undefined}
+            onChange={onPromptPrefixChange}
             placeholder={localize('com_endpoint_prompt_prefix_assistants_placeholder')}
             className={cn(
               defaultTextProps,
