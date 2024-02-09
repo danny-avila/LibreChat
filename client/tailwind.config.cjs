@@ -7,7 +7,7 @@ module.exports = {
   darkMode: ['class'],
   theme: {
     // colors: {
-    //   'gpt-dark-gray': '#343541',
+    //   'gpt-dark-gray': '#171717',
     // },
     fontFamily: {
       sans: ['Söhne', 'sans-serif'],
@@ -38,8 +38,8 @@ module.exports = {
           100: '#ececec',
           200: '#e3e3e3',
           300: '#cdcdcd',
-          400: '#acacb1',
-          500: '#8e8ea0',
+          400: '#999696',
+          500: '#686262',
           600: '#3d3d3f',
           700: '#262626', // Replacing .dark .dark:bg-gray-700 and .dark .dark:hover:bg-gray-700:hover
           750: '#333333',

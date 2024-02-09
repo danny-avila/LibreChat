@@ -1636,17 +1636,19 @@ button.scroll-convo {
 :root {
   --white:#fff;
   --black:#000;
+  --gray-200:#ececf1;
   --gray-50:#f7f7f8;
-  --gray-100:#ececf1;
-  --gray-200:#d9d9e3;
-  --gray-300:#c5c5d2;
-  --gray-400:#acacbe;
-  --gray-500:#8e8ea0;
-  --gray-600:#565869;
-  --gray-700:#40414f;
+  --gray-100:#ececec;
+  --gray-200:#e3e3e3;
+  --gray-300:#cdcdcd;
+  --gray-400:#999696;
+  --gray-500:#686262;
+  --gray-600:#3d3d3f;
+  --gray-700:#262626;
+  --gray-750:#333333;
   --gray-800:#171717;
-  --gray-900:#171717;
-  --gray-950:#0d0d0d;
+  --gray-900:#0d0d0d;
+  --gray-1000:#444654;
   --gizmo-gray-500:#999;
   --gizmo-gray-600:#666;
   --gizmo-gray-950:#0f0f0f
@@ -1701,7 +1703,7 @@ html {
 }
 
 .text-token-text-primary {
-  color:#343541;
+  color:#171717;
   color:var(--text-primary)
 }
 .text-token-text-secondary {

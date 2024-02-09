@@ -154,7 +154,7 @@ export default function TextChat({ isSearchView = false }: TextChatProps) {
                 ${isDark ? 'rgba(52, 53, 65, 0.08)' : 'rgba(255, 255, 255, 0.08)'}, 
                 ${isDark ? 'rgba(52, 53, 65, 0.38)' : 'rgba(255, 255, 255, 0.38)'}, 
                 ${isDark ? 'rgba(52, 53, 65, 1)' : 'rgba(255, 255, 255, 1)'}, 
-                ${isDark ? '#343541' : '#ffffff'})`,
+                ${isDark ? '#171717' : '#ffffff'})`,
         }}
       >
         <OptionsBar />
