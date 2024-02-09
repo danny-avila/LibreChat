@@ -158,11 +158,14 @@ export default {
     ' 	Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
   com_endpoint_google_custom_name_placeholder: 'Set a custom name for Google',
   com_endpoint_prompt_prefix_placeholder: 'Set custom instructions or context. Ignored if empty.',
+  com_endpoint_instructions_assistants_placeholder:
+    'Overrides the instructions of the assistant. This is useful for modifying the behavior on a per-run basis.',
   com_endpoint_prompt_prefix_assistants_placeholder:
     'Set additional instructions or context on top of the Assistant\'s main instructions. Ignored if empty.',
   com_endpoint_custom_name: 'Custom Name',
   com_endpoint_prompt_prefix: 'Custom Instructions',
   com_endpoint_prompt_prefix_assistants: 'Additional Instructions',
+  com_endpoint_instructions_assistants: 'Override Instructions',
   com_endpoint_temperature: 'Temperature',
   com_endpoint_default: 'default',
   com_endpoint_top_p: 'Top P',

@@ -711,3 +711,20 @@
  *
  * @typedef {OpenAI & OpenAIClientType} OpenAIClient
  */
+
+/**
+ * The body of the request to create a run, specifying the assistant, model,
+ * instructions, and any additional parameters needed for the run.
+ *
+ * @typedef {Object} CreateRunBody
+ * @property {string} assistant_id - The ID of the assistant to use for this run.
+ * @property {string} [model] - Optional. The ID of the model to be used for this run.
+ * @property {string} [instructions] - Optional. Override the default system message of the assistant.
+ * @property {string} [additional_instructions] - Optional. Appends additional instructions
+ * at the end of the instructions for the run. Useful for modifying behavior on a per-run basis without overriding other instructions.
+ * @property {Object[]} [tools] - Optional. Override the tools the assistant can use for this run. Should include tool call ID and the type of tool call.
+ * @property {string[]} [file_ids] - Optional. List of File IDs the assistant can use for this run.
+ * **Note:** The API seems to prefer files added to messages, not runs.
+ * @property {Object} [metadata] - Optional. Metadata for the run.
+ * @memberof typedefs
+ */

@@ -221,6 +221,7 @@ export const tConversationSchema = z.object({
   imageDetail: eImageDetailSchema.optional(),
   /* assistant */
   assistant_id: z.string().optional(),
+  instructions: z.string().optional(),
   /** Used to overwrite active conversation settings when saving a Preset */
   presetOverride: z.record(z.unknown()).optional(),
 });

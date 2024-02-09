@@ -31,11 +31,17 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     select: (res) => mapAssistants(res.data),
   });
 
-  const { model, endpoint, assistant_id, endpointType, promptPrefix } = conversation ?? {};
+  const { model, endpoint, assistant_id, endpointType, promptPrefix, instructions } =
+    conversation ?? {};
   const [onPromptPrefixChange, promptPrefixValue] = useDebouncedInput(
     setOption,
     'promptPrefix',
     promptPrefix,
+  );
+  const [onInstructionsChange, instructionsValue] = useDebouncedInput(
+    setOption,
+    'instructions',
+    instructions,
   );
 
   const activeAssistant = useMemo(() => {
@@ -60,10 +66,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     activeAssistant ? { label: activeAssistant.name, value: activeAssistant.id } : defaultOption,
   );
 
-  console.log('render check (outside effect)', assistantValue);
   useEffect(() => {
     if (assistantValue && assistantValue.value === '') {
-      console.log('render check', assistantValue);
       setOption('presetOverride')({
         assistant_id: assistantValue.value,
       } as Partial<TPreset>);
@@ -146,7 +150,25 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             className={cn(
               defaultTextProps,
               'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
-              'flex max-h-[240px] min-h-[100px] w-full resize-none px-3 py-2 ',
+              'flex max-h-[240px] min-h-[80px] w-full resize-none px-3 py-2 ',
+            )}
+          />
+        </div>
+        <div className="grid w-full items-center gap-2">
+          <Label htmlFor="instructions" className="text-left text-sm font-medium">
+            {localize('com_endpoint_instructions_assistants')}{' '}
+            <small className="opacity-40">({localize('com_endpoint_default_blank')})</small>
+          </Label>
+          <TextareaAutosize
+            id="instructions"
+            disabled={readonly}
+            value={instructionsValue as string | undefined}
+            onChange={onInstructionsChange}
+            placeholder={localize('com_endpoint_instructions_assistants_placeholder')}
+            className={cn(
+              defaultTextProps,
+              'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
+              'flex max-h-[240px] min-h-[80px] w-full resize-none px-3 py-2 ',
             )}
           />
         </div>
