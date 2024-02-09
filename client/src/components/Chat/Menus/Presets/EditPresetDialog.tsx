@@ -1,4 +1,5 @@
 import { useRecoilState } from 'recoil';
+import { useCallback, useState } from 'react';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { cn, defaultTextProps, removeFocusOutlines, mapEndpoints } from '~/utils';
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
@@ -7,6 +8,7 @@ import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
 import { EndpointSettings } from '~/components/Endpoints';
 import { useChatContext } from '~/Providers';
+import debounce from 'lodash/debounce';
 import store from '~/store';
 
 const EditPresetDialog = ({
@@ -17,9 +19,11 @@ const EditPresetDialog = ({
   submitPreset: () => void;
 }) => {
   const localize = useLocalize();
-  const { preset } = useChatContext();
+  const { preset, setPreset } = useChatContext();
   const { setOption } = useSetIndexOptions(preset);
+  const debouncedSetTitle = useCallback(debounce(setOption('title'), 650), []);
   const [presetModalVisible, setPresetModalVisible] = useRecoilState(store.presetModalVisible);
+  const [title, setTitle] = useState(preset?.title ?? '');
 
   const { data: availableEndpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
@@ -30,8 +34,21 @@ const EditPresetDialog = ({
     return null;
   }
 
+  const onChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    setTitle(e.target.value);
+    debouncedSetTitle(e.target.value ?? '');
+  };
+
   return (
-    <Dialog open={presetModalVisible} onOpenChange={setPresetModalVisible}>
+    <Dialog
+      open={presetModalVisible}
+      onOpenChange={(open) => {
+        setPresetModalVisible(open);
+        if (!open) {
+          setPreset(null);
+        }
+      }}
+    >
       <DialogTemplate
         title={`${localize('com_ui_edit') + ' ' + localize('com_endpoint_preset')} - ${
           preset?.title
@@ -47,8 +64,8 @@ const EditPresetDialog = ({
                   </Label>
                   <Input
                     id="preset-name"
-                    value={preset?.title || ''}
-                    onChange={(e) => setOption('title')(e.target.value || '')}
+                    value={title}
+                    onChange={onChange}
                     placeholder={localize('com_endpoint_set_custom_name')}
                     className={cn(
                       defaultTextProps,
