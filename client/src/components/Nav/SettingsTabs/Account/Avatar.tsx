@@ -96,11 +96,11 @@ function Avatar() {
 
       <Dialog open={isDialogOpen} onOpenChange={() => setDialogOpen(false)}>
         <DialogContent
-          className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:h-[350px] md:w-[450px] ')}
+          className={cn('shadow-2xl dark:bg-gray-800 dark:text-white md:h-[350px] md:w-[450px] ')}
           style={{ borderRadius: '12px' }}
         >
           <DialogHeader>
-            <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
+            <DialogTitle className="text-lg font-medium leading-6 text-gray-800 dark:text-gray-200">
               {localize('com_ui_preview')}
             </DialogTitle>
           </DialogHeader>

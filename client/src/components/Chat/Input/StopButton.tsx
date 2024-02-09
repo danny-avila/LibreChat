@@ -5,7 +5,7 @@ export default function StopButton({ stop, setShowStopButton }) {
         <div className="flex h-full flex-row items-center justify-center gap-3">
           <button
             type="button"
-            className="border-gizmo-gray-950 rounded-full border-2 p-1 dark:border-gray-200"
+            className="border-gizmo-gray-900 rounded-full border-2 p-1 dark:border-gray-200"
             aria-label="Stop generating"
             onClick={(e) => {
               setShowStopButton(false);
@@ -16,7 +16,7 @@ export default function StopButton({ stop, setShowStopButton }) {
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 16 16"
               fill="currentColor"
-              className="text-gizmo-gray-950 h-2 w-2 dark:text-gray-200"
+              className="text-gizmo-gray-900 h-2 w-2 dark:text-gray-200"
               height="16"
               width="16"
             >

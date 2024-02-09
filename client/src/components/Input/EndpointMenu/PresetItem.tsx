@@ -67,7 +67,7 @@ export default function PresetItem({
     <DropdownMenuRadioItem
       /* @ts-ignore, value can be an object as well */
       value={value}
-      className="group flex h-10 max-h-[44px] flex-row justify-between dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800 sm:h-auto"
+      className="group flex h-10 max-h-[44px] flex-row justify-between dark:font-semibold dark:text-gray-200 dark:hover:bg-gray-800 sm:h-auto"
     >
       <div className="flex items-center justify-start">
         {icon}

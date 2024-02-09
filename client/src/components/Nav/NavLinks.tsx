@@ -53,14 +53,14 @@ function NavLinks() {
         {({ open }) => (
           <>
             {startupConfig?.checkBalance && balanceQuery.data && (
-              <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-black dark:text-gray-100">
+              <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-black dark:text-gray-200">
                 {`Balance: ${balanceQuery.data}`}
               </div>
             )}
             <Menu.Button
               className={cn(
-                'group-ui-open:bg-gray-70 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm mb-1 flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-gray-70 dark:hover:bg-gray-700',
-                open ? 'bg-gray-70 dark:bg-gray-700' : '',
+                'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm mb-1 flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-gray-700',
+                open ? 'bg-gray-100 dark:bg-gray-700' : '',
               )}
               data-testid="nav-user"
             >
@@ -99,7 +99,7 @@ function NavLinks() {
                 <Menu.Item as="div">
                   <NavLink
                     className={cn(
-                      'flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-70 dark:text-white dark:hover:bg-gray-700',
+                      'flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700',
                       exportable
                         ? 'cursor-pointer text-black dark:text-white'
                         : 'cursor-not-allowed text-black/50 dark:text-white/50',
@@ -112,7 +112,7 @@ function NavLinks() {
                 <div className="my-1 h-px bg-black/20 dark:bg-white/20" role="none" />
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-70 dark:text-white dark:hover:bg-gray-700"
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                     svg={() => <LinkIcon />}
                     text={localize('com_nav_help_faq')}
                     clickHandler={() => window.open('https://docs.librechat.ai/', '_blank')}
@@ -120,7 +120,7 @@ function NavLinks() {
                 </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-70 dark:text-white dark:hover:bg-gray-700"
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                     svg={() => <GearIcon className="icon-md" />}
                     text={localize('com_nav_settings')}
                     clickHandler={() => setShowSettings(true)}

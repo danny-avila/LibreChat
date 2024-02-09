@@ -35,9 +35,8 @@ module.exports = {
         gray: {
           20: '#ececf1',
           50: '#f7f7f8',
-          70: '#ececec',
-          100: '#e3e3e3',
-          200: '#e3e3e3', // Replacing .bg-gray-200
+          100: '#ececec',
+          200: '#e3e3e3',
           300: '#cdcdcd',
           400: '#acacb1',
           500: '#8e8ea0',
@@ -45,8 +44,7 @@ module.exports = {
           700: '#262626', // Replacing .dark .dark:bg-gray-700 and .dark .dark:hover:bg-gray-700:hover
           750: '#333333',
           800: '#171717', // Replacing .dark .dark:bg-gray-800, .bg-gray-800, and .dark .dark:hover:bg-gray-800\/90
-          900: '#171717', // Replacing .dark .dark:bg-gray-900, .bg-gray-900, and .dark .dark:hover:bg-gray-900:hover
-          950: '#0d0d0d',
+          900: '#0d0d0d', // Replacing .dark .dark:bg-gray-900, .bg-gray-900, and .dark .dark:hover:bg-gray-900:hover
           1000: '#444654',
         },
         green: {

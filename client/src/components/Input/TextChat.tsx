@@ -165,8 +165,8 @@ export default function TextChat({ isSearchView = false }: TextChatProps) {
                 className={cn(
                   'relative flex flex-grow flex-row rounded-xl border border-black/10 py-[10px] md:py-4 md:pl-4',
                   'shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:shadow-[0_0_15px_rgba(0,0,0,0.10)]',
-                  'dark:border-gray-900/50 dark:text-white',
-                  disabled ? 'bg-gray-100 dark:bg-gray-900' : 'bg-white dark:bg-gray-700',
+                  'dark:border-gray-800/50 dark:text-white',
+                  disabled ? 'bg-gray-200 dark:bg-gray-800' : 'bg-white dark:bg-gray-700',
                 )}
               >
                 <EndpointMenu />

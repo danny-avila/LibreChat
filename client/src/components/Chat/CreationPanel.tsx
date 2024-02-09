@@ -164,7 +164,7 @@ export default function CreationPanel({ index = 0 }) {
             render={({ field }) => (
               <select
                 {...field}
-                className="focus:shadow-outline block w-full appearance-none rounded border border-gray-200 bg-white px-4 py-2 pr-8 text-sm leading-tight shadow hover:border-gray-100 focus:border-green-500 focus:outline-none focus:ring-0"
+                className="focus:shadow-outline block w-full appearance-none rounded border border-gray-200 bg-white px-4 py-2 pr-8 text-sm leading-tight shadow hover:border-gray-200 focus:border-green-500 focus:outline-none focus:ring-0"
                 id="model"
               >
                 <option value="gpt-3.5-turbo-1106">gpt-3.5-turbo-1106</option>
@@ -178,22 +178,22 @@ export default function CreationPanel({ index = 0 }) {
         <div className="mb-6">
           <label className="mb-2 block text-xs font-bold text-gray-700">Tools</label>
           <div className="flex flex-col space-y-4">
-            <Separator orientation="horizontal" className="bg-gray-100/50" />
+            <Separator orientation="horizontal" className="bg-gray-200/50" />
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-gray-700">Functions</span>
               {renderSwitch('function')}
             </div>
-            <Separator orientation="horizontal" className="bg-gray-100/50" />
+            <Separator orientation="horizontal" className="bg-gray-200/50" />
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-gray-700">Code Interpreter</span>
               {renderSwitch('code_interpreter')}
             </div>
-            <Separator orientation="horizontal" className="bg-gray-100/50" />
+            <Separator orientation="horizontal" className="bg-gray-200/50" />
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-gray-700">Retrieval</span>
               {renderSwitch('retrieval')}
             </div>
-            <Separator orientation="horizontal" className="bg-gray-100/50" />
+            <Separator orientation="horizontal" className="bg-gray-200/50" />
           </div>
         </div>
         <div className="flex items-center justify-end">

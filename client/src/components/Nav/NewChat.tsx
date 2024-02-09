@@ -42,13 +42,13 @@ export default function NewChat({
   };
 
   return (
-    <div className="sticky left-0 right-0 top-0 z-20 bg-gray-50 pt-3.5 dark:bg-gray-950">
+    <div className="sticky left-0 right-0 top-0 z-20 bg-gray-50 pt-3.5 dark:bg-gray-900">
       <div className="pb-0.5 last:pb-0" tabIndex={0} style={{ transform: 'none' }}>
         <a
           href="/"
           data-testid="nav-new-chat-button"
           onClick={clickHandler}
-          className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium hover:bg-gray-100 dark:hover:bg-gray-900"
+          className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium hover:bg-gray-200 dark:hover:bg-gray-800"
         >
           <div className="h-7 w-7 flex-shrink-0">
             <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black dark:bg-white">

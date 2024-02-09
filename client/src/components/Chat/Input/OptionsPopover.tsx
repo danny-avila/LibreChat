@@ -56,7 +56,7 @@ export default function OptionsPopover({
           <div
             className={cn(
               cardStyle,
-              'dark:bg-gray-900',
+              'dark:bg-gray-800',
               'border-d-0 flex w-full flex-col overflow-hidden rounded-none border-s-0 border-t bg-white px-0 pb-[10px] dark:border-white/10 md:rounded-md md:border lg:w-[736px]',
             )}
           >

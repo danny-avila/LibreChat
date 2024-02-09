@@ -91,7 +91,7 @@ export default function CreationHeader({
       optionsClass="hover:bg-gray-20/50"
       optionsListClass="rounded-lg shadow-lg"
       currentValueClass={cn(
-        'text-md font-semibold text-gray-900 dark:text-gray-100',
+        'text-md font-semibold text-gray-800 dark:text-gray-200',
         value === '' ? 'text-gray-500' : '',
       )}
       className={cn(
@@ -100,10 +100,10 @@ export default function CreationHeader({
       )}
       renderOption={() => (
         <span className="flex items-center gap-1.5 truncate">
-          <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-800 dark:text-gray-100">
+          <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-gray-800 dark:text-gray-200">
             <Plus className="w-[16px]" />
           </span>
-          <span className={cn('ml-4 flex h-6 items-center gap-1 text-gray-800 dark:text-gray-100')}>
+          <span className={cn('ml-4 flex h-6 items-center gap-1 text-gray-800 dark:text-gray-200')}>
             {'Create Assistant'}
           </span>
         </span>

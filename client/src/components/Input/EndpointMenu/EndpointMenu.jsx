@@ -180,7 +180,7 @@ export default function NewConversationMenu() {
               {localize('com_endpoint_open_menu')}
             </TooltipContent>
             <DropdownMenuContent
-              className="z-[100] w-[375px] dark:bg-gray-900 md:w-96"
+              className="z-[100] w-[375px] dark:bg-gray-800 md:w-96"
               onCloseAutoFocus={(event) => event.preventDefault()}
               side="top"
             >

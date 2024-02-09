@@ -35,15 +35,15 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
   const Cancel = localize('com_ui_cancel');
 
   const defaultSelect =
-    'bg-gray-900 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200';
+    'bg-gray-800 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-200 dark:text-gray-800 dark:hover:bg-gray-200';
   return (
     <DialogContent
       ref={ref}
-      className={cn('shadow-2xl dark:bg-gray-900', className || '')}
+      className={cn('shadow-2xl dark:bg-gray-800', className || '')}
       onClick={(e) => e.stopPropagation()}
     >
       <DialogHeader className={cn('sm:pb-2', headerClassName ?? '')}>
-        <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
+        <DialogTitle className="text-lg font-medium leading-6 text-gray-800 dark:text-gray-200">
           {title}
         </DialogTitle>
         {description && (
