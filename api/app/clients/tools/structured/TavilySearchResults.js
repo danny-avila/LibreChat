@@ -85,7 +85,7 @@ class TavilySearchResults extends Tool {
       throw new Error(`Request failed with status ${response.status}: ${json.error}`);
     }
 
-    return json;
+    return JSON.stringify(json);
   }
 }
 
