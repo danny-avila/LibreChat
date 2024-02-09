@@ -159,7 +159,7 @@ export default {
   com_endpoint_google_custom_name_placeholder: 'Set a custom name for Google',
   com_endpoint_prompt_prefix_placeholder: 'Set custom instructions or context. Ignored if empty.',
   com_endpoint_custom_name: 'Custom Name',
-  com_endpoint_prompt_prefix: 'Prompt Prefix',
+  com_endpoint_prompt_prefix: 'Custom Instructions',
   com_endpoint_temperature: 'Temperature',
   com_endpoint_default: 'default',
   com_endpoint_top_p: 'Top P',
