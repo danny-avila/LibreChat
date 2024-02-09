@@ -221,10 +221,9 @@ export const tConversationSchema = z.object({
   imageDetail: eImageDetailSchema.optional(),
   /* assistant */
   assistant_id: z.string().optional(),
-  instructions: z.string().optional(),
+  /** Used to overwrite active conversation settings when saving a Preset */
+  presetOverride: z.record(z.unknown()).optional(),
 });
-
-export type TConversation = z.infer<typeof tConversationSchema>;
 
 export const tPresetSchema = tConversationSchema
   .omit({
@@ -257,6 +256,10 @@ export const tPresetUpdateSchema = tConversationSchema.merge(
 );
 
 export type TPreset = z.infer<typeof tPresetSchema>;
+
+export type TConversation = z.infer<typeof tConversationSchema> & {
+  presetOverride?: Partial<TPreset>;
+};
 
 // type DefaultSchemaValues = Partial<typeof google>;
 

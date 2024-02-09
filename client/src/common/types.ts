@@ -62,7 +62,9 @@ export type AssistantPanelProps = {
 
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
 
-export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
+export type TSetOption = (
+  param: number | string,
+) => (newValue: number | string | boolean | Partial<TPreset>) => void;
 export type TSetExample = (
   i: number,
   type: string,

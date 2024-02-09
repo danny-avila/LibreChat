@@ -40,6 +40,12 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
       setLastModel(lastModelUpdate);
     } else if (param === 'jailbreak' && endpoint) {
       setLastBingSettings({ ...lastBingSettings, jailbreak: newValue });
+    } else if (param === 'presetOverride') {
+      const currentOverride = conversation?.presetOverride || {};
+      update['presetOverride'] = {
+        ...currentOverride,
+        ...(newValue as unknown as Partial<TPreset>),
+      };
     }
 
     setConversation(
