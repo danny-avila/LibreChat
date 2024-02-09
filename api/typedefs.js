@@ -27,6 +27,12 @@
  */
 
 /**
+ * @exports TPlugin
+ * @typedef {import('librechat-data-provider').TPlugin} TPlugin
+ * @memberof typedefs
+ */
+
+/**
  * @exports TCustomConfig
  * @typedef {import('librechat-data-provider').TCustomConfig} TCustomConfig
  * @memberof typedefs
