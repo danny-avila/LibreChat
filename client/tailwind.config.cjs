@@ -14,6 +14,9 @@ module.exports = {
       mono: ['Söhne Mono', 'monospace'],
     },
     extend: {
+      width: {
+        'authPageWidth': '370px',
+      },
       keyframes: {
         'accordion-down': {
           from: { height: 0 },
@@ -51,6 +54,7 @@ module.exports = {
           300: '#6dc8b9',
           400: '#41a79d',
           500: '#10a37f',
+          550: '#349072',
           600: '#126e6b',
           700: '#0a4f53',
           800: '#06373e',

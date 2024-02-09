@@ -90,6 +90,9 @@ describe('getMultiplier', () => {
     expect(getMultiplier({ tokenType: 'completion', model: 'gpt-4-turbo-vision-preview' })).toBe(
       tokenValues['gpt-4-1106'].completion,
     );
+    expect(getMultiplier({ tokenType: 'completion', model: 'gpt-3.5-turbo-0125' })).toBe(
+      tokenValues['gpt-3.5-turbo-0125'].completion,
+    );
   });
 
   it('should return defaultRate if derived valueKey does not match any known patterns', () => {

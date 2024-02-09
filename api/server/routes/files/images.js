@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
 const upload = require('./multer');
@@ -39,7 +40,12 @@ router.post('/', upload.single('file'), async (req, res) => {
   } catch (error) {
     logger.error('[/files/images] Error processing file:', error);
     try {
-      await fs.unlink(file.path);
+      const filepath = path.join(
+        req.app.locals.paths.imageOutput,
+        req.user.id,
+        path.basename(file.filename),
+      );
+      await fs.unlink(filepath);
     } catch (error) {
       logger.error('[/files/images] Error deleting file:', error);
     }

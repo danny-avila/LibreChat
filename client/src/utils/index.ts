@@ -1,6 +1,7 @@
 export * from './json';
 export * from './files';
 export * from './latex';
+export * from './convos';
 export * from './presets';
 export * from './languages';
 export * from './endpoints';

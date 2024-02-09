@@ -1,3 +1,5 @@
+// file deepcode ignore NoHardcodedPasswords: No hard-coded passwords in tests
+
 const { loginSchema, registerSchema, errorsToString } = require('./validators');
 
 describe('Zod Schemas', () => {

@@ -26,6 +26,7 @@ const startServer = async () => {
   await indexSync();
 
   const app = express();
+  app.disable('x-powered-by');
   await AppService(app);
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));

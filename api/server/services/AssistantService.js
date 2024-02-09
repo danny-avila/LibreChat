@@ -357,5 +357,6 @@ module.exports = {
   waitForRun,
   getResponse,
   handleRun,
+  sleep,
   mapMessagesToSteps,
 };

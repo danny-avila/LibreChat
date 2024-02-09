@@ -30,7 +30,6 @@ weight: -8
     - [Using Plugins with Azure](#using-plugins-with-azure)
   - [OpenRouter](#openrouter)
   - [Unofficial APIs](#unofficial-apis)
-    - [ChatGPTBrowser](#chatgptbrowser)
     - [BingAI](#bingai)
   - [Conclusion](#conclusion) -->
 
@@ -411,6 +410,7 @@ To use Azure with the Plugins endpoint, make sure the following environment vari
 ## [OpenRouter](https://openrouter.ai/)
 
 **[OpenRouter](https://openrouter.ai/)** is a legitimate proxy service to a multitude of LLMs, both closed and open source, including:
+
 - OpenAI models (great if you are barred from their API for whatever reason)
 - Anthropic Claude models (same as above)
 - Meta's Llama models
@@ -423,18 +423,19 @@ OpenRouter is integrated to the LibreChat by overriding the OpenAI endpoint.
 
 **Important**: As of v0.6.6, you can use OpenRouter as its own standalone endpoint:
 
-![image](https://github.com/danny-avila/LibreChat/assets/110412045/4955bfa3-7b6b-4602-933f-daef89c9eab3)
-
 ### [Review the Custom Config Guide (click here)](./custom_config.md) to add an `OpenRouter` Endpoint
 
-**Setup (legacy):**
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/4955bfa3-7b6b-4602-933f-daef89c9eab3)
+
+#### Setup (legacy):
+
 - Signup to **[OpenRouter](https://openrouter.ai/)** and create a key. You should name it and set a limit as well.
 - Set the environment variable `OPENROUTER_API_KEY` in your .env file to the key you just created.
 - Set something in the `OPENAI_API_KEY`, it can be anyting, but **do not** leave it blank or set to `user_provided`  
 - Restart your LibreChat server and use the OpenAI or Plugins endpoints.
 
-**Notes:**
-- [TODO] **In the future, you will be able to set up OpenRouter from the frontend as well.**
+#### Notes (legacy):
+
 - This will override the official OpenAI API or your reverse proxy settings for both Plugins and OpenAI.
 - On initial setup, you may need to refresh your page twice to see all their supported models populate automatically.
 - Plugins: Functions Agent works with OpenRouter when using OpenAI models.
@@ -455,7 +456,7 @@ This is not to be confused with [OpenAI's Official API](#openai)!
 
 > Note that this is disabled by default and requires additional configuration to work. 
 > Also, using this may have your data exposed to 3rd parties if using a proxy, and OpenAI may flag your account.
-> See: [ChatGPT Reverse Proxy](../../features/pandoranext.md)
+> See: [ChatGPT Reverse Proxy](../../features/ninja.md)
 
 To get your Access token for ChatGPT Browser Access, you need to:
 
@@ -479,10 +480,75 @@ I recommend using Microsoft Edge for this:
 - Look for `lsp.asx` (if it's not there look into the other entries for one with a **very long** cookie) 
 - Copy the whole cookie value. (Yes it's very long 😉)
 - Use this **"full cookie string"** for your "BingAI Token"
-
-<p align="left">
+  - <p align="left">
     <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d4dfd370-eddc-4694-ab16-076f913ff430" width="50%">
 </p>
+
+### copilot-gpt4-service
+For this setup, an additional docker container will need to be setup.
+
+***It is necessary to obtain your token first.***
+
+Follow these instructions provided at **[copilot-gpt4-service#obtaining-token](https://github.com/aaamoon/copilot-gpt4-service#obtaining-copilot-token)** and keep your token for use within the service. Additionally, more detailed instructions for setting copilot-gpt4-service are available at the [GitHub repo](https://github.com/aaamoon/copilot-gpt4-service). 
+
+It is *not* recommended to use the copilot token obtained directly, instead use the `SUPER_TOKEN` variable. (You can generate your own `SUPER_TOKEN` with the OpenSSL command `openssl rand -hex 16` and set the `ENABLE_SUPER_TOKEN` variable to `true`)
+
+1. Once your Docker environment is ready and your tokens are generated, proceed with this Docker run command to start the service:
+    ```
+    docker run -d \
+      --name copilot-gpt4-service \
+      -e HOST=0.0.0.0 \
+      -e COPILOT_TOKEN=ghp_xxxxxxx \
+      -e SUPER_TOKEN=your_super_token \
+      -e ENABLE_SUPER_TOKEN=true \
+      --restart always \
+      -p 8080:8080 \
+      aaamoon/copilot-gpt4-service:latest
+    ```
+
+2. For Docker Compose users, use the equivalent yaml configuration provided below:
+    ```yaml
+    version: '3.8'
+    services:
+      copilot-gpt4-service:
+        image: aaamoon/copilot-gpt4-service:latest
+        environment:
+          - HOST=0.0.0.0
+          - COPILOT_TOKEN=ghp_xxxxxxx # Default GitHub Copilot Token, if this item is set, the Token carried with the request will be ignored. Default is empty.
+          - SUPER_TOKEN=your_super_token # Super Token is a user-defined standalone token that can access COPILOT_TOKEN above. This allows you to share the service without exposing your COPILOT_TOKEN. Multiple tokens are separated by commas. Default is empty.
+          - ENABLE_SUPER_TOKEN=true # Whether to enable SUPER_TOKEN, default is false. If false, but COPILOT_TOKEN is not empty, COPILOT_TOKEN will be used without any authentication for all requests.
+        ports:
+          - 8080:8080
+        restart: unless-stopped
+        container_name: copilot-gpt4-service
+    ```
+
+3. After setting up the Docker container for `copilot-gpt4-service`, you can add it to your `librechat.yaml` configuration. Here is an example configuration:
+    ```yaml
+    version: 1.0.1
+    cache: true
+    endpoints:
+      custom:
+        - name: "OpenAI via Copilot"
+          apiKey: "your_super_token"
+          baseURL: "http://[copilotgpt4service_host_ip]:8080/v1"
+          models:
+            default: ["gpt-4", "gpt-3.5-turbo"] # *See Notes
+          titleConvo: true
+          titleModel: "gpt-3.5-turbo"
+          summarize: true
+          summaryModel: "gpt-3.5-turbo"
+          forcePrompt: false
+          modelDisplayLabel: "OpenAI"
+          dropParams: ["user"]
+    ```
+    Replace `your_super_token` with the token you obtained following the instructions highlighted above and `[copilotgpt4service_host_ip]` with the IP of your Docker host. *****See Notes***
+
+    Restart Librechat after adding the needed configuration, and select `OpenAI via Copilot` to start using!
+
+    >Notes: 
+    > - *Only allowed models are `gpt-4` and `gpt-3.5-turbo`. 
+    > - **Advanced users can add this to their existing docker-compose file/existing docker network and avoid having to expose port 8080 (or any port) to the copilot-gpt4-service container. 
 
 ---
 

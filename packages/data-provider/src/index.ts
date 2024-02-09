@@ -5,6 +5,7 @@ export * from './parsers';
 /* types (exports schemas from `./types` as they contain needed in other defs) */
 export * from './types';
 export * from './types/assistants';
+export * from './types/queries';
 export * from './types/files';
 export * from './types/mutations';
 /* query/mutation keys */

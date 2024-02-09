@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom';
-import { useDeleteConversationMutation } from 'librechat-data-provider/react-query';
 import { useLocalize, useConversations, useNewConvo } from '~/hooks';
+import { useDeleteConversationMutation } from '~/data-provider';
 import { Dialog, DialogTrigger, Label } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { TrashIcon, CrossIcon } from '~/components/svg';

@@ -428,7 +428,10 @@ class BaseClient {
       await this.saveMessageToDatabase(userMessage, saveOptions, user);
     }
 
-    if (isEnabled(process.env.CHECK_BALANCE) && supportsBalanceCheck[this.options.endpoint]) {
+    if (
+      isEnabled(process.env.CHECK_BALANCE) &&
+      supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
+    ) {
       await checkBalance({
         req: this.options.req,
         res: this.options.res,
@@ -438,6 +441,7 @@ class BaseClient {
           amount: promptTokens,
           model: this.modelOptions.model,
           endpoint: this.options.endpoint,
+          endpointTokenConfig: this.options.endpointTokenConfig,
         },
       });
     }

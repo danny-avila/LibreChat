@@ -1,3 +1,4 @@
+import React from 'react';
 import { useForm } from 'react-hook-form';
 import { useLocalize } from '~/hooks';
 import { TLoginUser } from 'librechat-data-provider';
@@ -6,14 +7,22 @@ type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
 };
 
-function LoginForm({ onSubmit }: TLoginFormProps) {
+const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
   const localize = useLocalize();
-
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<TLoginUser>();
+
+  const renderError = (fieldName: string) => {
+    const errorMessage = errors[fieldName]?.message;
+    return errorMessage ? (
+      <span role="alert" className="mt-1 text-sm text-black">
+        {String(errorMessage)}
+      </span>
+    ) : null;
+  };
 
   return (
     <form
@@ -31,23 +40,14 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             aria-label={localize('com_auth_email')}
             {...register('email', {
               required: localize('com_auth_email_required'),
-              minLength: {
-                value: 3,
-                message: localize('com_auth_email_min_length'),
-              },
-              maxLength: {
-                value: 120,
-                message: localize('com_auth_email_max_length'),
-              },
-              pattern: {
-                value: /\S+@\S+\.\S+/,
-                message: localize('com_auth_email_pattern'),
-              },
+              minLength: { value: 3, message: localize('com_auth_email_min_length') },
+              maxLength: { value: 120, message: localize('com_auth_email_max_length') },
+              pattern: { value: /\S+@\S+\.\S+/, message: localize('com_auth_email_pattern') },
             })}
             aria-invalid={!!errors.email}
-            className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+            className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
             placeholder=" "
-          ></input>
+          />
           <label
             htmlFor="email"
             className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
@@ -55,12 +55,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             {localize('com_auth_email_address')}
           </label>
         </div>
-        {errors.email && (
-          <span role="alert" className="mt-1 text-sm text-black">
-            {/* @ts-ignore not sure why*/}
-            {errors.email.message}
-          </span>
-        )}
+        {renderError('email')}
       </div>
       <div className="mb-2">
         <div className="relative">
@@ -71,19 +66,13 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             aria-label={localize('com_auth_password')}
             {...register('password', {
               required: localize('com_auth_password_required'),
-              minLength: {
-                value: 8,
-                message: localize('com_auth_password_min_length'),
-              },
-              maxLength: {
-                value: 128,
-                message: localize('com_auth_password_max_length'),
-              },
+              minLength: { value: 8, message: localize('com_auth_password_min_length') },
+              maxLength: { value: 128, message: localize('com_auth_password_max_length') },
             })}
             aria-invalid={!!errors.password}
-            className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+            className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
             placeholder=" "
-          ></input>
+          />
           <label
             htmlFor="password"
             className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
@@ -91,15 +80,9 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
             {localize('com_auth_password')}
           </label>
         </div>
-
-        {errors.password && (
-          <span role="alert" className="mt-1 text-sm text-black">
-            {/* @ts-ignore not sure why*/}
-            {errors.password.message}
-          </span>
-        )}
+        {renderError('password')}
       </div>
-      <a href="/forgot-password" className="text-sm font-medium text-green-500 hover:underline">
+      <a href="/forgot-password" className="text-sm font-medium text-green-500">
         {localize('com_auth_password_forgot')}
       </a>
       <div className="mt-6">
@@ -107,12 +90,13 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
           aria-label="Sign in"
           data-testid="login-button"
           type="submit"
-          className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none">
+          className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-all duration-300 hover:bg-green-550 focus:bg-green-550 focus:outline-none"
+        >
           {localize('com_auth_continue')}
         </button>
       </div>
     </form>
   );
-}
+};
 
 export default LoginForm;

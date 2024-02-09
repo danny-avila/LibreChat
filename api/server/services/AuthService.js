@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { registerSchema, errorsToString } = require('~/strategies/validators');
+const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const Token = require('~/models/schema/tokenSchema');
 const { sendEmail } = require('~/server/utils');
 const Session = require('~/models/Session');
@@ -11,6 +12,27 @@ const domains = {
   client: process.env.DOMAIN_CLIENT,
   server: process.env.DOMAIN_SERVER,
 };
+
+async function isDomainAllowed(email) {
+  if (!email) {
+    return false;
+  }
+
+  const domain = email.split('@')[1];
+
+  if (!domain) {
+    return false;
+  }
+
+  const customConfig = await getCustomConfig();
+  if (!customConfig) {
+    return true;
+  } else if (!customConfig?.registration?.allowedDomains) {
+    return true;
+  }
+
+  return customConfig.registration.allowedDomains.includes(domain);
+}
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -78,6 +100,12 @@ const registerUser = async (user) => {
 
       // TODO: We should change the process to always email and be generic is signup works or fails (user enum)
       return { status: 500, message: 'Something went wrong' };
+    }
+
+    if (!(await isDomainAllowed(email))) {
+      const errorMessage = 'Registration from this domain is not allowed.';
+      logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
+      return { status: 403, message: errorMessage };
     }
 
     //determine if this is the first registered user (not counting anonymous_user)
@@ -239,6 +267,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
 module.exports = {
   registerUser,
   logoutUser,
+  isDomainAllowed,
   requestPasswordReset,
   resetPassword,
   setAuthTokens,

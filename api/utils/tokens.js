@@ -1,3 +1,4 @@
+const z = require('zod');
 const { EModelEndpoint } = require('librechat-data-provider');
 
 const models = [
@@ -54,31 +55,37 @@ const openAIModels = {
   'gpt-3.5-turbo-16k': 16375, // -10 from max
   'gpt-3.5-turbo-16k-0613': 16375, // -10 from max
   'gpt-3.5-turbo-1106': 16375, // -10 from max
+  'gpt-3.5-turbo-0125': 16375, // -10 from max
   'mistral-': 31990, // -10 from max
+};
+
+const googleModels = {
+  /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
+  gemini: 32750, // -10 from max
+  'text-bison-32k': 32758, // -10 from max
+  'chat-bison-32k': 32758, // -10 from max
+  'code-bison-32k': 32758, // -10 from max
+  'codechat-bison-32k': 32758,
+  /* Codey, -5 from max: 6144 */
+  'code-': 6139,
+  'codechat-': 6139,
+  /* PaLM2, -5 from max: 8192 */
+  'text-': 8187,
+  'chat-': 8187,
+};
+
+const anthropicModels = {
+  'claude-2.1': 200000,
+  'claude-': 100000,
 };
 
 // Order is important here: by model series and context size (gpt-4 then gpt-3, ascending)
 const maxTokensMap = {
-  [EModelEndpoint.openAI]: openAIModels,
-  [EModelEndpoint.custom]: openAIModels,
-  [EModelEndpoint.google]: {
-    /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
-    gemini: 32750, // -10 from max
-    'text-bison-32k': 32758, // -10 from max
-    'chat-bison-32k': 32758, // -10 from max
-    'code-bison-32k': 32758, // -10 from max
-    'codechat-bison-32k': 32758,
-    /* Codey, -5 from max: 6144 */
-    'code-': 6139,
-    'codechat-': 6139,
-    /* PaLM2, -5 from max: 8192 */
-    'text-': 8187,
-    'chat-': 8187,
-  },
-  [EModelEndpoint.anthropic]: {
-    'claude-2.1': 200000,
-    'claude-': 100000,
-  },
+  [EModelEndpoint.azureOpenAI]: openAIModels,
+  [EModelEndpoint.openAI]: { ...openAIModels, ...googleModels, ...anthropicModels },
+  [EModelEndpoint.custom]: { ...openAIModels, ...googleModels, ...anthropicModels },
+  [EModelEndpoint.google]: googleModels,
+  [EModelEndpoint.anthropic]: anthropicModels,
 };
 
 /**
@@ -87,6 +94,7 @@ const maxTokensMap = {
  *
  * @param {string} modelName - The name of the model to look up.
  * @param {string} endpoint - The endpoint (default is 'openAI').
+ * @param {EndpointTokenConfig} [endpointTokenConfig] - Token Config for current endpoint to use for max tokens lookup
  * @returns {number|undefined} The maximum tokens for the given model or undefined if no match is found.
  *
  * @example
@@ -94,14 +102,19 @@ const maxTokensMap = {
  * getModelMaxTokens('gpt-4-32k-unknown'); // Returns 32767
  * getModelMaxTokens('unknown-model'); // Returns undefined
  */
-function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI) {
+function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI, endpointTokenConfig) {
   if (typeof modelName !== 'string') {
     return undefined;
   }
 
-  const tokensMap = maxTokensMap[endpoint];
+  /** @type {EndpointTokenConfig | Record<string, number>} */
+  const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint];
   if (!tokensMap) {
     return undefined;
+  }
+
+  if (tokensMap[modelName]?.context) {
+    return tokensMap[modelName].context;
   }
 
   if (tokensMap[modelName]) {
@@ -111,7 +124,8 @@ function getModelMaxTokens(modelName, endpoint = EModelEndpoint.openAI) {
   const keys = Object.keys(tokensMap);
   for (let i = keys.length - 1; i >= 0; i--) {
     if (modelName.includes(keys[i])) {
-      return tokensMap[keys[i]];
+      const result = tokensMap[keys[i]];
+      return result?.context ?? result;
     }
   }
 
@@ -156,9 +170,55 @@ function matchModelName(modelName, endpoint = EModelEndpoint.openAI) {
   return modelName;
 }
 
+const modelSchema = z.object({
+  id: z.string(),
+  pricing: z.object({
+    prompt: z.string(),
+    completion: z.string(),
+  }),
+  context_length: z.number(),
+});
+
+const inputSchema = z.object({
+  data: z.array(modelSchema),
+});
+
+/**
+ * Processes a list of model data from an API and organizes it into structured data based on URL and specifics of rates and context.
+ * @param {{ data: Array<z.infer<typeof modelSchema>> }} input The input object containing base URL and data fetched from the API.
+ * @returns {EndpointTokenConfig} The processed model data.
+ */
+function processModelData(input) {
+  const validationResult = inputSchema.safeParse(input);
+  if (!validationResult.success) {
+    throw new Error('Invalid input data');
+  }
+  const { data } = validationResult.data;
+
+  /** @type {EndpointTokenConfig} */
+  const tokenConfig = {};
+
+  for (const model of data) {
+    const modelKey = model.id;
+    const prompt = parseFloat(model.pricing.prompt) * 1000000;
+    const completion = parseFloat(model.pricing.completion) * 1000000;
+
+    tokenConfig[modelKey] = {
+      prompt,
+      completion,
+      context: model.context_length,
+    };
+  }
+
+  return tokenConfig;
+}
+
 module.exports = {
   tiktokenModels: new Set(models),
   maxTokensMap,
+  inputSchema,
+  modelSchema,
   getModelMaxTokens,
   matchModelName,
+  processModelData,
 };

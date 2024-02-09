@@ -1,4 +1,6 @@
 // Italian phrases
+// file deepcode ignore NoHardcodedPasswords: No hardcoded values present in this file
+// file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
   com_ui_examples: 'Esempi',
@@ -69,10 +71,10 @@ export default {
   com_auth_no_account: 'Non hai un account?',
   com_auth_sign_up: 'Registrati',
   com_auth_sign_in: 'Accedi',
-  com_auth_google_login: 'Accedi con Google',
-  com_auth_facebook_login: 'Accedi con Facebook',
-  com_auth_github_login: 'Accedi con Github',
-  com_auth_discord_login: 'Accedi con Discord',
+  com_auth_google_login: 'Continua con Google',
+  com_auth_facebook_login: 'Continua con Facebook',
+  com_auth_github_login: 'Continua con Github',
+  com_auth_discord_login: 'Continua con Discord',
   com_auth_email: 'Email',
   com_auth_email_required: 'L\'email è obbligatoria',
   com_auth_email_min_length: 'L\'email deve essere lunga almeno 6 caratteri',

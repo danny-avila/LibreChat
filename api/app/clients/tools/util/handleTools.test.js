@@ -53,6 +53,7 @@ describe('Tool Handlers', () => {
       username: 'fakeuser',
       email: 'fakeuser@example.com',
       emailVerified: false,
+      // file deepcode ignore NoHardcodedPasswords/test: fake value
       password: 'fakepassword123',
       avatar: '',
       provider: 'local',

@@ -1,5 +1,13 @@
 import { TPreset } from '../types';
 
+export type TGenTitleRequest = {
+  conversationId: string;
+};
+
+export type TGenTitleResponse = {
+  title: string;
+};
+
 export type PresetDeleteResponse = {
   acknowledged: boolean;
   deletedCount: number;

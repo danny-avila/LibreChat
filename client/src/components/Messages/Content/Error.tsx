@@ -1,3 +1,5 @@
+// file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
+
 import React from 'react';
 import type { TOpenAIMessage } from 'librechat-data-provider';
 import { formatJSON, extractJson, isJson } from '~/utils/json';

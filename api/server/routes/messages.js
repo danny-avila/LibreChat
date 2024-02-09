@@ -36,7 +36,7 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
   const { messageId, model } = req.params;
   const { text } = req.body;
   const tokenCount = await countTokens(text, model);
-  res.status(201).send(await updateMessage({ messageId, text, tokenCount }));
+  res.status(201).json(await updateMessage({ messageId, text, tokenCount }));
 });
 
 // DELETE

@@ -93,7 +93,7 @@ async function saveFileFromURL({ userId, URL, fileName, basePath = 'images' }) {
     }
 
     // Create a writable stream for the output path
-    const outputFilePath = path.join(outputPath, fileName);
+    const outputFilePath = path.join(outputPath, path.basename(fileName));
     const writer = fs.createWriteStream(outputFilePath);
 
     // Pipe the response data to the output file
