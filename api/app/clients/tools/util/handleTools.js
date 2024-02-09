@@ -3,23 +3,25 @@ const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
 const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
 const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
-const { TavilySearchResults } = require('@langchain/community/tools/tavily_search');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
+  // Basic Tools
+  CodeBrew,
+  AzureAISearch,
   GoogleSearchAPI,
   WolframAlphaAPI,
-  StructuredWolfram,
   OpenAICreateImage,
   StableDiffusionAPI,
+  // Structured Tools
   DALLE3,
-  StructuredSD,
-  AzureAISearch,
-  StructuredACS,
   E2BTools,
   CodeSherpa,
+  StructuredSD,
+  StructuredACS,
   CodeSherpaTools,
-  CodeBrew,
+  StructuredWolfram,
+  TavilySearchResults,
 } = require('../');
 const { loadToolSuite } = require('./loadToolSuite');
 const { loadSpecs } = require('./loadSpecs');
