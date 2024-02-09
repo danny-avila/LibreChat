@@ -48,7 +48,7 @@ const useNewConvo = (index = 0) => {
     ({ snapshot }) =>
       async (
         conversation: TConversation,
-        preset: TPreset | null = null,
+        preset: Partial<TPreset> | null = null,
         modelsData?: TModelsConfig,
         buildDefault?: boolean,
         keepLatestMessage?: boolean,
@@ -121,7 +121,7 @@ const useNewConvo = (index = 0) => {
       keepLatestMessage = false,
     }: {
       template?: Partial<TConversation>;
-      preset?: TPreset;
+      preset?: Partial<TPreset>;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
       keepLatestMessage?: boolean;
