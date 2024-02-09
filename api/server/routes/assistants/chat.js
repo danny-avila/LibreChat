@@ -10,7 +10,7 @@ const {
 } = require('~/server/services/Threads');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const { addTitle, initializeClient } = require('~/server/services/Endpoints/assistant');
-const { createRun } = require('~/server/services/Runs');
+const { createRun, sleep } = require('~/server/services/Runs');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { sendMessage } = require('~/server/utils');
@@ -48,9 +48,7 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
       thread_id: _thread_id,
       conversationId: convoId,
       parentMessageId: _parentId = Constants.NO_PARENT,
-      // TODO: model is not currently sent from the frontend
-      // maybe it should only be sent when changed from the assistant's model?
-      // model: _model = defaultModel,
+      model: _model,
     } = req.body;
 
     if (convoId && !_thread_id) {
@@ -256,6 +254,14 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
       messageId: responseMessage.messageId,
       messages: response.messages,
     });
+
+    if (!response.run.usage) {
+      await sleep(3000);
+      const completedRun = await openai.beta.threads.runs.retrieve(thread_id, run.id);
+      console.dir(completedRun, { depth: null });
+    } else {
+      console.dir(response.run.usage, { depth: null });
+    }
   } catch (error) {
     // res.status(500).json({ error: error.message });
     if (error.message !== 'Run cancelled') {
