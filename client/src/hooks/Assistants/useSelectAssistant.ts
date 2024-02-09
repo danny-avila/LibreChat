@@ -31,11 +31,18 @@ export default function useSelectAssistant() {
           conversation: { ...(conversation ?? {}) },
           preset: template,
         });
-        newConversation({ template: currentConvo, keepLatestMessage: true });
+        newConversation({
+          template: currentConvo,
+          preset: template as Partial<TPreset>,
+          keepLatestMessage: true,
+        });
         return;
       }
 
-      newConversation({ template: { ...(template as Partial<TConversation>) } });
+      newConversation({
+        template: { ...(template as Partial<TConversation>) },
+        preset: template as Partial<TPreset>,
+      });
     },
     [assistantMap, conversation, getDefaultConversation, newConversation],
   );
