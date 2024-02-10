@@ -127,7 +127,7 @@ const MessageContent = ({
           {showText ? (
             <DisplayMessage
               key={`display-${messageId}-${idx}`}
-              showCursor={isLastIndex && isLast}
+              showCursor={isLastIndex && isLast && isSubmitting}
               text={currentText}
               {...props}
             />
