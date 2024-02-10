@@ -55,13 +55,15 @@ export default function Knowledge({
       <div className="mb-1.5 flex items-center">
         <span>
           <label className="text-token-text-primary block font-medium">
-            {localize('com_assistants_knowledge')}
+            {assistant_id
+              ? localize('com_assistants_knowledge')
+              : localize('com_assistants_knowledge_disabled')}
           </label>
         </span>
       </div>
       <div className="flex flex-col gap-4">
         <div className="text-token-text-tertiary rounded-lg">
-          {localize('com_assistants_knowledge_info')}
+          {assistant_id ? localize('com_assistants_knowledge_info') : ''}
         </div>
         {/* Files available to both tools */}
         <FileRow
@@ -87,6 +89,7 @@ export default function Knowledge({
         <div>
           <button
             type="button"
+            disabled={!assistant_id}
             className="btn btn-neutral border-token-border-light relative h-8 rounded-lg font-medium"
             onClick={handleButtonClick}
           >
@@ -97,6 +100,7 @@ export default function Knowledge({
                 style={{ display: 'none' }}
                 tabIndex={-1}
                 ref={fileInputRef}
+                disabled={!assistant_id}
                 onChange={handleFileChange}
               />
               {localize('com_ui_upload_files')}

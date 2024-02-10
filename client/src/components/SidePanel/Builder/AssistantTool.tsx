@@ -1,7 +1,16 @@
 import type { TPlugin } from 'librechat-data-provider';
 import GearIcon from '~/components/svg/GearIcon';
+import { cn } from '~/utils';
 
-export default function AssistantTool({ tool, allTools }: { tool: string; allTools: TPlugin[] }) {
+export default function AssistantTool({
+  tool,
+  allTools,
+  assistant_id,
+}: {
+  tool: string;
+  allTools: TPlugin[];
+  assistant_id?: string;
+}) {
   const currentTool = allTools.find((t) => t.pluginKey === tool);
 
   if (!currentTool) {
@@ -10,7 +19,12 @@ export default function AssistantTool({ tool, allTools }: { tool: string; allToo
 
   return (
     <div>
-      <div className="border-token-border-medium flex w-full rounded-lg border text-sm hover:cursor-pointer">
+      <div
+        className={cn(
+          'border-token-border-medium flex w-full rounded-lg border text-sm hover:cursor-pointer',
+          !assistant_id ? 'opacity-40' : '',
+        )}
+      >
         {currentTool.icon && (
           <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full">
             <div

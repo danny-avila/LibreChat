@@ -35,7 +35,17 @@ router.post('/', async (req, res) => {
     /** @type {{ openai: OpenAI }} */
     const { openai } = await initializeClient({ req, res });
 
-    const assistantData = req.body;
+    const { tools = [], ...assistantData } = req.body;
+    assistantData.tools = tools
+      .map((tool) => {
+        if (typeof tool !== 'string') {
+          return tool;
+        }
+
+        return req.app.locals.availableTools[tool];
+      })
+      .filter((tool) => tool);
+
     const assistant = await openai.beta.assistants.create(assistantData);
     logger.debug('/assistants/', assistant);
     res.status(201).json(assistant);

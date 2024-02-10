@@ -368,7 +368,12 @@ export default function AssistantPanel({
             <label className={labelClass}>{localize('com_assistants_tools_section')}</label>
             <div className="space-y-1">
               {functions.map((func) => (
-                <AssistantTool key={func} tool={func} allTools={allTools} />
+                <AssistantTool
+                  key={func}
+                  tool={func}
+                  allTools={allTools}
+                  assistant_id={assistant_id}
+                />
               ))}
               {actions
                 .filter((action) => action.assistant_id === assistant_id)
@@ -426,7 +431,11 @@ export default function AssistantPanel({
             </button>
           </div>
         </div>
-        <ToolSelectDialog isOpen={showToolDialog} setIsOpen={setShowToolDialog} />
+        <ToolSelectDialog
+          isOpen={showToolDialog}
+          setIsOpen={setShowToolDialog}
+          assistant_id={assistant_id}
+        />
       </form>
     </FormProvider>
   );

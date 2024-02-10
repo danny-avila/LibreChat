@@ -6,6 +6,8 @@ export default {
   com_assistants_knowledge: 'Knowledge',
   com_assistants_knowledge_info:
     'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
+  com_assistants_knowledge_disabled:
+    'Assistant must be created before uploading files as Knowledge.',
   com_assistants_code_interpreter: 'Code Interpreter',
   com_assistants_code_interpreter_files:
     'The following files are only available for Code Interpreter:',
@@ -321,6 +323,7 @@ export default {
   com_nav_tool_add: 'Add',
   com_nav_tool_remove: 'Remove',
   com_nav_tool_dialog: 'Assistant Tools',
+  com_nav_tool_dialog_description: 'Assistant must be saved to persist tool selections.',
   com_show_agent_settings: 'Show Agent Settings',
   com_show_completion_settings: 'Show Completion Settings',
   com_hide_examples: 'Hide Examples',

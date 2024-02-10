@@ -161,7 +161,7 @@ export default function ActionsInput({
     });
   });
 
-  const handleInputChange = (event) => {
+  const handleInputChange: React.ChangeEventHandler<HTMLTextAreaElement> = (event) => {
     const newValue = event.target.value;
     setInputValue(newValue);
     if (!newValue) {
