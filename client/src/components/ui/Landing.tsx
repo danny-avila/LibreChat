@@ -43,19 +43,19 @@ export default function Landing() {
             <ul className="m-auto flex w-full flex-col gap-3.5 sm:max-w-md">
               <button
                 onClick={clickHandler}
-                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-800"
+                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-600"
               >
                 &quot;{localize('com_ui_example_quantum_computing')}&quot; →
               </button>
               <button
                 onClick={clickHandler}
-                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-800"
+                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-600"
               >
                 &quot;{localize('com_ui_example_10_year_old_b_day')}&quot; →
               </button>
               <button
                 onClick={clickHandler}
-                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-800"
+                className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-600"
               >
                 &quot;{localize('com_ui_example_http_in_js')}&quot; →
               </button>

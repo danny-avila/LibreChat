@@ -91,7 +91,7 @@ export default function Message(props: TMessageProps) {
     'w-full border-b text-gray-800 group border-black/10 dark:border-gray-800/50 dark:text-gray-200';
   const uniqueClasses = isCreatedByUser
     ? 'bg-white dark:bg-gray-800 dark:text-gray-20'
-    : 'bg-gray-50 dark:bg-gray-1000 dark:text-gray-100';
+    : 'bg-gray-50 dark:bg-gray-700 dark:text-gray-100';
 
   const messageProps = {
     className: cn(commonClasses, uniqueClasses),
