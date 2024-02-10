@@ -332,10 +332,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         } else if (response.status === 204) {
           const responseMessage = {
             ...submission.initialResponse,
-            text: submission.initialResponse.text.replace(
-              '<span className="result-streaming">█</span>',
-              '',
-            ),
           };
 
           return {
