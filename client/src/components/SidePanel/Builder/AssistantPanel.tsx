@@ -67,7 +67,9 @@ export default function AssistantPanel({
   const update = useUpdateAssistantMutation({
     onSuccess: (data) => {
       showToast({
-        message: `${localize('com_assistants_update_success')} ${data.name}`,
+        message: `${localize('com_assistants_update_success')} ${
+          data.name ?? localize('com_ui_assistant')
+        }`,
       });
     },
     onError: (err) => {
@@ -84,7 +86,9 @@ export default function AssistantPanel({
     onSuccess: (data) => {
       setCurrentAssistantId(data.id);
       showToast({
-        message: `${localize('com_assistants_create_success')} ${data.name}`,
+        message: `${localize('com_assistants_create_success')} ${
+          data.name ?? localize('com_ui_assistant')
+        }`,
       });
     },
     onError: (err) => {
