@@ -84,6 +84,15 @@ const deleteFile = async (file_id) => {
 };
 
 /**
+ * Deletes a file identified by a filter.
+ * @param {object} filter - The filter criteria to apply.
+ * @returns {Promise<MongoFile>} A promise that resolves to the deleted file document or null.
+ */
+const deleteFileByFilter = async (filter) => {
+  return await File.findOneAndDelete(filter).lean();
+};
+
+/**
  * Deletes multiple files identified by an array of file_ids.
  * @param {Array<string>} file_ids - The unique identifiers of the files to delete.
  * @returns {Promise<Object>} A promise that resolves to the result of the deletion operation.
@@ -101,4 +110,5 @@ module.exports = {
   updateFileUsage,
   deleteFile,
   deleteFiles,
+  deleteFileByFilter,
 };

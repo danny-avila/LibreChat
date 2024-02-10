@@ -1,9 +1,11 @@
 const multer = require('multer');
 const express = require('express');
+const { FileContext } = require('librechat-data-provider');
 const { updateAssistant, getAssistants } = require('~/models/Assistant');
 const { initializeClient } = require('~/server/services/Endpoints/assistant');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
+const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
 const actions = require('./actions');
 const tools = require('./tools');
@@ -185,8 +187,7 @@ router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => 
     /** @type {{ openai: OpenAI }} */
     const { openai } = await initializeClient({ req, res });
 
-    const image = await uploadImageBuffer({ req });
-    // TODO: create database record file and context for assistant avatar
+    const image = await uploadImageBuffer({ req, context: FileContext.avatar });
 
     try {
       _metadata = JSON.parse(_metadata);
@@ -199,6 +200,7 @@ router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => 
       const { deleteFile } = getStrategyFunctions(_metadata.avatar_source);
       try {
         await deleteFile(req, { filepath: _metadata.avatar });
+        await deleteFileByFilter({ filepath: _metadata.avatar });
       } catch (error) {
         logger.error('[/avatar/:assistant_id] Error deleting old avatar', error);
       }

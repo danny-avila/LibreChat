@@ -53,7 +53,8 @@ async function resizeAvatar({ userId, input }) {
       })
       .toBuffer();
 
-    return await resizeAndConvert(squaredBuffer);
+    const { buffer } = await resizeAndConvert(squaredBuffer);
+    return buffer;
   } catch (error) {
     logger.error('Error uploading the avatar:', error);
     throw error;

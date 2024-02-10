@@ -210,21 +210,32 @@ const processImageFile = async ({ req, res, file, metadata }) => {
  *
  * @param {Object} params - The parameters object.
  * @param {Express.Request} params.req - The Express request object.
+ * @param {FileContext} params.context - The context of the file (e.g., 'avatar', 'image_generation', etc.)
  * @returns {Promise<{ filepath: string, filename: string, source: string, type: 'image/webp'}>}
  */
-const uploadImageBuffer = async ({ req }) => {
+const uploadImageBuffer = async ({ req, context }) => {
   const source = req.app.locals.fileStrategy;
   const { saveBuffer } = getStrategyFunctions(source);
-  const buffer = await resizeAndConvert(req.file.buffer);
-  const fileName = `img-${v4()}.webp`;
+  const { buffer, width, height, bytes } = await resizeAndConvert(req.file.buffer);
+  const file_id = v4();
+  const fileName = `img-${file_id}.webp`;
 
   const filepath = await saveBuffer({ userId: req.user.id, fileName, buffer });
-  return {
-    filepath,
-    fileName,
-    source,
-    type: 'image/webp',
-  };
+  return await createFile(
+    {
+      user: req.user.id,
+      file_id,
+      bytes,
+      filepath,
+      filename: req.file.originalname,
+      context,
+      source,
+      type: 'image/webp',
+      width,
+      height,
+    },
+    true,
+  );
 };
 
 /**
