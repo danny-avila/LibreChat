@@ -16,11 +16,10 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const localize = useLocalize();
   let { endpoint } = conversation ?? {};
   if (
-    (console.log('showBirthdayIcon', startupConfig.showBirthdayIcon),
     endpoint === EModelEndpoint.assistant ||
-      endpoint === EModelEndpoint.chatGPTBrowser ||
-      endpoint === EModelEndpoint.azureOpenAI ||
-      endpoint === EModelEndpoint.gptPlugins)
+    endpoint === EModelEndpoint.chatGPTBrowser ||
+    endpoint === EModelEndpoint.azureOpenAI ||
+    endpoint === EModelEndpoint.gptPlugins
   ) {
     endpoint = EModelEndpoint.openAI;
   }
