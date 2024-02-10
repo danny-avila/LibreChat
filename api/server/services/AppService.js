@@ -1,6 +1,7 @@
 const { FileSources } = require('librechat-data-provider');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
+const handleRateLimits = require('./Config/handleRateLimits');
 const { loadAndFormatTools } = require('./ToolService');
 const paths = require('~/config/paths');
 
@@ -13,6 +14,8 @@ const paths = require('~/config/paths');
 const AppService = async (app) => {
   /** @type {TCustomConfig}*/
   const config = (await loadCustomConfig()) ?? {};
+  handleRateLimits(config?.rateLimits);
+
   const socialLogins = config?.registration?.socialLogins ?? [
     'google',
     'facebook',
@@ -27,6 +30,7 @@ const AppService = async (app) => {
     initializeFirebase();
   }
 
+  /** @type {Record<string, FunctionTool} */
   const availableTools = loadAndFormatTools({
     directory: paths.structuredTools,
     filter: new Set([
@@ -37,8 +41,6 @@ const AppService = async (app) => {
       'extractionChain.js',
     ]),
   });
-
-  /** @type {Record<string, FunctionTool} */
 
   app.locals = {
     socialLogins,

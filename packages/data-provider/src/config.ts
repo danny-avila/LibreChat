@@ -28,6 +28,17 @@ export const endpointSchema = z.object({
   headers: z.record(z.any()).optional(),
 });
 
+export const rateLimitSchema = z.object({
+  fileUploads: z
+    .object({
+      ipMax: z.number().optional(),
+      ipWindowInMinutes: z.number().optional(),
+      userMax: z.number().optional(),
+      userWindowInMinutes: z.number().optional(),
+    })
+    .optional(),
+});
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean(),
@@ -38,8 +49,10 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .optional(),
+  rateLimits: rateLimitSchema.optional(),
   endpoints: z
     .object({
+      uploadEnabledEndpoints: z.array(z.string()).optional(),
       custom: z.array(endpointSchema.partial()),
     })
     .strict()
@@ -237,6 +250,10 @@ export enum CacheKeys {
    * Key for the override config cache.
    */
   OVERRIDE_CONFIG = 'overrideConfig',
+  /**
+   * Key for accessing File Upload Violations (exceeding limit).
+   */
+  FILE_UPLOAD_LIMIT = 'file_upload_limit',
 }
 
 /**
