@@ -25,7 +25,7 @@
 }
 
 .nav-mask.active {
-  opacity: 1;
+  opacity: 0;
   pointer-events: auto;
 }
 
@@ -41,7 +41,7 @@
     right: 0;
     top: 0;
     bottom: 0;
-    background-color: rgba(86, 88, 105, 0.75);
+    background-color: rgba(7, 7, 7, 0.4);
     padding-left: 420px;
     padding-top: 12px;
     opacity: 0;
