@@ -123,7 +123,7 @@ router.delete('/:id', async (req, res) => {
     res.json(deletionStatus);
   } catch (error) {
     logger.error('[/assistants/:id] Error deleting assistant', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Error deleting assistant' });
   }
 });
 
@@ -177,11 +177,16 @@ router.get('/documents', async (req, res) => {
 router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => {
   try {
     const { assistant_id } = req.params;
+    if (!assistant_id) {
+      return res.status(400).json({ message: 'Assistant ID is required' });
+    }
+
     let { metadata: _metadata = '{}' } = req.body;
     /** @type {{ openai: OpenAI }} */
     const { openai } = await initializeClient({ req, res });
 
     const image = await uploadImageBuffer({ req });
+    // TODO: create database record file and context for assistant avatar
 
     try {
       _metadata = JSON.parse(_metadata);
@@ -220,7 +225,7 @@ router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => 
     promises.push(openai.beta.assistants.update(assistant_id, { metadata }));
 
     const resolved = await Promise.all(promises);
-    res.json(resolved[1]);
+    res.status(201).json(resolved[1]);
   } catch (error) {
     const message = 'An error occurred while updating the Assistant Avatar';
     logger.error(message, error);

@@ -6,6 +6,8 @@ import {
   FileSources,
 } from 'librechat-data-provider';
 import type { UseFormReset } from 'react-hook-form';
+import type { UseMutationResult } from '@tanstack/react-query';
+import type { Assistant, AssistantCreateParams } from 'librechat-data-provider';
 import type { AssistantForm, Actions, TAssistantOption, ExtendedFile } from '~/common';
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { useListAssistantsQuery } from '~/data-provider';
@@ -20,11 +22,13 @@ export default function AssistantSelect({
   value,
   selectedAssistant,
   setCurrentAssistantId,
+  createMutation,
 }: {
   reset: UseFormReset<AssistantForm>;
   value: TAssistantOption;
   selectedAssistant: string | null;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
+  createMutation: UseMutationResult<Assistant, Error, AssistantCreateParams>;
 }) {
   const localize = useLocalize();
   const fileMap = useFileMapContext();
@@ -70,6 +74,7 @@ export default function AssistantSelect({
     (value: string) => {
       const assistant = assistants.data?.find((assistant) => assistant.id === value);
 
+      createMutation.reset();
       if (!assistant) {
         setCurrentAssistantId(undefined);
         return reset(defaultAssistantFormValues);
@@ -118,7 +123,7 @@ export default function AssistantSelect({
       reset(formValues);
       setCurrentAssistantId(assistant?.id);
     },
-    [assistants.data, reset, setCurrentAssistantId],
+    [assistants.data, reset, setCurrentAssistantId, createMutation],
   );
 
   useEffect(() => {

@@ -175,6 +175,7 @@ export default function AssistantPanel({
                 value={field.value}
                 setCurrentAssistantId={setCurrentAssistantId}
                 selectedAssistant={current_assistant_id ?? null}
+                createMutation={create}
               />
             )}
           />
@@ -197,8 +198,9 @@ export default function AssistantPanel({
           {/* Avatar & Name */}
           <div className="mb-4">
             <AssistantAvatar
-              assistant_id={assistant_id}
-              metadata={typeof assistant !== 'string' ? assistant.metadata : null}
+              createMutation={create}
+              assistant_id={assistant_id ?? null}
+              metadata={assistant?.['metadata'] ?? null}
             />
             <label className={labelClass} htmlFor="name">
               {localize('com_ui_name')}
@@ -415,6 +417,7 @@ export default function AssistantPanel({
             <ContextButton
               assistant_id={assistant_id}
               setCurrentAssistantId={setCurrentAssistantId}
+              createMutation={create}
             />
             {/* Submit Button */}
             <button

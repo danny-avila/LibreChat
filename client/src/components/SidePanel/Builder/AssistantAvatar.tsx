@@ -1,8 +1,14 @@
 import * as Popover from '@radix-ui/react-popover';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { fileConfig, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
-import type { Metadata, AssistantListResponse } from 'librechat-data-provider';
+import type { UseMutationResult } from '@tanstack/react-query';
+import type {
+  Metadata,
+  AssistantListResponse,
+  Assistant,
+  AssistantCreateParams,
+} from 'librechat-data-provider';
 import { useUploadAssistantAvatarMutation } from '~/data-provider';
 import { AssistantAvatar, NoImage, AvatarMenu } from './Images';
 import { useToastContext } from '~/Providers';
@@ -10,12 +16,22 @@ import { useToastContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 // import { cn } from '~/utils/';
 
-function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: null | Metadata }) {
+function Avatar({
+  assistant_id,
+  metadata,
+  createMutation,
+}: {
+  assistant_id: string | null;
+  metadata: null | Metadata;
+  createMutation: UseMutationResult<Assistant, Error, AssistantCreateParams>;
+}) {
+  // console.log('Avatar', assistant_id, metadata, createMutation);
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const [progress, setProgress] = useState<number>(1);
-  const [input, setinput] = useState<File | null>(null);
+  const [input, setInput] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const lastSeenCreatedId = useRef<string | null>(null);
 
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -24,8 +40,16 @@ function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: nu
     onMutate: () => {
       setProgress(0.4);
     },
-    onSuccess: (data) => {
-      showToast({ message: localize('com_ui_upload_success') });
+    onSuccess: (data, vars) => {
+      if (!vars.postCreation) {
+        showToast({ message: localize('com_ui_upload_success') });
+      } else if (lastSeenCreatedId.current !== createMutation.data?.id) {
+        lastSeenCreatedId.current = createMutation.data?.id ?? '';
+      }
+
+      setInput(null);
+      setPreviewUrl(data.metadata?.avatar as string | null);
+
       const res = queryClient.getQueryData<AssistantListResponse>([
         QueryKeys.assistants,
         defaultOrderQuery,
@@ -55,6 +79,7 @@ function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: nu
     },
     onError: (error) => {
       console.error('Error:', error);
+      setInput(null);
       setPreviewUrl(null);
       showToast({ message: localize('com_ui_upload_error'), status: 'error' });
       setProgress(1);
@@ -68,14 +93,57 @@ function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: nu
         setPreviewUrl(reader.result as string);
       };
       reader.readAsDataURL(input);
-    } else {
-      setPreviewUrl(null);
     }
   }, [input]);
 
   useEffect(() => {
     setPreviewUrl((metadata?.avatar as string | undefined) ?? null);
-  }, [metadata?.avatar]);
+  }, [metadata]);
+
+  useEffect(() => {
+    /** Experimental: Condition to prime avatar upload before Assistant Creation
+     * - If the createMutation state Id was last seen (current) and the createMutation is successful
+     * we can assume that the avatar upload has already been initiated and we can skip the upload
+     *
+     * The mutation state is not reset until the user deliberately selects a new assistant or an assistant is deleted
+     *
+     * This prevents the avatar from being uploaded multiple times before the user selects a new assistant
+     * while allowing the user to upload to prime the avatar and other values before the assistant is created.
+     */
+    const sharedUploadCondition = !!(
+      createMutation.isSuccess &&
+      input &&
+      previewUrl &&
+      previewUrl?.includes('base64')
+    );
+    if (sharedUploadCondition && lastSeenCreatedId.current === createMutation.data?.id) {
+      return;
+    }
+
+    if (sharedUploadCondition && createMutation.data.id) {
+      console.log(
+        'createMutation.isSuccess',
+        createMutation.isSuccess,
+        input,
+        createMutation.data,
+        previewUrl,
+      );
+
+      const formData = new FormData();
+      formData.append('file', input, input.name);
+      formData.append('assistant_id', createMutation.data.id);
+
+      if (typeof createMutation.data?.metadata === 'object') {
+        formData.append('metadata', JSON.stringify(createMutation.data?.metadata));
+      }
+
+      uploadAvatar({
+        assistant_id: createMutation.data.id,
+        postCreation: true,
+        formData,
+      });
+    }
+  }, [createMutation.data, createMutation.isSuccess, input, previewUrl, uploadAvatar]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
@@ -86,7 +154,14 @@ function Avatar({ assistant_id, metadata }: { assistant_id: string; metadata: nu
         return;
       }
 
-      setinput(file);
+      setInput(file);
+      setMenuOpen(false);
+
+      if (!assistant_id) {
+        // wait for successful form submission before uploading avatar
+        console.log('No assistant_id, will wait until form submission + upload');
+        return;
+      }
 
       const formData = new FormData();
       formData.append('file', file, file.name);

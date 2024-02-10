@@ -410,7 +410,8 @@ export const useUploadAssistantAvatarMutation = (
   unknown // context
 > => {
   return useMutation([MutationKeys.assistantAvatarUpload], {
-    mutationFn: (variables: AssistantAvatarVariables) =>
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    mutationFn: ({ postCreation, ...variables }: AssistantAvatarVariables) =>
       dataService.uploadAssistantAvatar(variables),
     ...(options || {}),
   });

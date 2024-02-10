@@ -1,5 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
-import type { Assistant } from 'librechat-data-provider';
+import type { Assistant, AssistantCreateParams } from 'librechat-data-provider';
+import type { UseMutationResult } from '@tanstack/react-query';
 import { Dialog, DialogTrigger, Label } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useDeleteAssistantMutation } from '~/data-provider';
@@ -11,9 +12,11 @@ import { useChatContext } from '~/Providers';
 export default function ContextButton({
   assistant_id,
   setCurrentAssistantId,
+  createMutation,
 }: {
   assistant_id: string;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
+  createMutation: UseMutationResult<Assistant, Error, AssistantCreateParams>;
 }) {
   const localize = useLocalize();
   const { conversation } = useChatContext();
@@ -24,6 +27,11 @@ export default function ContextButton({
       const updatedList = context as Assistant[] | undefined;
       if (!updatedList) {
         return;
+      }
+
+      if (createMutation.data?.id) {
+        console.log('[deleteAssistant] resetting createMutation');
+        createMutation.reset();
       }
 
       const firstAssistant = updatedList[0] as Assistant | undefined;
