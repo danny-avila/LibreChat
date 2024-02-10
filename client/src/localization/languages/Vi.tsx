@@ -3,6 +3,7 @@
 export default {
   com_ui_examples: 'Ví dụ',
   com_ui_new_chat: 'Trò chuyện mới',
+  com_ui_happy_birthday: 'Đây là sinh nhật đầu tiên của tôi!',
   com_ui_example_quantum_computing: 'Giải thích máy tính lượng tử theo cách đơn giản',
   com_ui_example_10_year_old_b_day:
     'Có ý tưởng sáng tạo nào cho sinh nhật của một đứa trẻ 10 tuổi không?',
