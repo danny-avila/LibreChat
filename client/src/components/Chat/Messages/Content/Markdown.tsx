@@ -42,7 +42,7 @@ const p = React.memo(({ children }: { children: React.ReactNode }) => {
 });
 
 const Markdown = React.memo(({ content, message, showCursor }: TContentProps) => {
-  const [cursor, setCursor] = useState('⬤');
+  const [cursor, setCursor] = useState(' ⬤');
   const { isSubmitting, latestMessage } = useChatContext();
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
 
@@ -66,7 +66,7 @@ const Markdown = React.memo(({ content, message, showCursor }: TContentProps) =>
       timer1 = setInterval(() => {
         setCursor('ㅤ');
         timer2 = setTimeout(() => {
-          setCursor('⬤');
+          setCursor(' ⬤');
         }, 200);
       }, 1000);
     } else {
