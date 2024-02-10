@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { registerSchema, errorsToString } = require('~/strategies/validators');
-const getCustomConfig = require('~/cache/getCustomConfig');
+const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const Token = require('~/models/schema/tokenSchema');
 const { sendEmail } = require('~/server/utils');
 const Session = require('~/models/Session');
