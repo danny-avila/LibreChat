@@ -30,7 +30,7 @@ class PluginsClient extends OpenAIClient {
 
     super.setOptions(options);
 
-    if (this.functionsAgent && this.agentOptions.model && !this.useOpenRouter) {
+    if (this.functionsAgent && this.agentOptions.model && !this.useOpenRouter && !this.azure) {
       this.agentOptions.model = this.getFunctionModelName(this.agentOptions.model);
     }
 

@@ -1815,7 +1815,7 @@ html {
   display:block;
   height:12px;
   position:absolute;
-  top:32px;
+  top:-11px;
   -webkit-transform:translateZ(0);
   transform:translateZ(0);
   -webkit-transform-origin:center;
