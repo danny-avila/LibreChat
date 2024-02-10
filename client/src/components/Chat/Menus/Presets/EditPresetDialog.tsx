@@ -113,7 +113,7 @@ const EditPresetDialog = ({
               onClick={submitPreset}
               className="dark:hover:gray-400 ml-2 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
-              {localize('com_endpoint_save')}
+              {localize('com_ui_save')}
             </DialogClose>
           </div>
         }

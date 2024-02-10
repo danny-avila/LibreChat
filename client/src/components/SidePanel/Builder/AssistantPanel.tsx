@@ -14,12 +14,12 @@ import type { FunctionTool, TPlugin } from 'librechat-data-provider';
 import type { AssistantForm, AssistantPanelProps } from '~/common';
 import { useCreateAssistantMutation, useUpdateAssistantMutation } from '~/data-provider';
 import { SelectDropDown, Checkbox, QuestionMark } from '~/components/ui';
-import { useAssistantsMapContext } from '~/Providers';
+import { useAssistantsMapContext, useToastContext } from '~/Providers';
+import { useSelectAssistant, useLocalize } from '~/hooks';
 import { ToolSelectDialog } from '~/components/Tools';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
 import AssistantAction from './AssistantAction';
-import { useSelectAssistant } from '~/hooks';
 import ContextButton from './ContextButton';
 import AssistantTool from './AssistantTool';
 import { Spinner } from '~/components/svg';
@@ -45,6 +45,8 @@ export default function AssistantPanel({
   const [showToolDialog, setShowToolDialog] = useState(false);
   const allTools = queryClient.getQueryData<TPlugin[]>([QueryKeys.tools]) ?? [];
   const { onSelect: onSelectAssistant } = useSelectAssistant();
+  const { showToast } = useToastContext();
+  const localize = useLocalize();
 
   const methods = useForm<AssistantForm>({
     defaultValues: defaultAssistantFormValues,
@@ -62,9 +64,38 @@ export default function AssistantPanel({
   }, [model, setValue]);
 
   /* Mutations */
-  const update = useUpdateAssistantMutation();
+  const update = useUpdateAssistantMutation({
+    onSuccess: (data) => {
+      showToast({
+        message: `${localize('com_assistants_update_success')} ${data.name}`,
+      });
+    },
+    onError: (err) => {
+      const error = err as Error;
+      showToast({
+        message: `${localize('com_assistants_update_error')}${
+          error?.message ? ` ${localize('com_ui_error')}: ${error?.message}` : ''
+        }`,
+        status: 'error',
+      });
+    },
+  });
   const create = useCreateAssistantMutation({
-    onSuccess: (data) => setCurrentAssistantId(data.id),
+    onSuccess: (data) => {
+      setCurrentAssistantId(data.id);
+      showToast({
+        message: `${localize('com_assistants_create_success')} ${data.name}`,
+      });
+    },
+    onError: (err) => {
+      const error = err as Error;
+      showToast({
+        message: `${localize('com_assistants_create_error')}${
+          error?.message ? ` ${localize('com_ui_error')}: ${error?.message}` : ''
+        }`,
+        status: 'error',
+      });
+    },
   });
 
   const files = useMemo(() => {
@@ -78,13 +109,14 @@ export default function AssistantPanel({
     const tools: Array<FunctionTool | string> = [...functions].map((functionName) => {
       if (!functionName.includes(actionDelimiter)) {
         return functionName;
+      } else {
+        const assistant = assistantMap?.[assistant_id];
+        const tool = assistant?.tools?.find((tool) => tool.function?.name === functionName);
+        if (assistant && tool) {
+          return tool;
+        }
       }
 
-      const assistant = assistantMap?.[assistant_id];
-      const tool = assistant?.tools?.find((tool) => tool.function?.name === functionName);
-      if (assistant && tool) {
-        return tool;
-      }
       return functionName;
     });
 
@@ -157,7 +189,7 @@ export default function AssistantPanel({
                 onSelectAssistant(assistant_id);
               }}
             >
-              Select
+              {localize('com_ui_select')}
             </button>
           )}
         </div>
@@ -169,7 +201,7 @@ export default function AssistantPanel({
               metadata={typeof assistant !== 'string' ? assistant.metadata : null}
             />
             <label className={labelClass} htmlFor="name">
-              Name
+              {localize('com_ui_name')}
             </label>
             <Controller
               name="name"
@@ -182,7 +214,7 @@ export default function AssistantPanel({
                   className={inputClass}
                   id="name"
                   type="text"
-                  placeholder="Optional: The name of the assistant"
+                  placeholder={localize('com_assistants_name_placeholder')}
                 />
               )}
             />
@@ -197,7 +229,7 @@ export default function AssistantPanel({
           {/* Description */}
           <div className="mb-4">
             <label className={labelClass} htmlFor="description">
-              Description
+              {localize('com_ui_description')}
             </label>
             <Controller
               name="description"
@@ -210,7 +242,7 @@ export default function AssistantPanel({
                   className={inputClass}
                   id="description"
                   type="text"
-                  placeholder="Optional: Describe your Assistant here"
+                  placeholder={localize('com_assistants_description_placeholder')}
                 />
               )}
             />
@@ -219,7 +251,7 @@ export default function AssistantPanel({
           {/* Instructions */}
           <div className="mb-6">
             <label className={labelClass} htmlFor="instructions">
-              Instructions
+              {localize('com_ui_instructions')}
             </label>
             <Controller
               name="instructions"
@@ -231,7 +263,7 @@ export default function AssistantPanel({
                   {...{ max: 32768 }}
                   className="focus:shadow-outline min-h-[150px] w-full resize-none resize-y appearance-none rounded-md border px-3 py-2 text-sm leading-tight text-gray-700 shadow focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700/80 dark:bg-gray-800 dark:text-white"
                   id="instructions"
-                  placeholder="The system instructions that the assistant uses"
+                  placeholder={localize('com_assistants_instructions_placeholder')}
                   rows={3}
                 />
               )}
@@ -240,7 +272,7 @@ export default function AssistantPanel({
           {/* Model */}
           <div className="mb-6">
             <label className={labelClass} htmlFor="model">
-              Model
+              {localize('com_ui_model')}
             </label>
             <Controller
               name="model"
@@ -295,7 +327,7 @@ export default function AssistantPanel({
                   }
                 >
                   <div className="flex items-center">
-                    Code Interpreter
+                    {localize('com_assistants_code_interpreter')}
                     <QuestionMark />
                   </div>
                 </label>
@@ -326,14 +358,14 @@ export default function AssistantPanel({
                     setValue('retrieval', !getValues('retrieval'), { shouldDirty: true })
                   }
                 >
-                  Retrieval
+                  {localize('com_assistants_retrieval')}
                 </label>
               </div>
             </div>
           </div>
           {/* Tools */}
           <div className="mb-6">
-            <label className={labelClass}>Tools, Actions</label>
+            <label className={labelClass}>{localize('com_assistants_tools_section')}</label>
             <div className="space-y-1">
               {functions.map((func) => (
                 <AssistantTool key={func} tool={func} allTools={allTools} />
@@ -351,16 +383,25 @@ export default function AssistantPanel({
                 className="btn btn-neutral border-token-border-light relative mx-1 mt-2 h-8 rounded-lg font-medium"
               >
                 <div className="flex w-full items-center justify-center gap-2">
-                  Add Tools {/* TODO: Add localization */}
+                  {localize('com_assistants_add_tools')}
                 </div>
               </button>
               <button
                 type="button"
-                onClick={() => setActivePanel(Panel.actions)}
+                disabled={!assistant_id}
+                onClick={() => {
+                  if (!assistant_id) {
+                    return showToast({
+                      message: localize('com_assistants_actions_disabled'),
+                      status: 'warning',
+                    });
+                  }
+                  setActivePanel(Panel.actions);
+                }}
                 className="btn btn-neutral border-token-border-light relative mt-2 h-8 rounded-lg font-medium"
               >
                 <div className="flex w-full items-center justify-center gap-2">
-                  Add Actions {/* TODO: Add localization */}
+                  {localize('com_assistants_add_actions')}
                 </div>
               </button>
             </div>
@@ -375,13 +416,12 @@ export default function AssistantPanel({
               className="focus:shadow-outline mx-2 flex w-[90px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
               type="submit"
             >
-              {/* TODO: Add localization */}
               {create.isLoading || update.isLoading ? (
                 <Spinner className="icon-md" />
               ) : assistant_id ? (
-                'Save'
+                localize('com_ui_save')
               ) : (
-                'Create'
+                localize('com_ui_create')
               )}
             </button>
           </div>

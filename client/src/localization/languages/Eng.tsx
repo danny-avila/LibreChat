@@ -3,6 +3,24 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_assistants_knowledge: 'Knowledge',
+  com_assistants_knowledge_info:
+    'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
+  com_assistants_code_interpreter: 'Code Interpreter',
+  com_assistants_code_interpreter_files:
+    'The following files are only available for Code Interpreter:',
+  com_assistants_retrieval: 'Retrieval',
+  com_assistants_tools_section: 'Actions, Tools',
+  com_assistants_add_tools: 'Add Tools',
+  com_assistants_add_actions: 'Add Actions',
+  com_assistants_name_placeholder: 'Optional: The name of the assistant',
+  com_assistants_instructions_placeholder: 'The system instructions that the assistant uses',
+  com_assistants_description_placeholder: 'Optional: Describe your Assistant here',
+  com_assistants_actions_disabled: 'You need to create an assistant before adding actions.',
+  com_assistants_update_success: 'Successfully updated',
+  com_assistants_update_error: 'There was an error updating your assistant.',
+  com_assistants_create_success: 'Successfully created',
+  com_assistants_create_error: 'There was an error creating your assistant.',
   com_ui_attach_error_type: 'Unsupported file type for endpoint:',
   com_ui_attach_error_size: 'File size limit exceeded for endpoint:',
   com_ui_attach_error:
@@ -23,6 +41,11 @@ export default {
     'May occasionally produce harmful instructions or biased content',
   com_ui_limitation_limited_2021: 'Limited knowledge of world and events after 2021',
   com_ui_experimental: 'Experimental Features',
+  com_ui_name: 'Name',
+  com_ui_instructions: 'Instructions',
+  com_ui_description: 'Description',
+  com_ui_error: 'Error',
+  com_ui_select: 'Select',
   com_ui_input: 'Input',
   com_ui_close: 'Close',
   com_ui_model: 'Model',
@@ -31,6 +54,7 @@ export default {
   com_ui_prev: 'Prev',
   com_ui_next: 'Next',
   com_ui_stop: 'Stop',
+  com_ui_upload_files: 'Upload files',
   com_ui_prompt_templates: 'Prompt Templates',
   com_ui_hide_prompt_templates: 'Hide Prompt Templates',
   com_ui_showing: 'Showing',
@@ -234,7 +258,6 @@ export default {
   com_endpoint_completion: 'Completion',
   com_endpoint_agent: 'Agent',
   com_endpoint_show_what_settings: 'Show {0} Settings',
-  com_endpoint_save: 'Save',
   com_endpoint_export: 'Export',
   com_endpoint_assistant: 'Assistant',
   com_endpoint_use_active_assistant: 'Use Active Assistant',

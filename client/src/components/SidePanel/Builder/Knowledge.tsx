@@ -4,16 +4,20 @@ import type { ExtendedFile } from '~/common';
 import { useChatContext } from '~/Providers';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import { useFileHandling } from '~/hooks/Files';
+import useLocalize from '~/hooks/useLocalize';
 
-const CodeInterpreterFiles = ({ children }: { children: React.ReactNode }) => (
-  <div>
-    <div className="text-token-text-tertiary mb-2 text-xs">
-      The following files are only available for Code Interpreter:
+const CodeInterpreterFiles = ({ children }: { children: React.ReactNode }) => {
+  const localize = useLocalize();
+  return (
+    <div>
+      <div className="text-token-text-tertiary mb-2 text-xs">
+        {localize('com_assistants_code_interpreter_files')}
+      </div>
+      {/* Files available to Code Interpreter only */}
+      <div className="flex flex-wrap gap-2">{children}</div>
     </div>
-    {/* Files available to Code Interpreter only */}
-    <div className="flex flex-wrap gap-2">{children}</div>
-  </div>
-);
+  );
+};
 
 export default function Knowledge({
   assistant_id,
@@ -22,6 +26,7 @@ export default function Knowledge({
   assistant_id: string;
   files?: [string, ExtendedFile][];
 }) {
+  const localize = useLocalize();
   const { setFilesLoading } = useChatContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
@@ -49,13 +54,14 @@ export default function Knowledge({
     <div className="mb-6">
       <div className="mb-1.5 flex items-center">
         <span>
-          <label className="text-token-text-primary block font-medium">Knowledge</label>
+          <label className="text-token-text-primary block font-medium">
+            {localize('com_assistants_knowledge')}
+          </label>
         </span>
       </div>
       <div className="flex flex-col gap-4">
         <div className="text-token-text-tertiary rounded-lg">
-          If you upload files under Knowledge, conversations with your Assistant may include file
-          contents.
+          {localize('com_assistants_knowledge_info')}
         </div>
         {/* Files available to both tools */}
         <FileRow
@@ -93,7 +99,7 @@ export default function Knowledge({
                 ref={fileInputRef}
                 onChange={handleFileChange}
               />
-              Upload files
+              {localize('com_ui_upload_files')}
             </div>
           </button>
         </div>
