@@ -45,7 +45,7 @@ CHATGPT_REVERSE_PROXY=http://host.docker.internal:7999/backend-api/conversation
 From the Ninja directory, run the following command to launch the Docker containers:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ---
