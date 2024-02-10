@@ -30,6 +30,7 @@ const TooltipContent = React.forwardRef<
       )}
       ref={ref}
       {...props}
+      style={{ userSelect: 'none' }}
     >
       <span className="flex items-center whitespace-pre-wrap px-2 py-1 text-center text-sm font-medium normal-case text-white">
         {children}

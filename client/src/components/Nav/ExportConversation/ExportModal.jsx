@@ -435,7 +435,7 @@ export default function ExportModal({ open, onOpenChange, conversation }) {
           <>
             <DialogButton
               onClick={exportConversation}
-              className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
+              className="dark:hover:gray-400 border-gray-700 bg-green-500 text-white hover:bg-green-600 dark:hover:bg-green-600"
             >
               {localize('com_endpoint_export')}
             </DialogButton>

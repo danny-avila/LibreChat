@@ -99,7 +99,7 @@ const EditPresetDialog = ({
           <div className="mb-6 md:mb-2">
             <DialogButton
               onClick={exportPreset}
-              className="hover:gray-400 dark:hover:gray-400 border-gray-700"
+              className="border-gray-100 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-600"
             >
               {localize('com_endpoint_export')}
             </DialogButton>

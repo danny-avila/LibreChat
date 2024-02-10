@@ -150,10 +150,10 @@ export default function TextChat({ isSearchView = false }: TextChatProps) {
         className="no-gradient-sm fixed bottom-0 left-0 w-full pt-6 sm:bg-gradient-to-b md:absolute md:w-[calc(100%-.5rem)]"
         style={{
           background: `linear-gradient(to bottom, 
-                ${isDark ? 'rgba(52, 53, 65, 0)' : 'rgba(255, 255, 255, 0)'}, 
-                ${isDark ? 'rgba(52, 53, 65, 0.08)' : 'rgba(255, 255, 255, 0.08)'}, 
-                ${isDark ? 'rgba(52, 53, 65, 0.38)' : 'rgba(255, 255, 255, 0.38)'}, 
-                ${isDark ? 'rgba(52, 53, 65, 1)' : 'rgba(255, 255, 255, 1)'}, 
+                ${isDark ? 'rgba(23, 23, 23, 0)' : 'rgba(255, 255, 255, 0)'}, 
+                ${isDark ? 'rgba(23, 23, 23, 0.08)' : 'rgba(255, 255, 255, 0.08)'}, 
+                ${isDark ? 'rgba(23, 23, 23, 0.38)' : 'rgba(255, 255, 255, 0.38)'}, 
+                ${isDark ? 'rgba(23, 23, 23, 1)' : 'rgba(255, 255, 255, 1)'}, 
                 ${isDark ? '#171717' : '#ffffff'})`,
         }}
       >

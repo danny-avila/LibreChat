@@ -3,7 +3,7 @@ import { TFile, TMessage } from 'librechat-data-provider';
 const even =
   'w-full border-b border-black/10 dark:border-gray-800/50 text-gray-800 bg-white dark:text-gray-200 group dark:bg-gray-800 hover:bg-gray-200/25 hover:text-gray-700  dark:hover:bg-gray-800 dark:hover:text-gray-200';
 const odd =
-  'w-full border-b border-black/10 bg-gray-50 dark:border-gray-800/50 text-gray-800 dark:text-gray-200 group bg-gray-200 dark:bg-gray-1000 hover:bg-gray-200/40 hover:text-gray-700 dark:hover:bg-[#3b3d49] dark:hover:text-gray-200';
+  'w-full border-b border-black/10 bg-gray-50 dark:border-gray-800/50 text-gray-800 dark:text-gray-200 group bg-gray-200 dark:bg-gray-1000 hover:bg-gray-200/40 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200';
 
 export default function buildTree({
   messages,

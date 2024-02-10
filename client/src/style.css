@@ -1025,7 +1025,7 @@ button {
   --tw-border-opacity: 1;
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
-  background-color: rgba(52, 53, 65, var(--tw-bg-opacity));
+  background-color: rgba(23, 23, 23, var(--tw-bg-opacity));
   border-color: rgba(86, 88, 105, var(--tw-border-opacity));
   color: rgba(217, 217, 227, var(--tw-text-opacity));
 }
@@ -1037,7 +1037,7 @@ button {
   --tw-border-opacity: 1;
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
-  background-color: rgba(52, 53, 65, var(--tw-bg-opacity));
+  background-color: rgba(23, 23, 23, var(--tw-bg-opacity));
   border-color: rgba(86, 88, 105, var(--tw-border-opacity));
   border-width: 1px;
   color: rgba(255, 255, 255, var(--tw-text-opacity));
@@ -1096,7 +1096,7 @@ html {
 .dark body,
 .dark html {
   --tw-bg-opacity: 1;
-  background-color: rgba(52, 53, 65, var(--tw-bg-opacity));
+  background-color: rgba(23, 23, 23, var(--tw-bg-opacity));
 }
 
 #__next,
