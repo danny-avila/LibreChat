@@ -9,7 +9,7 @@ import { useUpdateConversationMutation } from '~/data-provider';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
-import DeleteButton from './DeleteButton';
+import DeleteButton from './NewDeleteButton';
 import { getEndpointField } from '~/utils';
 import RenameButton from './RenameButton';
 import store from '~/store';

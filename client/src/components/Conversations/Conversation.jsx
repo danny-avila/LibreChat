@@ -5,7 +5,7 @@ import { useConversations, useConversation } from '~/hooks';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
-import DeleteButton from './DeleteButton';
+import DeleteButton from './NewDeleteButton';
 import RenameButton from './RenameButton';
 import store from '~/store';
 
