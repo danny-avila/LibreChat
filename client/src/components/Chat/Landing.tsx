@@ -69,7 +69,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                   <BirthdayIcon className="absolute bottom-12 right-5" />
                 )}
               </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={85} className="left-[-20%]">
+              <TooltipContent side="top" sideOffset={115} className="left-[20%]">
                 {localize('com_ui_happy_birthday')}
               </TooltipContent>
             </div>
