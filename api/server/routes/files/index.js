@@ -13,8 +13,7 @@ const initialize = () => {
   router.use(uaParser);
 
   const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
-  router.use(fileUploadIpLimiter);
-  router.use(fileUploadUserLimiter);
+  router.post('*', fileUploadIpLimiter, fileUploadUserLimiter);
 
   router.use('/', files);
   router.use('/images', images);
