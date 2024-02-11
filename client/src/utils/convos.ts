@@ -11,6 +11,9 @@ const getGroupName = (date: Date) => {
   if (isToday(date)) {
     return 'Today';
   }
+  if (isWithinInterval(date, { start: subDays(now, 1), end: now })) {
+    return 'Yesterday';
+  }
   if (isWithinInterval(date, { start: subDays(now, 7), end: now })) {
     return 'Previous 7 days';
   }
