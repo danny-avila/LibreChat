@@ -1,4 +1,4 @@
-import { parseISO, isToday, isWithinInterval, subDays, getYear } from 'date-fns';
+import { parseISO, isToday, isWithinInterval, subDays, getMonth, getYear, startOfYear } from 'date-fns';
 import type {
   TConversation,
   ConversationData,
@@ -16,6 +16,9 @@ const getGroupName = (date: Date) => {
   }
   if (isWithinInterval(date, { start: subDays(now, 30), end: now })) {
     return 'Last 30 days';
+  }
+  if (isWithinInterval(date, { start: startOfYear(now), end: now })) {
+    return ' ' + getMonth(date).toString();
   }
   return ' ' + getYear(date).toString();
 };
