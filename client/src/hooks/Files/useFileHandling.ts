@@ -1,14 +1,18 @@
 import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
 import { useState, useEffect, useCallback } from 'react';
-import { fileConfig, EModelEndpoint } from 'librechat-data-provider';
+import {
+  fileConfig as defaultFileConfig,
+  EModelEndpoint,
+  mergeFileConfig,
+} from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
+import { useUploadFileMutation, useGetFileConfig } from '~/data-provider';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
-import { useUploadFileMutation } from '~/data-provider';
 import useUpdateFiles from './useUpdateFiles';
 
-const { checkType } = fileConfig;
+const { checkType } = defaultFileConfig;
 
 type UseFileHandling = {
   overrideEndpoint?: EModelEndpoint;
@@ -25,6 +29,9 @@ const useFileHandling = (params?: UseFileHandling) => {
     params?.fileSetter ?? setFiles,
   );
 
+  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+    select: (data) => mergeFileConfig(data),
+  });
   const endpoint =
     params?.overrideEndpoint ?? conversation?.endpointType ?? conversation?.endpoint ?? 'default';
 

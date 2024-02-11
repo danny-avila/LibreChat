@@ -1,7 +1,12 @@
 import * as Popover from '@radix-ui/react-popover';
 import { useState, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { fileConfig, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
+import {
+  fileConfig as defaultFileConfig,
+  QueryKeys,
+  defaultOrderQuery,
+  mergeFileConfig,
+} from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type {
   Metadata,
@@ -9,7 +14,7 @@ import type {
   Assistant,
   AssistantCreateParams,
 } from 'librechat-data-provider';
-import { useUploadAssistantAvatarMutation } from '~/data-provider';
+import { useUploadAssistantAvatarMutation, useGetFileConfig } from '~/data-provider';
 import { AssistantAvatar, NoImage, AvatarMenu } from './Images';
 import { useToastContext } from '~/Providers';
 // import { Spinner } from '~/components/svg';
@@ -32,6 +37,9 @@ function Avatar({
   const [input, setInput] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const lastSeenCreatedId = useRef<string | null>(null);
+  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+    select: (data) => mergeFileConfig(data),
+  });
 
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -142,7 +150,7 @@ function Avatar({
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
 
-    if (file && file.size <= fileConfig.avatarSizeLimit) {
+    if (fileConfig.avatarSizeLimit && file && file.size <= fileConfig.avatarSizeLimit) {
       if (!file) {
         console.error('No file selected');
         return;

@@ -3,11 +3,11 @@ const { v4 } = require('uuid');
 const mime = require('mime/lite');
 const {
   isUUID,
-  fileConfig,
   FileContext,
   FileSources,
   imageExtRegex,
   EModelEndpoint,
+  mergeFileConfig,
 } = require('librechat-data-provider');
 const { convertToWebP, resizeAndConvert } = require('~/server/services/Files/images');
 const { initializeClient } = require('~/server/services/Endpoints/assistant');
@@ -431,6 +431,8 @@ function filterFile({ req, file, image }) {
   if (!endpoint) {
     throw new Error('No endpoint provided');
   }
+
+  const fileConfig = mergeFileConfig(req.app.locals.fileConfig);
 
   const { fileSizeLimit, fileMaxSizeMB, supportedMimeTypes } =
     fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;

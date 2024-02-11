@@ -1,11 +1,12 @@
 import { useCallback } from 'react';
-import { fileConfig } from 'librechat-data-provider';
+import { fileConfig as defaultFileConfig, mergeFileConfig } from 'librechat-data-provider';
 import type { Row } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
 import { useFileMapContext, useChatContext, useToastContext } from '~/Providers';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { useUpdateFiles, useLocalize } from '~/hooks';
+import { useGetFileConfig } from '~/data-provider';
 import { getFileType } from '~/utils';
 
 export default function PanelFileCell({ row }: { row: Row<TFile> }) {
@@ -13,6 +14,9 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
   const { setFiles, conversation } = useChatContext();
+  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+    select: (data) => mergeFileConfig(data),
+  });
   const { addFile } = useUpdateFiles(setFiles);
 
   const handleFileClick = useCallback(() => {
@@ -38,7 +42,7 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
       });
     }
 
-    const isSupportedMimeType = fileConfig.checkType(file.type, supportedMimeTypes);
+    const isSupportedMimeType = defaultFileConfig.checkType(file.type, supportedMimeTypes);
 
     if (!isSupportedMimeType) {
       return showToast({
@@ -60,7 +64,7 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
       source: fileData.source,
       size: fileData.bytes,
     });
-  }, [addFile, fileMap, row.original, conversation, localize, showToast]);
+  }, [addFile, fileMap, row.original, conversation, localize, showToast, fileConfig.endpoints]);
 
   const file = row.original;
   if (file.type?.startsWith('image')) {

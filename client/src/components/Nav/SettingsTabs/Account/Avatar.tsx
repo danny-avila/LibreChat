@@ -1,10 +1,10 @@
 import { FileImage } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import { useState, useEffect } from 'react';
-import { fileConfig } from 'librechat-data-provider';
+import { fileConfig as defaultFileConfig, mergeFileConfig } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
-import { useUploadAvatarMutation } from '~/data-provider';
+import { useUploadAvatarMutation, useGetFileConfig } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import { useLocalize } from '~/hooks';
@@ -16,6 +16,9 @@ function Avatar() {
   const [input, setinput] = useState<File | null>(null);
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+    select: (data) => mergeFileConfig(data),
+  });
 
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -48,7 +51,7 @@ function Avatar() {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
 
-    if (file && file.size <= fileConfig.avatarSizeLimit) {
+    if (fileConfig.avatarSizeLimit && file && file.size <= fileConfig.avatarSizeLimit) {
       setinput(file);
       setDialogOpen(true);
     } else {
@@ -95,7 +98,7 @@ function Avatar() {
 
       <Dialog open={isDialogOpen} onOpenChange={() => setDialogOpen(false)}>
         <DialogContent
-          className={cn('shadow-2xl md:h-[350px] md:w-[450px] dark:bg-gray-900 dark:text-white ')}
+          className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:h-[350px] md:w-[450px] ')}
           style={{ borderRadius: '12px' }}
         >
           <DialogHeader>
