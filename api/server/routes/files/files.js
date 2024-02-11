@@ -9,7 +9,6 @@ const {
 } = require('~/server/services/Files/process');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
-const upload = require('./multer');
 
 const router = express.Router();
 
@@ -19,6 +18,15 @@ router.get('/', async (req, res) => {
     res.status(200).send(files);
   } catch (error) {
     logger.error('[/files] Error getting files:', error);
+    res.status(400).json({ message: 'Error in request', error: error.message });
+  }
+});
+
+router.get('/config', async (req, res) => {
+  try {
+    res.status(200).json(req.app.locals.fileConfig);
+  } catch (error) {
+    logger.error('[/files] Error getting fileConfig', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
   }
 });
@@ -83,7 +91,7 @@ router.get('/download/:fileId', async (req, res) => {
   }
 });
 
-router.post('/', upload.single('file'), async (req, res) => {
+router.post('/', async (req, res) => {
   const file = req.file;
   const metadata = req.body;
   let cleanup = true;

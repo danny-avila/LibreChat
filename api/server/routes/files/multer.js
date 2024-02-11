@@ -2,7 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
-const { fileConfig } = require('librechat-data-provider');
+const { fileConfig: defaultFileConfig, mergeFileConfig } = require('librechat-data-provider');
+const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -23,17 +24,21 @@ const fileFilter = (req, file, cb) => {
     return cb(new Error('No file provided'), false);
   }
 
-  if (!fileConfig.checkType(file.mimetype)) {
+  if (!defaultFileConfig.checkType(file.mimetype)) {
     return cb(new Error('Unsupported file type: ' + file.mimetype), false);
   }
 
   cb(null, true);
 };
 
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: { fileSize: fileConfig.serverFileSizeLimit },
-});
+const createMulterInstance = async () => {
+  const customConfig = await getCustomConfig();
+  const fileConfig = mergeFileConfig(customConfig?.fileConfig);
+  return multer({
+    storage,
+    fileFilter,
+    limits: { fileSize: fileConfig.serverFileSizeLimit },
+  });
+};
 
-module.exports = upload;
+module.exports = createMulterInstance;

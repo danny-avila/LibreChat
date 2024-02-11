@@ -18,6 +18,7 @@ export enum QueryKeys {
   assistant = 'assistant',
   endpointsConfigOverride = 'endpointsConfigOverride',
   files = 'files',
+  fileConfig = 'fileConfig',
   tools = 'tools',
   actions = 'actions',
   assistantDocs = 'assistantDocs',

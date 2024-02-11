@@ -3,11 +3,10 @@ const fs = require('fs').promises;
 const express = require('express');
 const { filterFile, processImageFile } = require('~/server/services/Files/process');
 const { logger } = require('~/config');
-const upload = require('./multer');
 
 const router = express.Router();
 
-router.post('/', upload.single('file'), async (req, res) => {
+router.post('/', async (req, res) => {
   const metadata = req.body;
 
   try {

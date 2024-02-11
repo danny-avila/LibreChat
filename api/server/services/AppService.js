@@ -46,6 +46,7 @@ const AppService = async (app) => {
     socialLogins,
     availableTools,
     fileStrategy,
+    fileConfig: config?.fileConfig,
     paths,
   };
 };

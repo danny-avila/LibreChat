@@ -208,6 +208,10 @@ export const getFiles = (): Promise<f.TFile[]> => {
   return request.get(endpoints.files());
 };
 
+export const getFileConfig = (): Promise<f.FileConfig> => {
+  return request.get(`${endpoints.files()}/config`);
+};
+
 export const uploadImage = (data: FormData): Promise<f.TFileUpload> => {
   return request.postMultiPart(endpoints.images(), data);
 };

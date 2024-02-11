@@ -188,8 +188,11 @@ export const convertStringsToRegex = (patterns: string[]): RegExp[] =>
     return acc;
   }, []);
 
-export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema>): FileConfig {
-  const mergedConfig: FileConfig = JSON.parse(JSON.stringify(fileConfig));
+export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | undefined): FileConfig {
+  const mergedConfig = fileConfig as FileConfig;
+  if (!dynamic) {
+    return mergedConfig;
+  }
 
   if (dynamic.serverFileSizeLimit !== undefined) {
     mergedConfig.serverFileSizeLimit = mbToBytes(dynamic.serverFileSizeLimit);

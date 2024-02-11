@@ -11,6 +11,7 @@ import type {
   TPreset,
   TFile,
   TPlugin,
+  FileConfig,
   ConversationListResponse,
   ConversationListParams,
   Assistant,
@@ -29,6 +30,21 @@ export const useGetFiles = <TData = TFile[] | boolean>(
     refetchOnMount: false,
     ...config,
   });
+};
+
+export const useGetFileConfig = <TData = FileConfig>(
+  config?: UseQueryOptions<FileConfig, unknown, TData>,
+): QueryObserverResult<TData, unknown> => {
+  return useQuery<FileConfig, unknown, TData>(
+    [QueryKeys.fileConfig],
+    () => dataService.getFileConfig(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
 };
 
 export const useGetPresetsQuery = (
