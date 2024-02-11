@@ -11,6 +11,20 @@ import useLocalize from '~/hooks/useLocalize';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
+const getAssistantName = ({
+  name,
+  localize,
+}: {
+  name?: string;
+  localize: (phraseKey: string, ...values: string[]) => string;
+}) => {
+  if (name && name.length > 0) {
+    return name;
+  } else {
+    return localize('com_ui_assistant');
+  }
+};
+
 export default function useTextarea({ setText, submitMessage, disabled = false }) {
   const assistantMap = useAssistantsMapContext();
   const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
@@ -69,7 +83,7 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
 
       const sender =
         conversation?.endpoint === EModelEndpoint.assistant
-          ? assistantName ?? 'Assistant'
+          ? getAssistantName({ name: assistantName, localize })
           : getSender(conversation as TEndpointOption);
 
       return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
