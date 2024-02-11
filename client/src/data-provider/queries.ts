@@ -1,4 +1,4 @@
-import { QueryKeys, dataService } from 'librechat-data-provider';
+import { EModelEndpoint, QueryKeys, dataService } from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   UseInfiniteQueryOptions,
@@ -18,6 +18,7 @@ import type {
   AssistantListParams,
   AssistantListResponse,
   AssistantDocument,
+  TEndpointsConfig,
 } from 'librechat-data-provider';
 import { findPageForConversation } from '~/utils';
 
@@ -160,10 +161,14 @@ export const useConversationsInfiniteQuery = (
  * Hook for getting all available tools for Assistants
  */
 export const useAvailableToolsQuery = (): QueryObserverResult<TPlugin[]> => {
+  const queryClient = useQueryClient();
+  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+  const enabled = !!endpointsConfig?.[EModelEndpoint.assistant];
   return useQuery<TPlugin[]>([QueryKeys.tools], () => dataService.getAvailableTools(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
+    enabled,
   });
 };
 
@@ -174,6 +179,9 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
   params?: AssistantListParams,
   config?: UseQueryOptions<AssistantListResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
+  const queryClient = useQueryClient();
+  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+  const enabled = !!endpointsConfig?.[EModelEndpoint.assistant];
   return useQuery<AssistantListResponse, unknown, TData>(
     [QueryKeys.assistants, params],
     () => dataService.listAssistants(params),
@@ -187,6 +195,7 @@ export const useListAssistantsQuery = <TData = AssistantListResponse>(
       refetchOnMount: false,
       retry: false,
       ...config,
+      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
     },
   );
 };
@@ -195,6 +204,9 @@ export const useListAssistantsInfiniteQuery = (
   params?: AssistantListParams,
   config?: UseInfiniteQueryOptions<AssistantListResponse, Error>,
 ) => {
+  const queryClient = useQueryClient();
+  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+  const enabled = !!endpointsConfig?.[EModelEndpoint.assistant];
   return useInfiniteQuery<AssistantListResponse, Error>(
     ['assistantsList', params],
     ({ pageParam = '' }) => dataService.listAssistants({ ...params, after: pageParam }),
@@ -207,6 +219,7 @@ export const useListAssistantsInfiniteQuery = (
         return undefined;
       },
       ...config,
+      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
     },
   );
 };
@@ -218,16 +231,20 @@ export const useGetAssistantByIdQuery = (
   assistant_id: string,
   config?: UseQueryOptions<Assistant>,
 ): QueryObserverResult<Assistant> => {
+  const queryClient = useQueryClient();
+  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+  const enabled = !!endpointsConfig?.[EModelEndpoint.assistant] && !!assistant_id;
   return useQuery<Assistant>(
     [QueryKeys.assistant, assistant_id],
     () => dataService.getAssistantById(assistant_id),
     {
-      enabled: !!assistant_id, // Query will not execute until the assistant_id exists
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
       retry: false,
       ...config,
+      // Query will not execute until the assistant_id exists
+      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
     },
   );
 };
@@ -238,11 +255,15 @@ export const useGetAssistantByIdQuery = (
 export const useGetActionsQuery = <TData = Action[]>(
   config?: UseQueryOptions<Action[], unknown, TData>,
 ): QueryObserverResult<TData> => {
+  const queryClient = useQueryClient();
+  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+  const enabled = !!endpointsConfig?.[EModelEndpoint.assistant];
   return useQuery<Action[], unknown, TData>([QueryKeys.actions], () => dataService.getActions(), {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
     ...config,
+    enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
   });
 };
 /**
@@ -251,6 +272,9 @@ export const useGetActionsQuery = <TData = Action[]>(
 export const useGetAssistantDocsQuery = (
   config?: UseQueryOptions<AssistantDocument[]>,
 ): QueryObserverResult<AssistantDocument[], unknown> => {
+  const queryClient = useQueryClient();
+  const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+  const enabled = !!endpointsConfig?.[EModelEndpoint.assistant];
   return useQuery<AssistantDocument[]>(
     [QueryKeys.assistantDocs],
     () => dataService.getAssistantDocs(),
@@ -259,6 +283,7 @@ export const useGetAssistantDocsQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       ...config,
+      enabled: config?.enabled !== undefined ? config?.enabled && enabled : enabled,
     },
   );
 };
