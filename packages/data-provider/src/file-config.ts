@@ -161,13 +161,28 @@ export const fileConfig = {
   },
 };
 
+const supportedMimeTypesSchema = z
+  .array(z.any())
+  .optional()
+  .refine(
+    (mimeTypes) => {
+      if (!mimeTypes) {
+        return true;
+      }
+      return mimeTypes.every((mimeType) => mimeType instanceof RegExp);
+    },
+    {
+      message: 'Each mimeType must be a string or a RegExp object.',
+    },
+  );
+
 export const endpointFileConfigSchema = z.object({
   fileLimit: z.number().min(1).optional(),
   fileMaxSizeMB: z.number().min(1).optional(),
   totalMaxSizeMB: z.number().min(1).optional(),
   fileSizeLimit: z.number().min(1).optional(),
   totalSizeLimit: z.number().min(1).optional(),
-  supportedMimeTypes: z.array(z.any()).optional(),
+  supportedMimeTypes: supportedMimeTypesSchema.optional(),
 });
 
 export const fileConfigSchema = z.object({
