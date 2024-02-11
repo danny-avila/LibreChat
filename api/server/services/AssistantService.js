@@ -9,6 +9,7 @@ const {
   ToolCallTypes,
   imageExtRegex,
   imageGenTools,
+  EModelEndpoint,
   defaultOrderQuery,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
@@ -392,13 +393,17 @@ async function runAssistant({
     },
   });
 
+  /** @type {TCustomConfig.endpoints.assistants} */
+  const assistantsEndpointConfig = openai.req.app.locals?.[EModelEndpoint.assistants] ?? {};
+  const { pollIntervalMs, timeoutMs } = assistantsEndpointConfig;
+
   const run = await waitForRun({
     openai,
     run_id,
     thread_id,
     runManager,
-    pollIntervalMs: 750, // TODO: make this configurable
-    timeout: 60000 * 3,
+    pollIntervalMs,
+    timeout: timeoutMs,
   });
 
   if (!run.required_action) {
