@@ -29,7 +29,7 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
     }
 
     const { fileSizeLimit, fileMaxSizeMB, supportedMimeTypes } =
-      fileConfig[endpoint] ?? fileConfig.default;
+      fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
 
     if (fileData.bytes > fileSizeLimit) {
       return showToast({

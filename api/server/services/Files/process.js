@@ -433,7 +433,7 @@ function filterFile({ req, file, image }) {
   }
 
   const { fileSizeLimit, fileMaxSizeMB, supportedMimeTypes } =
-    fileConfig[endpoint] ?? fileConfig.default;
+    fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
 
   if (file.size > fileSizeLimit) {
     throw new Error(`File size limit of ${fileMaxSizeMB} MB exceeded for ${endpoint} endpoint`);

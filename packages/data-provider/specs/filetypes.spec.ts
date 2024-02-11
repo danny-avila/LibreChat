@@ -8,6 +8,9 @@ import {
   retrievalMimeTypes,
   excelFileTypes,
   excelMimeTypes,
+  fileConfigSchema,
+  mergeFileConfig,
+  mbToBytes,
 } from '../src/file-config';
 
 describe('MIME Type Regex Patterns', () => {
@@ -96,5 +99,65 @@ describe('Testing `fileConfig`', () => {
         expect(isSupported).toBe(false);
       });
     });
+  });
+});
+
+const dynamicConfigs = {
+  minimalUpdate: {
+    serverFileSizeLimit: 1024, // Increasing server file size limit
+  },
+  fullOverrideDefaultEndpoint: {
+    endpoints: {
+      default: {
+        fileLimit: 15,
+        fileMaxSizeMB: 30,
+        totalMaxSizeMB: 60,
+        fileSizeLimit: 30,
+        totalSizeLimit: 60,
+        supportedMimeTypes: ['^video/.*$'], // Changing to support video files
+      },
+    },
+  },
+  newEndpointAddition: {
+    endpoints: {
+      newEndpoint: {
+        fileLimit: 5,
+        fileMaxSizeMB: 10,
+        totalMaxSizeMB: 20,
+        fileSizeLimit: 10,
+        totalSizeLimit: 20,
+        supportedMimeTypes: ['^application/json$', '^application/xml$'],
+      },
+    },
+  },
+};
+
+describe('mergeFileConfig', () => {
+  test('merges minimal update correctly', () => {
+    const result = mergeFileConfig(dynamicConfigs.minimalUpdate);
+    expect(result.serverFileSizeLimit).toEqual(mbToBytes(1024));
+    const parsedResult = fileConfigSchema.safeParse(result);
+    expect(parsedResult.success).toBeTruthy();
+  });
+
+  test('overrides default endpoint with full new configuration', () => {
+    const result = mergeFileConfig(dynamicConfigs.fullOverrideDefaultEndpoint);
+    expect(result.endpoints.default.fileLimit).toEqual(15);
+    expect(result.endpoints.default.supportedMimeTypes).toEqual(
+      expect.arrayContaining([new RegExp('^video/.*$')]),
+    );
+    const parsedResult = fileConfigSchema.safeParse(result);
+    expect(parsedResult.success).toBeTruthy();
+  });
+
+  test('adds new endpoint configuration correctly', () => {
+    const result = mergeFileConfig(dynamicConfigs.newEndpointAddition);
+    expect(result.endpoints.newEndpoint).toBeDefined();
+    expect(result.endpoints.newEndpoint.fileLimit).toEqual(5);
+    expect(result.endpoints.newEndpoint.supportedMimeTypes).toEqual(
+      expect.arrayContaining([new RegExp('^application/json$')]),
+    );
+    const parsedResult = fileConfigSchema.safeParse(result);
+    expect(parsedResult.success).toBeTruthy();
   });
 });

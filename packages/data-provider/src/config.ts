@@ -1,6 +1,7 @@
 /* eslint-disable max-len */
 import { z } from 'zod';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
+import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
 
 export const fileSourceSchema = z.nativeEnum(FileSources);
@@ -50,6 +51,7 @@ export const configSchema = z.object({
     })
     .optional(),
   rateLimits: rateLimitSchema.optional(),
+  fileConfig: fileConfigSchema.optional(),
   endpoints: z
     .object({
       uploadEnabledEndpoints: z.array(z.string()).optional(),

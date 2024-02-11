@@ -35,7 +35,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     fileSizeLimit,
     totalSizeLimit,
     supportedMimeTypes,
-  } = fileConfig[endpoint] ?? fileConfig.default;
+  } = fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
 
   const displayToast = useCallback(() => {
     if (errors.length > 1) {

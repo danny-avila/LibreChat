@@ -14,6 +14,24 @@ export enum FileContext {
   message_attachment = 'message_attachment',
 }
 
+export type EndpointFileConfig = {
+  fileLimit?: number;
+  fileMaxSizeMB?: number;
+  totalMaxSizeMB?: number;
+  fileSizeLimit?: number;
+  totalSizeLimit?: number;
+  supportedMimeTypes?: RegExp[];
+};
+
+export type FileConfig = {
+  endpoints: {
+    [key: string]: EndpointFileConfig;
+  };
+  serverFileSizeLimit?: number;
+  avatarSizeLimit?: number;
+  checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+};
+
 export type TFile = {
   _id?: string;
   __v?: number;
