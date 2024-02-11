@@ -12,10 +12,10 @@ const getGroupName = (date: Date) => {
     return 'Today';
   }
   if (isWithinInterval(date, { start: subDays(now, 7), end: now })) {
-    return 'Last 7 days';
+    return 'Previous 7 days';
   }
   if (isWithinInterval(date, { start: subDays(now, 30), end: now })) {
-    return 'Last 30 days';
+    return 'Previous 30 days';
   }
   if (isWithinInterval(date, { start: startOfYear(now), end: now })) {
     return ' ' + getMonth(date).toString();
