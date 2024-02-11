@@ -3,6 +3,9 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_sidepanel_select_assistant: 'Select an Assistant',
+  com_sidepanel_assistant_builder: 'Assistant Builder',
+  com_sidepanel_attach_files: 'Attach Files',
   com_assistants_knowledge: 'Knowledge',
   com_assistants_knowledge_info:
     'If you upload files under Knowledge, conversations with your Assistant may include file contents.',

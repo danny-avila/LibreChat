@@ -7,8 +7,8 @@ import {
   SelectValue,
 } from '~/components/ui/Select';
 import { EModelEndpoint, defaultOrderQuery } from 'librechat-data-provider';
+import { useSetIndexOptions, useSelectAssistant, useLocalize } from '~/hooks';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import { useSetIndexOptions, useSelectAssistant } from '~/hooks';
 import { useListAssistantsQuery } from '~/data-provider';
 import Icon from '~/components/Endpoints/Icon';
 import { cn } from '~/utils';
@@ -18,6 +18,7 @@ interface SwitcherProps {
 }
 
 export default function Switcher({ isCollapsed }: SwitcherProps) {
+  const localize = useLocalize();
   const { setOption } = useSetIndexOptions();
   const { index, conversation } = useChatContext();
 
@@ -60,9 +61,9 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
             : '',
           'bg-white',
         )}
-        aria-label="Select account"
+        aria-label={localize('com_sidepanel_select_assistant')}
       >
-        <SelectValue placeholder="Select an Assistant">
+        <SelectValue placeholder={localize('com_sidepanel_select_assistant')}>
           <div className="assistant-item flex items-center justify-center overflow-hidden rounded-full">
             <Icon
               isCreatedByUser={false}
@@ -73,7 +74,7 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
           </div>
           <span className={cn('ml-2', isCollapsed ? 'hidden' : '')}>
             {assistants.find((assistant) => assistant.id === selectedAssistant)?.name ??
-              'Select an Assistant'}
+              localize('com_sidepanel_select_assistant')}
           </span>
         </SelectValue>
       </SelectTrigger>
