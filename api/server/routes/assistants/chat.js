@@ -166,7 +166,7 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
       },
     });
 
-    await saveUserMessage(requestMessage);
+    await saveUserMessage({ ...requestMessage, model });
 
     const conversation = {
       conversationId,
@@ -251,7 +251,7 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
     });
     res.end();
 
-    await saveAssistantMessage(responseMessage);
+    await saveAssistantMessage({ ...responseMessage, model });
 
     if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {
