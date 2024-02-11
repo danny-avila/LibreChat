@@ -72,7 +72,13 @@ const Markdown = memo(({ content, message, showCursor }: TContentProps) => {
 
   if (isInitializing) {
     rehypePlugins.pop();
-    return <span className="result-thinking" />;
+    return (
+      <div className="absolute">
+        <p className="relative">
+          <span className="result-thinking" />
+        </p>
+      </div>
+    );
   }
 
   let isValidIframe: string | boolean | null = false;

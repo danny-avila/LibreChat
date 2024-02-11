@@ -86,7 +86,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
               <div
                 className={cn(
                   plugin.loading ? 'bg-green-100' : 'bg-gray-20',
-                  'flex items-center rounded p-3 text-xs text-gray-800',
+                  'my-1 flex items-center rounded p-3 text-xs text-gray-800',
                 )}
               >
                 <div>
