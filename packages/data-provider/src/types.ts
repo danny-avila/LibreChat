@@ -203,6 +203,7 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   emailEnabled: boolean;
   checkBalance: boolean;
+  showBirthdayIcon: boolean;
   customFooter?: string;
 };
 

@@ -3,6 +3,7 @@
 export default {
   com_ui_examples: 'Примеры',
   com_ui_new_chat: 'Создать чат',
+  com_ui_happy_birthday: 'Это мой первый день рождения!',
   com_ui_example_quantum_computing: 'Объясни квантовые вычисления простыми словами',
   com_ui_example_10_year_old_b_day:
     'У тебя есть креативные идеи для дня рождения 10-летнего ребенка?',
