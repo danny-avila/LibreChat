@@ -15,12 +15,21 @@ describe('Conversation Utilities', () => {
       const conversations = [
         { conversationId: '1', updatedAt: '2023-04-01T12:00:00Z' },
         { conversationId: '2', updatedAt: new Date().toISOString() },
+        { conversationId: '3', updatedAt: new Date(Date.now() - 86400000).toISOString() }, // 86400 seconds ago = yesterday
+        { conversationId: '4', updatedAt: new Date(Date.now() - 86400000 * 2).toISOString() }, // 2 days ago (previous 7 days)
+        { conversationId: '5', updatedAt: new Date(Date.now() - 86400000 * 8).toISOString() }, // 8 days ago (previous 30 days)
       ];
       const grouped = groupConversationsByDate(conversations as TConversation[]);
       expect(grouped[0][0]).toBe('Today');
       expect(grouped[0][1]).toHaveLength(1);
-      expect(grouped[1][0]).toBe(' 2023');
+      expect(grouped[1][0]).toBe('Yesterday');
       expect(grouped[1][1]).toHaveLength(1);
+      expect(grouped[2][0]).toBe('Previous 7 days');
+      expect(grouped[2][1]).toHaveLength(1);
+      expect(grouped[3][0]).toBe('Previous 30 days');
+      expect(grouped[3][1]).toHaveLength(1);
+      expect(grouped[4][0]).toBe(' 2023');
+      expect(grouped[4][1]).toHaveLength(1);
     });
 
     it('returns an empty array for no conversations', () => {
