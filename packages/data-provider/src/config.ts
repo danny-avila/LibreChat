@@ -6,7 +6,7 @@ import { FileSources } from './types/files';
 
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
-export const assistantSchema = z.object({
+export const assistantEndpointSchema = z.object({
   /* assistants specific */
   disableBuilder: z.boolean().optional(),
   pollIntervalMs: z.number().optional(),
@@ -77,7 +77,7 @@ export const configSchema = z.object({
   fileConfig: fileConfigSchema.optional(),
   endpoints: z
     .object({
-      [EModelEndpoint.assistants]: assistantSchema.optional(),
+      [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       custom: z.array(endpointSchema.partial()).optional(),
     })
     .strict()
