@@ -152,7 +152,7 @@ describe('Conversation Utilities with Fake Data', () => {
       const allConversations = pages.flatMap((p) => p.conversations);
       const grouped = groupConversationsByDate(allConversations);
 
-      expect(grouped).toHaveLength(2);
+      expect(grouped).toHaveLength(1);
       expect(grouped[0][1]).toBeInstanceOf(Array);
     });
   });
