@@ -1,29 +1,14 @@
 import { useState } from 'react';
-import { LucideIcon } from 'lucide-react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
-
-import { cn, removeFocusOutlines } from '~/utils';
+import type { NavLink, NavProps } from '~/common';
 import { Accordion, AccordionItem, AccordionContent } from '~/components/ui/Accordion';
-import { buttonVariants } from '~/components/ui/Button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/Tooltip';
-
-type NavLink = {
-  title: string;
-  label?: string;
-  icon: LucideIcon;
-  Component?: React.ComponentType;
-  variant?: 'default' | 'ghost';
-  id: string;
-};
-
-interface NavProps {
-  isCollapsed: boolean;
-  links: NavLink[];
-  resize?: (size: number) => void;
-  defaultActive?: string;
-}
+import { buttonVariants } from '~/components/ui/Button';
+import { cn, removeFocusOutlines } from '~/utils';
+import { useLocalize } from '~/hooks';
 
 export default function Nav({ links, isCollapsed, resize, defaultActive }: NavProps) {
+  const localize = useLocalize();
   const [active, _setActive] = useState<string | undefined>(defaultActive);
   const getVariant = (link: NavLink) => (link.id === active ? 'default' : 'ghost');
 
@@ -66,7 +51,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="right" className="flex items-center gap-4">
-                        {link.title}
+                        {localize(link.title)}
                         {link.label && (
                           <span className="text-muted-foreground ml-auto">{link.label}</span>
                         )}
@@ -95,7 +80,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                               )}
                             >
                               <link.icon className="mr-2 h-4 w-4" />
-                              {link.title}
+                              {localize(link.title)}
                               {link.label && (
                                 <span
                                   className={cn(

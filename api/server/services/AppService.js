@@ -1,4 +1,4 @@
-const { FileSources } = require('librechat-data-provider');
+const { FileSources, EModelEndpoint } = require('librechat-data-provider');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
@@ -30,6 +30,18 @@ const AppService = async (app) => {
     initializeFirebase();
   }
 
+  const endpointLocals = {};
+  if (config?.endpoints?.[EModelEndpoint.assistants]) {
+    const { disableBuilder, pollIntervalMs, timeoutMs } =
+      config.endpoints[EModelEndpoint.assistants];
+
+    endpointLocals[EModelEndpoint.assistants] = {
+      disableBuilder,
+      pollIntervalMs,
+      timeoutMs,
+    };
+  }
+
   /** @type {Record<string, FunctionTool} */
   const availableTools = loadAndFormatTools({
     directory: paths.structuredTools,
@@ -48,6 +60,7 @@ const AppService = async (app) => {
     fileStrategy,
     fileConfig: config?.fileConfig,
     paths,
+    ...endpointLocals,
   };
 };
 

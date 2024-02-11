@@ -1,6 +1,9 @@
 import throttle from 'lodash/throttle';
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
+import { EModelEndpoint, type TEndpointsConfig } from 'librechat-data-provider';
+import type { NavLink } from '~/common';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
 import { Blocks, AttachmentIcon } from '~/components/svg';
@@ -33,12 +36,37 @@ export default function SidePanel({
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
   const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
+  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
   const panelRef = useRef<ImperativePanelHandle>(null);
 
   const activePanel = localStorage.getItem('side:active-panel');
   const defaultActive = activePanel ? activePanel : undefined;
+
+  const Links = useMemo(() => {
+    const links: NavLink[] = [];
+    const assistants = endpointsConfig?.[EModelEndpoint.assistants];
+    if (assistants && assistants.disableBuilder !== true) {
+      links.push({
+        title: 'com_sidepanel_assistant_builder',
+        label: '',
+        icon: Blocks,
+        id: 'assistants',
+        Component: PanelSwitch,
+      });
+    }
+
+    links.push({
+      title: 'com_sidepanel_attach_files',
+      label: '',
+      icon: AttachmentIcon,
+      id: 'files',
+      Component: FilesPanel,
+    });
+
+    return links;
+  }, [endpointsConfig]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
@@ -142,35 +170,22 @@ export default function SidePanel({
               minSize === 0 ? 'min-w-0' : '',
             )}
           >
-            <div
-              className={cn(
-                'flex h-[52px] items-center justify-center',
-                isCollapsed ? 'h-[52px]' : 'px-2',
-              )}
-            >
-              <Switcher isCollapsed={isCollapsed} />
-            </div>
+            {endpointsConfig?.[EModelEndpoint.assistants] && (
+              <div
+                className={cn(
+                  'flex h-[52px] items-center justify-center',
+                  isCollapsed ? 'h-[52px]' : 'px-2',
+                )}
+              >
+                <Switcher isCollapsed={isCollapsed} />
+              </div>
+            )}
             <Separator className="bg-gray-100/50" />
             <Nav
               resize={panelRef.current?.resize}
               isCollapsed={isCollapsed}
               defaultActive={defaultActive}
-              links={[
-                {
-                  title: 'Assistant Builder',
-                  label: '',
-                  icon: Blocks,
-                  id: 'assistants',
-                  Component: PanelSwitch,
-                },
-                {
-                  title: 'Attach Files',
-                  label: '',
-                  icon: AttachmentIcon,
-                  id: 'files',
-                  Component: FilesPanel,
-                },
-              ]}
+              links={Links}
             />
             {/* <Separator className="bg-gray-100/50" /> */}
           </ResizablePanel>

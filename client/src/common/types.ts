@@ -14,8 +14,25 @@ import type {
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import type { LucideIcon } from 'lucide-react';
 
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
+
+export type NavLink = {
+  title: string;
+  label?: string;
+  icon: LucideIcon;
+  Component?: React.ComponentType;
+  variant?: 'default' | 'ghost';
+  id: string;
+};
+
+export interface NavProps {
+  isCollapsed: boolean;
+  links: NavLink[];
+  resize?: (size: number) => void;
+  defaultActive?: string;
+}
 
 interface ColumnMeta {
   meta: {

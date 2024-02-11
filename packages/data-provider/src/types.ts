@@ -145,6 +145,7 @@ export type TConfig = {
   modelDisplayLabel?: string;
   userProvide?: boolean | null;
   userProvideURL?: boolean | null;
+  disableBuilder?: boolean;
 };
 
 export type TEndpointsConfig =

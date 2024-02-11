@@ -6,6 +6,27 @@ import { FileSources } from './types/files';
 
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
+export const assistantSchema = z.object({
+  /* assistants specific */
+  disableBuilder: z.boolean().optional(),
+  pollIntervalMs: z.number().optional(),
+  timeoutMs: z.number().optional(),
+  /* general */
+  apiKey: z.string().optional(),
+  baseURL: z.string().optional(),
+  models: z
+    .object({
+      default: z.array(z.string()).min(1),
+      fetch: z.boolean().optional(),
+      userIdQuery: z.boolean().optional(),
+    })
+    .optional(),
+  titleConvo: z.boolean().optional(),
+  titleMethod: z.union([z.literal('completion'), z.literal('functions')]).optional(),
+  titleModel: z.string().optional(),
+  headers: z.record(z.any()).optional(),
+});
+
 export const endpointSchema = z.object({
   name: z.string().refine((value) => !eModelEndpointSchema.safeParse(value).success, {
     message: `Value cannot be one of the default endpoint (EModelEndpoint) values: ${Object.values(
@@ -27,6 +48,8 @@ export const endpointSchema = z.object({
   forcePrompt: z.boolean().optional(),
   modelDisplayLabel: z.string().optional(),
   headers: z.record(z.any()).optional(),
+  addParams: z.record(z.any()).optional(),
+  dropParams: z.array(z.string()).optional(),
 });
 
 export const rateLimitSchema = z.object({
@@ -54,10 +77,13 @@ export const configSchema = z.object({
   fileConfig: fileConfigSchema.optional(),
   endpoints: z
     .object({
-      uploadEnabledEndpoints: z.array(z.string()).optional(),
-      custom: z.array(endpointSchema.partial()),
+      [EModelEndpoint.assistants]: assistantSchema.optional(),
+      custom: z.array(endpointSchema.partial()).optional(),
     })
     .strict()
+    .refine((data) => Object.keys(data).length > 0, {
+      message: 'At least one `endpoints` field must be provided.',
+    })
     .optional(),
 });
 
