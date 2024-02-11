@@ -61,10 +61,15 @@ export default function ChatForm({ index = 0 }) {
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
                 setText={setText}
                 submitMessage={submitMessage}
-                endpoint={endpoint}
+                endpoint={_endpoint}
+                endpointType={endpointType}
               />
             )}
-            <AttachFile endpoint={endpoint ?? ''} disabled={requiresKey} />
+            <AttachFile
+              endpoint={_endpoint ?? ''}
+              endpointType={endpointType}
+              disabled={requiresKey}
+            />
             {isSubmitting && showStopButton ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (

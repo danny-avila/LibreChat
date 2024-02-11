@@ -1,10 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
-import { EModelEndpoint, retrievalMimeTypes } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  retrievalMimeTypes,
+  fileConfig as defaultFileConfig,
+  mergeFileConfig,
+} from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useChatContext } from '~/Providers';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
+import { useGetFileConfig } from '~/data-provider';
 import { useFileHandling } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
+import { useChatContext } from '~/Providers';
 
 const CodeInterpreterFiles = ({ children }: { children: React.ReactNode }) => {
   const localize = useLocalize();
@@ -30,6 +36,9 @@ export default function Knowledge({
   const { setFilesLoading } = useChatContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
+  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+    select: (data) => mergeFileConfig(data),
+  });
   const { handleFileChange } = useFileHandling({
     overrideEndpoint: EModelEndpoint.assistant,
     additionalMetadata: { assistant_id },
@@ -41,6 +50,12 @@ export default function Knowledge({
       setFiles(new Map(_files));
     }
   }, [_files]);
+
+  const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.assistant];
+
+  if (endpointFileConfig?.disabled) {
+    return null;
+  }
 
   const handleButtonClick = () => {
     // necessary to reset the input

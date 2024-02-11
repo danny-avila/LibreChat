@@ -144,6 +144,7 @@ export const fileConfig = {
       fileSizeLimit: mbToBytes(512),
       totalSizeLimit: mbToBytes(512),
       supportedMimeTypes,
+      disabled: false,
     },
     default: {
       fileLimit: 10,
@@ -152,6 +153,7 @@ export const fileConfig = {
       fileSizeLimit: mbToBytes(20),
       totalSizeLimit: mbToBytes(25),
       supportedMimeTypes: [imageMimeTypes],
+      disabled: false,
     },
   },
   serverFileSizeLimit: mbToBytes(512),
@@ -169,7 +171,9 @@ const supportedMimeTypesSchema = z
       if (!mimeTypes) {
         return true;
       }
-      return mimeTypes.every((mimeType) => mimeType instanceof RegExp);
+      return mimeTypes.every(
+        (mimeType) => mimeType instanceof RegExp || typeof mimeType === 'string',
+      );
     },
     {
       message: 'Each mimeType must be a string or a RegExp object.',
@@ -177,18 +181,19 @@ const supportedMimeTypesSchema = z
   );
 
 export const endpointFileConfigSchema = z.object({
-  fileLimit: z.number().min(1).optional(),
-  fileMaxSizeMB: z.number().min(1).optional(),
-  totalMaxSizeMB: z.number().min(1).optional(),
-  fileSizeLimit: z.number().min(1).optional(),
-  totalSizeLimit: z.number().min(1).optional(),
+  disabled: z.boolean().optional(),
+  fileLimit: z.number().min(0).optional(),
+  fileMaxSizeMB: z.number().min(0).optional(),
+  totalMaxSizeMB: z.number().min(0).optional(),
+  fileSizeLimit: z.number().min(0).optional(),
+  totalSizeLimit: z.number().min(0).optional(),
   supportedMimeTypes: supportedMimeTypesSchema.optional(),
 });
 
 export const fileConfigSchema = z.object({
   endpoints: z.record(endpointFileConfigSchema).optional(),
-  serverFileSizeLimit: z.number().min(1).optional(),
-  avatarSizeLimit: z.number().min(1).optional(),
+  serverFileSizeLimit: z.number().min(0).optional(),
+  avatarSizeLimit: z.number().min(0).optional(),
 });
 
 /** Helper function to safely convert string patterns to RegExp objects */
@@ -221,7 +226,7 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     return mergedConfig;
   }
 
-  Object.keys(dynamic.endpoints).forEach((key) => {
+  for (const key in dynamic.endpoints) {
     const dynamicEndpoint = (dynamic.endpoints as Record<string, EndpointFileConfig>)[key];
 
     if (!mergedConfig.endpoints[key]) {
@@ -229,6 +234,17 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     }
 
     const mergedEndpoint = mergedConfig.endpoints[key];
+
+    if (dynamicEndpoint.disabled === true) {
+      mergedEndpoint.disabled = true;
+      mergedEndpoint.fileLimit = 0;
+      mergedEndpoint.fileSizeLimit = 0;
+      mergedEndpoint.totalSizeLimit = 0;
+      mergedEndpoint.fileMaxSizeMB = 0;
+      mergedEndpoint.totalMaxSizeMB = 0;
+      mergedEndpoint.supportedMimeTypes = [];
+      continue;
+    }
 
     if (dynamicEndpoint.fileSizeLimit !== undefined) {
       mergedEndpoint.fileSizeLimit = mbToBytes(dynamicEndpoint.fileSizeLimit);
@@ -250,7 +266,7 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
         dynamicEndpoint.supportedMimeTypes as unknown as string[],
       );
     }
-  });
+  }
 
   return mergedConfig;
 }

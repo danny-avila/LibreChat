@@ -160,4 +160,30 @@ describe('mergeFileConfig', () => {
     const parsedResult = fileConfigSchema.safeParse(result);
     expect(parsedResult.success).toBeTruthy();
   });
+
+  test('disables an endpoint and sets numeric fields to 0 and empties supportedMimeTypes', () => {
+    const configWithDisabledEndpoint = {
+      endpoints: {
+        disabledEndpoint: {
+          disabled: true,
+          fileLimit: 15,
+          fileMaxSizeMB: 30,
+          totalMaxSizeMB: 60,
+          fileSizeLimit: 30,
+          totalSizeLimit: 60,
+          supportedMimeTypes: ['^video/.*$'],
+        },
+      },
+    };
+
+    const result = mergeFileConfig(configWithDisabledEndpoint);
+    expect(result.endpoints.disabledEndpoint).toBeDefined();
+    expect(result.endpoints.disabledEndpoint.disabled).toEqual(true);
+    expect(result.endpoints.disabledEndpoint.fileLimit).toEqual(0);
+    expect(result.endpoints.disabledEndpoint.fileSizeLimit).toEqual(0);
+    expect(result.endpoints.disabledEndpoint.totalSizeLimit).toEqual(0);
+    expect(result.endpoints.disabledEndpoint.fileMaxSizeMB).toEqual(0);
+    expect(result.endpoints.disabledEndpoint.totalMaxSizeMB).toEqual(0);
+    expect(result.endpoints.disabledEndpoint.supportedMimeTypes).toEqual([]);
+  });
 });
