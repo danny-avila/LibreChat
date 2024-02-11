@@ -134,8 +134,8 @@ export default function AssistantSelect({
     }
 
     if (selectedAssistant && assistants.data) {
-      lastSelectedAssistant.current = selectedAssistant;
       timerId = setTimeout(() => {
+        lastSelectedAssistant.current = selectedAssistant;
         onSelect(selectedAssistant);
       }, 5);
     }
