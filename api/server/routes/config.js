@@ -33,12 +33,8 @@ router.get('/', async function (req, res) {
         !!process.env.EMAIL_PASSWORD &&
         !!process.env.EMAIL_FROM,
       checkBalance: isEnabled(process.env.CHECK_BALANCE),
-      showBirthdayIcon:
-        process.env.SHOW_BIRTHDAY_ICON === 'true'
-          ? true
-          : process.env.SHOW_BIRTHDAY_ICON === ''
-            ? true
-            : false,
+      showBirthdayIcon: isEnabled(process.env.SHOW_BIRTHDAY_ICON)
+        || process.env.SHOW_BIRTHDAY_ICON === '',
     };
 
     if (typeof process.env.CUSTOM_FOOTER === 'string') {
