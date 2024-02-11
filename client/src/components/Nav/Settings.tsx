@@ -54,6 +54,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   isSmallScreen ? '' : 'dark:bg-gray-800',
                 )}
                 value={SettingsTabValues.GENERAL}
+                style={{ userSelect: 'none' }}
               >
                 <GearIcon />
                 {localize('com_nav_setting_general')}
@@ -67,6 +68,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   isSmallScreen ? '' : 'dark:bg-gray-800',
                 )}
                 value={SettingsTabValues.BETA}
+                style={{ userSelect: 'none' }}
               >
                 <ExperimentIcon />
                 {localize('com_nav_setting_beta')}
@@ -80,6 +82,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   isSmallScreen ? '' : 'dark:bg-gray-800',
                 )}
                 value={SettingsTabValues.DATA}
+                style={{ userSelect: 'none' }}
               >
                 <DataIcon />
                 {localize('com_nav_setting_data')}
@@ -93,6 +96,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                   isSmallScreen ? '' : 'dark:bg-gray-800',
                 )}
                 value={SettingsTabValues.ACCOUNT}
+                style={{ userSelect: 'none' }}
               >
                 <UserIcon />
                 {localize('com_nav_setting_account')}

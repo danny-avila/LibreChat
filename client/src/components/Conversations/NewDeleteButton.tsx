@@ -37,6 +37,7 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
         </button>
       </DialogTrigger>
       <DialogTemplate
+        showCloseButton={false}
         title={localize('com_ui_delete_conversation')}
         className="max-w-[450px]"
         main={
