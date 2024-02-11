@@ -156,8 +156,9 @@ export const useUploadFileMutation = (
       ]);
 
       const assistant_id = formData.get('assistant_id');
+      const message_file = formData.get('message_file');
 
-      if (!assistant_id) {
+      if (!assistant_id || message_file === 'true') {
         onSuccess?.(data, formData, context);
         return;
       }
