@@ -110,7 +110,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   };
 
   return (
-    <TooltipProvider delayDuration={150}>
+    <TooltipProvider delayDuration={250}>
       <Tooltip>
         <div
           className={

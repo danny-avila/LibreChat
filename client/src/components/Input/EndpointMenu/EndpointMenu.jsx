@@ -158,7 +158,7 @@ export default function NewConversationMenu() {
   };
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delayDuration={250}>
       <Tooltip>
         <Dialog className="z-[100]">
           <DropdownMenu open={menuOpen} onOpenChange={onOpenChange}>

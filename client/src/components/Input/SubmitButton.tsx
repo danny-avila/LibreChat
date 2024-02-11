@@ -107,7 +107,7 @@ export default function SubmitButton({
     );
   } else {
     return (
-      <TooltipProvider delayDuration={50}>
+      <TooltipProvider delayDuration={250}>
         <Tooltip>
           <TooltipTrigger asChild>
             <button

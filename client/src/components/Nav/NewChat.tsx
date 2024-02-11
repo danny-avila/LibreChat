@@ -43,7 +43,7 @@ export default function NewChat({
   };
 
   return (
-    <TooltipProvider delayDuration={50}>
+    <TooltipProvider delayDuration={250}>
       <Tooltip>
         <div className="sticky left-0 right-0 top-0 z-20 bg-gray-50 pt-3.5 dark:bg-gray-900">
           <div className="pb-0.5 last:pb-0" tabIndex={0} style={{ transform: 'none' }}>

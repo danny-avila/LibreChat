@@ -7,7 +7,7 @@ export default function SendButton({ text, disabled }) {
   const localize = useLocalize();
 
   return (
-    <TooltipProvider delayDuration={50}>
+    <TooltipProvider delayDuration={250}>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
