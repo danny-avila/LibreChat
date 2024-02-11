@@ -172,7 +172,7 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
       conversationId,
       // TODO: title feature
       title: 'New Chat',
-      endpoint: EModelEndpoint.assistant,
+      endpoint: EModelEndpoint.assistants,
       promptPrefix: promptPrefix,
       instructions: instructions,
       assistant_id,

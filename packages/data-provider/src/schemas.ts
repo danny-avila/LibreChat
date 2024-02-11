@@ -12,7 +12,7 @@ export enum EModelEndpoint {
   google = 'google',
   gptPlugins = 'gptPlugins',
   anthropic = 'anthropic',
-  assistant = 'assistant',
+  assistants = 'assistants',
   custom = 'custom',
 }
 

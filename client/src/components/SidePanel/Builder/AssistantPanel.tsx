@@ -288,7 +288,7 @@ export default function AssistantPanel({
                   emptyTitle={true}
                   value={field.value}
                   setValue={field.onChange}
-                  availableValues={modelsQuery.data?.[EModelEndpoint.assistant] ?? []}
+                  availableValues={modelsQuery.data?.[EModelEndpoint.assistants] ?? []}
                   showAbove={false}
                   showLabel={false}
                   className={cn(

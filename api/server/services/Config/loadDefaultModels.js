@@ -34,7 +34,7 @@ async function loadDefaultModels(req) {
     [EModelEndpoint.azureOpenAI]: azureOpenAI,
     [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
-    [EModelEndpoint.assistant]: assistant,
+    [EModelEndpoint.assistants]: assistant,
   };
 }
 

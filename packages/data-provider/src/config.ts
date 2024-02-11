@@ -70,7 +70,7 @@ export enum KnownEndpoints {
 
 export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.openAI,
-  EModelEndpoint.assistant,
+  EModelEndpoint.assistants,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.bingAI,
   EModelEndpoint.chatGPTBrowser,
@@ -82,7 +82,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
 
 export const alternateName = {
   [EModelEndpoint.openAI]: 'OpenAI',
-  [EModelEndpoint.assistant]: 'Assistants',
+  [EModelEndpoint.assistants]: 'Assistants',
   [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
   [EModelEndpoint.bingAI]: 'Bing',
   [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
@@ -93,7 +93,7 @@ export const alternateName = {
 };
 
 export const defaultModels = {
-  [EModelEndpoint.assistant]: [
+  [EModelEndpoint.assistants]: [
     'gpt-3.5-turbo-0125',
     'gpt-4-0125-preview',
     'gpt-4-turbo-preview',
@@ -169,7 +169,7 @@ export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.gptPlugins]: `/api/ask/${EModelEndpoint.gptPlugins}`,
   [EModelEndpoint.azureOpenAI]: `/api/ask/${EModelEndpoint.azureOpenAI}`,
   [EModelEndpoint.chatGPTBrowser]: `/api/ask/${EModelEndpoint.chatGPTBrowser}`,
-  [EModelEndpoint.assistant]: '/api/assistants/chat',
+  [EModelEndpoint.assistants]: '/api/assistants/chat',
 };
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([

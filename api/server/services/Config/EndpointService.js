@@ -29,7 +29,7 @@ module.exports = {
     userProvidedOpenAI,
     googleKey,
     [EModelEndpoint.openAI]: isUserProvided(openAIApiKey),
-    [EModelEndpoint.assistant]: isUserProvided(assistantsApiKey),
+    [EModelEndpoint.assistants]: isUserProvided(assistantsApiKey),
     [EModelEndpoint.azureOpenAI]: isUserProvided(azureOpenAIApiKey),
     [EModelEndpoint.chatGPTBrowser]: isUserProvided(chatGPTToken),
     [EModelEndpoint.anthropic]: isUserProvided(anthropicApiKey),

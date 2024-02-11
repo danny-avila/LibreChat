@@ -77,7 +77,7 @@ async function saveUserMessage(params) {
 
   const userMessage = {
     user: params.user,
-    endpoint: EModelEndpoint.assistant,
+    endpoint: EModelEndpoint.assistants,
     messageId: params.messageId,
     conversationId: params.conversationId,
     parentMessageId: params.parentMessageId ?? Constants.NO_PARENT,
@@ -91,7 +91,7 @@ async function saveUserMessage(params) {
   };
 
   const convo = {
-    endpoint: EModelEndpoint.assistant,
+    endpoint: EModelEndpoint.assistants,
     conversationId: params.conversationId,
     promptPrefix: params.promptPrefix,
     instructions: params.instructions,
@@ -140,7 +140,7 @@ async function saveAssistantMessage(params) {
 
   const message = await recordMessage({
     user: params.user,
-    endpoint: EModelEndpoint.assistant,
+    endpoint: EModelEndpoint.assistants,
     messageId: params.messageId,
     conversationId: params.conversationId,
     parentMessageId: params.parentMessageId,
@@ -155,7 +155,7 @@ async function saveAssistantMessage(params) {
   });
 
   await saveConvo(params.user, {
-    endpoint: EModelEndpoint.assistant,
+    endpoint: EModelEndpoint.assistants,
     conversationId: params.conversationId,
     promptPrefix: params.promptPrefix,
     instructions: params.instructions,
@@ -277,7 +277,7 @@ async function syncMessages({ openai, apiMessages, dbMessages, conversationId, t
         thread_id,
         conversationId,
         messageId: v4(),
-        endpoint: EModelEndpoint.assistant,
+        endpoint: EModelEndpoint.assistants,
         parentMessageId: lastMessage ? lastMessage.messageId : Constants.NO_PARENT,
         role: apiMessage.role,
         isCreatedByUser: apiMessage.role === 'user',

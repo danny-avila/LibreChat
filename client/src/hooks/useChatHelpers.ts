@@ -207,7 +207,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       error: false,
     };
 
-    if (endpoint === EModelEndpoint.assistant) {
+    if (endpoint === EModelEndpoint.assistants) {
       initialResponse.model = conversation?.assistant_id ?? '';
       initialResponse.text = '';
       initialResponse.content = [

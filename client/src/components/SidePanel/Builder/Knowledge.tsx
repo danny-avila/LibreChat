@@ -40,7 +40,7 @@ export default function Knowledge({
     select: (data) => mergeFileConfig(data),
   });
   const { handleFileChange } = useFileHandling({
-    overrideEndpoint: EModelEndpoint.assistant,
+    overrideEndpoint: EModelEndpoint.assistants,
     additionalMetadata: { assistant_id },
     fileSetter: setFiles,
   });
@@ -51,7 +51,7 @@ export default function Knowledge({
     }
   }, [_files]);
 
-  const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.assistant];
+  const endpointFileConfig = fileConfig.endpoints[EModelEndpoint.assistants];
 
   if (endpointFileConfig?.disabled) {
     return null;

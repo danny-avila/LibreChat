@@ -139,7 +139,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     }
 
     if (
-      endpoint === EModelEndpoint.assistant &&
+      endpoint === EModelEndpoint.assistants &&
       !formData.get('assistant_id') &&
       conversation?.assistant_id
     ) {

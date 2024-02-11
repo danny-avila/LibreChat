@@ -150,7 +150,7 @@ const getOpenAIModels = async (opts) => {
   let models = defaultModels[EModelEndpoint.openAI];
 
   if (opts.assistants) {
-    models = defaultModels[EModelEndpoint.assistant];
+    models = defaultModels[EModelEndpoint.assistants];
   }
 
   if (opts.plugins) {

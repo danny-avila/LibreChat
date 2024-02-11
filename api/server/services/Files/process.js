@@ -251,7 +251,7 @@ const uploadImageBuffer = async ({ req, context }) => {
  * @returns {Promise<void>}
  */
 const processFileUpload = async ({ req, res, file, metadata }) => {
-  const isAssistantUpload = metadata.endpoint === EModelEndpoint.assistant;
+  const isAssistantUpload = metadata.endpoint === EModelEndpoint.assistants;
   const source = isAssistantUpload ? FileSources.openai : req.app.locals.fileStrategy;
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;

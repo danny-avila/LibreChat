@@ -16,7 +16,7 @@ const EndpointsMenu: FC = () => {
   const { endpoint = '', assistant_id = null } = conversation ?? {};
   const assistantMap = useAssistantsMapContext();
 
-  const assistant = endpoint === EModelEndpoint.assistant && assistantMap?.[assistant_id ?? ''];
+  const assistant = endpoint === EModelEndpoint.assistants && assistantMap?.[assistant_id ?? ''];
   const assistantName = (assistant && assistant?.name) || 'Assistant';
 
   if (!endpoint) {

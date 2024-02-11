@@ -461,7 +461,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     const payloadData = createPayload(submission);
     let { payload } = payloadData;
-    if (payload.endpoint === EModelEndpoint.assistant) {
+    if (payload.endpoint === EModelEndpoint.assistants) {
       payload = removeNullishValues(payload);
     }
 

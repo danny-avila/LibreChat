@@ -6,7 +6,7 @@ import type { FileConfig, EndpointFileConfig } from './types/files';
 export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
   [EModelEndpoint.google]: true,
-  [EModelEndpoint.assistant]: true,
+  [EModelEndpoint.assistants]: true,
   [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.custom]: true,
 };
@@ -137,7 +137,7 @@ export const mbToBytes = (mb: number): number => mb * megabyte;
 
 export const fileConfig = {
   endpoints: {
-    [EModelEndpoint.assistant]: {
+    [EModelEndpoint.assistants]: {
       fileLimit: 10,
       fileMaxSizeMB: 512,
       totalMaxSizeMB: 512,

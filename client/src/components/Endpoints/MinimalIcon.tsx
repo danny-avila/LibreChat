@@ -41,7 +41,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     },
     [EModelEndpoint.bingAI]: { icon: <BingAIMinimalIcon />, name: 'BingAI' },
     [EModelEndpoint.chatGPTBrowser]: { icon: <LightningIcon />, name: 'ChatGPT' },
-    [EModelEndpoint.assistant]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
+    [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     default: {
       icon: (
         <UnknownIcon

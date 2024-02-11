@@ -41,7 +41,7 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
         return;
       }
 
-      if (endpoint !== EModelEndpoint.assistant) {
+      if (endpoint !== EModelEndpoint.assistants) {
         return;
       }
       setOption('model')(assistant.model);
@@ -67,7 +67,7 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
           <div className="assistant-item flex items-center justify-center overflow-hidden rounded-full">
             <Icon
               isCreatedByUser={false}
-              endpoint={EModelEndpoint.assistant}
+              endpoint={EModelEndpoint.assistants}
               assistantName={currentAssistant?.name ?? ''}
               iconURL={(currentAssistant?.metadata?.avatar as string) ?? ''}
             />
@@ -85,7 +85,7 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
               <div className="assistant-item overflow-hidden rounded-full ">
                 <Icon
                   isCreatedByUser={false}
-                  endpoint={EModelEndpoint.assistant}
+                  endpoint={EModelEndpoint.assistants}
                   assistantName={assistant.name ?? ''}
                   iconURL={(assistant.metadata?.avatar as string) ?? ''}
                 />

@@ -23,7 +23,7 @@ export const icons = {
   [EModelEndpoint.google]: GoogleMinimalIcon,
   [EModelEndpoint.bingAI]: BingAIMinimalIcon,
   [EModelEndpoint.custom]: CustomMinimalIcon,
-  [EModelEndpoint.assistant]: ({
+  [EModelEndpoint.assistants]: ({
     className = '',
     assistantName,
     avatar,

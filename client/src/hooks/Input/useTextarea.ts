@@ -39,7 +39,7 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
   const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
-  const assistant = endpoint === EModelEndpoint.assistant && assistantMap?.[assistant_id ?? ''];
+  const assistant = endpoint === EModelEndpoint.assistants && assistantMap?.[assistant_id ?? ''];
   const assistantName = (assistant && assistant?.name) || '';
 
   // auto focus to input, when enter a conversation.
@@ -82,7 +82,7 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
       }
 
       const sender =
-        conversation?.endpoint === EModelEndpoint.assistant
+        conversation?.endpoint === EModelEndpoint.assistants
           ? getAssistantName({ name: assistantName, localize })
           : getSender(conversation as TEndpointOption);
 

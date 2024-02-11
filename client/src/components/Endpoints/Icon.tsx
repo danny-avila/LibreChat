@@ -51,7 +51,7 @@ const Icon: React.FC<IconProps> = (props) => {
     );
   } else {
     const endpointIcons = {
-      [EModelEndpoint.assistant]: {
+      [EModelEndpoint.assistants]: {
         icon: props.iconURL ? (
           <div
             title={assistantName}

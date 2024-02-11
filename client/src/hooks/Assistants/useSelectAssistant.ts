@@ -20,13 +20,13 @@ export default function useSelectAssistant() {
         return;
       }
       const template: Partial<TPreset | TConversation> = {
-        endpoint: EModelEndpoint.assistant,
+        endpoint: EModelEndpoint.assistants,
         assistant_id: assistant.id,
         model: assistant.model,
         conversationId: 'new',
       };
 
-      if (conversation?.endpoint === EModelEndpoint.assistant) {
+      if (conversation?.endpoint === EModelEndpoint.assistants) {
         const currentConvo = getDefaultConversation({
           conversation: { ...(conversation ?? {}) },
           preset: template,

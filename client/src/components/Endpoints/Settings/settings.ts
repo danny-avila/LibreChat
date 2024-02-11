@@ -8,7 +8,7 @@ import BingAISettings from './BingAI';
 import OpenAISettings from './OpenAI';
 
 const settings: { [key: string]: FC<TModelSelectProps> } = {
-  [EModelEndpoint.assistant]: AssistantsSettings,
+  [EModelEndpoint.assistants]: AssistantsSettings,
   [EModelEndpoint.openAI]: OpenAISettings,
   [EModelEndpoint.custom]: OpenAISettings,
   [EModelEndpoint.azureOpenAI]: OpenAISettings,
