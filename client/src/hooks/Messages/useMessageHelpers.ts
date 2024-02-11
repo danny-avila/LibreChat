@@ -1,5 +1,6 @@
 import copy from 'copy-to-clipboard';
 import { useEffect, useRef, useCallback } from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
@@ -56,7 +57,8 @@ export default function useMessageHelpers(props: TMessageProps) {
     }
   }, [isSubmitting, setAbortScroll]);
 
-  const assistant = conversation?.endpoint === 'assistant' && assistantMap?.[message?.model ?? ''];
+  const assistant =
+    conversation?.endpoint === EModelEndpoint.assistants && assistantMap?.[message?.model ?? ''];
 
   const icon = Icon({
     ...conversation,
