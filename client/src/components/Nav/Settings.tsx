@@ -32,7 +32,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               role="tablist"
               aria-orientation="vertical"
               className={cn(
-                'min-w-auto -ml-[8px] flex flex-shrink-0 flex-col',
+                'min-w-auto -ml-[8px] -mr-[8px] flex flex-shrink-0 flex-col',
                 isSmallScreen ? 'flex-row rounded-lg bg-gray-100 p-1 dark:bg-gray-800/30' : '',
               )}
               style={{ outline: 'none' }}
