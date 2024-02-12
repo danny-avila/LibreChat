@@ -1,15 +1,17 @@
 version: '3.4'
 
-# # TO USE THIS FILE, FIRST UNCOMMENT THE LINE ('services:')
+# Please consult our docs for more info: https://docs.librechat.ai/install/configuration/docker_override.html
 
-# # THEN UNCOMMENT ONLY THE SECTION OR SECTIONS CONTAINING THE CHANGES YOU WANT TO APPLY
-# # SAVE THIS FILE AS 'docker-compose.override.yaml'
-# # AND USE THE 'docker compose build' & 'docker compose up -d' COMMANDS AS YOU WOULD NORMALLY DO
+# TO USE THIS FILE, FIRST UNCOMMENT THE LINE ('services:')
 
-# # WARNING: YOU CAN ONLY SPECIFY EVERY SERVICE NAME ONCE (api, mongodb, meilisearch, ...)
-# # IF YOU WANT TO OVERRIDE MULTIPLE SETTINGS IN ONE SERVICE YOU WILL HAVE TO EDIT ACCORDINGLY
+# THEN UNCOMMENT ONLY THE SECTION OR SECTIONS CONTAINING THE CHANGES YOU WANT TO APPLY
+# SAVE THIS FILE AS 'docker-compose.override.yaml'
+# AND USE THE 'docker compose build' & 'docker compose up -d' COMMANDS AS YOU WOULD NORMALLY DO
 
-# # EXAMPLE: if you want to use the config file and the latest docker image the result will be:
+# WARNING: YOU CAN ONLY SPECIFY EVERY SERVICE NAME ONCE (api, mongodb, meilisearch, ...)
+# IF YOU WANT TO OVERRIDE MULTIPLE SETTINGS IN ONE SERVICE YOU WILL HAVE TO EDIT ACCORDINGLY
+
+# EXAMPLE: if you want to use the config file and the latest docker image the result will be:
 
 # services:
 #   api:
