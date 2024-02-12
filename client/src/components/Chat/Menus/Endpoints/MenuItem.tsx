@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, modularEndpoints } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset, TConversation } from 'librechat-data-provider';
 import type { FC } from 'react';
@@ -47,10 +47,35 @@ const MenuItem: FC<MenuItemProps> = ({
       if (!expiryTime) {
         setDialogOpen(true);
       }
-      const template: Partial<TPreset> = { endpoint: newEndpoint, conversationId: 'new' };
+
+      const currentEndpoint = conversation?.endpoint;
+      const template: Partial<TPreset> = {
+        ...conversation,
+        endpoint: newEndpoint,
+        conversationId: 'new',
+      };
+      const isAssistantSwitch =
+        newEndpoint === EModelEndpoint.assistants &&
+        currentEndpoint === EModelEndpoint.assistants &&
+        currentEndpoint === newEndpoint;
+
       const { conversationId } = conversation ?? {};
-      if (modularChat && conversationId && conversationId !== 'new') {
-        template.endpointType = getEndpointField(endpointsConfig, newEndpoint, 'type');
+      const isExistingConversation = conversationId && conversationId !== 'new';
+      const currentEndpointType =
+        getEndpointField(endpointsConfig, currentEndpoint, 'type') ?? currentEndpoint;
+      const newEndpointType = getEndpointField(endpointsConfig, newEndpoint, 'type') ?? newEndpoint;
+
+      if (
+        isExistingConversation &&
+        (modularEndpoints.has(endpoint ?? '') ||
+          modularEndpoints.has(currentEndpointType ?? '') ||
+          isAssistantSwitch) &&
+        (modularEndpoints.has(newEndpoint ?? '') ||
+          modularEndpoints.has(newEndpointType ?? '') ||
+          isAssistantSwitch) &&
+        (endpoint === newEndpoint || modularChat || isAssistantSwitch)
+      ) {
+        template.endpointType = newEndpointType;
 
         const currentConvo = getDefaultConversation({
           /* target endpointType is necessary to avoid endpoint mixing */
@@ -59,7 +84,7 @@ const MenuItem: FC<MenuItemProps> = ({
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */
-        newConversation({ template: currentConvo, keepLatestMessage: true });
+        newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
         return;
       }
       newConversation({ template: { ...(template as Partial<TConversation>) } });
