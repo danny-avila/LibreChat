@@ -15,14 +15,6 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:min-h-[373px] md:w-[680px]')}
-        style={{
-          borderRadius: '12px',
-          position: 'fixed',
-          margin: 'auto',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-        }}
       >
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
