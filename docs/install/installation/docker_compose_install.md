@@ -44,7 +44,7 @@ Safely access and manage your MongoDB database using Mongo Express
 How to set up the user/auth system and Google login.
 
 ### Running LibreChat
-Once you have completed all the setup, you can start the LibreChat application by running the command `docker-compose up` in your terminal. After running this command, you can access the LibreChat application at `http://localhost:3080`.
+Once you have completed all the setup, you can start the LibreChat application by running the command `docker compose up` in your terminal. After running this command, you can access the LibreChat application at `http://localhost:3080`.
 
 **Note:** MongoDB does not support older ARM CPUs like those found in Raspberry Pis. However, you can make it work by setting MongoDB’s version to mongo:4.4.18 in docker-compose.yml, the most recent version compatible with
 
@@ -55,8 +55,8 @@ The following commands will fetch the latest code of LibreChat and build a new d
 
 ```bash
 git pull
-docker-compose down
-docker-compose up --build
+docker compose down
+docker compose up --build
 ```
 
 If you're having issues running this command, you can try running what the script does manually:
@@ -65,7 +65,7 @@ Prefix commands with `sudo` according to your environment permissions.
 
 ```bash
 # Stop the container (if running)
-docker-compose down
+docker compose down
 # Switch to the repo's main branch
 git checkout main
 # Pull the latest changes to the main branch from Github
@@ -77,10 +77,10 @@ docker rmi librechat:latest
 # computer, also those not created by LibreChat!
 docker image prune -f
 # Building a new LibreChat image without cache
-docker-compose build --no-cache
+docker compose build --no-cache
 
 # Start LibreChat
-docker-compose up
+docker compose up
 ```
 
 ## Advanced Settings
@@ -128,7 +128,7 @@ services:
     image: ghcr.io/danny-avila/librechat-dev:latest
 ```
 
-- Then use `docker-compose build` as you would normally
+- Then use `docker compose build` as you would normally
 
 - **Note:** There are different Dockerhub images. the `librechat:latest` image is only updated with new release tags, so it may not have the latest changes to the main branch. To get the latest changes you can use `librechat-dev:latest` instead
 

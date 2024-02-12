@@ -212,7 +212,7 @@ DISCORD_CALLBACK_URL=/oauth/discord/callback
 
 - Save the `.env` file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 ---
 
@@ -292,7 +292,7 @@ FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
 
 - Save the `.env` file.
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 ---
 
@@ -354,7 +354,7 @@ GITHUB_CALLBACK_URL=/oauth/github/callback
 
 - Save the `.env` file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 ---
 
@@ -448,7 +448,7 @@ GOOGLE_CALLBACK_URL=/oauth/github/callback
 
 - Save the `.env` file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 ---
 
@@ -559,7 +559,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 ```
 7. Save the .env file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 
 ---
@@ -590,7 +590,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyon
 ```
 11. Save the .env file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 
 ---
