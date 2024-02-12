@@ -275,6 +275,10 @@ async function processRequiredActions(openai, requiredActions) {
       ActionToolMap[currentAction.tool] = tool;
     }
 
+    if (currentAction.tool === 'calculator') {
+      currentAction.toolInput = currentAction.toolInput.input;
+    }
+
     try {
       const promise = tool
         ._call(currentAction.toolInput)
