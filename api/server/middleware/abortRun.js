@@ -1,4 +1,4 @@
-const { CacheKeys } = require('librechat-data-provider');
+const { CacheKeys, isUUID } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistant');
 const { checkMessageGaps } = require('~/server/services/Threads');
 const { getConvo } = require('~/models/Conversation');
@@ -11,9 +11,18 @@ async function abortRun(req, res) {
   res.setHeader('Content-Type', 'application/json');
   const { abortKey, latestMessageId } = req.body;
   const [thread_id, conversationId] = abortKey.split(':');
+
   if (!thread_id || !conversationId) {
+    logger.error('[abortRun] Invalid abortKey', { abortKey });
     return res.status(400).send({ message: 'Invalid abortKey' });
+  } else if (!isUUID.safeParse(conversationId).success) {
+    logger.error('[abortRun] Invalid conversationId', { conversationId });
+    return res.status(400).send({ message: 'Invalid conversationId' });
+  } else if (!thread_id.startsWith('thread_')) {
+    logger.error('[abortRun] Invalid thread_id', { thread_id });
+    return res.status(400).send({ message: 'Invalid thread_id' });
   }
+
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
   const run_id = await cache.get(thread_id);
 

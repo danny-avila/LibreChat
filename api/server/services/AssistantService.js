@@ -56,14 +56,17 @@ async function createOnTextProgress({
       return;
     }
 
-    sendMessage(openai.res, {
+    const contentData = {
       index,
       type,
       [type]: data[type],
       messageId,
       thread_id,
       conversationId,
-    });
+    };
+
+    logger.debug('Content data:', contentData);
+    sendMessage(openai.res, contentData);
   };
 }
 
@@ -320,7 +323,7 @@ function createInProgressHandler(openai, thread_id, messages) {
       // Create a small buffer before streaming begins
       await sleep(500);
 
-      const stream = new TextStream(result.text, { delay: 12 });
+      const stream = new TextStream(result.text, { delay: 9 });
       await stream.processTextStream(onProgress);
     }
   }

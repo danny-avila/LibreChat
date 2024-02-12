@@ -44,7 +44,15 @@ class RunManager {
    */
   async fetchRunSteps({ openai, thread_id, run_id, runStatus, final = false }) {
     // const { data: steps, first_id, last_id, has_more } = await openai.beta.threads.runs.steps.list(thread_id, run_id);
-    const { data: _steps } = await openai.beta.threads.runs.steps.list(thread_id, run_id);
+    const { data: _steps } = await openai.beta.threads.runs.steps.list(
+      thread_id,
+      run_id,
+      {},
+      {
+        timeout: 3000,
+        maxRetries: 5,
+      },
+    );
     const steps = _steps.sort((a, b) => a.created_at - b.created_at);
     for (const [i, step] of steps.entries()) {
       if (!final && this.seenSteps.has(`${step.id}-${step.status}`)) {

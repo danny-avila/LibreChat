@@ -3,6 +3,23 @@ const getLogStores = require('~/cache/getLogStores');
 const RunManager = require('./RunManager');
 const { logger } = require('~/config');
 
+async function withTimeout(promise, timeoutMs, timeoutMessage) {
+  let timeoutHandle;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      logger.debug(timeoutMessage);
+      reject(new Error('Operation timed out'));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
 /**
  * Creates a run on a thread using the OpenAI API.
  *
@@ -63,26 +80,39 @@ async function waitForRun({
 
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
 
+  let i = 0;
   let lastSeenStatus = null;
+  const runInfo = `user: ${openai.req.user.id} | thread_id: ${thread_id} | run_id: ${run_id}`;
   while (timeElapsed < timeout) {
-    run = await openai.beta.threads.runs.retrieve(thread_id, run_id);
+    i++;
+    run = await openai.beta.threads.runs.retrieve(thread_id, run_id, {
+      timeout: pollIntervalMs * 3,
+      maxRetries: 5,
+    });
+    const runStatus = `${runInfo} | status: ${run.status}`;
 
     if (run.status !== lastSeenStatus) {
-      logger.debug(
-        `[waitForRun] user: ${openai.req.user.id} | thread_id: ${thread_id} | run_id: ${run_id} | status: ${run.status}`,
-      );
+      logger.debug(`[waitForRun] ${runStatus}`);
       lastSeenStatus = run.status;
     }
 
-    const cancelStatus = await cache.get(thread_id);
-    if (cancelStatus === 'cancelled') {
-      logger.warn(
-        `run cancelled | user: ${openai.req.user.id} | thread_id: ${thread_id} | run_id: ${run_id} | status: ${run.status}`,
-      );
-      throw new Error('Run cancelled');
+    logger.debug(`[heartbeat ${i}] ${runStatus}`);
+
+    try {
+      const raceTimeoutMs = pollIntervalMs * 3;
+      const timeoutMessage = `[heartbeat ${i}] Operation timed out for thread_id: ${thread_id}`;
+      const cancelStatus = await withTimeout(cache.get(thread_id), raceTimeoutMs, timeoutMessage);
+
+      if (cancelStatus === 'cancelled') {
+        logger.warn(`run cancelled | ${runStatus}`);
+        throw new Error('Run cancelled');
+      }
+    } catch (error) {
+      logger.warn(`Error retrieving cancel status: ${error}`);
     }
 
     if (![RunStatus.IN_PROGRESS, RunStatus.QUEUED].includes(run.status)) {
+      logger.debug(`[final status] ${runInfo} | status: ${run.status}`);
       await runManager.fetchRunSteps({
         openai,
         thread_id: thread_id,
@@ -106,9 +136,7 @@ async function waitForRun({
   }
 
   if (timeElapsed >= timeout) {
-    logger.warn(
-      `[waitForRun] user: ${openai.req.user.id} | thread_id: ${thread_id} | run_id: ${run_id} | status: ${run.status} | timed out after ${timeout} ms`,
-    );
+    logger.warn(`[waitForRun] ${runInfo} | status: ${run.status} | timed out after ${timeout} ms`);
   }
 
   return run;
