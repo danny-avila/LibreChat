@@ -325,7 +325,7 @@ export default {
   com_nav_search_placeholder: 'Nachrichten suchen',
   com_nav_setting_general: 'Allgemein',
   com_nav_setting_beta: 'Beta-Funktionen',
-  com_nav_setting_data: 'Datenkontrollen',
+  com_nav_setting_data: 'Daten-Kontrolle',
   com_nav_setting_account: 'Konto',
   com_nav_language: 'Sprache',
   com_nav_lang_auto: 'Automatische Erkennung',
