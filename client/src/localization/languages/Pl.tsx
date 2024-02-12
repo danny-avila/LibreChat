@@ -1,8 +1,9 @@
-// Polskie frazy
+// Polish phrases
 
 export default {
   com_ui_examples: 'Przykłady',
   com_ui_new_chat: 'Nowy czat',
+  com_ui_happy_birthday: 'To moje pierwsze urodziny!',
   com_ui_example_quantum_computing: 'Wyjaśnij obliczenia kwantowe w prostych słowach',
   com_ui_example_10_year_old_b_day: 'Masz jakieś kreatywne pomysły na dziesiąte urodziny?',
   com_ui_example_http_in_js: 'Jak wykonać żądanie HTTP w JavaScript?',

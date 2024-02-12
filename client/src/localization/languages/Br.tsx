@@ -5,6 +5,7 @@
 export default {
   com_ui_examples: 'Exemplos',
   com_ui_new_chat: 'Novo Chat',
+  com_ui_happy_birthday: 'É meu primeiro aniversário!',
   com_ui_example_quantum_computing: 'Explique a computação quântica em termos simples',
   com_ui_example_10_year_old_b_day:
     'Tem alguma ideia criativa para o aniversário de uma criança de 10 anos?',
