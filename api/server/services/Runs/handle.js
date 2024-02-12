@@ -1,6 +1,7 @@
 const { RunStatus, defaultOrderQuery, CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const RunManager = require('./RunManager');
+const { retrieveRun } = require('./methods');
 const { logger } = require('~/config');
 
 async function withTimeout(promise, timeoutMs, timeoutMessage) {
@@ -84,13 +85,14 @@ async function waitForRun({
   let i = 0;
   let lastSeenStatus = null;
   const runInfo = `user: ${openai.req.user.id} | thread_id: ${thread_id} | run_id: ${run_id}`;
+  const raceTimeoutMs = 3000;
   while (timeElapsed < timeout) {
     i++;
     logger.debug(`[heartbeat ${i}] Retrieving run status for ${run_id}...`);
-    run = await openai.beta.threads.runs.retrieve(thread_id, run_id, {
-      timeout: pollIntervalMs * 3,
-      maxRetries: 5,
-    });
+    const startTime = Date.now();
+    run = await retrieveRun({ thread_id, run_id, timeout: raceTimeoutMs, openai });
+    const endTime = Date.now();
+    logger.debug(`[heartbeat ${i}] Elapsed run retrieval time: ${endTime - startTime}`);
     const runStatus = `${runInfo} | status: ${run.status}`;
 
     if (run.status !== lastSeenStatus) {
@@ -102,7 +104,6 @@ async function waitForRun({
 
     let cancelStatus;
     try {
-      const raceTimeoutMs = pollIntervalMs * 3;
       const timeoutMessage = `[heartbeat ${i}] Operation timed out for thread_id: ${thread_id}`;
       cancelStatus = await withTimeout(cache.get(cacheKey), raceTimeoutMs, timeoutMessage);
     } catch (error) {
@@ -139,7 +140,9 @@ async function waitForRun({
   }
 
   if (timeElapsed >= timeout) {
-    logger.warn(`[waitForRun] ${runInfo} | status: ${run.status} | timed out after ${timeout} ms`);
+    const timeoutMessage = `[waitForRun] ${runInfo} | status: ${run.status} | timed out after ${timeout} ms`;
+    logger.warn(timeoutMessage);
+    throw new Error(timeoutMessage);
   }
 
   return run;
