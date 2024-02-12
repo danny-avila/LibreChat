@@ -1,12 +1,27 @@
 version: '3.4'
 
-# # TO USE THIS FILE, FIRST UNCOMMENT THE FOLLOWING LINE ('services:')
+# Please consult our docs for more info: https://docs.librechat.ai/install/configuration/docker_override.html
+
+# TO USE THIS FILE, FIRST UNCOMMENT THE LINE ('services:')
+
+# THEN UNCOMMENT ONLY THE SECTION OR SECTIONS CONTAINING THE CHANGES YOU WANT TO APPLY
+# SAVE THIS FILE AS 'docker-compose.override.yaml'
+# AND USE THE 'docker compose build' & 'docker compose up -d' COMMANDS AS YOU WOULD NORMALLY DO
+
+# WARNING: YOU CAN ONLY SPECIFY EVERY SERVICE NAME ONCE (api, mongodb, meilisearch, ...)
+# IF YOU WANT TO OVERRIDE MULTIPLE SETTINGS IN ONE SERVICE YOU WILL HAVE TO EDIT ACCORDINGLY
+
+# EXAMPLE: if you want to use the config file and the latest docker image the result will be:
 
 # services:
+#   api:
+#     volumes:
+#       - ./librechat.yaml:/app/librechat.yaml
+#     image: ghcr.io/danny-avila/librechat-dev:latest
 
-# # THEN UNCOMMENT ONLY THE SECTION OR SECTIONS CONTAINING THE CHANGES YOU WANT TO APPLY
-# # SAVE THIS FILE AS 'docker-compose.override.yaml'
-# # AND USE THE 'docker compose build' & 'docker compose up -d' COMMANDS AS YOU WOULD NORMALLY DO
+# ---------------------------------------------------
+
+# services:
 
 # # USE LIBRECHAT CONFIG FILE
 #   api:
@@ -16,7 +31,7 @@ version: '3.4'
 # # BUILD FROM LATEST IMAGE
 #   api:
 #     image: ghcr.io/danny-avila/librechat-dev:latest
-
+T 
 # # BUILD FROM LATEST IMAGE (NUMBERED RELEASE)
 #   api:
 #     image: ghcr.io/danny-avila/librechat:latest
