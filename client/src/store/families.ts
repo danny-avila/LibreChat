@@ -58,6 +58,11 @@ const textByIndex = atomFamily<string, string | number>({
   default: '',
 });
 
+const showStopButtonByIndex = atomFamily<boolean, string | number>({
+  key: 'showStopButtonByIndex',
+  default: false,
+});
+
 const abortScrollFamily = atomFamily({
   key: 'abortScrollByIndex',
   default: false,
@@ -113,6 +118,7 @@ export default {
   presetByIndex,
   submissionByIndex,
   textByIndex,
+  showStopButtonByIndex,
   abortScrollFamily,
   isSubmittingFamily,
   optionSettingsFamily,

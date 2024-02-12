@@ -11,6 +11,8 @@ import store from '~/store';
 
 export default function ChatForm({ index = 0 }) {
   const [text, setText] = useRecoilState(store.textByIndex(index));
+  const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
+
   const {
     ask,
     files,
@@ -20,8 +22,6 @@ export default function ChatForm({ index = 0 }) {
     handleStopGenerating,
     filesLoading,
     setFilesLoading,
-    showStopButton,
-    setShowStopButton,
   } = useChatContext();
 
   const submitMessage = () => {
