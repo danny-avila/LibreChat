@@ -9,22 +9,18 @@ const { logger } = require('~/config');
 
 async function abortRun(req, res) {
   res.setHeader('Content-Type', 'application/json');
-  const { abortKey, latestMessageId } = req.body;
-  const [thread_id, conversationId] = abortKey.split(':');
+  const { abortKey } = req.body;
+  const [conversationId, latestMessageId] = abortKey.split(':');
 
-  if (!thread_id || !conversationId) {
-    logger.error('[abortRun] Invalid abortKey', { abortKey });
-    return res.status(400).send({ message: 'Invalid abortKey' });
-  } else if (!isUUID.safeParse(conversationId).success) {
+  if (!isUUID.safeParse(conversationId).success) {
     logger.error('[abortRun] Invalid conversationId', { conversationId });
     return res.status(400).send({ message: 'Invalid conversationId' });
-  } else if (!thread_id.startsWith('thread_')) {
-    logger.error('[abortRun] Invalid thread_id', { thread_id });
-    return res.status(400).send({ message: 'Invalid thread_id' });
   }
 
+  const cacheKey = `${req.user.id}:${conversationId}`;
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
-  const run_id = await cache.get(thread_id);
+  const runValues = await cache.get(cacheKey);
+  const [thread_id, run_id] = runValues.split(':');
 
   if (!run_id) {
     logger.warn('[abortRun] Couldn\'t find run for cancel request', { thread_id });
@@ -39,7 +35,7 @@ async function abortRun(req, res) {
   const { openai } = await initializeClient({ req, res });
 
   try {
-    await cache.set(thread_id, 'cancelled');
+    await cache.set(cacheKey, 'cancelled');
     const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
     logger.debug('Cancelled run:', cancelledRun);
   } catch (error) {

@@ -1,7 +1,8 @@
 import { v4 } from 'uuid';
+import { useSetRecoilState } from 'recoil';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
 import {
   /* @ts-ignore */
   SSE,
@@ -29,6 +30,7 @@ import useContentHandler from './useContentHandler';
 import { useAuthContext } from '../AuthContext';
 import useChatHelpers from '../useChatHelpers';
 import useSetStorage from '../useSetStorage';
+import store from '~/store';
 
 type TResData = {
   plugin?: TResPlugin;
@@ -44,6 +46,7 @@ type TResData = {
 
 type TSyncData = {
   sync: boolean;
+  thread_id: string;
   messages?: TMessage[];
   requestMessage: TMessage;
   responseMessage: TMessage;
@@ -58,10 +61,12 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
+  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
+
   const {
     setMessages,
-    setConversation,
     getMessages,
+    setConversation,
     setIsSubmitting,
     newConversation,
     resetLatestMessage,
@@ -159,7 +164,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   };
 
   const syncHandler = (data: TSyncData, submission: TSubmission) => {
-    const { conversationId, responseMessage, requestMessage } = data;
+    const { conversationId, thread_id, responseMessage, requestMessage } = data;
     const { initialResponse, messages: _messages, message } = submission;
 
     const messages = _messages.filter((msg) => msg.messageId !== message.messageId);
@@ -178,6 +183,8 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       update = tConvoUpdateSchema.parse({
         ...prevState,
         conversationId,
+        thread_id,
+        messages: [requestMessage.messageId, responseMessage.messageId],
       }) as TConversation;
 
       setStorage(update);
@@ -194,6 +201,8 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         return updateConversation(convoData, update);
       }
     });
+
+    setShowStopButton(true);
 
     resetLatestMessage();
   };
@@ -252,6 +261,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     const { requestMessage, responseMessage, conversation, runMessages } = data;
     const { messages, conversation: submissionConvo, isRegenerate = false } = submission;
 
+    setShowStopButton(false);
     setCompleted((prev) => new Set(prev.add(submission?.initialResponse?.messageId)));
 
     // update the messages; if assistants endpoint, client doesn't receive responseMessage
@@ -368,85 +378,84 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     return;
   };
 
-  const abortConversation = (conversationId = '', submission: TSubmission) => {
+  const abortConversation = async (conversationId = '', submission: TSubmission) => {
     console.log(submission);
-    const _messages = getMessages();
-    const latestMessage = _messages?.[_messages?.length - 1];
-    const runAbortKey = `${latestMessage?.thread_id}:${latestMessage?.conversationId}`;
+    let runAbortKey = '';
+    try {
+      const conversation = (JSON.parse(localStorage.getItem('lastConversationSetup') ?? '') ??
+        {}) as TConversation;
+      const { conversationId, messages } = conversation;
+      runAbortKey = `${conversationId}:${messages?.[messages.length - 1]}`;
+    } catch (error) {
+      console.error('Error getting last conversation setup');
+      console.error(error);
+    }
     const { endpoint: _endpoint, endpointType } = submission?.conversation || {};
     const endpoint = endpointType ?? _endpoint;
-    let res: Response;
+    try {
+      const response = await fetch(`${EndpointURLs[endpoint ?? '']}/abort`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          abortKey: _endpoint === EModelEndpoint.assistants ? runAbortKey : conversationId,
+          endpoint,
+        }),
+      });
 
-    fetch(`${EndpointURLs[endpoint ?? '']}/abort`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        abortKey: latestMessage ? runAbortKey : conversationId,
-        latestMessageId: latestMessage?.isCreatedByUser ? null : latestMessage?.messageId,
-        endpoint,
-      }),
-    })
-      .then((response) => {
-        res = response;
-        // Check if the response is JSON
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          return response.json();
-        } else if (response.status === 204) {
-          const responseMessage = {
-            ...submission.initialResponse,
-          };
-
-          return {
-            requestMessage: submission.message,
-            responseMessage: responseMessage,
-            conversation: submission.conversation,
-          };
-        } else {
-          throw new Error(
-            'Unexpected response from server; Status: ' + res.status + ' ' + res.statusText,
-          );
-        }
-      })
-      .then((data) => {
+      // Check if the response is JSON
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await response.json();
         console.log('aborted', data);
-        if (res.status === 404) {
-          return setIsSubmitting(false);
+        if (response.status === 404) {
+          setIsSubmitting(false);
+          return;
         }
         if (data.final) {
           finalHandler(data, submission);
-          return;
+        } else {
+          cancelHandler(data, submission);
         }
-        cancelHandler(data, submission);
-      })
-      .catch((error) => {
-        console.error('Error cancelling request');
-        console.error(error);
-        const convoId = conversationId ?? v4();
-
-        const text =
-          submission.initialResponse?.text?.length > 45 ? submission.initialResponse?.text : '';
-
-        const errorMessage = {
-          ...submission,
+      } else if (response.status === 204) {
+        const responseMessage = {
           ...submission.initialResponse,
-          text: text ?? error.message ?? 'Error cancelling request',
-          unfinished: !!text.length,
-          error: true,
         };
 
-        const errorResponse = tMessageSchema.parse(errorMessage);
-        setMessages([...submission.messages, submission.message, errorResponse]);
-        newConversation({
-          template: { conversationId: convoId },
-          preset: tPresetSchema.parse(submission?.conversation),
-        });
-        setIsSubmitting(false);
+        const data = {
+          requestMessage: submission.message,
+          responseMessage: responseMessage,
+          conversation: submission.conversation,
+        };
+        console.log('aborted', data);
+      } else {
+        throw new Error(
+          'Unexpected response from server; Status: ' + response.status + ' ' + response.statusText,
+        );
+      }
+    } catch (error) {
+      console.error('Error cancelling request');
+      console.error(error);
+      const convoId = conversationId ?? v4();
+      const text =
+        submission.initialResponse?.text?.length > 45 ? submission.initialResponse?.text : '';
+      const errorMessage = {
+        ...submission,
+        ...submission.initialResponse,
+        text: text ?? (error as Error).message ?? 'Error cancelling request',
+        unfinished: !!text.length,
+        error: true,
+      };
+      const errorResponse = tMessageSchema.parse(errorMessage);
+      setMessages([...submission.messages, submission.message, errorResponse]);
+      newConversation({
+        template: { conversationId: convoId },
+        preset: tPresetSchema.parse(submission?.conversation),
       });
-    return;
+      setIsSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -513,7 +522,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     events.onopen = () => console.log('connection is opened');
 
-    events.oncancel = () => {
+    events.oncancel = async () => {
       const streamKey = submission?.initialResponse?.messageId;
       if (completed.has(streamKey)) {
         setIsSubmitting(false);
@@ -525,7 +534,10 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       }
 
       setCompleted((prev) => new Set(prev.add(streamKey)));
-      return abortConversation(message?.conversationId ?? submission?.conversationId, submission);
+      return await abortConversation(
+        message?.conversationId ?? submission?.conversationId,
+        submission,
+      );
     };
 
     events.onerror = function (e: MessageEvent) {

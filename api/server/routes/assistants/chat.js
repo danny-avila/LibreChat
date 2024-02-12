@@ -208,7 +208,7 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
     });
 
     const cache = getLogStores(CacheKeys.ABORT_KEYS);
-    await cache.set(thread_id, run.id);
+    await cache.set(`${req.user.id}:${conversationId}`, `${thread_id}:${run.id}`);
 
     // todo: retry logic
     let response = await runAssistant({ openai, thread_id, run_id: run.id });

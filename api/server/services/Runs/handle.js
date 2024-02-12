@@ -79,6 +79,7 @@ async function waitForRun({
   let run;
 
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
+  const cacheKey = `${openai.req.user.id}:${openai.responseMessage.conversationId}`;
 
   let i = 0;
   let lastSeenStatus = null;
@@ -98,17 +99,18 @@ async function waitForRun({
 
     logger.debug(`[heartbeat ${i}] ${runStatus}`);
 
+    let cancelStatus;
     try {
       const raceTimeoutMs = pollIntervalMs * 3;
       const timeoutMessage = `[heartbeat ${i}] Operation timed out for thread_id: ${thread_id}`;
-      const cancelStatus = await withTimeout(cache.get(thread_id), raceTimeoutMs, timeoutMessage);
-
-      if (cancelStatus === 'cancelled') {
-        logger.warn(`run cancelled | ${runStatus}`);
-        throw new Error('Run cancelled');
-      }
+      cancelStatus = await withTimeout(cache.get(cacheKey), raceTimeoutMs, timeoutMessage);
     } catch (error) {
       logger.warn(`Error retrieving cancel status: ${error}`);
+    }
+
+    if (cancelStatus === 'cancelled') {
+      logger.warn(`run cancelled | ${runStatus}`);
+      throw new Error('Run cancelled');
     }
 
     if (![RunStatus.IN_PROGRESS, RunStatus.QUEUED].includes(run.status)) {
