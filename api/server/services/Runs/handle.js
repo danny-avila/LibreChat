@@ -1,7 +1,7 @@
 const { RunStatus, defaultOrderQuery, CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
-const RunManager = require('./RunManager');
 const { retrieveRun } = require('./methods');
+const RunManager = require('./RunManager');
 const { logger } = require('~/config');
 
 async function withTimeout(promise, timeoutMs, timeoutMessage) {
@@ -84,15 +84,41 @@ async function waitForRun({
 
   let i = 0;
   let lastSeenStatus = null;
-  const runInfo = `user: ${openai.req.user.id} | thread_id: ${thread_id} | run_id: ${run_id}`;
+  const runIdLog = `run_id: ${run_id}`;
+  const runInfo = `user: ${openai.req.user.id} | thread_id: ${thread_id} | ${runIdLog}`;
   const raceTimeoutMs = 3000;
+  let maxRetries = 5;
+  let attempt = 0;
   while (timeElapsed < timeout) {
     i++;
-    logger.debug(`[heartbeat ${i}] Retrieving run status for ${run_id}...`);
+    logger.debug(`[heartbeat ${i}] ${runIdLog} | Retrieving run status...`);
+    let updatedRun;
+
     const startTime = Date.now();
-    run = await retrieveRun({ thread_id, run_id, timeout: raceTimeoutMs, openai });
+    while (!updatedRun && attempt < maxRetries) {
+      try {
+        updatedRun = await withTimeout(
+          retrieveRun({ thread_id, run_id, timeout: raceTimeoutMs, openai }),
+          raceTimeoutMs,
+          `[heartbeat ${i}] ${runIdLog} | Run retrieval timed out at ${timeElapsed} ms. Trying again (attempt ${
+            attempt + 1
+          } of ${maxRetries})...`,
+        );
+        attempt++;
+      } catch (error) {
+        logger.warn(`${runIdLog} | Error retrieving run status: ${error}`);
+      }
+    }
     const endTime = Date.now();
-    logger.debug(`[heartbeat ${i}] Elapsed run retrieval time: ${endTime - startTime}`);
+    logger.debug(
+      `[heartbeat ${i}] ${runIdLog} | Elapsed run retrieval time: ${endTime - startTime}`,
+    );
+    if (!updatedRun) {
+      const errorMessage = `[waitForRun] ${runIdLog} | Run retrieval failed after ${maxRetries} attempts`;
+      throw new Error(errorMessage);
+    }
+    run = updatedRun;
+    attempt = 0;
     const runStatus = `${runInfo} | status: ${run.status}`;
 
     if (run.status !== lastSeenStatus) {
@@ -104,19 +130,19 @@ async function waitForRun({
 
     let cancelStatus;
     try {
-      const timeoutMessage = `[heartbeat ${i}] Operation timed out for thread_id: ${thread_id}`;
+      const timeoutMessage = `[heartbeat ${i}] ${runIdLog} | Cancel Status check operation timed out.`;
       cancelStatus = await withTimeout(cache.get(cacheKey), raceTimeoutMs, timeoutMessage);
     } catch (error) {
       logger.warn(`Error retrieving cancel status: ${error}`);
     }
 
     if (cancelStatus === 'cancelled') {
-      logger.warn(`run cancelled | ${runStatus}`);
+      logger.warn(`[waitForRun] ${runStatus} | RUN CANCELLED`);
       throw new Error('Run cancelled');
     }
 
     if (![RunStatus.IN_PROGRESS, RunStatus.QUEUED].includes(run.status)) {
-      logger.debug(`[final status] ${runInfo} | status: ${run.status}`);
+      logger.debug(`[FINAL] ${runInfo} | status: ${run.status}`);
       await runManager.fetchRunSteps({
         openai,
         thread_id: thread_id,
