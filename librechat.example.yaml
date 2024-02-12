@@ -1,8 +1,14 @@
 # Configuration version (required)
-version: 1.0.0
+version: 1.0.2
 
 # Cache settings: Set to true to enable caching
 cache: true
+
+# Example Registration Object Structure (optional)
+registration:
+  socialLogins: ["github", "google", "discord", "openid", "facebook"]
+  # allowedDomains:
+    # - "gmail.com"
 
 # Definition of custom endpoints
 endpoints:
@@ -46,15 +52,12 @@ endpoints:
 
       # Add additional parameters to the request. Default params will be overwritten.
       addParams:
-        safe_mode: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
+        safe_prompt: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
         
       # Drop Default params parameters from the request. See default params in guide linked below.
-      dropParams: ["stop", "temperature", "top_p"]
-      # - stop # dropped since it's not recognized by Mistral AI API
-      # `temperature` and `top_p` are removed to allow Mistral AI API defaults to be used:
-      # - temperature
-      # - top_p
-
+      # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
+      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
+      
     # OpenRouter.ai Example
     - name: "OpenRouter"
       # For `apiKey` and `baseURL`, you can use environment variables that you define.

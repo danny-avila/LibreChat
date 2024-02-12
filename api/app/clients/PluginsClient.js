@@ -30,7 +30,7 @@ class PluginsClient extends OpenAIClient {
 
     super.setOptions(options);
 
-    if (this.functionsAgent && this.agentOptions.model && !this.useOpenRouter) {
+    if (this.functionsAgent && this.agentOptions.model && !this.useOpenRouter && !this.azure) {
       this.agentOptions.model = this.getFunctionModelName(this.agentOptions.model);
     }
 
@@ -112,7 +112,7 @@ class PluginsClient extends OpenAIClient {
         signal: this.abortController.signal,
         openAIApiKey: this.openAIApiKey,
         conversationId: this.conversationId,
-        debug: this.options?.debug,
+        fileStrategy: this.options.req.app.locals.fileStrategy,
         message,
       },
     });

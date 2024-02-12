@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "",
   "workspaces": [
     "api",
@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "update:branch": "git pull upstream main && git merge upstream/main",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "list-balances": "node config/list-balances.js",
@@ -50,8 +51,8 @@
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
     "b:api": "NODE_ENV=production bun run api/server/index.js",
     "b:api:dev": "NODE_ENV=production bun run --watch api/server/index.js",
-    "b:data-provider": "cd packages/data-provider && bun run b:build",
-    "b:client": "bun --bun run b:data-provider && cd client && bun --bun run b:build",
+    "b:data": "cd packages/data-provider && bun run b:build",
+    "b:client": "bun --bun run b:data && cd client && bun --bun run b:build",
     "b:client:dev": "cd client && bun run b:dev",
     "b:test:client": "cd client && bun run b:test",
     "b:test:api": "cd api && bun run b:test",

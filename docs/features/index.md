@@ -8,6 +8,7 @@ weight: 2
 
 ---
 
+* 🤖[Custom Endpoints](../install/configuration/custom_config.md)
 * 🔌[Plugins](./plugins/index.md)
     * 🔌 [Introduction](./plugins/introduction.md)
     * 🛠️ [Make Your Own](./plugins/make_your_own.md)
@@ -25,7 +26,7 @@ weight: 2
 * 🔥 [Firebase CDN](./firebase.md)
 * 🍃 [Manage Your Database](./manage_your_database.md)
 * 🪵 [Logging System](./logging_system.md)
-* 📦 [PandoraNext](./pandoranext.md)
+* 🥷 [Ninja (ChatGPT reverse proxy)](./ninja.md)
 * 😈 [Bing Jailbreak](./bing_jailbreak.md)
 
 ---

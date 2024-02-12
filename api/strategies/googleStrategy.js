@@ -1,7 +1,7 @@
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
+const { createNewUser, handleExistingUser } = require('./process');
 const { logger } = require('~/config');
 const User = require('~/models/User');
-const { useFirebase, uploadAvatar } = require('~/server/services/Files/images');
 
 const googleLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -13,51 +13,27 @@ const googleLogin = async (accessToken, refreshToken, profile, cb) => {
     const avatarUrl = profile.photos[0].value;
 
     if (oldUser) {
-      await handleExistingUser(oldUser, avatarUrl, useFirebase);
+      await handleExistingUser(oldUser, avatarUrl);
       return cb(null, oldUser);
     }
 
     if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await createNewUser(profile, googleId, email, avatarUrl, useFirebase);
+      const newUser = await createNewUser({
+        email,
+        avatarUrl,
+        provider: 'google',
+        providerKey: 'googleId',
+        providerId: googleId,
+        username: profile.name.givenName,
+        name: `${profile.name.givenName} ${profile.name.familyName}`,
+        emailVerified: profile.emails[0].verified,
+      });
       return cb(null, newUser);
     }
   } catch (err) {
     logger.error('[googleLogin]', err);
     return cb(err);
   }
-};
-
-const handleExistingUser = async (oldUser, avatarUrl, useFirebase) => {
-  if ((!useFirebase && !oldUser.avatar.includes('?manual=true')) || oldUser.avatar === null) {
-    oldUser.avatar = avatarUrl;
-    await oldUser.save();
-  } else if (useFirebase && !oldUser.avatar.includes('?manual=true')) {
-    const userId = oldUser._id;
-    const avatarURL = await uploadAvatar(userId, avatarUrl);
-    oldUser.avatar = avatarURL;
-    await oldUser.save();
-  }
-};
-
-const createNewUser = async (profile, googleId, email, avatarUrl, useFirebase) => {
-  const newUser = await new User({
-    provider: 'google',
-    googleId,
-    username: profile.name.givenName,
-    email,
-    emailVerified: profile.emails[0].verified,
-    name: `${profile.name.givenName} ${profile.name.familyName}`,
-    avatar: avatarUrl,
-  }).save();
-
-  if (useFirebase) {
-    const userId = newUser._id;
-    const avatarURL = await uploadAvatar(userId, avatarUrl);
-    newUser.avatar = avatarURL;
-    await newUser.save();
-  }
-
-  return newUser;
 };
 
 module.exports = () =>

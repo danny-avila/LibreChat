@@ -1,5 +1,5 @@
 ---
-title: 🚅 LiteLLM
+title: 🚅 LiteLLM and Ollama
 description: Using LibreChat with LiteLLM Proxy 
 weight: -7
 ---
@@ -102,3 +102,161 @@ Key components and features include:
 - **Proxy CLI Arguments**: A wide range of command-line arguments for customization.
 
 Overall, LiteLLM Server offers a comprehensive suite of tools for managing, deploying, and interacting with a variety of LLMs, making it a versatile choice for large-scale AI applications.
+
+## Ollama
+Use [Ollama](https://ollama.ai/) for
+
+* Run large language models on local hardware
+* Host multiple models
+* Dynamically load the model upon request
+
+### GPU Acceleration
+
+- **Linux**: Requires a Linux distrubution support by official Nvidia drivers. [Nvidia CUDA Toolkit](https://developer.nvidia.com/cuda-downloads?target_os=Linux)
+- **Windows**: Requires Windows Subsytem for Linux. Follow Nvidia instructions at [Nvidia WSL User Guide](https://docs.nvidia.com/cuda/wsl-user-guide/index.html)
+- **macOS**: [macOS Ollama Download](https://ollama.ai/download/mac)
+
+### docker-compose.override.yml with GPU
+```yaml
+version: "3.8"
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    volumes:
+      - ./litellm/litellm-config.yaml:/app/config.yaml
+    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
+  ollama:
+    image: ollama/ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [compute, utility]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./ollama:/root/.ollama
+
+```
+
+### Loading Models in Ollama
+1. Browse the available models at [Ollama Library](https://ollama.ai/library)
+2. Run ```docker exec -it ollama /bin/bash```
+3. Copy the text from the Tags tab from the library website. It should begin with 'ollama run'
+4. Check model size. Models that can run in GPU memory perform the best.
+5. Use /bye to exit the terminal
+
+### Litellm Ollama Configuration
+Add the below lines to the config to access the Ollama models
+```yaml
+  - model_name: mixtral
+    litellm_params:
+      model: ollama/mixtral:8x7b-instruct-v0.1-q5_K_M
+      api_base: http://ollama:11434
+      stream: True
+  - model_name: mistral
+    litellm_params:
+      model: ollama/mistral
+      api_base: http://ollama:11434
+      stream: True
+```
+
+## Caching with Redis
+Litellm supports in-memory, redis, and s3 caching. Note: Caching currently only works with exact matching.
+
+### Update docker-compose.override.yml to enable Redis
+Add the below service to your docker-compose.override.yml
+```yaml
+  redis:
+    image: redis:7-alpine
+    command:
+    - sh
+    - -c # this is to evaluate the $REDIS_PASSWORD from the env
+    - redis-server --appendonly yes --requirepass $$REDIS_PASSWORD ## $$ because of docker-compose
+    environment:
+      REDIS_PASSWORD: RedisChangeMe
+    volumes:
+    - ./redis:/data
+```
+
+Add the following to the environment variables in the litellm service inside the docker-compose.override.yml
+```yaml
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    volumes:
+      - ./litellm/litellm-config.yaml:/app/config.yaml
+    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: RedisChangeMe
+```
+
+### Update Litellm Config File
+Add the below options to the litellm config file
+```yaml
+litellm_settings: # module level litellm settings - https://github.com/BerriAI/litellm/blob/main/litellm/__init__.py
+  cache: True          # set cache responses to True, litellm defaults to using a redis cache
+  cache_params:         # cache_params are optional
+    type: "redis"  # The type of cache to initialize. Can be "local" or "redis". Defaults to "local".
+
+    # Optional configurations
+    supported_call_types: ["acompletion", "completion", "embedding", "aembedding"] # defaults to all litellm call types
+```
+
+
+## Performance Monitoring with Langfuse
+Litellm supports various logging and observability options.  The settings below will enable Langfuse which will provide a cache_hit tag showing which conversations used cache.
+
+### Update docker-compose.override.yml to enable Langfuse
+Langfuse requires a postgres database, so add both postgres and langfuse services to the docker-compose.override.yml
+```yaml
+  langfuse-server:
+    image: ghcr.io/langfuse/langfuse:latest
+    depends_on:
+      - db
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:PostgresChangeMe@db:5432/postgres
+      - NEXTAUTH_SECRET=ChangeMe
+      - SALT=ChangeMe
+      - NEXTAUTH_URL=http://localhost:3000
+      - TELEMETRY_ENABLED=${TELEMETRY_ENABLED:-true}
+      - NEXT_PUBLIC_SIGN_UP_DISABLED=${NEXT_PUBLIC_SIGN_UP_DISABLED:-false}
+      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+
+  db:
+    image: postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=PostgresChangeMe
+      - POSTGRES_DB=postgres
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+```
+
+Once Langfuse is running, create an account by accessing the web interface on port 3000. Create a new project to obtain the needed public and private key used by the litellm config
+Add environement variable within the litellm service within docker-compose.override.yml
+```yaml
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - /srv/litellm/config/litellm-config.yaml:/app/config.yaml
+    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
+    environment:
+      LANGFUSE_PUBLIC_KEY: pk-lf-RandomStringFromLangfuseWebInterface
+      LANGFUSE_SECRET_KEY: sk-lf-RandomStringFromLangfuseWebInterface
+      LANGFUSE_HOST: http://langfuse-server:3000
+```
+
+### Update litellm config file
+```yaml
+litellm_settings:
+  success_callback: ["langfuse"]
+```

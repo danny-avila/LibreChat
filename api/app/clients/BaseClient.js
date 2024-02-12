@@ -47,6 +47,10 @@ class BaseClient {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', response);
   }
 
+  async addPreviousAttachments(messages) {
+    return messages;
+  }
+
   async recordTokenUsage({ promptTokens, completionTokens }) {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', {
       promptTokens,
@@ -463,7 +467,10 @@ class BaseClient {
       await this.saveMessageToDatabase(userMessage, saveOptions, user);
     }
 
-    if (isEnabled(process.env.CHECK_BALANCE) && supportsBalanceCheck[this.options.endpoint]) {
+    if (
+      isEnabled(process.env.CHECK_BALANCE) &&
+      supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
+    ) {
       await checkBalance({
         req: this.options.req,
         res: this.options.res,
@@ -473,6 +480,7 @@ class BaseClient {
           amount: promptTokens,
           model: this.modelOptions.model,
           endpoint: this.options.endpoint,
+          endpointTokenConfig: this.options.endpointTokenConfig,
         },
       });
     }
@@ -523,20 +531,22 @@ class BaseClient {
       mapMethod = this.getMessageMapMethod();
     }
 
-    const orderedMessages = this.constructor.getMessagesForConversation({
+    let _messages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       mapMethod,
     });
 
+    _messages = await this.addPreviousAttachments(_messages);
+
     if (!this.shouldSummarize) {
-      return orderedMessages;
+      return _messages;
     }
 
     // Find the latest message with a 'summary' property
-    for (let i = orderedMessages.length - 1; i >= 0; i--) {
-      if (orderedMessages[i]?.summary) {
-        this.previous_summary = orderedMessages[i];
+    for (let i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i]?.summary) {
+        this.previous_summary = _messages[i];
         break;
       }
     }
@@ -551,7 +561,7 @@ class BaseClient {
       });
     }
 
-    return orderedMessages;
+    return _messages;
   }
 
   async saveMessageToDatabase(message, endpointOptions, user = null) {
@@ -657,6 +667,11 @@ class BaseClient {
    * An additional 3 tokens need to be added for assistant label priming after all messages have been counted.
    * In our implementation, this is accounted for in the getMessagesWithinTokenLimit method.
    *
+   * The content parts example was adapted from the following example:
+   * https://github.com/openai/openai-cookbook/pull/881/files
+   *
+   * Note: image token calculation is to be done elsewhere where we have access to the image metadata
+   *
    * @param {Object} message
    */
   getTokenCountForMessage(message) {
@@ -670,11 +685,18 @@ class BaseClient {
     }
 
     const processValue = (value) => {
-      if (typeof value === 'object' && value !== null) {
-        for (let [nestedKey, nestedValue] of Object.entries(value)) {
-          if (nestedKey === 'image_url' || nestedValue === 'image_url') {
+      if (Array.isArray(value)) {
+        for (let item of value) {
+          if (!item || !item.type || item.type === 'image_url') {
             continue;
           }
+
+          const nestedValue = item[item.type];
+
+          if (!nestedValue) {
+            continue;
+          }
+
           processValue(nestedValue);
         }
       } else {

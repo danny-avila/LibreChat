@@ -1,5 +1,6 @@
 import debounce from 'lodash/debounce';
 import { useState, useEffect, useCallback } from 'react';
+import { FileSources } from 'librechat-data-provider';
 import type { BatchFile } from 'librechat-data-provider';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { useSetFilesToDelete } from '~/hooks';
@@ -70,13 +71,20 @@ export default function Images({
   }
 
   const deleteFile = (_file: ExtendedFile) => {
-    const { file_id, progress, temp_file_id = '', filepath = '' } = _file;
+    const {
+      file_id,
+      progress,
+      temp_file_id = '',
+      filepath = '',
+      source = FileSources.local,
+    } = _file;
     if (progress < 1) {
       return;
     }
-    const file = {
+    const file: BatchFile = {
       file_id,
       filepath,
+      source,
     };
 
     setFiles((currentFiles) => {

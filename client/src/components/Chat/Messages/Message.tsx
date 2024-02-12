@@ -1,18 +1,21 @@
+import { useRecoilValue } from 'recoil';
+import { useAuthContext, useMessageHelpers, useLocalize } from '~/hooks';
+import type { TMessageProps } from '~/common';
 import { Plugin } from '~/components/Messages/Content';
 import MessageContent from './Content/MessageContent';
-import type { TMessageProps } from '~/common';
 import SiblingSwitch from './SiblingSwitch';
-import { useMessageHelpers } from '~/hooks';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
 import { ArrowUpIcon, ArrowDownIcon } from '~/components/svg';
+import store from '~/store';
 
 export default function Message(props: TMessageProps) {
-  const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
-    props;
+  const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
+  const { user } = useAuthContext();
+  const localize = useLocalize();
 
   const {
     ask,
@@ -33,10 +36,20 @@ export default function Message(props: TMessageProps) {
     handleExpand,
   } = useMessageHelpers(props);
 
-  const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+  const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
+    props;
 
   if (!message) {
     return null;
+  }
+
+  const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+
+  let messageLabel = '';
+  if (isCreatedByUser) {
+    messageLabel = UsernameDisplay ? user?.name : localize('com_user_message');
+  } else {
+    messageLabel = message.sender;
   }
 
   return (

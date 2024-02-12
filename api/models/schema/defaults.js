@@ -84,6 +84,12 @@ const conversationPreset = {
     type: String,
     // default: null,
   },
+  resendImages: {
+    type: Boolean,
+  },
+  imageDetail: {
+    type: String,
+  },
 };
 
 const agentOptions = {

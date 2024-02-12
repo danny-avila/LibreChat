@@ -14,7 +14,7 @@ async function abortMessage(req, res) {
   }
 
   if (!abortControllers.has(abortKey) && !res.headersSent) {
-    return res.status(404).send({ message: 'Request not found' });
+    return res.status(204).send({ message: 'Request not found' });
   }
 
   const { abortController } = abortControllers.get(abortKey);
@@ -25,6 +25,8 @@ async function abortMessage(req, res) {
   if (res.headersSent && finalEvent) {
     return sendMessage(res, finalEvent);
   }
+
+  res.setHeader('Content-Type', 'application/json');
 
   res.send(JSON.stringify(finalEvent));
 }

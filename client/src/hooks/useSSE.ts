@@ -1,17 +1,29 @@
 import { v4 } from 'uuid';
-import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import {
   /* @ts-ignore */
   SSE,
+  QueryKeys,
+  EndpointURLs,
   createPayload,
+  tPresetSchema,
   tMessageSchema,
-  tConvoUpdateSchema,
   EModelEndpoint,
+  tConvoUpdateSchema,
   removeNullishValues,
 } from 'librechat-data-provider';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
-import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
+import type {
+  TResPlugin,
+  TMessage,
+  TConversation,
+  TSubmission,
+  ConversationData,
+} from 'librechat-data-provider';
+import { addConversation, deleteConversation, updateConversation } from '~/utils';
+import { useGenTitleMutation } from '~/data-provider';
 import { useAuthContext } from './AuthContext';
 import useChatHelpers from './useChatHelpers';
 import useSetStorage from './useSetStorage';
@@ -28,17 +40,14 @@ type TResData = {
 
 export default function useSSE(submission: TSubmission | null, index = 0) {
   const setStorage = useSetStorage();
+  const queryClient = useQueryClient();
+  const genTitle = useGenTitleMutation();
+
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
-  const {
-    addConvo,
-    setMessages,
-    setConversation,
-    setIsSubmitting,
-    resetLatestMessage,
-    invalidateConvos,
-    newConversation,
-  } = useChatHelpers(index, paramId);
+  const [completed, setCompleted] = useState(new Set());
+  const { setMessages, setConversation, setIsSubmitting, newConversation, resetLatestMessage } =
+    useChatHelpers(index, paramId);
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -100,16 +109,21 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       setMessages(messagesUpdate);
     }
 
-    // refresh title
-    if (requestMessage?.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      setTimeout(() => {
-        invalidateConvos();
-      }, 2000);
+    const isNewConvo = conversation.conversationId !== submission.conversation.conversationId;
+    if (isNewConvo) {
+      queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
+        if (!convoData) {
+          return convoData;
+        }
+        return deleteConversation(convoData, submission.conversation.conversationId as string);
+      });
+    }
 
-      // in case it takes too long.
+    // refresh title
+    if (isNewConvo && requestMessage?.parentMessageId == '00000000-0000-0000-0000-000000000000') {
       setTimeout(() => {
-        invalidateConvos();
-      }, 5000);
+        genTitle.mutate({ conversationId: convoUpdate.conversationId as string });
+      }, 2500);
     }
 
     setConversation((prevState) => {
@@ -161,15 +175,25 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       setStorage(update);
       return update;
     });
-    if (message.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      addConvo(update);
-    }
+
+    queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
+      if (!convoData) {
+        return convoData;
+      }
+      if (message.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+        return addConversation(convoData, update);
+      } else {
+        return updateConversation(convoData, update);
+      }
+    });
     resetLatestMessage();
   };
 
   const finalHandler = (data: TResData, submission: TSubmission) => {
     const { requestMessage, responseMessage, conversation } = data;
     const { messages, conversation: submissionConvo, isRegenerate = false } = submission;
+
+    setCompleted((prev) => new Set(prev.add(submission?.initialResponse?.messageId)));
 
     // update the messages
     if (isRegenerate) {
@@ -178,16 +202,21 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       setMessages([...messages, requestMessage, responseMessage]);
     }
 
-    // refresh title
-    if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      setTimeout(() => {
-        invalidateConvos();
-      }, 1500);
+    const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
+    if (isNewConvo) {
+      queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
+        if (!convoData) {
+          return convoData;
+        }
+        return deleteConversation(convoData, submissionConvo.conversationId as string);
+      });
+    }
 
-      // in case it takes too long.
+    // refresh title
+    if (isNewConvo && requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
       setTimeout(() => {
-        invalidateConvos();
-      }, 5000);
+        genTitle.mutate({ conversationId: conversation.conversationId as string });
+      }, 2500);
     }
 
     setConversation((prevState) => {
@@ -211,7 +240,10 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const errorHandler = ({ data, submission }: { data?: TResData; submission: TSubmission }) => {
     const { messages, message, initialResponse } = submission;
 
+    setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
+
     const conversationId = message?.conversationId ?? submission?.conversationId;
+
     const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
       const metadata = data['responseMessage'] ?? data;
       const errorMessage = {
@@ -236,7 +268,10 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         conversationId: convoId,
       });
       setMessages([...messages, message, errorResponse]);
-      newConversation({ template: { conversationId: convoId } });
+      newConversation({
+        template: { conversationId: convoId },
+        preset: tPresetSchema.parse(submission?.conversation),
+      });
       setIsSubmitting(false);
       return;
     }
@@ -245,7 +280,10 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       const convoId = v4();
       const errorResponse = parseErrorResponse(data);
       setMessages([...messages, message, errorResponse]);
-      newConversation({ template: { conversationId: convoId } });
+      newConversation({
+        template: { conversationId: convoId },
+        preset: tPresetSchema.parse(submission?.conversation),
+      });
       setIsSubmitting(false);
       return;
     }
@@ -259,7 +297,10 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     setMessages([...messages, message, errorResponse]);
     if (data.conversationId && paramId === 'new') {
-      newConversation({ template: { conversationId: data.conversationId } });
+      newConversation({
+        template: { conversationId: data.conversationId },
+        preset: tPresetSchema.parse(submission?.conversation),
+      });
     }
 
     setIsSubmitting(false);
@@ -268,10 +309,11 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
   const abortConversation = (conversationId = '', submission: TSubmission) => {
     console.log(submission);
-    const { endpoint } = submission?.conversation || {};
+    const { endpoint: _endpoint, endpointType } = submission?.conversation || {};
+    const endpoint = endpointType ?? _endpoint;
     let res: Response;
 
-    fetch(`/api/ask/${endpoint}/abort`, {
+    fetch(`${EndpointURLs[endpoint ?? '']}/abort`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -283,7 +325,25 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     })
       .then((response) => {
         res = response;
-        return response.json();
+        // Check if the response is JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          return response.json();
+        } else if (response.status === 204) {
+          const responseMessage = {
+            ...submission.initialResponse,
+          };
+
+          return {
+            requestMessage: submission.message,
+            responseMessage: responseMessage,
+            conversation: submission.conversation,
+          };
+        } else {
+          throw new Error(
+            'Unexpected response from server; Status: ' + res.status + ' ' + res.statusText,
+          );
+        }
       })
       .then((data) => {
         console.log('aborted', data);
@@ -295,6 +355,25 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       .catch((error) => {
         console.error('Error aborting request');
         console.error(error);
+        const convoId = conversationId ?? v4();
+
+        const text =
+          submission.initialResponse?.text?.length > 45 ? submission.initialResponse?.text : '';
+
+        const errorMessage = {
+          ...submission,
+          ...submission.initialResponse,
+          text: text ?? error.message ?? 'Error cancelling request',
+          unfinished: !!text.length,
+          error: true,
+        };
+
+        const errorResponse = tMessageSchema.parse(errorMessage);
+        setMessages([...submission.messages, submission.message, errorResponse]);
+        newConversation({
+          template: { conversationId: convoId },
+          preset: tPresetSchema.parse(submission?.conversation),
+        });
         setIsSubmitting(false);
       });
     return;
@@ -349,8 +428,20 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     events.onopen = () => console.log('connection is opened');
 
-    events.oncancel = () =>
-      abortConversation(message?.conversationId ?? submission?.conversationId, submission);
+    events.oncancel = () => {
+      const streamKey = submission?.initialResponse?.messageId;
+      if (completed.has(streamKey)) {
+        setIsSubmitting(false);
+        setCompleted((prev) => {
+          prev.delete(streamKey);
+          return new Set(prev);
+        });
+        return;
+      }
+
+      setCompleted((prev) => new Set(prev.add(streamKey)));
+      return abortConversation(message?.conversationId ?? submission?.conversationId, submission);
+    };
 
     events.onerror = function (e: MessageEvent) {
       console.log('error in server stream.');
@@ -363,10 +454,11 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       } catch (error) {
         console.error(error);
         console.log(e);
+        setIsSubmitting(false);
+        return;
       }
 
       errorHandler({ data, submission: { ...submission, message } });
-      events.oncancel();
     };
 
     setIsSubmitting(true);

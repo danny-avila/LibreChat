@@ -1,8 +1,11 @@
 // Italian phrases
+// file deepcode ignore NoHardcodedPasswords: No hardcoded values present in this file
+// file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
   com_ui_examples: 'Esempi',
   com_ui_new_chat: 'Nuova Chat',
+  com_ui_happy_birthday: 'È il mio primo compleanno!',
   com_ui_example_quantum_computing: 'Spiega l\'informatica quantistica in termini semplici',
   com_ui_example_10_year_old_b_day:
     'Hai qualche idea creativa per il compleanno di un bambino di 10 anni?',
@@ -38,6 +41,8 @@ export default {
   com_ui_upload_invalid: 'File non valido per il caricamento',
   com_ui_cancel: 'Annulla',
   com_ui_save: 'Salva',
+  com_ui_save_submit: 'Salva e invia',
+  com_user_message: 'Tú',
   com_ui_copy_to_clipboard: 'Copia negli appunti',
   com_ui_copied_to_clipboard: 'Copiato negli appunti',
   com_ui_regenerate: 'Rigenera',
@@ -67,10 +72,10 @@ export default {
   com_auth_no_account: 'Non hai un account?',
   com_auth_sign_up: 'Registrati',
   com_auth_sign_in: 'Accedi',
-  com_auth_google_login: 'Accedi con Google',
-  com_auth_facebook_login: 'Accedi con Facebook',
-  com_auth_github_login: 'Accedi con Github',
-  com_auth_discord_login: 'Accedi con Discord',
+  com_auth_google_login: 'Continua con Google',
+  com_auth_facebook_login: 'Continua con Facebook',
+  com_auth_github_login: 'Continua con Github',
+  com_auth_discord_login: 'Continua con Discord',
   com_auth_email: 'Email',
   com_auth_email_required: 'L\'email è obbligatoria',
   com_auth_email_min_length: 'L\'email deve essere lunga almeno 6 caratteri',
@@ -162,6 +167,10 @@ export default {
     'Numero tra -2.0 e 2.0. Valori positivi penalizzano i nuovi token in base alla loro frequenza esistente nel testo finora, diminuendo la probabilità del modello di ripetere la stessa riga verbatim.',
   com_endpoint_openai_pres:
     'Numero tra -2.0 e 2.0. Valori positivi penalizzano i nuovi token in base al fatto che appaiano nel testo finora, aumentando la probabilità del modello di parlare di nuovi argomenti.',
+  com_endpoint_openai_resend:
+    'Rinvia tutte le immagini allegate in precedenza. Nota: questo può aumentare significativamente il costo dei token e potresti riscontrare errori con molti allegati di immagini.',
+  com_endpoint_openai_detail:
+    'La risoluzione per le richieste Vision. "Bassa" è più economica e veloce, "Alta" è più dettagliata e costosa, e "Automatica" sceglierà automaticamente tra le due in base alla risoluzione dell\'immagine.',
   com_endpoint_openai_custom_name_placeholder: 'Imposta un nome personalizzato per ChatGPT',
   com_endpoint_openai_prompt_prefix_placeholder:
     'Imposta istruzioni personalizzate da includere nel Messaggio di sistema. Predefinito: nessuno',
@@ -177,6 +186,8 @@ export default {
   com_endpoint_frequency_penalty: 'Penalità di frequenza',
   com_endpoint_presence_penalty: 'Penalità di presenza',
   com_endpoint_plug_use_functions: 'Usa funzioni',
+  com_endpoint_plug_resend_images: 'Rinvia immagini',
+  com_endpoint_plug_image_detail: 'Dettagli immagine',
   com_endpoint_plug_skip_completion: 'Salta completamento',
   com_endpoint_disabled_with_tools: 'disabilitato con strumenti',
   com_endpoint_disabled_with_tools_placeholder: 'Disabilitato con strumenti selezionati',
@@ -265,7 +276,9 @@ export default {
   com_endpoint_config_key_google_vertex_api_role:
     'Assicurati di fare clic su "Crea e continua" per dare almeno il ruolo "Vertex AI User". Infine, crea una chiave JSON da importare qui.',
   com_nav_welcome_message: 'Come posso aiutarti oggi?',
-  com_nav_auto_scroll: 'Scorri automaticamente al Più recente all\'apertura',
+  com_nav_auto_scroll: 'Scorri automaticamente al messaggio più recente all\'apertura',
+  com_nav_modular_chat: 'Abilita il cambio di endpoint durante la conversazione',
+  com_nav_latex_parsing: 'Analisi del LaTeX nei messaggi (può influire sulle prestazioni)',
   com_nav_profile_picture: 'Immagine del profilo',
   com_nav_change_picture: 'Cambia immagine',
   com_nav_plugin_store: 'Negozio dei plugin',
@@ -286,6 +299,7 @@ export default {
   com_nav_theme_system: 'Sistema',
   com_nav_theme_dark: 'Scuro',
   com_nav_theme_light: 'Chiaro',
+  com_nav_user_name_display: 'Mostra username nei messaggi',
   com_nav_clear_all_chats: 'Elimina tutte le chat',
   com_nav_confirm_clear: 'Conferma eliminazione',
   com_nav_close_sidebar: 'Chiudi sidebar',
@@ -300,5 +314,7 @@ export default {
   com_nav_settings: 'Impostazioni',
   com_nav_search_placeholder: 'Cerca messaggi',
   com_nav_setting_general: 'Generale',
+  com_nav_setting_beta: 'Funzioni Beta',
   com_nav_setting_data: 'Controlli dati',
+  com_nav_setting_account: 'Profilo',
 };

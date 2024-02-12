@@ -31,13 +31,14 @@ const setup = ({
     isLoading: false,
     isError: false,
     data: {
-      googleLoginEnabled: true,
+      socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
+      discordLoginEnabled: true,
       facebookLoginEnabled: true,
+      githubLoginEnabled: true,
+      googleLoginEnabled: true,
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
-      githubLoginEnabled: true,
-      discordLoginEnabled: true,
       registrationEnabled: true,
       emailLoginEnabled: true,
       socialLoginEnabled: true,
@@ -78,23 +79,23 @@ test('renders login form', () => {
   expect(getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Sign up/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Sign up/i })).toHaveAttribute('href', '/register');
-  expect(getByRole('link', { name: /Login with Google/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Login with Google/i })).toHaveAttribute(
+  expect(getByRole('link', { name: /Continue with Google/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Continue with Google/i })).toHaveAttribute(
     'href',
     'mock-server/oauth/google',
   );
-  expect(getByRole('link', { name: /Login with Facebook/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Login with Facebook/i })).toHaveAttribute(
+  expect(getByRole('link', { name: /Continue with Facebook/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Continue with Facebook/i })).toHaveAttribute(
     'href',
     'mock-server/oauth/facebook',
   );
-  expect(getByRole('link', { name: /Login with Github/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Login with Github/i })).toHaveAttribute(
+  expect(getByRole('link', { name: /Continue with Github/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Continue with Github/i })).toHaveAttribute(
     'href',
     'mock-server/oauth/github',
   );
-  expect(getByRole('link', { name: /Login with Discord/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Login with Discord/i })).toHaveAttribute(
+  expect(getByRole('link', { name: /Continue with Discord/i })).toBeInTheDocument();
+  expect(getByRole('link', { name: /Continue with Discord/i })).toHaveAttribute(
     'href',
     'mock-server/oauth/discord',
   );
