@@ -689,6 +689,8 @@
  *
  * @property {Express.Request} req - The Express request object.
  * @property {Express.Response} res - The Express response object.
+ * @property {?import('https-proxy-agent').HttpsProxyAgent} httpAgent - An optional HTTP proxy agent for the request.
+
  * @property {() => string} getPartialText - Retrieves the current tokens accumulated by `progressCallback`.
  *
  * Note: not used until real streaming is implemented by OpenAI.
