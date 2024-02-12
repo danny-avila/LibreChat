@@ -18,6 +18,8 @@ Future updates will streamline configuration further by migrating some settings 
 
 Stay tuned for ongoing enhancements to customize your LibreChat instance!
 
+> Note: To verify your YAML config, you can use online tools like [yamlchecker.com](https://yamlchecker.com/)
+
 <!-- # Table of Contents
 
 - [LibreChat Configuration Guide](#librechat-configuration-guide)
@@ -66,7 +68,7 @@ The example config file has some options ready to go for Mistral AI and Openrout
 
 For Docker, you need to make use of an [override file](./docker_override.md), named `docker-compose.override.yml`, to ensure the config file works for you.
 
-- First, make sure your containers stop running with `docker-compose down`
+- First, make sure your containers stop running with `docker compose down`
 - Create or edit existing `docker-compose.override.yml` at the root of the project:
 
 ```yaml
@@ -83,7 +85,7 @@ services:
 
 - Start docker again, and you should see your config file settings apply
 ```bash
-docker-compose up # no need to rebuild
+docker compose up # no need to rebuild
 ```
 
 ## Config Structure
@@ -242,6 +244,9 @@ endpoints:
     - Type: Boolean
     - Example: `fetch: true`
     - **Note**: May cause slowdowns during initial use of the app if the response is delayed. Defaults to `false`.
+  - **userIdQuery**: When set to `true`, adds the LibreChat user ID as a query parameter to the API models request.
+    - Type: Boolean
+    - Example: `userIdQuery: true`
 
 ### **titleConvo**:
 

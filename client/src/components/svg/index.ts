@@ -45,3 +45,4 @@ export { default as UserIcon } from './UserIcon';
 export { default as NewChatIcon } from './NewChatIcon';
 export { default as ExperimentIcon } from './ExperimentIcon';
 export { default as GoogleIconChat } from './GoogleIconChat';
+export { default as BirthdayIcon } from './BirthdayIcon';

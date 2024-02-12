@@ -1,47 +1,35 @@
-const Keyv = require('keyv');
 const axios = require('axios');
-const HttpsProxyAgent = require('https-proxy-agent');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
 const { extractBaseURL, inputSchema, processModelData } = require('~/utils');
 const getLogStores = require('~/cache/getLogStores');
-const { isEnabled } = require('~/server/utils');
-const keyvRedis = require('~/cache/keyvRedis');
 const { logger } = require('~/config');
 
 // const { getAzureCredentials, genAzureChatCompletion } = require('~/utils/');
 
 const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
 
-const modelsCache = isEnabled(process.env.USE_REDIS)
-  ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: 'models' });
-
-const {
-  OPENROUTER_API_KEY,
-  OPENAI_REVERSE_PROXY,
-  CHATGPT_MODELS,
-  ANTHROPIC_MODELS,
-  GOOGLE_MODELS,
-  PROXY,
-} = process.env ?? {};
-
 /**
  * Fetches OpenAI models from the specified base API path or Azure, based on the provided configuration.
  *
  * @param {Object} params - The parameters for fetching the models.
+ * @param {Object} params.user - The user ID to send to the API.
  * @param {string} params.apiKey - The API key for authentication with the API.
  * @param {string} params.baseURL - The base path URL for the API.
  * @param {string} [params.name='OpenAI'] - The name of the API; defaults to 'OpenAI'.
  * @param {boolean} [params.azure=false] - Whether to fetch models from Azure.
+ * @param {boolean} [params.userIdQuery=false] - Whether to send the user ID as a query parameter.
  * @param {boolean} [params.createTokenConfig=true] - Whether to create a token configuration from the API response.
  * @returns {Promise<string[]>} A promise that resolves to an array of model identifiers.
  * @async
  */
 const fetchModels = async ({
+  user,
   apiKey,
   baseURL,
   name = 'OpenAI',
   azure = false,
+  userIdQuery = false,
   createTokenConfig = true,
 }) => {
   let models = [];
@@ -51,21 +39,26 @@ const fetchModels = async ({
   }
 
   try {
-    const payload = {
+    const options = {
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },
     };
 
-    if (PROXY) {
-      payload.httpsAgent = new HttpsProxyAgent(PROXY);
+    if (process.env.PROXY) {
+      options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
     }
 
     if (process.env.OPENAI_ORGANIZATION && baseURL.includes('openai')) {
-      payload.headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
+      options.headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
     }
 
-    const res = await axios.get(`${baseURL}${azure ? '' : '/models'}`, payload);
+    const url = new URL(`${baseURL}${azure ? '' : '/models'}`);
+    if (user && userIdQuery) {
+      url.searchParams.append('user', user);
+    }
+    const res = await axios.get(url.toString(), options);
+
     /** @type {z.infer<typeof inputSchema>} */
     const input = res.data;
 
@@ -83,11 +76,22 @@ const fetchModels = async ({
   return models;
 };
 
-const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _models = []) => {
+/**
+ * Fetches models from the specified API path or Azure, based on the provided options.
+ * @async
+ * @function
+ * @param {object} opts - The options for fetching the models.
+ * @param {string} opts.user - The user ID to send to the API.
+ * @param {boolean} [opts.azure=false] - Whether to fetch models from Azure.
+ * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
+ * @param {string[]} [_models=[]] - The models to use as a fallback.
+ */
+const fetchOpenAIModels = async (opts, _models = []) => {
   let models = _models.slice() ?? [];
   let apiKey = openAIApiKey;
-  let baseURL = 'https://api.openai.com/v1';
-  let reverseProxyUrl = OPENAI_REVERSE_PROXY;
+  const openaiBaseURL = 'https://api.openai.com/v1';
+  let baseURL = openaiBaseURL;
+  let reverseProxyUrl = process.env.OPENAI_REVERSE_PROXY;
   if (opts.azure) {
     return models;
     // const azure = getAzureCredentials();
@@ -95,14 +99,16 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
     //   .split('/deployments')[0]
     //   .concat(`/models?api-version=${azure.azureOpenAIApiVersion}`);
     // apiKey = azureOpenAIApiKey;
-  } else if (OPENROUTER_API_KEY) {
+  } else if (process.env.OPENROUTER_API_KEY) {
     reverseProxyUrl = 'https://openrouter.ai/api/v1';
-    apiKey = OPENROUTER_API_KEY;
+    apiKey = process.env.OPENROUTER_API_KEY;
   }
 
   if (reverseProxyUrl) {
     baseURL = extractBaseURL(reverseProxyUrl);
   }
+
+  const modelsCache = getLogStores(CacheKeys.MODEL_QUERIES);
 
   const cachedModels = await modelsCache.get(baseURL);
   if (cachedModels) {
@@ -114,10 +120,15 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
       apiKey,
       baseURL,
       azure: opts.azure,
+      user: opts.user,
     });
   }
 
-  if (!reverseProxyUrl) {
+  if (models.length === 0) {
+    return _models;
+  }
+
+  if (baseURL === openaiBaseURL) {
     const regex = /(text-davinci-003|gpt-)/;
     models = models.filter((model) => regex.test(model));
   }
@@ -126,18 +137,27 @@ const fetchOpenAIModels = async (opts = { azure: false, plugins: false }, _model
   return models;
 };
 
-const getOpenAIModels = async (opts = { azure: false, plugins: false }) => {
-  let models = [
-    'gpt-4',
-    'gpt-4-0613',
-    'gpt-3.5-turbo',
-    'gpt-3.5-turbo-16k',
-    'gpt-3.5-turbo-0613',
-    'gpt-3.5-turbo-0301',
-  ];
+/**
+ * Loads the default models for the application.
+ * @async
+ * @function
+ * @param {object} opts - The options for fetching the models.
+ * @param {string} opts.user - The user ID to send to the API.
+ * @param {boolean} [opts.azure=false] - Whether to fetch models from Azure.
+ * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
+ */
+const getOpenAIModels = async (opts) => {
+  let models = defaultModels.openAI;
 
-  if (!opts.plugins) {
-    models.push('text-davinci-003');
+  if (opts.plugins) {
+    models = models.filter(
+      (model) =>
+        !model.includes('text-davinci') &&
+        !model.includes('instruct') &&
+        !model.includes('0613') &&
+        !model.includes('0314') &&
+        !model.includes('0301'),
+    );
   }
 
   let key;
@@ -154,7 +174,7 @@ const getOpenAIModels = async (opts = { azure: false, plugins: false }) => {
     return models;
   }
 
-  if (userProvidedOpenAI && !OPENROUTER_API_KEY) {
+  if (userProvidedOpenAI && !process.env.OPENROUTER_API_KEY) {
     return models;
   }
 
@@ -163,8 +183,8 @@ const getOpenAIModels = async (opts = { azure: false, plugins: false }) => {
 
 const getChatGPTBrowserModels = () => {
   let models = ['text-davinci-002-render-sha', 'gpt-4'];
-  if (CHATGPT_MODELS) {
-    models = String(CHATGPT_MODELS).split(',');
+  if (process.env.CHATGPT_MODELS) {
+    models = String(process.env.CHATGPT_MODELS).split(',');
   }
 
   return models;
@@ -172,8 +192,8 @@ const getChatGPTBrowserModels = () => {
 
 const getAnthropicModels = () => {
   let models = defaultModels[EModelEndpoint.anthropic];
-  if (ANTHROPIC_MODELS) {
-    models = String(ANTHROPIC_MODELS).split(',');
+  if (process.env.ANTHROPIC_MODELS) {
+    models = String(process.env.ANTHROPIC_MODELS).split(',');
   }
 
   return models;
@@ -181,8 +201,8 @@ const getAnthropicModels = () => {
 
 const getGoogleModels = () => {
   let models = defaultModels[EModelEndpoint.google];
-  if (GOOGLE_MODELS) {
-    models = String(GOOGLE_MODELS).split(',');
+  if (process.env.GOOGLE_MODELS) {
+    models = String(process.env.GOOGLE_MODELS).split(',');
   }
 
   return models;

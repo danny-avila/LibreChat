@@ -6,7 +6,7 @@ version: '3.4'
 
 # # THEN UNCOMMENT ONLY THE SECTION OR SECTIONS CONTAINING THE CHANGES YOU WANT TO APPLY
 # # SAVE THIS FILE AS 'docker-compose.override.yaml'
-# # AND USE THE 'docker-compose build' & 'docker-compose up -d' COMMANDS AS YOU WOULD NORMALLY DO
+# # AND USE THE 'docker compose build' & 'docker compose up -d' COMMANDS AS YOU WOULD NORMALLY DO
 
 # # USE LIBRECHAT CONFIG FILE
 #   api:

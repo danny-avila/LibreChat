@@ -105,16 +105,23 @@ Overall, LiteLLM Server offers a comprehensive suite of tools for managing, depl
 
 ## Ollama
 Use [Ollama](https://ollama.ai/) for
+
 * Run large language models on local hardware
 * Host multiple models
 * Dynamically load the model upon request
 
-### docker-compose.yaml with GPU
+### GPU Acceleration
+
+- **Linux**: Requires a Linux distrubution support by official Nvidia drivers. [Nvidia CUDA Toolkit](https://developer.nvidia.com/cuda-downloads?target_os=Linux)
+- **Windows**: Requires Windows Subsytem for Linux. Follow Nvidia instructions at [Nvidia WSL User Guide](https://docs.nvidia.com/cuda/wsl-user-guide/index.html)
+- **macOS**: [macOS Ollama Download](https://ollama.ai/download/mac)
+
+### docker-compose.override.yml with GPU
 ```yaml
 version: "3.8"
 services:
   litellm:
-    image: ghcr.io/berriai/litellm:main-v1.18.8
+    image: ghcr.io/berriai/litellm:main-latest
     volumes:
       - ./litellm/litellm-config.yaml:/app/config.yaml
     command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
@@ -158,8 +165,8 @@ Add the below lines to the config to access the Ollama models
 ## Caching with Redis
 Litellm supports in-memory, redis, and s3 caching. Note: Caching currently only works with exact matching.
 
-### Update docker-compose.yaml to enable Redis
-Add the below service to your docker-compose.yaml
+### Update docker-compose.override.yml to enable Redis
+Add the below service to your docker-compose.override.yml
 ```yaml
   redis:
     image: redis:7-alpine
@@ -173,7 +180,7 @@ Add the below service to your docker-compose.yaml
     - ./redis:/data
 ```
 
-Add the following to the environment variables in the litellm service inside the docker-compose.yaml
+Add the following to the environment variables in the litellm service inside the docker-compose.override.yml
 ```yaml
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
@@ -202,8 +209,8 @@ litellm_settings: # module level litellm settings - https://github.com/BerriAI/l
 ## Performance Monitoring with Langfuse
 Litellm supports various logging and observability options.  The settings below will enable Langfuse which will provide a cache_hit tag showing which conversations used cache.
 
-### Update docker-compose.yaml to enable Langfuse
-Langfuse requires a postgres database, so add both postgres and langfuse services to the docker-compose.yaml
+### Update docker-compose.override.yml to enable Langfuse
+Langfuse requires a postgres database, so add both postgres and langfuse services to the docker-compose.override.yml
 ```yaml
   langfuse-server:
     image: ghcr.io/langfuse/langfuse:latest
@@ -233,7 +240,7 @@ Langfuse requires a postgres database, so add both postgres and langfuse service
 ```
 
 Once Langfuse is running, create an account by accessing the web interface on port 3000. Create a new project to obtain the needed public and private key used by the litellm config
-Add environement variable within the litellm service within docker-compose.yaml
+Add environement variable within the litellm service within docker-compose.override.yml
 ```yaml
   litellm:
     image: ghcr.io/berriai/litellm:main-latest

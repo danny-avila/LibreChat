@@ -8,15 +8,6 @@ const { processFileURL } = require('~/server/services/Files/process');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const { logger } = require('~/config');
 
-const {
-  DALLE2_SYSTEM_PROMPT,
-  DALLE_REVERSE_PROXY,
-  PROXY,
-  DALLE2_AZURE_API_VERSION,
-  DALLE2_BASEURL,
-  DALLE2_API_KEY,
-  DALLE_API_KEY,
-} = process.env;
 class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
@@ -26,19 +17,22 @@ class OpenAICreateImage extends Tool {
     let apiKey = fields.DALLE2_API_KEY ?? fields.DALLE_API_KEY ?? this.getApiKey();
 
     const config = { apiKey };
-    if (DALLE_REVERSE_PROXY) {
-      config.baseURL = extractBaseURL(DALLE_REVERSE_PROXY);
+    if (process.env.DALLE_REVERSE_PROXY) {
+      config.baseURL = extractBaseURL(process.env.DALLE_REVERSE_PROXY);
     }
 
-    if (DALLE2_AZURE_API_VERSION && DALLE2_BASEURL) {
-      config.baseURL = DALLE2_BASEURL;
-      config.defaultQuery = { 'api-version': DALLE2_AZURE_API_VERSION };
-      config.defaultHeaders = { 'api-key': DALLE2_API_KEY, 'Content-Type': 'application/json' };
-      config.apiKey = DALLE2_API_KEY;
+    if (process.env.DALLE2_AZURE_API_VERSION && process.env.DALLE2_BASEURL) {
+      config.baseURL = process.env.DALLE2_BASEURL;
+      config.defaultQuery = { 'api-version': process.env.DALLE2_AZURE_API_VERSION };
+      config.defaultHeaders = {
+        'api-key': process.env.DALLE2_API_KEY,
+        'Content-Type': 'application/json',
+      };
+      config.apiKey = process.env.DALLE2_API_KEY;
     }
 
-    if (PROXY) {
-      config.httpAgent = new HttpsProxyAgent(PROXY);
+    if (process.env.PROXY) {
+      config.httpAgent = new HttpsProxyAgent(process.env.PROXY);
     }
 
     this.openai = new OpenAI(config);
@@ -51,7 +45,7 @@ Guidelines:
 "Subject: [subject], Style: [style], Color: [color], Details: [details], Emotion: [emotion]"
 - Generate images only once per human query unless explicitly requested by the user`;
     this.description_for_model =
-      DALLE2_SYSTEM_PROMPT ??
+      process.env.DALLE2_SYSTEM_PROMPT ??
       `// Whenever a description of an image is given, generate prompts (following these rules), and use dalle to create the image. If the user does not ask for a specific number of images, default to creating 2 prompts to send to dalle that are written to be as diverse as possible. All prompts sent to dalle must abide by the following policies:
 // 1. Prompts must be in English. Translate to English if needed.
 // 2. One image per function call. Create only 1 image per request unless explicitly told to generate more than 1 image.
@@ -67,7 +61,7 @@ Guidelines:
   }
 
   getApiKey() {
-    const apiKey = DALLE2_API_KEY ?? DALLE_API_KEY ?? '';
+    const apiKey = process.env.DALLE2_API_KEY ?? process.env.DALLE_API_KEY ?? '';
     if (!apiKey) {
       throw new Error('Missing DALLE_API_KEY environment variable.');
     }
