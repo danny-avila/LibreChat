@@ -1,4 +1,4 @@
-const { CacheKeys, isUUID } = require('librechat-data-provider');
+const { CacheKeys, RunStatus, isUUID } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistant');
 const { checkMessageGaps } = require('~/server/services/Threads');
 const { getConvo } = require('~/models/Conversation');
@@ -40,7 +40,10 @@ async function abortRun(req, res) {
     logger.debug('Cancelled run:', cancelledRun);
   } catch (error) {
     logger.error('[abortRun] Error cancelling run', error);
-    if (error?.message?.includes('Cannot cancel run')) {
+    if (
+      error?.message?.includes(RunStatus.CANCELLED) ||
+      error?.message?.includes(RunStatus.CANCELLING)
+    ) {
       return res.end();
     }
   }
