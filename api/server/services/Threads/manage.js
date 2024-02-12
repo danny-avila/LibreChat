@@ -204,9 +204,17 @@ async function addThreadMetadata({ openai, thread_id, messageId, messages }) {
  * @param {ThreadMessage[]} params.apiMessages - The thread messages from the API.
  * @param {string} params.conversationId - The current conversation ID.
  * @param {string} params.thread_id - The current thread ID.
+ * @param {string} [params.assistant_id] - The current assistant ID.
  * @return {Promise<TMessage[]>} A promise that resolves to the updated messages
  */
-async function syncMessages({ openai, apiMessages, dbMessages, conversationId, thread_id }) {
+async function syncMessages({
+  openai,
+  apiMessages,
+  dbMessages,
+  conversationId,
+  thread_id,
+  assistant_id,
+}) {
   let result = [];
   let dbMessageMap = new Map(dbMessages.map((msg) => [msg.messageId, msg]));
 
@@ -292,6 +300,13 @@ async function syncMessages({ openai, apiMessages, dbMessages, conversationId, t
         // TODO: retrieve file objects from API
         newMessage.files = apiMessage.file_ids.map((file_id) => ({ file_id }));
       }
+
+      /* Assign assistant_id if defined */
+      if (assistant_id && apiMessage.role === 'assistant' && !newMessage.model) {
+        apiMessage.model = assistant_id;
+        newMessage.model = assistant_id;
+      }
+
       result.push(newMessage);
       lastMessage = newMessage;
 
@@ -426,12 +441,15 @@ async function checkMessageGaps({ openai, latestMessageId, thread_id, run_id, co
   }
 
   const dbMessages = await getMessages({ conversationId });
+  const assistant_id = dbMessages?.[0]?.model;
+
   const syncedMessages = await syncMessages({
     openai,
     dbMessages,
     apiMessages,
-    conversationId,
     thread_id,
+    conversationId,
+    assistant_id,
   });
 
   return Object.values(
