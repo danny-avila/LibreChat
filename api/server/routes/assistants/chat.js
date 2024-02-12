@@ -4,7 +4,7 @@ const { EModelEndpoint, Constants, RunStatus, CacheKeys } = require('librechat-d
 const {
   initThread,
   saveUserMessage,
-  // checkMessageGaps,
+  checkMessageGaps,
   addThreadMetadata,
   saveAssistantMessage,
 } = require('~/server/services/Threads');
@@ -36,52 +36,58 @@ router.post('/abort', handleAbort());
  * @returns {void}
  */
 router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
-  try {
-    logger.debug('[/assistants/chat/] req.body', req.body);
-    const {
-      text,
-      model,
-      files = [],
-      promptPrefix,
-      assistant_id,
-      instructions,
-      thread_id: _thread_id,
-      messageId: _messageId,
-      conversationId: convoId,
-      parentMessageId: _parentId = Constants.NO_PARENT,
-    } = req.body;
+  logger.debug('[/assistants/chat/] req.body', req.body);
+  const {
+    text,
+    model,
+    files = [],
+    promptPrefix,
+    assistant_id,
+    instructions,
+    thread_id: _thread_id,
+    messageId: _messageId,
+    conversationId: convoId,
+    parentMessageId: _parentId = Constants.NO_PARENT,
+  } = req.body;
 
+  /** @type {OpenAIClient} */
+  let openai;
+  /** @type {string|undefined} - the current thread id */
+  let thread_id = _thread_id;
+  /** @type {string|undefined} - the current run id */
+  let run_id;
+  /** @type {string|undefined} - the parent messageId */
+  let parentMessageId = _parentId;
+  /** @type {TMessage[]} */
+  let previousMessages = [];
+
+  const userMessageId = v4();
+  const responseMessageId = v4();
+
+  /** @type {string} - The conversation UUID - created if undefined */
+  const conversationId = convoId ?? v4();
+
+  const cache = getLogStores(CacheKeys.ABORT_KEYS);
+  const cacheKey = `${req.user.id}:${conversationId}`;
+
+  try {
     if (convoId && !_thread_id) {
       throw new Error('Missing thread_id for existing conversation');
     }
-
-    // Temporary: Can't use 0613 models
-    // const model = _model.replace(/gpt-4.*$/, 'gpt-4-1106-preview');
-
-    /** @type {string|undefined} - the current thread id */
-    let thread_id = _thread_id;
-
-    let parentMessageId = _parentId;
 
     if (!assistant_id) {
       throw new Error('Missing assistant_id');
     }
 
-    /** @type {string} - The conversation UUID - created if undefined */
-    const conversationId = convoId ?? v4();
-    const responseMessageId = v4();
-    const userMessageId = v4();
-
     /** @type {{ openai: OpenAIClient }} */
-    const { openai, client } = await initializeClient({
+    const { openai: _openai, client } = await initializeClient({
       req,
       res,
       endpointOption: req.body.endpointOption,
       initAppClient: true,
     });
 
-    /** @type {TMessage[]} */
-    let previousMessages = [];
+    openai = _openai;
 
     // if (thread_id) {
     //   previousMessages = await checkMessageGaps({ openai, thread_id, conversationId });
@@ -150,22 +156,6 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
 
     previousMessages.push(requestMessage);
 
-    sendMessage(res, {
-      sync: true,
-      conversationId,
-      // messages: previousMessages,
-      requestMessage,
-      responseMessage: {
-        user: req.user.id,
-        messageId: openai.responseMessage.messageId,
-        parentMessageId: userMessageId,
-        conversationId,
-        assistant_id,
-        thread_id,
-        model: assistant_id,
-      },
-    });
-
     await saveUserMessage({ ...requestMessage, model });
 
     const conversation = {
@@ -207,23 +197,37 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
       body,
     });
 
-    const cache = getLogStores(CacheKeys.ABORT_KEYS);
-    await cache.set(`${req.user.id}:${conversationId}`, `${thread_id}:${run.id}`);
+    run_id = run.id;
+    await cache.set(cacheKey, `${thread_id}:${run_id}`);
+
+    sendMessage(res, {
+      sync: true,
+      conversationId,
+      // messages: previousMessages,
+      requestMessage,
+      responseMessage: {
+        user: req.user.id,
+        messageId: openai.responseMessage.messageId,
+        parentMessageId: userMessageId,
+        conversationId,
+        assistant_id,
+        thread_id,
+        model: assistant_id,
+      },
+    });
 
     // todo: retry logic
-    let response = await runAssistant({ openai, thread_id, run_id: run.id });
+    let response = await runAssistant({ openai, thread_id, run_id });
     logger.debug('[/assistants/chat/] response', response);
 
     if (response.run.status === RunStatus.IN_PROGRESS) {
       response = await runAssistant({
         openai,
         thread_id,
-        run_id: run.id,
+        run_id,
         in_progress: openai.in_progress,
       });
     }
-
-    // TODO: failed run handling
 
     /** @type {ResponseMessage} */
     const responseMessage = {
@@ -237,7 +241,6 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
     };
 
     // TODO: token count from usage returned in run
-
     // TODO: parse responses, save to db, send to user
 
     sendMessage(res, {
@@ -277,11 +280,45 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
       console.dir(response.run.usage, { depth: null });
     }
   } catch (error) {
-    // res.status(500).json({ error: error.message });
-    if (error.message !== 'Run cancelled') {
-      logger.error('[/assistants/chat/]', error);
+    if (error.message === 'Run cancelled') {
+      return res.end();
     }
-    res.end();
+
+    logger.error('[/assistants/chat/]', error);
+
+    if (!openai || !thread_id || !run_id) {
+      return res.status(500).json({ error: 'The Assistant run failed to initialize' });
+    }
+
+    try {
+      await cache.delete(cacheKey);
+      const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
+      logger.debug('Cancelled run:', cancelledRun);
+    } catch (error) {
+      logger.error('[abortRun] Error cancelling run', error);
+    }
+
+    await sleep(2000);
+    const runMessages = await checkMessageGaps({
+      openai,
+      run_id,
+      thread_id,
+      conversationId,
+      latestMessageId: responseMessageId,
+    });
+
+    const finalEvent = {
+      title: 'New Chat',
+      final: true,
+      conversation: await getConvo(req.user.id, conversationId),
+      runMessages,
+    };
+
+    if (res.headersSent && finalEvent) {
+      return sendMessage(res, finalEvent);
+    }
+
+    res.json(finalEvent);
   }
 });
 

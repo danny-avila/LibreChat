@@ -86,6 +86,7 @@ async function waitForRun({
   const runInfo = `user: ${openai.req.user.id} | thread_id: ${thread_id} | run_id: ${run_id}`;
   while (timeElapsed < timeout) {
     i++;
+    logger.debug(`[heartbeat ${i}] Retrieving run status for ${run_id}...`);
     run = await openai.beta.threads.runs.retrieve(thread_id, run_id, {
       timeout: pollIntervalMs * 3,
       maxRetries: 5,
@@ -93,7 +94,7 @@ async function waitForRun({
     const runStatus = `${runInfo} | status: ${run.status}`;
 
     if (run.status !== lastSeenStatus) {
-      logger.debug(`[waitForRun] ${runStatus}`);
+      logger.debug(`[${run.status}] ${runInfo}`);
       lastSeenStatus = run.status;
     }
 

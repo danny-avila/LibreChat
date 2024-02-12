@@ -39,8 +39,12 @@ async function abortRun(req, res) {
     const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
     logger.debug('Cancelled run:', cancelledRun);
   } catch (error) {
-    logger.error('[abortRun] Error cancelling run', { error });
+    logger.error('[abortRun] Error cancelling run', error);
+    if (error?.message?.includes('Cannot cancel run')) {
+      return res.end();
+    }
   }
+
   runMessages = await checkMessageGaps({
     openai,
     latestMessageId,
