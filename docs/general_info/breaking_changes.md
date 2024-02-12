@@ -68,8 +68,8 @@ Some users have reported an error after updating their docker containers.
     **(leave mongo intact to preserve your profiles and history)**
     ![image](https://github.com/fuegovic/LibreChat/assets/32828263/acf15682-435e-44bd-8873-a5dceb3121cc)
   - Repeat the docker update process: 🚀
-    - `docker-compose build`
-    - `docker-compose up -d`
+    - `docker compose build`
+    - `docker compose up -d`
 
 ## v0.5.4
 Some changes were made in the .env file

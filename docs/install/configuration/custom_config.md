@@ -66,7 +66,7 @@ The example config file has some options ready to go for Mistral AI and Openrout
 
 For Docker, you need to make use of an [override file](./docker_override.md), named `docker-compose.override.yml`, to ensure the config file works for you.
 
-- First, make sure your containers stop running with `docker-compose down`
+- First, make sure your containers stop running with `docker compose down`
 - Create or edit existing `docker-compose.override.yml` at the root of the project:
 
 ```yaml
@@ -83,7 +83,7 @@ services:
 
 - Start docker again, and you should see your config file settings apply
 ```bash
-docker-compose up # no need to rebuild
+docker compose up # no need to rebuild
 ```
 
 ## Config Structure
