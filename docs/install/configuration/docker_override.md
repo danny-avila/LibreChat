@@ -34,6 +34,8 @@ Open your `docker-compose.override.yml` file with vscode or any text editor.
 
 Make your desired changes by uncommenting the relevant sections and customizing them as needed.
 
+> Warning: You can only specify every service name once (api, mongodb, meilisearch, ...) If you want to override multiple settings in one service you will have to edit accordingly.
+
 For example, if you want to make sure Docker can use your `librechat.yaml` file for [custom configuration](./custom_config.md), it would look like this:
 
 ```yaml
@@ -45,14 +47,16 @@ services:
       - ./librechat.yaml:/app/librechat.yaml
 ```
 
-Or, if you want to use a prebuilt image for the `api` service and expose MongoDB's port, your `docker-compose.override.yml` might look like this:
+Or, if you want to use a prebuilt image for the `api` service, use the LibreChat config file, and expose MongoDB's port, your `docker-compose.override.yml` might look like this:
 
 ```yaml
 version: '3.4'
 
 services:
   api:
-    image: ghcr.io/danny-avila/librechat:latest
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml
+    image: ghcr.io/danny-avila/librechat-dev:latest
 
   mongodb:
     ports:
