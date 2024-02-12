@@ -3,6 +3,7 @@
 export default {
   com_ui_examples: 'Örnekler',
   com_ui_new_chat: 'Yeni Sohbet',
+  com_ui_happy_birthday: 'Bu benim ilk doğum günüm!',
   com_ui_example_quantum_computing: 'Kuantum bilgisayarını basit terimlerle açıkla',
   com_ui_example_10_year_old_b_day:
     '10 yaşındaki bir çocuğun doğum günü için yaratıcı fikirlerin var mı?',

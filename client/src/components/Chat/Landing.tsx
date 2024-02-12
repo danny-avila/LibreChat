@@ -1,14 +1,17 @@
 import type { ReactNode } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { icons } from './Menus/Endpoints/Icons';
 import { useChatContext } from '~/Providers';
 import { getEndpointField } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { BirthdayIcon } from '~/components/svg';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
+  const { data: startupConfig } = useGetStartupConfig();
 
   const localize = useLocalize();
   let { endpoint } = conversation ?? {};
@@ -27,26 +30,38 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const Icon = icons[iconKey];
 
   return (
-    <div className="relative h-full">
-      <div className="absolute left-0 right-0">{Header && Header}</div>
-      <div className="flex h-full flex-col items-center justify-center">
-        <div className="mb-3 h-[72px] w-[72px]">
-          <div className="gizmo-shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
-            {endpoint &&
-              Icon &&
-              Icon({
-                size: 41,
-                context: 'landing',
-                className: 'h-2/3 w-2/3',
-                endpoint: endpoint,
-                iconURL: iconURL,
-              })}
+    <TooltipProvider delayDuration={50}>
+      <Tooltip>
+        <div className="relative h-full">
+          <div className="absolute left-0 right-0">{Header && Header}</div>
+          <div className="flex h-full flex-col items-center justify-center">
+            <div className="relative mb-3 h-[72px] w-[72px]">
+              <div className="gizmo-shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
+                {endpoint &&
+                  Icon &&
+                  Icon({
+                    size: 41,
+                    context: 'landing',
+                    className: 'h-2/3 w-2/3',
+                    endpoint: endpoint,
+                    iconURL: iconURL,
+                  })}
+                <TooltipTrigger>
+                  {(startupConfig?.showBirthdayIcon ?? false) && (
+                    <BirthdayIcon className="absolute bottom-12 right-5" />
+                  )}
+                </TooltipTrigger>
+                <TooltipContent side="top" sideOffset={85} className="left-[-20%]">
+                  {localize('com_ui_happy_birthday')}
+                </TooltipContent>
+              </div>
+            </div>
+            <div className="mb-5 text-2xl font-medium dark:text-white">
+              {localize('com_nav_welcome_message')}
+            </div>
           </div>
         </div>
-        <div className="mb-5 text-2xl font-medium dark:text-white">
-          {localize('com_nav_welcome_message')}
-        </div>
-      </div>
-    </div>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

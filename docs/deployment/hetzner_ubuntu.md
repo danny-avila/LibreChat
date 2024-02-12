@@ -126,7 +126,7 @@ SEARCH=true
 MEILI_HOST=meilisearch
 ```
 
-### 5. After everything file has been updated, run  `docker-compose build` then `docker-compose up`
+### 5. After everything file has been updated, run  `docker compose build` then `docker compose up`
 
 
 **NOTE: You may need to run these commands with sudo permissions.**

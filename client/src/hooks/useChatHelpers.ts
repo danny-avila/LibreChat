@@ -179,9 +179,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
 
     // construct the placeholder response message
     const generation = editedText ?? latestMessage?.text ?? '';
-    const responseText = isEditOrContinue
-      ? generation
-      : '<span className="result-streaming">█</span>';
+    const responseText = isEditOrContinue ? generation : '';
 
     const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
     const initialResponse: TMessage = {

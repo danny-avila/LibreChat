@@ -205,6 +205,7 @@ export type TStartupConfig = {
   checkBalance: boolean;
   speechToTextExternal: boolean;
   textToSpeechExternal: boolean;
+  showBirthdayIcon: boolean;
   customFooter?: string;
 };
 
