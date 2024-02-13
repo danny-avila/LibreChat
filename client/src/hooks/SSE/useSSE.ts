@@ -502,11 +502,8 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         syncHandler(data, { ...submission, message });
       } else if (data.type) {
         const { text, index } = data;
-        if (!text) {
-          console.log(data);
-        } else if (index !== textIndex) {
+        if (text && index !== textIndex) {
           textIndex = index;
-          console.log('message index', textIndex);
         }
 
         contentHandler({ data, submission });
