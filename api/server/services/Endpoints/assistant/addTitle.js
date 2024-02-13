@@ -16,7 +16,7 @@ const addTitle = async (req, { text, responseText, conversationId, client }) => 
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
   const key = `${req.user.id}-${conversationId}`;
 
-  const title = await client.titleConvo({ text, responseText });
+  const title = await client.titleConvo({ text, conversationId, responseText });
   await titleCache.set(key, title);
 
   await saveConvo(req.user.id, {

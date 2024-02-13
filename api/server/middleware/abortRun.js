@@ -1,6 +1,6 @@
 const { CacheKeys, RunStatus, isUUID } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistant');
-const { checkMessageGaps } = require('~/server/services/Threads');
+const { checkMessageGaps, recordUsage } = require('~/server/services/Threads');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { sendMessage } = require('~/server/utils');
@@ -46,6 +46,18 @@ async function abortRun(req, res) {
     ) {
       return res.end();
     }
+  }
+
+  try {
+    const run = await openai.beta.threads.runs.retrieve(thread_id, run_id);
+    await recordUsage({
+      ...run.usage,
+      model: run.model,
+      user: req.user.id,
+      conversationId,
+    });
+  } catch (error) {
+    logger.error('[abortRun] Error fetching or processing run', error);
   }
 
   runMessages = await checkMessageGaps({

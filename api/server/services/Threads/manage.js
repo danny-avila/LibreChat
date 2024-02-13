@@ -7,6 +7,7 @@ const {
 } = require('librechat-data-provider');
 const { recordMessage, getMessages } = require('~/models/Message');
 const { saveConvo } = require('~/models/Conversation');
+const spendTokens = require('~/models/spendTokens');
 const { countTokens } = require('~/server/utils');
 
 /**
@@ -460,8 +461,32 @@ async function checkMessageGaps({ openai, latestMessageId, thread_id, run_id, co
   );
 }
 
+/**
+ * Records token usage for a given completion request.
+ *
+ * @param {Object} params - The parameters for initializing a thread.
+ * @param {number} params.prompt_tokens - The number of prompt tokens used.
+ * @param {number} params.completion_tokens - The number of completion tokens used.
+ * @param {string} params.model - The model used by the assistant run.
+ * @param {string} params.user - The user's ID.
+ * @param {string} params.conversationId - LibreChat conversation ID.
+ * @return {Promise<TMessage[]>} A promise that resolves to the updated messages
+ */
+const recordUsage = async ({ prompt_tokens, completion_tokens, model, user, conversationId }) => {
+  await spendTokens(
+    {
+      user,
+      model,
+      context: 'message',
+      conversationId,
+    },
+    { promptTokens: prompt_tokens, completionTokens: completion_tokens },
+  );
+};
+
 module.exports = {
   initThread,
+  recordUsage,
   saveUserMessage,
   checkMessageGaps,
   addThreadMetadata,

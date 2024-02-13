@@ -3,6 +3,7 @@ const express = require('express');
 const { EModelEndpoint, Constants, RunStatus, CacheKeys } = require('librechat-data-provider');
 const {
   initThread,
+  recordUsage,
   saveUserMessage,
   checkMessageGaps,
   addThreadMetadata,
@@ -275,9 +276,21 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
     if (!response.run.usage) {
       await sleep(3000);
       const completedRun = await openai.beta.threads.runs.retrieve(thread_id, run.id);
-      console.dir(completedRun, { depth: null });
+      if (completedRun.usage) {
+        await recordUsage({
+          ...completedRun.usage,
+          user: req.user.id,
+          model: completedRun.model ?? model,
+          conversationId,
+        });
+      }
     } else {
-      console.dir(response.run.usage, { depth: null });
+      await recordUsage({
+        ...response.run.usage,
+        user: req.user.id,
+        model: response.run.model ?? model,
+        conversationId,
+      });
     }
   } catch (error) {
     if (error.message === 'Run cancelled') {
@@ -299,26 +312,43 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
     }
 
     await sleep(2000);
-    const runMessages = await checkMessageGaps({
-      openai,
-      run_id,
-      thread_id,
-      conversationId,
-      latestMessageId: responseMessageId,
-    });
-
-    const finalEvent = {
-      title: 'New Chat',
-      final: true,
-      conversation: await getConvo(req.user.id, conversationId),
-      runMessages,
-    };
-
-    if (res.headersSent && finalEvent) {
-      return sendMessage(res, finalEvent);
+    try {
+      const run = await openai.beta.threads.runs.retrieve(thread_id, run_id);
+      await recordUsage({
+        ...run.usage,
+        model: run.model,
+        user: req.user.id,
+        conversationId,
+      });
+    } catch (error) {
+      logger.error('[/assistants/chat/] Error fetching or processing run', error);
     }
 
-    res.json(finalEvent);
+    try {
+      const runMessages = await checkMessageGaps({
+        openai,
+        run_id,
+        thread_id,
+        conversationId,
+        latestMessageId: responseMessageId,
+      });
+
+      const finalEvent = {
+        title: 'New Chat',
+        final: true,
+        conversation: await getConvo(req.user.id, conversationId),
+        runMessages,
+      };
+
+      if (res.headersSent && finalEvent) {
+        return sendMessage(res, finalEvent);
+      }
+
+      res.json(finalEvent);
+    } catch (error) {
+      logger.error('[/assistants/chat/] Error finalizing error process', error);
+      return res.status(500).json({ error: 'The Assistant run failed' });
+    }
   }
 });
 
