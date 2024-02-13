@@ -69,8 +69,33 @@ const fetchModels = async ({
       await cache.set(name, endpointTokenConfig);
     }
     models = input.data.map((item) => item.id);
-  } catch (err) {
-    logger.error(`Failed to fetch models from ${azure ? 'Azure ' : ''}${name} API`, err);
+  } catch (error) {
+    const logMessage = `Failed to fetch models from ${azure ? 'Azure ' : ''}${name} API`;
+    if (error.response) {
+      logger.error(
+        `${logMessage} The request was made and the server responded with a status code that falls out of the range of 2xx: ${
+          error.message ? error.message : ''
+        }`,
+        {
+          headers: error.response.headers,
+          status: error.response.status,
+          data: error.response.data,
+        },
+      );
+    } else if (error.request) {
+      logger.error(
+        `${logMessage} The request was made but no response was received: ${
+          error.message ? error.message : ''
+        }`,
+        {
+          request: error.request,
+        },
+      );
+    } else {
+      logger.error(`${logMessage} Something happened in setting up the request`, {
+        message: error.message ? error.message : '',
+      });
+    }
   }
 
   return models;
