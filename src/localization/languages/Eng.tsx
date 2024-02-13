@@ -6,7 +6,7 @@ export default {
   com_ui_examples: 'Examples',
   com_ui_new_chat: 'New Chat',
   com_ui_example_quantum_computing: 'Explain quantum computing in simple terms',
-  com_ui_example_10_year_old_b_day: 'Got any creative ideas for a 10 year old\'s birthday?',
+  com_ui_example_10_year_old_b_day: "Got any creative ideas for a 10 year old's birthday?",
   com_ui_example_http_in_js: 'How do I make an HTTP request in Javascript?',
   com_ui_capabilities: 'Capabilities',
   com_ui_capability_remember: 'Remembers what user said earlier in the conversation',
@@ -68,7 +68,7 @@ export default {
     'Your account has been temporarily banned due to violations of our service.',
   com_auth_error_login_server:
     'There was an internal server error. Please wait a few moments and try again.',
-  com_auth_no_account: 'Don\'t have an account?',
+  com_auth_no_account: "Don't have an account?",
   com_auth_sign_up: 'Sign up',
   com_auth_sign_in: 'Sign in',
   com_auth_google_login: 'Continue with Google',
@@ -124,9 +124,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'To enable Sydney',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-    'Bing can use up to 7k tokens for \'context\', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens',
+    "Bing can use up to 7k tokens for 'context', which it can reference for the conversation. The specific limit is not known but may run into errors exceeding 7k tokens",
   com_endpoint_bing_system_message_placeholder:
-    'WARNING: Misuse of this feature can get you BANNED from using Bing! Click on \'System Message\' for full instructions and the default message if omitted, which is the \'Sydney\' preset that is considered safe.',
+    "WARNING: Misuse of this feature can get you BANNED from using Bing! Click on 'System Message' for full instructions and the default message if omitted, which is the 'Sydney' preset that is considered safe.",
   com_endpoint_system_message: 'System Message',
   com_endpoint_message: 'Message',
   com_endpoint_message_not_appendable: 'Edit your message or Regenerate.',
@@ -144,7 +144,7 @@ export default {
   com_endpoint_google_topp:
     'Top-p changes how the model selects tokens for output. Tokens are selected from most K (see topK parameter) probable to least until the sum of their probabilities equals the top-p value.',
   com_endpoint_google_topk:
-    'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
+    "Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model's vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).",
   com_endpoint_google_maxoutputtokens:
     ' 	Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
   com_endpoint_google_custom_name_placeholder: 'Set a custom name for Google',
@@ -159,13 +159,13 @@ export default {
   com_endpoint_openai_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
   com_endpoint_openai_max:
-    'The max tokens to generate. The total length of input tokens and generated tokens is limited by the model\'s context length.',
+    "The max tokens to generate. The total length of input tokens and generated tokens is limited by the model's context length.",
   com_endpoint_openai_topp:
     'An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered. We recommend altering this or temperature but not both.',
   com_endpoint_openai_freq:
-    'Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model\'s likelihood to repeat the same line verbatim.',
+    "Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.",
   com_endpoint_openai_pres:
-    'Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model\'s likelihood to talk about new topics.',
+    "Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.",
   com_endpoint_openai_resend:
     'Resend all previously attached images. Note: this can significantly increase token cost and you may experience errors with many image attachments.',
   com_endpoint_openai_detail:
@@ -178,7 +178,7 @@ export default {
   com_endpoint_anthropic_topp:
     'Top-p changes how the model selects tokens for output. Tokens are selected from most K (see topK parameter) probable to least until the sum of their probabilities equals the top-p value.',
   com_endpoint_anthropic_topk:
-    'Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model\'s vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).',
+    "Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model's vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).",
   com_endpoint_anthropic_maxoutputtokens:
     'Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.',
   com_endpoint_anthropic_custom_name_placeholder: 'Set a custom name for Anthropic',
@@ -258,7 +258,7 @@ export default {
     'Use dev tools or an extension while logged into the site to copy the content of the _U cookie. If this fails, follow these',
   com_endpoint_config_key_edge_instructions: 'instructions',
   com_endpoint_config_key_edge_full_key_string: 'to provide the full cookie strings.',
-  com_endpoint_config_key_chatgpt: 'To get your Access token For ChatGPT \'Free Version\', login to',
+  com_endpoint_config_key_chatgpt: "To get your Access token For ChatGPT 'Free Version', login to",
   com_endpoint_config_key_chatgpt_then_visit: 'then visit',
   com_endpoint_config_key_chatgpt_copy_token: 'Copy access token.',
   com_endpoint_config_key_google_need_to: 'You need to',
@@ -266,8 +266,8 @@ export default {
   com_endpoint_config_key_google_vertex_api: 'API on Google Cloud, then',
   com_endpoint_config_key_google_service_account: 'Create a Service Account',
   com_endpoint_config_key_google_vertex_api_role:
-    'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
-  com_nav_welcome_message: 'How can I help you today?',
+    "Make sure to click 'Create and Continue' to give at least the 'Vertex AI User' role. Lastly, create a JSON key to import here.",
+  com_nav_welcome_message: 'How can I assist you today?',
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
   com_nav_modular_chat: 'Enable switching Endpoints mid-conversation',
   com_nav_latex_parsing: 'Parsing LaTeX in messages (may affect performance)',

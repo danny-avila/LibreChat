@@ -4,7 +4,7 @@ import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import Icon from '~/components/Endpoints/Icon';
 import { useChatContext } from '~/Providers';
-import { getEndpointField } from '~/utils';
+//import { getEndpointField } from '~/utils';
 
 export default function useMessageHelpers(props: TMessageProps) {
   const latestText = useRef('');
@@ -52,8 +52,8 @@ export default function useMessageHelpers(props: TMessageProps) {
   const icon = Icon({
     ...conversation,
     ...(message as TMessage),
-    iconURL: getEndpointField({}, conversation?.endpoint, 'iconURL'),
-    model: message?.model ?? conversation?.model,
+    iconURL: '',
+    model: '',
     size: 28.8,
   });
 

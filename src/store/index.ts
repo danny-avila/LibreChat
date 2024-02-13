@@ -11,8 +11,10 @@ import search from './search';
 import preset from './preset';
 import lang from './language';
 import settings from './settings';
+import eventMessage from './eventMessage';
 
 export default {
+  ...eventMessage,
   ...families,
   ...conversation,
   ...conversations,

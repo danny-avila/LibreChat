@@ -13,6 +13,7 @@ import {
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 import { useAuthStore } from '~/zustand';
+import VeraColorIcon from '../svg/VeraColorIcon';
 
 const Icon: React.FC<IconProps> = (props) => {
   const { user } = useAuthStore();
@@ -101,14 +102,7 @@ const Icon: React.FC<IconProps> = (props) => {
       },
       null: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'N/A' },
       default: {
-        icon: (
-          <UnknownIcon
-            iconURL={props.iconURL}
-            endpoint={endpoint ?? ''}
-            className="icon-sm"
-            context="message"
-          />
-        ),
+        icon: <VeraColorIcon />,
         name: endpoint,
       },
     };
@@ -130,11 +124,6 @@ const Icon: React.FC<IconProps> = (props) => {
         )}
       >
         {icon}
-        {/* {error && (
-          <span className="absolute right-0 top-[20px] -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
-            !
-          </span>
-        )} */}
       </div>
     );
   }

@@ -25,6 +25,8 @@ export default function HoverButtons({
   regenerate,
   handleContinue,
 }: THoverButtons) {
+  console.log('HoverButtons');
+
   const localize = useLocalize();
   const { endpoint } = conversation ?? {};
   const [isCopied, setIsCopied] = useState(false);
@@ -34,9 +36,9 @@ export default function HoverButtons({
     message,
     endpoint: endpoint ?? '',
   });
-  if (!conversation) {
-    return null;
-  }
+  // if (!conversation) {
+  //   return null;
+  // }
 
   const { isCreatedByUser } = message;
 

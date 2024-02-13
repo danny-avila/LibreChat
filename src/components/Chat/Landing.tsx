@@ -5,6 +5,7 @@ import { icons } from './Menus/Endpoints/Icons';
 import { useChatContext } from '~/Providers';
 import { getEndpointField } from '~/utils';
 import { useLocalize } from '~/hooks';
+import VeraColorIcon from '../svg/VeraColorIcon';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();
@@ -30,17 +31,9 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
     <div className="relative h-full">
       <div className="absolute left-0 right-0">{Header && Header}</div>
       <div className="flex h-full flex-col items-center justify-center">
-        <div className="mb-3 h-[72px] w-[72px]">
+        <div className="mb-4 h-[72px] w-[72px]">
           <div className="gizmo-shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
-            {endpoint &&
-              Icon &&
-              Icon({
-                size: 41,
-                context: 'landing',
-                className: 'h-2/3 w-2/3',
-                endpoint: endpoint,
-                iconURL: iconURL,
-              })}
+            <VeraColorIcon />
           </div>
         </div>
         <div className="mb-5 text-2xl font-medium dark:text-white">

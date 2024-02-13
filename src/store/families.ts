@@ -38,6 +38,11 @@ const presetByIndex = atomFamily<TPreset | null, string | number>({
   default: null,
 });
 
+const eventMessageByIndex = atomFamily<string | null, string | number>({
+  key: 'eventMessageByIndex',
+  default: '',
+});
+
 const submissionByIndex = atomFamily<TSubmission | null, string | number>({
   key: 'submissionByIndex',
   default: null,
@@ -99,6 +104,7 @@ function useCreateConversationAtom(key: string | number) {
 
 export default {
   conversationByIndex,
+  eventMessageByIndex,
   filesByIndex,
   presetByIndex,
   submissionByIndex,

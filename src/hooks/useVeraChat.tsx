@@ -10,15 +10,30 @@ import store from '~/store';
 import { useAuthStore } from '~/zustand';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { VERA_HEADER } from '~/utils/constants';
+import { useNavigate } from 'react-router-dom';
+
+const EVENT_TYPES = {
+  PROCESS_PROMPT: 'process_prompt',
+  ROUTE_PROMPT: 'route_prompt',
+  GENERATE_RESPONSE: 'generate_response',
+  PROCESS_RESPONSE: 'process_response',
+  MESSAGE: 'message',
+  INIT_CONVERSATION: 'init_conversation',
+};
 
 // this to be set somewhere else
 export default function useVeraChat(index = 0, paramId: string | undefined) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { token, user } = useAuthStore();
-
   const [abortController, setAbortController] = useState(new AbortController());
+  const [showStopButton, setShowStopButton] = useState(false);
+
+  const [currEvent, setCurrEvent] = useRecoilState(store.eventMessageByIndex(index));
+  const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
+  const [latestMessage, setLatestMessage] = useRecoilState(store.latestMessageFamily(index));
+
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
-  const [showStopButton, setShowStopButton] = useState(true);
   const [filesLoading, setFilesLoading] = useState(false);
 
   const { newConversation } = useNewConvo(index);
@@ -29,8 +44,6 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
   const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
 
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
-  const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
-  const [latestMessage, setLatestMessage] = useRecoilState(store.latestMessageFamily(index));
   const setSiblingIdx = useSetRecoilState(
     store.messagesSiblingIdxFamily(latestMessage?.parentMessageId ?? null),
   );
@@ -58,22 +71,42 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
       isEdited = false,
     } = {},
   ) => {
+    const messages = getMessages() ?? [];
+    const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+
+    console.log(conversation);
     setShowStopButton(true);
     setIsSubmitting(true);
-    console.log(`[PROTO] ESTABLISHING CONNECTION WITH TOKEN: \n${token}\n and PROMPT: \n${text}`);
+    setCurrEvent('Starting');
+
+    const tempMessage = {
+      text: text.trim(),
+      sender: user?.username,
+      isCreatedByUser: true,
+      parentMessageId: parentMessageId ?? lastMessage?.messageId ?? null,
+      conversationId: conversationId ?? lastMessage?.conversationId ?? null,
+      messageId: 'tempMessage',
+      error: false,
+    };
+    setMessages([...messages, tempMessage]);
+
     const apiUrl = 'https://dev-app.askvera.io/api/v1/chat';
     const apiKey = token!;
     const payload = {
       prompt_text: text.trim(),
+      conversation_id: conversation?.conversation_id ?? null,
     };
-    const headers = { 'Content-Type': 'application/json', [VERA_HEADER]: apiKey };
+    const headers = {
+      'Content-Type': 'application/json',
+      [VERA_HEADER]: apiKey,
+    };
+    console.log(`[PROTO] ESTABLISHING CONNECTION WITH TOKEN: \n${apiKey}\n and PROMPT: \n${text}`);
 
-    let count = 0;
     fetchEventSource(apiUrl, {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload),
       signal: abortController.signal,
+      body: JSON.stringify(payload),
       async onopen(response) {
         console.log('[PROTO] OPENED CONNECTION:', response);
         if (response.ok) {
@@ -86,45 +119,93 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         }
       },
       onmessage(msg) {
-        console.log('[PROTO] NEW EVENT:', msg);
+        //console.log('[PROTO] NEW EVENT:', msg);
         if (msg.data) {
           const data = JSON.parse(msg.data);
-          console.log('[PROTO] EVENT DATA:', JSON.parse(msg.data));
-          const fakeMessageId = v4();
-          let currentMessages: TMessage[] | null = getMessages() ?? [];
-
-          const msgObject = {
-            text: msg.data,
-            sender: count % 2 === 0 ? user?.username : 'Model',
-            isCreatedByUser: count % 2 === 0,
-            parentMessageId: count - 1 >= 0 ? count - 1 : null,
-            conversationId,
-            messageId: count,
-            error: false,
-          };
-          console.log('[PROTO] Current msgs: ', currentMessages);
-          setMessages([...currentMessages, msgObject]);
-          setLatestMessage(msgObject);
-          count++;
+          //console.log('[PROTO] EVENT DATA:', data);
+          processEventMessage(data);
         }
-        if (msg.event === 'FatalError') {
-          throw new Error(msg.data);
-        }
+        if (msg.event === 'FatalError') throw new Error(msg.data);
       },
       onerror(e) {
         abortController.abort();
         setAbortController(new AbortController());
+        setCurrEvent('');
         setShowStopButton(false);
         setIsSubmitting(false);
         console.log('[PROTO] ERROR: ', e);
         throw Error(e);
       },
       onclose() {
+        setCurrEvent('');
         setShowStopButton(false);
         setIsSubmitting(false);
         console.log('[PROTO] CONNECTION CLOSED');
       },
     });
+  };
+
+  const processEventMessage = (data) => {
+    let currentMessages: TMessage[] | null = getMessages() ?? [];
+    switch (data.event_type) {
+      case EVENT_TYPES.INIT_CONVERSATION:
+        setConversation(data.event);
+      case EVENT_TYPES.PROCESS_PROMPT:
+        setCurrEvent('Processing Prompt');
+        console.log(EVENT_TYPES.PROCESS_PROMPT, ':', data);
+        break;
+      case EVENT_TYPES.ROUTE_PROMPT:
+        setCurrEvent('Routing Prompt');
+        console.log(EVENT_TYPES.ROUTE_PROMPT, ':', data);
+        break;
+      case EVENT_TYPES.GENERATE_RESPONSE:
+        setCurrEvent('Generating Response');
+        console.log(EVENT_TYPES.GENERATE_RESPONSE, ':', data);
+        break;
+      case EVENT_TYPES.PROCESS_RESPONSE:
+        setCurrEvent('Processing Response');
+        console.log(EVENT_TYPES.PROCESS_RESPONSE, ':', data);
+        break;
+      case EVENT_TYPES.MESSAGE:
+        console.log('message: ', data);
+        const { body, is_user_created, parent_message_id, message_id } = data.event;
+        const { conversation_id, is_error } = data;
+
+        const msg = {
+          text: body,
+          sender: is_user_created ? user?.username : 'Vera',
+          isCreatedByUser: is_user_created,
+          parentMessageId: parent_message_id,
+          conversationId: conversation_id,
+          messageId: message_id,
+          error: is_error,
+        };
+
+        if (!is_user_created) {
+          const {
+            policy_message,
+            system_message,
+            selected_model = 'Sample Model',
+            selected_model_reason = 'Sample Reason: Lorem Ipsum Genuar Jaguar Lem Ip Su onpunm Delra gris',
+          } = data.event;
+
+          msg.model = selected_model;
+          msg.modelReason = selected_model_reason;
+          msg.policyMessage = policy_message;
+          msg.systemMessage = system_message;
+
+          setMessages([...currentMessages, msg]);
+        } else {
+          const tempMsgIndex = currentMessages.findIndex((msg) => msg.messageId === 'tempMessage');
+          currentMessages[tempMsgIndex] = msg;
+
+          setMessages([...currentMessages]);
+        }
+
+        setLatestMessage(msg);
+      default:
+        console.log('uncaught event: ', data);
+    }
   };
 
   const regenerate = ({ parentMessageId }) => {
@@ -213,7 +294,6 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     latestMessage,
     setLatestMessage,
     resetLatestMessage,
-    ask,
     index,
     regenerate,
     stopGenerating,
@@ -236,6 +316,10 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     setFiles,
     filesLoading,
     setFilesLoading,
+
+    currEvent,
+    setCurrEvent,
+    ask,
     showStopButton,
     setShowStopButton,
   };

@@ -1,5 +1,5 @@
 import { useRecoilValue } from 'recoil';
-import { useMessageHelpers, useLocalize } from '~/hooks';
+import { useMessageHelpers, useLocalize, useVeraChat } from '~/hooks';
 import type { TMessageProps } from '~/common';
 import { Plugin } from '~/components/Messages/Content';
 import MessageContent from './Content/MessageContent';
@@ -11,6 +11,8 @@ import SubRow from './SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
 import { useAuthStore } from '~/zustand';
+import MessageInfoChip from './MessageInfoChip';
+import { VERA_BLUE, VERA_TEAL } from '~/utils/constants';
 
 export default function Message(props: TMessageProps) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
@@ -43,7 +45,7 @@ export default function Message(props: TMessageProps) {
 
   let messageLabel = '';
   if (isCreatedByUser) {
-    messageLabel = UsernameDisplay ? user?.name : localize('com_user_message');
+    messageLabel = UsernameDisplay ? user?.username : localize('com_user_message');
   } else {
     messageLabel = message.sender;
   }
@@ -99,13 +101,18 @@ export default function Message(props: TMessageProps) {
                   />
                 </div>
               </div>
-              {isLast && isSubmitting ? null : (
-                <SubRow classes="text-xs">
-                  <SiblingSwitch
-                    siblingIdx={siblingIdx}
-                    siblingCount={siblingCount}
-                    setSiblingIdx={setSiblingIdx}
-                  />
+              {/* {isLast && isSubmitting ? null : ( */}
+
+              <SubRow
+                classes={`text-xs items-center  ${isSubmitting ? 'hidden' : 'block'} h-max-content`}
+              >
+                <SiblingSwitch
+                  siblingIdx={siblingIdx}
+                  siblingCount={siblingCount}
+                  setSiblingIdx={setSiblingIdx}
+                />
+
+                <div>
                   <HoverButtons
                     isEditing={edit}
                     message={message}
@@ -117,8 +124,32 @@ export default function Message(props: TMessageProps) {
                     handleContinue={handleContinue}
                     latestMessage={latestMessage}
                   />
-                </SubRow>
-              )}
+                </div>
+
+                {!isCreatedByUser && (
+                  <>
+                    <span style={{ background: '#DADCE5', height: '16px', width: 1 }} />
+
+                    {message.model && (
+                      <MessageInfoChip text={message.model} color={VERA_TEAL} bg="#30A9E51A">
+                        {message.modelReason}
+                      </MessageInfoChip>
+                    )}
+
+                    {message.systemMessage && (
+                      <MessageInfoChip text={'System info'} color="#192C6B" bg="#192C6B1A">
+                        {message.systemMessage}
+                      </MessageInfoChip>
+                    )}
+
+                    <MessageInfoChip text={'Cached response'} bg="#3F5AFF1A" color={VERA_BLUE}>
+                      This response was generated from Cache
+                    </MessageInfoChip>
+                  </>
+                )}
+              </SubRow>
+
+              {/* )} */}
             </div>
           </div>
         </div>

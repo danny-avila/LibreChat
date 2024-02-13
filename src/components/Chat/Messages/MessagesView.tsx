@@ -2,9 +2,10 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
-import { useScreenshot, useMessageScrolling } from '~/hooks';
+import { useScreenshot, useMessageScrolling, useMessageHandler, useVeraChat } from '~/hooks';
 import { CSSTransition } from 'react-transition-group';
 import MultiMessage from './MultiMessage';
+import ProcessingSpinner from './ProcessingSpinner';
 
 export default function MessagesView({
   messagesTree: _messagesTree,
@@ -15,7 +16,7 @@ export default function MessagesView({
 }) {
   const { screenshotTargetRef } = useScreenshot();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
-
+  const { isSubmitting, currEvent } = useVeraChat(0, '');
   const {
     conversation,
     scrollableRef,
@@ -24,7 +25,6 @@ export default function MessagesView({
     handleSmoothToRef,
     debouncedHandleScroll,
   } = useMessageScrolling(_messagesTree);
-
   const { conversationId } = conversation ?? {};
 
   return (
@@ -55,6 +55,8 @@ export default function MessagesView({
                     setCurrentEditId={setCurrentEditId}
                     currentEditId={currentEditId ?? null}
                   />
+
+                  {isSubmitting && <ProcessingSpinner event={currEvent} />}
                 </div>
               </>
             )}

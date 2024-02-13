@@ -38,9 +38,9 @@ export default function HoverButtons({
     endpoint: endpoint ?? '',
     latestMessage,
   });
-  if (!conversation) {
-    return null;
-  }
+  // if (!conversation) {
+  //   return null;
+  // }
 
   const { isCreatedByUser } = message;
 
@@ -53,20 +53,22 @@ export default function HoverButtons({
 
   return (
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
-      <button
-        className={cn(
-          'hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
-          isCreatedByUser ? '' : 'active',
-          hideEditButton ? 'opacity-0' : '',
-          isEditing ? 'active bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200' : '',
-        )}
-        onClick={onEdit}
-        type="button"
-        title={localize('com_ui_edit')}
-        disabled={hideEditButton}
-      >
-        <EditIcon />
-      </button>
+      {isCreatedByUser && (
+        <button
+          className={cn(
+            'hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+            isCreatedByUser ? '' : 'active',
+            !isCreatedByUser ? 'opacity-0' : '',
+            isEditing ? 'active bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200' : '',
+          )}
+          onClick={onEdit}
+          type="button"
+          title={localize('com_ui_edit')}
+          disabled={hideEditButton}
+        >
+          <EditIcon />
+        </button>
+      )}
       <button
         className={cn(
           'ml-0 flex items-center gap-1.5 rounded-md p-1 pl-0 text-xs hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
@@ -80,7 +82,7 @@ export default function HoverButtons({
       >
         {isCopied ? <CheckMark /> : <Clipboard />}
       </button>
-      {regenerateEnabled ? (
+      {!isCreatedByUser ? (
         <button
           className="hover-button active rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible md:group-[.final-completion]:visible"
           onClick={regenerate}

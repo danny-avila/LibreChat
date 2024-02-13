@@ -14,6 +14,7 @@ export default function MultiMessage({
   setCurrentEditId,
   isSearchView,
 }: TMessageProps) {
+  console.log('MultiMessage: ', messageId);
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
 
   const setSiblingIdxRev = (value: number) => {
@@ -42,18 +43,18 @@ export default function MultiMessage({
       <>
         {messagesTree
           ? messagesTree.map((message) => (
-            <Message
-              key={message.messageId}
-              conversation={conversation}
-              message={message}
-              scrollToBottom={scrollToBottom}
-              currentEditId={currentEditId}
-              setCurrentEditId={null}
-              siblingIdx={1}
-              siblingCount={1}
-              setSiblingIdx={null}
-            />
-          ))
+              <Message
+                key={message.messageId}
+                conversation={conversation}
+                message={message}
+                scrollToBottom={scrollToBottom}
+                currentEditId={currentEditId}
+                setCurrentEditId={null}
+                siblingIdx={1}
+                siblingCount={1}
+                setSiblingIdx={null}
+              />
+            ))
           : null}
       </>
     );
