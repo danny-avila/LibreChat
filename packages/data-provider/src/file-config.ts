@@ -139,8 +139,6 @@ export const fileConfig = {
   endpoints: {
     [EModelEndpoint.assistants]: {
       fileLimit: 10,
-      fileMaxSizeMB: 512,
-      totalMaxSizeMB: 512,
       fileSizeLimit: mbToBytes(512),
       totalSizeLimit: mbToBytes(512),
       supportedMimeTypes,
@@ -148,8 +146,6 @@ export const fileConfig = {
     },
     default: {
       fileLimit: 10,
-      fileMaxSizeMB: 20,
-      totalMaxSizeMB: 25,
       fileSizeLimit: mbToBytes(20),
       totalSizeLimit: mbToBytes(25),
       supportedMimeTypes: [imageMimeTypes],
@@ -183,8 +179,6 @@ const supportedMimeTypesSchema = z
 export const endpointFileConfigSchema = z.object({
   disabled: z.boolean().optional(),
   fileLimit: z.number().min(0).optional(),
-  fileMaxSizeMB: z.number().min(0).optional(),
-  totalMaxSizeMB: z.number().min(0).optional(),
   fileSizeLimit: z.number().min(0).optional(),
   totalSizeLimit: z.number().min(0).optional(),
   supportedMimeTypes: supportedMimeTypesSchema.optional(),
@@ -240,8 +234,6 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       mergedEndpoint.fileLimit = 0;
       mergedEndpoint.fileSizeLimit = 0;
       mergedEndpoint.totalSizeLimit = 0;
-      mergedEndpoint.fileMaxSizeMB = 0;
-      mergedEndpoint.totalMaxSizeMB = 0;
       mergedEndpoint.supportedMimeTypes = [];
       continue;
     }
@@ -254,7 +246,7 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       mergedEndpoint.totalSizeLimit = mbToBytes(dynamicEndpoint.totalSizeLimit);
     }
 
-    const configKeys = ['fileLimit', 'fileMaxSizeMB', 'totalMaxSizeMB'] as const;
+    const configKeys = ['fileLimit'] as const;
     configKeys.forEach((field) => {
       if (dynamicEndpoint[field] !== undefined) {
         mergedEndpoint[field] = dynamicEndpoint[field];

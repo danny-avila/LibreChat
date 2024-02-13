@@ -17,8 +17,6 @@ export enum FileContext {
 export type EndpointFileConfig = {
   disabled?: boolean;
   fileLimit?: number;
-  fileMaxSizeMB?: number;
-  totalMaxSizeMB?: number;
   fileSizeLimit?: number;
   totalSizeLimit?: number;
   supportedMimeTypes?: RegExp[];

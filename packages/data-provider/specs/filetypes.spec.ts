@@ -110,8 +110,6 @@ const dynamicConfigs = {
     endpoints: {
       default: {
         fileLimit: 15,
-        fileMaxSizeMB: 30,
-        totalMaxSizeMB: 60,
         fileSizeLimit: 30,
         totalSizeLimit: 60,
         supportedMimeTypes: ['^video/.*$'], // Changing to support video files
@@ -122,8 +120,6 @@ const dynamicConfigs = {
     endpoints: {
       newEndpoint: {
         fileLimit: 5,
-        fileMaxSizeMB: 10,
-        totalMaxSizeMB: 20,
         fileSizeLimit: 10,
         totalSizeLimit: 20,
         supportedMimeTypes: ['^application/json$', '^application/xml$'],
@@ -167,8 +163,6 @@ describe('mergeFileConfig', () => {
         disabledEndpoint: {
           disabled: true,
           fileLimit: 15,
-          fileMaxSizeMB: 30,
-          totalMaxSizeMB: 60,
           fileSizeLimit: 30,
           totalSizeLimit: 60,
           supportedMimeTypes: ['^video/.*$'],
@@ -182,8 +176,6 @@ describe('mergeFileConfig', () => {
     expect(result.endpoints.disabledEndpoint.fileLimit).toEqual(0);
     expect(result.endpoints.disabledEndpoint.fileSizeLimit).toEqual(0);
     expect(result.endpoints.disabledEndpoint.totalSizeLimit).toEqual(0);
-    expect(result.endpoints.disabledEndpoint.fileMaxSizeMB).toEqual(0);
-    expect(result.endpoints.disabledEndpoint.totalMaxSizeMB).toEqual(0);
     expect(result.endpoints.disabledEndpoint.supportedMimeTypes).toEqual([]);
   });
 });

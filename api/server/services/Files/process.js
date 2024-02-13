@@ -3,6 +3,7 @@ const { v4 } = require('uuid');
 const mime = require('mime/lite');
 const {
   isUUID,
+  megabyte,
   FileContext,
   FileSources,
   imageExtRegex,
@@ -434,11 +435,13 @@ function filterFile({ req, file, image }) {
 
   const fileConfig = mergeFileConfig(req.app.locals.fileConfig);
 
-  const { fileSizeLimit, fileMaxSizeMB, supportedMimeTypes } =
+  const { fileSizeLimit, supportedMimeTypes } =
     fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
 
   if (file.size > fileSizeLimit) {
-    throw new Error(`File size limit of ${fileMaxSizeMB} MB exceeded for ${endpoint} endpoint`);
+    throw new Error(
+      `File size limit of ${fileSizeLimit / megabyte} MB exceeded for ${endpoint} endpoint`,
+    );
   }
 
   const isSupportedMimeType = fileConfig.checkType(file.mimetype, supportedMimeTypes);

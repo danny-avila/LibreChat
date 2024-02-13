@@ -2,9 +2,10 @@ import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
 import { useState, useEffect, useCallback } from 'react';
 import {
-  fileConfig as defaultFileConfig,
+  megabyte,
   EModelEndpoint,
   mergeFileConfig,
+  fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useUploadFileMutation, useGetFileConfig } from '~/data-provider';
@@ -35,14 +36,8 @@ const useFileHandling = (params?: UseFileHandling) => {
   const endpoint =
     params?.overrideEndpoint ?? conversation?.endpointType ?? conversation?.endpoint ?? 'default';
 
-  const {
-    fileLimit,
-    fileMaxSizeMB,
-    totalMaxSizeMB,
-    fileSizeLimit,
-    totalSizeLimit,
-    supportedMimeTypes,
-  } = fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
+  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes } =
+    fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
 
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
@@ -171,13 +166,13 @@ const useFileHandling = (params?: UseFileHandling) => {
       }
 
       if (originalFile.size >= fileSizeLimit) {
-        setError(`File size exceeds ${fileMaxSizeMB} MB.`);
+        setError(`File size exceeds ${fileSizeLimit / megabyte} MB.`);
         return false;
       }
     }
 
     if (currentTotalSize + incomingTotalSize > totalSizeLimit) {
-      setError(`The total size of the files cannot exceed ${totalMaxSizeMB} MB.`);
+      setError(`The total size of the files cannot exceed ${totalSizeLimit / megabyte} MB.`);
       return false;
     }
 

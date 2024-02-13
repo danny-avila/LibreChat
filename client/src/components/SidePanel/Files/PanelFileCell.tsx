@@ -1,5 +1,9 @@
 import { useCallback } from 'react';
-import { fileConfig as defaultFileConfig, mergeFileConfig } from 'librechat-data-provider';
+import {
+  fileConfig as defaultFileConfig,
+  mergeFileConfig,
+  megabyte,
+} from 'librechat-data-provider';
 import type { Row } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
 import { useFileMapContext, useChatContext, useToastContext } from '~/Providers';
@@ -32,12 +36,14 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
       return showToast({ message: localize('com_ui_attach_error'), status: 'error' });
     }
 
-    const { fileSizeLimit, fileMaxSizeMB, supportedMimeTypes } =
+    const { fileSizeLimit, supportedMimeTypes } =
       fileConfig.endpoints[endpoint] ?? fileConfig.endpoints.default;
 
     if (fileData.bytes > fileSizeLimit) {
       return showToast({
-        message: `${localize('com_ui_attach_error_size')} ${fileMaxSizeMB} MB (${endpoint})`,
+        message: `${localize('com_ui_attach_error_size')} ${
+          fileSizeLimit / megabyte
+        } MB (${endpoint})`,
         status: 'error',
       });
     }
