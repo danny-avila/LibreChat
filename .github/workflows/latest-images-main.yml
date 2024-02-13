@@ -1,4 +1,4 @@
-name: Docker Compose Build on Tag
+name: Docker Compose Build Latest Tag (Manual Dispatch)
 
 # The workflow is manually triggered
 on:
@@ -46,7 +46,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/librechat-api
           tags: |
-            type=raw,value=${{ env.LATEST_TAG }}
+            type=raw,value=${{ env.LATEST_TAG }},enable=true
+            type=raw,value=latest,enable=true
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}
             type=semver,pattern={{major}}.{{minor}}
@@ -69,7 +70,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/librechat
           tags: |
-            type=raw,value=${{ env.LATEST_TAG }}
+            type=raw,value=${{ env.LATEST_TAG }},enable=true
+            type=raw,value=latest,enable=true
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}
             type=semver,pattern={{major}}.{{minor}}
