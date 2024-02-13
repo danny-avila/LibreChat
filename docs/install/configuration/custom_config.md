@@ -101,46 +101,98 @@ endpoints:
 ## Example Config
 
 ```yaml
-version: 1.0.2
+version: 1.0.3
 cache: true
-# Example Registration Object Structure
+# fileStrategy: "firebase"  # If using Firebase CDN
+fileConfig:
+  endpoints:
+    assistants:
+      fileLimit: 5
+      fileSizeLimit: 10  # Maximum size for an individual file in MB
+      totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
+      supportedMimeTypes:
+        - "image/.*"
+        - "application/pdf"
+    openAI:
+      disabled: true  # Disables file uploading to the OpenAI endpoint
+    default:
+      totalSizeLimit: 20
+    YourCustomEndpointName:
+      fileLimit: 2
+      fileSizeLimit: 5
+  serverFileSizeLimit: 100  # Global server file size limit in MB
+  avatarSizeLimit: 2  # Limit for user avatar image size in MB
+rateLimits:
+  fileUploads:
+    ipMax: 100
+    ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
+    userMax: 50
+    userWindowInMinutes: 60  # Rate limit window for file uploads per user
 registration:
+  socialLogins: ["google", "facebook", "github", "discord", "openid"]
   allowedDomains:
-    - "gmail.com"
+    - "example.com"
+    - "anotherdomain.com"
 endpoints:
+  assistants:
+    disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
+    pollIntervalMs: 750  # Polling interval for checking assistant updates
+    timeoutMs: 180000  # Timeout for assistant operations
   custom:
-    # Mistral AI API
     - name: "Mistral"
-      apiKey: "your_api_key"
+      apiKey: "${MISTRAL_API_KEY}"
       baseURL: "https://api.mistral.ai/v1"
-      models: 
+      models:
         default: ["mistral-tiny", "mistral-small", "mistral-medium"]
+        fetch: true  # Attempt to dynamically fetch available models
+        userIdQuery: false
+      iconURL: "https://example.com/mistral-icon.png"
       titleConvo: true
-      titleModel: "mistral-tiny" 
-      summarize: false
-      summaryModel: "mistral-tiny" 
-      forcePrompt: false 
-      modelDisplayLabel: "Mistral"
+      titleMethod: "completion"
+      titleModel: "mistral-tiny"
+      summarize: true
+      summaryModel: "mistral-summary"
+      forcePrompt: false
+      modelDisplayLabel: "Mistral AI"
       addParams:
         safe_prompt: true
-      # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
-      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
-
-     # OpenRouter.ai API
+      dropParams:
+        - "stop"
+        - "user"
+        - "presence_penalty"
+        - "frequency_penalty"
+      # headers:
+      #    x-custom-header: "${CUSTOM_HEADER_VALUE}"
     - name: "OpenRouter"
-      # Known issue: you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
-      apiKey: "${OPENROUTER_KEY}"
+      apiKey: "${OPENROUTER_API_KEY}"
       baseURL: "https://openrouter.ai/api/v1"
       models:
         default: ["gpt-3.5-turbo"]
-        fetch: true
+        fetch: false
       titleConvo: true
       titleModel: "gpt-3.5-turbo"
       summarize: false
-      summaryModel: "gpt-3.5-turbo"
       forcePrompt: false
       modelDisplayLabel: "OpenRouter"
+      dropParams:
+        - "frequency_penalty"
 ```
+
+This example configuration file sets up LibreChat with detailed options across several key areas:
+
+- **Caching**: Enabled to improve performance.
+- **File Handling**:
+    - **File Strategy**: Commented out but hints at possible integration with Firebase for file storage.
+    - **File Configurations**: Customizes file upload limits and allowed MIME types for different endpoints, including a global server file size limit and a specific limit for user avatar images.
+- **Rate Limiting**: Defines thresholds for the maximum number of file uploads allowed per IP and user within a specified time window, aiming to prevent abuse.
+- **Registration**:
+    - Allows registration from specified social login providers and email domains, enhancing security and user management.
+- **Endpoints**:
+    - **Assistants**: Configures the assistants' endpoint with a polling interval and a timeout for operations, and provides an option to disable the builder interface.
+    - **Custom Endpoints**:
+        - Configures two external AI service endpoints, Mistral and OpenRouter, including API keys, base URLs, model handling, and specific feature toggles like conversation titles, summarization, and parameter adjustments.
+        - For Mistral, it enables dynamic model fetching, applies additional parameters for safe prompts, and explicitly drops unsupported parameters.
+        - For OpenRouter, it sets up a basic configuration without dynamic model fetching and specifies a model for conversation titles.
 
 ## Config Structure
 
@@ -232,10 +284,13 @@ rateLimits:
   - **Type**: Object
   - **Description**: Assistants endpoint-specific configuration.
     - **Sub-Key**: `disableBuilder`
+    - **Description**: Controls the visibility and use of the builder interface for assistants.
     - [More info](#disablebuilder)
-  - **Sub-Key**: `pollIntervalMs`
+    - **Sub-Key**: `pollIntervalMs`
+    - **Description**: Specifies the polling interval in milliseconds for checking run updates or changes in assistant run states.
     - [More info](#pollintervalms)
-  - **Sub-Key**: `timeoutMs`
+    - **Sub-Key**: `timeoutMs`
+    - **Description**: Sets a timeout in milliseconds for assistant runs. Helps manage system load by limiting total run operation time.
     - [More info](#timeoutMs)
   - [Full Assistants Endpoint Object Structure](#assistants-endpoint-object-structure)
   - **Sub-Key**: `custom`
@@ -450,11 +505,11 @@ In addition to custom endpoints, you can configure settings specific to the assi
 
 ### **pollIntervalMs**:
 
-> Specifies the interval in milliseconds at which the system will poll for run updates or changes in assistant run states.
+> Specifies the polling interval in milliseconds for checking run updates or changes in assistant run states.
 
 - **Type**: Integer
 - **Example**: `pollIntervalMs: 500`
-- **Description**: Specifies the polling interval in milliseconds for checking assistant run updates. Useful for adapting the responsiveness of assistant interactions.
+- **Description**: Specifies the polling interval in milliseconds for checking assistant run updates.
 - **Note**: Defaults to `750` if omitted.
 
 ### **timeoutMs**:
@@ -463,8 +518,8 @@ In addition to custom endpoints, you can configure settings specific to the assi
 
 - **Type**: Integer
 - **Example**: `timeoutMs: 10000`
-- **Description**: Sets a timeout in milliseconds for assistant runs. Helps manage system load by limiting total run operation time. The default is 
-- **Note**: Defaults to `180000` if omitted (3 minutes). Run operation times can range between 50 seconds to 2 minutes but also exceed this. If the `timeoutMs` value is exceeded, the run will be cancelled.
+- **Description**: Sets a timeout in milliseconds for assistant runs. Helps manage system load by limiting total run operation time.
+- **Note**: Defaults to 3 minutes (180,000 ms). Run operation times can range between 50 seconds to 2 minutes but also exceed this. If the `timeoutMs` value is exceeded, the run will be cancelled.
 
 ## Custom Endpoint Object Structure
 Each endpoint in the `custom` array should have the following structure:
