@@ -41,10 +41,24 @@ This script automates the local Windows 64 bits installation and offers a utilit
 ---
 
 ## [LibreChat Azure Deployment](https://github.com/thunderbug1/LibreChatAzureDeployment)
+
 A Terraform setup to deploy LibreChat to Azure and setup all the necessary services.
+
 <div>
 <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Microsoft_Azure.svg/1280px-Microsoft_Azure.svg.png" width=150>
 </div>
+
+---
+
+## [LibreChat Enhanced Docker Compose Deployment](https://github.com/CXwudi/librechat-docker-deployment)
+
+This repository offers an advanced example of deploying LibreChat with Docker Compose. It includes several benefits but is more complex to configure.
+
+It serves as a valuable reference for those requiring sophisticated configurations for their setup. 
+
+For simpler setups, consider using [the `docker-compose.override.yml` file](../install/configuration/docker_override.md) for an easier LibreChat deployment process.
+
+![Screenshot 2024-02-13 175651](https://github.com/CXwudi/LibreChat-doc/assets/17377423/53dfb88f-ea1e-4fc2-8952-4069b281a272)
 
 ---
 
