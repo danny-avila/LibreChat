@@ -190,6 +190,12 @@
  */
 
 /**
+ * @exports TAssistantEndpoint
+ * @typedef {import('librechat-data-provider').TAssistantEndpoint} TAssistantEndpoint
+ * @memberof typedefs
+ */
+
+/**
  * Represents details of the message creation by the run step, including the ID of the created message.
  *
  * @exports MessageCreationStepDetails

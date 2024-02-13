@@ -4,6 +4,7 @@ const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
 const { loadAndFormatTools } = require('./ToolService');
 const paths = require('~/config/paths');
+const { logger } = require('~/config');
 
 /**
  *
@@ -32,13 +33,22 @@ const AppService = async (app) => {
 
   const endpointLocals = {};
   if (config?.endpoints?.[EModelEndpoint.assistants]) {
-    const { disableBuilder, pollIntervalMs, timeoutMs } =
+    const { disableBuilder, pollIntervalMs, timeoutMs, supportedIds, excludedIds } =
       config.endpoints[EModelEndpoint.assistants];
 
+    if (supportedIds?.length && excludedIds?.length) {
+      logger.warn(
+        `Both \`supportedIds\` and \`excludedIds\` are defined for the ${EModelEndpoint.assistants} endpoint; \`excludedIds\` field will be ignored.`,
+      );
+    }
+
+    /** @type {Partial<TAssistantEndpoint>} */
     endpointLocals[EModelEndpoint.assistants] = {
       disableBuilder,
       pollIntervalMs,
       timeoutMs,
+      supportedIds,
+      excludedIds,
     };
   }
 

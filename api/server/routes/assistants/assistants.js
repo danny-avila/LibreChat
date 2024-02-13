@@ -1,6 +1,6 @@
 const multer = require('multer');
 const express = require('express');
-const { FileContext } = require('librechat-data-provider');
+const { FileContext, EModelEndpoint } = require('librechat-data-provider');
 const { updateAssistant, getAssistants } = require('~/models/Assistant');
 const { initializeClient } = require('~/server/services/Endpoints/assistant');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -147,7 +147,22 @@ router.get('/', async (req, res) => {
       after,
       before,
     });
-    res.json(response.body);
+
+    /** @type {AssistantListResponse} */
+    let body = response.body;
+
+    if (req.app.locals?.[EModelEndpoint.assistants]) {
+      /** @type {Partial<TAssistantEndpoint>} */
+      const assistantsConfig = req.app.locals[EModelEndpoint.assistants];
+      const { supportedIds, excludedIds } = assistantsConfig;
+      if (supportedIds?.length) {
+        body.data = body.data.filter((assistant) => supportedIds.includes(assistant.id));
+      } else if (excludedIds?.length) {
+        body.data = body.data.filter((assistant) => !excludedIds.includes(assistant.id));
+      }
+    }
+
+    res.json(body);
   } catch (error) {
     logger.error('[/assistants] Error listing assistants', error);
     res.status(500).json({ error: error.message });

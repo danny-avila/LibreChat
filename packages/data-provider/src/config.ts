@@ -11,6 +11,8 @@ export const assistantEndpointSchema = z.object({
   disableBuilder: z.boolean().optional(),
   pollIntervalMs: z.number().optional(),
   timeoutMs: z.number().optional(),
+  supportedIds: z.array(z.string()).min(1).optional(),
+  excludedIds: z.array(z.string()).min(1).optional(),
   /* general */
   apiKey: z.string().optional(),
   baseURL: z.string().optional(),
@@ -26,6 +28,8 @@ export const assistantEndpointSchema = z.object({
   titleModel: z.string().optional(),
   headers: z.record(z.any()).optional(),
 });
+
+export type TAssistantEndpoint = z.infer<typeof assistantEndpointSchema>;
 
 export const endpointSchema = z.object({
   name: z.string().refine((value) => !eModelEndpointSchema.safeParse(value).success, {

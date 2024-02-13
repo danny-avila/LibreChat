@@ -377,7 +377,7 @@ ASSISTANTS_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gp
 ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
 ```
 
-- There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, that are available via the [`librechat.yaml` custom config file](./custom_config.md#assistants-endpoint-object-structure).
+- There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, and determining which assistants can be used, that are available via the [`librechat.yaml` custom config file](./custom_config.md#assistants-endpoint-object-structure).
 
 ### OpenRouter
 See [OpenRouter](./free_ai_apis.md#openrouter-preferred) for more info.

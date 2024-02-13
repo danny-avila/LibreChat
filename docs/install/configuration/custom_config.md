@@ -57,50 +57,6 @@ docker compose up # no need to rebuild
 ## Example Config
 
 ```yaml
-version: 1.0.2
-cache: true
-# Example Registration Object Structure
-registration:
-  allowedDomains:
-    - "gmail.com"
-endpoints:
-  custom:
-    # Mistral AI API
-    - name: "Mistral"
-      apiKey: "your_api_key"
-      baseURL: "https://api.mistral.ai/v1"
-      models: 
-        default: ["mistral-tiny", "mistral-small", "mistral-medium"]
-      titleConvo: true
-      titleModel: "mistral-tiny" 
-      summarize: false
-      summaryModel: "mistral-tiny" 
-      forcePrompt: false 
-      modelDisplayLabel: "Mistral"
-      addParams:
-        safe_prompt: true
-      # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
-      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
-
-     # OpenRouter.ai API
-    - name: "OpenRouter"
-      # Known issue: you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
-      apiKey: "${OPENROUTER_KEY}"
-      baseURL: "https://openrouter.ai/api/v1"
-      models:
-        default: ["gpt-3.5-turbo"]
-        fetch: true
-      titleConvo: true
-      titleModel: "gpt-3.5-turbo"
-      summarize: false
-      summaryModel: "gpt-3.5-turbo"
-      forcePrompt: false
-      modelDisplayLabel: "OpenRouter"
-```
-
-## Example Config
-
-```yaml
 version: 1.0.3
 cache: true
 # fileStrategy: "firebase"  # If using Firebase CDN
@@ -138,6 +94,9 @@ endpoints:
     disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
     pollIntervalMs: 750  # Polling interval for checking assistant updates
     timeoutMs: 180000  # Timeout for assistant operations
+    # Should only be one or the other, either `supportedIds` or `excludedIds`
+    supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
+    # excludedIds: ["asst_excludedAssistantId"]
   custom:
     - name: "Mistral"
       apiKey: "${MISTRAL_API_KEY}"
@@ -292,6 +251,12 @@ rateLimits:
     - **Sub-Key**: `timeoutMs`
     - **Description**: Sets a timeout in milliseconds for assistant runs. Helps manage system load by limiting total run operation time.
     - [More info](#timeoutMs)
+    - **Sub-Key**: `supportedIds`
+    - **Description**: List of supported assistant Ids. Use this or `excludedIds` but not both.
+    - [More info](#supportedIds)
+    - **Sub-Key**: `excludedIds`
+    - **Description**: List of excluded assistant Ids. Use this or `supportedIds` but not both (the `excludedIds` field will be ignored if so).
+    - [More info](#excludedIds)
   - [Full Assistants Endpoint Object Structure](#assistants-endpoint-object-structure)
   - **Sub-Key**: `custom`
   - **Type**: Array of Objects
@@ -489,6 +454,9 @@ endpoints:
     disableBuilder: false
     pollIntervalMs: 500
     timeoutMs: 10000
+    # Use either `supportedIds` or `excludedIds` but not both
+    supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
+    # excludedIds: ["asst_excludedAssistantId"]
 ```
 > This configuration enables the builder interface for assistants, sets a polling interval of 500ms to check for run updates, and establishes a timeout of 10 seconds for assistant run operations.
 
@@ -520,6 +488,22 @@ In addition to custom endpoints, you can configure settings specific to the assi
 - **Example**: `timeoutMs: 10000`
 - **Description**: Sets a timeout in milliseconds for assistant runs. Helps manage system load by limiting total run operation time.
 - **Note**: Defaults to 3 minutes (180,000 ms). Run operation times can range between 50 seconds to 2 minutes but also exceed this. If the `timeoutMs` value is exceeded, the run will be cancelled.
+
+### **supportedIds**:
+
+  > List of supported assistant Ids
+
+  - Type: Array/List of Strings
+  - **Description**: List of supported assistant Ids. Use this or `excludedIds` but not both (the `excludedIds` field will be ignored if so).
+  - **Example**: `supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]`
+
+### **excludedIds**:
+
+  > List of excluded assistant Ids
+
+  - Type: Array/List of Strings
+  - **Description**: List of excluded assistant Ids. Use this or `supportedIds` but not both (the `excludedIds` field will be ignored if so).
+  - **Example**: `excludedIds: ["asst_excludedAssistantId1", "asst_excludedAssistantId2"]`
 
 ## Custom Endpoint Object Structure
 Each endpoint in the `custom` array should have the following structure:

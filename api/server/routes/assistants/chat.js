@@ -21,7 +21,7 @@ const router = express.Router();
 const {
   setHeaders,
   handleAbort,
-  // handleAbortError,
+  handleAbortError,
   // validateEndpoint,
   buildEndpointOption,
 } = require('~/server/middleware');
@@ -50,6 +50,30 @@ router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
     conversationId: convoId,
     parentMessageId: _parentId = Constants.NO_PARENT,
   } = req.body;
+
+  /** @type {Partial<TAssistantEndpoint>} */
+  const assistantsConfig = req.app.locals?.[EModelEndpoint.assistants];
+
+  if (assistantsConfig) {
+    const { supportedIds, excludedIds } = assistantsConfig;
+    const error = { message: 'Assistant not supported' };
+    if (supportedIds?.length && !supportedIds.includes(assistant_id)) {
+      return await handleAbortError(res, req, error, {
+        sender: 'System',
+        conversationId: convoId,
+        messageId: v4(),
+        parentMessageId: _messageId,
+        error,
+      });
+    } else if (excludedIds?.length && excludedIds.includes(assistant_id)) {
+      return await handleAbortError(res, req, error, {
+        sender: 'System',
+        conversationId: convoId,
+        messageId: v4(),
+        parentMessageId: _messageId,
+      });
+    }
+  }
 
   /** @type {OpenAIClient} */
   let openai;
