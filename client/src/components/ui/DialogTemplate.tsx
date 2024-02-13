@@ -52,7 +52,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
           </DialogDescription>
         )}
       </DialogHeader>
-      <div className="px-6 py-4 max-h-[60vh] md:max-h-full overflow-y-auto">{main ? main : null}</div>
+      <div className="px-6 py-4 max-h-[60vh] md:max-h-full overflow-y-auto md:overflow-hidden">{main ? main : null}</div>
       <DialogFooter>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex h-auto gap-2">
