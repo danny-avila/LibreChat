@@ -21,7 +21,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
             {localize('com_nav_settings')}
           </DialogTitle>
         </DialogHeader>
-        <div className="px-6">
+        <div className="px-6 py-4 min-h-[50vh]">
           <Tabs.Root
             defaultValue={SettingsTabValues.GENERAL}
             className="flex flex-col gap-10 md:flex-row"

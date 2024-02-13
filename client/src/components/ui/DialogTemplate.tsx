@@ -42,7 +42,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
       className={cn('shadow-2xl dark:bg-gray-900', className || '')}
       onClick={(e) => e.stopPropagation()}
     >
-      <DialogHeader className={cn('sm:pb-2', headerClassName ?? '')}>
+      <DialogHeader className={cn(headerClassName ?? '')}>
         <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
           {title}
         </DialogTitle>
@@ -52,7 +52,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
           </DialogDescription>
         )}
       </DialogHeader>
-      <div className="px-6">{main ? main : null}</div>
+      <div className="px-6 py-4 max-h-[50vh] overflow-y-auto">{main ? main : null}</div>
       <DialogFooter>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex h-auto gap-2">

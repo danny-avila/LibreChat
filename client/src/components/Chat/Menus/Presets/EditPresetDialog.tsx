@@ -36,7 +36,7 @@ const EditPresetDialog = ({
         title={`${localize('com_ui_edit') + ' ' + localize('com_endpoint_preset')} - ${
           preset?.title
         }`}
-        className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] md:overflow-y-hidden lg:w-[950px] xl:h-[720px]"
+        className="max-w-full overflow-y-auto sm:w-[680px]"
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">
             <div className="grid w-full grid-cols-5 gap-6">
@@ -96,7 +96,7 @@ const EditPresetDialog = ({
           </div>
         }
         buttons={
-          <div className="mb-6 md:mb-2">
+          <div className="mb-2">
             <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
               {localize('com_endpoint_export')}
             </DialogButton>

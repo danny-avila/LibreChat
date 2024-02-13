@@ -185,7 +185,7 @@ export default {
   com_endpoint_disabled_with_tools_placeholder: 'Отключено при включённых плагинах',
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Задайте кастомные инструкции для включения в системное сообщение. По умолчанию: нет',
-  com_endpoint_import: 'Импортировать',
+  com_endpoint_import: 'Импорт',
   com_endpoint_set_custom_name:
     'Задайте кастомное имя на случай, если вы сможете найти эту предустановку :)',
   com_endpoint_preset_delete_confirm: 'Вы уверены, что хотите удалить этот пресет?',
@@ -217,7 +217,7 @@ export default {
   com_endpoint_agent: 'Агент',
   com_endpoint_show_what_settings: 'Показать настройки {0}',
   com_endpoint_save: 'Сохранить',
-  com_endpoint_export: 'Экспортировать',
+  com_endpoint_export: 'Экспорт',
   com_endpoint_save_as_preset: 'Сохранить как Пресет',
   com_endpoint_presets_clear_warning:
     'Вы уверены, что хотите удалить все пресеты? Это действие необратимо и восстановление невозможно.',

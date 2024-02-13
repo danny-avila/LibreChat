@@ -45,14 +45,14 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed z-[999] grid w-11/12 gap-4 bg-white pb-6 rounded-xl m-auto top-24 left-1/2 -translate-x-1/2',
+        'fixed z-[999] grid w-11/12 bg-white rounded-xl m-auto top-1/3 left-1/2 transform -translate-x-1/2 -translate-y-1/3',
         'dark:bg-slate-900',
         className ?? '',
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-6 top-[0.5rem] rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-slate-100 dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900 dark:data-[state=open]:bg-slate-800 sm:top-[1.6rem]">
+      <DialogPrimitive.Close className="absolute right-6 top-[1.6rem] rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-slate-100 dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900 dark:data-[state=open]:bg-slate-800">
         <X className="h-5 w-5 text-black dark:text-white" />
         <span className="sr-only">Close</span>
       </DialogPrimitive.Close>
@@ -64,7 +64,7 @@ DialogContent.displayName = DialogPrimitive.Content.displayName;
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      'flex flex-col space-y-2 border-b border-black/10 p-2 text-center dark:border-white/10 sm:p-6 sm:text-left',
+      'flex flex-col space-y-2 border-b border-black/10 dark:border-white/10 p-6 pb-4 text-left',
       className ?? '',
     )}
     {...props}
@@ -75,7 +75,7 @@ DialogHeader.displayName = 'DialogHeader';
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      'flex gap-2 px-6 flex-row justify-between space-x-2',
+      'flex px-6 py-4 flex-row justify-between space-x-2',
       className ?? '',
     )}
     {...props}

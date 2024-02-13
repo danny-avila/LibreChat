@@ -87,7 +87,7 @@ const EndpointOptionsDialog = ({
             </div>
           }
           buttons={
-            <div className="mb-6 md:mb-2">
+            <div className="mb-2">
               <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
                 {localize('com_endpoint_export')}
               </DialogButton>
