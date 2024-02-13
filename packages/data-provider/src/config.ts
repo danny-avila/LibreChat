@@ -355,7 +355,11 @@ export enum Constants {
   /**
    * Key for the app's version.
    */
-  VERSION = 'v0.6.5',
+  VERSION = 'v0.6.9',
+  /**
+   * Key for the Custom Config's version (librechat.yaml).
+   */
+  CONFIG_VERSION = '1.0.3',
   /**
    * Standard value for the first message's `parentMessageId` value, to indicate no parent exists.
    */
