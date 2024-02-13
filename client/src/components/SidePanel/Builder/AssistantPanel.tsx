@@ -186,7 +186,7 @@ export default function AssistantPanel({
           {/* Select Button */}
           {assistant_id && (
             <button
-              className="focus:shadow-outline mx-2 mt-1 h-[40px]  rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+              className="btn btn-primary focus:shadow-outline mx-2 mt-1 h-[40px] rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
               type="button"
               disabled={!assistant_id}
               onClick={(e) => {
@@ -417,15 +417,30 @@ export default function AssistantPanel({
               </button>
             </div>
           </div>
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-end gap-2">
+            {/* Context Button */}
             <ContextButton
               assistant_id={assistant_id}
               setCurrentAssistantId={setCurrentAssistantId}
               createMutation={create}
             />
+            {/* Secondary Select Button */}
+            {assistant_id && (
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={!assistant_id}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onSelectAssistant(assistant_id);
+                }}
+              >
+                {localize('com_ui_select')}
+              </button>
+            )}
             {/* Submit Button */}
             <button
-              className="focus:shadow-outline mx-2 flex w-[90px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+              className="btn btn-primary focus:shadow-outline flex w-[90px] items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500"
               type="submit"
             >
               {create.isLoading || update.isLoading ? (
