@@ -39,8 +39,8 @@ const EditPresetDialog = ({
         className="max-w-full overflow-y-auto sm:w-[680px]"
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">
-            <div className="grid w-full grid-cols-5 gap-6">
-              <div className="col-span-4 flex items-start justify-start gap-4">
+            <div className="w-full">
+              <div className="col-span-5 flex flex-col items-center justify-start gap-6 pb-2 sm:col-span-3">
                 <div className="flex w-full flex-col">
                   <Label htmlFor="preset-name" className="mb-1 text-left text-sm font-medium">
                     {localize('com_endpoint_preset_name')}
@@ -72,13 +72,13 @@ const EditPresetDialog = ({
                 <div className="flex w-full flex-col">
                   <Label
                     htmlFor="endpoint"
-                    className="mb-1 hidden text-left text-sm font-medium sm:block"
+                    className="mb-1 hidden text-left text-sm font-medium"
                   >
                     {'ㅤ'}
                   </Label>
                   <PopoverButtons
                     buttonClass="ml-0 w-full dark:bg-gray-700 dark:hover:bg-gray-800 p-2 h-[40px] justify-center mt-0"
-                    iconClass="hidden lg:block w-4"
+                    iconClass="hidden w-4"
                   />
                 </div>
               </div>
