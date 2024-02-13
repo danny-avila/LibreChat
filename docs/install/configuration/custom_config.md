@@ -20,41 +20,7 @@ Stay tuned for ongoing enhancements to customize your LibreChat instance!
 
 > Note: To verify your YAML config, you can use online tools like [yamlchecker.com](https://yamlchecker.com/)
 
-<!-- # Table of Contents
-
-- [LibreChat Configuration Guide](#librechat-configuration-guide)
-- [Table of Contents](#table-of-contents)
-  - [Setup](#setup)
-  - [Docker Setup](#docker-setup)
-  - [Config Structure](#config-structure)
-    - [Version](#version)
-    - [Cache Settings](#cache-settings)
-    - [File Strategy](#file-strategy)
-    - [Registration](#registration)
-    - [Endpoints](#endpoints)
-  - [Registration Object Structure](#registration-object-structure)
-    - [**socialLogins**:](#socialLogins)
-    - [**allowedDomains**:](#allowedDomains)
-  - [Custom Endpoint Object Structure](#custom-endpoint-object-structure)
-    - [**name**:](#name)
-    - [**apiKey**:](#apikey)
-    - [**baseURL**:](#baseurl)
-    - [**iconURL**:](#iconurl)
-    - [**models**:](#models)
-    - [**titleConvo**:](#titleconvo)
-    - [**titleMethod**:](#titlemethod)
-    - [**titleModel**:](#titlemodel)
-    - [**summarize**:](#summarize)
-    - [**summaryModel**:](#summarymodel)
-    - [**forcePrompt**:](#forceprompt)
-    - [**modelDisplayLabel**:](#modeldisplaylabel)
-    - [**addParams**:](#addparams)
-    - [**dropParams**:](#dropparams)
-    - [**headers**:](#headers)
-  - [Additional Notes](#additional-notes)
-  - [Default Parameters](#default-parameters)
-    - [Breakdown of Default Params](#breakdown-of-default-params)
-  - [Example Config](#example-config) -->
+**Note:** To verify your YAML config, you can use online tools like [yamlchecker.com](https://yamlchecker.com/)
 
 ## Setup
 
@@ -88,6 +54,94 @@ services:
 docker compose up # no need to rebuild
 ```
 
+## Example Config
+
+```yaml
+version: 1.0.2
+cache: true
+# Example Registration Object Structure
+registration:
+  allowedDomains:
+    - "gmail.com"
+endpoints:
+  custom:
+    # Mistral AI API
+    - name: "Mistral"
+      apiKey: "your_api_key"
+      baseURL: "https://api.mistral.ai/v1"
+      models: 
+        default: ["mistral-tiny", "mistral-small", "mistral-medium"]
+      titleConvo: true
+      titleModel: "mistral-tiny" 
+      summarize: false
+      summaryModel: "mistral-tiny" 
+      forcePrompt: false 
+      modelDisplayLabel: "Mistral"
+      addParams:
+        safe_prompt: true
+      # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
+      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
+
+     # OpenRouter.ai API
+    - name: "OpenRouter"
+      # Known issue: you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: ["gpt-3.5-turbo"]
+        fetch: true
+      titleConvo: true
+      titleModel: "gpt-3.5-turbo"
+      summarize: false
+      summaryModel: "gpt-3.5-turbo"
+      forcePrompt: false
+      modelDisplayLabel: "OpenRouter"
+```
+
+## Example Config
+
+```yaml
+version: 1.0.2
+cache: true
+# Example Registration Object Structure
+registration:
+  allowedDomains:
+    - "gmail.com"
+endpoints:
+  custom:
+    # Mistral AI API
+    - name: "Mistral"
+      apiKey: "your_api_key"
+      baseURL: "https://api.mistral.ai/v1"
+      models: 
+        default: ["mistral-tiny", "mistral-small", "mistral-medium"]
+      titleConvo: true
+      titleModel: "mistral-tiny" 
+      summarize: false
+      summaryModel: "mistral-tiny" 
+      forcePrompt: false 
+      modelDisplayLabel: "Mistral"
+      addParams:
+        safe_prompt: true
+      # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
+      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
+
+     # OpenRouter.ai API
+    - name: "OpenRouter"
+      # Known issue: you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: ["gpt-3.5-turbo"]
+        fetch: true
+      titleConvo: true
+      titleModel: "gpt-3.5-turbo"
+      summarize: false
+      summaryModel: "gpt-3.5-turbo"
+      forcePrompt: false
+      modelDisplayLabel: "OpenRouter"
+```
+
 ## Config Structure
 
 **Note:** Fields not specifically mentioned as required are optional.
@@ -111,27 +165,226 @@ docker compose up # no need to rebuild
 - **Description**: Determines where to save user uploaded/generated files. Defaults to `"local"` if omitted.
 - **Example**: `fileStrategy: "firebase"`
 
+### File Configuration
+- **Key**: `fileConfig`
+- **Type**: Object
+- **Description**: Configures file handling settings for the application, including size limits and MIME type restrictions.
+  
+  - **Sub-Key**: `endpoints`
+    - **Type**: Record/Object
+    - **Description**: Specifies file handling configurations for individual endpoints, allowing customization per endpoint basis.
+    - [Endpoint File Config Object Structure](#endpoint-file-config-object-structure)
+  
+  - **Sub-Key**: `serverFileSizeLimit`
+    - **Type**: Number
+    - **Description**: The maximum file size (in MB) that the server will accept. Applies globally across all endpoints unless overridden by endpoint-specific settings.
+  
+  - **Sub-Key**: `avatarSizeLimit`
+    - **Type**: Number
+    - **Description**: Maximum size (in MB) for user avatar images.
+
+### Rate Limiting
+
+- **Key**: `rateLimits`
+- **Type**: Object
+- **Description**: Defines rate limiting policies to prevent abuse by limiting the number of requests.
+  - **Sub-Key**: `fileUploads`
+  - **Type**: Object
+  - **Description**: Configures rate limits specifically for file upload operations.
+    - **Sub-Key**: `ipMax`
+      - **Type**: Number
+      - **Description**: Maximum number of uploads allowed per IP address per window.
+    - **Sub-Key**: `ipWindowInMinutes`
+      - **Type**: Number
+      - **Description**: Time window in minutes for the IP-based upload limit.
+    - **Sub-Key**: `userMax`
+      - **Type**: Number
+      - **Description**: Maximum number of uploads allowed per user per window.
+    - **Sub-Key**: `userWindowInMinutes`
+      - **Type**: Number
+      - **Description**: Time window in minutes for the user-based upload limit.
+
+- **Example**:
+```yaml
+rateLimits:
+  fileUploads:
+    ipMax: 100
+    ipWindowInMinutes: 60
+    userMax: 50
+    userWindowInMinutes: 60
+```
+
 ### Registration
 - **Key**: `registration`
 - **Type**: Object
 - **Description**: Configures registration-related settings for the application.
   - **Sub-Key**: `socialLogins`
-  - **Type**: Array of Strings (`"google"`, `"facebook"`, `"openid"`, `"github"`, `"discord"`)
-  - **Description**: Determines both the available social login providers and their arranged order to list on the login/registration page, from top to bottom (first to last values). Note: a login option will not appear even if listed if not [properly configured.](./user_auth_system.md#social-authentication-setup-and-configuration)
+  - [More info](#socialLogins)
   - **Sub-Key**: `allowedDomains`
-  - **Type**: Array of Strings
-  - **Description**: Specifies a list of allowed email domains for user registration. Users attempting to register with email domains not listed here will be restricted from registering.
+  - [More info](#allowedDomains)
 - [Registration Object Structure](#registration-object-structure)
 
 ### Endpoints
 - **Key**: `endpoints`
 - **Type**: Object
 - **Description**: Defines custom API endpoints for the application.
+  - **Sub-Key**: `assistants`
+  - **Type**: Object
+  - **Description**: Assistants endpoint-specific configuration.
+    - **Sub-Key**: `disableBuilder`
+    - [More info](#disablebuilder)
+  - **Sub-Key**: `pollIntervalMs`
+    - [More info](#pollintervalms)
+  - **Sub-Key**: `timeoutMs`
+    - [More info](#timeoutMs)
+  - [Full Assistants Endpoint Object Structure](#assistants-endpoint-object-structure)
   - **Sub-Key**: `custom`
   - **Type**: Array of Objects
   - **Description**: Each object in the array represents a unique endpoint configuration.
-  - [Custom Endpoint Object Structure](#custom-endpoint-object-structure)
+  - [Full Custom Endpoint Object Structure](#custom-endpoint-object-structure)
 - **Required**
+
+## Endpoint File Config Object Structure
+
+### **Overview**
+
+  - `disabled`: Whether file handling is disabled for the endpoint.
+  - `fileLimit`: The maximum number of files allowed per upload request.
+  - `fileSizeLimit`: The maximum size for a single file. In units of MB (e.g. use `20` for 20 megabytes)
+  - `totalSizeLimit`: The total maximum size for all files in a single request. In units of MB (e.g. use `20` for 20 megabytes)
+  - `supportedMimeTypes`: A list of [Regular Expressions](https://en.wikipedia.org/wiki/Regular_expression) specifying what MIME types are allowed for upload. This can be customized to restrict file types.
+
+**Notes:**
+
+- At the time of writing, the Assistants endpoint [supports filetypes from this list](https://platform.openai.com/docs/assistants/tools/supported-files).
+- The OpenAI, Azure OpenAI, Google, and Custom endpoints only suppport images.
+- Any other endpoints not mentioned, like Plugins, do not support file uploads (yet).
+- The Assistants endpoint has a defined endpoint value of `assistants`. All other endpoints use the defined value `default`
+  - For non-assistants endpoints, you can adjust file settings for all of them under `default`
+  - If you'd like to adjust settings for a specific endpoint, you can list their corresponding endpoint names:
+    - `assistants` (does not use `default` as it has defined defaults separate from the others.)
+    - `openAI`
+    - `azureOpenAI`
+    - `google`
+    - `YourCustomEndpointName`
+- You can omit values, in which case, the app will use the default values as defined per endpoint type listed below.
+- LibreChat counts 1 megabyte as follows: `1 x 1024 x 1024`
+
+### Example
+
+```yaml
+fileConfig:
+  endpoints:
+    assistants:
+      fileLimit: 5
+      fileSizeLimit: 10
+      totalSizeLimit: 50
+      supportedMimeTypes:
+        - "image/.*"
+        - "application/pdf"
+    openAI:
+      disabled: true
+    default:
+      totalSizeLimit: 20
+    YourCustomEndpointName:
+      fileLimit: 5
+      fileSizeLimit: 1000
+      supportedMimeTypes:
+        - "image/.*"
+  serverFileSizeLimit: 1000
+  avatarSizeLimit: 2
+```
+
+### **disabled**:
+
+> Indicates whether file uploading is disabled for a specific endpoint.
+
+- Type: Boolean
+- Default: `false` (i.e., uploading is enabled by default)
+- Example: 
+  ```yaml
+  openAI:
+    disabled: true
+  ```
+- **Note**: Setting this to `true` prevents any file uploads to the specified endpoint, overriding any other file-related settings.
+
+### **fileLimit**:
+
+> The maximum number of files allowed in a single upload request.
+
+- Type: Integer
+- Default: Varies by endpoint
+- Example: 
+  ```yaml
+  assistants:
+    fileLimit: 5
+  ```
+- **Note**: Helps control the volume of uploads and manage server load.
+
+### **fileSizeLimit**:
+
+> The maximum size allowed for each individual file, specified in megabytes (MB).
+
+- Type: Integer
+- Default: Varies by endpoint
+- Example: 
+  ```yaml
+  YourCustomEndpointName:
+    fileSizeLimit: 1000
+  ```
+- **Note**: This limit ensures that no single file exceeds the specified size, allowing for better resource allocation and management.
+
+### **totalSizeLimit**:
+
+> The total maximum size allowed for all files in a single request, specified in megabytes (MB).
+
+- Type: Integer
+- Default: Varies by endpoint
+- Example: 
+  ```yaml
+  assistants:
+    totalSizeLimit: 50
+  ```
+- **Note**: This setting is crucial for preventing excessive bandwidth and storage usage by any single upload request.
+
+### **supportedMimeTypes**:
+
+> A list of regular expressions defining the MIME types permitted for upload.
+
+- Type: Array of Strings
+- Default: Varies by endpoint
+- Example: 
+  ```yaml
+  assistants:
+    supportedMimeTypes:
+      - "image/.*"
+      - "application/pdf"
+  ```
+- **Note**: This allows for precise control over the types of files that can be uploaded. Invalid regex is ignored.
+
+### **serverFileSizeLimit**:
+
+> The global maximum size for any file uploaded to the server, specified in megabytes (MB).
+
+- Type: Integer
+- Example: 
+  ```yaml
+  fileConfig:
+    serverFileSizeLimit: 1000
+  ```
+- **Note**: Acts as an overarching limit for file uploads across all endpoints, ensuring that no file exceeds this size server-wide.
+
+### **avatarSizeLimit**:
+
+> The maximum size allowed for avatar images, specified in megabytes (MB).
+
+- Type: Integer
+- Example: 
+  ```yaml
+  fileConfig:
+    avatarSizeLimit: 2
+  ```
+- **Note**: Specifically tailored for user avatar uploads, allowing for control over image sizes to maintain consistent quality and loading times.
 
 ## Registration Object Structure
 
@@ -169,8 +422,54 @@ registration:
   - **Required**
   - **Note**: Users with email domains not listed will be restricted from registering.
 
+Given the additional details and correction regarding `supportedMimeTypes` being a list of regex strings and the omission of the `assistantEndpoint` configuration, let's revise and add the necessary documentation sections.
+
+## Assistants Endpoint Object Structure
+
+### Example
+
+```yaml
+endpoints:
+  assistants:
+    disableBuilder: false
+    pollIntervalMs: 500
+    timeoutMs: 10000
+```
+> This configuration enables the builder interface for assistants, sets a polling interval of 500ms to check for run updates, and establishes a timeout of 10 seconds for assistant run operations.
+
+In addition to custom endpoints, you can configure settings specific to the assistants endpoint.
+
+### **disableBuilder**:
+
+> Controls the visibility and use of the builder interface for assistants.
+
+- **Type**: Boolean
+- **Example**: `disableBuilder: false`
+- **Description**: When set to `true`, disables the builder interface for the assistant, limiting direct manual interaction.
+- **Note**: Defaults to `false` if omitted.
+
+### **pollIntervalMs**:
+
+> Specifies the interval in milliseconds at which the system will poll for run updates or changes in assistant run states.
+
+- **Type**: Integer
+- **Example**: `pollIntervalMs: 500`
+- **Description**: Specifies the polling interval in milliseconds for checking assistant run updates. Useful for adapting the responsiveness of assistant interactions.
+- **Note**: Defaults to `750` if omitted.
+
+### **timeoutMs**:
+
+> Defines the maximum time in milliseconds that an assistant can run before the request is cancelled.
+
+- **Type**: Integer
+- **Example**: `timeoutMs: 10000`
+- **Description**: Sets a timeout in milliseconds for assistant runs. Helps manage system load by limiting total run operation time. The default is 
+- **Note**: Defaults to `180000` if omitted (3 minutes). Run operation times can range between 50 seconds to 2 minutes but also exceed this. If the `timeoutMs` value is exceeded, the run will be cancelled.
+
 ## Custom Endpoint Object Structure
 Each endpoint in the `custom` array should have the following structure:
+
+### Example 
 
 ```yaml
 # Example Endpoint Object Structure
@@ -343,10 +642,10 @@ endpoints:
       Content-Type: "application/json"
 ```
 
-## Additional Notes
+### Additional Notes
 - Ensure that all URLs and keys are correctly specified to avoid connectivity issues.
 
-## Default Parameters
+### Default Parameters
 
 Custom endpoints share logic with the OpenAI endpoint, and thus have default parameters tailored to the OpenAI API.
 
@@ -385,46 +684,3 @@ Custom endpoints share logic with the OpenAI endpoint, and thus have default par
 
 **Note:** The `max_tokens` field is not sent to use the maximum amount of tokens available, which is default OpenAI API behavior. Some alternate APIs require this field, or it may default to a very low value and your responses may appear cut off; in this case, you should add it to `addParams` field as shown in the [Endpoint Object Structure](#endpoint-object-structure).
 
-## Example Config
-
-```yaml
-version: 1.0.2
-cache: true
-# Example Registration Object Structure
-registration:
-  allowedDomains:
-    - "gmail.com"
-endpoints:
-  custom:
-    # Mistral AI API
-    - name: "Mistral"
-      apiKey: "your_api_key"
-      baseURL: "https://api.mistral.ai/v1"
-      models: 
-        default: ["mistral-tiny", "mistral-small", "mistral-medium"]
-      titleConvo: true
-      titleModel: "mistral-tiny" 
-      summarize: false
-      summaryModel: "mistral-tiny" 
-      forcePrompt: false 
-      modelDisplayLabel: "Mistral"
-      addParams:
-        safe_prompt: true
-      # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
-      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
-
-     # OpenRouter.ai API
-    - name: "OpenRouter"
-      # Known issue: you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
-      apiKey: "${OPENROUTER_KEY}"
-      baseURL: "https://openrouter.ai/api/v1"
-      models:
-        default: ["gpt-3.5-turbo"]
-        fetch: true
-      titleConvo: true
-      titleModel: "gpt-3.5-turbo"
-      summarize: false
-      summaryModel: "gpt-3.5-turbo"
-      forcePrompt: false
-      modelDisplayLabel: "OpenRouter"
-```
