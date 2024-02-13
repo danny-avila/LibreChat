@@ -173,21 +173,21 @@ export default function SidePanel({
             {endpointsConfig?.[EModelEndpoint.assistants] && (
               <div
                 className={cn(
-                  'flex h-[52px] items-center justify-center',
+                  'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-black',
                   isCollapsed ? 'h-[52px]' : 'px-2',
                 )}
               >
                 <Switcher isCollapsed={isCollapsed} />
+                <Separator className="bg-gray-100/50" />
               </div>
             )}
-            <Separator className="bg-gray-100/50" />
+
             <Nav
               resize={panelRef.current?.resize}
               isCollapsed={isCollapsed}
               defaultActive={defaultActive}
               links={Links}
             />
-            {/* <Separator className="bg-gray-100/50" /> */}
           </ResizablePanel>
         </ResizablePanelGroup>
       </TooltipProvider>
