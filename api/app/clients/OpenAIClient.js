@@ -635,6 +635,7 @@ class OpenAIClient extends BaseClient {
     context,
     tokenBuffer,
     initialMessageCount,
+    conversationId,
   }) {
     const modelOptions = {
       modelName: modelName ?? model,
@@ -682,7 +683,7 @@ class OpenAIClient extends BaseClient {
       callbacks: runManager.createCallbacks({
         context,
         tokenBuffer,
-        conversationId: this.conversationId,
+        conversationId: this.conversationId ?? conversationId,
         initialMessageCount,
       }),
     });
@@ -698,12 +699,13 @@ class OpenAIClient extends BaseClient {
    *
    * @param {Object} params - The parameters for the conversation title generation.
    * @param {string} params.text - The user's input.
+   * @param {string} [params.conversationId] - The current conversationId, if not already defined on client initialization.
    * @param {string} [params.responseText=''] - The AI's immediate response to the user.
    *
    * @returns {Promise<string | 'New Chat'>} A promise that resolves to the generated conversation title.
    *                            In case of failure, it will return the default title, "New Chat".
    */
-  async titleConvo({ text, responseText = '' }) {
+  async titleConvo({ text, conversationId, responseText = '' }) {
     let title = 'New Chat';
     const convo = `||>User:
 "${truncateText(text)}"
@@ -763,7 +765,12 @@ ${convo}
 
     try {
       this.abortController = new AbortController();
-      const llm = this.initializeLLM({ ...modelOptions, context: 'title', tokenBuffer: 150 });
+      const llm = this.initializeLLM({
+        ...modelOptions,
+        conversationId,
+        context: 'title',
+        tokenBuffer: 150,
+      });
       title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
     } catch (e) {
       if (e?.message?.toLowerCase()?.includes('abort')) {
