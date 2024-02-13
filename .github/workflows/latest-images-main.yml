@@ -1,7 +1,8 @@
-name: Docker Compose Build on Main Branch
+name: Docker Compose Build on Tag
 
+# The workflow is manually triggered
 on:
-  workflow_dispatch:  # This line allows manual triggering
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,20 +13,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Fetch all tags and set the latest tag
+      - name: Fetch tags and set the latest tag
+        run: |
+          git fetch --tags
+          echo "LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)" >> $GITHUB_ENV
+
       # Set up Docker
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
 
-      # Set up QEMU for cross-platform builds
+      # Set up QEMU
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-
-      # Login to Docker Hub
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Log in to GitHub Container Registry
       - name: Log in to GitHub Container Registry
@@ -37,23 +37,21 @@ jobs:
 
       # Prepare Docker Build
       - name: Build Docker images
-        run: |
-          cp .env.example .env
+        run: cp .env.example .env
 
-      # Tag and push librechat-api
+      # Docker metadata for librechat-api
       - name: Docker metadata for librechat-api
         id: meta-librechat-api
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/${{ github.repository_owner }}/librechat-api
-            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/librechat-api
+          images: ghcr.io/${{ github.repository_owner }}/librechat-api
           tags: |
-            type=raw,value=latest
+            type=raw,value=${{ env.LATEST_TAG }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}
             type=semver,pattern={{major}}.{{minor}}
 
+      # Build and push librechat-api
       - name: Build and push librechat-api
         uses: docker/build-push-action@v5
         with:
@@ -64,20 +62,19 @@ jobs:
           platforms: linux/amd64,linux/arm64
           target: api-build
 
-      # Tag and push librechat
+      # Docker metadata for librechat
       - name: Docker metadata for librechat
         id: meta-librechat
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/${{ github.repository_owner }}/librechat
-            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/librechat
+          images: ghcr.io/${{ github.repository_owner }}/librechat
           tags: |
-            type=raw,value=latest
+            type=raw,value=${{ env.LATEST_TAG }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}
             type=semver,pattern={{major}}.{{minor}}
 
+      # Build and push librechat
       - name: Build and push librechat
         uses: docker/build-push-action@v5
         with:
