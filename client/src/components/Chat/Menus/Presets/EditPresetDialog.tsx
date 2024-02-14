@@ -83,7 +83,7 @@ const EditPresetDialog = ({
                 </div>
               </div>
             </div>
-            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
+            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-700" />
             <div className="w-full p-0">
               <EndpointSettings
                 conversation={preset}

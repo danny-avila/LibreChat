@@ -9,7 +9,7 @@ import FileUpload from '~/components/Input/EndpointMenu/FileUpload';
 import { PinIcon, EditIcon, TrashIcon } from '~/components/svg';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { getPresetTitle, getEndpointField } from '~/utils';
-import { Dialog, DialogTrigger } from '~/components/ui/';
+import { Dialog, DialogTrigger, Label } from '~/components/ui/';
 import { MenuSeparator, MenuItem } from '../UI';
 import { icons } from '../Endpoints/Icons';
 import { useLocalize } from '~/hooks';
@@ -62,14 +62,25 @@ const PresetItems: FC<{
               </label>
             </DialogTrigger>
             <DialogTemplate
+              showCloseButton={false}
               title={`${localize('com_ui_clear')} ${localize('com_endpoint_presets')}`}
-              description={localize('com_endpoint_presets_clear_warning')}
+              className="max-w-[450px]"
+              main={
+                <>
+                  <div className="flex w-full flex-col items-center gap-2">
+                    <div className="grid w-full items-center gap-2">
+                      <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
+                        {localize('com_endpoint_presets_clear_warning')}
+                      </Label>
+                    </div>
+                  </div>
+                </>
+              }
               selection={{
                 selectHandler: clearAllPresets,
                 selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
                 selectText: localize('com_ui_clear'),
               }}
-              className="max-w-[500px]"
             />
             <FileUpload onFileSelected={onFileSelected} />
           </Dialog>

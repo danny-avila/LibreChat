@@ -45,7 +45,6 @@ module.exports = {
           750: '#333333',
           800: '#171717', // Replacing .dark .dark:bg-gray-800, .bg-gray-800, and .dark .dark:hover:bg-gray-800\/90
           900: '#0d0d0d', // Replacing .dark .dark:bg-gray-900, .bg-gray-900, and .dark .dark:hover:bg-gray-900:hover
-          1000: '#444654',
         },
         green: {
           50: '#f1f9f7',

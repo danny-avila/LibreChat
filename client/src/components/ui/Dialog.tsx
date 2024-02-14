@@ -3,6 +3,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Button } from '../ui/Button';
 import { X } from 'lucide-react';
 import { cn } from '~/utils';
+import { useMediaQuery } from '~/hooks';
 
 const Dialog = DialogPrimitive.Root;
 
@@ -39,26 +40,33 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { showCloseButton?: boolean }
->(({ className, children, showCloseButton = true, ...props }, ref) => (
-  <DialogPortal>
-    <DialogOverlay />
-    <DialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        'and sm:slide-in-from-right-0. fixed z-[999] grid w-full gap-4 rounded-b-lg bg-white pb-6 animate-in data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10 sm:rounded-lg',
-        'dark:bg-slate-900',
-        className ?? '',
-      )}
-      {...props}
-    >
-      {children}
-      <DialogPrimitive.Close className="absolute right-6 top-[0.5rem] rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-slate-100 dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900 dark:data-[state=open]:bg-slate-800 sm:top-[1.6rem]">
-        <X className="h-5 w-5 text-black dark:text-white" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
-    </DialogPrimitive.Content>
-  </DialogPortal>
-));
+>(({ className, children = true, ...props }, ref) => {
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+
+  return (
+    <DialogPortal>
+      <DialogOverlay />
+      <DialogPrimitive.Content
+        ref={ref}
+        className={cn(
+          'fixed z-[999] grid w-full gap-4 rounded-b-lg bg-white pb-6 animate-in data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10 sm:rounded-lg',
+          'dark:bg-slate-900',
+          isSmallScreen
+            ? 'fixed left-1/2 top-24 z-[999] m-auto grid w-11/12 -translate-x-1/2 gap-4 rounded-xl bg-white pb-6'
+            : '',
+          className ?? '',
+        )}
+        {...props}
+      >
+        {children}
+        <DialogPrimitive.Close className="absolute right-6 top-[0.5rem] rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-slate-100 dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900 dark:data-[state=open]:bg-slate-800 sm:top-[1.6rem]">
+          <X className="h-5 w-5 text-black dark:text-white" />
+          <span className="sr-only">Close</span>
+        </DialogPrimitive.Close>
+      </DialogPrimitive.Content>
+    </DialogPortal>
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
@@ -114,7 +122,7 @@ const DialogClose = React.forwardRef<
   <DialogPrimitive.Close
     ref={ref}
     className={cn(
-      'mt-2 inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-transparent px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-gray-800 dark:focus:ring-slate-400 dark:focus:ring-offset-slate-900 sm:mt-0',
+      'mt-2 inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-transparent px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-gray-800 sm:mt-0',
       className ?? '',
     )}
     {...props}

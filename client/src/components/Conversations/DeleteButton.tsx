@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { useLocalize, useConversations, useConversation } from '~/hooks';
+import { useLocalize, useConversations, useNewConvo } from '~/hooks';
 import { useDeleteConversationMutation } from '~/data-provider';
 import { Dialog, DialogTrigger, Label } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
@@ -7,7 +7,8 @@ import { TrashIcon, CrossIcon } from '~/components/svg';
 
 export default function DeleteButton({ conversationId, renaming, retainView, title }) {
   const localize = useLocalize();
-  const { newConversation } = useConversation();
+  // TODO: useNewConvo uses indices so we need to update global index state on every switch to Convo
+  const { newConversation } = useNewConvo();
   const { refreshConversations } = useConversations();
   const { conversationId: currentConvoId } = useParams();
   const deleteConvoMutation = useDeleteConversationMutation(conversationId);
@@ -31,9 +32,12 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <button className="p-1 hover:text-white">{renaming ? <CrossIcon /> : <TrashIcon />}</button>
+        <button className="p-1 hover:text-black dark:hover:text-white">
+          {renaming ? <CrossIcon /> : <TrashIcon />}
+        </button>
       </DialogTrigger>
       <DialogTemplate
+        showCloseButton={false}
         title={localize('com_ui_delete_conversation')}
         className="max-w-[450px]"
         main={
@@ -49,7 +53,8 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
         }
         selection={{
           selectHandler: confirmDelete,
-          selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
+          selectClasses:
+            'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
           selectText: localize('com_ui_delete'),
         }}
       />

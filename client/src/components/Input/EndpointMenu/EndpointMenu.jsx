@@ -7,7 +7,7 @@ import {
   useCreatePresetMutation,
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
-import { Icon, EditPresetDialog } from '~/components/Endpoints';
+import { Icon } from '~/components/Endpoints';
 import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';
 import FileUpload from './FileUpload';
@@ -37,8 +37,6 @@ export default function NewConversationMenu() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPresets, setShowPresets] = useState(true);
   const [showEndpoints, setShowEndpoints] = useState(true);
-  const [presetModalVisible, setPresetModalVisible] = useState(false);
-  const [preset, setPreset] = useState(false);
   const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
   const [messages, setMessages] = useRecoilState(store.messages);
 
@@ -128,11 +126,6 @@ export default function NewConversationMenu() {
     }
 
     newConversation({}, newPreset);
-  };
-
-  const onChangePreset = (preset) => {
-    setPresetModalVisible(true);
-    setPreset(preset);
   };
 
   const clearAllPresets = () => {
@@ -257,7 +250,6 @@ export default function NewConversationMenu() {
                     <PresetItems
                       presets={presets}
                       onSelect={onSelectPreset}
-                      onChangePreset={onChangePreset}
                       onDeletePreset={onDeletePreset}
                     />
                   ) : (
@@ -268,11 +260,6 @@ export default function NewConversationMenu() {
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-          <EditPresetDialog
-            open={presetModalVisible}
-            onOpenChange={setPresetModalVisible}
-            preset={preset}
-          />
         </Dialog>
       </Tooltip>
     </TooltipProvider>
