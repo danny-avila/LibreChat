@@ -18,10 +18,14 @@ export enum QueryKeys {
   assistant = 'assistant',
   endpointsConfigOverride = 'endpointsConfigOverride',
   files = 'files',
+  fileConfig = 'fileConfig',
+  tools = 'tools',
+  actions = 'actions',
+  assistantDocs = 'assistantDocs',
 }
 
 export enum MutationKeys {
-  imageUpload = 'imageUpload',
+  fileUpload = 'fileUpload',
   fileDelete = 'fileDelete',
   updatePreset = 'updatePreset',
   deletePreset = 'deletePreset',
@@ -29,4 +33,7 @@ export enum MutationKeys {
   avatarUpload = 'avatarUpload',
   speechToText = 'speechToText',
   textToSpeech = 'textToSpeech',
+  assistantAvatarUpload = 'assistantAvatarUpload',
+  updateAction = 'updateAction',
+  deleteAction = 'deleteAction',
 }

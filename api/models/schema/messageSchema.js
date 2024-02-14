@@ -17,6 +17,7 @@ const messageSchema = mongoose.Schema(
     user: {
       type: String,
       index: true,
+      required: true,
       default: null,
     },
     model: {
@@ -46,12 +47,10 @@ const messageSchema = mongoose.Schema(
     },
     sender: {
       type: String,
-      required: true,
       meiliIndex: true,
     },
     text: {
       type: String,
-      required: true,
       meiliIndex: true,
     },
     summary: {
@@ -103,6 +102,14 @@ const messageSchema = mongoose.Schema(
       default: undefined,
     },
     plugins: { type: [{ type: mongoose.Schema.Types.Mixed }], default: undefined },
+    content: {
+      type: [{ type: mongoose.Schema.Types.Mixed }],
+      default: undefined,
+      meiliIndex: true,
+    },
+    thread_id: {
+      type: String,
+    },
   },
   { timestamps: true },
 );

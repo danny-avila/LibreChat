@@ -1,5 +1,6 @@
 const { FileSources } = require('librechat-data-provider');
-const uploadAvatar = require('~/server/services/Files/images/avatar');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const User = require('~/models/User');
 
 /**
@@ -24,8 +25,12 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
     await oldUser.save();
   } else if (!isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
     const userId = oldUser._id;
-    const newavatarUrl = await uploadAvatar({ userId, input: avatarUrl, fileStrategy });
-    oldUser.avatar = newavatarUrl;
+    const webPBuffer = await resizeAvatar({
+      userId,
+      input: avatarUrl,
+    });
+    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    oldUser.avatar = await processAvatar({ buffer: webPBuffer, userId });
     await oldUser.save();
   }
 };
@@ -78,8 +83,12 @@ const createNewUser = async ({
 
   if (!isLocal) {
     const userId = newUser._id;
-    const newavatarUrl = await uploadAvatar({ userId, input: avatarUrl, fileStrategy });
-    newUser.avatar = newavatarUrl;
+    const webPBuffer = await resizeAvatar({
+      userId,
+      input: avatarUrl,
+    });
+    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    newUser.avatar = await processAvatar({ buffer: webPBuffer, userId });
     await newUser.save();
   }
 

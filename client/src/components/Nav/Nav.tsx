@@ -173,6 +173,7 @@ export default function Nav({ navVisible, setNavVisible }) {
           setIsHovering={setIsToggleHovering}
           onToggle={toggleNavVisible}
           navVisible={navVisible}
+          className="fixed left-0 top-1/2 z-40"
         />
         <div className={`nav-mask${navVisible ? ' active' : ''}`} onClick={toggleNavVisible} />
       </Tooltip>

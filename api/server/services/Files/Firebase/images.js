@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { resizeImage } = require('../images/resize');
+const { resizeImageBuffer } = require('../images/resize');
+const { updateUser } = require('~/models/userMethods');
 const { saveBufferToFirebase } = require('./crud');
 const { updateFile } = require('~/models/File');
 const { logger } = require('~/config');
@@ -11,7 +12,7 @@ const { logger } = require('~/config');
  * resolution.
  *
  *
- * @param {Object} req - The request object from Express. It should have a `user` property with an `id`
+ * @param {Express.Request} req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
  * @param {Express.Multer.File} file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
@@ -26,7 +27,8 @@ const { logger } = require('~/config');
  */
 async function uploadImageToFirebase(req, file, resolution = 'high') {
   const inputFilePath = file.path;
-  const { buffer: resizedBuffer, width, height } = await resizeImage(inputFilePath, resolution);
+  const inputBuffer = await fs.promises.readFile(inputFilePath);
+  const { buffer: resizedBuffer, width, height } = await resizeImageBuffer(inputBuffer, resolution);
   const extension = path.extname(inputFilePath);
   const userId = req.user.id;
 
@@ -73,15 +75,15 @@ async function prepareImageURL(req, file) {
  *
  * @param {object} params - The parameters object.
  * @param {Buffer} params.buffer - The Buffer containing the avatar image in WebP format.
- * @param {object} params.User - The User document (mongoose); TODO: remove direct use of Model, `User`
+ * @param {string} params.userId - The user ID.
  * @param {string} params.manual - A string flag indicating whether the update is manual ('true' or 'false').
  * @returns {Promise<string>} - A promise that resolves with the URL of the uploaded avatar.
  * @throws {Error} - Throws an error if Firebase is not initialized or if there is an error in uploading.
  */
-async function processFirebaseAvatar({ buffer, User, manual }) {
+async function processFirebaseAvatar({ buffer, userId, manual }) {
   try {
     const downloadURL = await saveBufferToFirebase({
-      userId: User._id.toString(),
+      userId,
       buffer,
       fileName: 'avatar.png',
     });
@@ -91,8 +93,7 @@ async function processFirebaseAvatar({ buffer, User, manual }) {
     const url = `${downloadURL}?manual=${isManual}`;
 
     if (isManual) {
-      User.avatar = url;
-      await User.save();
+      await updateUser(userId, { avatar: url });
     }
 
     return url;

@@ -1,13 +1,6 @@
 const express = require('express');
-const router = express.Router();
-const {
-  uaParser,
-  checkBan,
-  requireJwtAuth,
-  // concurrentLimiter,
-  // messageIpLimiter,
-  // messageUserLimiter,
-} = require('../../middleware');
+const createMulterInstance = require('./multer');
+const { uaParser, checkBan, requireJwtAuth, createFileLimiters } = require('~/server/middleware');
 
 const files = require('./files');
 const images = require('./images');
@@ -15,14 +8,24 @@ const avatar = require('./avatar');
 const stt = require('./stt');
 const tts = require('./tts');
 
-router.use(requireJwtAuth);
-router.use(checkBan);
-router.use(uaParser);
+const initialize = async () => {
+  const router = express.Router();
+  router.use(requireJwtAuth);
+  router.use(checkBan);
+  router.use(uaParser);
 
-router.use('/', files);
-router.use('/stt', stt);
-router.use('/tts', tts);
-router.use('/images', images);
-router.use('/images/avatar', avatar);
+  const upload = await createMulterInstance();
+  const { fileUploadIpLimiter, fileUploadUserLimiter } = createFileLimiters();
+  router.post('*', fileUploadIpLimiter, fileUploadUserLimiter);
+  router.post('/', upload.single('file'));
+  router.post('/images', upload.single('file'));
 
-module.exports = router;
+  router.use('/stt', stt);
+  router.use('/tts', tts);
+  router.use('/', files);
+  router.use('/images', images);
+  router.use('/images/avatar', avatar);
+  return router;
+};
+
+module.exports = { initialize };

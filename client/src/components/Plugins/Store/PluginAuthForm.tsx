@@ -7,9 +7,10 @@ import PluginTooltip from './PluginTooltip';
 type TPluginAuthFormProps = {
   plugin: TPlugin | undefined;
   onSubmit: (installActionData: TPluginAction) => void;
+  isAssistantTool?: boolean;
 };
 
-function PluginAuthForm({ plugin, onSubmit }: TPluginAuthFormProps) {
+function PluginAuthForm({ plugin, onSubmit, isAssistantTool }: TPluginAuthFormProps) {
   const {
     register,
     handleSubmit,
@@ -23,7 +24,12 @@ function PluginAuthForm({ plugin, onSubmit }: TPluginAuthFormProps) {
           className="col-span-1 flex w-full flex-col items-start justify-start gap-2"
           method="POST"
           onSubmit={handleSubmit((auth) =>
-            onSubmit({ pluginKey: plugin?.pluginKey ?? '', action: 'install', auth }),
+            onSubmit({
+              pluginKey: plugin?.pluginKey ?? '',
+              action: 'install',
+              auth,
+              isAssistantTool,
+            }),
           )}
         >
           {plugin?.authConfig?.map((config: TPluginAuthConfig, i: number) => {

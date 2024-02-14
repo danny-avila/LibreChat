@@ -1,7 +1,13 @@
 import { v4 } from 'uuid';
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, parseCompactConvo } from 'librechat-data-provider';
+import {
+  Constants,
+  EModelEndpoint,
+  QueryKeys,
+  parseCompactConvo,
+  ContentTypes,
+} from 'librechat-data-provider';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { useGetMessagesByConvoId, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type {
@@ -11,7 +17,7 @@ import type {
   TEndpointsConfig,
 } from 'librechat-data-provider';
 import type { TAskFunction } from '~/common';
-import useSetFilesToDelete from './useSetFilesToDelete';
+import useSetFilesToDelete from './Files/useSetFilesToDelete';
 import useGetSender from './Conversations/useGetSender';
 import { useAuthContext } from './AuthContext';
 import useUserKey from './Input/useUserKey';
@@ -21,8 +27,8 @@ import store from '~/store';
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
-  const [showStopButton, setShowStopButton] = useState(true);
   const [filesLoading, setFilesLoading] = useState(false);
   const setFilesToDelete = useSetFilesToDelete();
   const getSender = useGetSender();
@@ -93,7 +99,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       isEdited = false,
     } = {},
   ) => {
-    setShowStopButton(true);
+    setShowStopButton(false);
     if (!!isSubmitting || text === '') {
       return;
     }
@@ -116,6 +122,26 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
 
     const isEditOrContinue = isEdited || isContinued;
 
+    let currentMessages: TMessage[] | null = getMessages() ?? [];
+
+    // construct the query message
+    // this is not a real messageId, it is used as placeholder before real messageId returned
+    text = text.trim();
+    const fakeMessageId = v4();
+    parentMessageId = parentMessageId || latestMessage?.messageId || Constants.NO_PARENT;
+
+    if (conversationId == 'new') {
+      parentMessageId = Constants.NO_PARENT;
+      currentMessages = [];
+      conversationId = null;
+    }
+
+    const parentMessage = currentMessages?.find(
+      (msg) => msg.messageId === latestMessage?.parentMessageId,
+    );
+
+    const thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+
     // set the endpoint option
     const convo = parseCompactConvo({
       endpoint,
@@ -130,23 +156,10 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       endpointType,
       modelDisplayLabel,
       key: getExpiry(),
+      thread_id,
     } as TEndpointOption;
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
-    let currentMessages: TMessage[] | null = getMessages() ?? [];
-
-    // construct the query message
-    // this is not a real messageId, it is used as placeholder before real messageId returned
-    text = text.trim();
-    const fakeMessageId = v4();
-    parentMessageId =
-      parentMessageId || latestMessage?.messageId || '00000000-0000-0000-0000-000000000000';
-
-    if (conversationId == 'new') {
-      parentMessageId = '00000000-0000-0000-0000-000000000000';
-      currentMessages = [];
-      conversationId = null;
-    }
     const currentMsg: TMessage = {
       text,
       sender: 'User',
@@ -154,12 +167,10 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       parentMessageId,
       conversationId,
       messageId: isContinued && messageId ? messageId : fakeMessageId,
+      thread_id,
       error: false,
     };
 
-    const parentMessage = currentMessages?.find(
-      (msg) => msg.messageId === latestMessage?.parentMessageId,
-    );
     const reuseFiles = isRegenerate && parentMessage?.files;
     if (reuseFiles && parentMessage.files?.length) {
       currentMsg.files = parentMessage.files;
@@ -188,12 +199,28 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
+      thread_id,
       conversationId,
       unfinished: false,
       isCreatedByUser: false,
       isEdited: isEditOrContinue,
       error: false,
     };
+
+    if (endpoint === EModelEndpoint.assistants) {
+      initialResponse.model = conversation?.assistant_id ?? '';
+      initialResponse.text = '';
+      initialResponse.content = [
+        {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: {
+            value: responseText,
+          },
+        },
+      ];
+    } else {
+      setShowStopButton(true);
+    }
 
     if (isContinued) {
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
@@ -334,7 +361,5 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     setFiles,
     filesLoading,
     setFilesLoading,
-    showStopButton,
-    setShowStopButton,
   };
 }
