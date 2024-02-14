@@ -122,6 +122,19 @@
     ]
   },
   {
+    "name": "TraversaalSearch",
+    "pluginKey": "traversaal_search",
+    "description": "TraversaalSearch is a robust search API tailored specifically for LLM Agents. It seamlessly integrates with diverse data sources to ensure a superior, relevant search experience.",
+    "icon": "https://traversaal.ai/favicon.ico",
+    "authConfig": [
+      {
+        "authField": "TRAVERSAAL_API_KEY",
+        "label": "Traversaal API Key",
+        "description": "Get your API key here: https://traversaal.ai/"
+      }
+    ]
+  },
+  {
     "name": "Calculator",
     "pluginKey": "calculator",
     "description": "Perform simple and complex mathematical calculations.",
