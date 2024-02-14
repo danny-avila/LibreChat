@@ -1,4 +1,7 @@
 import { useParams } from 'react-router-dom';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import type { TMessage } from 'librechat-data-provider';
 import { useLocalize, useConversations, useNewConvo } from '~/hooks';
 import { useDeleteConversationMutation } from '~/data-provider';
 import { Dialog, DialogTrigger, Label } from '~/components/ui';
@@ -7,15 +10,19 @@ import { TrashIcon, CrossIcon } from '~/components/svg';
 
 export default function DeleteButton({ conversationId, renaming, retainView, title }) {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
   // TODO: useNewConvo uses indices so we need to update global index state on every switch to Convo
   const { newConversation } = useNewConvo();
   const { refreshConversations } = useConversations();
   const { conversationId: currentConvoId } = useParams();
-  const deleteConvoMutation = useDeleteConversationMutation(conversationId);
+  const deleteConvoMutation = useDeleteConversationMutation();
 
   const confirmDelete = () => {
+    const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
+    const thread_id = messages?.[messages?.length - 1]?.thread_id;
+
     deleteConvoMutation.mutate(
-      { conversationId, source: 'button' },
+      { conversationId, thread_id, source: 'button' },
       {
         onSuccess: () => {
           if (currentConvoId == conversationId) {

@@ -3,8 +3,8 @@ const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { FileContext } = require('librechat-data-provider');
 const { getImageBasename } = require('~/server/services/Files/images');
-const { processFileURL } = require('~/server/services/Files/process');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const { logger } = require('~/config');
 
@@ -14,6 +14,9 @@ class OpenAICreateImage extends Tool {
 
     this.userId = fields.userId;
     this.fileStrategy = fields.fileStrategy;
+    if (fields.processFileURL) {
+      this.processFileURL = fields.processFileURL.bind(this);
+    }
     let apiKey = fields.DALLE2_API_KEY ?? fields.DALLE_API_KEY ?? this.getApiKey();
 
     const config = { apiKey };
@@ -80,13 +83,21 @@ Guidelines:
   }
 
   async _call(input) {
-    const resp = await this.openai.images.generate({
-      prompt: this.replaceUnwantedChars(input),
-      // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
-      n: 1,
-      // size: '1024x1024'
-      size: '512x512',
-    });
+    let resp;
+
+    try {
+      resp = await this.openai.images.generate({
+        prompt: this.replaceUnwantedChars(input),
+        // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
+        n: 1,
+        // size: '1024x1024'
+        size: '512x512',
+      });
+    } catch (error) {
+      logger.error('[DALL-E] Problem generating the image:', error);
+      return `Something went wrong when trying to generate the image. The DALL-E API may be unavailable:
+Error Message: ${error.message}`;
+    }
 
     const theImageUrl = resp.data[0].url;
 
@@ -110,15 +121,16 @@ Guidelines:
     });
 
     try {
-      const result = await processFileURL({
+      const result = await this.processFileURL({
         fileStrategy: this.fileStrategy,
         userId: this.userId,
         URL: theImageUrl,
         fileName: imageName,
         basePath: 'images',
+        context: FileContext.image_generation,
       });
 
-      this.result = this.wrapInMarkdown(result);
+      this.result = this.wrapInMarkdown(result.filepath);
     } catch (error) {
       logger.error('Error while saving the image:', error);
       this.result = `Failed to save the image locally. ${error.message}`;

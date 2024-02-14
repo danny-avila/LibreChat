@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import type { TMessageContentParts } from './types/assistants';
+import type { TFile } from './types/files';
+
+export const isUUID = z.string().uuid();
 
 export enum EModelEndpoint {
   azureOpenAI = 'azureOpenAI',
@@ -8,9 +12,21 @@ export enum EModelEndpoint {
   google = 'google',
   gptPlugins = 'gptPlugins',
   anthropic = 'anthropic',
-  assistant = 'assistant',
+  assistants = 'assistants',
   custom = 'custom',
 }
+
+export const defaultAssistantFormValues = {
+  assistant: '',
+  id: '',
+  name: '',
+  description: '',
+  instructions: '',
+  model: 'gpt-3.5-turbo-1106',
+  functions: [],
+  code_interpreter: false,
+  retrieval: false,
+};
 
 export const endpointSettings = {
   [EModelEndpoint.google]: {
@@ -153,21 +169,16 @@ export const tMessageSchema = z.object({
   unfinished: z.boolean().optional(),
   searchResult: z.boolean().optional(),
   finish_reason: z.string().optional(),
+  /* assistant */
+  thread_id: z.string().optional(),
 });
 
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
   plugin?: TResPlugin | null;
   plugins?: TResPlugin[];
-  files?: {
-    file_id: string;
-    type?: string;
-    filename?: string;
-    preview?: string;
-    filepath?: string;
-    height?: number;
-    width?: number;
-  }[];
+  content?: TMessageContentParts[];
+  files?: Partial<TFile>[];
 };
 
 export const tConversationSchema = z.object({
@@ -204,15 +215,16 @@ export const tConversationSchema = z.object({
   toneStyle: z.string().nullable().optional(),
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
+  file_ids: z.array(z.string()).optional(),
   /* vision */
   resendImages: z.boolean().optional(),
   imageDetail: eImageDetailSchema.optional(),
   /* assistant */
   assistant_id: z.string().optional(),
-  thread_id: z.string().optional(),
+  instructions: z.string().optional(),
+  /** Used to overwrite active conversation settings when saving a Preset */
+  presetOverride: z.record(z.unknown()).optional(),
 });
-
-export type TConversation = z.infer<typeof tConversationSchema>;
 
 export const tPresetSchema = tConversationSchema
   .omit({
@@ -245,6 +257,10 @@ export const tPresetUpdateSchema = tConversationSchema.merge(
 );
 
 export type TPreset = z.infer<typeof tPresetSchema>;
+
+export type TConversation = z.infer<typeof tConversationSchema> & {
+  presetOverride?: Partial<TPreset>;
+};
 
 // type DefaultSchemaValues = Partial<typeof google>;
 
@@ -470,7 +486,8 @@ export const assistantSchema = tConversationSchema
   .pick({
     model: true,
     assistant_id: true,
-    thread_id: true,
+    instructions: true,
+    promptPrefix: true,
   })
   .transform(removeNullishValues)
   .catch(() => ({}));

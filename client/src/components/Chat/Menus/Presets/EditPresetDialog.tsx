@@ -4,7 +4,7 @@ import { cn, defaultTextProps, removeFocusOutlines, mapEndpoints } from '~/utils
 import { Input, Label, Dropdown, Dialog, DialogClose, DialogButton } from '~/components/';
 import PopoverButtons from '~/components/Chat/Input/PopoverButtons';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { useSetIndexOptions, useLocalize } from '~/hooks';
+import { useSetIndexOptions, useLocalize, useDebouncedInput } from '~/hooks';
 import { EndpointSettings } from '~/components/Endpoints';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
@@ -17,8 +17,9 @@ const EditPresetDialog = ({
   submitPreset: () => void;
 }) => {
   const localize = useLocalize();
-  const { preset } = useChatContext();
+  const { preset, setPreset } = useChatContext();
   const { setOption } = useSetIndexOptions(preset);
+  const [onTitleChange, title] = useDebouncedInput(setOption, 'title', preset?.title);
   const [presetModalVisible, setPresetModalVisible] = useRecoilState(store.presetModalVisible);
 
   const { data: availableEndpoints = [] } = useGetEndpointsQuery({
@@ -31,7 +32,15 @@ const EditPresetDialog = ({
   }
 
   return (
-    <Dialog open={presetModalVisible} onOpenChange={setPresetModalVisible}>
+    <Dialog
+      open={presetModalVisible}
+      onOpenChange={(open) => {
+        setPresetModalVisible(open);
+        if (!open) {
+          setPreset(null);
+        }
+      }}
+    >
       <DialogTemplate
         title={`${localize('com_ui_edit') + ' ' + localize('com_endpoint_preset')} - ${
           preset?.title
@@ -47,8 +56,8 @@ const EditPresetDialog = ({
                   </Label>
                   <Input
                     id="preset-name"
-                    value={preset?.title || ''}
-                    onChange={(e) => setOption('title')(e.target.value || '')}
+                    value={(title as string | undefined) ?? ''}
+                    onChange={onTitleChange}
                     placeholder={localize('com_endpoint_set_custom_name')}
                     className={cn(
                       defaultTextProps,
@@ -104,7 +113,7 @@ const EditPresetDialog = ({
               onClick={submitPreset}
               className="dark:hover:gray-400 ml-2 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
             >
-              {localize('com_endpoint_save')}
+              {localize('com_ui_save')}
             </DialogClose>
           </div>
         }

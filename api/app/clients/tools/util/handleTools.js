@@ -6,19 +6,22 @@ const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
+  // Basic Tools
+  CodeBrew,
+  AzureAISearch,
   GoogleSearchAPI,
   WolframAlphaAPI,
-  StructuredWolfram,
   OpenAICreateImage,
   StableDiffusionAPI,
+  // Structured Tools
   DALLE3,
-  StructuredSD,
-  AzureAISearch,
-  StructuredACS,
   E2BTools,
   CodeSherpa,
+  StructuredSD,
+  StructuredACS,
   CodeSherpaTools,
-  CodeBrew,
+  StructuredWolfram,
+  TavilySearchResults,
 } = require('../');
 const { loadToolSuite } = require('./loadToolSuite');
 const { loadSpecs } = require('./loadSpecs');
@@ -151,8 +154,10 @@ const loadTools = async ({
   returnMap = false,
   tools = [],
   options = {},
+  skipSpecs = false,
 }) => {
   const toolConstructors = {
+    tavily_search_results_json: TavilySearchResults,
     calculator: Calculator,
     google: GoogleSearchAPI,
     wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
@@ -229,10 +234,17 @@ const loadTools = async ({
     toolConstructors.codesherpa = CodeSherpa;
   }
 
+  const imageGenOptions = {
+    fileStrategy: options.fileStrategy,
+    processFileURL: options.processFileURL,
+    returnMetadata: options.returnMetadata,
+  };
+
   const toolOptions = {
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
-    dalle: { fileStrategy: options.fileStrategy },
-    'dall-e': { fileStrategy: options.fileStrategy },
+    dalle: imageGenOptions,
+    'dall-e': imageGenOptions,
+    'stable-diffusion': imageGenOptions,
   };
 
   const toolAuthFields = {};
@@ -271,7 +283,7 @@ const loadTools = async ({
   }
 
   let specs = null;
-  if (functions && remainingTools.length > 0) {
+  if (functions && remainingTools.length > 0 && skipSpecs !== true) {
     specs = await loadSpecs({
       llm: model,
       user,
@@ -298,6 +310,9 @@ const loadTools = async ({
   let result = [];
   for (const tool of tools) {
     const validTool = requestedTools[tool];
+    if (!validTool) {
+      continue;
+    }
     const plugin = await validTool();
 
     if (Array.isArray(plugin)) {

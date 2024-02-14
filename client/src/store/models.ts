@@ -12,7 +12,7 @@ const modelsConfig = atom<TModelsConfig>({
   key: 'models',
   default: {
     [EModelEndpoint.openAI]: openAIModels,
-    [EModelEndpoint.assistant]: openAIModels.filter(fitlerAssistantModels),
+    [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
     [EModelEndpoint.gptPlugins]: openAIModels,
     [EModelEndpoint.azureOpenAI]: openAIModels,
     [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],

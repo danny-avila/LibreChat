@@ -1,44 +1,48 @@
-import { useRecoilState } from 'recoil';
 import { Search, X } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
-import { useState, useEffect, useCallback } from 'react';
-import { tConversationSchema } from 'librechat-data-provider';
+import { useState, useEffect } from 'react';
 import {
   useAvailablePluginsQuery,
   useUpdateUserPluginsMutation,
 } from 'librechat-data-provider/react-query';
-import type { TError, TPlugin, TPluginAction } from 'librechat-data-provider';
-import { useAuthContext } from '~/hooks/AuthContext';
+import type { TError, TPluginAction } from 'librechat-data-provider';
+import type { TPluginStoreDialogProps } from '~/common/types';
+import { useLocalize, usePluginDialogHelpers, useSetIndexOptions, useAuthContext } from '~/hooks';
 import PluginPagination from './PluginPagination';
 import PluginStoreItem from './PluginStoreItem';
 import PluginAuthForm from './PluginAuthForm';
-import { useLocalize } from '~/hooks';
-import store from '~/store';
-
-type TPluginStoreDialogProps = {
-  isOpen: boolean;
-  setIsOpen: (open: boolean) => void;
-};
 
 function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { data: availablePlugins } = useAvailablePluginsQuery();
   const updateUserPlugins = useUpdateUserPluginsMutation();
+  const { setTools } = useSetIndexOptions();
 
-  const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
-  const [selectedPlugin, setSelectedPlugin] = useState<TPlugin | undefined>(undefined);
-
-  const [maxPage, setMaxPage] = useState(1);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(1);
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
-  const [searchChanged, setSearchChanged] = useState(false);
-  const [searchValue, setSearchValue] = useState('');
 
-  const [error, setError] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string>('');
-  const [showPluginAuthForm, setShowPluginAuthForm] = useState<boolean>(false);
+  const {
+    maxPage,
+    setMaxPage,
+    currentPage,
+    setCurrentPage,
+    itemsPerPage,
+    searchChanged,
+    setSearchChanged,
+    searchValue,
+    setSearchValue,
+    gridRef,
+    handleSearch,
+    handleChangePage,
+    error,
+    setError,
+    errorMessage,
+    setErrorMessage,
+    showPluginAuthForm,
+    setShowPluginAuthForm,
+    selectedPlugin,
+    setSelectedPlugin,
+  } = usePluginDialogHelpers();
 
   const handleInstallError = (error: TError) => {
     setError(true);
@@ -68,18 +72,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
           handleInstallError(error as TError);
         },
         onSuccess: () => {
-          //@ts-ignore - can't set a default convo or it will break routing
-          let { tools } = conversation;
-          tools = tools.filter((t: TPlugin) => {
-            return t.pluginKey !== plugin;
-          });
-          localStorage.setItem('lastSelectedTools', JSON.stringify(tools));
-          setConversation((prevState) =>
-            tConversationSchema.parse({
-              ...prevState,
-              tools,
-            }),
-          );
+          setTools(plugin, true);
         },
       },
     );
@@ -98,43 +91,9 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     }
   };
 
-  const calculateColumns = (node) => {
-    const width = node.offsetWidth;
-    let columns;
-    if (width < 501) {
-      setItemsPerPage(8);
-      return;
-    } else if (width < 640) {
-      columns = 2;
-    } else if (width < 1024) {
-      columns = 3;
-    } else {
-      columns = 4;
-    }
-    setItemsPerPage(columns * 2); // 2 rows
-  };
-
-  const gridRef = useCallback(
-    (node) => {
-      if (node !== null) {
-        if (itemsPerPage === 1) {
-          calculateColumns(node);
-        }
-        const resizeObserver = new ResizeObserver(() => calculateColumns(node));
-        resizeObserver.observe(node);
-      }
-    },
-    [itemsPerPage],
-  );
-
   const filteredPlugins = availablePlugins?.filter((plugin) =>
     plugin.name.toLowerCase().includes(searchValue.toLowerCase()),
   );
-
-  const handleSearch = (e) => {
-    setSearchValue(e.target.value);
-    setSearchChanged(true);
-  };
 
   useEffect(() => {
     if (user && user.plugins) {
@@ -148,11 +107,10 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
         setSearchChanged(false);
       }
     }
-  }, [availablePlugins, itemsPerPage, user, searchValue, filteredPlugins, searchChanged]);
 
-  const handleChangePage = (page: number) => {
-    setCurrentPage(page);
-  };
+    // Disabled due to state setters erroneously being flagged as dependencies
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availablePlugins, itemsPerPage, user, searchValue, filteredPlugins, searchChanged]);
 
   return (
     <Dialog
@@ -169,10 +127,10 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <Dialog.Panel
-          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-900 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
+          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl dark:bg-gray-900"
           style={{ minHeight: '610px' }}
         >
-          <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 dark:border-white/10 sm:p-6">
+          <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 sm:p-6 dark:border-white/10">
             <div className="flex items-center">
               <div className="text-center sm:text-left">
                 <Dialog.Title className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
