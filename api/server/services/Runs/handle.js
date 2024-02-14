@@ -88,35 +88,38 @@ async function waitForRun({
   const runInfo = `user: ${openai.req.user.id} | thread_id: ${thread_id} | ${runIdLog}`;
   const raceTimeoutMs = 3000;
   let maxRetries = 5;
-  let attempt = 0;
   while (timeElapsed < timeout) {
     i++;
     logger.debug(`[heartbeat ${i}] ${runIdLog} | Retrieving run status...`);
     let updatedRun;
 
-    const startTime = Date.now();
+    let attempt = 0;
+    let startTime = Date.now();
     while (!updatedRun && attempt < maxRetries) {
       try {
         updatedRun = await withTimeout(
           retrieveRun({ thread_id, run_id, timeout: raceTimeoutMs, openai }),
           raceTimeoutMs,
-          `[heartbeat ${i}] ${runIdLog} | Run retrieval timed out at ${timeElapsed} ms. Trying again (attempt ${
+          `[heartbeat ${i}] ${runIdLog} | Run retrieval timed out after ${raceTimeoutMs} ms. Trying again (attempt ${
             attempt + 1
           } of ${maxRetries})...`,
         );
-        attempt++;
+        const endTime = Date.now();
+        logger.debug(
+          `[heartbeat ${i}] ${runIdLog} | Elapsed run retrieval time: ${endTime - startTime}`,
+        );
       } catch (error) {
-        logger.warn(`${runIdLog} | Error retrieving run status: ${error}`);
+        attempt++;
+        startTime = Date.now();
+        logger.warn(`${runIdLog} | Error retrieving run status`, error);
       }
     }
-    const endTime = Date.now();
-    logger.debug(
-      `[heartbeat ${i}] ${runIdLog} | Elapsed run retrieval time: ${endTime - startTime}`,
-    );
+
     if (!updatedRun) {
       const errorMessage = `[waitForRun] ${runIdLog} | Run retrieval failed after ${maxRetries} attempts`;
       throw new Error(errorMessage);
     }
+
     run = updatedRun;
     attempt = 0;
     const runStatus = `${runInfo} | status: ${run.status}`;
