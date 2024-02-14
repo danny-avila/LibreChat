@@ -24,7 +24,7 @@ export default function useGenerations({
   const isEditableEndpoint = !![
     EModelEndpoint.openAI,
     EModelEndpoint.google,
-    EModelEndpoint.assistant,
+    EModelEndpoint.assistants,
     EModelEndpoint.anthropic,
     EModelEndpoint.gptPlugins,
     EModelEndpoint.azureOpenAI,

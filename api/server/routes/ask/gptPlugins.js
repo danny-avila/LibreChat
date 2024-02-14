@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getResponseSender } = require('librechat-data-provider');
+const { getResponseSender, Constants } = require('librechat-data-provider');
 const { validateTools } = require('~/app');
 const { addTitle } = require('~/server/services/Endpoints/openAI');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
@@ -204,7 +204,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     });
     res.end();
 
-    if (parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
+    if (parentMessageId === Constants.NO_PARENT && newConvo) {
       addTitle(req, {
         text,
         response,

@@ -1,256 +1,93 @@
-const RunManager = require('./Runs/RunMananger');
+const path = require('path');
+const { klona } = require('klona');
+const {
+  StepTypes,
+  RunStatus,
+  StepStatus,
+  FilePurpose,
+  ContentTypes,
+  ToolCallTypes,
+  imageExtRegex,
+  imageGenTools,
+  EModelEndpoint,
+  defaultOrderQuery,
+} = require('librechat-data-provider');
+const { retrieveAndProcessFile } = require('~/server/services/Files/process');
+const { RunManager, waitForRun, sleep } = require('~/server/services/Runs');
+const { processRequiredActions } = require('~/server/services/ToolService');
+const { createOnProgress, sendMessage } = require('~/server/utils');
+const { TextStream } = require('~/app/clients');
+const { logger } = require('~/config');
 
 /**
- * @typedef {Object} Message
- * @property {string} id - The identifier of the message.
- * @property {string} object - The object type, always 'thread.message'.
- * @property {number} created_at - The Unix timestamp (in seconds) for when the message was created.
- * @property {string} thread_id - The thread ID that this message belongs to.
- * @property {string} role - The entity that produced the message. One of 'user' or 'assistant'.
- * @property {Object[]} content - The content of the message in an array of text and/or images.
- * @property {string} content[].type - The type of content, either 'text' or 'image_file'.
- * @property {Object} [content[].text] - The text content, present if type is 'text'.
- * @property {string} content[].text.value - The data that makes up the text.
- * @property {Object[]} [content[].text.annotations] - Annotations for the text content.
- * @property {Object} [content[].image_file] - The image file content, present if type is 'image_file'.
- * @property {string} content[].image_file.file_id - The File ID of the image in the message content.
- * @property {string[]} [file_ids] - Optional list of File IDs for the message.
- * @property {string|null} [assistant_id] - If applicable, the ID of the assistant that authored this message.
- * @property {string|null} [run_id] - If applicable, the ID of the run associated with the authoring of this message.
- * @property {Object} [metadata] - Optional metadata for the message, a map of key-value pairs.
- */
-
-/**
- * @typedef {Object} FunctionTool
- * @property {string} type - The type of tool, 'function'.
- * @property {Object} function - The function definition.
- * @property {string} function.description - A description of what the function does.
- * @property {string} function.name - The name of the function to be called.
- * @property {Object} function.parameters - The parameters the function accepts, described as a JSON Schema object.
- */
-
-/**
- * @typedef {Object} Tool
- * @property {string} type - The type of tool, can be 'code_interpreter', 'retrieval', or 'function'.
- * @property {FunctionTool} [function] - The function tool, present if type is 'function'.
- */
-
-/**
- * @typedef {Object} Run
- * @property {string} id - The identifier of the run.
- * @property {string} object - The object type, always 'thread.run'.
- * @property {number} created_at - The Unix timestamp (in seconds) for when the run was created.
- * @property {string} thread_id - The ID of the thread that was executed on as a part of this run.
- * @property {string} assistant_id - The ID of the assistant used for execution of this run.
- * @property {string} status - The status of the run (e.g., 'queued', 'completed').
- * @property {Object} [required_action] - Details on the action required to continue the run.
- * @property {string} required_action.type - The type of required action, always 'submit_tool_outputs'.
- * @property {Object} required_action.submit_tool_outputs - Details on the tool outputs needed for the run to continue.
- * @property {Object[]} required_action.submit_tool_outputs.tool_calls - A list of the relevant tool calls.
- * @property {string} required_action.submit_tool_outputs.tool_calls[].id - The ID of the tool call.
- * @property {string} required_action.submit_tool_outputs.tool_calls[].type - The type of tool call the output is required for, always 'function'.
- * @property {Object} required_action.submit_tool_outputs.tool_calls[].function - The function definition.
- * @property {string} required_action.submit_tool_outputs.tool_calls[].function.name - The name of the function.
- * @property {string} required_action.submit_tool_outputs.tool_calls[].function.arguments - The arguments that the model expects you to pass to the function.
- * @property {Object} [last_error] - The last error associated with this run.
- * @property {string} last_error.code - One of 'server_error' or 'rate_limit_exceeded'.
- * @property {string} last_error.message - A human-readable description of the error.
- * @property {number} [expires_at] - The Unix timestamp (in seconds) for when the run will expire.
- * @property {number} [started_at] - The Unix timestamp (in seconds) for when the run was started.
- * @property {number} [cancelled_at] - The Unix timestamp (in seconds) for when the run was cancelled.
- * @property {number} [failed_at] - The Unix timestamp (in seconds) for when the run failed.
- * @property {number} [completed_at] - The Unix timestamp (in seconds) for when the run was completed.
- * @property {string} [model] - The model that the assistant used for this run.
- * @property {string} [instructions] - The instructions that the assistant used for this run.
- * @property {Tool[]} [tools] - The list of tools used for this run.
- * @property {string[]} [file_ids] - The list of File IDs used for this run.
- * @property {Object} [metadata] - Metadata associated with this run.
- */
-
-/**
- * @typedef {Object} RunStep
- * @property {string} id - The identifier of the run step.
- * @property {string} object - The object type, always 'thread.run.step'.
- * @property {number} created_at - The Unix timestamp (in seconds) for when the run step was created.
- * @property {string} assistant_id - The ID of the assistant associated with the run step.
- * @property {string} thread_id - The ID of the thread that was run.
- * @property {string} run_id - The ID of the run that this run step is a part of.
- * @property {string} type - The type of run step, either 'message_creation' or 'tool_calls'.
- * @property {string} status - The status of the run step, can be 'in_progress', 'cancelled', 'failed', 'completed', or 'expired'.
- * @property {Object} step_details - The details of the run step.
- * @property {Object} [last_error] - The last error associated with this run step.
- * @property {string} last_error.code - One of 'server_error' or 'rate_limit_exceeded'.
- * @property {string} last_error.message - A human-readable description of the error.
- * @property {number} [expired_at] - The Unix timestamp (in seconds) for when the run step expired.
- * @property {number} [cancelled_at] - The Unix timestamp (in seconds) for when the run step was cancelled.
- * @property {number} [failed_at] - The Unix timestamp (in seconds) for when the run step failed.
- * @property {number} [completed_at] - The Unix timestamp (in seconds) for when the run step completed.
- * @property {Object} [metadata] - Metadata associated with this run step, a map of up to 16 key-value pairs.
- */
-
-/**
- * @typedef {Object} StepMessage
- * @property {Message} message - The complete message object created by the step.
- * @property {string} id - The identifier of the run step.
- * @property {string} object - The object type, always 'thread.run.step'.
- * @property {number} created_at - The Unix timestamp (in seconds) for when the run step was created.
- * @property {string} assistant_id - The ID of the assistant associated with the run step.
- * @property {string} thread_id - The ID of the thread that was run.
- * @property {string} run_id - The ID of the run that this run step is a part of.
- * @property {string} type - The type of run step, either 'message_creation' or 'tool_calls'.
- * @property {string} status - The status of the run step, can be 'in_progress', 'cancelled', 'failed', 'completed', or 'expired'.
- * @property {Object} step_details - The details of the run step.
- * @property {Object} [last_error] - The last error associated with this run step.
- * @property {string} last_error.code - One of 'server_error' or 'rate_limit_exceeded'.
- * @property {string} last_error.message - A human-readable description of the error.
- * @property {number} [expired_at] - The Unix timestamp (in seconds) for when the run step expired.
- * @property {number} [cancelled_at] - The Unix timestamp (in seconds) for when the run step was cancelled.
- * @property {number} [failed_at] - The Unix timestamp (in seconds) for when the run step failed.
- * @property {number} [completed_at] - The Unix timestamp (in seconds) for when the run step completed.
- * @property {Object} [metadata] - Metadata associated with this run step, a map of up to 16 key-value pairs.
- */
-
-/**
- * Initializes a new thread or adds messages to an existing thread.
+ * Sorts, processes, and flattens messages to a single string.
  *
- * @param {Object} params - The parameters for initializing a thread.
- * @param {OpenAI} params.openai - The OpenAI client instance.
- * @param {Object} params.body - The body of the request.
- * @param {Message[]} params.body.messages - A list of messages to start the thread with.
- * @param {Object} [params.body.metadata] - Optional metadata for the thread.
- * @param {string} [params.thread_id] - Optional existing thread ID. If provided, a message will be added to this thread.
- * @return {Promise<Thread>} A promise that resolves to the newly created thread object or the updated thread object.
+ * @param {Object} params - Params for creating the onTextProgress function.
+ * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {string} params.conversationId - The current conversation ID.
+ * @param {string} params.userMessageId - The user message ID; response's `parentMessageId`.
+ * @param {string} params.messageId - The response message ID.
+ * @param {string} params.thread_id - The current thread ID.
+ * @returns {void}
  */
-async function initThread({ openai, body, thread_id: _thread_id }) {
-  let thread = {};
-  const messages = [];
-  if (_thread_id) {
-    const message = await openai.beta.threads.messages.create(_thread_id, body.messages[0]);
-    messages.push(message);
-  } else {
-    thread = await openai.beta.threads.create(body);
-  }
+async function createOnTextProgress({
+  openai,
+  conversationId,
+  userMessageId,
+  messageId,
+  thread_id,
+}) {
+  openai.responseMessage = {
+    conversationId,
+    parentMessageId: userMessageId,
+    role: 'assistant',
+    messageId,
+    content: [],
+  };
 
-  const thread_id = _thread_id ?? thread.id;
-  return { messages, thread_id, ...thread };
-}
+  openai.responseText = '';
 
-/**
- * Creates a run on a thread using the OpenAI API.
- *
- * @param {Object} params - The parameters for creating a run.
- * @param {OpenAI} params.openai - The OpenAI client instance.
- * @param {string} params.thread_id - The ID of the thread to run.
- * @param {Object} params.body - The body of the request to create a run.
- * @param {string} params.body.assistant_id - The ID of the assistant to use for this run.
- * @param {string} [params.body.model] - Optional. The ID of the model to be used for this run.
- * @param {string} [params.body.instructions] - Optional. Override the default system message of the assistant.
- * @param {Object[]} [params.body.tools] - Optional. Override the tools the assistant can use for this run.
- * @param {string[]} [params.body.file_ids] - Optional. List of File IDs the assistant can use for this run.
- * @param {Object} [params.body.metadata] - Optional. Metadata for the run.
- * @return {Promise<Run>} A promise that resolves to the created run object.
- */
-async function createRun({ openai, thread_id, body }) {
-  const run = await openai.beta.threads.runs.create(thread_id, body);
-  return run;
-}
+  openai.addContentData = (data) => {
+    const { type, index } = data;
+    openai.responseMessage.content[index] = { type, [type]: data[type] };
 
-// /**
-//  * Retrieves all steps of a run.
-//  *
-//  * @param {Object} params - The parameters for the retrieveRunSteps function.
-//  * @param {OpenAI} params.openai - The OpenAI client instance.
-//  * @param {string} params.thread_id - The ID of the thread associated with the run.
-//  * @param {string} params.run_id - The ID of the run to retrieve steps for.
-//  * @return {Promise<RunStep[]>} A promise that resolves to an array of RunStep objects.
-//  */
-// async function retrieveRunSteps({ openai, thread_id, run_id }) {
-//   const runSteps = await openai.beta.threads.runs.steps.list(thread_id, run_id);
-//   return runSteps;
-// }
-
-/**
- * Delays the execution for a specified number of milliseconds.
- *
- * @param {number} ms - The number of milliseconds to delay.
- * @return {Promise<void>} A promise that resolves after the specified delay.
- */
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Waits for a run to complete by repeatedly checking its status. It uses a RunManager instance to fetch and manage run steps based on the run status.
- *
- * @param {Object} params - The parameters for the waitForRun function.
- * @param {OpenAI} params.openai - The OpenAI client instance.
- * @param {string} params.run_id - The ID of the run to wait for.
- * @param {string} params.thread_id - The ID of the thread associated with the run.
- * @param {RunManager} params.runManager - The RunManager instance to manage run steps.
- * @param {number} params.pollIntervalMs - The interval for polling the run status, default is 500 milliseconds.
- * @return {Promise<Run>} A promise that resolves to the last fetched run object.
- */
-async function waitForRun({ openai, run_id, thread_id, runManager, pollIntervalMs = 500 }) {
-  const timeout = 18000; // 18 seconds
-  let timeElapsed = 0;
-  let run;
-
-  // this runManager will be passed in from the caller
-  // const runManager = new RunManager({
-  //   'in_progress': (step) => { /* ... */ },
-  //   'queued': (step) => { /* ... */ },
-  // });
-
-  while (timeElapsed < timeout) {
-    run = await openai.beta.threads.runs.retrieve(thread_id, run_id);
-    console.log(`Run status: ${run.status}`);
-
-    if (!['in_progress', 'queued'].includes(run.status)) {
-      await runManager.fetchRunSteps({
-        openai,
-        thread_id: thread_id,
-        run_id: run_id,
-        runStatus: run.status,
-        final: true,
-      });
-      break;
+    if (type === ContentTypes.TEXT) {
+      openai.responseText += data[type].value;
+      return;
     }
 
-    // may use in future
-    // await runManager.fetchRunSteps({
-    //   openai,
-    //   thread_id: thread_id,
-    //   run_id: run_id,
-    //   runStatus: run.status,
-    // });
+    const contentData = {
+      index,
+      type,
+      [type]: data[type],
+      messageId,
+      thread_id,
+      conversationId,
+    };
 
-    await sleep(pollIntervalMs);
-    timeElapsed += pollIntervalMs;
-  }
-
-  return run;
+    logger.debug('Content data:', contentData);
+    sendMessage(openai.res, contentData);
+  };
 }
 
 /**
  * Retrieves the response from an OpenAI run.
  *
  * @param {Object} params - The parameters for getting the response.
- * @param {OpenAI} params.openai - The OpenAI client instance.
+ * @param {OpenAIClient} params.openai - The OpenAI client instance.
  * @param {string} params.run_id - The ID of the run to get the response for.
  * @param {string} params.thread_id - The ID of the thread associated with the run.
- * @return {Promise<OpenAIAssistantFinish | OpenAIAssistantAction[] | Message[] | RequiredActionFunctionToolCall[]>}
+ * @return {Promise<OpenAIAssistantFinish | OpenAIAssistantAction[] | ThreadMessage[] | RequiredActionFunctionToolCall[]>}
  */
 async function getResponse({ openai, run_id, thread_id }) {
   const run = await waitForRun({ openai, run_id, thread_id, pollIntervalMs: 500 });
 
-  if (run.status === 'completed') {
-    const messages = await openai.beta.threads.messages.list(thread_id, {
-      order: 'asc',
-    });
+  if (run.status === RunStatus.COMPLETED) {
+    const messages = await openai.beta.threads.messages.list(thread_id, defaultOrderQuery);
     const newMessages = messages.data.filter((msg) => msg.run_id === run_id);
 
     return newMessages;
-  } else if (run.status === 'requires_action') {
+  } else if (run.status === RunStatus.REQUIRES_ACTION) {
     const actions = [];
     run.required_action?.submit_tool_outputs.tool_calls.forEach((item) => {
       const functionCall = item.function;
@@ -259,7 +96,6 @@ async function getResponse({ openai, run_id, thread_id }) {
         tool: functionCall.name,
         toolInput: args,
         toolCallId: item.id,
-        log: '',
         run_id,
         thread_id,
       });
@@ -273,90 +109,432 @@ async function getResponse({ openai, run_id, thread_id }) {
 }
 
 /**
- * Initializes a RunManager with handlers, then invokes waitForRun to monitor and manage an OpenAI run.
- *
- * @param {Object} params - The parameters for managing and monitoring the run.
- * @param {OpenAI} params.openai - The OpenAI client instance.
- * @param {string} params.run_id - The ID of the run to manage and monitor.
- * @param {string} params.thread_id - The ID of the thread associated with the run.
- * @return {Promise<Object>} A promise that resolves to an object containing the run and managed steps.
+ * Filters the steps to keep only the most recent instance of each unique step.
+ * @param {RunStep[]} steps - The array of RunSteps to filter.
+ * @return {RunStep[]} The filtered array of RunSteps.
  */
-async function handleRun({ openai, run_id, thread_id }) {
-  let steps;
-  let messages;
-  const runManager = new RunManager({
-    // 'in_progress': async ({ step, final, isLast }) => {
-    //   // Define logic for handling steps with 'in_progress' status
-    // },
-    // 'queued': async ({ step, final, isLast }) => {
-    //   // Define logic for handling steps with 'queued' status
-    // },
-    final: async ({ step, runStatus, stepsByStatus }) => {
-      console.log(`Final step for ${run_id} with status ${runStatus}`);
-      console.dir(step, { depth: null });
+function filterSteps(steps = []) {
+  if (steps.length <= 1) {
+    return steps;
+  }
+  const stepMap = new Map();
 
-      const promises = [];
-      promises.push(
-        openai.beta.threads.messages.list(thread_id, {
-          order: 'asc',
-        }),
-      );
+  steps.forEach((step) => {
+    if (!step) {
+      return;
+    }
 
-      const finalSteps = stepsByStatus[runStatus];
+    const effectiveTimestamp = Math.max(
+      step.created_at,
+      step.expired_at || 0,
+      step.cancelled_at || 0,
+      step.failed_at || 0,
+      step.completed_at || 0,
+    );
 
-      // loop across all statuses, may use in the future
-      // for (const [_status, stepsPromises] of Object.entries(stepsByStatus)) {
-      //   promises.push(...stepsPromises);
-      // }
-      for (const stepPromise of finalSteps) {
-        promises.push(stepPromise);
+    if (!stepMap.has(step.id) || effectiveTimestamp > stepMap.get(step.id).effectiveTimestamp) {
+      const latestStep = { ...step, effectiveTimestamp };
+      if (latestStep.last_error) {
+        // testing to see if we ever step into this
       }
-
-      const resolved = await Promise.all(promises);
-      const res = resolved.shift();
-      messages = res.data.filter((msg) => msg.run_id === run_id);
-      resolved.push(step);
-      steps = resolved;
-    },
+      stepMap.set(step.id, latestStep);
+    }
   });
 
-  const run = await waitForRun({ openai, run_id, thread_id, runManager, pollIntervalMs: 500 });
-
-  return { run, steps, messages };
-}
-
-/**
- * Maps messages to their corresponding steps. Steps with message creation will be paired with their messages,
- * while steps without message creation will be returned as is.
- *
- * @param {RunStep[]} steps - An array of steps from the run.
- * @param {Message[]} messages - An array of message objects.
- * @returns {(StepMessage | RunStep)[]} An array where each element is either a step with its corresponding message (StepMessage) or a step without a message (RunStep).
- */
-function mapMessagesToSteps(steps, messages) {
-  // Create a map of messages indexed by their IDs for efficient lookup
-  const messageMap = messages.reduce((acc, msg) => {
-    acc[msg.id] = msg;
-    return acc;
-  }, {});
-
-  // Map each step to its corresponding message, or return the step as is if no message ID is present
-  return steps.map((step) => {
-    const messageId = step.step_details?.message_creation?.message_id;
-
-    if (messageId && messageMap[messageId]) {
-      return { step, message: messageMap[messageId] };
-    }
+  return Array.from(stepMap.values()).map((step) => {
+    delete step.effectiveTimestamp;
     return step;
   });
 }
 
+/**
+ * @callback InProgressFunction
+ * @param {Object} params - The parameters for the in progress step.
+ * @param {RunStep} params.step - The step object with details about the message creation.
+ * @returns {Promise<void>} - A promise that resolves when the step is processed.
+ */
+
+function hasToolCallChanged(previousCall, currentCall) {
+  return JSON.stringify(previousCall) !== JSON.stringify(currentCall);
+}
+
+/**
+ * Creates a handler function for steps in progress, specifically for
+ * processing messages and managing seen completed messages.
+ *
+ * @param {OpenAIClient} openai - The OpenAI client instance.
+ * @param {string} thread_id - The ID of the thread the run is in.
+ * @param {ThreadMessage[]} messages - The accumulated messages for the run.
+ * @return {InProgressFunction} a function to handle steps in progress.
+ */
+function createInProgressHandler(openai, thread_id, messages) {
+  openai.index = 0;
+  openai.mappedOrder = new Map();
+  openai.seenToolCalls = new Map();
+  openai.processedFileIds = new Set();
+  openai.completeToolCallSteps = new Set();
+  openai.seenCompletedMessages = new Set();
+
+  /**
+   * The in_progress function for handling message creation steps.
+   *
+   * @type {InProgressFunction}
+   */
+  async function in_progress({ step }) {
+    if (step.type === StepTypes.TOOL_CALLS) {
+      const { tool_calls } = step.step_details;
+
+      for (const _toolCall of tool_calls) {
+        /** @type {StepToolCall} */
+        const toolCall = _toolCall;
+        const previousCall = openai.seenToolCalls.get(toolCall.id);
+
+        // If the tool call isn't new and hasn't changed
+        if (previousCall && !hasToolCallChanged(previousCall, toolCall)) {
+          continue;
+        }
+
+        let toolCallIndex = openai.mappedOrder.get(toolCall.id);
+        if (toolCallIndex === undefined) {
+          // New tool call
+          toolCallIndex = openai.index;
+          openai.mappedOrder.set(toolCall.id, openai.index);
+          openai.index++;
+        }
+
+        if (step.status === StepStatus.IN_PROGRESS) {
+          toolCall.progress =
+            previousCall && previousCall.progress
+              ? Math.min(previousCall.progress + 0.2, 0.95)
+              : 0.01;
+        } else {
+          toolCall.progress = 1;
+          openai.completeToolCallSteps.add(step.id);
+        }
+
+        if (
+          toolCall.type === ToolCallTypes.CODE_INTERPRETER &&
+          step.status === StepStatus.COMPLETED
+        ) {
+          const { outputs } = toolCall[toolCall.type];
+
+          for (const output of outputs) {
+            if (output.type !== 'image') {
+              continue;
+            }
+
+            if (openai.processedFileIds.has(output.image?.file_id)) {
+              continue;
+            }
+
+            const { file_id } = output.image;
+            const file = await retrieveAndProcessFile({
+              openai,
+              file_id,
+              basename: `${file_id}.png`,
+            });
+            // toolCall.asset_pointer = file.filepath;
+            const prelimImage = {
+              file_id,
+              filename: path.basename(file.filepath),
+              filepath: file.filepath,
+              height: file.height,
+              width: file.width,
+            };
+            // check if every key has a value before adding to content
+            const prelimImageKeys = Object.keys(prelimImage);
+            const validImageFile = prelimImageKeys.every((key) => prelimImage[key]);
+
+            if (!validImageFile) {
+              continue;
+            }
+
+            const image_file = {
+              [ContentTypes.IMAGE_FILE]: prelimImage,
+              type: ContentTypes.IMAGE_FILE,
+              index: openai.index,
+            };
+            openai.addContentData(image_file);
+            openai.processedFileIds.add(file_id);
+            openai.index++;
+          }
+        } else if (
+          toolCall.type === ToolCallTypes.FUNCTION &&
+          step.status === StepStatus.COMPLETED &&
+          imageGenTools.has(toolCall[toolCall.type].name)
+        ) {
+          /* If a change is detected, skip image generation tools as already processed */
+          openai.seenToolCalls.set(toolCall.id, toolCall);
+          continue;
+        }
+
+        openai.addContentData({
+          [ContentTypes.TOOL_CALL]: toolCall,
+          index: toolCallIndex,
+          type: ContentTypes.TOOL_CALL,
+        });
+
+        // Update the stored tool call
+        openai.seenToolCalls.set(toolCall.id, toolCall);
+      }
+    } else if (step.type === StepTypes.MESSAGE_CREATION && step.status === StepStatus.COMPLETED) {
+      const { message_id } = step.step_details.message_creation;
+      if (openai.seenCompletedMessages.has(message_id)) {
+        return;
+      }
+
+      openai.seenCompletedMessages.add(message_id);
+
+      const message = await openai.beta.threads.messages.retrieve(thread_id, message_id);
+      messages.push(message);
+
+      let messageIndex = openai.mappedOrder.get(step.id);
+      if (messageIndex === undefined) {
+        // New message
+        messageIndex = openai.index;
+        openai.mappedOrder.set(step.id, openai.index);
+        openai.index++;
+      }
+
+      const result = await processMessages(openai, [message]);
+      openai.addContentData({
+        [ContentTypes.TEXT]: { value: result.text },
+        type: ContentTypes.TEXT,
+        index: messageIndex,
+      });
+
+      // Create the Factory Function to stream the message
+      const { onProgress: progressCallback } = createOnProgress({
+        // todo: add option to save partialText to db
+        // onProgress: () => {},
+      });
+
+      // This creates a function that attaches all of the parameters
+      // specified here to each SSE message generated by the TextStream
+      const onProgress = progressCallback({
+        res: openai.res,
+        index: messageIndex,
+        messageId: openai.responseMessage.messageId,
+        type: ContentTypes.TEXT,
+        stream: true,
+        thread_id,
+      });
+
+      // Create a small buffer before streaming begins
+      await sleep(500);
+
+      const stream = new TextStream(result.text, { delay: 9 });
+      await stream.processTextStream(onProgress);
+    }
+  }
+
+  return in_progress;
+}
+
+/**
+ * Initializes a RunManager with handlers, then invokes waitForRun to monitor and manage an OpenAI run.
+ *
+ * @param {Object} params - The parameters for managing and monitoring the run.
+ * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {string} params.run_id - The ID of the run to manage and monitor.
+ * @param {string} params.thread_id - The ID of the thread associated with the run.
+ * @param {RunStep[]} params.accumulatedSteps - The accumulated steps for the run.
+ * @param {ThreadMessage[]} params.accumulatedMessages - The accumulated messages for the run.
+ * @param {InProgressFunction} [params.in_progress] - The `in_progress` function from a previous run.
+ * @return {Promise<RunResponse>} A promise that resolves to an object containing the run and managed steps.
+ */
+async function runAssistant({
+  openai,
+  run_id,
+  thread_id,
+  accumulatedSteps = [],
+  accumulatedMessages = [],
+  in_progress: inProgress,
+}) {
+  let steps = accumulatedSteps;
+  let messages = accumulatedMessages;
+  const in_progress = inProgress ?? createInProgressHandler(openai, thread_id, messages);
+  openai.in_progress = in_progress;
+
+  const runManager = new RunManager({
+    in_progress,
+    final: async ({ step, runStatus, stepsByStatus }) => {
+      logger.debug(`[runAssistant] Final step for ${run_id} with status ${runStatus}`, step);
+
+      const promises = [];
+      // promises.push(
+      //   openai.beta.threads.messages.list(thread_id, defaultOrderQuery),
+      // );
+
+      // const finalSteps = stepsByStatus[runStatus];
+      // for (const stepPromise of finalSteps) {
+      //   promises.push(stepPromise);
+      // }
+
+      // loop across all statuses
+      for (const [_status, stepsPromises] of Object.entries(stepsByStatus)) {
+        promises.push(...stepsPromises);
+      }
+
+      const resolved = await Promise.all(promises);
+      const finalSteps = filterSteps(steps.concat(resolved));
+
+      if (step.type === StepTypes.MESSAGE_CREATION) {
+        const incompleteToolCallSteps = finalSteps.filter(
+          (s) => s && s.type === StepTypes.TOOL_CALLS && !openai.completeToolCallSteps.has(s.id),
+        );
+        for (const incompleteToolCallStep of incompleteToolCallSteps) {
+          await in_progress({ step: incompleteToolCallStep });
+        }
+      }
+      await in_progress({ step });
+      // const res = resolved.shift();
+      // messages = messages.concat(res.data.filter((msg) => msg && msg.run_id === run_id));
+      resolved.push(step);
+      /* Note: no issues without deep cloning, but it's safer to do so */
+      steps = klona(finalSteps);
+    },
+  });
+
+  /** @type {TCustomConfig.endpoints.assistants} */
+  const assistantsEndpointConfig = openai.req.app.locals?.[EModelEndpoint.assistants] ?? {};
+  const { pollIntervalMs, timeoutMs } = assistantsEndpointConfig;
+
+  const run = await waitForRun({
+    openai,
+    run_id,
+    thread_id,
+    runManager,
+    pollIntervalMs,
+    timeout: timeoutMs,
+  });
+
+  if (!run.required_action) {
+    // const { messages: sortedMessages, text } = await processMessages(openai, messages);
+    // return { run, steps, messages: sortedMessages, text };
+    const sortedMessages = messages.sort((a, b) => a.created_at - b.created_at);
+    return { run, steps, messages: sortedMessages };
+  }
+
+  const { submit_tool_outputs } = run.required_action;
+  const actions = submit_tool_outputs.tool_calls.map((item) => {
+    const functionCall = item.function;
+    const args = JSON.parse(functionCall.arguments);
+    return {
+      tool: functionCall.name,
+      toolInput: args,
+      toolCallId: item.id,
+      run_id,
+      thread_id,
+    };
+  });
+
+  const outputs = await processRequiredActions(openai, actions);
+
+  const toolRun = await openai.beta.threads.runs.submitToolOutputs(run.thread_id, run.id, outputs);
+
+  // Recursive call with accumulated steps and messages
+  return await runAssistant({
+    openai,
+    run_id: toolRun.id,
+    thread_id,
+    accumulatedSteps: steps,
+    accumulatedMessages: messages,
+    in_progress,
+  });
+}
+
+/**
+ * Sorts, processes, and flattens messages to a single string.
+ *
+ * @param {OpenAIClient} openai - The OpenAI client instance.
+ * @param {ThreadMessage[]} messages - An array of messages.
+ * @returns {Promise<{messages: ThreadMessage[], text: string}>} The sorted messages and the flattened text.
+ */
+async function processMessages(openai, messages = []) {
+  const sorted = messages.sort((a, b) => a.created_at - b.created_at);
+
+  let text = '';
+  for (const message of sorted) {
+    message.files = [];
+    for (const content of message.content) {
+      const processImageFile =
+        content.type === 'image_file' && !openai.processedFileIds.has(content.image_file?.file_id);
+      if (processImageFile) {
+        const { file_id } = content.image_file;
+
+        const file = await retrieveAndProcessFile({ openai, file_id, basename: `${file_id}.png` });
+        openai.processedFileIds.add(file_id);
+        message.files.push(file);
+        continue;
+      }
+
+      text += (content.text?.value ?? '') + ' ';
+
+      // Process annotations if they exist
+      if (!content.text?.annotations) {
+        continue;
+      }
+
+      logger.debug('Processing annotations:', content.text.annotations);
+      for (const annotation of content.text.annotations) {
+        logger.debug('Current annotation:', annotation);
+        let file;
+        const processFilePath =
+          annotation.file_path && !openai.processedFileIds.has(annotation.file_path?.file_id);
+
+        if (processFilePath) {
+          const basename = imageExtRegex.test(annotation.text)
+            ? path.basename(annotation.text)
+            : null;
+          file = await retrieveAndProcessFile({
+            openai,
+            file_id: annotation.file_path.file_id,
+            basename,
+          });
+          openai.processedFileIds.add(annotation.file_path.file_id);
+        }
+
+        const processFileCitation =
+          annotation.file_citation &&
+          !openai.processedFileIds.has(annotation.file_citation?.file_id);
+
+        if (processFileCitation) {
+          file = await retrieveAndProcessFile({
+            openai,
+            file_id: annotation.file_citation.file_id,
+            unknownType: true,
+          });
+          openai.processedFileIds.add(annotation.file_citation.file_id);
+        }
+
+        if (!file && (annotation.file_path || annotation.file_citation)) {
+          const { file_id } = annotation.file_citation || annotation.file_path || {};
+          file = await retrieveAndProcessFile({ openai, file_id, unknownType: true });
+          openai.processedFileIds.add(file_id);
+        }
+
+        if (!file) {
+          continue;
+        }
+
+        if (file.purpose && file.purpose === FilePurpose.Assistants) {
+          text = text.replace(annotation.text, file.filename);
+        } else if (file.filepath) {
+          text = text.replace(annotation.text, file.filepath);
+        }
+
+        message.files.push(file);
+      }
+    }
+  }
+
+  return { messages: sorted, text };
+}
+
 module.exports = {
-  initThread,
-  createRun,
-  waitForRun,
   getResponse,
-  handleRun,
-  sleep,
-  mapMessagesToSteps,
+  runAssistant,
+  processMessages,
+  createOnTextProgress,
 };

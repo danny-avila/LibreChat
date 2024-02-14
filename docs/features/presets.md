@@ -49,7 +49,7 @@ The "presets" feature in our app is a powerful tool that allows users to save an
 - **Custom Name:**
   - Optionally provide a custom name for your preset. This is the name that will be shown in the UI when using it.
 
-- **Prompt Prefix:**
+- **Custom Instructions:**
   - Define instructions or guidelines that will be displayed before each prompt to guide the user in providing input.
 
 - **Temperature:**

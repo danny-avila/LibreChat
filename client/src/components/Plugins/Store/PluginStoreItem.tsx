@@ -1,5 +1,6 @@
 import { TPlugin } from 'librechat-data-provider';
 import { XCircle, DownloadCloud } from 'lucide-react';
+import { useLocalize } from '~/hooks';
 
 type TPluginStoreItemProps = {
   plugin: TPlugin;
@@ -9,6 +10,7 @@ type TPluginStoreItemProps = {
 };
 
 function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPluginStoreItemProps) {
+  const localize = useLocalize();
   const handleClick = () => {
     if (isInstalled) {
       onUninstall();
@@ -38,11 +40,11 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
             {!isInstalled ? (
               <button
                 className="btn btn-primary relative"
-                aria-label={`Install ${plugin.name}`}
+                aria-label={`${localize('com_nav_plugin_install')} ${plugin.name}`}
                 onClick={handleClick}
               >
                 <div className="flex w-full items-center justify-center gap-2">
-                  Install
+                  {localize('com_nav_plugin_install')}
                   <DownloadCloud className="flex h-4 w-4 items-center stroke-2" />
                 </div>
               </button>
@@ -50,10 +52,10 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
               <button
                 className="btn relative bg-gray-300 hover:bg-gray-400 dark:bg-gray-50 dark:hover:bg-gray-200"
                 onClick={handleClick}
-                aria-label={`Uninstall ${plugin.name}`}
+                aria-label={`${localize('com_nav_plugin_uninstall')} ${plugin.name}`}
               >
                 <div className="flex w-full items-center justify-center gap-2">
-                  Uninstall
+                  {localize('com_nav_plugin_uninstall')}
                   <XCircle className="flex h-4 w-4 items-center stroke-2" />
                 </div>
               </button>

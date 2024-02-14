@@ -16,7 +16,7 @@ import store from '~/store';
 
 type TCodeProps = {
   inline: boolean;
-  className: string;
+  className?: string;
   children: React.ReactNode;
 };
 
@@ -26,7 +26,7 @@ type TContentProps = {
   showCursor?: boolean;
 };
 
-const code = memo(({ inline, className, children }: TCodeProps) => {
+export const code = memo(({ inline, className, children }: TCodeProps) => {
   const match = /language-(\w+)/.exec(className || '');
   const lang = match && match[1];
 
@@ -37,7 +37,7 @@ const code = memo(({ inline, className, children }: TCodeProps) => {
   }
 });
 
-const p = memo(({ children }: { children: React.ReactNode }) => {
+export const p = memo(({ children }: { children: React.ReactNode }) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 

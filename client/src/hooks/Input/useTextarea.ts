@@ -1,15 +1,32 @@
 import debounce from 'lodash/debounce';
 import { useEffect, useRef } from 'react';
-import { TEndpointOption } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
+import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
+import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useChatContext } from '~/Providers/ChatContext';
-import useFileHandling from '~/hooks/useFileHandling';
 import useLocalize from '~/hooks/useLocalize';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
+const getAssistantName = ({
+  name,
+  localize,
+}: {
+  name?: string;
+  localize: (phraseKey: string, ...values: string[]) => string;
+}) => {
+  if (name && name.length > 0) {
+    return name;
+  } else {
+    return localize('com_ui_assistant');
+  }
+};
+
 export default function useTextarea({ setText, submitMessage, disabled = false }) {
+  const assistantMap = useAssistantsMapContext();
   const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
     useChatContext();
   const isComposing = useRef(false);
@@ -18,9 +35,12 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
   const getSender = useGetSender();
   const localize = useLocalize();
 
-  const { conversationId, jailbreak } = conversation || {};
+  const { conversationId, jailbreak, endpoint = '', assistant_id } = conversation || {};
   const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
+
+  const assistant = endpoint === EModelEndpoint.assistants && assistantMap?.[assistant_id ?? ''];
+  const assistantName = (assistant && assistant?.name) || '';
 
   // auto focus to input, when enter a conversation.
   useEffect(() => {
@@ -61,7 +81,10 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
         return localize('com_endpoint_message_not_appendable');
       }
 
-      const sender = getSender(conversation as TEndpointOption);
+      const sender =
+        conversation?.endpoint === EModelEndpoint.assistants
+          ? getAssistantName({ name: assistantName, localize })
+          : getSender(conversation as TEndpointOption);
 
       return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
     };
@@ -84,7 +107,7 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
     debouncedSetPlaceholder();
 
     return () => debouncedSetPlaceholder.cancel();
-  }, [conversation, disabled, latestMessage, isNotAppendable, localize, getSender]);
+  }, [conversation, disabled, latestMessage, isNotAppendable, localize, getSender, assistantName]);
 
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Enter' && isSubmitting) {
