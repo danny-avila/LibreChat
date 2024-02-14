@@ -4,12 +4,13 @@ const { GoogleVertexAI } = require('langchain/llms/googlevertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
 const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
-const { encodeAndFormat, validateVisionModel } = require('~/server/services/Files/images');
+const { encodeAndFormat } = require('~/server/services/Files/images');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
+  validateVisionModel,
   getResponseSender,
-  EModelEndpoint,
   endpointSettings,
+  EModelEndpoint,
   AuthKeys,
 } = require('librechat-data-provider');
 const { getModelMaxTokens } = require('~/utils');

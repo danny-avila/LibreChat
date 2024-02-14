@@ -109,6 +109,19 @@
     ]
   },
   {
+    "name": "Tavily Search",
+    "pluginKey": "tavily_search_results_json",
+    "description": "Tavily Search is a robust search API tailored specifically for LLM Agents. It seamlessly integrates with diverse data sources to ensure a superior, relevant search experience.",
+    "icon": "https://tavily.com/favicon.ico",
+    "authConfig": [
+      {
+        "authField": "TAVILY_API_KEY",
+        "label": "Tavily API Key",
+        "description": "Get your API key here: https://app.tavily.com/"
+      }
+    ]
+  },
+  {
     "name": "Calculator",
     "pluginKey": "calculator",
     "description": "Perform simple and complex mathematical calculations.",

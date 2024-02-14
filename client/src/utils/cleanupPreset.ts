@@ -16,7 +16,11 @@ const cleanupPreset = ({ preset: _preset }: TCleanupPreset): TPreset => {
     };
   }
 
-  const parsedPreset = parseConvo({ endpoint, endpointType, conversation: _preset });
+  const { presetOverride = {}, ...rest } = _preset;
+  const preset = { ...rest, ...presetOverride };
+
+  /* @ts-ignore: endpoint can be a custom defined name */
+  const parsedPreset = parseConvo({ endpoint, endpointType, conversation: preset });
 
   return {
     presetId: _preset?.presetId ?? null,

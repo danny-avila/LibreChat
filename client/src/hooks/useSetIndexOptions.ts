@@ -14,7 +14,7 @@ import store from '~/store';
 
 type TUseSetOptions = (preset?: TPreset | boolean | null) => TSetOptionsPayload;
 
-const useSetOptions: TUseSetOptions = (preset = false) => {
+const useSetIndexOptions: TUseSetOptions = (preset = false) => {
   const setShowPluginStoreDialog = useSetRecoilState(store.showPluginStoreDialog);
   const availableTools = useRecoilValue(store.availableTools);
   const { conversation, setConversation } = useChatContext();
@@ -40,6 +40,12 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
       setLastModel(lastModelUpdate);
     } else if (param === 'jailbreak' && endpoint) {
       setLastBingSettings({ ...lastBingSettings, jailbreak: newValue });
+    } else if (param === 'presetOverride') {
+      const currentOverride = conversation?.presetOverride || {};
+      update['presetOverride'] = {
+        ...currentOverride,
+        ...(newValue as unknown as Partial<TPreset>),
+      };
     }
 
     setConversation(
@@ -133,7 +139,7 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
     );
   };
 
-  const setTools: (newValue: string) => void = (newValue) => {
+  const setTools: (newValue: string, remove?: boolean) => void = (newValue, remove) => {
     if (newValue === 'pluginStore') {
       setShowPluginStoreDialog(true);
       return;
@@ -144,7 +150,7 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
     const isSelected = checkPluginSelection(newValue);
     const tool =
       availableTools[availableTools.findIndex((el: TPlugin) => el.pluginKey === newValue)];
-    if (isSelected) {
+    if (isSelected || remove) {
       update['tools'] = current.filter((el) => el.pluginKey !== newValue);
     } else {
       update['tools'] = [...current, tool];
@@ -171,4 +177,4 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
   };
 };
 
-export default useSetOptions;
+export default useSetIndexOptions;

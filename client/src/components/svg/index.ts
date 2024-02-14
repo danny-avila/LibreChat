@@ -1,3 +1,4 @@
+export { default as Blocks } from './Blocks';
 export { default as Plugin } from './Plugin';
 export { default as GPTIcon } from './GPTIcon';
 export { default as EditIcon } from './EditIcon';
@@ -28,6 +29,7 @@ export { default as DotsIcon } from './DotsIcon';
 export { default as GearIcon } from './GearIcon';
 export { default as PinIcon } from './PinIcon';
 export { default as TrashIcon } from './TrashIcon';
+export { default as NewTrashIcon } from './NewTrashIcon';
 export { default as MinimalPlugin } from './MinimalPlugin';
 export { default as AzureMinimalIcon } from './AzureMinimalIcon';
 export { default as OpenAIMinimalIcon } from './OpenAIMinimalIcon';
@@ -46,3 +48,5 @@ export { default as NewChatIcon } from './NewChatIcon';
 export { default as ExperimentIcon } from './ExperimentIcon';
 export { default as GoogleIconChat } from './GoogleIconChat';
 export { default as BirthdayIcon } from './BirthdayIcon';
+export { default as AssistantIcon } from './AssistantIcon';
+export { default as Sparkles } from './Sparkles';

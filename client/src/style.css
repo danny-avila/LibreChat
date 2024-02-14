@@ -1823,3 +1823,50 @@ html {
   width:12px;
   will-change:transform
 }
+
+.shadow-stroke {
+  position:relative
+}
+.shadow-stroke:after {
+  --tw-shadow:inset 0 0 0 1px rgba(0,0,0,.1);
+  --tw-shadow-colored:inset 0 0 0 1px var(--tw-shadow-color);
+  border-radius:9999px;
+  bottom:0;
+  content:"";
+  left:0;
+  position:absolute;
+  right:0;
+  top:0
+}
+.dark .shadow-stroke:after,
+.shadow-stroke:after {
+  box-shadow:0 0 transparent,0 0 transparent,var(--tw-shadow);
+  box-shadow:var(--tw-ring-offset-shadow,0 0 transparent),var(--tw-ring-shadow,0 0 transparent),var(--tw-shadow)
+}
+.dark .shadow-stroke:after {
+  --tw-shadow:inset 0 0 0 1px hsla(0,0%,100%,.3);
+  --tw-shadow-colored:inset 0 0 0 1px var(--tw-shadow-color)
+}
+
+.assistant-item {
+  position: relative;
+}
+
+.assistant-item:after {
+  --tw-shadow: inset 0 0 0 1px rgba(0,0,0,.25);
+  --tw-shadow-colored: inset 0 0 0 1px var(--tw-shadow-color);
+  border-radius: 9999px;
+  bottom: 0;
+  content: "";
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  box-shadow: 0 0 transparent, 0 0 transparent, var(--tw-shadow);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 transparent), var(--tw-ring-shadow, 0 0 transparent), var(--tw-shadow);
+}
+
+.dark .assistant-item:after {
+  --tw-shadow: inset 0 0 0 1px rgba(0,0,0,.25);
+  --tw-shadow-colored: inset 0 0 0 1px var(--tw-shadow-color);
+}
