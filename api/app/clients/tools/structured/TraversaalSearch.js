@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { getEnvironmentVariable } = require('@langchain/core/utils/env');
+const { logger } = require('~/config');
 
 /**
  * Tool for the Traversaal AI search API, Ares.
@@ -42,22 +43,29 @@ class TraversaalSearch extends Tool {
     const body = {
       data: [query],
     };
-    const response = await fetch('https://api-ares.traversaal.ai/d/predict', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': this.apiKey,
-      },
-      body: JSON.stringify({ ...body }),
-    });
-    const json = await response.json();
-    if (!response.ok) {
-      throw new Error(`Request failed with status code ${response.status}: ${json.error}`);
+    try {
+      const response = await fetch('https://api-ares.traversaal.ai/live/predict', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': this.apiKey,
+        },
+        body: JSON.stringify({ ...body }),
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          `Request failed with status code ${response.status}: ${json.error ?? json.message}`,
+        );
+      }
+      if (!json.data) {
+        throw new Error('Could not parse Traversaal API results. Please try again.');
+      }
+      return JSON.stringify(json.data);
+    } catch (error) {
+      logger.error('Traversaal API request failed', error);
+      return `Traversaal API request failed: ${error.message}`;
     }
-    if (!json.data) {
-      throw new Error('Could not parse Traversaal API results. Please try again.');
-    }
-    return JSON.stringify(json.data);
   }
 }
 
