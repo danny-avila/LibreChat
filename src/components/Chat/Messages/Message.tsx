@@ -41,7 +41,15 @@ export default function Message(props: TMessageProps) {
     return null;
   }
 
-  const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
+  const {
+    text,
+    children,
+    messageId = null,
+    isCreatedByUser,
+    error,
+    unfinished,
+    parentMessageId,
+  } = message ?? {};
 
   let messageLabel = '';
   if (isCreatedByUser) {
@@ -69,6 +77,8 @@ export default function Message(props: TMessageProps) {
                       icon
                     )}
                   </div>
+                  <p className="text-sm">messageId: {messageId}</p>
+                  <p className="text-sm">parentMessageId: {parentMessageId}</p>
                 </div>
               </div>
             </div>
@@ -130,8 +140,8 @@ export default function Message(props: TMessageProps) {
                   <>
                     <span style={{ background: '#DADCE5', height: '16px', width: 1 }} />
 
-                    {message.model && (
-                      <MessageInfoChip text={message.model} color={VERA_TEAL} bg="#30A9E51A">
+                    {message.modelId && (
+                      <MessageInfoChip text={message.modelId} color={VERA_TEAL} bg="#30A9E51A">
                         {message.modelReason}
                       </MessageInfoChip>
                     )}
@@ -142,9 +152,11 @@ export default function Message(props: TMessageProps) {
                       </MessageInfoChip>
                     )}
 
-                    <MessageInfoChip text={'Cached response'} bg="#3F5AFF1A" color={VERA_BLUE}>
-                      This response was generated from Cache
-                    </MessageInfoChip>
+                    {message.isCacheResult && (
+                      <MessageInfoChip text={'Cached response'} bg="#3F5AFF1A" color={VERA_BLUE}>
+                        This response was generated from Cache
+                      </MessageInfoChip>
+                    )}
                   </>
                 )}
               </SubRow>

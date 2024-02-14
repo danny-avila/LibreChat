@@ -5,4 +5,9 @@ const eventMessage = atom<string>({
   default: '',
 });
 
-export default { eventMessage };
+const errorMessage = atom<string>({
+  key: 'errorMessage',
+  default: '',
+});
+
+export default { eventMessage, errorMessage };

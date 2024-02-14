@@ -13,7 +13,7 @@ import {
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 import { useAuthStore } from '~/zustand';
-import VeraColorIcon from '../svg/VeraColorIcon';
+import VeraColorIcon from '../svg/VeraColorLogo';
 
 const Icon: React.FC<IconProps> = (props) => {
   const { user } = useAuthStore();

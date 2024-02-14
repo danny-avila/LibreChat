@@ -1,4 +1,4 @@
-export default function VeraColorIcon() {
+export default function VeraColorLogo() {
   return (
     <svg
       id="Layer_1"

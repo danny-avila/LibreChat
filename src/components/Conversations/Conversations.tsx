@@ -22,9 +22,9 @@ export default function Conversations({
     () => groupConversationsByDate(conversations),
     [conversations],
   );
-  const firstTodayConvoId = conversations.find((convo) =>
-    isToday(parseISO(convo.updatedAt)),
-  )?.conversationId;
+  // const firstTodayConvoId = (conversations ?? []).find((convo) =>
+  //   isToday(parseISO(convo.updatedAt)),
+  // )?.conversationId;
 
   return (
     <div className="text-token-text-primary flex flex-col gap-2 pb-2 text-sm">
@@ -46,7 +46,7 @@ export default function Conversations({
               {convos.map((convo, i) => (
                 <ConvoItem
                   key={`${groupName}-${convo.conversationId}-${i}`}
-                  isLatestConvo={convo.conversationId === firstTodayConvoId}
+                  isLatestConvo={convo.conversationId === false}
                   conversation={convo}
                   retainView={moveToTop}
                   toggleNav={toggleNav}

@@ -29,7 +29,7 @@ export default function Message(props: TMessageProps) {
 
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScroll);
-  const { isSubmitting, ask, regenerate, handleContinue } = useVeraChat();
+  const { isSubmitting, ask, regenerate, handleContinue } = useVeraChat(0, '');
   const { switchToConversation } = useConversation();
   const { conversationId } = useParams();
   const isSearching = useRecoilValue(store.isSearching);

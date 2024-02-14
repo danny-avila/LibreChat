@@ -2,13 +2,7 @@ import { useParams } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import type { ConversationListResponse } from 'librechat-data-provider';
-import {
-  useMediaQuery,
-  useConversation,
-  useLocalStorage,
-  useNavScrolling,
-  useConversations,
-} from '~/hooks';
+import { useMediaQuery, useConversation, useLocalStorage, useNavScrolling } from '~/hooks';
 import { useSearchInfiniteQuery, useConversationsInfiniteQuery } from '~/data-provider';
 import { TooltipProvider, Tooltip } from '~/components/ui';
 import { Conversations } from '~/components/Conversations';
@@ -20,6 +14,7 @@ import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
 import { useAuthStore } from '~/zustand';
+import { useConversations } from '~/services/queries/conversations';
 
 export default function Nav({ navVisible, setNavVisible }) {
   const { conversationId } = useParams();
@@ -46,7 +41,7 @@ export default function Nav({ navVisible, setNavVisible }) {
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
   const { newConversation, searchPlaceholderConversation } = useConversation();
 
-  const { refreshConversations } = useConversations();
+  //const { refreshConversations } = useConversations();
   const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
 
   // const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
@@ -88,13 +83,16 @@ export default function Nav({ navVisible, setNavVisible }) {
   //   }
   // }, [searchQueryRes.data, searchQueryRes.isInitialLoading, onSearchSuccess]);
 
-  const clearSearch = () => {
-    setPageNumber(1);
-    refreshConversations();
-    if (conversationId == 'search') {
-      newConversation();
-    }
-  };
+  const conversationsQuery = useConversations();
+  const conversations = conversationsQuery.data ?? [];
+
+  // const clearSearch = () => {
+  //   setPageNumber(1);
+  //   refreshConversations();
+  //   if (conversationId == 'search') {
+  //     newConversation();
+  //   }
+  // };
 
   const toggleNavVisible = () => {
     setNavVisible((prev: boolean) => !prev);
@@ -147,13 +145,14 @@ export default function Nav({ navVisible, setNavVisible }) {
                     >
                       <NewChat
                         toggleNav={itemToggleNav}
-                        subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
+                        // subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                       />
-                      {/* <Conversations
+                      {/* TODO: FETCH CONVERSATIONS! */}
+                      <Conversations
                         conversations={conversations}
-                        moveToTop={moveToTop}
+                        //moveToTop={moveToTop}
                         toggleNav={itemToggleNav}
-                      /> */}
+                      />
                       <Spinner
                         className={cn(
                           'm-1 mx-auto mb-4 h-4 w-4',

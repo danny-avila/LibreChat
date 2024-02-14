@@ -1,15 +1,11 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 import type { ContextType } from '~/common';
-import { useServerStream, useConversation } from '~/hooks';
 import { Nav, MobileNav } from '~/components/Nav';
 import { useAuthStore } from '~/zustand';
 
 export default function Root() {
-  console.log('root');
-  const location = useLocation();
-  const { newConversation } = useConversation();
   const { isAuthenticated } = useAuthStore();
   const [navVisible, setNavVisible] = useState(() => {
     const savedNavVisible = localStorage.getItem('navVisible');

@@ -31,6 +31,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
 
   const [currEvent, setCurrEvent] = useRecoilState(store.eventMessageByIndex(index));
   const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
+  const [error, setError] = useRecoilState(store.errorMessageByIndex(index));
   const [latestMessage, setLatestMessage] = useRecoilState(store.latestMessageFamily(index));
 
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
@@ -71,6 +72,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
       isEdited = false,
     } = {},
   ) => {
+    setError('');
     const messages = getMessages() ?? [];
     const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
 
@@ -133,6 +135,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         setCurrEvent('');
         setShowStopButton(false);
         setIsSubmitting(false);
+        setError(e);
         console.log('[PROTO] ERROR: ', e);
         throw Error(e);
       },
@@ -167,7 +170,45 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         console.log(EVENT_TYPES.PROCESS_RESPONSE, ':', data);
         break;
       case EVENT_TYPES.MESSAGE:
-        console.log('message: ', data);
+        // console.log('message: ', data);
+        // const { body, is_user_created, parent_message_id, message_id } = data.event;
+        // const { conversation_id, is_error } = data;
+
+        // const msg = {
+        //   text: body,
+        //   sender: is_user_created ? user?.username : 'Vera',
+        //   isCreatedByUser: is_user_created,
+        //   parentMessageId: parent_message_id,
+        //   conversationId: conversation_id,
+        //   messageId: message_id,
+        //   error: is_error,
+        // };
+
+        // if (!is_user_created) {
+        //   const {
+        //     policy_message,
+        //     system_message,
+        //     selected_model = 'Sample Model',
+        //     selected_model_reason = 'Sample Reason: Lorem Ipsum Genuar Jaguar Lem Ip Su onpunm Delra gris',
+        //   } = data.event;
+
+        //   msg.model = selected_model;
+        //   msg.modelReason = selected_model_reason;
+        //   msg.policyMessage = policy_message;
+        //   msg.systemMessage = system_message;
+
+        //   setMessages([...currentMessages, msg]);
+        // } else {
+        //   const tempMsgIndex = currentMessages.findIndex((msg) => msg.messageId === 'tempMessage');
+        //   currentMessages[tempMsgIndex] = msg;
+
+        //   setMessages([...currentMessages]);
+        // }
+
+        // setLatestMessage(msg);
+        break;
+      case 'temp__user_message': {
+        console.log('user message: ', data);
         const { body, is_user_created, parent_message_id, message_id } = data.event;
         const { conversation_id, is_error } = data;
 
@@ -181,28 +222,48 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
           error: is_error,
         };
 
-        if (!is_user_created) {
-          const {
-            policy_message,
-            system_message,
-            selected_model = 'Sample Model',
-            selected_model_reason = 'Sample Reason: Lorem Ipsum Genuar Jaguar Lem Ip Su onpunm Delra gris',
-          } = data.event;
+        const tempMsgIndex = currentMessages.findIndex((msg) => msg.messageId === 'tempMessage');
+        currentMessages[tempMsgIndex] = msg;
 
-          msg.model = selected_model;
-          msg.modelReason = selected_model_reason;
-          msg.policyMessage = policy_message;
-          msg.systemMessage = system_message;
+        setMessages([...currentMessages]);
+        setLatestMessage(msg);
+        break;
+      }
+      case 'temp__bot_message': {
+        console.log('bot message: ', data);
+        const {
+          body,
+          is_user_created,
+          parent_message_id,
+          message_id,
+          policy_message,
+          system_message,
+          model_id,
+          selected_model_id,
+          reason,
+          is_cache_result,
+        } = data.event;
+        const { conversation_id, is_error } = data;
+        const msg = {
+          text: body,
+          sender: is_user_created ? user?.username : 'Vera',
+          isCreatedByUser: is_user_created,
+          parentMessageId: parent_message_id,
+          conversationId: conversation_id,
+          messageId: message_id,
+          error: is_error,
+          modelId: selected_model_id ?? model_id,
+          modelReason: reason,
+          policyMessage: policy_message,
+          systemMessage: system_message,
+          isCacheResult: is_cache_result,
+        };
 
-          setMessages([...currentMessages, msg]);
-        } else {
-          const tempMsgIndex = currentMessages.findIndex((msg) => msg.messageId === 'tempMessage');
-          currentMessages[tempMsgIndex] = msg;
-
-          setMessages([...currentMessages]);
-        }
+        setMessages([...currentMessages, msg]);
 
         setLatestMessage(msg);
+        break;
+      }
       default:
         console.log('uncaught event: ', data);
     }
@@ -317,6 +378,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     filesLoading,
     setFilesLoading,
 
+    error,
     currEvent,
     setCurrEvent,
     ask,

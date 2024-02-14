@@ -24,7 +24,7 @@ export default function GenerationButtons({
     handleContinue,
     handleRegenerate,
     handleStopGenerating,
-  } = useVeraChat();
+  } = useVeraChat(0, '');
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { continueSupported, regenerateEnabled } = useGenerations({
     endpoint,

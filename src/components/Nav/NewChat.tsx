@@ -6,9 +6,8 @@ import {
   useOriginNavigate,
   useLocalStorage,
 } from '~/hooks';
-import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import { NewChatIcon } from '~/components/svg';
-import { getEndpointField } from '~/utils';
+import VeraColorLogo from '../svg/VeraColorLogo';
 
 export default function NewChat({
   toggleNav,
@@ -21,12 +20,6 @@ export default function NewChat({
   const { newConversation } = useConversation();
   const navigate = useOriginNavigate();
   const localize = useLocalize();
-
-  const [convo] = useLocalStorage('lastConversationSetup', { endpoint: EModelEndpoint.openAI });
-  const { endpoint } = convo;
-  const iconURL = 'https://cdn4.iconfinder.com/data/icons/ionicons/512/icon-image-512.png';
-  const iconKey = 'unknown';
-  const Icon = icons[iconKey];
 
   const clickHandler = (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (event.button === 0 && !event.ctrlKey) {
@@ -48,16 +41,8 @@ export default function NewChat({
           className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium hover:bg-gray-900"
         >
           <div className="h-7 w-7 flex-shrink-0">
-            <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
-              {endpoint &&
-                Icon &&
-                Icon({
-                  size: 41,
-                  context: 'nav',
-                  className: 'h-2/3 w-2/3',
-                  endpoint: endpoint,
-                  iconURL: iconURL,
-                })}
+            <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full  text-black">
+              <VeraColorLogo />
             </div>
           </div>
           <div className="text-token-text-primary grow overflow-hidden text-ellipsis whitespace-nowrap text-sm">

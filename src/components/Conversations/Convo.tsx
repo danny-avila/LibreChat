@@ -2,7 +2,7 @@ import { useRecoilValue } from 'recoil';
 import { useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+//import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useConversations, useNavigateToConvo } from '~/hooks';
 import { useUpdateConversationMutation } from '~/data-provider';
@@ -13,6 +13,8 @@ import DeleteButton from './NewDeleteButton';
 import { getEndpointField } from '~/utils';
 import RenameButton from './RenameButton';
 import store from '~/store';
+import VeraColorIcon from '../svg/VeraColorLogo';
+import VeraWhiteLogo from '../svg/VeraWhiteLogo';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
@@ -25,7 +27,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const { navigateToConvo } = useNavigateToConvo();
   const { showToast } = useToastContext();
 
-  const { conversationId, title } = conversation;
+  const { conversationId, description: title } = conversation;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [titleInput, setTitleInput] = useState(title);
   const [renaming, setRenaming] = useState(false);
@@ -133,7 +135,9 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       {...aProps}
       title={title}
     >
-      {icon}
+      <div style={{ width: 18, height: 18 }}>
+        <VeraWhiteLogo />
+      </div>
       <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">
         {renaming === true ? (
           <input

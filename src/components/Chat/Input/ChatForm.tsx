@@ -22,6 +22,8 @@ export default function ChatForm({ index = 0 }) {
     setFilesLoading,
     showStopButton,
     setShowStopButton,
+    error,
+    handleRegenerate,
   } = useChatContext();
 
   const sendMessage = () => {
@@ -34,6 +36,15 @@ export default function ChatForm({ index = 0 }) {
   // TODO: change back to null after proto
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: 'used to be null' };
   const endpoint = endpointType ?? _endpoint;
+
+  // if (!!error) {
+  //   return (
+  //     <div className="text-center mb-8">
+  //       <p className="font-bold">There was an error processing your message. </p>{' '}
+  //       <p>Please try again.</p> <button onClick={handleRegenerate}>Regenerate Response</button>
+  //     </div>
+  //   );
+  // }
 
   return (
     <form

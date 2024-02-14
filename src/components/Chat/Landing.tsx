@@ -5,7 +5,7 @@ import { icons } from './Menus/Endpoints/Icons';
 import { useChatContext } from '~/Providers';
 import { getEndpointField } from '~/utils';
 import { useLocalize } from '~/hooks';
-import VeraColorIcon from '../svg/VeraColorIcon';
+import VeraColorIcon from '../svg/VeraColorLogo';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();

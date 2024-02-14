@@ -43,6 +43,11 @@ const eventMessageByIndex = atomFamily<string | null, string | number>({
   default: '',
 });
 
+const errorMessageByIndex = atomFamily<string | null, string | number>({
+  key: 'errorMessageByIndex',
+  default: '',
+});
+
 const submissionByIndex = atomFamily<TSubmission | null, string | number>({
   key: 'submissionByIndex',
   default: null,
@@ -59,6 +64,11 @@ const abortScrollFamily = atomFamily({
 });
 
 const isSubmittingFamily = atomFamily({
+  key: 'isSubmittingByIndex',
+  default: false,
+});
+
+const messageErrorFamily = atomFamily({
   key: 'isSubmittingByIndex',
   default: false,
 });
@@ -103,6 +113,7 @@ function useCreateConversationAtom(key: string | number) {
 }
 
 export default {
+  errorMessageByIndex,
   conversationByIndex,
   eventMessageByIndex,
   filesByIndex,

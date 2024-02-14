@@ -6,6 +6,8 @@ import { useScreenshot, useMessageScrolling, useMessageHandler, useVeraChat } fr
 import { CSSTransition } from 'react-transition-group';
 import MultiMessage from './MultiMessage';
 import ProcessingSpinner from './ProcessingSpinner';
+import VeraMessage from './VeraMessage';
+import VeraErrorMessage from './VeraErrorMessage';
 
 export default function MessagesView({
   messagesTree: _messagesTree,
@@ -16,7 +18,7 @@ export default function MessagesView({
 }) {
   const { screenshotTargetRef } = useScreenshot();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
-  const { isSubmitting, currEvent } = useVeraChat(0, '');
+  const { isSubmitting, currEvent, error } = useVeraChat(0, '');
   const {
     conversation,
     scrollableRef,
@@ -57,6 +59,8 @@ export default function MessagesView({
                   />
 
                   {isSubmitting && <ProcessingSpinner event={currEvent} />}
+
+                  {!!error && <VeraErrorMessage />}
                 </div>
               </>
             )}
