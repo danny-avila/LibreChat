@@ -196,23 +196,57 @@ export const listAssistants = (
   return request.get(endpoints.assistants(), { params });
 };
 
+/* Tools */
+
+export const getAvailableTools = (): Promise<s.TPlugin[]> => {
+  return request.get(`${endpoints.assistants()}/tools`);
+};
+
 /* Files */
 
 export const getFiles = (): Promise<f.TFile[]> => {
   return request.get(endpoints.files());
 };
 
+export const getFileConfig = (): Promise<f.FileConfig> => {
+  return request.get(`${endpoints.files()}/config`);
+};
+
 export const uploadImage = (data: FormData): Promise<f.TFileUpload> => {
   return request.postMultiPart(endpoints.images(), data);
+};
+
+export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
+  return request.postMultiPart(endpoints.files(), data);
 };
 
 export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
   return request.postMultiPart(endpoints.avatar(), data);
 };
 
-export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesResponse> =>
+export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise<a.Assistant> => {
+  return request.postMultiPart(endpoints.assistants(`avatar/${data.assistant_id}`), data.formData);
+};
+
+export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
+  const { assistant_id, ...body } = data;
+  return request.post(endpoints.assistants(`actions/${assistant_id}`), body);
+};
+
+export function getActions(): Promise<a.Action[]> {
+  return request.get(endpoints.assistants('actions'));
+}
+
+export function getAssistantDocs(): Promise<a.AssistantDocument[]> {
+  return request.get(endpoints.assistants('documents'));
+}
+
+export const deleteFiles = async (
+  files: f.BatchFile[],
+  assistant_id?: string,
+): Promise<f.DeleteFilesResponse> =>
   request.deleteWithOptions(endpoints.files(), {
-    data: { files },
+    data: { files, assistant_id },
   });
 
 /* conversations */
@@ -237,3 +271,6 @@ export const listConversationsByQuery = (
     return request.get(endpoints.conversations(pageNumber));
   }
 };
+
+export const deleteAction = async (assistant_id: string, action_id: string): Promise<void> =>
+  request.delete(endpoints.assistants(`actions/${assistant_id}/${action_id}`));

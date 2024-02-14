@@ -60,6 +60,7 @@ module.exports = {
           800: '#06373e',
           900: '#031f29',
         },
+        'brand-purple': '#ab68ff',
         'text-primary': 'var(--gray-800)',
         'text-secondary': 'var(--gray-600)',
         'text-tertiary': 'var(--gray-500)',
