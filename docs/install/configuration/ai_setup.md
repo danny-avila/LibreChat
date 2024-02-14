@@ -64,7 +64,7 @@ In the case where you have multiple endpoints setup, but want a specific one to 
 ```bash
 # .env file
 # No spaces between values
-ENDPOINTS=azureOpenAI,openAI,google 
+ENDPOINTS=azureOpenAI,openAI,assistants,google 
 ```
 
 Note that LibreChat will use your last selected endpoint when creating a new conversation. So if Azure OpenAI is first in the order, but you used or view an OpenAI conversation last, when you hit "New Chat," OpenAI will be selected with its default conversation settings.
@@ -138,6 +138,7 @@ ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
     - gpt-4-1106-preview
     - gpt-3.5-turbo-1106
 - Vision capability is not yet supported.
+- If you have previously set the [`ENDPOINTS` value in your .env file](./dotenv.md#endpoints), you will need to add the value `assistants`
 
 ---
 

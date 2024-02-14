@@ -13,7 +13,6 @@ import ToolItem from './ToolItem';
 function ToolSelectDialog({
   isOpen,
   setIsOpen,
-  assistant_id,
 }: TPluginStoreDialogProps & { assistant_id?: string }) {
   const localize = useLocalize();
   const { getValues, setValue } = useFormContext();
@@ -152,11 +151,9 @@ function ToolSelectDialog({
                 <Dialog.Title className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
                   {localize('com_nav_tool_dialog')}
                 </Dialog.Title>
-                {!assistant_id && (
-                  <Dialog.Description className="text-sm text-gray-500 dark:text-gray-300">
-                    {localize('com_nav_tool_dialog_description')}
-                  </Dialog.Description>
-                )}
+                <Dialog.Description className="text-sm text-gray-500 dark:text-gray-300">
+                  {localize('com_nav_tool_dialog_description')}
+                </Dialog.Description>
               </div>
             </div>
             <div>
