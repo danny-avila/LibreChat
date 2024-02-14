@@ -350,6 +350,35 @@ OPENAI_REVERSE_PROXY=
 OPENAI_FORCE_PROMPT=true
 ```
 
+### Assistants
+
+- The [Assistants API by OpenAI](https://platform.openai.com/docs/assistants/overview) has a dedicated endpoint.
+- To get your OpenAI API key, you need to:
+    - Go to [https://platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys)
+    - Create an account or log in with your existing one
+    - Add a payment method to your account (this is not free, sorry 😬)
+    - Copy your secret key (sk-...) to `ASSISTANTS_API_KEY`
+
+- Leave `ASSISTANTS_API_KEY=` blank to disable this endpoint
+- Set `ASSISTANTS_API_KEY=` to `user_provided` to allow users to provide their own API key from the WebUI
+
+- Customize the available models, separated by commas, **without spaces**.
+    - The first will be default.
+    - Leave it blank or commented out to use internal settings:
+        - The models list will be fetched from OpenAI but only Assistants-API-compatible models will be shown; at the time of writing, they are as shown in the example below.
+
+```bash
+ASSISTANTS_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
+```
+
+- If necessary, you can also set an alternate base URL instead of the official one with `ASSISTANTS_BASE_URL`, which is similar to the OpenAI counterpart `OPENAI_REVERSE_PROXY`
+
+```bash
+ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
+```
+
+- There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, and determining which assistants can be used, that are available via the [`librechat.yaml` custom config file](./custom_config.md#assistants-endpoint-object-structure).
+
 ### OpenRouter
 See [OpenRouter](./free_ai_apis.md#openrouter-preferred) for more info.
 

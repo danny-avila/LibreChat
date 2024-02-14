@@ -1,19 +1,21 @@
-import type { Option } from './types';
 import type { Assistant } from 'librechat-data-provider';
+import type { Option, ExtendedFile } from './types';
 
-export type TAssistantOption = string | (Option & Assistant);
+export type TAssistantOption =
+  | string
+  | (Option & Assistant & { files?: Array<[string, ExtendedFile]> });
 
 export type Actions = {
-  function: boolean;
   code_interpreter: boolean;
   retrieval: boolean;
 };
 
-export type CreationForm = {
+export type AssistantForm = {
   assistant: TAssistantOption;
   id: string;
   name: string | null;
   description: string | null;
   instructions: string | null;
   model: string;
+  functions: string[];
 } & Actions;

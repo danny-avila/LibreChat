@@ -1,6 +1,7 @@
+const crypto = require('crypto');
+const { Constants } = require('librechat-data-provider');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const PluginsClient = require('../PluginsClient');
-const crypto = require('crypto');
 
 jest.mock('~/lib/db/connectDb');
 jest.mock('~/models/Conversation', () => {
@@ -66,7 +67,7 @@ describe('PluginsClient', () => {
         TestAgent.setOptions(opts);
       }
       const conversationId = opts.conversationId || crypto.randomUUID();
-      const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
+      const parentMessageId = opts.parentMessageId || Constants.NO_PARENT;
       const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
       this.pastMessages = await TestAgent.loadHistory(
         conversationId,

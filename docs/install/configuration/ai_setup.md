@@ -91,9 +91,53 @@ To get your OpenAI API key, you need to:
 - Add a payment method to your account (this is not free, sorry 😬)
 - Copy your secret key (sk-...) and save it in ./.env as OPENAI_API_KEY
 
-Notes:
+**Notes:**
+
 - Selecting a vision model for messages with attachments is not necessary as it will be switched behind the scenes for you. If you didn't outright select a vision model, it will only be used for the vision request and you should still see the non-vision model you had selected after the request is successful
 - OpenAI Vision models allow for messages without attachments
+
+---
+
+## Assistants
+
+- The [Assistants API by OpenAI](https://platform.openai.com/docs/assistants/overview) has a dedicated endpoint.
+- The Assistants API enables the creation of AI assistants, offering functionalities like code interpreter, knowledge retrieval of files, and function execution.
+    - [Read here for an in-depth documentation](https://platform.openai.com/docs/assistants/overview) of the feature, how it works, what it's capable of.
+- As with the regular [OpenAI API](#openai), go to **[https://platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys)** to get a key.
+- You will need to set the following environment variable to your key or you can set it to `user_provided` for users to provide their own.
+
+```bash
+ASSISTANTS_API_KEY=your-key
+```
+
+- You can determine which models you would like to have available with `ASSISTANTS_MODELS`; otherwise, the models list fetched from OpenAI will be used (only Assistants API compatible models will be shown).
+
+```bash
+# without spaces
+ASSISTANTS_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
+```
+
+- If necessary, you can also set an alternate base URL instead of the official one with `ASSISTANTS_BASE_URL`, which is similar to the OpenAI counterpart `OPENAI_REVERSE_PROXY`
+
+```bash
+ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
+```
+
+- There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, that are available via the [`librechat.yaml` custom config file](./custom_config.md#assistants-endpoint-object-structure):
+    - Control the visibility and use of the builder interface for assistants. [More info](./custom_config.md#disablebuilder)
+    - Specify the polling interval in milliseconds for checking run updates or changes in assistant run states. [More info](./custom_config.md#pollintervalms)
+    - Set the timeout period in milliseconds for assistant runs. Helps manage system load by limiting total run operation time. [More info](./custom_config.md#timeoutMs)
+    - Specify which assistant Ids are supported or excluded [More info](./custom_config.md#supportedIds)
+
+**Notes:**
+
+- At the time of writing, only the following models support the [Retrieval](https://platform.openai.com/docs/assistants/tools/knowledge-retrieval) capability:
+    - gpt-3.5-turbo-0125
+    - gpt-4-0125-preview
+    - gpt-4-turbo-preview
+    - gpt-4-1106-preview
+    - gpt-3.5-turbo-1106
+- Vision capability is not yet supported.
 
 ---
 
@@ -334,6 +378,7 @@ Alternatively, you can set the [required variables](#required-variables) to expl
 
 
 **Notes:**
+
 - If using `AZURE_OPENAI_BASEURL`, you should not specify instance and deployment names instead of placeholders as the vision request will fail.
 - As of December 18th, 2023, Vision models seem to have degraded performance with Azure OpenAI when compared to [OpenAI](#openai)
 
@@ -403,6 +448,7 @@ To use Azure with the Plugins endpoint, make sure the following environment vari
 * `AZURE_API_KEY`: Your Azure API key must be set with an environment variable.
 
 **Important:**
+
 - If using `AZURE_OPENAI_BASEURL`, you should not specify instance and deployment names instead of placeholders as the plugin request will fail.
 
 ---

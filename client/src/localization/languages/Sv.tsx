@@ -134,7 +134,7 @@ export default {
   com_endpoint_prompt_prefix_placeholder:
     'Ange anpassade instruktioner eller kontext. Ignoreras om tom.', // Set custom instructions or context. Ignored if empty.
   com_endpoint_custom_name: 'Anpassat namn', // Custom Name
-  com_endpoint_prompt_prefix: 'Uppmaningsprefix', // Prompt Prefix
+  com_endpoint_prompt_prefix: 'Uppmaningsprefix', // Custom Instructions
   com_endpoint_temperature: 'Temperatur', // Temperature
   com_endpoint_default: 'standard', // default
   com_endpoint_top_p: 'Top P', // Top P

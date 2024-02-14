@@ -1,6 +1,16 @@
 const sharp = require('sharp');
 
-async function resizeImage(inputFilePath, resolution) {
+/**
+ * Resizes an image from a given buffer based on the specified resolution.
+ *
+ * @param {Buffer} inputBuffer - The buffer of the image to be resized.
+ * @param {'low' | 'high'} resolution - The resolution to resize the image to.
+ *                                      'low' for a maximum of 512x512 resolution,
+ *                                      'high' for a maximum of 768x2000 resolution.
+ * @returns {Promise<{buffer: Buffer, width: number, height: number}>} An object containing the resized image buffer and its dimensions.
+ * @throws Will throw an error if the resolution parameter is invalid.
+ */
+async function resizeImageBuffer(inputBuffer, resolution) {
   const maxLowRes = 512;
   const maxShortSideHighRes = 768;
   const maxLongSideHighRes = 2000;
@@ -12,7 +22,7 @@ async function resizeImage(inputFilePath, resolution) {
     resizeOptions.width = maxLowRes;
     resizeOptions.height = maxLowRes;
   } else if (resolution === 'high') {
-    const metadata = await sharp(inputFilePath).metadata();
+    const metadata = await sharp(inputBuffer).metadata();
     const isWidthShorter = metadata.width < metadata.height;
 
     if (isWidthShorter) {
@@ -43,10 +53,28 @@ async function resizeImage(inputFilePath, resolution) {
     throw new Error('Invalid resolution parameter');
   }
 
-  const resizedBuffer = await sharp(inputFilePath).rotate().resize(resizeOptions).toBuffer();
+  const resizedBuffer = await sharp(inputBuffer).rotate().resize(resizeOptions).toBuffer();
 
   const resizedMetadata = await sharp(resizedBuffer).metadata();
   return { buffer: resizedBuffer, width: resizedMetadata.width, height: resizedMetadata.height };
 }
 
-module.exports = { resizeImage };
+/**
+ * Resizes an image buffer to webp format as well as reduces 150 px width.
+ *
+ * @param {Buffer} inputBuffer - The buffer of the image to be resized.
+ * @returns {Promise<{ buffer: Buffer, width: number, height: number, bytes: number }>} An object containing the resized image buffer, its size and dimensions.
+ * @throws Will throw an error if the resolution parameter is invalid.
+ */
+async function resizeAndConvert(inputBuffer) {
+  const resizedBuffer = await sharp(inputBuffer).resize({ width: 150 }).toFormat('webp').toBuffer();
+  const resizedMetadata = await sharp(resizedBuffer).metadata();
+  return {
+    buffer: resizedBuffer,
+    width: resizedMetadata.width,
+    height: resizedMetadata.height,
+    bytes: Buffer.byteLength(resizedBuffer),
+  };
+}
+
+module.exports = { resizeImageBuffer, resizeAndConvert };
