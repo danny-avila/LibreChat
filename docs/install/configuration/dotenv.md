@@ -124,7 +124,7 @@ In this section you can configure the endpoints and models selection, their API 
 - `PROXY` is to be used by all endpoints (leave blank by default)
 
 ```bash
-ENDPOINTS=openAI,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
+ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
 PROXY=
 ```
 
@@ -376,6 +376,8 @@ ASSISTANTS_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gp
 ```bash
 ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
 ```
+
+- If you have previously set the [`ENDPOINTS` value in your .env file](#endpoints), you will need to add the value `assistants`
 
 - There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, and determining which assistants can be used, that are available via the [`librechat.yaml` custom config file](./custom_config.md#assistants-endpoint-object-structure).
 
