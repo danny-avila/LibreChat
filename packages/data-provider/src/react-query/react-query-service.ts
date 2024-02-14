@@ -136,6 +136,9 @@ export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknow
   return useMutation(() => dataService.revokeUserKey(name), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.name]);
+      if (name === s.EModelEndpoint.assistants) {
+        queryClient.invalidateQueries([QueryKeys.assistants]);
+      }
     },
   });
 };
@@ -145,6 +148,7 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
   return useMutation(() => dataService.revokeAllUserKeys(), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.name]);
+      queryClient.invalidateQueries([QueryKeys.assistants]);
     },
   });
 };

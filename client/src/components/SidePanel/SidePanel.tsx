@@ -1,6 +1,6 @@
 import throttle from 'lodash/throttle';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { useGetEndpointsQuery, useUserKeyQuery } from 'librechat-data-provider/react-query';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { EModelEndpoint, type TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
@@ -37,6 +37,7 @@ export default function SidePanel({
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
   const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(EModelEndpoint.assistants);
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
   const panelRef = useRef<ImperativePanelHandle>(null);
@@ -47,7 +48,9 @@ export default function SidePanel({
   const Links = useMemo(() => {
     const links: NavLink[] = [];
     const assistants = endpointsConfig?.[EModelEndpoint.assistants];
-    if (assistants && assistants.disableBuilder !== true) {
+    const userProvidesKey = !!assistants?.userProvide;
+    const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
+    if (assistants && assistants.disableBuilder !== true && keyProvided) {
       links.push({
         title: 'com_sidepanel_assistant_builder',
         label: '',
@@ -66,7 +69,7 @@ export default function SidePanel({
     });
 
     return links;
-  }, [endpointsConfig]);
+  }, [endpointsConfig, keyExpiry?.expiresAt]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
@@ -106,6 +109,10 @@ export default function SidePanel({
       panelRef.current?.expand();
     }
   };
+
+  const assistants = endpointsConfig?.[EModelEndpoint.assistants];
+  const userProvidesKey = !!assistants?.userProvide;
+  const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
 
   return (
     <>
@@ -170,7 +177,7 @@ export default function SidePanel({
               minSize === 0 ? 'min-w-0' : '',
             )}
           >
-            {endpointsConfig?.[EModelEndpoint.assistants] && (
+            {keyProvided && (
               <div
                 className={cn(
                   'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-black',
