@@ -971,24 +971,6 @@ button {
   --tw-bg-opacity: 1;
   background-color: rgba(199, 210, 254, var(--tw-bg-opacity));
 }
-.btn-secondary:focus {
-  --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
-    var(--tw-ring-offset-color);
-  --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width))
-    var(--tw-ring-color);
-  --tw-ring-offset-width: 2px;
-  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), 0 0 transparent;
-  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow),
-    var(--tw-shadow, 0 0 transparent);
-}
-.btn-secondary.focus-visible {
-  --tw-ring-opacity: 1;
-  --tw-ring-color: rgba(99, 102, 241, var(--tw-ring-opacity));
-}
-.btn-secondary:focus-visible {
-  --tw-ring-opacity: 1;
-  --tw-ring-color: rgba(99, 102, 241, var(--tw-ring-opacity));
-}
 .btn-neutral {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
@@ -1003,48 +985,17 @@ button {
   --tw-bg-opacity: 1;
   background-color: rgba(236, 236, 241, var(--tw-bg-opacity));
 }
-.btn-neutral:focus {
-  --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
-    var(--tw-ring-offset-color);
-  --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width))
-    var(--tw-ring-color);
-  --tw-ring-offset-width: 2px;
-  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), 0 0 transparent;
-  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow),
-    var(--tw-shadow, 0 0 transparent);
-}
-.btn-neutral.focus-visible {
-  --tw-ring-opacity: 1;
-  --tw-ring-color: rgba(99, 102, 241, var(--tw-ring-opacity));
-}
-.btn-neutral:focus-visible {
-  --tw-ring-opacity: 1;
-  --tw-ring-color: rgba(99, 102, 241, var(--tw-ring-opacity));
-}
 .dark .btn-neutral {
   --tw-border-opacity: 1;
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
-  background-color: rgba(23, 23, 23, var(--tw-bg-opacity));
-  border-color: rgba(86, 88, 105, var(--tw-border-opacity));
-  color: rgba(217, 217, 227, var(--tw-text-opacity));
+  background-color: transparent;
+  border-color: rgba(38, 38, 38, var(--tw-border-opacity));
+  color: rgba(255, 255, 240, var(--tw-text-opacity));
 }
 .dark .btn-neutral:hover {
   --tw-bg-opacity: 1;
-  background-color: rgba(64, 65, 79, var(--tw-bg-opacity));
-}
-.btn-dark {
-  --tw-border-opacity: 1;
-  --tw-bg-opacity: 1;
-  --tw-text-opacity: 1;
   background-color: rgba(23, 23, 23, var(--tw-bg-opacity));
-  border-color: rgba(86, 88, 105, var(--tw-border-opacity));
-  border-width: 1px;
-  color: rgba(255, 255, 255, var(--tw-text-opacity));
-}
-.btn-dark:hover {
-  --tw-bg-opacity: 1;
-  background-color: rgba(64, 65, 79, var(--tw-bg-opacity));
 }
 .btn-small {
   padding: 0.25rem 0.5rem;

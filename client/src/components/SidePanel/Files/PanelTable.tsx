@@ -88,7 +88,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                     <TableHead
                       key={header.id}
                       style={{ width: index === 0 ? '75%' : '25%' }}
-                      className="sticky top-0 h-auto border-b border-black/10 bg-white py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-black dark:text-gray-100"
+                      className="sticky top-0 h-auto border-b border-black/10 bg-white py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100"
                     >
                       {header.isPlaceholder
                         ? null

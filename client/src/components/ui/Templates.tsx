@@ -25,7 +25,7 @@ export default function Templates({ showTemplates }: { showTemplates: () => void
             </span>
             <button
               onClick={showTemplates}
-              className="btn btn-neutral justify-center gap-2 border-0 md:border"
+              className="btn justify-center gap-2 border-0 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 md:border"
             >
               <ChatIcon />
               {localize('com_ui_hide_prompt_templates')}
