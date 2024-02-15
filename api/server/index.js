@@ -11,6 +11,7 @@ const configureSocialLogins = require('./socialLogins');
 const { connectDb, indexSync } = require('~/lib/db');
 const AppService = require('./services/AppService');
 const noIndex = require('./middleware/noIndex');
+const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const routes = require('./routes');
@@ -53,7 +54,7 @@ const startServer = async () => {
   passport.use(await jwtLogin());
   passport.use(passportLogin());
 
-  if (ALLOW_SOCIAL_LOGIN?.toLowerCase() === 'true') {
+  if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     configureSocialLogins(app);
   }
 

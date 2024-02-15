@@ -1,4 +1,9 @@
-const { FileSources, EModelEndpoint, Constants } = require('librechat-data-provider');
+const {
+  FileSources,
+  EModelEndpoint,
+  Constants,
+  defaultSocialLogins,
+} = require('librechat-data-provider');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
@@ -35,10 +40,13 @@ const AppService = async (app) => {
     ]),
   });
 
+  const socialLogins = config?.registration?.socialLogins ?? defaultSocialLogins;
+
   if (!Object.keys(config).length) {
     app.locals = {
       availableTools,
       fileStrategy,
+      socialLogins,
       paths,
     };
 
@@ -52,13 +60,6 @@ const AppService = async (app) => {
   }
 
   handleRateLimits(config?.rateLimits);
-  const socialLogins = config?.registration?.socialLogins ?? [
-    'google',
-    'facebook',
-    'openid',
-    'github',
-    'discord',
-  ];
 
   const endpointLocals = {};
   if (config?.endpoints?.[EModelEndpoint.assistants]) {
