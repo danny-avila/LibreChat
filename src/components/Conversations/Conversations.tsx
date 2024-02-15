@@ -45,8 +45,8 @@ export default function Conversations({
               </div>
               {convos.map((convo, i) => (
                 <ConvoItem
-                  key={`${groupName}-${convo.conversationId}-${i}`}
-                  isLatestConvo={convo.conversationId === false}
+                  key={`${groupName}-${convo.conversation_id}-${i}`}
+                  isLatestConvo={convo.conversation_id === false}
                   conversation={convo}
                   retainView={moveToTop}
                   toggleNav={toggleNav}

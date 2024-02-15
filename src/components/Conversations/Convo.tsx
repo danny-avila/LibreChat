@@ -1,33 +1,30 @@
 import { useRecoilValue } from 'recoil';
 import { useState, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { EModelEndpoint } from 'librechat-data-provider';
 //import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
-import { useConversations, useNavigateToConvo } from '~/hooks';
+import { useConversations } from '~/hooks';
 import { useUpdateConversationMutation } from '~/data-provider';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from './NewDeleteButton';
-import { getEndpointField } from '~/utils';
 import RenameButton from './RenameButton';
 import store from '~/store';
-import VeraColorIcon from '../svg/VeraColorLogo';
 import VeraWhiteLogo from '../svg/VeraWhiteLogo';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
 export default function Conversation({ conversation, retainView, toggleNav, isLatestConvo }) {
+  const navigate = useNavigate();
   const { conversationId: currentConvoId } = useParams();
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
-  // const { data: endpointsConfig } = useGetEndpointsQuery();
   const { refreshConversations } = useConversations();
-  const { navigateToConvo } = useNavigateToConvo();
   const { showToast } = useToastContext();
 
-  const { conversationId, description: title } = conversation;
+  const { conversation_id: conversationId, description: title } = conversation;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [titleInput, setTitleInput] = useState(title);
   const [renaming, setRenaming] = useState(false);
@@ -45,21 +42,11 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
     toggleNav();
 
-    // set document title
-    document.title = title;
+    // // set document title
+    // document.title = title;
 
     // set conversation to the new conversation
-    if (conversation?.endpoint === EModelEndpoint.gptPlugins) {
-      let lastSelectedTools = [];
-      try {
-        lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') ?? [];
-      } catch (e) {
-        // console.error(e);
-      }
-      navigateToConvo({ ...conversation, tools: lastSelectedTools });
-    } else {
-      navigateToConvo(conversation);
-    }
+    navigate(`/c/${conversationId}`, { replace: true });
   };
 
   const renameHandler = (e: MouseEvent<HTMLButtonElement>) => {
@@ -95,17 +82,6 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       },
     );
   };
-
-  const icon = MinimalIcon({
-    size: 20,
-    iconURL: '', //getEndpointField(endpointsConfig, conversation.endpoint, 'iconURL'),
-    endpoint: conversation.endpoint,
-    endpointType: conversation.endpointType,
-    model: conversation.model,
-    error: false,
-    className: 'mr-0',
-    isCreatedByUser: false,
-  });
 
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Enter') {

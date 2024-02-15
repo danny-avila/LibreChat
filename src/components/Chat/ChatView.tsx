@@ -16,6 +16,7 @@ import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
 import store from '~/store';
+import { useConversation } from '~/services/queries/conversations';
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
@@ -24,6 +25,7 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   const fileMap = {};
 
+  const conversationQuery = useConversation(conversationId ?? '');
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
     select: (data) => {
       const dataTree = buildTree({ messages: data, fileMap });
@@ -31,6 +33,8 @@ function ChatView({ index = 0 }: { index?: number }) {
     },
     enabled: !!fileMap,
   });
+
+  console.log(conversationQuery.data, messagesTree);
 
   const chatHelpers = useVeraChat(index, conversationId);
 

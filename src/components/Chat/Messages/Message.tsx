@@ -77,8 +77,8 @@ export default function Message(props: TMessageProps) {
                       icon
                     )}
                   </div>
-                  <p className="text-sm">messageId: {messageId}</p>
-                  <p className="text-sm">parentMessageId: {parentMessageId}</p>
+                  {/* <p className="text-sm">messageId: {messageId}</p>
+                  <p className="text-sm">parentMessageId: {parentMessageId}</p> */}
                 </div>
               </div>
             </div>
