@@ -1,4 +1,4 @@
-const { FileSources } = require('librechat-data-provider');
+const { FileSources, defaultSocialLogins } = require('librechat-data-provider');
 
 const AppService = require('./AppService');
 
@@ -240,6 +240,7 @@ describe('AppService updating app.locals', () => {
     expect(app.locals.paths).toBeDefined();
     expect(app.locals.availableTools).toBeDefined();
     expect(app.locals.fileStrategy).toEqual(FileSources.local);
+    expect(app.locals.socialLogins).toEqual(defaultSocialLogins);
   });
 
   it('should update app.locals with values from loadCustomConfig', async () => {
