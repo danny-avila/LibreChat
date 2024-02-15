@@ -4,6 +4,8 @@ import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
 
+export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
+
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
 export const assistantEndpointSchema = z.object({
