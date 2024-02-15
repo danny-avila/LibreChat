@@ -31,7 +31,7 @@ version: '3.4'
 # # BUILD FROM LATEST IMAGE
 #   api:
 #     image: ghcr.io/danny-avila/librechat-dev:latest
-T 
+ 
 # # BUILD FROM LATEST IMAGE (NUMBERED RELEASE)
 #   api:
 #     image: ghcr.io/danny-avila/librechat:latest
