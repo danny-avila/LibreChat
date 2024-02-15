@@ -440,7 +440,7 @@ export default function AssistantPanel({
             )}
             {/* Submit Button */}
             <button
-              className="btn btn-primary focus:shadow-outline flex w-[90px] items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500"
+              className="btn btn-primary focus:shadow-outline flex w-[90px] items-center justify-center px-4 py-2 font-semibold text-white hover:bg-green-600 focus:border-green-500"
               type="submit"
             >
               {create.isLoading || update.isLoading ? (
