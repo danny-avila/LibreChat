@@ -23,6 +23,8 @@ export const conversations = (pageNumber: string) => `/api/convos?pageNumber=${p
 
 export const conversationById = (id: string) => `/api/convos/${id}`;
 
+export const genTitle = () => '/api/convos/gen_title';
+
 export const updateConversation = () => '/api/convos/update';
 
 export const deleteConversation = () => '/api/convos/clear';
@@ -37,6 +39,8 @@ export const presets = () => '/api/presets';
 export const deletePreset = () => '/api/presets/delete';
 
 export const aiEndpoints = () => '/api/endpoints';
+
+export const endpointsConfigOverride = () => '/api/endpoints/config/override';
 
 export const models = () => '/api/models';
 
@@ -63,3 +67,9 @@ export const plugins = () => '/api/plugins';
 export const config = () => '/api/config';
 
 export const assistants = (id?: string) => `/api/assistants${id ? `/${id}` : ''}`;
+
+export const files = () => '/api/files';
+
+export const images = () => `${files()}/images`;
+
+export const avatar = () => `${images()}/avatar`;

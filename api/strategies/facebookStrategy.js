@@ -1,40 +1,36 @@
 const FacebookStrategy = require('passport-facebook').Strategy;
-const User = require('../models/User');
-const config = require('../../config/loader');
-const domains = config.domains;
+const { createNewUser, handleExistingUser } = require('./process');
+const { logger } = require('~/config');
+const User = require('~/models/User');
 
 const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
     const email = profile.emails[0]?.value;
     const facebookId = profile.id;
-    const oldUser = await User.findOne({
-      email,
-    });
+    const oldUser = await User.findOne({ email });
     const ALLOW_SOCIAL_REGISTRATION =
       process.env.ALLOW_SOCIAL_REGISTRATION?.toLowerCase() === 'true';
+    const avatarUrl = profile.photos[0]?.value;
 
     if (oldUser) {
-      oldUser.avatar = profile.photo;
-      await oldUser.save();
+      await handleExistingUser(oldUser, avatarUrl);
       return cb(null, oldUser);
-    } else if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await new User({
-        provider: 'facebook',
-        facebookId,
-        username: profile.displayName,
-        email,
-        name: profile.name?.givenName + ' ' + profile.name?.familyName,
-        avatar: profile.photos[0]?.value,
-      }).save();
-
-      return cb(null, newUser);
     }
 
-    return cb(null, false, {
-      message: 'User not found.',
-    });
+    if (ALLOW_SOCIAL_REGISTRATION) {
+      const newUser = await createNewUser({
+        email,
+        avatarUrl,
+        provider: 'facebook',
+        providerKey: 'facebookId',
+        providerId: facebookId,
+        username: profile.displayName,
+        name: profile.name?.givenName + ' ' + profile.name?.familyName,
+      });
+      return cb(null, newUser);
+    }
   } catch (err) {
-    console.error(err);
+    logger.error('[facebookLogin]', err);
     return cb(err);
   }
 };
@@ -44,7 +40,7 @@ module.exports = () =>
     {
       clientID: process.env.FACEBOOK_CLIENT_ID,
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-      callbackURL: `${domains.server}${process.env.FACEBOOK_CALLBACK_URL}`,
+      callbackURL: `${process.env.DOMAIN_SERVER}${process.env.FACEBOOK_CALLBACK_URL}`,
       proxy: true,
       scope: ['public_profile'],
       profileFields: ['id', 'email', 'name'],

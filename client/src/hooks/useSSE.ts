@@ -1,42 +1,53 @@
-import { useEffect } from 'react';
+import { v4 } from 'uuid';
 import { useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import {
   /* @ts-ignore */
   SSE,
+  QueryKeys,
+  EndpointURLs,
   createPayload,
-  useGetUserBalance,
+  tPresetSchema,
   tMessageSchema,
-  tConversationSchema,
-  useGetStartupConfig,
   EModelEndpoint,
+  tConvoUpdateSchema,
   removeNullishValues,
 } from 'librechat-data-provider';
-import type { TResPlugin, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
+import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
+import type {
+  TResPlugin,
+  TMessage,
+  TConversation,
+  TSubmission,
+  ConversationData,
+} from 'librechat-data-provider';
+import { addConversation, deleteConversation, updateConversation } from '~/utils';
+import { useGenTitleMutation } from '~/data-provider';
 import { useAuthContext } from './AuthContext';
 import useChatHelpers from './useChatHelpers';
 import useSetStorage from './useSetStorage';
 
 type TResData = {
-  plugin: TResPlugin;
+  plugin?: TResPlugin;
   final?: boolean;
   initial?: boolean;
   requestMessage: TMessage;
   responseMessage: TMessage;
   conversation: TConversation;
+  conversationId?: string;
 };
 
 export default function useSSE(submission: TSubmission | null, index = 0) {
   const setStorage = useSetStorage();
+  const queryClient = useQueryClient();
+  const genTitle = useGenTitleMutation();
+
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
-  const {
-    addConvo,
-    setMessages,
-    setConversation,
-    setIsSubmitting,
-    resetLatestMessage,
-    invalidateConvos,
-  } = useChatHelpers(index, paramId);
+  const [completed, setCompleted] = useState(new Set());
+  const { setMessages, setConversation, setIsSubmitting, newConversation, resetLatestMessage } =
+    useChatHelpers(index, paramId);
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -63,7 +74,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           messageId: message?.overrideParentMessageId + '_',
           plugin: plugin ?? null,
           plugins: plugins ?? [],
-          submitting: true,
           // unfinished: true
         },
       ]);
@@ -78,7 +88,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           messageId: message?.messageId + '_',
           plugin: plugin ?? null,
           plugins: plugins ?? [],
-          submitting: true,
           // unfinished: true
         },
       ]);
@@ -89,35 +98,45 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     const { requestMessage, responseMessage, conversation } = data;
     const { messages, isRegenerate = false } = submission;
 
+    const convoUpdate = conversation ?? submission.conversation;
+
     // update the messages
     if (isRegenerate) {
-      setMessages([...messages, responseMessage]);
+      const messagesUpdate = [...messages, responseMessage].filter((msg) => msg);
+      setMessages(messagesUpdate);
     } else {
-      setMessages([...messages, requestMessage, responseMessage]);
+      const messagesUpdate = [...messages, requestMessage, responseMessage].filter((msg) => msg);
+      setMessages(messagesUpdate);
     }
-    setIsSubmitting(false);
+
+    const isNewConvo = conversation.conversationId !== submission.conversation.conversationId;
+    if (isNewConvo) {
+      queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
+        if (!convoData) {
+          return convoData;
+        }
+        return deleteConversation(convoData, submission.conversation.conversationId as string);
+      });
+    }
 
     // refresh title
-    if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (isNewConvo && requestMessage?.parentMessageId == '00000000-0000-0000-0000-000000000000') {
       setTimeout(() => {
-        invalidateConvos();
-      }, 2000);
-
-      // in case it takes too long.
-      setTimeout(() => {
-        invalidateConvos();
-      }, 5000);
+        genTitle.mutate({ conversationId: convoUpdate.conversationId as string });
+      }, 2500);
     }
 
     setConversation((prevState) => {
       const update = {
         ...prevState,
-        ...conversation,
+        ...convoUpdate,
       };
 
       setStorage(update);
       return update;
     });
+
+    setIsSubmitting(false);
   };
 
   const createdHandler = (data: TResData, submission: TSubmission) => {
@@ -130,7 +149,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           ...initialResponse,
           parentMessageId: message?.overrideParentMessageId ?? null,
           messageId: message?.overrideParentMessageId + '_',
-          submitting: true,
         },
       ]);
     } else {
@@ -141,7 +159,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           ...initialResponse,
           parentMessageId: message?.messageId,
           messageId: message?.messageId + '_',
-          submitting: true,
         },
       ]);
     }
@@ -150,23 +167,33 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     let update = {} as TConversation;
     setConversation((prevState) => {
-      update = tConversationSchema.parse({
+      update = tConvoUpdateSchema.parse({
         ...prevState,
         conversationId,
-      });
+      }) as TConversation;
 
       setStorage(update);
       return update;
     });
-    if (message.parentMessageId == '00000000-0000-0000-0000-000000000000') {
-      addConvo(update);
-    }
+
+    queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
+      if (!convoData) {
+        return convoData;
+      }
+      if (message.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+        return addConversation(convoData, update);
+      } else {
+        return updateConversation(convoData, update);
+      }
+    });
     resetLatestMessage();
   };
 
   const finalHandler = (data: TResData, submission: TSubmission) => {
     const { requestMessage, responseMessage, conversation } = data;
-    const { messages, isRegenerate = false } = submission;
+    const { messages, conversation: submissionConvo, isRegenerate = false } = submission;
+
+    setCompleted((prev) => new Set(prev.add(submission?.initialResponse?.messageId)));
 
     // update the messages
     if (isRegenerate) {
@@ -174,18 +201,22 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     } else {
       setMessages([...messages, requestMessage, responseMessage]);
     }
-    setIsSubmitting(false);
+
+    const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
+    if (isNewConvo) {
+      queryClient.setQueryData<ConversationData>([QueryKeys.allConversations], (convoData) => {
+        if (!convoData) {
+          return convoData;
+        }
+        return deleteConversation(convoData, submissionConvo.conversationId as string);
+      });
+    }
 
     // refresh title
-    if (requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (isNewConvo && requestMessage.parentMessageId == '00000000-0000-0000-0000-000000000000') {
       setTimeout(() => {
-        invalidateConvos();
-      }, 1500);
-
-      // in case it takes too long.
-      setTimeout(() => {
-        invalidateConvos();
-      }, 5000);
+        genTitle.mutate({ conversationId: conversation.conversationId as string });
+      }, 2500);
     }
 
     setConversation((prevState) => {
@@ -194,13 +225,68 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         ...conversation,
       };
 
+      // Revert to previous model if the model was auto-switched by backend due to message attachments
+      if (conversation.model?.includes('vision') && !submissionConvo.model?.includes('vision')) {
+        update.model = submissionConvo?.model;
+      }
+
       setStorage(update);
       return update;
     });
+
+    setIsSubmitting(false);
   };
 
-  const errorHandler = (data: TResData, submission: TSubmission) => {
-    const { messages, message } = submission;
+  const errorHandler = ({ data, submission }: { data?: TResData; submission: TSubmission }) => {
+    const { messages, message, initialResponse } = submission;
+
+    setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
+
+    const conversationId = message?.conversationId ?? submission?.conversationId;
+
+    const parseErrorResponse = (data: TResData | Partial<TMessage>) => {
+      const metadata = data['responseMessage'] ?? data;
+      const errorMessage = {
+        ...initialResponse,
+        ...metadata,
+        error: true,
+        parentMessageId: message?.messageId,
+      };
+
+      if (!errorMessage.messageId) {
+        errorMessage.messageId = v4();
+      }
+
+      return tMessageSchema.parse(errorMessage);
+    };
+
+    if (!data) {
+      const convoId = conversationId ?? v4();
+      const errorResponse = parseErrorResponse({
+        text: 'Error connecting to server',
+        ...submission,
+        conversationId: convoId,
+      });
+      setMessages([...messages, message, errorResponse]);
+      newConversation({
+        template: { conversationId: convoId },
+        preset: tPresetSchema.parse(submission?.conversation),
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!conversationId && !data.conversationId) {
+      const convoId = v4();
+      const errorResponse = parseErrorResponse(data);
+      setMessages([...messages, message, errorResponse]);
+      newConversation({
+        template: { conversationId: convoId },
+        preset: tPresetSchema.parse(submission?.conversation),
+      });
+      setIsSubmitting(false);
+      return;
+    }
 
     console.log('Error:', data);
     const errorResponse = tMessageSchema.parse({
@@ -208,16 +294,26 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       error: true,
       parentMessageId: message?.messageId,
     });
-    setIsSubmitting(false);
+
     setMessages([...messages, message, errorResponse]);
+    if (data.conversationId && paramId === 'new') {
+      newConversation({
+        template: { conversationId: data.conversationId },
+        preset: tPresetSchema.parse(submission?.conversation),
+      });
+    }
+
+    setIsSubmitting(false);
     return;
   };
 
   const abortConversation = (conversationId = '', submission: TSubmission) => {
     console.log(submission);
-    const { endpoint } = submission?.conversation || {};
+    const { endpoint: _endpoint, endpointType } = submission?.conversation || {};
+    const endpoint = endpointType ?? _endpoint;
+    let res: Response;
 
-    fetch(`/api/ask/${endpoint}/abort`, {
+    fetch(`${EndpointURLs[endpoint ?? '']}/abort`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -227,15 +323,58 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         abortKey: conversationId,
       }),
     })
-      .then((response) => response.json())
+      .then((response) => {
+        res = response;
+        // Check if the response is JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          return response.json();
+        } else if (response.status === 204) {
+          const responseMessage = {
+            ...submission.initialResponse,
+          };
+
+          return {
+            requestMessage: submission.message,
+            responseMessage: responseMessage,
+            conversation: submission.conversation,
+          };
+        } else {
+          throw new Error(
+            'Unexpected response from server; Status: ' + res.status + ' ' + res.statusText,
+          );
+        }
+      })
       .then((data) => {
         console.log('aborted', data);
+        if (res.status === 404) {
+          return setIsSubmitting(false);
+        }
         cancelHandler(data, submission);
       })
       .catch((error) => {
         console.error('Error aborting request');
         console.error(error);
-        // errorHandler({ text: 'Error aborting request' }, { ...submission, message });
+        const convoId = conversationId ?? v4();
+
+        const text =
+          submission.initialResponse?.text?.length > 45 ? submission.initialResponse?.text : '';
+
+        const errorMessage = {
+          ...submission,
+          ...submission.initialResponse,
+          text: text ?? error.message ?? 'Error cancelling request',
+          unfinished: !!text.length,
+          error: true,
+        };
+
+        const errorResponse = tMessageSchema.parse(errorMessage);
+        setMessages([...submission.messages, submission.message, errorResponse]);
+        newConversation({
+          template: { conversationId: convoId },
+          preset: tPresetSchema.parse(submission?.conversation),
+        });
+        setIsSubmitting(false);
       });
     return;
   };
@@ -272,6 +411,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       }
       if (data.created) {
         message = {
+          ...message,
           ...data.message,
           overrideParentMessageId: message?.overrideParentMessageId,
         };
@@ -288,23 +428,37 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
     events.onopen = () => console.log('connection is opened');
 
-    events.oncancel = () =>
-      abortConversation(message?.conversationId ?? submission?.conversationId, submission);
+    events.oncancel = () => {
+      const streamKey = submission?.initialResponse?.messageId;
+      if (completed.has(streamKey)) {
+        setIsSubmitting(false);
+        setCompleted((prev) => {
+          prev.delete(streamKey);
+          return new Set(prev);
+        });
+        return;
+      }
+
+      setCompleted((prev) => new Set(prev.add(streamKey)));
+      return abortConversation(message?.conversationId ?? submission?.conversationId, submission);
+    };
 
     events.onerror = function (e: MessageEvent) {
-      console.log('error in opening conn.');
+      console.log('error in server stream.');
       startupConfig?.checkBalance && balanceQuery.refetch();
       events.close();
 
-      let data = {} as TResData;
+      let data: TResData | undefined = undefined;
       try {
-        data = JSON.parse(e.data);
+        data = JSON.parse(e.data) as TResData;
       } catch (error) {
         console.error(error);
         console.log(e);
+        setIsSubmitting(false);
+        return;
       }
 
-      errorHandler(data, { ...submission, message });
+      errorHandler({ data, submission: { ...submission, message } });
     };
 
     setIsSubmitting(true);
@@ -318,7 +472,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         const e = new Event('cancel');
         events.dispatchEvent(e);
       }
-      setIsSubmitting(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);

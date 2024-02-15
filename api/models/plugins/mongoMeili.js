@@ -1,7 +1,9 @@
+const _ = require('lodash');
 const mongoose = require('mongoose');
 const { MeiliSearch } = require('meilisearch');
-const { cleanUpPrimaryKeyValue } = require('../../lib/utils/misc');
-const _ = require('lodash');
+const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
+const logger = require('~/config/meiliLogger');
+
 const searchEnabled = process.env.SEARCH && process.env.SEARCH.toLowerCase() === 'true';
 const meiliEnabled = process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY && searchEnabled;
 
@@ -64,8 +66,7 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
           offset += batchSize;
         }
 
-        console.log('indexMap', indexMap.size);
-        console.log('mongoMap', mongoMap.size);
+        logger.debug('[syncWithMeili]', { indexMap: indexMap.size, mongoMap: mongoMap.size });
 
         const updateOps = [];
 
@@ -80,7 +81,11 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
               (doc.text && doc.text !== mongoMap.get(id).text) ||
               (doc.title && doc.title !== mongoMap.get(id).title)
             ) {
-              console.log(`${id} had document discrepancy in ${doc.text ? 'text' : 'title'} field`);
+              logger.debug(
+                `[syncWithMeili] ${id} had document discrepancy in ${
+                  doc.text ? 'text' : 'title'
+                } field`,
+              );
               updateOps.push({
                 updateOne: { filter: update, update: { $set: { _meiliIndex: true } } },
               });
@@ -116,15 +121,14 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
 
         if (updateOps.length > 0) {
           await this.collection.bulkWrite(updateOps);
-          console.log(
-            `[Meilisearch] Finished indexing ${
+          logger.debug(
+            `[syncWithMeili] Finished indexing ${
               primaryKey === 'messageId' ? 'messages' : 'conversations'
             }`,
           );
         }
       } catch (error) {
-        console.log('[Meilisearch] Error adding document to Meili');
-        console.error(error);
+        logger.error('[syncWithMeili] Error adding document to Meili', error);
       }
     }
 
@@ -143,7 +147,7 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
         const query = {};
         // query[primaryKey] = { $in: _.map(data.hits, primaryKey) };
         query[primaryKey] = _.map(data.hits, (hit) => cleanUpPrimaryKeyValue(hit[primaryKey]));
-        // console.log('query', query);
+        // logger.debug('query', query);
         const hitsFromMongoose = await this.find(
           query,
           _.reduce(
@@ -186,11 +190,11 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
     async addObjectToMeili() {
       const object = this.preprocessObjectForIndex();
       try {
-        // console.log('Adding document to Meili', object);
+        // logger.debug('Adding document to Meili', object);
         await index.addDocuments([object]);
       } catch (error) {
-        // console.log('Error adding document to Meili');
-        // console.error(error);
+        // logger.debug('Error adding document to Meili');
+        // logger.error(error);
       }
 
       await this.collection.updateMany({ _id: this._id }, { $set: { _meiliIndex: true } });
@@ -311,10 +315,10 @@ module.exports = function mongoMeili(schema, options) {
       return next();
     } catch (error) {
       if (meiliEnabled) {
-        console.log(
-          '[Meilisearch] There was an issue deleting conversation indexes upon deletion, next startup may be slow due to syncing',
+        logger.error(
+          '[MeiliMongooseModel.deleteMany] There was an issue deleting conversation indexes upon deletion, next startup may be slow due to syncing',
+          error,
         );
-        console.error(error);
       }
       return next();
     }
@@ -335,7 +339,11 @@ module.exports = function mongoMeili(schema, options) {
       try {
         meiliDoc = await client.index('convos').getDocument(doc.conversationId);
       } catch (error) {
-        console.log('[Meilisearch] Convo not found and will index', doc.conversationId);
+        logger.error(
+          '[MeiliMongooseModel.findOneAndUpdate] Convo not found in MeiliSearch and will index ' +
+            doc.conversationId,
+          error,
+        );
       }
     }
 

@@ -13,27 +13,35 @@ const tokenValues = {
   '16k': { prompt: 3, completion: 4 },
   'gpt-3.5-turbo-1106': { prompt: 1, completion: 1 },
   'gpt-4-1106': { prompt: 5, completion: 15 },
+  'gpt-3.5-turbo-0125': { prompt: 0.5, completion: 1.5 },
 };
 
 /**
  * Retrieves the key associated with a given model name.
  *
  * @param {string} model - The model name to match.
+ * @param {string} endpoint - The endpoint name to match.
  * @returns {string|undefined} The key corresponding to the model name, or undefined if no match is found.
  */
-const getValueKey = (model) => {
-  const modelName = matchModelName(model);
+const getValueKey = (model, endpoint) => {
+  const modelName = matchModelName(model, endpoint);
   if (!modelName) {
     return undefined;
   }
 
   if (modelName.includes('gpt-3.5-turbo-16k')) {
     return '16k';
+  } else if (modelName.includes('gpt-3.5-turbo-0125')) {
+    return 'gpt-3.5-turbo-0125';
   } else if (modelName.includes('gpt-3.5-turbo-1106')) {
     return 'gpt-3.5-turbo-1106';
   } else if (modelName.includes('gpt-3.5')) {
     return '4k';
   } else if (modelName.includes('gpt-4-1106')) {
+    return 'gpt-4-1106';
+  } else if (modelName.includes('gpt-4-0125')) {
+    return 'gpt-4-1106';
+  } else if (modelName.includes('gpt-4-turbo')) {
     return 'gpt-4-1106';
   } else if (modelName.includes('gpt-4-32k')) {
     return '32k';
@@ -52,9 +60,15 @@ const getValueKey = (model) => {
  * @param {string} [params.valueKey] - The key corresponding to the model name.
  * @param {string} [params.tokenType] - The type of token (e.g., 'prompt' or 'completion').
  * @param {string} [params.model] - The model name to derive the value key from if not provided.
+ * @param {string} [params.endpoint] - The endpoint name to derive the value key from if not provided.
+ * @param {EndpointTokenConfig} [params.endpointTokenConfig] - The token configuration for the endpoint.
  * @returns {number} The multiplier for the given parameters, or a default value if not found.
  */
-const getMultiplier = ({ valueKey, tokenType, model }) => {
+const getMultiplier = ({ valueKey, tokenType, model, endpoint, endpointTokenConfig }) => {
+  if (endpointTokenConfig) {
+    return endpointTokenConfig?.[model]?.[tokenType] ?? defaultRate;
+  }
+
   if (valueKey && tokenType) {
     return tokenValues[valueKey][tokenType] ?? defaultRate;
   }
@@ -63,7 +77,7 @@ const getMultiplier = ({ valueKey, tokenType, model }) => {
     return 1;
   }
 
-  valueKey = getValueKey(model);
+  valueKey = getValueKey(model, endpoint);
   if (!valueKey) {
     return defaultRate;
   }

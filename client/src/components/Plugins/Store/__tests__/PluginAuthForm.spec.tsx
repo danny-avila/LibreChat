@@ -39,6 +39,7 @@ describe('PluginAuthForm', () => {
       action: 'install',
       auth: {
         key: '1234567890',
+        // file deepcode ignore HardcodedNonCryptoSecret/test: test
         secret: '1234567890',
       },
     });

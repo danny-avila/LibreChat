@@ -1,7 +1,9 @@
 import type { FC } from 'react';
-import { EModelEndpoint, useGetEndpointsQuery } from 'librechat-data-provider';
+import { Close } from '@radix-ui/react-popover';
+import { EModelEndpoint, alternateName } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import MenuSeparator from '../UI/MenuSeparator';
-import { alternateName } from '~/common';
+import { getEndpointField } from '~/utils';
 import MenuItem from './MenuItem';
 
 const EndpointItems: FC<{
@@ -18,20 +20,26 @@ const EndpointItems: FC<{
           } else if (!endpointsConfig?.[endpoint]) {
             return null;
           }
-          const userProvidesKey = endpointsConfig?.[endpoint]?.userProvide;
+          const userProvidesKey: boolean | null | undefined = getEndpointField(
+            endpointsConfig,
+            endpoint,
+            'userProvide',
+          );
           return (
-            <div key={`endpoint-${endpoint}`}>
-              <MenuItem
-                key={`endpoint-item-${endpoint}`}
-                title={alternateName[endpoint] || endpoint}
-                value={endpoint}
-                selected={selected === endpoint}
-                data-testid={`endpoint-item-${endpoint}`}
-                userProvidesKey={!!userProvidesKey}
-                // description="With DALL·E, browsing and analysis"
-              />
-              {i !== endpoints.length - 1 && <MenuSeparator />}
-            </div>
+            <Close asChild key={`endpoint-${endpoint}`}>
+              <div key={`endpoint-${endpoint}`}>
+                <MenuItem
+                  key={`endpoint-item-${endpoint}`}
+                  title={alternateName[endpoint] || endpoint}
+                  value={endpoint}
+                  selected={selected === endpoint}
+                  data-testid={`endpoint-item-${endpoint}`}
+                  userProvidesKey={!!userProvidesKey}
+                  // description="With DALL·E, browsing and analysis"
+                />
+                {i !== endpoints.length - 1 && <MenuSeparator />}
+              </div>
+            </Close>
           );
         })}
     </>

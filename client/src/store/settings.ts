@@ -50,6 +50,63 @@ const autoScroll = atom<boolean>({
   ] as const,
 });
 
+const modularChat = atom<boolean>({
+  key: 'modularChat',
+  default: localStorage.getItem('modularChat') === 'true',
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('modularChat');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('modularChat', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
+const LaTeXParsing = atom<boolean>({
+  key: 'LaTeXParsing',
+  default: true,
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('LaTeXParsing');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('LaTeXParsing', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
+const UsernameDisplay = atom<boolean>({
+  key: 'UsernameDisplay',
+  default: localStorage.getItem('UsernameDisplay') === 'true',
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('UsernameDisplay');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('UsernameDisplay', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 export default {
   abortScroll,
   optionSettings,
@@ -58,4 +115,7 @@ export default {
   showBingToneSetting,
   showPopover,
   autoScroll,
+  modularChat,
+  LaTeXParsing,
+  UsernameDisplay,
 };

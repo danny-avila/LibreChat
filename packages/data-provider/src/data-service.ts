@@ -1,7 +1,9 @@
+import * as f from './types/files';
+import * as q from './types/queries';
+import * as m from './types/mutations';
+import * as a from './types/assistants';
 import * as t from './types';
 import * as s from './schemas';
-/* TODO: fix dependency cycle */
-// eslint-disable-next-line import/no-cycle
 import request from './request';
 import * as endpoints from './api-endpoints';
 
@@ -51,6 +53,10 @@ export function updateConversation(
   return request.post(endpoints.updateConversation(), { arg: payload });
 }
 
+export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
+  return request.post(endpoints.genTitle(), payload);
+}
+
 export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown> {
   const { conversationId, messageId, text } = payload;
   if (!conversationId) {
@@ -73,15 +79,15 @@ export function getPresets(): Promise<s.TPreset[]> {
   return request.get(endpoints.presets());
 }
 
-export function createPreset(payload: s.TPreset): Promise<s.TPreset[]> {
+export function createPreset(payload: s.TPreset): Promise<s.TPreset> {
   return request.post(endpoints.presets(), payload);
 }
 
-export function updatePreset(payload: s.TPreset): Promise<s.TPreset[]> {
+export function updatePreset(payload: s.TPreset): Promise<s.TPreset> {
   return request.post(endpoints.presets(), payload);
 }
 
-export function deletePreset(arg: s.TPreset | object): Promise<s.TPreset[]> {
+export function deletePreset(arg: s.TPreset | undefined): Promise<m.PresetDeleteResponse> {
   return request.post(endpoints.deletePreset(), arg);
 }
 
@@ -104,14 +110,6 @@ export const searchConversations = async (
   return request.get(endpoints.search(q, pageNumber));
 };
 
-export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
-  return request.get(endpoints.aiEndpoints());
-};
-
-export const getModels = async (): Promise<t.TModelsConfig> => {
-  return request.get(endpoints.models());
-};
-
 export const updateTokenCount = (text: string) => {
   return request.post(endpoints.tokenizer(), { arg: text });
 };
@@ -127,8 +125,6 @@ export const logout = () => {
 export const register = (payload: t.TRegisterUser) => {
   return request.post(endpoints.register(), payload);
 };
-
-export const refreshToken = (retry?: boolean) => request.post(endpoints.refreshToken(retry));
 
 export const userKeyQuery = (name: string): Promise<t.TCheckUserKeyResponse> =>
   request.get(endpoints.userKeyQuery(name));
@@ -155,22 +151,38 @@ export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
   return request.post(endpoints.userPlugins(), payload);
 };
 
+/* Config */
+
 export const getStartupConfig = (): Promise<t.TStartupConfig> => {
   return request.get(endpoints.config());
 };
 
-export const createAssistant = (data: t.AssistantCreateParams): Promise<t.Assistant> => {
+export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
+  return request.get(endpoints.aiEndpoints());
+};
+
+export const getModels = async (): Promise<t.TModelsConfig> => {
+  return request.get(endpoints.models());
+};
+
+export const getEndpointsConfigOverride = (): Promise<unknown | boolean> => {
+  return request.get(endpoints.endpointsConfigOverride());
+};
+
+/* Assistants */
+
+export const createAssistant = (data: a.AssistantCreateParams): Promise<a.Assistant> => {
   return request.post(endpoints.assistants(), data);
 };
 
-export const getAssistantById = (assistant_id: string): Promise<t.Assistant> => {
+export const getAssistantById = (assistant_id: string): Promise<a.Assistant> => {
   return request.get(endpoints.assistants(assistant_id));
 };
 
 export const updateAssistant = (
   assistant_id: string,
-  data: t.AssistantUpdateParams,
-): Promise<t.Assistant> => {
+  data: a.AssistantUpdateParams,
+): Promise<a.Assistant> => {
   return request.patch(endpoints.assistants(assistant_id), data);
 };
 
@@ -179,7 +191,49 @@ export const deleteAssistant = (assistant_id: string): Promise<void> => {
 };
 
 export const listAssistants = (
-  params?: t.AssistantListParams,
-): Promise<t.AssistantListResponse> => {
+  params?: a.AssistantListParams,
+): Promise<a.AssistantListResponse> => {
   return request.get(endpoints.assistants(), { params });
+};
+
+/* Files */
+
+export const getFiles = (): Promise<f.TFile[]> => {
+  return request.get(endpoints.files());
+};
+
+export const uploadImage = (data: FormData): Promise<f.TFileUpload> => {
+  return request.postMultiPart(endpoints.images(), data);
+};
+
+export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
+  return request.postMultiPart(endpoints.avatar(), data);
+};
+
+export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesResponse> =>
+  request.deleteWithOptions(endpoints.files(), {
+    data: { files },
+  });
+
+/* conversations */
+
+export const listConversations = (
+  params?: q.ConversationListParams,
+): Promise<q.ConversationListResponse> => {
+  // Assuming params has a pageNumber property
+  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
+  return request.get(endpoints.conversations(pageNumber));
+};
+
+export const listConversationsByQuery = (
+  params?: q.ConversationListParams & { searchQuery?: string },
+): Promise<q.ConversationListResponse> => {
+  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
+  const searchQuery = params?.searchQuery || ''; // If no search query is provided, default to an empty string
+  // Update the endpoint to handle a search query
+  if (searchQuery !== '') {
+    return request.get(endpoints.search(searchQuery, pageNumber));
+  } else {
+    return request.get(endpoints.conversations(pageNumber));
+  }
 };

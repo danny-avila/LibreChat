@@ -1,19 +1,33 @@
 const { initializeFakeClient } = require('./FakeClient');
 
 jest.mock('../../../lib/db/connectDb');
-jest.mock('../../../models', () => {
-  return function () {
-    return {
-      save: jest.fn(),
-      deleteConvos: jest.fn(),
-      getConvo: jest.fn(),
-      getMessages: jest.fn(),
-      saveMessage: jest.fn(),
-      updateMessage: jest.fn(),
-      saveConvo: jest.fn(),
-    };
-  };
-});
+jest.mock('~/models', () => ({
+  User: jest.fn(),
+  Key: jest.fn(),
+  Session: jest.fn(),
+  Balance: jest.fn(),
+  Transaction: jest.fn(),
+  getMessages: jest.fn().mockResolvedValue([]),
+  saveMessage: jest.fn(),
+  updateMessage: jest.fn(),
+  deleteMessagesSince: jest.fn(),
+  deleteMessages: jest.fn(),
+  getConvoTitle: jest.fn(),
+  getConvo: jest.fn(),
+  saveConvo: jest.fn(),
+  deleteConvos: jest.fn(),
+  getPreset: jest.fn(),
+  getPresets: jest.fn(),
+  savePreset: jest.fn(),
+  deletePresets: jest.fn(),
+  findFileById: jest.fn(),
+  createFile: jest.fn(),
+  updateFile: jest.fn(),
+  deleteFile: jest.fn(),
+  deleteFiles: jest.fn(),
+  getFiles: jest.fn(),
+  updateFileUsage: jest.fn(),
+}));
 
 jest.mock('langchain/chat_models/openai', () => {
   return {
@@ -529,9 +543,9 @@ describe('BaseClient', () => {
       );
     });
 
-    test('setOptions is called with the correct arguments', async () => {
+    test('setOptions is called with the correct arguments only when replaceOptions is set to true', async () => {
       TestClient.setOptions = jest.fn();
-      const opts = { conversationId: '123', parentMessageId: '456' };
+      const opts = { conversationId: '123', parentMessageId: '456', replaceOptions: true };
       await TestClient.sendMessage('Hello, world!', opts);
       expect(TestClient.setOptions).toHaveBeenCalledWith(opts);
       TestClient.setOptions.mockClear();

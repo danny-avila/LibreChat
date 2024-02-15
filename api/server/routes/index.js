@@ -17,6 +17,7 @@ const user = require('./user');
 const config = require('./config');
 const payment = require('./payment');
 const assistants = require('./assistants');
+const files = require('./files');
 
 module.exports = {
   search,
@@ -38,4 +39,5 @@ module.exports = {
   config,
   payment,
   assistants,
+  files,
 };

@@ -1,31 +1,28 @@
-const { getUserPluginAuthValue } = require('../../../../server/services/PluginService');
-const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
 const { ZapierToolKit } = require('langchain/agents');
-const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
-const { ChatOpenAI } = require('langchain/chat_models/openai');
 const { Calculator } = require('langchain/tools/calculator');
 const { WebBrowser } = require('langchain/tools/webbrowser');
+const { SerpAPI, ZapierNLAWrapper } = require('langchain/tools');
+const { OpenAIEmbeddings } = require('langchain/embeddings/openai');
+const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const {
   availableTools,
-  CodeInterpreter,
-  AIPluginTool,
   GoogleSearchAPI,
   WolframAlphaAPI,
   StructuredWolfram,
-  HttpRequestTool,
   OpenAICreateImage,
   StableDiffusionAPI,
   DALLE3,
   StructuredSD,
-  AzureCognitiveSearch,
+  AzureAISearch,
   StructuredACS,
   E2BTools,
   CodeSherpa,
   CodeSherpaTools,
   CodeBrew,
 } = require('../');
-const { loadSpecs } = require('./loadSpecs');
 const { loadToolSuite } = require('./loadToolSuite');
+const { loadSpecs } = require('./loadSpecs');
+const { logger } = require('~/config');
 
 const getOpenAIKey = async (options, user) => {
   let openAIApiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
@@ -33,6 +30,14 @@ const getOpenAIKey = async (options, user) => {
   return openAIApiKey || (await getUserPluginAuthValue(user, 'OPENAI_API_KEY'));
 };
 
+/**
+ * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
+ * Tools without required authentication or with valid authentication are considered valid.
+ *
+ * @param {Object} user The user object for whom to validate tool access.
+ * @param {Array<string>} tools An array of tool identifiers to validate. Defaults to an empty array.
+ * @returns {Promise<Array<string>>} A promise that resolves to an array of valid tool identifiers.
+ */
 const validateTools = async (user, tools = []) => {
   try {
     const validToolsSet = new Set(tools);
@@ -40,16 +45,34 @@ const validateTools = async (user, tools = []) => {
       validToolsSet.has(tool.pluginKey),
     );
 
+    /**
+     * Validates the credentials for a given auth field or set of alternate auth fields for a tool.
+     * If valid admin or user authentication is found, the function returns early. Otherwise, it removes the tool from the set of valid tools.
+     *
+     * @param {string} authField The authentication field or fields (separated by "||" for alternates) to validate.
+     * @param {string} toolName The identifier of the tool being validated.
+     */
     const validateCredentials = async (authField, toolName) => {
-      const adminAuth = process.env[authField];
-      if (adminAuth && adminAuth.length > 0) {
-        return;
+      const fields = authField.split('||');
+      for (const field of fields) {
+        const adminAuth = process.env[field];
+        if (adminAuth && adminAuth.length > 0) {
+          return;
+        }
+
+        let userAuth = null;
+        try {
+          userAuth = await getUserPluginAuthValue(user, field);
+        } catch (err) {
+          if (field === fields[fields.length - 1] && !userAuth) {
+            throw err;
+          }
+        }
+        if (userAuth && userAuth.length > 0) {
+          return;
+        }
       }
 
-      const userAuth = await getUserPluginAuthValue(user, authField);
-      if (userAuth && userAuth.length > 0) {
-        return;
-      }
       validToolsSet.delete(toolName);
     };
 
@@ -65,24 +88,59 @@ const validateTools = async (user, tools = []) => {
 
     return Array.from(validToolsSet.values());
   } catch (err) {
-    console.log('There was a problem validating tools', err);
-    throw new Error(err);
+    logger.error('[validateTools] There was a problem validating tools', err);
+    throw new Error('There was a problem validating tools');
   }
 };
 
-const loadToolWithAuth = async (user, authFields, ToolConstructor, options = {}) => {
+/**
+ * Initializes a tool with authentication values for the given user, supporting alternate authentication fields.
+ * Authentication fields can have alternates separated by "||", and the first defined variable will be used.
+ *
+ * @param {string} userId The user ID for which the tool is being loaded.
+ * @param {Array<string>} authFields Array of strings representing the authentication fields. Supports alternate fields delimited by "||".
+ * @param {typeof import('langchain/tools').Tool} ToolConstructor The constructor function for the tool to be initialized.
+ * @param {Object} options Optional parameters to be passed to the tool constructor alongside authentication values.
+ * @returns {Function} An Async function that, when called, asynchronously initializes and returns an instance of the tool with authentication.
+ */
+const loadToolWithAuth = (userId, authFields, ToolConstructor, options = {}) => {
   return async function () {
     let authValues = {};
 
-    for (const authField of authFields) {
-      let authValue = process.env[authField];
-      if (!authValue) {
-        authValue = await getUserPluginAuthValue(user, authField);
+    /**
+     * Finds the first non-empty value for the given authentication field, supporting alternate fields.
+     * @param {string[]} fields Array of strings representing the authentication fields. Supports alternate fields delimited by "||".
+     * @returns {Promise<{ authField: string, authValue: string} | null>} An object containing the authentication field and value, or null if not found.
+     */
+    const findAuthValue = async (fields) => {
+      for (const field of fields) {
+        let value = process.env[field];
+        if (value) {
+          return { authField: field, authValue: value };
+        }
+        try {
+          value = await getUserPluginAuthValue(userId, field);
+        } catch (err) {
+          if (field === fields[fields.length - 1] && !value) {
+            throw err;
+          }
+        }
+        if (value) {
+          return { authField: field, authValue: value };
+        }
       }
-      authValues[authField] = authValue;
+      return null;
+    };
+
+    for (let authField of authFields) {
+      const fields = authField.split('||');
+      const result = await findAuthValue(fields);
+      if (result) {
+        authValues[result.authField] = result.authValue;
+      }
     }
 
-    return new ToolConstructor({ ...options, ...authValues });
+    return new ToolConstructor({ ...options, ...authValues, userId });
   };
 };
 
@@ -96,12 +154,11 @@ const loadTools = async ({
 }) => {
   const toolConstructors = {
     calculator: Calculator,
-    codeinterpreter: CodeInterpreter,
     google: GoogleSearchAPI,
     wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
     'dall-e': OpenAICreateImage,
     'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
-    'azure-cognitive-search': functions ? StructuredACS : AzureCognitiveSearch,
+    'azure-ai-search': functions ? StructuredACS : AzureAISearch,
     CodeBrew: CodeBrew,
   };
 
@@ -163,15 +220,6 @@ const loadTools = async ({
       const zapier = new ZapierNLAWrapper({ apiKey });
       return ZapierToolKit.fromZapierNLAWrapper(zapier);
     },
-    plugins: async () => {
-      return [
-        new HttpRequestTool(),
-        await AIPluginTool.fromPluginUrl(
-          'https://www.klarna.com/.well-known/ai-plugin.json',
-          new ChatOpenAI({ openAIApiKey: options.openAIApiKey, temperature: 0 }),
-        ),
-      ];
-    },
   };
 
   const requestedTools = {};
@@ -183,6 +231,8 @@ const loadTools = async ({
 
   const toolOptions = {
     serpapi: { location: 'Austin,Texas,United States', hl: 'en', gl: 'us' },
+    dalle: { fileStrategy: options.fileStrategy },
+    'dall-e': { fileStrategy: options.fileStrategy },
   };
 
   const toolAuthFields = {};
@@ -205,7 +255,7 @@ const loadTools = async ({
 
     if (toolConstructors[tool]) {
       const options = toolOptions[tool] || {};
-      const toolInstance = await loadToolWithAuth(
+      const toolInstance = loadToolWithAuth(
         user,
         toolAuthFields[tool],
         toolConstructors[tool],
@@ -261,6 +311,7 @@ const loadTools = async ({
 };
 
 module.exports = {
+  loadToolWithAuth,
   validateTools,
   loadTools,
 };

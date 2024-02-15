@@ -1,5 +1,5 @@
-const { execSync } = require('child_process');
 const path = require('path');
+const { execSync } = require('child_process');
 const { askQuestion, isDockerRunning, deleteNodeModules, silentExit } = require('./helpers');
 
 const config = {
@@ -63,23 +63,23 @@ async function validateDockerRunning() {
   await validateDockerRunning();
   const { docker, singleCompose, useSudo, skipGit, bun } = config;
   const sudo = useSudo ? 'sudo ' : '';
-  if (!skipGit) {
-    // Fetch latest repo
-    console.purple('Fetching the latest repo...');
-    execSync('git fetch origin', { stdio: 'inherit' });
+  // if (!skipGit) {
+  //   // Fetch latest repo
+  //   console.purple('Fetching the latest repo...');
+  //   execSync('git fetch origin', { stdio: 'inherit' });
 
-    // Switch to main branch
-    console.purple('Switching to main branch...');
-    execSync('git checkout main', { stdio: 'inherit' });
+  //   // Switch to main branch
+  //   console.purple('Switching to main branch...');
+  //   execSync('git checkout main', { stdio: 'inherit' });
 
-    // Git pull origin main
-    console.purple('Pulling the latest code from main...');
-    execSync('git pull origin main', { stdio: 'inherit' });
-  }
+  //   // Git pull origin main
+  //   console.purple('Pulling the latest code from main...');
+  //   execSync('git pull origin main', { stdio: 'inherit' });
+  // }
 
   if (docker) {
     console.purple('Removing previously made Docker container...');
-    const downCommand = `${sudo}docker-compose ${
+    const downCommand = `${sudo}docker compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
     }down`;
     console.orange(downCommand);
@@ -95,9 +95,9 @@ async function validateDockerRunning() {
     console.purple('Removing all unused dangling Docker images...');
     execSync(`${sudo}docker image prune -f`, { stdio: 'inherit' });
     console.purple('Building new LibreChat image...');
-    const buildCommand = `${sudo}docker-compose ${
+    const buildCommand = `${sudo}docker compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
-    }build`;
+    }build --no-cache`;
     console.orange(buildCommand);
     execSync(buildCommand, { stdio: 'inherit' });
   } else {
@@ -119,7 +119,7 @@ async function validateDockerRunning() {
 
   let startCommand = 'npm run backend';
   if (docker) {
-    startCommand = `${sudo}docker-compose ${
+    startCommand = `${sudo}docker compose ${
       singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
     }up`;
   }

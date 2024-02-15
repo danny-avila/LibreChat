@@ -15,7 +15,7 @@ type MenuItemProps = {
   textClassName?: string;
   disableHover?: boolean;
   // hoverContent?: string;
-};
+} & Record<string, unknown>;
 
 const MenuItem: FC<MenuItemProps> = ({
   title,
@@ -30,6 +30,7 @@ const MenuItem: FC<MenuItemProps> = ({
   disableHover = false,
   children,
   onClick,
+  ...rest
 }) => {
   return (
     <div
@@ -40,6 +41,7 @@ const MenuItem: FC<MenuItemProps> = ({
       )}
       tabIndex={-1}
       onClick={onClick}
+      {...rest}
     >
       <div className="flex grow items-center justify-between gap-2">
         <div>
@@ -81,7 +83,7 @@ const MenuItem: FC<MenuItemProps> = ({
               viewBox="0 0 24 24"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
-              className="icon-md block hidden gap-x-1 group-hover:flex "
+              className="icon-md invisible block gap-x-1 group-hover:visible group-hover:flex"
             >
               <path
                 fillRule="evenodd"

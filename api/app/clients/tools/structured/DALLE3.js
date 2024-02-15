@@ -1,26 +1,38 @@
-// From https://platform.openai.com/docs/guides/images/usage?context=node
-// To use this tool, you must pass in a configured OpenAIApi object.
-const fs = require('fs');
-const path = require('path');
 const { z } = require('zod');
+const path = require('path');
 const OpenAI = require('openai');
+const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const saveImageFromUrl = require('../saveImageFromUrl');
-const extractBaseURL = require('../../../../utils/extractBaseURL');
-const { DALLE3_SYSTEM_PROMPT, DALLE_REVERSE_PROXY, PROXY } = process.env;
+const { getImageBasename } = require('~/server/services/Files/images');
+const { processFileURL } = require('~/server/services/Files/process');
+const extractBaseURL = require('~/utils/extractBaseURL');
+const { logger } = require('~/config');
+
 class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
 
-    let apiKey = fields.DALLE_API_KEY || this.getApiKey();
+    this.userId = fields.userId;
+    this.fileStrategy = fields.fileStrategy;
+    let apiKey = fields.DALLE3_API_KEY ?? fields.DALLE_API_KEY ?? this.getApiKey();
     const config = { apiKey };
-    if (DALLE_REVERSE_PROXY) {
-      config.baseURL = extractBaseURL(DALLE_REVERSE_PROXY);
+    if (process.env.DALLE_REVERSE_PROXY) {
+      config.baseURL = extractBaseURL(process.env.DALLE_REVERSE_PROXY);
     }
 
-    if (PROXY) {
-      config.httpAgent = new HttpsProxyAgent(PROXY);
+    if (process.env.DALLE3_AZURE_API_VERSION && process.env.DALLE3_BASEURL) {
+      config.baseURL = process.env.DALLE3_BASEURL;
+      config.defaultQuery = { 'api-version': process.env.DALLE3_AZURE_API_VERSION };
+      config.defaultHeaders = {
+        'api-key': process.env.DALLE3_API_KEY,
+        'Content-Type': 'application/json',
+      };
+      config.apiKey = process.env.DALLE3_API_KEY;
+    }
+
+    if (process.env.PROXY) {
+      config.httpAgent = new HttpsProxyAgent(process.env.PROXY);
     }
 
     this.openai = new OpenAI(config);
@@ -30,7 +42,7 @@ class DALLE3 extends Tool {
     - Create only one image, without repeating or listing descriptions outside the "prompts" field.
     - Maintains the original intent of the description, with parameters for image style, quality, and size to tailor the output.`;
     this.description_for_model =
-      DALLE3_SYSTEM_PROMPT ??
+      process.env.DALLE3_SYSTEM_PROMPT ??
       `// Whenever a description of an image is given, generate prompts (following these rules), and use dalle to create the image. If the user does not ask for a specific number of images, default to creating 2 prompts to send to dalle that are written to be as diverse as possible. All prompts sent to dalle must abide by the following policies:
     // 1. Prompts must be in English. Translate to English if needed.
     // 2. One image per function call. Create only 1 image per request unless explicitly told to generate more than 1 image.
@@ -42,7 +54,8 @@ class DALLE3 extends Tool {
     // - Use "various" or "diverse" ONLY IF the description refers to groups of more than 3 people. Do not change the number of people requested in the original description.
     // - Don't alter memes, fictional character origins, or unseen people. Maintain the original prompt's intent and prioritize quality.
     // The prompt must intricately describe every part of the image in concrete, objective detail. THINK about what the end goal of the description is, and extrapolate that to what would make satisfying images.
-    // All descriptions sent to dalle should be a paragraph of text that is extremely descriptive and detailed. Each should be more than 3 sentences long.`;
+    // All descriptions sent to dalle should be a paragraph of text that is extremely descriptive and detailed. Each should be more than 3 sentences long.
+    // - The "vivid" style is HIGHLY preferred, but "natural" is also supported.`;
     this.schema = z.object({
       prompt: z
         .string()
@@ -67,7 +80,7 @@ class DALLE3 extends Tool {
   }
 
   getApiKey() {
-    const apiKey = process.env.DALLE_API_KEY || '';
+    const apiKey = process.env.DALLE3_API_KEY ?? process.env.DALLE_API_KEY ?? '';
     if (!apiKey) {
       throw new Error('Missing DALLE_API_KEY environment variable.');
     }
@@ -81,12 +94,8 @@ class DALLE3 extends Tool {
       .trim();
   }
 
-  getMarkdownImageUrl(imageName) {
-    const imageUrl = path
-      .join(this.relativeImageUrl, imageName)
-      .replace(/\\/g, '/')
-      .replace('public/', '');
-    return `![generated image](/${imageUrl})`;
+  wrapInMarkdown(imageUrl) {
+    return `![generated image](${imageUrl})`;
   }
 
   async _call(data) {
@@ -106,12 +115,12 @@ class DALLE3 extends Tool {
         n: 1,
       });
     } catch (error) {
-      return `Something went wrong when trying to generate the image. The DALL-E API may unavailable:
+      return `Something went wrong when trying to generate the image. The DALL-E API may be unavailable:
 Error Message: ${error.message}`;
     }
 
     if (!resp) {
-      return 'Something went wrong when trying to generate the image. The DALL-E API may unavailable';
+      return 'Something went wrong when trying to generate the image. The DALL-E API may be unavailable';
     }
 
     const theImageUrl = resp.data[0].url;
@@ -120,42 +129,34 @@ Error Message: ${error.message}`;
       return 'No image URL returned from OpenAI API. There may be a problem with the API or your configuration.';
     }
 
-    const regex = /img-[\w\d]+.png/;
-    const match = theImageUrl.match(regex);
-    let imageName = '1.png';
+    const imageBasename = getImageBasename(theImageUrl);
+    const imageExt = path.extname(imageBasename);
 
-    if (match) {
-      imageName = match[0];
-      console.log(imageName); // Output: img-lgCf7ppcbhqQrz6a5ear6FOb.png
-    } else {
-      console.log('No image name found in the string.');
-    }
+    const extension = imageExt.startsWith('.') ? imageExt.slice(1) : imageExt;
+    const imageName = `img-${uuidv4()}.${extension}`;
 
-    this.outputPath = path.resolve(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      '..',
-      '..',
-      'client',
-      'public',
-      'images',
-    );
-    const appRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', 'client');
-    this.relativeImageUrl = path.relative(appRoot, this.outputPath);
-
-    // Check if directory exists, if not create it
-    if (!fs.existsSync(this.outputPath)) {
-      fs.mkdirSync(this.outputPath, { recursive: true });
-    }
+    logger.debug('[DALL-E-3]', {
+      imageName,
+      imageBasename,
+      imageExt,
+      extension,
+      theImageUrl,
+      data: resp.data[0],
+    });
 
     try {
-      await saveImageFromUrl(theImageUrl, this.outputPath, imageName);
-      this.result = this.getMarkdownImageUrl(imageName);
+      const result = await processFileURL({
+        fileStrategy: this.fileStrategy,
+        userId: this.userId,
+        URL: theImageUrl,
+        fileName: imageName,
+        basePath: 'images',
+      });
+
+      this.result = this.wrapInMarkdown(result);
     } catch (error) {
-      console.error('Error while saving the image:', error);
-      this.result = theImageUrl;
+      logger.error('Error while saving the image:', error);
+      this.result = `Failed to save the image locally. ${error.message}`;
     }
 
     return this.result;

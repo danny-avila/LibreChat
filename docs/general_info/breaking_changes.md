@@ -1,8 +1,35 @@
-# ⚠️ **Breaking Changes** ⚠️
+---
+title: ⚠️ Breaking Changes
+description: This doc lists the breaking changes that affect the functionality and compatibility of LibreChat. You should read this doc before updating to a new version of LibreChat, and follow the instructions to resolve any issues.
+weight: -10
+---
+# ⚠️ Breaking Changes
 
 > **Note:**
 **If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
 Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
+
+## January 31th 2024
+- A new method to use the ChatGPT endpoint is now documented. It uses "Ninja"
+- For more info:
+    - [Ninja Deployment Guide](../features/ninja.md)
+    - [Ninja GitHub repo](https://github.com/gngpp/ninja/tree/main)
+
+## January 30th 2024
+- Since PandoraNext has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
+- For more info:
+    - [https://github.com/danny-avila/LibreChat/discussions/1663](https://github.com/danny-avila/LibreChat/discussions/1663#discussioncomment-8314025)
+    - [https://linux.do/t/topic/1051](https://linux.do/t/topic/1051)
+
+## v0.6.6
+
+- **DALL-E Update**: user-provided keys for DALL-E are now specific to each DALL-E version, i.e.: `DALLE3_API_KEY` and `DALLE2_API_KEY`
+- Note: `DALLE_API_KEY` will work for both DALL-E-3 and DALL-E-2 when the admin provides the credential; in other words, this may only affect your users if DALLE_API_KEY is not set in the `.env` file. In this case, they will simply have to "uninstall" the plugin, and provide their API key again.
+
+## v0.6.x
+
+- **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data` may be present in your root directory. This folder is no longer required and can be **safely deleted** to free up space.
+- **New Indexing Data Location**: The indexing data has been relocated. It will now be stored in a new folder named `meili_data_v1.x`, where `1.x` represents the version of Meilisearch. For instance, with the current Meilisearch version `1.5`, the folder will be `meili_data_v1.5`.
 
 ## v0.5.9
 
@@ -15,7 +42,7 @@ Certain changes in the updates may impact cookies, leading to unexpected behavio
 
 ## v0.5.8
 
-- It's now required to name manifest JSON files (for [ChatGPT Plugins](..\features\plugins\chatgpt_plugins_openapi.md)) in the `api\app\clients\tools\.well-known` directory after their `name_for_model` property should you add one yourself.
+- It's now required to name manifest JSON files (for [ChatGPT Plugins](../features/plugins/chatgpt_plugins_openapi.md)) in the `api\app\clients\tools\.well-known` directory after their `name_for_model` property should you add one yourself.
     - This was a recommended convention before, but is now required.
 
 ## v0.5.7
@@ -115,7 +142,7 @@ I had to change the environment variable from AZURE_OPENAI_API_KEY to AZURE_API_
 ---
 
 ### Docker
-- The docker-compose file had some change. Review the [new docker instructions](../install/docker_compose_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
+- The docker-compose file had some change. Review the [new docker instructions](../install/installation/docker_compose_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
 
 ---
 

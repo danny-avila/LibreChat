@@ -1,48 +1,41 @@
 import { v4 } from 'uuid';
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, parseCompactConvo } from 'librechat-data-provider';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import {
-  QueryKeys,
-  parseCompactConvo,
-  getResponseSender,
-  useGetMessagesByConvoId,
-} from 'librechat-data-provider';
+import { useGetMessagesByConvoId, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type {
   TMessage,
   TSubmission,
   TEndpointOption,
-  TConversation,
-  TGetConversationsResponse,
+  TEndpointsConfig,
 } from 'librechat-data-provider';
-import type { TAskFunction, ExtendedFile } from '~/common';
+import type { TAskFunction } from '~/common';
+import useSetFilesToDelete from './useSetFilesToDelete';
+import useGetSender from './Conversations/useGetSender';
 import { useAuthContext } from './AuthContext';
+import useUserKey from './Input/useUserKey';
 import useNewConvo from './useNewConvo';
-import useUserKey from './useUserKey';
 import store from '~/store';
 
 // this to be set somewhere else
-export default function useChatHelpers(index = 0, paramId) {
+export default function useChatHelpers(index = 0, paramId: string | undefined) {
+  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const [files, setFiles] = useRecoilState(store.filesByIndex(index));
+  const [showStopButton, setShowStopButton] = useState(true);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const setFilesToDelete = useSetFilesToDelete();
+  const getSender = useGetSender();
+
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthContext();
-  // const tempConvo = {
-  //   endpoint: null,
-  //   conversationId: null,
-  //   jailbreak: false,
-  //   examples: [],
-  //   tools: [],
-  // };
 
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
-  const { conversationId, endpoint } = conversation ?? {};
+  const { conversationId, endpoint, endpointType } = conversation ?? {};
 
   const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
-
-  // if (!queryParam && paramId && paramId !== 'new') {
-
-  // }
 
   /* Messages: here simply to fetch, don't export and use `getMessages()` instead */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -64,46 +57,6 @@ export default function useChatHelpers(index = 0, paramId) {
     // [conversationId, queryClient],
     [queryParam, queryClient],
   );
-
-  const addConvo = useCallback(
-    (convo: TConversation) => {
-      const convoData = queryClient.getQueryData<TGetConversationsResponse>([
-        QueryKeys.allConversations,
-        { pageNumber: '1', active: true },
-      ]) ?? { conversations: [] as TConversation[], pageNumber: '1', pages: 1, pageSize: 14 };
-
-      let { conversations: convos, pageSize = 14 } = convoData;
-      pageSize = Number(pageSize);
-      convos = convos.filter((c) => c.conversationId !== convo.conversationId);
-      convos = convos.length < pageSize ? convos : convos.slice(0, -1);
-
-      const conversations = [
-        {
-          ...convo,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        ...convos,
-      ];
-
-      queryClient.setQueryData<TGetConversationsResponse>(
-        [QueryKeys.allConversations, { pageNumber: '1', active: true }],
-        {
-          ...convoData,
-          conversations,
-        },
-      );
-    },
-    [queryClient],
-  );
-
-  // const getConvos = useCallback(() => {
-  //   return queryClient.getQueryData<TGetConversationsResponse>([QueryKeys.allConversations, { pageNumber: '1', active: true }]);
-  // }, [queryClient]);
-
-  const invalidateConvos = useCallback(() => {
-    queryClient.invalidateQueries([QueryKeys.allConversations, { active: true }]);
-  }, [queryClient]);
 
   const getMessages = useCallback(() => {
     return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
@@ -140,6 +93,7 @@ export default function useChatHelpers(index = 0, paramId) {
       isEdited = false,
     } = {},
   ) => {
+    setShowStopButton(true);
     if (!!isSubmitting || text === '') {
       return;
     }
@@ -163,13 +117,21 @@ export default function useChatHelpers(index = 0, paramId) {
     const isEditOrContinue = isEdited || isContinued;
 
     // set the endpoint option
-    const convo = parseCompactConvo(endpoint, conversation ?? {});
+    const convo = parseCompactConvo({
+      endpoint,
+      endpointType,
+      conversation: conversation ?? {},
+    });
+
+    const { modelDisplayLabel } = endpointsConfig?.[endpoint ?? ''] ?? {};
     const endpointOption = {
       ...convo,
       endpoint,
+      endpointType,
+      modelDisplayLabel,
       key: getExpiry(),
     } as TEndpointOption;
-    const responseSender = getResponseSender(endpointOption);
+    const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
     let currentMessages: TMessage[] | null = getMessages() ?? [];
 
@@ -195,21 +157,39 @@ export default function useChatHelpers(index = 0, paramId) {
       error: false,
     };
 
+    const parentMessage = currentMessages?.find(
+      (msg) => msg.messageId === latestMessage?.parentMessageId,
+    );
+    const reuseFiles = isRegenerate && parentMessage?.files;
+    if (reuseFiles && parentMessage.files?.length) {
+      currentMsg.files = parentMessage.files;
+      setFiles(new Map());
+      setFilesToDelete({});
+    } else if (files.size > 0) {
+      currentMsg.files = Array.from(files.values()).map((file) => ({
+        file_id: file.file_id,
+        filepath: file.filepath,
+        type: file.type || '', // Ensure type is not undefined
+        height: file.height,
+        width: file.width,
+      }));
+      setFiles(new Map());
+      setFilesToDelete({});
+    }
+
     // construct the placeholder response message
     const generation = editedText ?? latestMessage?.text ?? '';
-    const responseText = isEditOrContinue
-      ? generation
-      : '<span className="result-streaming">█</span>';
+    const responseText = isEditOrContinue ? generation : '';
 
     const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
     const initialResponse: TMessage = {
       sender: responseSender,
       text: responseText,
+      endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : fakeMessageId,
       messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
       conversationId,
       unfinished: false,
-      submitting: true,
       isCreatedByUser: false,
       isEdited: isEditOrContinue,
       error: false,
@@ -311,21 +291,16 @@ export default function useChatHelpers(index = 0, paramId) {
   );
   const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
-  const [autoScroll, setAutoScroll] = useRecoilState(store.autoScrollFamily(index));
   const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
-  const [textareaHeight, setTextareaHeight] = useRecoilState(store.textareaHeightFamily(index));
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
   const [showAgentSettings, setShowAgentSettings] = useRecoilState(
     store.showAgentSettingsFamily(index),
   );
 
-  const [files, setFiles] = useState<ExtendedFile[]>([]);
-
   return {
     newConversation,
     conversation,
     setConversation,
-    addConvo,
     // getConvos,
     // setConvos,
     isSubmitting,
@@ -347,8 +322,6 @@ export default function useChatHelpers(index = 0, paramId) {
     setShowPopover,
     abortScroll,
     setAbortScroll,
-    autoScroll,
-    setAutoScroll,
     showBingToneSetting,
     setShowBingToneSetting,
     preset,
@@ -357,10 +330,11 @@ export default function useChatHelpers(index = 0, paramId) {
     setOptionSettings,
     showAgentSettings,
     setShowAgentSettings,
-    textareaHeight,
-    setTextareaHeight,
     files,
     setFiles,
-    invalidateConvos,
+    filesLoading,
+    setFilesLoading,
+    showStopButton,
+    setShowStopButton,
   };
 }

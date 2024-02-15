@@ -1,35 +1,21 @@
-const { EModelEndpoint } = require('../routes/endpoints/schemas');
-const {
-  getOpenAIModels,
-  getChatGPTBrowserModels,
-  getAnthropicModels,
-} = require('../services/ModelService');
-
-const { useAzurePlugins } = require('../services/EndpointService').config;
-
-const fitlerAssistantModels = (str) => {
-  return /gpt-4|gpt-3\\.5/i.test(str) && !/vision|instruct/i.test(str);
-};
+const { CacheKeys } = require('librechat-data-provider');
+const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
+const { getLogStores } = require('~/cache');
 
 async function modelController(req, res) {
-  const openAI = await getOpenAIModels();
-  const azureOpenAI = await getOpenAIModels({ azure: true });
-  const gptPlugins = await getOpenAIModels({ azure: useAzurePlugins, plugins: true });
-  const chatGPTBrowser = getChatGPTBrowserModels();
-  const anthropic = getAnthropicModels();
+  const cache = getLogStores(CacheKeys.CONFIG_STORE);
+  const cachedModelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
+  if (cachedModelsConfig) {
+    res.send(cachedModelsConfig);
+    return;
+  }
+  const defaultModelsConfig = await loadDefaultModels(req);
+  const customModelsConfig = await loadConfigModels(req);
 
-  res.send(
-    JSON.stringify({
-      [EModelEndpoint.openAI]: openAI,
-      [EModelEndpoint.azureOpenAI]: azureOpenAI,
-      [EModelEndpoint.assistant]: openAI.filter(fitlerAssistantModels),
-      [EModelEndpoint.google]: ['chat-bison', 'text-bison', 'codechat-bison'],
-      [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
-      [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
-      [EModelEndpoint.gptPlugins]: gptPlugins,
-      [EModelEndpoint.anthropic]: anthropic,
-    }),
-  );
+  const modelConfig = { ...defaultModelsConfig, ...customModelsConfig };
+
+  await cache.set(CacheKeys.MODELS_CONFIG, modelConfig);
+  res.send(modelConfig);
 }
 
 module.exports = modelController;

@@ -54,7 +54,6 @@ describe('formatMessage', () => {
         _id: '6512cdfb92cbf69fea615331',
         messageId: 'b620bf73-c5c3-4a38-b724-76886aac24c4',
         __v: 0,
-        cancelled: false,
         conversationId: '5c23d24f-941f-4aab-85df-127b596c8aa5',
         createdAt: Date.now(),
         error: false,

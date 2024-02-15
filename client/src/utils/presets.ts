@@ -1,6 +1,5 @@
 import type { TPreset } from 'librechat-data-provider';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { alternateName } from '~/common';
 
 export const getPresetIcon = (preset: TPreset, Icon) => {
   return Icon({
@@ -13,44 +12,44 @@ export const getPresetIcon = (preset: TPreset, Icon) => {
   });
 };
 
-export const getPresetTitle = (preset: TPreset) => {
-  const { endpoint } = preset;
-  let _title = `${alternateName[endpoint ?? '']}`;
-  const { chatGptLabel, modelLabel, model, jailbreak, toneStyle } = preset;
+type TEndpoints = Array<string | EModelEndpoint>;
 
-  if (endpoint === EModelEndpoint.azureOpenAI || endpoint === EModelEndpoint.openAI) {
-    if (chatGptLabel) {
-      _title = chatGptLabel;
-    }
-    if (model) {
-      _title += `: ${model}`;
-    }
-  } else if (endpoint === EModelEndpoint.google) {
-    if (modelLabel) {
-      _title = modelLabel;
-    }
-    if (model) {
-      _title += `: ${model}`;
-    }
+export const getPresetTitle = (preset: TPreset) => {
+  const {
+    endpoint,
+    title: presetTitle,
+    model,
+    chatGptLabel,
+    modelLabel,
+    jailbreak,
+    toneStyle,
+  } = preset;
+  let title = '';
+  let modelInfo = model || '';
+  let label = '';
+
+  const usesChatGPTLabel: TEndpoints = [
+    EModelEndpoint.azureOpenAI,
+    EModelEndpoint.openAI,
+    EModelEndpoint.custom,
+  ];
+  const usesModelLabel: TEndpoints = [EModelEndpoint.google, EModelEndpoint.anthropic];
+
+  if (endpoint && usesChatGPTLabel.includes(endpoint)) {
+    label = chatGptLabel || '';
+  } else if (endpoint && usesModelLabel.includes(endpoint)) {
+    label = modelLabel || '';
   } else if (endpoint === EModelEndpoint.bingAI) {
-    if (jailbreak) {
-      _title = 'Sydney';
-    }
-    if (toneStyle) {
-      _title += `: ${toneStyle}`;
-    }
-  } else if (endpoint === EModelEndpoint.chatGPTBrowser) {
-    if (model) {
-      _title += `: ${model}`;
-    }
-  } else if (endpoint === EModelEndpoint.gptPlugins) {
-    if (model) {
-      _title += `: ${model}`;
-    }
-  } else if (endpoint === null) {
-    null;
-  } else {
-    null;
+    modelInfo = jailbreak ? 'Sydney' : modelInfo;
+    label = toneStyle ? `: ${toneStyle}` : '';
   }
-  return _title;
+
+  if (label && presetTitle && label.toLowerCase().includes(presetTitle.toLowerCase())) {
+    title = label + ': ';
+    label = '';
+  } else if (presetTitle && presetTitle.trim() !== 'New Chat') {
+    title = presetTitle + ': ';
+  }
+
+  return `${title}${modelInfo}${label ? ` (${label})` : ''}`.trim();
 };

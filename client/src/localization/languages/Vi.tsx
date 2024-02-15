@@ -29,7 +29,7 @@ export default {
   com_ui_of: 'của',
   com_ui_entries: 'mục',
   com_ui_pay_per_call:
-    'Tất cả các cuộc trò chuyện AI ở một nơi. Thanh toán theo cuộc gọi, không phải hàng tháng',
+    'Tất cả các cuộc hội thoại AI ở một nơi. Trả tiền cho mỗi cuộc gọi chứ không phải mỗi tháng',
   com_ui_enter: 'Nhập',
   com_ui_submit: 'Gửi',
   com_ui_upload_success: 'Tải tệp thành công',
@@ -134,7 +134,7 @@ export default {
     'Top-k thay đổi cách mô hình chọn mã thông báo để xuất. Top-k là 1 có nghĩa là mã thông báo được chọn là phổ biến nhất trong tất cả các mã thông báo trong bảng từ vựng của mô hình (còn được gọi là giải mã tham lam), trong khi top-k là 3 có nghĩa là mã thông báo tiếp theo được chọn từ giữa 3 mã thông báo phổ biến nhất (sử dụng nhiệt độ).',
   com_endpoint_google_maxoutputtokens:
     'Số mã thông báo tối đa có thể được tạo ra trong phản hồi. Chỉ định một giá trị thấp hơn cho các phản hồi ngắn hơn và một giá trị cao hơn cho các phản hồi dài hơn.',
-  com_endpoint_google_custom_name_placeholder: 'Đặt tên tùy chỉnh cho PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'Đặt tên tùy chỉnh cho Google',
   com_endpoint_prompt_prefix_placeholder:
     'Đặt hướng dẫn hoặc ngữ cảnh tùy chỉnh. Bỏ qua nếu trống.',
   com_endpoint_custom_name: 'Tên tùy chỉnh',
@@ -233,8 +233,6 @@ export default {
   com_nav_plugin_store: 'Cửa hàng Plugin',
   com_nav_plugin_search: 'Tìm kiếm plugin',
   com_nav_plugin_auth_error: 'Đã xảy ra lỗi khi xác thực plugin này. Vui lòng thử lại.',
-  com_nav_close_menu: 'Đóng thanh bên',
-  com_nav_open_menu: 'Mở thanh bên',
   com_nav_export_filename: 'Tên tệp',
   com_nav_export_filename_placeholder: 'Đặt tên cho tệp',
   com_nav_export_type: 'Loại',

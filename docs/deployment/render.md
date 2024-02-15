@@ -1,3 +1,8 @@
+---
+title: ⏹️ Render
+description: How to deploy LibreChat on Render
+weight: -4
+---
 # Render Deployment
 
 ## Note:
@@ -53,7 +58,7 @@ Also:
 | JWT_REFRESH_SECRET | secret |
 | JWT_SECRET | secret |
 | OPENAI_API_KEY | user_provided |
-| PALM_KEY | user_provided |
+| GOOGLE_KEY | user_provided |
 | PORT | 3080 |
 | SESSION_EXPIRY | (1000 * 60 * 60 * 24) * 7 |
 
@@ -77,8 +82,9 @@ Also:
 ## Create and Configure your Database
 
 The last thing you need is to create a MongoDB Atlas Database and get your connection string.
+You can also restrict access to your Mongodb to only the [static outgoing IP addresses](https://docs.render.com/static-outbound-ip-addresses) for your Render hosted web service.
 
-Follow the instructions in this document: [Online MongoDB Database](../install/mongodb.md)
+Follow the instructions in this document but add each of the outgoing IP addresses to the list instead of all hosts: [Online MongoDB Database](../install/configuration/mongodb.md)
 
 ## Complete the Environment Variables configuration 
 

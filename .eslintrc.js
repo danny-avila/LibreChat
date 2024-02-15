@@ -61,7 +61,7 @@ module.exports = {
     'no-restricted-syntax': 'off',
     'react/prop-types': ['off'],
     'react/display-name': ['off'],
-    'no-unused-vars': ['error', { varsIgnorePattern: '^_' }],
+    'no-unused-vars': ['error', { varsIgnorePattern: '^(skip|_)' }],
     quotes: ['error', 'single'],
   },
   overrides: [
@@ -70,7 +70,7 @@ module.exports = {
       rules: {
         'no-unused-vars': 'off', // off because it conflicts with '@typescript-eslint/no-unused-vars'
         'react/display-name': 'off',
-        '@typescript-eslint/no-unused-vars': 'warn',
+        '@typescript-eslint/no-unused-vars': ['warn', { varsIgnorePattern: '^(skip|_)' }],
       },
     },
     {

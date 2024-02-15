@@ -1,4 +1,5 @@
 const Transaction = require('./Transaction');
+const { logger } = require('~/config');
 
 /**
  * Creates up to two transactions to record the spending of tokens.
@@ -10,6 +11,7 @@ const Transaction = require('./Transaction');
  * @param {String} txData.conversationId - The ID of the conversation.
  * @param {String} txData.model - The model name.
  * @param {String} txData.context - The context in which the transaction is made.
+ * @param {String} [txData.endpointTokenConfig] - The current endpoint token config.
  * @param {String} [txData.valueKey] - The value key (optional).
  * @param {Object} tokenUsage - The number of tokens used.
  * @param {Number} tokenUsage.promptTokens - The number of prompt tokens used.
@@ -30,7 +32,7 @@ const spendTokens = async (txData, tokenUsage) => {
     }
 
     if (!completionTokens) {
-      this.debug && console.dir({ prompt, completion }, { depth: null });
+      logger.debug('[spendTokens] !completionTokens', { prompt, completion });
       return;
     }
 
@@ -40,9 +42,9 @@ const spendTokens = async (txData, tokenUsage) => {
       rawAmount: -completionTokens,
     });
 
-    this.debug && console.dir({ prompt, completion }, { depth: null });
+    logger.debug('[spendTokens] post-transaction', { prompt, completion });
   } catch (err) {
-    console.error(err);
+    logger.error('[spendTokens]', err);
   }
 };
 

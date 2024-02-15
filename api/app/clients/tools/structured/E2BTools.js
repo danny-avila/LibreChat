@@ -1,9 +1,10 @@
+const { z } = require('zod');
+const axios = require('axios');
 const { StructuredTool } = require('langchain/tools');
 const { PromptTemplate } = require('langchain/prompts');
-const { createExtractionChainFromZod } = require('./extractionChain');
 // const { ChatOpenAI } = require('langchain/chat_models/openai');
-const axios = require('axios');
-const { z } = require('zod');
+const { createExtractionChainFromZod } = require('./extractionChain');
+const { logger } = require('~/config');
 
 const envs = ['Nodejs', 'Go', 'Bash', 'Rust', 'Python3', 'PHP', 'Java', 'Perl', 'DotNET'];
 const env = z.enum(envs);
@@ -34,8 +35,8 @@ async function extractEnvFromCode(code, model) {
   // const chatModel = new ChatOpenAI({ openAIApiKey, modelName: 'gpt-4-0613', temperature: 0 });
   const chain = createExtractionChainFromZod(zodSchema, model, { prompt, verbose: true });
   const result = await chain.run(code);
-  console.log('<--------------- extractEnvFromCode --------------->');
-  console.log(result);
+  logger.debug('<--------------- extractEnvFromCode --------------->');
+  logger.debug(result);
   return result.env;
 }
 
@@ -69,7 +70,7 @@ class RunCommand extends StructuredTool {
   }
 
   async _call(data) {
-    console.log(`<--------------- Running ${data} --------------->`);
+    logger.debug(`<--------------- Running ${data} --------------->`);
     const response = await axios({
       url: `${this.url}/commands`,
       method: 'post',
@@ -96,7 +97,7 @@ class ReadFile extends StructuredTool {
   }
 
   async _call(data) {
-    console.log(`<--------------- Reading ${data} --------------->`);
+    logger.debug(`<--------------- Reading ${data} --------------->`);
     const response = await axios.get(`${this.url}/files`, { params: data, headers: this.headers });
     return response.data;
   }
@@ -121,12 +122,12 @@ class WriteFile extends StructuredTool {
 
   async _call(data) {
     let { env, path, content } = data;
-    console.log(`<--------------- environment ${env} typeof ${typeof env}--------------->`);
+    logger.debug(`<--------------- environment ${env} typeof ${typeof env}--------------->`);
     if (env && !envs.includes(env)) {
-      console.log(`<--------------- Invalid environment ${env} --------------->`);
+      logger.debug(`<--------------- Invalid environment ${env} --------------->`);
       env = await extractEnvFromCode(content, this.model);
     } else if (!env) {
-      console.log('<--------------- Undefined environment --------------->');
+      logger.debug('<--------------- Undefined environment --------------->');
       env = await extractEnvFromCode(content, this.model);
     }
 
@@ -139,7 +140,7 @@ class WriteFile extends StructuredTool {
         content,
       },
     };
-    console.log('Writing to file', JSON.stringify(payload));
+    logger.debug('Writing to file', JSON.stringify(payload));
 
     await axios({
       url: `${this.url}/files`,

@@ -1,17 +1,26 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { getResponseSender, ImageDetailCost, ImageDetail } = require('librechat-data-provider');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
-const { getModelMaxTokens, genAzureChatCompletion, extractBaseURL } = require('../../utils');
+const {
+  getModelMaxTokens,
+  genAzureChatCompletion,
+  extractBaseURL,
+  constructAzureURL,
+} = require('~/utils');
+const { encodeAndFormat, validateVisionModel } = require('~/server/services/Files/images');
 const { truncateText, formatMessage, CUT_OFF_PROMPT } = require('./prompts');
-const spendTokens = require('../../models/spendTokens');
 const { handleOpenAIErrors } = require('./tools/util');
-const { isEnabled } = require('../../server/utils');
+const spendTokens = require('~/models/spendTokens');
 const { createLLM, RunManager } = require('./llm');
 const ChatGPTClient = require('./ChatGPTClient');
+const { isEnabled } = require('~/server/utils');
+const { getFiles } = require('~/models/File');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
 const BaseClient = require('./BaseClient');
+const { logger } = require('~/config');
 
 // Cache to store Tiktoken instances
 const tokenizersCache = {};
@@ -24,15 +33,16 @@ class OpenAIClient extends BaseClient {
     this.ChatGPTClient = new ChatGPTClient();
     this.buildPrompt = this.ChatGPTClient.buildPrompt.bind(this);
     this.getCompletion = this.ChatGPTClient.getCompletion.bind(this);
-    this.sender = options.sender ?? 'ChatGPT';
     this.contextStrategy = options.contextStrategy
       ? options.contextStrategy.toLowerCase()
       : 'discard';
     this.shouldSummarize = this.contextStrategy === 'summarize';
+    /** @type {AzureOptions} */
     this.azure = options.azure || false;
     this.setOptions(options);
   }
 
+  // TODO: PluginsClient calls this 3x, unneeded
   setOptions(options) {
     if (this.options && !this.options.replaceOptions) {
       this.options.modelOptions = {
@@ -53,6 +63,7 @@ class OpenAIClient extends BaseClient {
     }
 
     const modelOptions = this.options.modelOptions || {};
+
     if (!this.modelOptions) {
       this.modelOptions = {
         ...modelOptions,
@@ -72,6 +83,8 @@ class OpenAIClient extends BaseClient {
       };
     }
 
+    this.checkVisionRequest(this.options.attachments);
+
     const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
     if (OPENROUTER_API_KEY && !this.azure) {
       this.apiKey = OPENROUTER_API_KEY;
@@ -79,20 +92,33 @@ class OpenAIClient extends BaseClient {
     }
 
     const { reverseProxyUrl: reverseProxy } = this.options;
+
+    if (
+      !this.useOpenRouter &&
+      reverseProxy &&
+      reverseProxy.includes('https://openrouter.ai/api/v1')
+    ) {
+      this.useOpenRouter = true;
+    }
+
     this.FORCE_PROMPT =
       isEnabled(OPENAI_FORCE_PROMPT) ||
       (reverseProxy && reverseProxy.includes('completions') && !reverseProxy.includes('chat'));
 
+    if (typeof this.options.forcePrompt === 'boolean') {
+      this.FORCE_PROMPT = this.options.forcePrompt;
+    }
+
     if (this.azure && process.env.AZURE_OPENAI_DEFAULT_MODEL) {
-      this.azureEndpoint = genAzureChatCompletion(this.azure, this.modelOptions.model);
+      this.azureEndpoint = genAzureChatCompletion(this.azure, this.modelOptions.model, this);
       this.modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
     } else if (this.azure) {
-      this.azureEndpoint = genAzureChatCompletion(this.azure, this.modelOptions.model);
+      this.azureEndpoint = genAzureChatCompletion(this.azure, this.modelOptions.model, this);
     }
 
     const { model } = this.modelOptions;
 
-    this.isChatCompletion = this.useOpenRouter || !!reverseProxy || model.includes('gpt-');
+    this.isChatCompletion = this.useOpenRouter || !!reverseProxy || model.includes('gpt');
     this.isChatGptModel = this.isChatCompletion;
     if (
       model.includes('text-davinci') ||
@@ -105,14 +131,20 @@ class OpenAIClient extends BaseClient {
     const { isChatGptModel } = this;
     this.isUnofficialChatGptModel =
       model.startsWith('text-chat') || model.startsWith('text-davinci-002-render');
-    this.maxContextTokens = getModelMaxTokens(model) ?? 4095; // 1 less than maximum
+
+    this.maxContextTokens =
+      getModelMaxTokens(
+        model,
+        this.options.endpointType ?? this.options.endpoint,
+        this.options.endpointTokenConfig,
+      ) ?? 4095; // 1 less than maximum
 
     if (this.shouldSummarize) {
       this.maxContextTokens = Math.floor(this.maxContextTokens / 2);
     }
 
     if (this.options.debug) {
-      console.debug('maxContextTokens', this.maxContextTokens);
+      logger.debug('[OpenAIClient] maxContextTokens', this.maxContextTokens);
     }
 
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
@@ -127,12 +159,22 @@ class OpenAIClient extends BaseClient {
       );
     }
 
+    this.sender =
+      this.options.sender ??
+      getResponseSender({
+        model: this.modelOptions.model,
+        endpoint: this.options.endpoint,
+        endpointType: this.options.endpointType,
+        chatGptLabel: this.options.chatGptLabel,
+        modelDisplayLabel: this.options.modelDisplayLabel,
+      });
+
     this.userLabel = this.options.userLabel || 'User';
     this.chatGptLabel = this.options.chatGptLabel || 'Assistant';
 
     this.setupTokens();
 
-    if (!this.modelOptions.stop) {
+    if (!this.modelOptions.stop && !this.isVisionModel) {
       const stopTokens = [this.startToken];
       if (this.endToken && this.endToken !== this.startToken) {
         stopTokens.push(this.endToken);
@@ -156,7 +198,7 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.azureEndpoint && this.options.debug) {
-      console.debug('Using Azure endpoint');
+      logger.debug('Using Azure endpoint');
     }
 
     if (this.useOpenRouter) {
@@ -164,6 +206,27 @@ class OpenAIClient extends BaseClient {
     }
 
     return this;
+  }
+
+  /**
+   *
+   * Checks if the model is a vision model based on request attachments and sets the appropriate options:
+   * - Sets `this.modelOptions.model` to `gpt-4-vision-preview` if the request is a vision request.
+   * - Sets `this.isVisionModel` to `true` if vision request.
+   * - Deletes `this.modelOptions.stop` if vision request.
+   * @param {Array<Promise<MongoFile[]> | MongoFile[]> | Record<string, MongoFile[]>} attachments
+   */
+  checkVisionRequest(attachments) {
+    this.isVisionModel = validateVisionModel(this.modelOptions.model);
+
+    if (attachments && !this.isVisionModel) {
+      this.modelOptions.model = 'gpt-4-vision-preview';
+      this.isVisionModel = true;
+    }
+
+    if (this.isVisionModel) {
+      delete this.modelOptions.stop;
+    }
   }
 
   setupTokens() {
@@ -235,8 +298,7 @@ class OpenAIClient extends BaseClient {
       // Reset count
       tokenizerCallsCount = 1;
     } catch (error) {
-      console.log('Free and reset encoders error');
-      console.error(error);
+      logger.error('[OpenAIClient] Free and reset encoders error', error);
     }
   }
 
@@ -244,14 +306,18 @@ class OpenAIClient extends BaseClient {
   resetTokenizersIfNecessary() {
     if (tokenizerCallsCount >= 25) {
       if (this.options.debug) {
-        console.debug('freeAndResetAllEncoders: reached 25 encodings, resetting...');
+        logger.debug('[OpenAIClient] freeAndResetAllEncoders: reached 25 encodings, resetting...');
       }
       this.constructor.freeAndResetAllEncoders();
     }
     tokenizerCallsCount++;
   }
 
-  // Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
+  /**
+   * Returns the token count of a given text. It also checks and resets the tokenizers if necessary.
+   * @param {string} text - The text to get the token count for.
+   * @returns {number} The token count of the given text.
+   */
   getTokenCount(text) {
     this.resetTokenizersIfNecessary();
     try {
@@ -264,10 +330,33 @@ class OpenAIClient extends BaseClient {
     }
   }
 
+  /**
+   * Calculate the token cost for an image based on its dimensions and detail level.
+   *
+   * @param {Object} image - The image object.
+   * @param {number} image.width - The width of the image.
+   * @param {number} image.height - The height of the image.
+   * @param {'low'|'high'|string|undefined} [image.detail] - The detail level ('low', 'high', or other).
+   * @returns {number} The calculated token cost.
+   */
+  calculateImageTokenCost({ width, height, detail }) {
+    if (detail === 'low') {
+      return ImageDetailCost.LOW;
+    }
+
+    // Calculate the number of 512px squares
+    const numSquares = Math.ceil(width / 512) * Math.ceil(height / 512);
+
+    // Default to high detail cost calculation
+    return numSquares * ImageDetailCost.HIGH + ImageDetailCost.ADDITIONAL;
+  }
+
   getSaveOptions() {
     return {
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
+      resendImages: this.options.resendImages,
+      imageDetail: this.options.imageDetail,
       ...this.modelOptions,
     };
   }
@@ -280,10 +369,74 @@ class OpenAIClient extends BaseClient {
     };
   }
 
+  /**
+   *
+   * @param {TMessage[]} _messages
+   * @returns {TMessage[]}
+   */
+  async addPreviousAttachments(_messages) {
+    if (!this.options.resendImages) {
+      return _messages;
+    }
+
+    /**
+     *
+     * @param {TMessage} message
+     */
+    const processMessage = async (message) => {
+      if (!this.message_file_map) {
+        /** @type {Record<string, MongoFile[]> */
+        this.message_file_map = {};
+      }
+
+      const fileIds = message.files.map((file) => file.file_id);
+      const files = await getFiles({
+        file_id: { $in: fileIds },
+      });
+
+      await this.addImageURLs(message, files);
+
+      this.message_file_map[message.messageId] = files;
+      return message;
+    };
+
+    const promises = [];
+
+    for (const message of _messages) {
+      if (!message.files) {
+        promises.push(message);
+        continue;
+      }
+
+      promises.push(processMessage(message));
+    }
+
+    const messages = await Promise.all(promises);
+
+    this.checkVisionRequest(this.message_file_map);
+    return messages;
+  }
+
+  /**
+   *
+   * Adds image URLs to the message object and returns the files
+   *
+   * @param {TMessage[]} messages
+   * @param {MongoFile[]} files
+   * @returns {Promise<MongoFile[]>}
+   */
+  async addImageURLs(message, attachments) {
+    const { files, image_urls } = await encodeAndFormat(this.options.req, attachments);
+
+    message.image_urls = image_urls;
+    return files;
+  }
+
   async buildMessages(
     messages,
     parentMessageId,
     { isChatCompletion = false, promptPrefix = null },
+    opts,
   ) {
     let orderedMessages = this.constructor.getMessagesForConversation({
       messages,
@@ -316,6 +469,27 @@ class OpenAIClient extends BaseClient {
       }
     }
 
+    if (this.options.attachments) {
+      const attachments = (await this.options.attachments).filter((file) =>
+        file.type.includes('image'),
+      );
+
+      if (this.message_file_map) {
+        this.message_file_map[orderedMessages[orderedMessages.length - 1].messageId] = attachments;
+      } else {
+        this.message_file_map = {
+          [orderedMessages[orderedMessages.length - 1].messageId]: attachments,
+        };
+      }
+
+      const files = await this.addImageURLs(
+        orderedMessages[orderedMessages.length - 1],
+        attachments,
+      );
+
+      this.options.attachments = files;
+    }
+
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
         message,
@@ -323,8 +497,23 @@ class OpenAIClient extends BaseClient {
         assistantName: this.options?.chatGptLabel,
       });
 
-      if (this.contextStrategy && !orderedMessages[i].tokenCount) {
+      const needsTokenCount = this.contextStrategy && !orderedMessages[i].tokenCount;
+
+      /* If tokens were never counted, or, is a Vision request and the message has files, count again */
+      if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
         orderedMessages[i].tokenCount = this.getTokenCountForMessage(formattedMessage);
+      }
+
+      /* If message has files, calculate image token cost */
+      if (this.message_file_map && this.message_file_map[message.messageId]) {
+        const attachments = this.message_file_map[message.messageId];
+        for (const file of attachments) {
+          orderedMessages[i].tokenCount += this.calculateImageTokenCost({
+            width: file.width,
+            height: file.height,
+            detail: this.options.imageDetail ?? ImageDetail.auto,
+          });
+        }
       }
 
       return formattedMessage;
@@ -350,8 +539,8 @@ class OpenAIClient extends BaseClient {
       result.tokenCountMap = tokenCountMap;
     }
 
-    if (promptTokens >= 0 && typeof this.options.getReqData === 'function') {
-      this.options.getReqData({ promptTokens });
+    if (promptTokens >= 0 && typeof opts?.getReqData === 'function') {
+      opts.getReqData({ promptTokens });
     }
 
     return result;
@@ -363,18 +552,13 @@ class OpenAIClient extends BaseClient {
     let streamResult = null;
     this.modelOptions.user = this.user;
     const invalidBaseUrl = this.completionsUrl && extractBaseURL(this.completionsUrl) === null;
-    const useOldMethod = !!(this.azure || invalidBaseUrl || !this.isChatCompletion);
+    const useOldMethod = !!(invalidBaseUrl || !this.isChatCompletion);
     if (typeof opts.onProgress === 'function' && useOldMethod) {
       await this.getCompletion(
         payload,
         (progressMessage) => {
           if (progressMessage === '[DONE]') {
             return;
-          }
-
-          if (this.options.debug) {
-            // console.debug('progressMessage');
-            // console.dir(progressMessage, { depth: null });
           }
 
           if (progressMessage.choices) {
@@ -396,9 +580,7 @@ class OpenAIClient extends BaseClient {
           if (!token) {
             return;
           }
-          if (this.options.debug) {
-            // console.debug(token);
-          }
+
           if (token === this.endToken) {
             return;
           }
@@ -407,7 +589,7 @@ class OpenAIClient extends BaseClient {
         },
         opts.abortController || new AbortController(),
       );
-    } else if (typeof opts.onProgress === 'function') {
+    } else if (typeof opts.onProgress === 'function' || this.options.useChatCompletion) {
       reply = await this.chatCompletion({
         payload,
         clientOptions: opts,
@@ -420,9 +602,9 @@ class OpenAIClient extends BaseClient {
         null,
         opts.abortController || new AbortController(),
       );
-      if (this.options.debug) {
-        console.debug(JSON.stringify(result));
-      }
+
+      logger.debug('[OpenAIClient] sendCompletion: result', result);
+
       if (this.isChatCompletion) {
         reply = result.choices[0].message.content;
       } else {
@@ -503,6 +685,19 @@ class OpenAIClient extends BaseClient {
     return llm;
   }
 
+  /**
+   * Generates a concise title for a conversation based on the user's input text and response.
+   * Uses either specified method or starts with the OpenAI `functions` method (using LangChain).
+   * If the `functions` method fails, it falls back to the `completion` method,
+   * which involves sending a chat completion request with specific instructions for title generation.
+   *
+   * @param {Object} params - The parameters for the conversation title generation.
+   * @param {string} params.text - The user's input.
+   * @param {string} [params.responseText=''] - The AI's immediate response to the user.
+   *
+   * @returns {Promise<string | 'New Chat'>} A promise that resolves to the generated conversation title.
+   *                            In case of failure, it will return the default title, "New Chat".
+   */
   async titleConvo({ text, responseText = '' }) {
     let title = 'New Chat';
     const convo = `||>User:
@@ -512,30 +707,25 @@ class OpenAIClient extends BaseClient {
 
     const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
+    const model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+
     const modelOptions = {
-      model: OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo',
+      // TODO: remove the gpt fallback and make it specific to endpoint
+      model,
       temperature: 0.2,
       presence_penalty: 0,
       frequency_penalty: 0,
       max_tokens: 16,
     };
 
-    try {
-      this.abortController = new AbortController();
-      const llm = this.initializeLLM({ ...modelOptions, context: 'title', tokenBuffer: 150 });
-      title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
-    } catch (e) {
-      if (e?.message?.toLowerCase()?.includes('abort')) {
-        this.options.debug && console.debug('Aborted title generation');
-        return;
-      }
-      console.log('There was an issue generating title with LangChain, trying the old method...');
-      this.options.debug && console.error(e.message, e);
-      modelOptions.model = OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+    const titleChatCompletion = async () => {
+      modelOptions.model = model;
+
       if (this.azure) {
         modelOptions.model = process.env.AZURE_OPENAI_DEFAULT_MODEL ?? modelOptions.model;
-        this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model);
+        this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
       }
+
       const instructionsPayload = [
         {
           role: 'system',
@@ -549,24 +739,59 @@ ${convo}
       ];
 
       try {
-        title = (await this.sendPayload(instructionsPayload, { modelOptions })).replaceAll('"', '');
+        title = (
+          await this.sendPayload(instructionsPayload, { modelOptions, useChatCompletion: true })
+        ).replaceAll('"', '');
       } catch (e) {
-        console.error(e);
-        console.log('There was another issue generating the title, see error above.');
+        logger.error(
+          '[OpenAIClient] There was an issue generating the title with the completion method',
+          e,
+        );
       }
+    };
+
+    if (this.options.titleMethod === 'completion') {
+      await titleChatCompletion();
+      logger.debug('[OpenAIClient] Convo Title: ' + title);
+      return title;
     }
 
-    console.log('CONVERSATION TITLE', title);
+    try {
+      this.abortController = new AbortController();
+      const llm = this.initializeLLM({ ...modelOptions, context: 'title', tokenBuffer: 150 });
+      title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
+    } catch (e) {
+      if (e?.message?.toLowerCase()?.includes('abort')) {
+        logger.debug('[OpenAIClient] Aborted title generation');
+        return;
+      }
+      logger.error(
+        '[OpenAIClient] There was an issue generating title with LangChain, trying completion method...',
+        e,
+      );
+
+      await titleChatCompletion();
+    }
+
+    logger.debug('[OpenAIClient] Convo Title: ' + title);
     return title;
   }
 
   async summarizeMessages({ messagesToRefine, remainingContextTokens }) {
-    this.options.debug && console.debug('Summarizing messages...');
+    logger.debug('[OpenAIClient] Summarizing messages...');
     let context = messagesToRefine;
     let prompt;
 
+    // TODO: remove the gpt fallback and make it specific to endpoint
     const { OPENAI_SUMMARY_MODEL = 'gpt-3.5-turbo' } = process.env ?? {};
-    const maxContextTokens = getModelMaxTokens(OPENAI_SUMMARY_MODEL) ?? 4095;
+    const model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
+    const maxContextTokens =
+      getModelMaxTokens(
+        model,
+        this.options.endpointType ?? this.options.endpoint,
+        this.options.endpointTokenConfig,
+      ) ?? 4095; // 1 less than maximum
+
     // 3 tokens for the assistant label, and 98 for the summarizer prompt (101)
     let promptBuffer = 101;
 
@@ -584,8 +809,9 @@ ${convo}
     }
 
     if (context.length === 0) {
-      this.options.debug &&
-        console.debug('Summary context is empty, using latest message within token limit');
+      logger.debug(
+        '[OpenAIClient] Summary context is empty, using latest message within token limit',
+      );
 
       promptBuffer = 32;
       const { text, ...latestMessage } = messagesToRefine[messagesToRefine.length - 1];
@@ -612,10 +838,10 @@ ${convo}
     // by recreating the summary prompt (single message) to avoid LangChain handling
 
     const initialPromptTokens = this.maxContextTokens - remainingContextTokens;
-    this.options.debug && console.debug(`initialPromptTokens: ${initialPromptTokens}`);
+    logger.debug('[OpenAIClient] initialPromptTokens', initialPromptTokens);
 
     const llm = this.initializeLLM({
-      model: OPENAI_SUMMARY_MODEL,
+      model,
       temperature: 0.2,
       context: 'summary',
       tokenBuffer: initialPromptTokens,
@@ -638,9 +864,9 @@ ${convo}
       const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
 
       if (this.options.debug) {
-        console.debug('summaryMessage:', summaryMessage);
-        console.debug(
-          `remainingContextTokens: ${remainingContextTokens}, after refining: ${
+        logger.debug('[OpenAIClient] summaryTokenCount', summaryTokenCount);
+        logger.debug(
+          `[OpenAIClient] Summarization complete: remainingContextTokens: ${remainingContextTokens}, after refining: ${
             remainingContextTokens - summaryTokenCount
           }`,
         );
@@ -649,7 +875,7 @@ ${convo}
       return { summaryMessage, summaryTokenCount };
     } catch (e) {
       if (e?.message?.toLowerCase()?.includes('abort')) {
-        this.options.debug && console.debug('Aborted summarization');
+        logger.debug('[OpenAIClient] Aborted summarization');
         const { run, runId } = this.runManager.getRunByConversationId(this.conversationId);
         if (run && run.error) {
           const { error } = run;
@@ -657,23 +883,20 @@ ${convo}
           throw new Error(error);
         }
       }
-      console.error('Error summarizing messages');
-      this.options.debug && console.error(e);
+      logger.error('[OpenAIClient] Error summarizing messages', e);
       return {};
     }
   }
 
   async recordTokenUsage({ promptTokens, completionTokens }) {
-    if (this.options.debug) {
-      console.debug('promptTokens', promptTokens);
-      console.debug('completionTokens', completionTokens);
-    }
+    logger.debug('[OpenAIClient] recordTokenUsage:', { promptTokens, completionTokens });
     await spendTokens(
       {
         user: this.user,
         model: this.modelOptions.model,
         context: 'message',
         conversationId: this.conversationId,
+        endpointTokenConfig: this.options.endpointTokenConfig,
       },
       { promptTokens, completionTokens },
     );
@@ -694,25 +917,31 @@ ${convo}
       if (!abortController) {
         abortController = new AbortController();
       }
-      const modelOptions = { ...this.modelOptions };
+
+      let modelOptions = { ...this.modelOptions };
+
       if (typeof onProgress === 'function') {
         modelOptions.stream = true;
       }
       if (this.isChatCompletion) {
         modelOptions.messages = payload;
       } else {
-        // TODO: unreachable code. Need to implement completions call for non-chat models
         modelOptions.prompt = payload;
       }
 
-      const { debug } = this.options;
-      const url = extractBaseURL(this.completionsUrl);
-      if (debug) {
-        console.debug('baseURL', url);
-        console.debug('modelOptions', modelOptions);
-      }
+      const baseURL = extractBaseURL(this.completionsUrl);
+      // let { messages: _msgsToLog, ...modelOptionsToLog } = modelOptions;
+      // if (modelOptionsToLog.messages) {
+      //   _msgsToLog = modelOptionsToLog.messages.map((msg) => {
+      //     let { content, ...rest } = msg;
+
+      //     if (content)
+      //     return { ...rest, content: truncateText(content) };
+      //   });
+      // }
+      logger.debug('[OpenAIClient] chatCompletion', { baseURL, modelOptions });
       const opts = {
-        baseURL: url,
+        baseURL,
       };
 
       if (this.useOpenRouter) {
@@ -730,12 +959,69 @@ ${convo}
         opts.httpAgent = new HttpsProxyAgent(this.options.proxy);
       }
 
+      if (this.isVisionModel) {
+        modelOptions.max_tokens = 4000;
+      }
+
+      if (this.azure || this.options.azure) {
+        // Azure does not accept `model` in the body, so we need to remove it.
+        delete modelOptions.model;
+
+        opts.baseURL = this.langchainProxy
+          ? constructAzureURL({
+            baseURL: this.langchainProxy,
+            azure: this.azure,
+          })
+          : this.azureEndpoint.split(/\/(chat|completion)/)[0];
+        opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
+        opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
+      }
+
+      if (process.env.OPENAI_ORGANIZATION) {
+        opts.organization = process.env.OPENAI_ORGANIZATION;
+      }
+
       let chatCompletion;
       const openai = new OpenAI({
         apiKey: this.apiKey,
         ...opts,
       });
 
+      /* hacky fixes for Mistral AI API:
+      - Re-orders system message to the top of the messages payload, as not allowed anywhere else
+      - If there is only one message and it's a system message, change the role to user
+      */
+      if (opts.baseURL.includes('https://api.mistral.ai/v1') && modelOptions.messages) {
+        const { messages } = modelOptions;
+
+        const systemMessageIndex = messages.findIndex((msg) => msg.role === 'system');
+
+        if (systemMessageIndex > 0) {
+          const [systemMessage] = messages.splice(systemMessageIndex, 1);
+          messages.unshift(systemMessage);
+        }
+
+        modelOptions.messages = messages;
+
+        if (messages.length === 1 && messages[0].role === 'system') {
+          modelOptions.messages[0].role = 'user';
+        }
+      }
+
+      if (this.options.addParams && typeof this.options.addParams === 'object') {
+        modelOptions = {
+          ...modelOptions,
+          ...this.options.addParams,
+        };
+      }
+
+      if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
+        this.options.dropParams.forEach((param) => {
+          delete modelOptions[param];
+        });
+      }
+
+      let UnexpectedRoleError = false;
       if (modelOptions.stream) {
         const stream = await openai.beta.chat.completions
           .stream({
@@ -747,6 +1033,12 @@ ${convo}
           })
           .on('error', (err) => {
             handleOpenAIErrors(err, errorCallback, 'stream');
+          })
+          .on('finalMessage', (message) => {
+            if (message?.role !== 'assistant') {
+              stream.messages.push({ role: 'assistant', content: intermediateReply });
+              UnexpectedRoleError = true;
+            }
           });
 
         for await (const chunk of stream) {
@@ -759,9 +1051,11 @@ ${convo}
           }
         }
 
-        chatCompletion = await stream.finalChatCompletion().catch((err) => {
-          handleOpenAIErrors(err, errorCallback, 'finalChatCompletion');
-        });
+        if (!UnexpectedRoleError) {
+          chatCompletion = await stream.finalChatCompletion().catch((err) => {
+            handleOpenAIErrors(err, errorCallback, 'finalChatCompletion');
+          });
+        }
       }
       // regular completion
       else {
@@ -774,7 +1068,11 @@ ${convo}
           });
       }
 
-      if (!chatCompletion && error) {
+      if (!chatCompletion && UnexpectedRoleError) {
+        throw new Error(
+          'OpenAI error: Invalid final message: OpenAI expects final message to include role=assistant',
+        );
+      } else if (!chatCompletion && error) {
         throw new Error(error);
       } else if (!chatCompletion) {
         throw new Error('Chat completion failed');
@@ -785,32 +1083,35 @@ ${convo}
         clientOptions.addMetadata({ finish_reason });
       }
 
+      logger.debug('[OpenAIClient] chatCompletion response', chatCompletion);
+
       return message.content;
     } catch (err) {
       if (
         err?.message?.includes('abort') ||
         (err instanceof OpenAI.APIError && err?.message?.includes('abort'))
       ) {
-        return '';
+        return intermediateReply;
       }
       if (
+        err?.message?.includes(
+          'OpenAI error: Invalid final message: OpenAI expects final message to include role=assistant',
+        ) ||
+        err?.message?.includes('The server had an error processing your request') ||
         err?.message?.includes('missing finish_reason') ||
+        err?.message?.includes('missing role') ||
         (err instanceof OpenAI.OpenAIError && err?.message?.includes('missing finish_reason'))
       ) {
-        await abortController.abortCompletion();
+        logger.error('[OpenAIClient] Known OpenAI error:', err);
         return intermediateReply;
       } else if (err instanceof OpenAI.APIError) {
-        console.log(err.name);
-        console.log(err.status);
-        console.log(err.headers);
         if (intermediateReply) {
           return intermediateReply;
         } else {
           throw err;
         }
       } else {
-        console.warn('[OpenAIClient.chatCompletion] Unhandled error type');
-        console.error(err);
+        logger.error('[OpenAIClient.chatCompletion] Unhandled error type', err);
         throw err;
       }
     }

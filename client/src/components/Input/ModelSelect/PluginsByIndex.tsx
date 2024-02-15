@@ -1,7 +1,8 @@
 import { useRecoilState } from 'recoil';
 import { useState, useEffect } from 'react';
 import { ChevronDownIcon } from 'lucide-react';
-import { useAvailablePluginsQuery, TPlugin } from 'librechat-data-provider';
+import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
+import type { TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import {
   SelectDropDown,
@@ -91,7 +92,7 @@ export default function PluginsByIndex({
         type="button"
         className={cn(
           cardStyle,
-          'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-3 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
+          'z-40 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
         )}
         onClick={() => setVisibility((prev) => !prev)}
       >
@@ -102,24 +103,26 @@ export default function PluginsByIndex({
           )}
         />
       </Button>
-      <Menu
-        value={conversation.model ?? ''}
-        setValue={setOption('model')}
-        availableValues={models}
-        showAbove={showAbove}
-        showLabel={false}
-        className={cn(cardStyle, 'min-w-60 z-40 flex w-64 sm:w-48 ', visible ? '' : 'hidden')}
-      />
-      <PluginsMenu
-        value={conversation.tools || []}
-        isSelected={checkPluginSelection}
-        setSelected={setTools}
-        availableValues={availableTools}
-        optionValueKey="pluginKey"
-        showAbove={false}
-        showLabel={false}
-        className={cn(cardStyle, 'min-w-60 z-50 w-64 sm:w-48 ', visible ? '' : 'hidden')}
-      />
+      {visible && (
+        <>
+          <Menu
+            value={conversation.model ?? ''}
+            setValue={setOption('model')}
+            availableValues={models}
+            showAbove={showAbove}
+            showLabel={false}
+          />
+          <PluginsMenu
+            value={conversation.tools || []}
+            isSelected={checkPluginSelection}
+            setSelected={setTools}
+            availableValues={availableTools}
+            optionValueKey="pluginKey"
+            showAbove={false}
+            showLabel={false}
+          />
+        </>
+      )}
     </>
   );
 }

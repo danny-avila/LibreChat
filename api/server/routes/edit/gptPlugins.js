@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { getResponseSender } = require('../endpoints/schemas');
-const { validateTools } = require('../../../app');
-const { initializeClient } = require('../endpoints/gptPlugins');
-const { saveMessage, getConvoTitle, getConvo } = require('../../../models');
-const { sendMessage, createOnProgress, formatSteps, formatAction } = require('../../utils');
+const { validateTools } = require('~/app');
+const { getResponseSender } = require('librechat-data-provider');
+const { saveMessage, getConvoTitle, getConvo } = require('~/models');
+const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
+const { sendMessage, createOnProgress, formatSteps, formatAction } = require('~/server/utils');
 const {
   handleAbort,
   createAbortController,
@@ -12,8 +12,11 @@ const {
   setHeaders,
   validateEndpoint,
   buildEndpointOption,
-} = require('../../middleware');
+  moderateText,
+} = require('~/server/middleware');
+const { logger } = require('~/config');
 
+router.use(moderateText);
 router.post('/abort', handleAbort());
 
 router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, res) => {
@@ -27,14 +30,20 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     parentMessageId = null,
     overrideParentMessageId = null,
   } = req.body;
-  console.log('edit log');
-  console.dir({ text, generation, isContinued, conversationId, endpointOption }, { depth: null });
+
+  logger.debug('[/edit/gptPlugins]', {
+    text,
+    generation,
+    isContinued,
+    conversationId,
+    ...endpointOption,
+  });
   let metadata;
   let userMessage;
   let promptTokens;
   let lastSavedTimestamp = 0;
   let saveDelay = 100;
-  const sender = getResponseSender(endpointOption);
+  const sender = getResponseSender({ ...endpointOption, model: endpointOption.modelOptions.model });
   const userMessageId = parentMessageId;
   const user = req.user.id;
 
@@ -81,7 +90,6 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
           text: partialText,
           model: endpointOption.modelOptions.model,
           unfinished: true,
-          cancelled: false,
           isEdited: true,
           error: false,
           user,
@@ -102,7 +110,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       saveMessage({ ...userMessage, user });
     }
     sendIntermediateMessage(res, { plugin });
-    // console.log('PLUGIN ACTION', formattedAction);
+    // logger.debug('PLUGIN ACTION', formattedAction);
   };
 
   const onChainEnd = (data) => {
@@ -111,7 +119,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
     plugin.loading = false;
     saveMessage({ ...userMessage, user });
     sendIntermediateMessage(res, { plugin });
-    // console.log('CHAIN END', plugin.outputs);
+    // logger.debug('CHAIN END', plugin.outputs);
   };
 
   const getAbortData = () => ({
@@ -162,8 +170,7 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
       response = { ...response, ...metadata };
     }
 
-    console.log('CLIENT RESPONSE');
-    console.dir(response, { depth: null });
+    logger.debug('[/edit/gptPlugins] CLIENT RESPONSE', response);
     response.plugin = { ...plugin, loading: false };
     await saveMessage({ ...response, user });
 

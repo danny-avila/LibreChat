@@ -28,15 +28,22 @@ export default function OptionsPopover({
     popoverRef,
     () => closePopover(),
     ['dialog-template-content', 'shadcn-button', 'advanced-settings'],
-    (target) => {
-      const tagName = (target as Element)?.tagName;
+    (_target) => {
+      const target = _target as Element;
+      if (
+        target?.id === 'presets-button' ||
+        (target?.parentNode instanceof Element && target.parentNode.id === 'presets-button')
+      ) {
+        return false;
+      }
+      const tagName = target?.tagName;
       return tagName === 'path' || tagName === 'svg' || tagName === 'circle';
     },
   );
 
   const localize = useLocalize();
   const cardStyle =
-    'shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
+    'shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white ';
 
   if (!visible) {
     return null;
@@ -45,7 +52,7 @@ export default function OptionsPopover({
   return (
     <Portal>
       <Content sideOffset={8} align="start" ref={popoverRef} asChild>
-        <div className="z-0 flex w-full flex-col items-center md:px-4">
+        <div className="z-[70] flex w-screen flex-col items-center md:w-full md:px-4">
           <div
             className={cn(
               cardStyle,
@@ -56,7 +63,7 @@ export default function OptionsPopover({
             <div className="flex w-full items-center bg-slate-100 px-2 py-2 dark:bg-gray-800/60">
               <Button
                 type="button"
-                className="h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+                className="h-auto justify-start rounded-md bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
                 onClick={saveAsPreset}
               >
                 <Save className="mr-1 w-[14px]" />

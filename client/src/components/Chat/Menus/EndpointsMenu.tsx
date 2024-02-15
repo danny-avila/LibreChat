@@ -1,10 +1,10 @@
+import { alternateName } from 'librechat-data-provider';
 import { Content, Portal, Root } from '@radix-ui/react-popover';
-import { useGetEndpointsQuery } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import EndpointItems from './Endpoints/MenuItems';
 import { useChatContext } from '~/Providers';
 import TitleButton from './UI/TitleButton';
-import { alternateName } from '~/common';
 import { mapEndpoints } from '~/utils';
 
 const EndpointsMenu: FC = () => {
@@ -14,9 +14,14 @@ const EndpointsMenu: FC = () => {
 
   const { conversation } = useChatContext();
   const selected = conversation?.endpoint ?? '';
+
+  if (!selected) {
+    console.warn('No endpoint selected');
+    return null;
+  }
   return (
     <Root>
-      <TitleButton primaryText={alternateName[selected] + ' '} />
+      <TitleButton primaryText={(alternateName[selected] ?? selected ?? '') + ' '} />
       <Portal>
         <div
           style={{
@@ -31,7 +36,7 @@ const EndpointsMenu: FC = () => {
           <Content
             side="bottom"
             align="start"
-            className="mt-2 min-w-[340px] overflow-hidden rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+            className="mt-2 max-h-[65vh] min-w-[340px] overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white lg:max-h-[75vh]"
           >
             <EndpointItems endpoints={endpoints} selected={selected} />
           </Content>

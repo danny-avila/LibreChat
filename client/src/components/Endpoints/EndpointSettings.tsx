@@ -17,13 +17,16 @@ export default function Settings({
   }
 
   const { settings, multiViewSettings } = getSettings(isMultiChat);
-  const { endpoint } = conversation;
-  const models = modelsConfig?.[endpoint] ?? [];
+  const { endpoint: _endpoint, endpointType } = conversation;
+  const models = modelsConfig?.[_endpoint] ?? [];
+  const endpoint = endpointType ?? _endpoint;
   const OptionComponent = settings[endpoint];
 
   if (OptionComponent) {
     return (
-      <div className={cn('h-[480px] overflow-y-auto md:mb-2 md:h-[350px]', className)}>
+      <div
+        className={cn('hide-scrollbar h-[500px] overflow-y-auto md:mb-2 md:h-[350px]', className)}
+      >
         <OptionComponent
           conversation={conversation}
           setOption={setOption}
@@ -41,7 +44,7 @@ export default function Settings({
   }
 
   return (
-    <div className={cn('h-[480px] overflow-y-auto md:mb-2 md:h-[350px]', className)}>
+    <div className={cn('hide-scrollbar h-[500px] overflow-y-auto md:mb-2 md:h-[350px]', className)}>
       <MultiViewComponent conversation={conversation} models={models} isPreset={isPreset} />
     </div>
   );

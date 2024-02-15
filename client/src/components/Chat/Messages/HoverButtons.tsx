@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
-import { useGenerations, useLocalize } from '~/hooks';
+import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 type THoverButtons = {
@@ -28,9 +28,10 @@ export default function HoverButtons({
   latestMessage,
 }: THoverButtons) {
   const localize = useLocalize();
-  const { endpoint } = conversation ?? {};
+  const { endpoint: _endpoint, endpointType } = conversation ?? {};
+  const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
-  const { hideEditButton, regenerateEnabled, continueSupported } = useGenerations({
+  const { hideEditButton, regenerateEnabled, continueSupported } = useGenerationsByLatest({
     isEditing,
     isSubmitting,
     message,
@@ -54,7 +55,7 @@ export default function HoverButtons({
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
       <button
         className={cn(
-          'hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible md:group-[.final-completion]:visible',
+          'hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
           isCreatedByUser ? '' : 'active',
           hideEditButton ? 'opacity-0' : '',
           isEditing ? 'active bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200' : '',
@@ -68,8 +69,8 @@ export default function HoverButtons({
       </button>
       <button
         className={cn(
-          'hover-button ml-0 flex items-center gap-1.5 rounded-md p-1 pl-0 text-xs hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible md:group-[.final-completion]:visible',
-          isCreatedByUser ? '' : 'active',
+          'ml-0 flex items-center gap-1.5 rounded-md p-1 pl-0 text-xs hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+          isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
         )}
         onClick={() => copyToClipboard(setIsCopied)}
         type="button"

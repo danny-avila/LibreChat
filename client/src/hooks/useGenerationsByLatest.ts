@@ -18,12 +18,13 @@ export default function useGenerationsByLatest({
 }: TUseGenerations) {
   const { error, messageId, searchResult, finish_reason, isCreatedByUser } = message ?? {};
   const isEditableEndpoint = !![
-    EModelEndpoint.azureOpenAI,
     EModelEndpoint.openAI,
+    EModelEndpoint.custom,
+    EModelEndpoint.google,
     EModelEndpoint.assistant,
+    EModelEndpoint.anthropic,
     EModelEndpoint.gptPlugins,
-    EModelEndpoint.anthropic,
-    EModelEndpoint.anthropic,
+    EModelEndpoint.azureOpenAI,
   ].find((e) => e === endpoint);
 
   const continueSupported =
@@ -39,6 +40,7 @@ export default function useGenerationsByLatest({
     !![
       EModelEndpoint.azureOpenAI,
       EModelEndpoint.openAI,
+      EModelEndpoint.custom,
       EModelEndpoint.chatGPTBrowser,
       EModelEndpoint.google,
       EModelEndpoint.bingAI,

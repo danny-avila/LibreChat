@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { useUpdateMessageMutation } from 'librechat-data-provider';
+import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
 import store from '~/store';
 import Container from './Container';
@@ -96,7 +96,7 @@ const EditMessage = ({
           disabled={isSubmitting}
           onClick={resubmitMessage}
         >
-          {localize('com_ui_save')} {'&'} {localize('com_ui_submit')}
+          {localize('com_ui_save_submit')}
         </button>
         <button
           className="btn btn-secondary relative mr-2"

@@ -7,12 +7,17 @@ import {
   useSetRecoilState,
 } from 'recoil';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
-import type { TOptionSettings } from '~/common';
+import type { TOptionSettings, ExtendedFile } from '~/common';
 import { useEffect } from 'react';
 
 const conversationByIndex = atomFamily<TConversation | null, string | number>({
   key: 'conversationByIndex',
   default: null,
+});
+
+const filesByIndex = atomFamily<Map<string, ExtendedFile>, string | number>({
+  key: 'filesByIndex',
+  default: new Map(),
 });
 
 const conversationKeysAtom = atom<(string | number)[]>({
@@ -78,30 +83,6 @@ const latestMessageFamily = atomFamily<TMessage | null, string | number | null>(
   default: null,
 });
 
-const textareaHeightFamily = atomFamily<number, string | number>({
-  key: 'textareaHeightByIndex',
-  default: 56,
-});
-
-const autoScrollFamily = atomFamily({
-  key: 'autoScrollByIndex',
-  default: localStorage.getItem('autoScroll') === 'true',
-  effects: [
-    ({ setSelf, onSet }) => {
-      const savedValue = localStorage.getItem('autoScroll');
-      if (savedValue != null) {
-        setSelf(savedValue === 'true');
-      }
-
-      onSet((newValue: unknown) => {
-        if (typeof newValue === 'boolean') {
-          localStorage.setItem('autoScroll', newValue.toString());
-        }
-      });
-    },
-  ] as const,
-});
-
 function useCreateConversationAtom(key: string | number) {
   const [keys, setKeys] = useRecoilState(conversationKeysAtom);
   const setConversation = useSetRecoilState(conversationByIndex(key));
@@ -118,6 +99,7 @@ function useCreateConversationAtom(key: string | number) {
 
 export default {
   conversationByIndex,
+  filesByIndex,
   presetByIndex,
   submissionByIndex,
   textByIndex,
@@ -127,9 +109,7 @@ export default {
   showAgentSettingsFamily,
   showBingToneSettingFamily,
   showPopoverFamily,
-  autoScrollFamily,
   latestMessageFamily,
-  textareaHeightFamily,
   allConversationsSelector,
   useCreateConversationAtom,
 };

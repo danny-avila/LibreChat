@@ -2,7 +2,7 @@
 
 # Logs
 data-node
-meili_data
+meili_data*
 data/
 logs
 *.log
@@ -48,6 +48,9 @@ bower_components/
 .floo
 .flooignore
 
+#config file
+librechat.yaml
+
 # Environment
 .npmrc
 .env*
@@ -66,10 +69,15 @@ src/style - official.css
 .DS_Store
 *.code-workspace
 .idea
+*.iml
 *.pem
 config.local.ts
 **/storageState.json
 junit.xml
+
+# docker override file
+docker-compose.override.yaml
+docker-compose.override.yml
 
 # meilisearch
 meilisearch
@@ -79,3 +87,5 @@ auth.json
 
 /packages/ux-shared/
 /images
+
+!client/src/components/Nav/SettingsTabs/Data/

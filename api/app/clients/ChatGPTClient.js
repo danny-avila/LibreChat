@@ -166,6 +166,12 @@ class ChatGPTClient extends BaseClient {
       console.debug(modelOptions);
       console.debug();
     }
+
+    if (this.azure || this.options.azure) {
+      // Azure does not accept `model` in the body, so we need to remove it.
+      delete modelOptions.model;
+    }
+
     const opts = {
       method: 'POST',
       headers: {
@@ -548,7 +554,7 @@ ${botMessage.message}
     if (isChatGptModel) {
       return { prompt: [instructionsPayload, messagePayload], context };
     }
-    return { prompt, context };
+    return { prompt, context, promptTokens: currentTokenCount };
   }
 
   getTokenCount(text) {

@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { countTokens } = require('../utils');
-const requireJwtAuth = require('../middleware/requireJwtAuth');
+const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { countTokens } = require('~/server/utils');
+const { logger } = require('~/config');
 
 router.post('/', requireJwtAuth, async (req, res) => {
   try {
@@ -9,8 +10,8 @@ router.post('/', requireJwtAuth, async (req, res) => {
     const count = await countTokens(arg?.text ?? arg);
     res.send({ count });
   } catch (e) {
-    console.error(e);
-    res.status(500).send(e.message);
+    logger.error('[/tokenizer] Error counting tokens', e);
+    res.status(500).json('Error counting tokens');
   }
 });
 

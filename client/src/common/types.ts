@@ -1,12 +1,13 @@
+import { FileSources } from 'librechat-data-provider';
 import type {
   TConversation,
   TMessage,
   TPreset,
-  TMutation,
   TLoginUser,
   TUser,
+  EModelEndpoint,
 } from 'librechat-data-provider';
-import { EModelEndpoint } from 'librechat-data-provider';
+import type { UseMutationResult } from '@tanstack/react-query';
 
 export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
 export type TSetExample = (
@@ -14,22 +15,6 @@ export type TSetExample = (
   type: string,
   newValue: number | string | boolean | null,
 ) => void;
-
-export const alternateName = {
-  [EModelEndpoint.openAI]: 'OpenAI',
-  [EModelEndpoint.assistant]: 'Assistants',
-  [EModelEndpoint.azureOpenAI]: 'Azure OpenAI',
-  [EModelEndpoint.bingAI]: 'Bing',
-  [EModelEndpoint.chatGPTBrowser]: 'ChatGPT',
-  [EModelEndpoint.gptPlugins]: 'Plugins',
-  [EModelEndpoint.google]: 'PaLM',
-  [EModelEndpoint.anthropic]: 'Anthropic',
-};
-
-export const supportsFiles = {
-  [EModelEndpoint.openAI]: true,
-  [EModelEndpoint.assistant]: true,
-};
 
 export enum ESide {
   Top = 'top',
@@ -49,6 +34,8 @@ export type TShowToast = {
   message: string;
   severity?: NotificationSeverity;
   showIcon?: boolean;
+  duration?: number;
+  status?: 'error' | 'success' | 'warning' | 'info';
 };
 
 export type TBaseSettingsProps = {
@@ -128,7 +115,6 @@ export type TMessageProps = {
   isSearchView?: boolean;
   siblingIdx?: number;
   siblingCount?: number;
-  scrollToBottom?: () => void;
   setCurrentEditId?: React.Dispatch<React.SetStateAction<string | number | null>> | null;
   setSiblingIdx?: ((value: number) => void | React.Dispatch<React.SetStateAction<number>>) | null;
 };
@@ -163,7 +149,7 @@ export type TDisplayProps = TText &
 export type TConfigProps = {
   userKey: string;
   setUserKey: React.Dispatch<React.SetStateAction<string>>;
-  endpoint: string;
+  endpoint: EModelEndpoint | string;
 };
 
 export type TDangerButtonProps = {
@@ -172,7 +158,7 @@ export type TDangerButtonProps = {
   className?: string;
   disabled?: boolean;
   showText?: boolean;
-  mutation?: TMutation;
+  mutation?: UseMutationResult<unknown>;
   onClick: () => void;
   infoTextCode: string;
   actionTextCode: string;
@@ -216,9 +202,11 @@ export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
   Pick<TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
     size?: number;
     button?: boolean;
+    iconURL?: string;
     message?: boolean;
     className?: string;
-    endpoint?: string | null;
+    endpoint?: EModelEndpoint | string | null;
+    endpointType?: EModelEndpoint | null;
   };
 
 export type Option = Record<string, unknown> & {
@@ -233,10 +221,17 @@ export type TOptionSettings = {
 
 export interface ExtendedFile {
   file: File;
+  file_id: string;
+  temp_file_id?: string;
+  type?: string;
+  filepath?: string;
+  filename?: string;
   width?: number;
   height?: number;
+  size: number;
   preview: string;
   progress: number;
+  source?: FileSources;
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

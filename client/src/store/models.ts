@@ -1,25 +1,12 @@
 import { atom } from 'recoil';
-import { TModelsConfig, EModelEndpoint } from 'librechat-data-provider';
-const openAIModels = [
-  'gpt-3.5-turbo-16k-0613',
-  'gpt-3.5-turbo-16k',
-  'gpt-4-1106-preview',
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-1106',
-  'gpt-4-vision-preview',
-  'gpt-4',
-  'gpt-3.5-turbo-instruct-0914',
-  'gpt-3.5-turbo-0613',
-  'gpt-3.5-turbo-0301',
-  'gpt-3.5-turbo-instruct',
-  'gpt-4-0613',
-  'text-davinci-003',
-  'gpt-4-0314',
-];
+import { EModelEndpoint, defaultModels } from 'librechat-data-provider';
+import type { TModelsConfig } from 'librechat-data-provider';
 
 const fitlerAssistantModels = (str: string) => {
   return /gpt-4|gpt-3\\.5/i.test(str) && !/vision|instruct/i.test(str);
 };
+
+const openAIModels = defaultModels[EModelEndpoint.openAI];
 
 const modelsConfig = atom<TModelsConfig>({
   key: 'models',
@@ -30,17 +17,17 @@ const modelsConfig = atom<TModelsConfig>({
     [EModelEndpoint.azureOpenAI]: openAIModels,
     [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
     [EModelEndpoint.chatGPTBrowser]: ['text-davinci-002-render-sha'],
-    [EModelEndpoint.google]: ['chat-bison', 'text-bison', 'codechat-bison'],
-    [EModelEndpoint.anthropic]: [
-      'claude-1',
-      'claude-1-100k',
-      'claude-instant-1',
-      'claude-instant-1-100k',
-      'claude-2',
-    ],
+    [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
+    [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
   },
+});
+
+const modelsQueryEnabled = atom<boolean>({
+  key: 'modelsQueryEnabled',
+  default: true,
 });
 
 export default {
   modelsConfig,
+  modelsQueryEnabled,
 };

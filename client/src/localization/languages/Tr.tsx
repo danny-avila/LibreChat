@@ -1,4 +1,4 @@
-// English phrases
+// Turkish phrases
 
 export default {
   com_ui_examples: 'Örnekler',
@@ -22,13 +22,14 @@ export default {
   com_ui_use_prompt: 'İpucu kullan',
   com_ui_prev: 'Önceki',
   com_ui_next: 'Sonraki',
+  com_ui_stop: 'Durdur',
   com_ui_prompt_templates: 'İpucu Şablonları',
   com_ui_hide_prompt_templates: 'İpucu Şablonlarını Gizle',
   com_ui_showing: 'Gösteriliyor',
   com_ui_of: 'of',
   com_ui_entries: 'Girişler',
-  com_ui_pay_per_call:
-    'Tüm yapay zeka konuşmaları bir yerde. Ayda bir değil, çağrı başına ödeme yapın',
+  com_ui_pay_per_call: 'Tüm yapay zekalar bir yerde. Ayda bir değil, çağrı başına ödeme yapın',
+  com_ui_new_footer: 'Tüm yapay zekalar bir arada.',
   com_ui_enter: 'Gir',
   com_ui_submit: 'Gönder',
   com_ui_upload_success: 'Dosya başarıyla yüklendi',
@@ -40,7 +41,7 @@ export default {
   com_ui_regenerate: 'Yeniden oluştur',
   com_ui_continue: 'Devam et',
   com_ui_edit: 'Düzenle',
-  com_ui_success: 'Başarı',
+  com_ui_success: 'Başarılı',
   com_ui_all: 'tümü',
   com_ui_clear: 'Temizle',
   com_ui_revoke: 'İptal et',
@@ -48,7 +49,7 @@ export default {
   com_ui_confirm_action: 'İşlemi Onayla',
   com_ui_chats: 'sohbetler',
   com_ui_delete: 'Sil',
-  com_ui_delete_conversation: 'Sohbeti sil?',
+  com_ui_delete_conversation: 'Sohbet silinecek?',
   com_ui_delete_conversation_confirm: 'Bu silinecek',
   com_auth_error_login:
     'Sağlanan bilgilerle giriş yapılamıyor. Lütfen kimlik bilgilerinizi kontrol edip tekrar deneyin.',
@@ -79,7 +80,7 @@ export default {
   com_auth_password_confirm: 'Şifreyi onayla',
   com_auth_password_not_match: 'Şifreler uyuşmuyor',
   com_auth_continue: 'Devam et',
-  com_auth_create_account: 'Hesabını oluştur',
+  com_auth_create_account: 'Hesap oluşturun',
   com_auth_error_create: 'Hesabınızı kaydetmeye çalışırken bir hata oluştu. Lütfen tekrar deneyin.',
   com_auth_full_name: 'Tam Adı',
   com_auth_name_required: 'Ad gereklidir',
@@ -116,6 +117,8 @@ export default {
   com_endpoint_bing_system_message_placeholder:
     'UYARI: Bu özelliği yanlış kullanmak sizi Bing kullanımından MEN edebilir! "Sistem Mesajı" na tıklayarak tam talimatları ve varsayılan mesajı görebilirsiniz, ki bu da güvenli kabul edilen "Sydney" önceden ayarıdır.',
   com_endpoint_system_message: 'Sistem Mesajı',
+  com_endpoint_message: 'Mesaj',
+  com_endpoint_message_not_appendable: 'Mesajınızı düzenleyin veya Yeniden Oluşturun.',
   com_endpoint_default_blank: 'varsayılan: boş',
   com_endpoint_default_false: 'varsayılan: false',
   com_endpoint_default_creative: 'varsayılan: yaratıcı',
@@ -133,7 +136,7 @@ export default {
     'Top-k, modelin çıkış için token seçme şeklini değiştirir. 1 top-k, seçilen tokenın modelin kelime dağarcığındaki tüm tokenlar arasında en olası olduğu anlamına gelir (ayrıca aç gözlü kod çözme denir), 3 top-k ise bir sonraki tokenın 3 en olası token arasından seçildiği anlamına gelir (sıcaklık kullanılarak).',
   com_endpoint_google_maxoutputtokens:
     'Yanıtta üretilebilecek maksimum token sayısı. Daha kısa yanıtlar için daha düşük bir değer belirtin ve daha uzun yanıtlar için daha yüksek bir değer belirtin.',
-  com_endpoint_google_custom_name_placeholder: 'PaLM2 için özel bir ad belirleyin',
+  com_endpoint_google_custom_name_placeholder: 'Google için özel bir ad belirleyin',
   com_endpoint_prompt_prefix_placeholder:
     'Özel talimatları veya bağlamı ayarlayın. Boşsa göz ardı edilir.',
   com_endpoint_custom_name: 'Özel Ad',
@@ -174,9 +177,26 @@ export default {
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Sistem Mesajı\'na dahil edilecek özel talimatları ayarlayın. Varsayılan: hiçbiri',
   com_endpoint_import: 'İçe Aktar',
-  com_endpoint_set_custom_name: 'Bu ön ayarı bulmak için özel bir ad belirleyin',
+  com_endpoint_set_custom_name: 'Bu ön ayarı bulabilmeniz için özel bir ad belirleyin',
+  com_endpoint_preset_delete_confirm: 'Bu ön ayarı silmek istediğinizden emin misiniz?',
+  com_endpoint_preset_clear_all_confirm: 'Tüm ön ayarlarınızı silmek istediğinizden emin misiniz?',
+  com_endpoint_preset_import: 'Ön Ayar İçe Aktarıldı!',
+  com_endpoint_preset_import_error:
+    'Ön ayarınız içe aktarılırken bir hata oluştu. Lütfen tekrar deneyin.',
+  com_endpoint_preset_save_error:
+    'Ön ayarınız kaydedilirken bir hata oluştu. Lütfen tekrar deneyin.',
+  com_endpoint_preset_delete_error:
+    'Ön ayarınız silinirken bir hata oluştu. Lütfen tekrar deneyin.',
+  com_endpoint_preset_default_removed: 'artık varsayılan ön ayar değildir.',
+  com_endpoint_preset_default_item: 'Varsayılan:',
+  com_endpoint_preset_default_none: 'Varsayılan ön ayar etkin değil.',
+  com_endpoint_preset_title: 'Ön Ayar',
+  com_endpoint_preset_saved: 'Kaydedildi',
+  com_endpoint_preset_default: 'artık varsayılan ön ayardır.',
   com_endpoint_preset: 'ön ayar',
   com_endpoint_presets: 'ön ayarlar',
+  com_endpoint_preset_selected: 'Ön Ayar Aktif!',
+  com_endpoint_preset_selected_title: 'Aktif!',
   com_endpoint_preset_name: 'Ön Ayar Adı',
   com_endpoint_new_topic: 'Yeni Konu',
   com_endpoint: 'Nokta',
@@ -203,6 +223,7 @@ export default {
   com_endpoint_skip_hover:
     'Tamamlama adımını atlamayı etkinleştir, bu adım, nihai cevabı ve üretilen adımları kontrol eder',
   com_endpoint_config_key: 'API Anahtarı Ayarla',
+  com_endpoint_config_placeholder: 'Sohbet etmek için Başlık menüsünde Anahtarınızı ayarlayın.',
   com_endpoint_config_key_for: 'API Anahtarını Ayarla',
   com_endpoint_config_key_name: 'Anahtar',
   com_endpoint_config_value: 'İçin değeri girin',
@@ -229,13 +250,12 @@ export default {
   com_endpoint_config_key_google_service_account: 'Bir Servis Hesabı Oluşturun',
   com_endpoint_config_key_google_vertex_api_role:
     'Lütfen \'Oluştur ve Devam Et\'e tıklayarak en az \'Vertex AI Kullanıcısı\' rolünü verdiğinizden emin olun. Son olarak, buraya içe aktarmak için bir JSON anahtarı oluşturun.',
+  com_nav_welcome_message: 'Bugün size nasıl yardımcı olabilirim?',
   com_nav_auto_scroll: 'Açıkta En Yeniye Otomatik Kaydır',
   com_nav_plugin_store: 'Eklenti Mağazası',
   com_nav_plugin_search: 'Eklentileri Ara',
   com_nav_plugin_auth_error:
     'Bu eklentiyi kimlik doğrulama girişiminde bir hata oluştu. Lütfen tekrar deneyin.',
-  com_nav_close_menu: 'Kenar çubuğunu kapat',
-  com_nav_open_menu: 'Kenar çubuğunu aç',
   com_nav_export_filename: 'Dosya adı',
   com_nav_export_filename_placeholder: 'Dosya adını belirleyin',
   com_nav_export_type: 'Tür',
@@ -254,6 +274,7 @@ export default {
   com_nav_confirm_clear: 'Temizlemeyi Onayla',
   com_nav_close_sidebar: 'Kenar çubuğunu kapat',
   com_nav_open_sidebar: 'Kenar çubuğunu aç',
+  com_nav_send_message: 'Mesaj gönder',
   com_nav_log_out: 'Çıkış yap',
   com_nav_user: 'KULLANICI',
   com_nav_clear_conversation: 'Sohbetleri Temizle',

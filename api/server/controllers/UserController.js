@@ -1,5 +1,6 @@
-const { updateUserPluginsService } = require('../services/UserService');
-const { updateUserPluginAuth, deleteUserPluginAuth } = require('../services/PluginService');
+const { updateUserPluginsService } = require('~/server/services/UserService');
+const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
+const { logger } = require('~/config');
 
 const getUserController = async (req, res) => {
   res.status(200).send(req.user);
@@ -13,7 +14,7 @@ const updateUserPluginsController = async (req, res) => {
     const userPluginsService = await updateUserPluginsService(user, pluginKey, action);
 
     if (userPluginsService instanceof Error) {
-      console.log(userPluginsService);
+      logger.error('[userPluginsService]', userPluginsService);
       const { status, message } = userPluginsService;
       res.status(status).send({ message });
     }
@@ -24,7 +25,7 @@ const updateUserPluginsController = async (req, res) => {
         for (let i = 0; i < keys.length; i++) {
           authService = await updateUserPluginAuth(user.id, keys[i], pluginKey, values[i]);
           if (authService instanceof Error) {
-            console.log(authService);
+            logger.error('[authService]', authService);
             const { status, message } = authService;
             res.status(status).send({ message });
           }
@@ -34,7 +35,7 @@ const updateUserPluginsController = async (req, res) => {
         for (let i = 0; i < keys.length; i++) {
           authService = await deleteUserPluginAuth(user.id, keys[i]);
           if (authService instanceof Error) {
-            console.log(authService);
+            logger.error('[authService]', authService);
             const { status, message } = authService;
             res.status(status).send({ message });
           }
@@ -44,7 +45,7 @@ const updateUserPluginsController = async (req, res) => {
 
     res.status(200).send();
   } catch (err) {
-    console.log(err);
+    logger.error('[updateUserPluginsController]', err);
     res.status(500).json({ message: err.message });
   }
 };

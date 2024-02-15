@@ -1,7 +1,8 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.6.1",
+  "version": "0.6.6",
   "description": "",
+  "type": "module",
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
     "build": "cross-env NODE_ENV=production vite build",
@@ -48,10 +49,12 @@
     "clsx": "^1.2.1",
     "copy-to-clipboard": "^3.3.3",
     "cross-env": "^7.0.3",
+    "date-fns": "^3.3.1",
     "downloadjs": "^1.4.7",
     "export-from-json": "^1.7.2",
     "filenamify": "^6.0.0",
     "html-to-image": "^1.11.11",
+    "image-blob-reduce": "^4.1.0",
     "librechat-data-provider": "*",
     "lodash": "^4.17.21",
     "lucide-react": "^0.220.0",
@@ -60,7 +63,9 @@
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^18.2.0",
+    "react-flip-toolkit": "^7.1.0",
     "react-hook-form": "^7.43.9",
+    "react-lazy-load-image-component": "^1.6.0",
     "react-markdown": "^8.0.6",
     "react-router-dom": "^6.11.2",
     "react-textarea-autosize": "^8.4.0",
@@ -92,7 +97,7 @@
     "@types/node": "^20.3.0",
     "@types/react": "^18.2.11",
     "@types/react-dom": "^18.2.4",
-    "@vitejs/plugin-react": "^4.0.4",
+    "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.13",
     "babel-plugin-replace-ts-export-assignment": "^0.0.2",
     "babel-plugin-root-import": "^6.6.0",
@@ -108,10 +113,11 @@
     "postcss": "^8.4.31",
     "postcss-loader": "^7.1.0",
     "postcss-preset-env": "^8.2.0",
-    "tailwindcss": "^3.2.6",
+    "tailwindcss": "^3.4.1",
     "ts-jest": "^29.1.0",
     "typescript": "^5.0.4",
-    "vite": "^4.4.9",
-    "vite-plugin-html": "^3.2.0"
+    "vite": "^5.0.7",
+    "vite-plugin-html": "^3.2.0",
+    "vite-plugin-node-polyfills": "^0.17.0"
   }
 }

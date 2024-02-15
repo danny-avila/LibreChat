@@ -1,3 +1,8 @@
+---
+title: 🌊 DigitalOcean ✨(Recommended)
+description: These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server using one of the cheapest tiers (6 USD/mo) 
+weight: -10
+---
 # Digital Ocean (Ubuntu/Docker) Setup
 
 >These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server. You can skip to any point that is useful for you. There are probably more efficient/scalable ways, but this guide works really great for my personal use case.
@@ -303,14 +308,14 @@ cd LibreChat/
 ``` 
 
 ### **2. Create a global environment file.**
-The default values are enough to get you started and running the app.
+The default values are enough to get you started and running the app, allowing you to provide your credentials from the web app.
 
 ```bash
 # Copies the example file as your global env file
 cp .env.example .env
 ```
 
-However, it's highly recommended you use environment variables for any sensitive credentials until we remove use of localStorage for passing credentials from the frontend
+However, if you'd like to provide any credentials for all users of your instance to consume, you can add them to the .env file as follows:
 
 ```bash
 nano .env
@@ -334,8 +339,8 @@ ALLOW_REGISTRATION=false
 ```
 
 **Resources:**
-- [Tokens/Apis/etc](../install/apis_and_tokens.md)
-- [User/Auth System](../install/user_auth_system.md)
+- [Tokens/Apis/etc](../install/configuration/ai_setup.md)
+- [User/Auth System](../install/configuration/user_auth_system.md)
 
 ### **3. Start docker, and then run the installation/update script**
 
@@ -362,7 +367,7 @@ It's safe to close the terminal if you wish -- the docker app will continue to r
 
 >If you are setting up a domain to be used with LibreChat, this compose file is using the nginx file located in client/nginx.conf. Instructions on this below in part V.
 
-### **4. Once the app is running, you can access it at http://yourserverip**
+### **4. Once the app is running, you can access it at `http://yourserverip`**
 
 ### Go back to the DigitalOcean droplet page to get your server ip, copy it, and paste it into your browser!
 

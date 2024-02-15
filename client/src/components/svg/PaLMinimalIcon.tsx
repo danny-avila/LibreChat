@@ -1,6 +1,5 @@
-import React from 'react';
-
-export default function PaLMinimalIcon() {
+import { cn } from '~/utils';
+export default function PaLMinimalIcon({ className = '' }: { className?: string }) {
   return (
     <svg
       stroke="currentColor"
@@ -9,7 +8,7 @@ export default function PaLMinimalIcon() {
       viewBox="0 0 32 32"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="h-4 w-4"
+      className={cn('h-4 w-4', className)}
       height="1em"
       width="1em"
       xmlns="http://www.w3.org/2000/svg"
