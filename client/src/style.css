@@ -10,37 +10,111 @@
 
 @font-face {
   font-display: swap;
-  font-family: Signifier;
+  font-family: Inter;
   font-style: normal;
   font-weight: 400;
-  src: url("$fonts/signifier-light.woff2") format("woff2")
+  src: url("$fonts/Inter-Regular.woff2") format("woff2");
+  size-adjust: 94%;
 }
 
 @font-face {
   font-display: swap;
-  font-family: Signifier;
+  font-family: Inter;
   font-style: italic;
   font-weight: 400;
-  src: url("$fonts/signifier-light-italic.woff2") format("woff2")
+  src: url("$fonts/Inter-Italic.woff2") format("woff2");
+  size-adjust: 94%;
 }
 
 @font-face {
   font-display: swap;
-  font-family: Signifier;
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 500;
+  src: url("$fonts/Inter-SemiBold.woff2") format("woff2");
+  size-adjust: 94%;
+}
+
+@font-face {
+  font-display: swap;
+  font-family: Inter;
+  font-style: italic;
+  font-weight: 500;
+  src: url("$fonts/Inter-SemiBoldItalic.woff2") format("woff2");
+  size-adjust: 94%;
+}
+
+@font-face {
+  font-display: swap;
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 600;
+  src: url("$fonts/Inter-Bold.woff2") format("woff2");
+  size-adjust: 94%;
+}
+
+@font-face {
+  font-display: swap;
+  font-family: Inter;
+  font-style: italic;
+  font-weight: 600;
+  src: url("$fonts/Inter-BoldItalic.woff2") format("woff2");
+  size-adjust: 94%;
+}
+
+@font-face {
+  font-display: swap;
+  font-family: Roboto Mono;
+  font-style: normal;
+  font-weight: 400;
+  src: url("$fonts/roboto-mono-latin-400-normal.woff2") format("woff2")
+}
+
+@font-face {
+  font-display: swap;
+  font-family: Roboto Mono;
   font-style: normal;
   font-weight: 700;
-  src: url("$fonts/signifier-bold.woff2") format("woff2")
+  src: url("$fonts/roboto-mono-latin-700-normal.woff2") format("woff2")
 }
 
 @font-face {
   font-display: swap;
-  font-family: Signifier;
+  font-family: Roboto Mono;
   font-style: italic;
-  font-weight: 700;
-  src: url("$fonts/signifier-bold-italic.woff2") format("woff2")
+  font-weight: 400;
+  src: url("$fonts/roboto-mono-latin-400-italic.woff2") format("woff2")
 }
 
-@font-face {
+/*
+
+The default ChatGPT fonts, according to OpenAI's brand guidelines, are proprietary and require appropriate font license according to your use case.
+
+They can be purchased here: https://klim.co.nz/buy/soehne/
+
+The fonts in question are (9 total):
+
+> - Söhne (Buch Kursiv, Buch, Halbfett Kursiv, Halbfett, Kraftig Kursiv, Kraftig, Mono Buch Kursiv, Mono Buch, Mono Halbfett)
+
+If you have purchased a license, you can use the commented-out `@font-face` declarations below to include them in your project.
+
+Step 1: Buy whatever license applies to you and allows use of `.woff2` font files (likely web font license).
+Step 2: Place them in ./client/public/fonts/ directory.
+Step 3: Replace the current `fontFamily` config in ./client/tailwind.config.cjs with the following:
+
+```
+    fontFamily: {
+      sans: ['Söhne', 'sans-serif'],
+      mono: ['Söhne Mono', 'monospace'],
+    },
+```
+
+Step 4: Uncomment all Söhne font-face declarations below.
+Step 5: rebuild frontend code: `npm run frontend` (or rebuild docker).
+
+*/
+
+/* @font-face {
   font-display: swap;
   font-family: Söhne;
   font-style: normal;
@@ -110,7 +184,7 @@
   font-style: italic;
   font-weight: 400;
   src: url("$fonts/soehne-mono-buch-kursiv.woff2") format("woff2")
-}
+} */
 
 /* * {
   box-sizing: border-box;
@@ -1311,25 +1385,6 @@ html {
   animation: spin 1s linear infinite;
 }
 
-.result-streaming {
-  -webkit-animation: blink 1s steps(5, start) infinite;
-  animation: blink 1s steps(5, start) infinite;
-  content:"⬤ ";
-  margin-left: 0.25rem;
-  vertical-align: baseline;
-}
-
-/* .result-streaming>:not(ol):not(ul):not(pre):last-child:after,
-.result-streaming>ol:last-child li:last-child:after,
-.result-streaming>pre:last-child code:after,
-.result-streaming>ul:last-child li:last-child:after {
- -webkit-animation:blink 1s steps(5,start) infinite;
- animation:blink 1s steps(5,start) infinite;
- content:"▋";
- margin-left:.25rem;
- vertical-align:baseline
-} */
-
 .form-input,
 .form-multiselect,
 .form-select,
@@ -1869,4 +1924,75 @@ html {
 .dark .assistant-item:after {
   --tw-shadow: inset 0 0 0 1px rgba(0,0,0,.25);
   --tw-shadow-colored: inset 0 0 0 1px var(--tw-shadow-color);
+}
+
+.result-streaming>:not(ol):not(ul):not(pre):last-child:after,
+.result-streaming>pre:last-child code:after {
+  display: inline-block; /* Add this line */
+  content:"⬤";
+  width: 12px;
+  height: 12px;
+  font-family:system-ui,Inter,Söhne Circle,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
+  line-height:normal;
+  margin-left:.25rem;
+  vertical-align:middle;
+  font-size: 0.5rem;
+}
+
+.result-streaming>pre:last-child code {
+  background: url('path-to-circle-image') no-repeat right center;
+  padding-right: 1em; /* Adjust as necessary */
+}
+
+@supports (selector(:has(*))) {
+  .result-streaming>ol:last-child>li:last-child>ol:last-child>li:last-child:after,
+  .result-streaming>ol:last-child>li:last-child>ol:last-child>li:last-child>ol:last-child>li:last-child:after,
+  .result-streaming>ol:last-child>li:last-child>ol:last-child>li:last-child>ul:last-child>li:last-child:after,
+  .result-streaming>ol:last-child>li:last-child>ul:last-child>li:last-child:after,
+  .result-streaming>ol:last-child>li:last-child>ul:last-child>li:last-child>ol:last-child>li:last-child:after,
+  .result-streaming>ol:last-child>li:last-child>ul:last-child>li:last-child>ul:last-child>li:last-child:after,
+  .result-streaming>ul:last-child>li:last-child>ol:last-child>li:last-child:after,
+  .result-streaming>ul:last-child>li:last-child>ol:last-child>li:last-child>ol:last-child>li:last-child:after,
+  .result-streaming>ul:last-child>li:last-child>ol:last-child>li:last-child>ul:last-child>li:last-child:after,
+  .result-streaming>ul:last-child>li:last-child>ul:last-child>li:last-child:after,
+  .result-streaming>ul:last-child>li:last-child>ul:last-child>li:last-child>ol:last-child>li:last-child:after,
+  .result-streaming>ul:last-child>li:last-child>ul:last-child>li:last-child>ul:last-child>li:last-child:after,
+  .result-streaming>ul:last-child>li:last-child[*|\:not-has\(]:after {
+    content:"⬤";
+    font-family:system-ui,Inter,Söhne Circle,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
+    line-height:normal;
+    margin-left:.25rem;
+    vertical-align:baseline
+  }
+  .result-streaming>ul:last-child>li:last-child:not(:has(*>li)):after {
+    content:"⬤";
+    font-family:system-ui,Inter,Söhne Circle,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
+    line-height:normal;
+    margin-left:.25rem;
+    vertical-align:baseline
+  }
+  .result-streaming>ol:last-child>li:last-child[*|\:not-has\(]:after {
+    content:"⬤";
+    font-family:system-ui,Inter,Söhne Circle,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
+    line-height:normal;
+    margin-left:.25rem;
+    vertical-align:baseline
+  }
+  .result-streaming>ol:last-child>li:last-child:not(:has(*>li)):after {
+    content:"⬤";
+    font-family:system-ui,Inter,Söhne Circle,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
+    line-height:normal;
+    margin-left:.25rem;
+    vertical-align:baseline
+  }
+}
+@supports not (selector(:has(*))) {
+  .result-streaming>ol:last-child>li:last-child:after,
+  .result-streaming>ul:last-child>li:last-child:after {
+    content:"⬤";
+    font-family:system-ui,Inter,Söhne Circle,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
+    line-height:normal;
+    margin-left:.25rem;
+    vertical-align:baseline
+  }
 }

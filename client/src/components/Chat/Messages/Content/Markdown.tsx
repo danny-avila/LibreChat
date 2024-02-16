@@ -41,7 +41,7 @@ export const p = memo(({ children }: { children: React.ReactNode }) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 
-const cursor = ' ⬤';
+const cursor = ' ';
 const Markdown = memo(({ content, message, showCursor }: TContentProps) => {
   const { isSubmitting, latestMessage } = useChatContext();
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
