@@ -1,4 +1,4 @@
-name: Docker Compose Build Latest Main Image (Manual Dispatch)
+name: Docker Compose Build Latest Main Image Tag (Manual Dispatch)
 
 # The workflow is manually triggered
 on:
@@ -42,9 +42,17 @@ jobs:
             type=semver,pattern={{major}}
             type=semver,pattern={{major}}.{{minor}}
 
-      - name: Retry Build and Push librechat
+      # Adjusted to correct the command and include retry logic
+      - name: Build and push librechat with retry
         uses: nick-invision/retry@v3
         with:
-          timeout_minutes: 20 # Total time to attempt retries
-          max_attempts: 3 # Number of retry attempts
-          command: docker buildx build --file Dockerfile --push --tags ${{ steps.meta-librechat.outputs.tags }} --platform linux/amd64,linux/arm64 --target node .
+          timeout_minutes: 20
+          max_attempts: 3
+          command: |
+            docker buildx build \
+              --file Dockerfile \
+              --push \
+              $(echo "${{ steps.meta-librechat.outputs.tags }}" | sed "s/,/ --tag /g" | xargs echo --tag) \
+              --platform linux/amd64,linux/arm64 \
+              --target node \
+              .
