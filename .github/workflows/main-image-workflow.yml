@@ -30,6 +30,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Docker metadata for librechat
       - name: Docker metadata for librechat
         id: meta-librechat
         uses: docker/metadata-action@v5
@@ -42,17 +43,13 @@ jobs:
             type=semver,pattern={{major}}
             type=semver,pattern={{major}}.{{minor}}
 
-      # Adjusted to correct the command and include retry logic
-      - name: Build and push librechat with retry
-        uses: nick-invision/retry@v3
+      # Build and push librechat
+      - name: Build and push librechat
+        uses: docker/build-push-action@v5
         with:
-          timeout_minutes: 20
-          max_attempts: 3
-          command: |
-            docker buildx build \
-              --file Dockerfile \
-              --push \
-              $(echo "${{ steps.meta-librechat.outputs.tags }}" | sed "s/,/ --tag /g" | xargs echo --tag) \
-              --platform linux/amd64,linux/arm64 \
-              --target node \
-              .
+          file: Dockerfile
+          context: .
+          push: true
+          tags: ${{ steps.meta-librechat.outputs.tags }}
+          platforms: linux/amd64,linux/arm64
+          target: node
