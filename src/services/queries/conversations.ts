@@ -1,17 +1,35 @@
 import { useQuery } from '@tanstack/react-query';
-import { getAllConversations, getConversation } from '../api/conversations';
+import {
+  getAllUserConversations,
+  getConversationEvents,
+  getConversationMessages,
+} from '../api/conversations';
+import { useAuthStore } from '~/zustand';
 
-export function useConversation(conversationId: string | null) {
+export function useConversationEvents(conversationId: string | null) {
   return useQuery({
-    queryKey: ['conversation', { conversationId }],
-    queryFn: () => getConversation(conversationId!),
+    queryKey: ['events', conversationId],
+    queryFn: () => getConversationEvents(conversationId!),
     enabled: !!conversationId,
   });
 }
 
+export function useConversationMessages(conversationId: string | null) {
+  const { user } = useAuthStore();
+
+  return useQuery({
+    queryKey: ['messages', conversationId],
+    queryFn: () => getConversationMessages(conversationId!, user!),
+    enabled: !!conversationId && !!user,
+  });
+}
+
 export function useConversations() {
+  const { user } = useAuthStore();
+
   return useQuery({
     queryKey: ['conversations'],
-    queryFn: () => getAllConversations(),
+    queryFn: () => getAllUserConversations(user?.user_id!),
+    enabled: !!user?.user_id,
   });
 }

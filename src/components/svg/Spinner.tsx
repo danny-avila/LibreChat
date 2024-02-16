@@ -1,10 +1,10 @@
 import React from 'react';
 import { cn } from '~/utils/';
 
-export default function Spinner({ className = 'm-auto' }) {
+export default function Spinner({ className = 'm-auto', color = '#fff' }) {
   return (
     <svg
-      stroke="#ffffff"
+      stroke={color}
       fill="none"
       strokeWidth="2"
       viewBox="0 0 24 24"

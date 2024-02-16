@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useMemo, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
@@ -16,34 +16,28 @@ import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
 import store from '~/store';
-import { useConversation } from '~/services/queries/conversations';
+import { useConversationEvents, useConversationMessages } from '~/services/queries/conversations';
+import {
+  buildMessageTreeFromEvents,
+  buildMessageTreeFromMessages,
+  buildMessagesFromEvents,
+} from '~/utils/buildTree';
+import { useAuthStore } from '~/zustand';
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
+  const chatHelpers = useVeraChat(index, conversationId);
+  const { data = null, isLoading } = useConversationMessages(conversationId ?? ''); // 'c985dc60-0f72-4de4-a774-38b39dc22e19'
+  const messagesTree = buildMessageTreeFromMessages({ messages: data });
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
   useSSE(submissionAtIndex);
-
-  const fileMap = {};
-
-  const conversationQuery = useConversation(conversationId ?? '');
-  const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
-    select: (data) => {
-      const dataTree = buildTree({ messages: data, fileMap });
-      return dataTree?.length === 0 ? null : dataTree ?? null;
-    },
-    enabled: !!fileMap,
-  });
-
-  console.log(conversationQuery.data, messagesTree);
-
-  const chatHelpers = useVeraChat(index, conversationId);
 
   return (
     <ChatContext.Provider value={chatHelpers}>
       <Presentation>
-        {conversationId !== 'new' ? (
+        {conversationId !== 'new' && isLoading ? (
           <div className="flex h-screen items-center justify-center">
-            <Spinner className="opacity-0" />
+            <Spinner color="black" />
           </div>
         ) : messagesTree && messagesTree.length !== 0 ? (
           <MessagesView messagesTree={messagesTree} Header={<Header />} />

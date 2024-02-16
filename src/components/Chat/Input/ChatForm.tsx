@@ -8,8 +8,10 @@ import SendButton from './SendButton';
 import Images from './Files/Images';
 import Textarea from './Textarea';
 import store from '~/store';
+import { useParams } from 'react-router-dom';
 
 export default function ChatForm({ index = 0 }) {
+  const { conversationId } = useParams();
   const [text, setText] = useRecoilState(store.textByIndex(index));
   const {
     ask,
@@ -28,6 +30,7 @@ export default function ChatForm({ index = 0 }) {
 
   const sendMessage = () => {
     if (!text) return;
+
     ask({ text });
     setText('');
   };

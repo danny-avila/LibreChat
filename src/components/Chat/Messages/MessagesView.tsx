@@ -8,6 +8,7 @@ import MultiMessage from './MultiMessage';
 import ProcessingSpinner from './ProcessingSpinner';
 import VeraMessage from './VeraMessage';
 import VeraErrorMessage from './VeraErrorMessage';
+import { useParams } from 'react-router-dom';
 
 export default function MessagesView({
   messagesTree: _messagesTree,
@@ -16,6 +17,7 @@ export default function MessagesView({
   messagesTree?: TMessage[] | null;
   Header?: ReactNode;
 }) {
+  const { conversationId } = useParams();
   const { screenshotTargetRef } = useScreenshot();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
   const { isSubmitting, currEvent, error } = useVeraChat(0, '');
@@ -27,7 +29,7 @@ export default function MessagesView({
     handleSmoothToRef,
     debouncedHandleScroll,
   } = useMessageScrolling(_messagesTree);
-  const { conversationId } = conversation ?? {};
+  //const { conversationId } = conversation ?? {};
 
   return (
     <div className="flex-1 overflow-hidden overflow-y-auto">

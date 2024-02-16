@@ -8,7 +8,7 @@ import { useConversations } from '~/hooks';
 import { useUpdateConversationMutation } from '~/data-provider';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
-import { useToastContext } from '~/Providers';
+import { useChatContext, useToastContext } from '~/Providers';
 import DeleteButton from './NewDeleteButton';
 import RenameButton from './RenameButton';
 import store from '~/store';
@@ -24,7 +24,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const { refreshConversations } = useConversations();
   const { showToast } = useToastContext();
 
-  const { conversation_id: conversationId, description: title } = conversation;
+  const { conversation_id: conversationId, description: title = 'Prev Chat' } = conversation;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [titleInput, setTitleInput] = useState(title);
   const [renaming, setRenaming] = useState(false);

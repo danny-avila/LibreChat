@@ -1,4 +1,7 @@
 import { TFile, TMessage } from 'librechat-data-provider';
+import { MessageType } from '~/types/conversation';
+import { EVENT_TYPES, MessageEventType } from '~/types/events';
+import { User } from '~/types/user';
 
 const even =
   'w-full border-b border-black/10 dark:border-gray-900/50 text-gray-800 bg-white dark:text-gray-100 group dark:bg-gray-800 hover:bg-gray-100/25 hover:text-gray-700  dark:hover:bg-gray-900 dark:hover:text-gray-200';
@@ -45,34 +48,103 @@ export default function buildTree({
 
     return rootMessages;
   }
+}
 
-  // // Group all messages into one tree
-  // let parentId = null;
-  // messages.forEach((message, i) => {
-  //   messageMap[message.messageId] = { ...message, bg: i % 2 === 0 ? even : odd, children: [] };
-  //   const currentMessage = messageMap[message.messageId];
-  //   const parentMessage = messageMap[parentId];
-  //   if (parentMessage) parentMessage.children.push(currentMessage);
-  //   else rootMessages.push(currentMessage);
-  //   parentId = message.messageId;
-  // });
+export function buildMessagesFromEvents({ events, user }) {
+  if (!events || !user) {
+    return null;
+  }
 
-  // return rootMessages;
+  const messages: MessageType[] = [];
 
-  // Group all messages by conversation, doesn't look great
-  // Traverse the messages array and store each element in messageMap.
-  // rootMessages = {};
-  // let parents = 0;
-  // messages.forEach(message => {
-  //   if (message.conversationId in messageMap) {
-  //     messageMap[message.conversationId].children.push(message);
-  //   } else {
-  //     messageMap[message.conversationId] = { ...message, bg: parents % 2 === 0 ? even : odd, children: [] };
-  //     rootMessages.push(messageMap[message.conversationId]);
-  //     parents++;
-  //   }
-  // });
+  let interactionId = null;
+  let conversationId = null;
+  let message: any = {};
+  events.forEach((event: any) => {
+    switch (event.event_type) {
+      case EVENT_TYPES.INIT_CONVERSATION:
+        conversationId = event.event.conversation_id;
+        break;
+      case EVENT_TYPES.INIT_INTERACTION:
+        interactionId = event.event.interaction_id;
+        break;
+      case EVENT_TYPES.PROCESS_PROMPT:
+        message.policyResults = event.event.policy_results;
+        message.policyMessage = event.event.policy_message;
+        message.systemMessage = event.event.system_message;
+        break;
+      case EVENT_TYPES.ROUTE_PROMPT:
+        message.modelId = event.event.selected_model_id;
+        message.modelReason = event.event.reason;
+        break;
+      case EVENT_TYPES.GENERATE_RESPONSE:
+        message.isCacheResult = event.event.is_cache_result;
+        break;
+      case EVENT_TYPES.PROCESS_RESPONSE:
+        message.policyResults = event.event.policy_results;
+        message.policyMessage = event.event.policy_message;
+        message.systemMessage = event.event.system_message;
+        break;
+      case EVENT_TYPES.MESSAGE:
+        message.isCreatedByUser = event.event.is_user_created;
+        message.text = event.event.body;
+        message.messageId = event.event.message_id;
+        message.parentMessageId = event.event.parent_message_id;
+        message.sender = event.event.is_user_created ? user.username : 'Vera';
+        message.error = event.is_error;
+        message.conversationId = conversationId;
+        message.interactionId = interactionId;
 
-  // // return Object.values(rootMessages);
-  // return rootMessages;
+        messages.push(message);
+        message = {};
+        break;
+      default:
+        console.log('uncaught event: ', event);
+        throw Error('Unexpected event caught: ', event);
+    }
+  });
+
+  return messages;
+}
+
+export function buildMessageTreeFromMessages({ messages }) {
+  if (!messages) {
+    return null;
+  }
+
+  const messageMap: Record<string, MessageType> = {};
+  const messagesTree: MessageType[] = [];
+
+  messages.forEach((message) => {
+    messageMap[message.messageId] = { ...message, children: [] };
+  });
+
+  Object.keys(messageMap).forEach((messageId) => {
+    const message = messageMap[messageId];
+
+    const parentMessage = message.parentMessageId ? messageMap[message.parentMessageId] : null;
+    if (parentMessage) {
+      parentMessage.children.push(messageMap[message.messageId]);
+    } else {
+      messagesTree.push(messageMap[message.messageId]);
+    }
+  });
+
+  return messagesTree;
+}
+
+export function buildMessageTreeFromEvents({
+  events,
+  user,
+}: {
+  events: MessageEventType[] | null;
+  user: User | null;
+}) {
+  if (!events || !user) {
+    return null;
+  }
+
+  const messages = buildMessagesFromEvents({ events, user });
+  const messagesTree = buildMessageTreeFromMessages({ messages });
+  return messagesTree;
 }

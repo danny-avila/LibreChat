@@ -1,4 +1,26 @@
-import { Policy } from "./policy";
+import { Policy } from './policy';
+
+export type UserMessage = {
+  text: string;
+  sender: string;
+  isCreatedByUser: true;
+  parentMessageId: null | string;
+  conversationId: string;
+  messageId: string;
+  error: boolean;
+  children: (VeraMessage | UserMessage)[];
+};
+
+export type VeraMessage = UserMessage & {
+  isCreatedByUser: false;
+  modelId: string;
+  modelReason: string;
+  policyMessage: string;
+  systemMessage: string;
+  isCacheResult: boolean;
+};
+
+export type MessageType = VeraMessage | UserMessage;
 
 export type Conversation = {
   bot_response_history: BotResponse[];

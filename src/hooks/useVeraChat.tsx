@@ -10,21 +10,12 @@ import store from '~/store';
 import { useAuthStore } from '~/zustand';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { VERA_HEADER } from '~/utils/constants';
-import { useNavigate } from 'react-router-dom';
-
-const EVENT_TYPES = {
-  PROCESS_PROMPT: 'process_prompt',
-  ROUTE_PROMPT: 'route_prompt',
-  GENERATE_RESPONSE: 'generate_response',
-  PROCESS_RESPONSE: 'process_response',
-  MESSAGE: 'message',
-  INIT_CONVERSATION: 'init_conversation',
-};
+import { EVENT_TYPES } from '~/types/events';
+import { buildMessagesFromEvents } from '~/utils/buildTree';
 
 // this to be set somewhere else
 export default function useVeraChat(index = 0, paramId: string | undefined) {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const { token, user } = useAuthStore();
   const [abortController, setAbortController] = useState(new AbortController());
   const [showStopButton, setShowStopButton] = useState(false);
@@ -74,19 +65,23 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
   ) => {
     setError('');
     const messages = getMessages() ?? [];
+    console.log('[ASK] messages: ', messages);
     const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
 
-    console.log(conversation);
+    // console.log('ask', conversation, conversationId);
     setShowStopButton(true);
     setIsSubmitting(true);
     setCurrEvent('Starting');
+
+    const convoId =
+      conversationId ?? conversation?.conversation_id ?? lastMessage?.conversationId ?? null;
 
     const tempMessage = {
       text: text.trim(),
       sender: user?.username,
       isCreatedByUser: true,
       parentMessageId: parentMessageId ?? lastMessage?.messageId ?? null,
-      conversationId: conversationId ?? lastMessage?.conversationId ?? null,
+      conversationId: convoId,
       messageId: 'tempMessage',
       error: false,
     };
@@ -96,13 +91,13 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     const apiKey = token!;
     const payload = {
       prompt_text: text.trim(),
-      conversation_id: conversation?.conversation_id ?? null,
+      conversation_id: convoId,
     };
     const headers = {
       'Content-Type': 'application/json',
       [VERA_HEADER]: apiKey,
     };
-    console.log(`[PROTO] ESTABLISHING CONNECTION WITH TOKEN: \n${apiKey}\n and PROMPT: \n${text}`);
+    // console.log(`[PROTO] ESTABLISHING CONNECTION WITH TOKEN: \n${apiKey}\n and PROMPT: \n${text}`);
 
     fetchEventSource(apiUrl, {
       method: 'POST',
@@ -110,7 +105,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
       signal: abortController.signal,
       body: JSON.stringify(payload),
       async onopen(response) {
-        console.log('[PROTO] OPENED CONNECTION:', response);
+        // console.log('[PROTO] OPENED CONNECTION:', response);
         if (response.ok) {
           return; // everything's good
         } else if (response.status >= 400 && response.status < 500 && response.status !== 429) {
@@ -121,10 +116,10 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         }
       },
       onmessage(msg) {
-        //console.log('[PROTO] NEW EVENT:', msg);
+        //// console.log('[PROTO] NEW EVENT:', msg);
         if (msg.data) {
           const data = JSON.parse(msg.data);
-          //console.log('[PROTO] EVENT DATA:', data);
+          //// console.log('[PROTO] EVENT DATA:', data);
           processEventMessage(data);
         }
         if (msg.event === 'FatalError') throw new Error(msg.data);
@@ -136,14 +131,14 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         setShowStopButton(false);
         setIsSubmitting(false);
         setError(e);
-        console.log('[PROTO] ERROR: ', e);
+        // console.log('[PROTO] ERROR: ', e);
         throw Error(e);
       },
       onclose() {
         setCurrEvent('');
         setShowStopButton(false);
         setIsSubmitting(false);
-        console.log('[PROTO] CONNECTION CLOSED');
+        // console.log('[PROTO] CONNECTION CLOSED');
       },
     });
   };
@@ -152,25 +147,32 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     let currentMessages: TMessage[] | null = getMessages() ?? [];
     switch (data.event_type) {
       case EVENT_TYPES.INIT_CONVERSATION:
+        // console.log(EVENT_TYPES.INIT_CONVERSATION, ':', data);
         setConversation(data.event);
+        break;
+      case EVENT_TYPES.INIT_INTERACTION:
+        // console.log(EVENT_TYPES.INIT_INTERACTION, ':', data);
+        break;
       case EVENT_TYPES.PROCESS_PROMPT:
         setCurrEvent('Processing Prompt');
-        console.log(EVENT_TYPES.PROCESS_PROMPT, ':', data);
+        // console.log(EVENT_TYPES.PROCESS_PROMPT, ':', data);
         break;
       case EVENT_TYPES.ROUTE_PROMPT:
         setCurrEvent('Routing Prompt');
-        console.log(EVENT_TYPES.ROUTE_PROMPT, ':', data);
+        // console.log(EVENT_TYPES.ROUTE_PROMPT, ':', data);
         break;
       case EVENT_TYPES.GENERATE_RESPONSE:
         setCurrEvent('Generating Response');
-        console.log(EVENT_TYPES.GENERATE_RESPONSE, ':', data);
+        // console.log(EVENT_TYPES.GENERATE_RESPONSE, ':', data);
         break;
       case EVENT_TYPES.PROCESS_RESPONSE:
         setCurrEvent('Processing Response');
-        console.log(EVENT_TYPES.PROCESS_RESPONSE, ':', data);
+        // console.log(EVENT_TYPES.PROCESS_RESPONSE, ':', data);
         break;
       case EVENT_TYPES.MESSAGE:
-        // console.log('message: ', data);
+        // console.log('MESSAGE RECEIVED! : ', data);
+
+        // // console.log('message: ', data);
         // const { body, is_user_created, parent_message_id, message_id } = data.event;
         // const { conversation_id, is_error } = data;
 
@@ -208,7 +210,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         // setLatestMessage(msg);
         break;
       case 'temp__user_message': {
-        console.log('user message: ', data);
+        // console.log('user message: ', data);
         const { body, is_user_created, parent_message_id, message_id } = data.event;
         const { conversation_id, is_error } = data;
 
@@ -230,7 +232,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         break;
       }
       case 'temp__bot_message': {
-        console.log('bot message: ', data);
+        // console.log('bot message: ', data);
         const {
           body,
           is_user_created,
@@ -265,7 +267,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         break;
       }
       default:
-        console.log('uncaught event: ', data);
+      // console.log('uncaught event: ', data);
     }
   };
 

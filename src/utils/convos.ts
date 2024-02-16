@@ -32,7 +32,7 @@ export const groupConversationsByDate = (conversations: TConversation[]): Groupe
     }
     seenConversationIds.add(conversation.conversation_id);
 
-    const date = parseISO(conversation.most_recent_message);
+    const date = parseISO(conversation.start_time);
     const groupName = getGroupName(date);
     if (!acc[groupName]) {
       acc[groupName] = [];
