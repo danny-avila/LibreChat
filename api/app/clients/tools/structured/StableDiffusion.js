@@ -61,7 +61,7 @@ class StableDiffusionAPI extends StructuredTool {
   async _call(data) {
     const url = this.url;
     const { prompt, negative_prompt } = data;
-    let defaultPayload;
+    let defaultPayload = {};
     try {
       defaultPayload = process.env.SD_WEBUI_DEFAULT_PARAMETERS
         ? JSON.parse(process.env.SD_WEBUI_DEFAULT_PARAMETERS)
