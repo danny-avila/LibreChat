@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const { Session, User } = require('~/models');
+const Balance = require('~/models/Balance');
 const {
   registerUser,
   resetPassword,
@@ -21,12 +22,12 @@ const registrationController = async (req, res) => {
         await newUser.save();
       }
 
-      // // Create a new Balance document for the user with 10,000 token credits
-      // const newBalance = new Balance({
-      //   user: newUser._id,
-      //   tokenCredits: 25000,
-      // });
-      // await newBalance.save();
+      // Create a new Balance document for the user with 10,000 token credits
+      const newBalance = new Balance({
+        user: newUser._id,
+        tokenCredits: 25000,
+      });
+      await newBalance.save();
 
       const token = await setAuthTokens(user._id, res);
       res.setHeader('Authorization', `Bearer ${token}`);
