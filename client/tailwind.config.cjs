@@ -10,9 +10,13 @@ module.exports = {
     //   'gpt-dark-gray': '#343541',
     // },
     fontFamily: {
-      sans: ['Söhne', 'sans-serif'],
-      mono: ['Söhne Mono', 'monospace'],
+      sans: ['Inter', 'sans-serif'],
+      mono: ['Roboto Mono', 'monospace'],
     },
+    // fontFamily: {
+    //   sans: ['Söhne', 'sans-serif'],
+    //   mono: ['Söhne Mono', 'monospace'],
+    // },
     extend: {
       width: {
         'authPageWidth': '370px',
