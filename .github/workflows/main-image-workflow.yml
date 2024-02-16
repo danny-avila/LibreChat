@@ -17,10 +17,6 @@ jobs:
           git fetch --tags
           echo "LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)" >> $GITHUB_ENV
 
-      # Ensure emulation for different architectures is set up
-      - name: Set up binfmt for multi-platform build
-        run: docker run --rm --privileged docker/binfmt:820fdd95a9972a5308930a2bdfb8573dd4447ad3
-
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
 
@@ -47,7 +43,7 @@ jobs:
             type=semver,pattern={{major}}
             type=semver,pattern={{major}}.{{minor}}
 
-      # Build and push librechat
+      # Build and push librechat with only linux/amd64 platform
       - name: Build and push librechat
         uses: docker/build-push-action@v5
         with:
@@ -55,5 +51,5 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.meta-librechat.outputs.tags }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           target: node
