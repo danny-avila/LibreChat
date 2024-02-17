@@ -65,26 +65,37 @@ class StableDiffusionAPI extends StructuredTool {
     const url = this.url;
     const { prompt, negative_prompt } = data;
     let defaultPayload = {};
+    let payload = {};
     try {
-      defaultPayload = process.env.SD_WEBUI_DEFAULT_PARAMETERS
-        ? JSON.parse(process.env.SD_WEBUI_DEFAULT_PARAMETERS)
-        : {
-            sampler_name: 'DPM++ 2M Karras',
-            cfg_scale: 4.5,
-            steps: 22,
-            width: 1024,
-            height: 1024,
-          };
+      defaultPayload = JSON.parse(process.env.SD_WEBUI_DEFAULT_PARAMETERS) || {
+        sampler_name: 'DPM++ 2M Karras',
+        cfg_scale: 4.5,
+        steps: 22,
+        width: 1024,
+        height: 1024,
+      };
     } catch (error) {
-      logger.error('[StableDiffusion] Error while parsing JSON:', error);
+      logger.error('[StableDiffusion] Error while parsing JSON from process.env:', error);
+      defaultPayload = {
+        sampler_name: 'DPM++ 2M Karras',
+        cfg_scale: 4.5,
+        steps: 22,
+        width: 1024,
+        height: 1024,
+      };
     }
 
-    const payload = {
-      prompt: prompt,
-      negative_prompt: defaultPayload.negative_prompt || negative_prompt,
-      ...defaultPayload,
-    };
-    logger.debug(`[StableDiffusion] Payload: ${JSON.stringify(defaultPayload)}`);
+    try {
+      payload = {
+        prompt: prompt,
+        negative_prompt: defaultPayload.negative_prompt || negative_prompt,
+        ...defaultPayload,
+      };
+      logger.debug(`[StableDiffusion] Payload: ${JSON.stringify(defaultPayload)}`);
+    } catch (error) {
+      logger.error('[StableDiffusion] Error while creating payload from defaultPayload:', error);
+    }
+
     const response = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
     const image = response.data.images[0];
     const pngPayload = { image: `data:image/png;base64,${image}` };
