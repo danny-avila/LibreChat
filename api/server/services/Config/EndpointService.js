@@ -2,6 +2,7 @@ const { EModelEndpoint } = require('librechat-data-provider');
 
 const {
   OPENAI_API_KEY: openAIApiKey,
+  ASSISTANTS_API_KEY: assistantsApiKey,
   AZURE_API_KEY: azureOpenAIApiKey,
   ANTHROPIC_API_KEY: anthropicApiKey,
   CHATGPT_TOKEN: chatGPTToken,
@@ -28,7 +29,7 @@ module.exports = {
     userProvidedOpenAI,
     googleKey,
     [EModelEndpoint.openAI]: isUserProvided(openAIApiKey),
-    [EModelEndpoint.assistant]: isUserProvided(openAIApiKey),
+    [EModelEndpoint.assistants]: isUserProvided(assistantsApiKey),
     [EModelEndpoint.azureOpenAI]: isUserProvided(azureOpenAIApiKey),
     [EModelEndpoint.chatGPTBrowser]: isUserProvided(chatGPTToken),
     [EModelEndpoint.anthropic]: isUserProvided(anthropicApiKey),

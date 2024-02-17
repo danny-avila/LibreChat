@@ -1,6 +1,4 @@
-import React from 'react';
-
-export default function OpenAIMinimalIcon() {
+export default function OpenAIMinimalIcon({ className = 'h-4 w-4' }) {
   return (
     <svg
       stroke="currentColor"
@@ -9,7 +7,7 @@ export default function OpenAIMinimalIcon() {
       viewBox="0 0 40 40"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="h-4 w-4"
+      className={className}
       height="1em"
       width="1em"
       xmlns="http://www.w3.org/2000/svg"

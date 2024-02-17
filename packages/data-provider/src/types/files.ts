@@ -5,17 +5,54 @@ export enum FileSources {
   s3 = 's3',
 }
 
+export enum FileContext {
+  avatar = 'avatar',
+  unknown = 'unknown',
+  assistants = 'assistants',
+  image_generation = 'image_generation',
+  assistants_output = 'assistants_output',
+  message_attachment = 'message_attachment',
+}
+
+export type EndpointFileConfig = {
+  disabled?: boolean;
+  fileLimit?: number;
+  fileSizeLimit?: number;
+  totalSizeLimit?: number;
+  supportedMimeTypes?: RegExp[];
+};
+
+export type FileConfig = {
+  endpoints: {
+    [key: string]: EndpointFileConfig;
+  };
+  serverFileSizeLimit?: number;
+  avatarSizeLimit?: number;
+  checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+};
+
 export type TFile = {
-  message: string;
+  _id?: string;
+  __v?: number;
+  user: string;
+  conversationId?: string;
+  message?: string;
   file_id: string;
-  filepath: string;
-  filename: string;
-  type: string;
-  size: number;
   temp_file_id?: string;
+  bytes: number;
+  filename: string;
+  filepath: string;
+  object: 'file';
+  type: string;
+  usage: number;
+  context?: FileContext;
   source?: FileSources;
-  height?: number;
   width?: number;
+  height?: number;
+  expiresAt?: string | Date;
+  preview?: string;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
 };
 
 export type TFileUpload = TFile & {
@@ -26,15 +63,10 @@ export type AvatarUploadResponse = {
   url: string;
 };
 
-export type FileUploadBody = {
-  formData: FormData;
-  file_id: string;
-};
-
 export type UploadMutationOptions = {
-  onSuccess?: (data: TFileUpload, variables: FileUploadBody, context?: unknown) => void;
-  onMutate?: (variables: FileUploadBody) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: FileUploadBody, context?: unknown) => void;
+  onSuccess?: (data: TFileUpload, variables: FormData, context?: unknown) => void;
+  onMutate?: (variables: FormData) => void | Promise<unknown>;
+  onError?: (error: unknown, variables: FormData, context?: unknown) => void;
 };
 
 export type UploadAvatarOptions = {
@@ -56,6 +88,7 @@ export type BatchFile = {
 
 export type DeleteFilesBody = {
   files: BatchFile[];
+  assistant_id?: string;
 };
 
 export type DeleteMutationOptions = {

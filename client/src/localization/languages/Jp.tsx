@@ -5,6 +5,7 @@
 export default {
   com_ui_examples: '例',
   com_ui_new_chat: '新規チャット',
+  com_ui_happy_birthday: '初めての誕生日です！',
   com_ui_example_quantum_computing: '量子コンピュータを簡潔に説明してください',
   com_ui_example_10_year_old_b_day: '10歳の誕生日で行うクリエイティブなアイデアはありますか？',
   com_ui_example_http_in_js: 'JavascriptでHTTPリクエストを作成するにはどうすればよいですか？',

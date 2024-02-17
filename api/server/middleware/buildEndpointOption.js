@@ -5,6 +5,7 @@ const anthropic = require('~/server/services/Endpoints/anthropic');
 const openAI = require('~/server/services/Endpoints/openAI');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
+const assistant = require('~/server/services/Endpoints/assistant');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
@@ -13,6 +14,7 @@ const buildFunction = {
   [EModelEndpoint.azureOpenAI]: openAI.buildOptions,
   [EModelEndpoint.anthropic]: anthropic.buildOptions,
   [EModelEndpoint.gptPlugins]: gptPlugins.buildOptions,
+  [EModelEndpoint.assistants]: assistant.buildOptions,
 };
 
 function buildEndpointOption(req, res, next) {

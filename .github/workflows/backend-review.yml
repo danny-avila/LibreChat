@@ -39,6 +39,9 @@ jobs:
       - name: Run unit tests
         run: cd api && npm run test:ci
 
+      - name: Run librechat-data-provider unit tests
+        run: cd packages/data-provider && npm run test:ci
+
       - name: Run linters
         uses: wearerequired/lint-action@v2
         with:

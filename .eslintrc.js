@@ -131,6 +131,12 @@ module.exports = {
         },
       ],
     },
+    {
+      files: ['./packages/data-provider/specs/**/*.ts'],
+      parserOptions: {
+        project: './packages/data-provider/tsconfig.spec.json',
+      },
+    },
   ],
   settings: {
     react: {

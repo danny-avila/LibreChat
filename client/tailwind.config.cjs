@@ -10,9 +10,13 @@ module.exports = {
     //   'gpt-dark-gray': '#343541',
     // },
     fontFamily: {
-      sans: ['Söhne', 'sans-serif'],
-      mono: ['Söhne Mono', 'monospace'],
+      sans: ['Inter', 'sans-serif'],
+      mono: ['Roboto Mono', 'monospace'],
     },
+    // fontFamily: {
+    //   sans: ['Söhne', 'sans-serif'],
+    //   mono: ['Söhne Mono', 'monospace'],
+    // },
     extend: {
       width: {
         'authPageWidth': '370px',
@@ -60,6 +64,7 @@ module.exports = {
           800: '#06373e',
           900: '#031f29',
         },
+        'brand-purple': '#ab68ff',
         'text-primary': 'var(--gray-800)',
         'text-secondary': 'var(--gray-600)',
         'text-tertiary': 'var(--gray-500)',

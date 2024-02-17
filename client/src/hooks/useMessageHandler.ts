@@ -87,9 +87,7 @@ const useMessageHandler = () => {
 
     // construct the placeholder response message
     const generation = editedText ?? latestMessage?.text ?? '';
-    const responseText = isEditOrContinue
-      ? generation
-      : '<span className="result-streaming">█</span>';
+    const responseText = isEditOrContinue ? generation : '';
 
     const responseMessageId = editedMessageId ?? latestMessage?.messageId ?? null;
     const initialResponse: TMessage = {
@@ -99,7 +97,6 @@ const useMessageHandler = () => {
       messageId: responseMessageId ?? `${isRegenerate ? messageId : fakeMessageId}_`,
       conversationId,
       unfinished: false,
-      submitting: true,
       isCreatedByUser: false,
       isEdited: isEditOrContinue,
       error: false,

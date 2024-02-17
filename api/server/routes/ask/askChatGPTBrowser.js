@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const express = require('express');
+const { Constants } = require('librechat-data-provider');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('~/models');
 const { handleError, sendMessage, createOnProgress, handleText } = require('~/server/utils');
 const { setHeaders } = require('~/server/middleware');
@@ -27,7 +28,7 @@ router.post('/', setHeaders, async (req, res) => {
   const conversationId = oldConversationId || crypto.randomUUID();
   const isNewConversation = !oldConversationId;
   const userMessageId = crypto.randomUUID();
-  const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
+  const userParentMessageId = parentMessageId || Constants.NO_PARENT;
   const userMessage = {
     messageId: userMessageId,
     sender: 'User',
@@ -209,7 +210,7 @@ const ask = async ({
     });
     res.end();
 
-    if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (userParentMessageId == Constants.NO_PARENT) {
       // const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
       const title = await response.details.title;
       await saveConvo(user, {

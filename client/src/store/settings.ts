@@ -6,6 +6,11 @@ const abortScroll = atom<boolean>({
   default: false,
 });
 
+const showFiles = atom<boolean>({
+  key: 'showFiles',
+  default: false,
+});
+
 const optionSettings = atom<TOptionSettings>({
   key: 'optionSettings',
   default: {},
@@ -44,6 +49,25 @@ const autoScroll = atom<boolean>({
       onSet((newValue: unknown) => {
         if (typeof newValue === 'boolean') {
           localStorage.setItem('autoScroll', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
+const hideSidePanel = atom<boolean>({
+  key: 'hideSidePanel',
+  default: localStorage.getItem('hideSidePanel') === 'true',
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('hideSidePanel');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('hideSidePanel', newValue.toString());
         }
       });
     },
@@ -109,12 +133,14 @@ const UsernameDisplay = atom<boolean>({
 
 export default {
   abortScroll,
+  showFiles,
   optionSettings,
   showPluginStoreDialog,
   showAgentSettings,
   showBingToneSetting,
   showPopover,
   autoScroll,
+  hideSidePanel,
   modularChat,
   LaTeXParsing,
   UsernameDisplay,

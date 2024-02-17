@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 
 /**
  * @typedef {Object} MongoFile
+ * @property {mongoose.Schema.Types.ObjectId} [_id] - MongoDB Document ID
+ * @property {number} [__v] - MongoDB Version Key
  * @property {mongoose.Schema.Types.ObjectId} user - User ID
  * @property {string} [conversationId] - Optional conversation ID
  * @property {string} file_id - File identifier
@@ -17,6 +19,8 @@ const mongoose = require('mongoose');
  * @property {number} [width] - Optional width of the file
  * @property {number} [height] - Optional height of the file
  * @property {Date} [expiresAt] - Optional height of the file
+ * @property {Date} [createdAt] - Date when the file was created
+ * @property {Date} [updatedAt] - Date when the file was updated
  */
 const fileSchema = mongoose.Schema(
   {
@@ -60,6 +64,10 @@ const fileSchema = mongoose.Schema(
     type: {
       type: String,
       required: true,
+    },
+    context: {
+      type: String,
+      // required: true,
     },
     usage: {
       type: Number,

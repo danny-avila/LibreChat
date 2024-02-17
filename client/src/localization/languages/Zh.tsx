@@ -5,6 +5,7 @@
 export default {
   com_ui_examples: '示例',
   com_ui_new_chat: '创建新对话',
+  com_ui_happy_birthday: '这是我的第一个生日！',
   com_ui_example_quantum_computing: '如何给7岁小孩讲解量子计算？',
   com_ui_example_10_year_old_b_day: '如何举办生日宴才能耳目一新？',
   com_ui_example_http_in_js: '如何在Python中实现HTTP请求？',

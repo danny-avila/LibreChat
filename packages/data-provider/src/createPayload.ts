@@ -12,7 +12,7 @@ export default function createPayload(submission: TSubmission) {
 
   let server = EndpointURLs[endpointType ?? endpoint];
 
-  if (isEdited && endpoint === EModelEndpoint.assistant) {
+  if (isEdited && endpoint === EModelEndpoint.assistants) {
     server += '/modify';
   } else if (isEdited) {
     server = server.replace('/ask/', '/edit/');
@@ -31,10 +31,6 @@ export default function createPayload(submission: TSubmission) {
     isContinued: !!(isEdited && isContinued),
     conversationId,
   };
-
-  if (endpoint === EModelEndpoint.assistant) {
-    payload.messages = messages;
-  }
 
   return { server, payload };
 }

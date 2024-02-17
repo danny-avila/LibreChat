@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const { logger } = require('~/config');
+const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
+const { logger } = require('~/config');
 
 /**
  * Saves a file to a specified output path with a new filename.
@@ -13,7 +14,7 @@ const paths = require('~/config/paths');
  * @returns {Promise<string>} The full path of the saved file.
  * @throws Will throw an error if the file saving process fails.
  */
-async function saveFile(file, outputPath, outputFilename) {
+async function saveLocalFile(file, outputPath, outputFilename) {
   try {
     if (!fs.existsSync(outputPath)) {
       fs.mkdirSync(outputPath, { recursive: true });
@@ -44,8 +45,40 @@ async function saveFile(file, outputPath, outputFilename) {
 const saveLocalImage = async (req, file, filename) => {
   const imagePath = req.app.locals.paths.imageOutput;
   const outputPath = path.join(imagePath, req.user.id ?? '');
-  await saveFile(file, outputPath, filename);
+  await saveLocalFile(file, outputPath, filename);
 };
+
+/**
+ * Saves a buffer to a specified directory on the local file system.
+ *
+ * @param {Object} params - The parameters object.
+ * @param {string} params.userId - The user's unique identifier. This is used to create a user-specific directory.
+ * @param {Buffer} params.buffer - The buffer to be saved.
+ * @param {string} params.fileName - The name of the file to be saved.
+ * @param {string} [params.basePath='images'] - Optional. The base path where the file will be stored.
+ *                                          Defaults to 'images' if not specified.
+ * @returns {Promise<string>} - A promise that resolves to the path of the saved file.
+ */
+async function saveLocalBuffer({ userId, buffer, fileName, basePath = 'images' }) {
+  try {
+    const { publicPath, uploads } = paths;
+
+    const directoryPath = path.join(basePath === 'images' ? publicPath : uploads, basePath, userId);
+
+    if (!fs.existsSync(directoryPath)) {
+      fs.mkdirSync(directoryPath, { recursive: true });
+    }
+
+    fs.writeFileSync(path.join(directoryPath, fileName), buffer);
+
+    const filePath = path.posix.join('/', basePath, userId, fileName);
+
+    return filePath;
+  } catch (error) {
+    logger.error('[saveLocalBuffer] Error while saving the buffer:', error);
+    throw error;
+  }
+}
 
 /**
  * Saves a file from a given URL to a local directory. The function fetches the file using the provided URL,
@@ -62,20 +95,18 @@ const saveLocalImage = async (req, file, filename) => {
  * @param {string} [params.basePath='images'] - Optional. The base directory where the file will be saved.
  *                                              Defaults to 'images' if not specified.
  *
- * @returns {Promise<string|null>}
- *          A promise that resolves to the file name if the file is successfully saved, or null if there is an error.
+ * @returns {Promise<{ bytes: number, type: string, dimensions: Record<string, number>} | null>}
+ *          A promise that resolves to the file metadata if the file is successfully saved, or null if there is an error.
  */
 async function saveFileFromURL({ userId, URL, fileName, basePath = 'images' }) {
   try {
-    // Fetch the file from the URL
     const response = await axios({
       url: URL,
-      responseType: 'stream',
+      responseType: 'arraybuffer',
     });
 
-    // Get the content type from the response headers
-    const contentType = response.headers['content-type'];
-    let extension = contentType.split('/').pop();
+    const buffer = Buffer.from(response.data, 'binary');
+    const { bytes, type, dimensions, extension } = await getBufferMetadata(buffer);
 
     // Construct the outputPath based on the basePath and userId
     const outputPath = path.join(paths.publicPath, basePath, userId.toString());
@@ -92,17 +123,15 @@ async function saveFileFromURL({ userId, URL, fileName, basePath = 'images' }) {
       fileName += `.${extension}`;
     }
 
-    // Create a writable stream for the output path
-    const outputFilePath = path.join(outputPath, path.basename(fileName));
-    const writer = fs.createWriteStream(outputFilePath);
+    // Save the file to the output path
+    const outputFilePath = path.join(outputPath, fileName);
+    fs.writeFileSync(outputFilePath, buffer);
 
-    // Pipe the response data to the output file
-    response.data.pipe(writer);
-
-    return new Promise((resolve, reject) => {
-      writer.on('finish', () => resolve(fileName));
-      writer.on('error', reject);
-    });
+    return {
+      bytes,
+      type,
+      dimensions,
+    };
   } catch (error) {
     logger.error('[saveFileFromURL] Error while saving the file:', error);
     return null;
@@ -171,4 +200,11 @@ const deleteLocalFile = async (req, file) => {
   await fs.promises.unlink(filepath);
 };
 
-module.exports = { saveFile, saveLocalImage, saveFileFromURL, getLocalFileURL, deleteLocalFile };
+module.exports = {
+  saveLocalFile,
+  saveLocalImage,
+  saveLocalBuffer,
+  saveFileFromURL,
+  getLocalFileURL,
+  deleteLocalFile,
+};

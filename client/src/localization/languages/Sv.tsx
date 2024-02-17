@@ -3,6 +3,7 @@
 export default {
   com_ui_examples: 'Exempel', // Examples
   com_ui_new_chat: 'Ny chatt', // New chat
+  com_ui_happy_birthday: 'Det är min första födelsedag!', // It's my first birthday!
   com_ui_example_quantum_computing: 'Förklara kvantberäkning på enkla termer', // Explain quantum computing in simple terms
   com_ui_example_10_year_old_b_day: 'Har du några kreativa idéer till ett 10-årings födelsedag?', // Got any creative ideas for a 10 year old's birthday?
   com_ui_example_http_in_js: 'Hur gör jag en HTTP-förfrågan i Javascript?', // How do I make an HTTP request in Javascript?
@@ -133,7 +134,7 @@ export default {
   com_endpoint_prompt_prefix_placeholder:
     'Ange anpassade instruktioner eller kontext. Ignoreras om tom.', // Set custom instructions or context. Ignored if empty.
   com_endpoint_custom_name: 'Anpassat namn', // Custom Name
-  com_endpoint_prompt_prefix: 'Uppmaningsprefix', // Prompt Prefix
+  com_endpoint_prompt_prefix: 'Uppmaningsprefix', // Custom Instructions
   com_endpoint_temperature: 'Temperatur', // Temperature
   com_endpoint_default: 'standard', // default
   com_endpoint_top_p: 'Top P', // Top P

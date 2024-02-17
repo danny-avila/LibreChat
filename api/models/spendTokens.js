@@ -21,6 +21,10 @@ const { logger } = require('~/config');
  */
 const spendTokens = async (txData, tokenUsage) => {
   const { promptTokens, completionTokens } = tokenUsage;
+  logger.debug(`[spendTokens] conversationId: ${txData.conversationId} | Token usage: `, {
+    promptTokens,
+    completionTokens,
+  });
   let prompt, completion;
   try {
     if (promptTokens >= 0) {
@@ -42,7 +46,12 @@ const spendTokens = async (txData, tokenUsage) => {
       rawAmount: -completionTokens,
     });
 
-    logger.debug('[spendTokens] post-transaction', { prompt, completion });
+    prompt &&
+      completion &&
+      logger.debug('[spendTokens] Transaction data record against balance:', {
+        prompt,
+        completion,
+      });
   } catch (err) {
     logger.error('[spendTokens]', err);
   }

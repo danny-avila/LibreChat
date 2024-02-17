@@ -35,7 +35,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.anthropic]: anthropicSchema,
   [EModelEndpoint.chatGPTBrowser]: chatGPTBrowserSchema,
   [EModelEndpoint.gptPlugins]: gptPluginsSchema,
-  [EModelEndpoint.assistant]: assistantSchema,
+  [EModelEndpoint.assistants]: assistantSchema,
 };
 
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
@@ -172,16 +172,16 @@ type CompactEndpointSchema =
   | typeof compactPluginsSchema;
 
 const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
-  openAI: compactOpenAISchema,
-  azureOpenAI: compactOpenAISchema,
-  custom: compactOpenAISchema,
-  assistant: assistantSchema,
-  google: compactGoogleSchema,
+  [EModelEndpoint.openAI]: compactOpenAISchema,
+  [EModelEndpoint.azureOpenAI]: compactOpenAISchema,
+  [EModelEndpoint.custom]: compactOpenAISchema,
+  [EModelEndpoint.assistants]: assistantSchema,
+  [EModelEndpoint.google]: compactGoogleSchema,
   /* BingAI needs all fields */
-  bingAI: bingAISchema,
-  anthropic: compactAnthropicSchema,
-  chatGPTBrowser: compactChatGPTSchema,
-  gptPlugins: compactPluginsSchema,
+  [EModelEndpoint.bingAI]: bingAISchema,
+  [EModelEndpoint.anthropic]: compactAnthropicSchema,
+  [EModelEndpoint.chatGPTBrowser]: compactChatGPTSchema,
+  [EModelEndpoint.gptPlugins]: compactPluginsSchema,
 };
 
 export const parseCompactConvo = ({

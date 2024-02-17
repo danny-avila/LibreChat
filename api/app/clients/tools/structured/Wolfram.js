@@ -7,6 +7,9 @@ const { logger } = require('~/config');
 class WolframAlphaAPI extends StructuredTool {
   constructor(fields) {
     super();
+    /* Used to initialize the Tool without necessary variables. */
+    this.override = fields.override ?? false;
+
     this.name = 'wolfram';
     this.apiKey = fields.WOLFRAM_APP_ID || this.getAppId();
     this.description_for_model = `// Access dynamic computation and curated data from WolframAlpha and Wolfram Cloud.
@@ -55,7 +58,7 @@ class WolframAlphaAPI extends StructuredTool {
 
   getAppId() {
     const appId = process.env.WOLFRAM_APP_ID || '';
-    if (!appId) {
+    if (!appId && !this.override) {
       throw new Error('Missing WOLFRAM_APP_ID environment variable.');
     }
     return appId;

@@ -1,10 +1,10 @@
 const express = require('express');
 const { CacheKeys } = require('librechat-data-provider');
-const { getConvosByPage, deleteConvos } = require('~/models/Conversation');
+const { initializeClient } = require('~/server/services/Endpoints/assistant');
+const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
-const { sleep } = require('~/server/services/AssistantService');
+const { sleep } = require('~/server/services/Runs/handle');
 const getLogStores = require('~/cache/getLogStores');
-const { getConvo, saveConvo } = require('~/models');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -47,27 +47,36 @@ router.post('/gen_title', async (req, res) => {
     await titleCache.delete(key);
     res.status(200).json({ title });
   } else {
-    res
-      .status(404)
-      .json({
-        message: 'Title not found or method not implemented for the conversation\'s endpoint',
-      });
+    res.status(404).json({
+      message: 'Title not found or method not implemented for the conversation\'s endpoint',
+    });
   }
 });
 
 router.post('/clear', async (req, res) => {
   let filter = {};
-  const { conversationId, source } = req.body.arg;
+  const { conversationId, source, thread_id } = req.body.arg;
   if (conversationId) {
     filter = { conversationId };
   }
 
-  // for debugging deletion source
-  // logger.debug('source:', source);
-
   if (source === 'button' && !conversationId) {
     return res.status(200).send('No conversationId provided');
   }
+
+  if (thread_id) {
+    /** @type {{ openai: OpenAI}} */
+    const { openai } = await initializeClient({ req, res });
+    try {
+      const response = await openai.beta.threads.del(thread_id);
+      logger.debug('Deleted OpenAI thread:', response);
+    } catch (error) {
+      logger.error('Error deleting OpenAI thread:', error);
+    }
+  }
+
+  // for debugging deletion source
+  // logger.debug('source:', source);
 
   try {
     const dbResponse = await deleteConvos(req.user.id, filter);

@@ -59,7 +59,7 @@ export default function Message(props: TMessageProps) {
             <div className="relative flex flex-shrink-0 flex-col items-end">
               <div>
                 <div className="pt-0.5">
-                  <div className="gizmo-shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+                  <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
                     {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
                       <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
                     ) : (
