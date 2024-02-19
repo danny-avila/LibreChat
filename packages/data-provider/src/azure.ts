@@ -1,47 +1,67 @@
-import type { TAzureGroupConfigs } from '../src/config';
+import type { TAzureGroupConfigs, TAzureBaseSchema, TModelMapSchema } from '../src/config';
 import { azureGroupConfigsSchema } from '../src/config';
 
 export function validateAzureGroupConfigs(configs: TAzureGroupConfigs): {
   isValid: boolean;
   modelNames: string[];
+  modelConfigMap: Record<string, TModelMapSchema>;
+  groupMap: Record<string, TAzureBaseSchema>;
 } {
-  try {
-    const result = azureGroupConfigsSchema.safeParse(configs);
-    if (!result.success) {
-      // Basic structure is wrong, immediately return.
-      return { isValid: false, modelNames: [] };
-    }
+  let isValid = true;
+  const modelNames: string[] = [];
+  const modelConfigMap: Record<string, TModelMapSchema> = {};
+  const groupMap: Record<string, TAzureBaseSchema> = {};
 
-    const modelNames: string[] = [];
-
+  const result = azureGroupConfigsSchema.safeParse(configs);
+  if (!result.success) {
+    isValid = false;
+  } else {
     for (const group of result.data) {
-      // Check if deploymentName and version are defined at the group level if a model is a boolean.
-      for (const modelName in group.models) {
-        // Collect model names
-        modelNames.push(modelName);
+      const {
+        group: groupName,
+        apiKey,
+        instanceName,
+        deploymentName,
+        version,
+        baseURL,
+        additionalHeaders,
+      } = group;
+      groupMap[groupName] = {
+        apiKey,
+        instanceName,
+        deploymentName,
+        version,
+        baseURL,
+        additionalHeaders,
+      };
 
+      for (const modelName in group.models) {
+        modelNames.push(modelName);
         const model = group.models[modelName];
+
         if (typeof model === 'boolean') {
-          // If model is boolean, check for deploymentName and version at group level.
+          // For boolean models, check if group-level deploymentName and version are present.
           if (!group.deploymentName || !group.version) {
-            return { isValid: false, modelNames };
+            return { isValid: false, modelNames, modelConfigMap, groupMap };
           }
         } else {
-          // If model is an object and does not define deploymentName or version, check group level.
+          // For object models, check if deploymentName and version are required but missing.
           if (
             (!model.deploymentName && !group.deploymentName) ||
             (!model.version && !group.version)
           ) {
-            return { isValid: false, modelNames };
+            return { isValid: false, modelNames, modelConfigMap, groupMap };
           }
+
+          modelConfigMap[modelName] = {
+            group: groupName,
+            deploymentName: model.deploymentName || group.deploymentName,
+            version: model.version || group.version,
+          };
         }
       }
     }
-
-    // If all checks are passed, the structure is valid.
-    return { isValid: true, modelNames };
-  } catch (error) {
-    console.error(error);
-    return { isValid: false, modelNames: [] }; // In case of unexpected error, mark as invalid.
   }
+
+  return { isValid, modelNames, modelConfigMap, groupMap };
 }
