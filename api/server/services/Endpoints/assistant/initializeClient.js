@@ -32,7 +32,10 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
 
   let userKey = null;
   if (isUserProvided) {
-    const expiresAt = getUserKeyExpiry({ userId: req.user.id, name: EModelEndpoint.assistants });
+    const expiresAt = await getUserKeyExpiry({
+      userId: req.user.id,
+      name: EModelEndpoint.assistants,
+    });
     checkUserKeyExpiry(
       expiresAt,
       'Your Assistants API key has expired. Please provide your API key again.',
