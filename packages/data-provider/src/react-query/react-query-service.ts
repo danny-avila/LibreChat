@@ -117,8 +117,8 @@ export const useUpdateUserKeysMutation = (): UseMutationResult<
 > => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TUpdateUserKeyRequest) => dataService.updateUserKey(payload), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.name]);
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries([QueryKeys.name, variables.name]);
     },
   });
 };
@@ -136,7 +136,7 @@ export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknow
   const queryClient = useQueryClient();
   return useMutation(() => dataService.revokeUserKey(name), {
     onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.name]);
+      queryClient.invalidateQueries([QueryKeys.name, name]);
       if (name === s.EModelEndpoint.assistants) {
         queryClient.invalidateQueries([QueryKeys.assistants, defaultOrderQuery]);
         queryClient.invalidateQueries([QueryKeys.assistantDocs]);

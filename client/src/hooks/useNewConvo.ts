@@ -77,6 +77,8 @@ const useNewConvo = (index = 0) => {
           const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
           if (!conversation.endpointType && endpointType) {
             conversation.endpointType = endpointType;
+          } else if (conversation.endpointType && !endpointType) {
+            conversation.endpointType = undefined;
           }
 
           if (!conversation.assistant_id && defaultEndpoint === EModelEndpoint.assistants) {

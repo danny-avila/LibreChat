@@ -1,6 +1,7 @@
-const { OpenAIClient } = require('~/app');
-const initializeClient = require('./initializeClient');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey } = require('~/server/services/UserService');
+const initializeClient = require('./initializeClient');
+const { OpenAIClient } = require('~/app');
 
 // Mock getUserKey since it's the only function we want to mock
 jest.mock('~/server/services/UserService', () => ({
@@ -145,7 +146,7 @@ describe('initializeClient', () => {
     const endpointOption = {};
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      'API key not provided.',
+      `${EModelEndpoint.openAI} API key not provided.`,
     );
   });
 
