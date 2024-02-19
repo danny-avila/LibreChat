@@ -1,4 +1,5 @@
 const express = require('express');
+const { defaultSocialLogins } = require('librechat-data-provider');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
@@ -15,7 +16,7 @@ router.get('/', async function (req, res) {
   try {
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
-      socialLogins: req.app.locals.socialLogins,
+      socialLogins: req.app.locals.socialLogins ?? defaultSocialLogins,
       discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
       facebookLoginEnabled:
         !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,

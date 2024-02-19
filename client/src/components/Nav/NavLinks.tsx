@@ -1,13 +1,14 @@
-import { Download } from 'lucide-react';
-import { useRecoilValue } from 'recoil';
-import { Fragment, useState, memo } from 'react';
 import { useLocation } from 'react-router-dom';
+import { Fragment, useState, memo } from 'react';
+import { Download, FileText } from 'lucide-react';
 import { Menu, Transition } from '@headlessui/react';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TConversation } from 'librechat-data-provider';
+import FilesView from '~/components/Chat/Input/Files/FilesView';
+import { useAuthContext } from '~/hooks/AuthContext';
 import { ExportModal } from './ExportConversation';
 import { LinkIcon, GearIcon } from '~/components';
-import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import NavLink from './NavLink';
@@ -25,6 +26,7 @@ function NavLinks() {
   });
   const [showExports, setShowExports] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
 
   let conversation;
   const activeConvo = useRecoilValue(store.conversationByIndex(0));
@@ -111,6 +113,14 @@ function NavLinks() {
                 <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    svg={() => <FileText className="icon-md" />}
+                    text="My Files"
+                    clickHandler={() => setShowFiles(true)}
+                  />
+                </Menu.Item>
+                <Menu.Item as="div">
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
                     svg={() => <LinkIcon />}
                     text={localize('com_nav_help_faq')}
                     clickHandler={() => window.open('https://docs.librechat.ai/', '_blank')}
@@ -136,6 +146,7 @@ function NavLinks() {
       {showExports && (
         <ExportModal open={showExports} onOpenChange={setShowExports} conversation={conversation} />
       )}
+      {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </>
   );

@@ -8,16 +8,19 @@ const getUserController = async (req, res) => {
 
 const updateUserPluginsController = async (req, res) => {
   const { user } = req;
-  const { pluginKey, action, auth } = req.body;
+  const { pluginKey, action, auth, isAssistantTool } = req.body;
   let authService;
   try {
-    const userPluginsService = await updateUserPluginsService(user, pluginKey, action);
+    if (!isAssistantTool) {
+      const userPluginsService = await updateUserPluginsService(user, pluginKey, action);
 
-    if (userPluginsService instanceof Error) {
-      logger.error('[userPluginsService]', userPluginsService);
-      const { status, message } = userPluginsService;
-      res.status(status).send({ message });
+      if (userPluginsService instanceof Error) {
+        logger.error('[userPluginsService]', userPluginsService);
+        const { status, message } = userPluginsService;
+        res.status(status).send({ message });
+      }
     }
+
     if (auth) {
       const keys = Object.keys(auth);
       const values = Object.values(auth);

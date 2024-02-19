@@ -1,4 +1,4 @@
-const { getResponseSender } = require('librechat-data-provider');
+const { getResponseSender, Constants } = require('librechat-data-provider');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage, getConvoTitle, getConvo } = require('~/models');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
@@ -143,7 +143,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     }
 
     await saveMessage(userMessage);
-    if (addTitle && parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
+    if (addTitle && parentMessageId === Constants.NO_PARENT && newConvo) {
       if (!isMyUser(req.user.email) || isDummyMode()) {
         return;
       }

@@ -60,7 +60,7 @@ if you want, you can use NGINX, Apache, or any other proxy manager.
 
 ### Start NGINX Proxy Manager
 
- - By executing: `docker-compose up -d`
+ - By executing: `docker compose up -d`
 
 ### Login to NGINX Proxy Manager
   - **Important: You need to update the default credentials**

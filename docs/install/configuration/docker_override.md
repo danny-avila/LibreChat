@@ -6,7 +6,7 @@ weight: -9
 
 # How to Use the Docker Compose Override File
 
-In Docker Compose, an override file is a powerful feature that allows you to modify the default configuration provided by the main `docker-compose.yml` without the need to directly edit or duplicate the whole file. The primary use of the override file is for local development customizations, and Docker Compose merges the configurations of the `docker-compose.yml` and the `docker-compose.override.yml` files when you run `docker-compose up`.
+In Docker Compose, an override file is a powerful feature that allows you to modify the default configuration provided by the main `docker-compose.yml` without the need to directly edit or duplicate the whole file. The primary use of the override file is for local development customizations, and Docker Compose merges the configurations of the `docker-compose.yml` and the `docker-compose.override.yml` files when you run `docker compose up`.
 
 Here's a quick guide on how to use the `docker-compose.override.yml`:
 
@@ -34,6 +34,8 @@ Open your `docker-compose.override.yml` file with vscode or any text editor.
 
 Make your desired changes by uncommenting the relevant sections and customizing them as needed.
 
+> Warning: You can only specify every service name once (api, mongodb, meilisearch, ...) If you want to override multiple settings in one service you will have to edit accordingly.
+
 For example, if you want to make sure Docker can use your `librechat.yaml` file for [custom configuration](./custom_config.md), it would look like this:
 
 ```yaml
@@ -45,14 +47,16 @@ services:
       - ./librechat.yaml:/app/librechat.yaml
 ```
 
-Or, if you want to use a prebuilt image for the `api` service and expose MongoDB's port, your `docker-compose.override.yml` might look like this:
+Or, if you want to use a prebuilt image for the `api` service, use the LibreChat config file, and expose MongoDB's port, your `docker-compose.override.yml` might look like this:
 
 ```yaml
 version: '3.4'
 
 services:
   api:
-    image: ghcr.io/danny-avila/librechat:latest
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml
+    image: ghcr.io/danny-avila/librechat-dev:latest
 
   mongodb:
     ports:
@@ -66,14 +70,14 @@ services:
 To apply your configuration changes, simply run Docker Compose as usual. Docker Compose automatically takes into account both the `docker-compose.yml` and the `docker-compose.override.yml` files:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 If you want to invoke a build with the changes before starting containers:
 
 ```bash
-docker-compose build
-docker-compose up -d
+docker compose build
+docker compose up -d
 ```
 
 ## Step 4: Verify the changes
@@ -110,8 +114,8 @@ Use of the `docker-compose.override.yml` file allows us to enable explicit authe
 First, we must stop the default containers from running, and only run the mongodb container.
 
 ```bash
-docker-compose down
-docker-compose up -d mongodb
+docker compose down
+docker compose up -d mongodb
 ```
 
 > Note: The `-d` flag detaches the current terminal instance as the container runs in the background. If you would like to see the mongodb log outputs, omit it and continue in a separate terminal.
@@ -205,7 +209,7 @@ admin> exit
 
 And shut down the running container:
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ### Step 2: Enabling Authentication and Creating a User with `readWrite` Access
@@ -226,7 +230,7 @@ services:
 After configuring the override file as above, run the mongodb container again:
 
 ```bash
-docker-compose up -d mongodb
+docker compose up -d mongodb
 ```
 
 And access mongosh as the admin user:
@@ -281,16 +285,16 @@ exit
 ```
 
 ```bash
-docker-compose down
+docker compose down
 ```
 
 I had an issue where the newly created user would not persist after creating it. To solve this, I simply repeated the steps to ensure it was created. Here they are for your convenience:
 
 ```bash
 # ensure container is shut down
-docker-compose down
+docker compose down
 # start mongo container
-docker-compose up -d mongodb
+docker compose up -d mongodb
 # enter mongosh as admin
 docker exec -it chat-mongodb mongosh -u adminUser -p securePassword --authenticationDatabase admin
 
@@ -328,7 +332,7 @@ services:
     command: mongod --auth
 ```
 
-You should now run `docker-compose up` successfully authenticated with read/write access to the LibreChat database
+You should now run `docker compose up` successfully authenticated with read/write access to the LibreChat database
 
 Example successful connection:
 ```bash
@@ -344,24 +348,24 @@ These are all the necessary commands if you'd like to run through these quickly 
 
 ```bash
 # Step 1:
-docker-compose down
-docker-compose up -d mongodb
+docker compose down
+docker compose up -d mongodb
 docker exec -it chat-mongodb mongosh
 use admin
 db.createUser({ user: "adminUser", pwd: "securePassword", roles: ["userAdminAnyDatabase", "readWriteAnyDatabase"] })
 exit
-docker-compose down
+docker compose down
 # Step 2:
 # Edit override file with --auth flag
-docker-compose up -d mongodb
+docker compose up -d mongodb
 docker exec -it chat-mongodb mongosh -u adminUser -p securePassword --authenticationDatabase admin
 use LibreChat
 db.createUser({ user: 'user', pwd: 'userpasswd', roles: [ { role: "readWrite", db: "LibreChat" } ] });
 exit
-docker-compose down
+docker compose down
 # Step 3:
 # Edit override file with new connection string
-docker-compose up
+docker compose up
 ```
 
 ## Example

@@ -1,14 +1,15 @@
 import copy from 'copy-to-clipboard';
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
+import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import Icon from '~/components/Endpoints/Icon';
-import { useChatContext } from '~/Providers';
 import { getEndpointField } from '~/utils';
 
 export default function useMessageHelpers(props: TMessageProps) {
-  const latestText = useRef('');
+  const latestText = useRef<string | number>('');
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { message, currentEditId, setCurrentEditId } = props;
 
@@ -22,6 +23,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     handleContinue,
     setLatestMessage,
   } = useChatContext();
+  const assistantMap = useAssistantsMapContext();
 
   const { text, children, messageId = null, isCreatedByUser } = message ?? {};
   const edit = messageId === currentEditId;
@@ -50,15 +52,19 @@ export default function useMessageHelpers(props: TMessageProps) {
   }, [message]);
 
   useEffect(() => {
+    let contentChanged = message?.content
+      ? message?.content?.length !== latestText.current
+      : message?.text !== latestText.current;
+
+    if (!isLast) {
+      contentChanged = false;
+    }
+
     if (!message) {
       return;
-    } else if (
-      isLast &&
-      conversation?.conversationId !== 'new' &&
-      latestText.current !== message.text
-    ) {
+    } else if (isLast && conversation?.conversationId !== 'new' && contentChanged) {
       setLatestMessage({ ...message });
-      latestText.current = message.text;
+      latestText.current = message?.content ? message.content.length : message.text;
     }
   }, [isLast, message, setLatestMessage, conversation?.conversationId]);
 
@@ -73,11 +79,17 @@ export default function useMessageHelpers(props: TMessageProps) {
     }
   }, [isSubmitting, setAbortScroll]);
 
+  const assistant =
+    conversation?.endpoint === EModelEndpoint.assistants && assistantMap?.[message?.model ?? ''];
+
   const icon = Icon({
     ...conversation,
     ...(message as TMessage),
-    iconURL: getEndpointField(endpointsConfig, conversation?.endpoint, 'iconURL'),
+    iconURL: !assistant
+      ? getEndpointField(endpointsConfig, conversation?.endpoint, 'iconURL')
+      : (assistant?.metadata?.avatar as string | undefined) ?? '',
     model: message?.model ?? conversation?.model,
+    assistantName: assistant ? (assistant.name as string | undefined) : '',
     size: 28.8,
   });
 
@@ -114,6 +126,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     icon,
     edit,
     isLast,
+    assistant,
     enterEdit,
     conversation,
     isSubmitting,

@@ -1,5 +1,6 @@
 const fetch = require('node-fetch');
 const { ref, uploadBytes, getDownloadURL, deleteObject } = require('firebase/storage');
+const { getBufferMetadata } = require('~/server/utils');
 const { getFirebaseStorage } = require('./initialize');
 
 /**
@@ -41,9 +42,8 @@ async function deleteFile(basePath, fileName) {
  * @param {string} [params.basePath='images'] - Optional. The base basePath in Firebase Storage where the file will
  *                                          be stored. Defaults to 'images' if not specified.
  *
- * @returns {Promise<string|null>}
- *          A promise that resolves to the file name if the file is successfully uploaded, or null if there
- *          is an error in initialization or upload.
+ * @returns {Promise<{ bytes: number, type: string, dimensions: Record<string, number>} | null>}
+ *          A promise that resolves to the file metadata if the file is successfully saved, or null if there is an error.
  */
 async function saveURLToFirebase({ userId, URL, fileName, basePath = 'images' }) {
   const storage = getFirebaseStorage();
@@ -53,10 +53,12 @@ async function saveURLToFirebase({ userId, URL, fileName, basePath = 'images' })
   }
 
   const storageRef = ref(storage, `${basePath}/${userId.toString()}/${fileName}`);
+  const response = await fetch(URL);
+  const buffer = await response.buffer();
 
   try {
-    await uploadBytes(storageRef, await fetch(URL).then((response) => response.buffer()));
-    return fileName;
+    await uploadBytes(storageRef, buffer);
+    return await getBufferMetadata(buffer);
   } catch (error) {
     console.error('Error uploading file to Firebase Storage:', error.message);
     return null;
