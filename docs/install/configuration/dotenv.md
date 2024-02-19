@@ -841,3 +841,26 @@ Mail address for from field. It is **REQUIRED** to set a value here (even if it'
 ```bash
 EMAIL_FROM=noreply@librechat.ai 
 ```
+
+### Other
+
+- **Redis:** Redis support is experimental, you may encounter some problems when using it. 
+
+> If using Redis, you should flush the cache after changing any LibreChat settings
+
+```bash
+REDIS_URI=
+USE_REDIS=
+```
+
+- **Birthday Hat:** Give the AI Icon a Birthday Hat 🥳
+
+> Will show automatically on February 11th (LibreChat's birthday)
+ 
+> Set this to `false` to disable the birthday hat
+
+> Set to `true` to enable all the time.
+
+```bash
+SHOW_BIRTHDAY_ICON=true
+```

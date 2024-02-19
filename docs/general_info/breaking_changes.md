@@ -9,6 +9,57 @@ weight: -10
 **If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
 Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
 
+## **.env** changes v0.6.6 -> v0.6.9
+see [⚙️ Environment Variables](../install/configuration/dotenv.md) for more info
+
+- Assistants added to the list
+```sh
+# ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
+```
+- Updated OpenAI models
+```sh
+# OPENAI_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k
+```
+- Assistants configuration
+```sh
+#====================#
+#   Assistants API   #
+#====================#
+
+# ASSISTANTS_API_KEY=
+# ASSISTANTS_BASE_URL=
+# ASSISTANTS_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
+```
+- Updated Plugin models
+```sh
+# PLUGIN_MODELS=gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
+```
+- Birthday hat
+```sh
+# SHOW_BIRTHDAY_ICON=true
+```
+### Previous changes:
+- DALL-E
+```sh
+# DALL·E
+#----------------
+# DALLE_API_KEY=
+# DALLE3_API_KEY=
+# DALLE2_API_KEY=
+# DALLE3_SYSTEM_PROMPT=
+# DALLE2_SYSTEM_PROMPT=
+# DALLE_REVERSE_PROXY=
+# DALLE3_BASEURL=
+# DALLE2_BASEURL=
+
+# DALL·E (via Azure OpenAI)
+# Note: requires some of the variables above to be set
+#----------------
+# DALLE3_AZURE_API_VERSION=
+# DALLE2_AZURE_API_VERSION=
+```
+
+
 ## January 31th 2024
 - A new method to use the ChatGPT endpoint is now documented. It uses "Ninja"
 - For more info:
