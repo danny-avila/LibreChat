@@ -1097,6 +1097,14 @@ ${convo}
 
       logger.debug('[OpenAIClient] chatCompletion response', chatCompletion);
 
+      if (!message?.content?.trim() && intermediateReply.length) {
+        logger.debug(
+          '[OpenAIClient] chatCompletion: using intermediateReply due to empty message.content',
+          { intermediateReply },
+        );
+        return intermediateReply;
+      }
+
       return message.content;
     } catch (err) {
       if (
