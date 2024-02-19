@@ -8,6 +8,32 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
+export const modelConfigSchema = z
+  .object({
+    deploymentName: z.string().optional(),
+    version: z.string().optional(),
+  })
+  .or(z.boolean());
+
+export const azureGroupSchema = z.object({
+  group: z.string(),
+  apiKey: z.string(),
+  instanceName: z.string(),
+  deploymentName: z.string().optional(),
+  version: z.string().optional(),
+  baseURL: z.string().optional(),
+  additionalHeaders: z.record(z.any()).optional(),
+  models: z.record(z.string(), modelConfigSchema),
+});
+
+export const azureGroupConfigsSchema = z.array(azureGroupSchema).min(1);
+
+export type TAzureGroupConfigs = z.infer<typeof azureGroupConfigsSchema>;
+
+export const azureEndpointSchema = z.object({
+  groupConfigs: azureGroupConfigsSchema,
+});
+
 export const assistantEndpointSchema = z.object({
   /* assistants specific */
   disableBuilder: z.boolean().optional(),
@@ -83,6 +109,7 @@ export const configSchema = z.object({
   fileConfig: fileConfigSchema.optional(),
   endpoints: z
     .object({
+      [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       custom: z.array(endpointSchema.partial()).optional(),
     })
