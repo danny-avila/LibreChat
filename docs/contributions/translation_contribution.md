@@ -13,7 +13,7 @@ weight: -8
 ## Language Translation
 
 ### Preparation
-Fork the [LibreChat repository](https://github.com/danny-avila/LibreChat) and download it using git clone 
+Fork the [LibreChat repository](https://github.librechat.ai) and download it using git clone 
 
 ### Add your language to `Translation.tsx`:
 - Navigate to the `client\src\localization` folder and open the `Translation.tsx` file

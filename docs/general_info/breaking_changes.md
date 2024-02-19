@@ -173,7 +173,7 @@ I had to change the environment variable from AZURE_OPENAI_API_KEY to AZURE_API_
 ### Summary
 - In this version, we have simplified the configuration process, improved the security of your credentials, and updated the docker instructions. 🚀
 - Please read the following sections carefully to learn how to upgrade your app and avoid any issues. 🙏
-- **Note:** If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+- **Note:** If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
 
 ---
 
