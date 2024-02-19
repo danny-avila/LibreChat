@@ -67,7 +67,7 @@
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://github.com/danny-avila/LibreChat#readme",
+  "homepage": "https://librechat.ai/",
   "devDependencies": {
     "@playwright/test": "^1.38.1",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
