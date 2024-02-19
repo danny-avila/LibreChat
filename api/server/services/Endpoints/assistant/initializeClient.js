@@ -46,7 +46,7 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
   let apiKey = isUserProvided ? userKey : credentials;
 
   if (!apiKey) {
-    throw new Error('API key not provided.');
+    throw new Error(`${EModelEndpoint.assistants} API key not provided.`);
   }
 
   /** @type {OpenAIClient} */
