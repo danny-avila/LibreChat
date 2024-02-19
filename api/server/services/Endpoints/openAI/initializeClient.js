@@ -58,7 +58,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   if (!apiKey) {
-    throw new Error('API key not provided.');
+    throw new Error(`${endpoint} API key not provided.`);
   }
 
   const client = new OpenAIClient(apiKey, clientOptions);
