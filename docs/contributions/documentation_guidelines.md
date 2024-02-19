@@ -49,7 +49,7 @@ weight: 0
 ---
 ### Example of HTML image embedding:
 <p align="center">
-  <a href="https://discord.gg/NGaa9RPCft">
+  <a href="https://discord.librechat.ai">
     <img src="https://github.com/danny-avila/LibreChat/assets/32828263/45890a7c-5b8d-4650-a6e0-aa5d7e4951c3" height="128" width="128">
   </a>
   <a href="https://librechat.ai">
