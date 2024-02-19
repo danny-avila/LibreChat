@@ -86,4 +86,4 @@ Now, insert the below environment variable values into your LibreChat project (R
 ## Conclusion
 Now, you should be able to perform searches again, congratulations, you have successfully deployed Meilisearch on render.com
 
-### Note: If you are still having issues, before creating a new issue, please search for similar issues on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or on our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussion page. If you cannot find a relevant issue, feel free to create a new one and provide as many details as possible.
+### Note: If you are still having issues, before creating a new issue, please search for similar issues on our [#issues thread on our discord](https://discord.librechat.ai) or on our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussion page. If you cannot find a relevant issue, feel free to create a new one and provide as many details as possible.
