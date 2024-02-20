@@ -1,4 +1,5 @@
 const { EModelEndpoint, CacheKeys, ViolationTypes } = require('librechat-data-provider');
+const { loadModels } = require('~/server/controllers/ModelController');
 const { logViolation, getLogStores } = require('~/cache');
 const { handleError } = require('~/server/utils');
 
@@ -17,7 +18,11 @@ const validateModel = async (req, res, next) => {
   }
 
   const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  const modelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
+  let modelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
+  if (!modelsConfig) {
+    modelsConfig = await loadModels(req);
+  }
+
   if (!modelsConfig) {
     return handleError(res, { text: 'Models not loaded' });
   }

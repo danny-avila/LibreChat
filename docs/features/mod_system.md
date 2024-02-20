@@ -31,10 +31,13 @@ The project's current rate limiters are as follows (see below under setup for de
 - Login and registration rate limiting
 - [optional] Concurrent Message limiting (only X messages at a time per user)
 - [optional] Message limiting (how often a user can send a message, configurable by IP and User)
+- [optional] File Upload limiting: configurable through [`librechat.yaml` config file](https://docs.librechat.ai/install/configuration/custom_config.html#rate-limiting).
 
 ### Setup
 
 The following are all of the related env variables to make use of and configure the mod system. Note this is also found in the [/.env.example](https://github.com/danny-avila/LibreChat/blob/main/.env.example) file, to be set in your own `.env` file.
+
+**Note:** currently, most of these values are configured through the .env file, but they may soon migrate to be exclusively configured from the [`librechat.yaml` config file](https://docs.librechat.ai/install/configuration/custom_config.html#rate-limiting).
 
 ```bash
 BAN_VIOLATIONS=true # Whether or not to enable banning users for violations (they will still be logged)
