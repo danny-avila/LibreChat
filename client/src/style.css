@@ -1186,7 +1186,7 @@ html {
 .dark body,
 .dark html {
   --tw-bg-opacity: 1;
-  background-color: rgba(52, 53, 65, var(--tw-bg-opacity));
+  background-color: #212120;
 }
 
 #__next,
@@ -1481,7 +1481,7 @@ html {
 .dark body,
 .dark html {
   --tw-bg-opacity: 1;
-  background-color: rgba(52, 53, 65, var(--tw-bg-opacity));
+  background-color: #212120;
 }
 #__next,
 #root {
@@ -1884,11 +1884,11 @@ html {
 }
 
 .dark .readmore-blur::before {
-  background: linear-gradient(#343541, rgba(255, 255, 255, 0));
+  background: linear-gradient(#212120, rgba(255, 255, 255, 0));
 }
 
 .dark .readmore-blur::after {
-  background: linear-gradient(rgba(255, 255, 255, 0), #343541);
+  background: linear-gradient(rgba(255, 255, 255, 0), #212120);
 }
 @-webkit-keyframes pulseSize {
   0%,

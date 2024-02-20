@@ -92,7 +92,7 @@ export default function Message(props: TMessageProps) {
                   className={cn(
                     'flex max-w-full flex-grow flex-col gap-0',
                     isCreatedByUser && !edit && showExpand
-                      ? 'h-[120px] cursor-pointer brightness-100 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      ? 'h-[120px] cursor-pointer brightness-100 hover:bg-gray-50 dark:hover:bg-[rgba(39,39,37,1)]'
                       : '',
                     !isCreatedByUser || isExpand || edit
                       ? 'h-auto'
