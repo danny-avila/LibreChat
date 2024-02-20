@@ -1,6 +1,6 @@
 import copy from 'copy-to-clipboard';
 import { useEffect, useRef, useCallback } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, ContentTypes } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
@@ -25,7 +25,7 @@ export default function useMessageHelpers(props: TMessageProps) {
   } = useChatContext();
   const assistantMap = useAssistantsMapContext();
 
-  const { text, children, messageId = null, isCreatedByUser } = message ?? {};
+  const { text, content, children, messageId = null, isCreatedByUser } = message ?? {};
   const edit = messageId === currentEditId;
   const isLast = !children?.length;
 
@@ -46,8 +46,10 @@ export default function useMessageHelpers(props: TMessageProps) {
     }
   }, [isLast, message, setLatestMessage, conversation?.conversationId]);
 
-  const enterEdit = (cancel?: boolean) =>
-    setCurrentEditId && setCurrentEditId(cancel ? -1 : messageId);
+  const enterEdit = useCallback(
+    (cancel?: boolean) => setCurrentEditId && setCurrentEditId(cancel ? -1 : messageId),
+    [messageId, setCurrentEditId],
+  );
 
   const handleScroll = useCallback(() => {
     if (isSubmitting) {
@@ -79,14 +81,26 @@ export default function useMessageHelpers(props: TMessageProps) {
     regenerate(message);
   };
 
-  const copyToClipboard = (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
-    setIsCopied(true);
-    copy(text ?? '');
+  const copyToClipboard = useCallback(
+    (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
+      setIsCopied(true);
+      let messageText = text ?? '';
+      if (content) {
+        messageText = content.reduce((acc, curr, i) => {
+          if (curr.type === ContentTypes.TEXT) {
+            return acc + curr.text.value + (i === content.length - 1 ? '' : '\n');
+          }
+          return acc;
+        }, '');
+      }
+      copy(messageText ?? '');
 
-    setTimeout(() => {
-      setIsCopied(false);
-    }, 3000);
-  };
+      setTimeout(() => {
+        setIsCopied(false);
+      }, 3000);
+    },
+    [text, content],
+  );
 
   return {
     ask,
