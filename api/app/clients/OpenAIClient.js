@@ -994,6 +994,7 @@ ${convo}
       }
 
       let chatCompletion;
+      /** @type {OpenAI} */
       const openai = new OpenAI({
         apiKey: this.apiKey,
         ...opts,
@@ -1045,6 +1046,16 @@ ${convo}
           })
           .on('error', (err) => {
             handleOpenAIErrors(err, errorCallback, 'stream');
+          })
+          .on('finalChatCompletion', (finalChatCompletion) => {
+            const finalMessage = finalChatCompletion?.choices?.[0]?.message;
+            if (finalMessage && finalMessage?.role !== 'assistant') {
+              finalChatCompletion.choices[0].message.role = 'assistant';
+            }
+
+            if (finalMessage && !finalMessage?.content?.trim()) {
+              finalChatCompletion.choices[0].message.content = intermediateReply;
+            }
           })
           .on('finalMessage', (message) => {
             if (message?.role !== 'assistant') {
@@ -1116,6 +1127,9 @@ ${convo}
       if (
         err?.message?.includes(
           'OpenAI error: Invalid final message: OpenAI expects final message to include role=assistant',
+        ) ||
+        err?.message?.includes(
+          'stream ended without producing a ChatCompletionMessage with role=assistant',
         ) ||
         err?.message?.includes('The server had an error processing your request') ||
         err?.message?.includes('missing finish_reason') ||
