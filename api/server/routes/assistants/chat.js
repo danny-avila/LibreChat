@@ -21,6 +21,7 @@ const router = express.Router();
 const {
   setHeaders,
   handleAbort,
+  validateModel,
   handleAbortError,
   // validateEndpoint,
   buildEndpointOption,
@@ -36,7 +37,7 @@ router.post('/abort', handleAbort());
  * @param {express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
-router.post('/', buildEndpointOption, setHeaders, async (req, res) => {
+router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
   const {
     text,

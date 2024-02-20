@@ -284,10 +284,20 @@ export enum CacheKeys {
    * Key for the override config cache.
    */
   OVERRIDE_CONFIG = 'overrideConfig',
+}
+
+/**
+ * Enum for violation types, used to identify, log, and cache violations.
+ */
+export enum ViolationTypes {
   /**
-   * Key for accessing File Upload Violations (exceeding limit).
+   * File Upload Violations (exceeding limit).
    */
   FILE_UPLOAD_LIMIT = 'file_upload_limit',
+  /**
+   * Illegal Model Request (not available).
+   */
+  ILLEGAL_MODEL_REQUEST = 'illegal_model_request',
 }
 
 /**
