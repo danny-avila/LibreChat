@@ -33,6 +33,12 @@
  */
 
 /**
+ * @exports TModelsConfig
+ * @typedef {import('librechat-data-provider').TModelsConfig} TModelsConfig
+ * @memberof typedefs
+ */
+
+/**
  * @exports TPlugin
  * @typedef {import('librechat-data-provider').TPlugin} TPlugin
  * @memberof typedefs
