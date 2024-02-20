@@ -41,7 +41,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
   let endpointTokenConfig = await cache.get(endpoint);
-  if (!endpointTokenConfig) {
+  if (endpointConfig && endpointConfig.models.fetch && !endpointTokenConfig) {
     await fetchModels({ apiKey: CUSTOM_API_KEY, baseURL: CUSTOM_BASE_URL, name: endpoint });
     endpointTokenConfig = await cache.get(endpoint);
   }
