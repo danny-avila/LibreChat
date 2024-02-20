@@ -1,16 +1,16 @@
-import type { TAzureGroupConfigs, TAzureBaseSchema, TModelMapSchema } from '../src/config';
+import type { TAzureGroupConfigs, TAzureGroupMap, TAzureModelMapSchema } from '../src/config';
 import { azureGroupConfigsSchema } from '../src/config';
 
 export function validateAzureGroupConfigs(configs: TAzureGroupConfigs): {
   isValid: boolean;
   modelNames: string[];
-  modelConfigMap: Record<string, TModelMapSchema>;
-  groupMap: Record<string, TAzureBaseSchema>;
+  modelGroupMap: Record<string, TAzureModelMapSchema>;
+  groupMap: Record<string, TAzureGroupMap>;
 } {
   let isValid = true;
   const modelNames: string[] = [];
-  const modelConfigMap: Record<string, TModelMapSchema> = {};
-  const groupMap: Record<string, TAzureBaseSchema> = {};
+  const modelGroupMap: Record<string, TAzureModelMapSchema> = {};
+  const groupMap: Record<string, TAzureGroupMap> = {};
 
   const result = azureGroupConfigsSchema.safeParse(configs);
   if (!result.success) {
@@ -25,6 +25,7 @@ export function validateAzureGroupConfigs(configs: TAzureGroupConfigs): {
         version,
         baseURL,
         additionalHeaders,
+        models,
       } = group;
       groupMap[groupName] = {
         apiKey,
@@ -33,6 +34,7 @@ export function validateAzureGroupConfigs(configs: TAzureGroupConfigs): {
         version,
         baseURL,
         additionalHeaders,
+        models,
       };
 
       for (const modelName in group.models) {
@@ -42,7 +44,7 @@ export function validateAzureGroupConfigs(configs: TAzureGroupConfigs): {
         if (typeof model === 'boolean') {
           // For boolean models, check if group-level deploymentName and version are present.
           if (!group.deploymentName || !group.version) {
-            return { isValid: false, modelNames, modelConfigMap, groupMap };
+            return { isValid: false, modelNames, modelGroupMap, groupMap };
           }
         } else {
           // For object models, check if deploymentName and version are required but missing.
@@ -50,18 +52,18 @@ export function validateAzureGroupConfigs(configs: TAzureGroupConfigs): {
             (!model.deploymentName && !group.deploymentName) ||
             (!model.version && !group.version)
           ) {
-            return { isValid: false, modelNames, modelConfigMap, groupMap };
+            return { isValid: false, modelNames, modelGroupMap, groupMap };
           }
 
-          modelConfigMap[modelName] = {
+          modelGroupMap[modelName] = {
             group: groupName,
-            deploymentName: model.deploymentName || group.deploymentName,
-            version: model.version || group.version,
+            // deploymentName: model.deploymentName || group.deploymentName,
+            // version: model.version || group.version,
           };
         }
       }
     }
   }
 
-  return { isValid, modelNames, modelConfigMap, groupMap };
+  return { isValid, modelNames, modelGroupMap, groupMap };
 }

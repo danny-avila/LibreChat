@@ -15,6 +15,8 @@ export const modelConfigSchema = z
   })
   .or(z.boolean());
 
+export type TAzureModelConfig = z.infer<typeof modelConfigSchema>;
+
 export const azureBaseSchema = z.object({
   apiKey: z.string(),
   instanceName: z.string(),
@@ -31,20 +33,23 @@ export const azureGroupSchema = z
     group: z.string(),
     models: z.record(z.string(), modelConfigSchema),
   })
+  .required()
   .and(azureBaseSchema);
 
 export const azureGroupConfigsSchema = z.array(azureGroupSchema).min(1);
 export type TAzureGroupConfigs = z.infer<typeof azureGroupConfigsSchema>;
 
 export const azureEndpointSchema = z.object({
-  groupConfigs: azureGroupConfigsSchema,
+  groups: azureGroupConfigsSchema,
 });
 
-export type TModelMapSchema = {
-  deploymentName?: string;
-  version?: string;
+export type TAzureModelMapSchema = {
+  // deploymentName?: string;
+  // version?: string;
   group: string;
 };
+
+export type TAzureGroupMap = TAzureBaseSchema & { models: Record<string, TAzureModelConfig> };
 
 export const assistantEndpointSchema = z.object({
   /* assistants specific */

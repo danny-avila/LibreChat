@@ -152,8 +152,8 @@ describe('validateAzureGroupConfigs', () => {
   });
 });
 
-describe('validateAzureGroupConfigs with modelConfigMap and regionMap', () => {
-  it('should provide a valid modelConfigMap and regionMap for a correct configuration', () => {
+describe('validateAzureGroupConfigs with modelGroupMap and regionMap', () => {
+  it('should provide a valid modelGroupMap and regionMap for a correct configuration', () => {
     const validConfigs = [
       {
         group: 'us-east',
@@ -190,13 +190,14 @@ describe('validateAzureGroupConfigs with modelConfigMap and regionMap', () => {
         },
       },
     ];
-    const { isValid, modelConfigMap, groupMap } = validateAzureGroupConfigs(validConfigs);
+    const { isValid, modelGroupMap, groupMap } = validateAzureGroupConfigs(validConfigs);
     expect(isValid).toBe(true);
-    expect(modelConfigMap['gpt-4-turbo']).toBeDefined();
-    expect(modelConfigMap['gpt-4-turbo'].group).toBe('us-east');
+    expect(modelGroupMap['gpt-4-turbo']).toBeDefined();
+    expect(modelGroupMap['gpt-4-turbo'].group).toBe('us-east');
     expect(groupMap['us-east']).toBeDefined();
     expect(groupMap['us-east'].apiKey).toBe('prod-1234');
-    console.dir(modelConfigMap, { depth: null });
+    expect(groupMap['us-east'].models['gpt-4-turbo']).toBeDefined();
+    console.dir(modelGroupMap, { depth: null });
     console.dir(groupMap, { depth: null });
   });
 });
