@@ -3,6 +3,7 @@ const checkBan = require('./checkBan');
 const uaParser = require('./uaParser');
 const setHeaders = require('./setHeaders');
 const loginLimiter = require('./loginLimiter');
+const validateModel = require('./validateModel');
 const requireJwtAuth = require('./requireJwtAuth');
 const uploadLimiters = require('./uploadLimiters');
 const registerLimiter = require('./registerLimiter');
@@ -32,6 +33,7 @@ module.exports = {
   validateMessageReq,
   buildEndpointOption,
   validateRegistration,
+  validateModel,
   moderateText,
   noIndex,
 };

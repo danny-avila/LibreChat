@@ -602,7 +602,10 @@ REGISTRATION_VIOLATION_SCORE=1
 CONCURRENT_VIOLATION_SCORE=1
 MESSAGE_VIOLATION_SCORE=1
 NON_BROWSER_VIOLATION_SCORE=20
+ILLEGAL_MODEL_REQ_SCORE=5
 ```
+
+> Note: Non-browser access and Illegal model requests are almost always nefarious as it means a 3rd party is attempting to access the server through an automated script.
 
 #### Login and registration rate limiting.
 - `LOGIN_MAX`: The max amount of logins allowed per IP per `LOGIN_WINDOW`
