@@ -69,7 +69,12 @@ MESSAGE_IP_WINDOW=1 # in minutes, determines the window of time for MESSAGE_IP_M
 LIMIT_MESSAGE_USER=false # Whether to limit the amount of messages an IP can send per MESSAGE_USER_WINDOW
 MESSAGE_USER_MAX=40 # The max amount of messages an IP can send per MESSAGE_USER_WINDOW
 MESSAGE_USER_WINDOW=1 # in minutes, determines the window of time for MESSAGE_USER_MAX messages
+
+ILLEGAL_MODEL_REQ_SCORE=5 #Violation score to accrue if a user attempts to use an unlisted model.
+
 ```
+
+> Note: Illegal model requests are almost always nefarious as it means a 3rd party is attempting to access the server through an automated script. For this, I recommend a relatively high score, no less than 5.
 
 ## OpenAI moderation text
 
