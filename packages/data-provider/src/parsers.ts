@@ -1,3 +1,4 @@
+import type { ZodIssue } from 'zod';
 import type { TConversation, TPreset } from './schemas';
 import type { TEndpointOption } from './types';
 import {
@@ -41,6 +42,17 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
 //   [EModelEndpoint.google]: createGoogleSchema,
 // };
+
+export function errorsToString(errors: ZodIssue[]) {
+  return errors
+    .map((error) => {
+      const field = error.path.join('.');
+      const message = error.message;
+
+      return `${field}: ${message}`;
+    })
+    .join(' ');
+}
 
 export function getFirstDefinedValue(possibleValues: string[]) {
   let returnValue;
