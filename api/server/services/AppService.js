@@ -5,6 +5,7 @@ const {
   defaultSocialLogins,
   validateAzureGroups,
   mapModelToAzureConfig,
+  deprecatedAzureVariables,
 } = require('librechat-data-provider');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
@@ -86,6 +87,14 @@ const AppService = async (app) => {
       modelGroupMap,
       groupMap,
     };
+
+    deprecatedAzureVariables.forEach(({ key, description }) => {
+      if (process.env[key]) {
+        logger.warn(
+          `The \`${key}\` environment variable (related to ${description}) should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you will experience conflicts and errors.`,
+        );
+      }
+    });
   }
 
   if (config?.endpoints?.[EModelEndpoint.assistants]) {

@@ -3,6 +3,31 @@ import type { TAzureGroups, TAzureGroupMap, TAzureModelGroupMap } from '../src/c
 import { errorsToString, extractEnvVariable, envVarRegex } from '../src/parsers';
 import { azureGroupConfigsSchema } from '../src/config';
 
+export const deprecatedAzureVariables = [
+  /* "related to" precedes description text */
+  { key: 'AZURE_OPENAI_DEFAULT_MODEL', description: 'setting a default model' },
+  { key: 'AZURE_OPENAI_MODELS', description: 'setting models' },
+  {
+    key: 'AZURE_USE_MODEL_AS_DEPLOYMENT_NAME',
+    description: 'using model names as deployment names',
+  },
+  { key: 'AZURE_API_KEY', description: 'setting a single Azure API key' },
+  { key: 'AZURE_OPENAI_API_INSTANCE_NAME', description: 'setting a single Azure instance name' },
+  {
+    key: 'AZURE_OPENAI_API_DEPLOYMENT_NAME',
+    description: 'setting a single Azure deployment name',
+  },
+  { key: 'AZURE_OPENAI_API_VERSION', description: 'setting a single Azure API version' },
+  {
+    key: 'AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME',
+    description: 'setting a single Azure completions deployment name',
+  },
+  {
+    key: 'AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME',
+    description: 'setting a single Azure embeddings deployment name',
+  },
+];
+
 export function validateAzureGroups(configs: TAzureGroups): {
   isValid: boolean;
   modelNames: string[];
