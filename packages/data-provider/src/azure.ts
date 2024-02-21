@@ -1,19 +1,19 @@
 import type { ZodError } from 'zod';
-import type { TAzureGroups, TAzureGroupMap, TAzureModelMapSchema } from '../src/config';
+import type { TAzureGroups, TAzureGroupMap, TAzureModelGroupMap } from '../src/config';
 import { azureGroupConfigsSchema } from '../src/config';
 import { errorsToString } from '../src/parsers';
 
 export function validateAzureGroups(configs: TAzureGroups): {
   isValid: boolean;
   modelNames: string[];
-  modelGroupMap: Record<string, TAzureModelMapSchema>;
-  groupMap: Record<string, TAzureGroupMap>;
+  modelGroupMap: TAzureModelGroupMap;
+  groupMap: TAzureGroupMap;
   errors: (ZodError | string)[];
 } {
   let isValid = true;
   const modelNames: string[] = [];
-  const modelGroupMap: Record<string, TAzureModelMapSchema> = {};
-  const groupMap: Record<string, TAzureGroupMap> = {};
+  const modelGroupMap: TAzureModelGroupMap = {};
+  const groupMap: TAzureGroupMap = {};
   const errors: (ZodError | string)[] = [];
 
   const result = azureGroupConfigsSchema.safeParse(configs);
@@ -81,4 +81,52 @@ export function validateAzureGroups(configs: TAzureGroups): {
   }
 
   return { isValid, modelNames, modelGroupMap, groupMap, errors };
+}
+
+export type AzureOptions = {
+  azureOpenAIApiKey: string;
+  azureOpenAIApiInstanceName: string;
+  azureOpenAIApiDeploymentName?: string;
+  azureOpenAIApiVersion?: string;
+};
+
+export function mapModelToAzureConfig({
+  modelName,
+  modelGroupMap,
+  groupMap,
+}: {
+  modelName: string;
+  modelGroupMap: TAzureModelGroupMap;
+  groupMap: TAzureGroupMap;
+}): AzureOptions {
+  const modelConfig = modelGroupMap[modelName];
+  if (!modelConfig) {
+    throw new Error(`Model named "${modelName}" not found in configuration.`);
+  }
+
+  const groupConfig = groupMap[modelConfig.group];
+  if (!groupConfig) {
+    throw new Error(
+      `Group "${modelConfig.group}" for model "${modelName}" not found in configuration.`,
+    );
+  }
+
+  const modelDetails = groupConfig.models[modelName];
+  const deploymentName =
+    typeof modelDetails === 'object'
+      ? modelDetails.deploymentName || groupConfig.deploymentName
+      : groupConfig.deploymentName;
+  const version =
+    typeof modelDetails === 'object'
+      ? modelDetails.version || groupConfig.version
+      : groupConfig.version;
+
+  const clientOptions: AzureOptions = {
+    azureOpenAIApiKey: groupConfig.apiKey,
+    azureOpenAIApiInstanceName: groupConfig.instanceName,
+    azureOpenAIApiDeploymentName: deploymentName,
+    azureOpenAIApiVersion: version,
+  };
+
+  return clientOptions;
 }

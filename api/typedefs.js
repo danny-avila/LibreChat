@@ -33,6 +33,12 @@
  */
 
 /**
+ * @exports TAzureGroups
+ * @typedef {import('librechat-data-provider').TAzureGroups} TAzureGroups
+ * @memberof typedefs
+ */
+
+/**
  * @exports TModelsConfig
  * @typedef {import('librechat-data-provider').TModelsConfig} TModelsConfig
  * @memberof typedefs

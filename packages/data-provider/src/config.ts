@@ -49,7 +49,11 @@ export type TAzureModelMapSchema = {
   group: string;
 };
 
-export type TAzureGroupMap = TAzureBaseSchema & { models: Record<string, TAzureModelConfig> };
+export type TAzureModelGroupMap = Record<string, TAzureModelMapSchema>;
+export type TAzureGroupMap = Record<
+  string,
+  TAzureBaseSchema & { models: Record<string, TAzureModelConfig> }
+>;
 
 export const assistantEndpointSchema = z.object({
   /* assistants specific */
