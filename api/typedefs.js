@@ -57,6 +57,12 @@
  */
 
 /**
+ * @exports TEndpointsConfig
+ * @typedef {import('librechat-data-provider').TEndpointsConfig} TEndpointsConfig
+ * @memberof typedefs
+ */
+
+/**
  * @exports TMessage
  * @typedef {import('librechat-data-provider').TMessage} TMessage
  * @memberof typedefs
