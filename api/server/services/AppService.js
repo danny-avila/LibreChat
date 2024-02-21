@@ -4,6 +4,7 @@ const {
   EModelEndpoint,
   defaultSocialLogins,
   validateAzureGroups,
+  mapModelToAzureConfig,
 } = require('librechat-data-provider');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
@@ -63,13 +64,21 @@ const AppService = async (app) => {
   handleRateLimits(config?.rateLimits);
 
   const endpointLocals = {};
+
   if (config?.endpoints?.[EModelEndpoint.azureOpenAI]) {
     const { isValid, modelNames, modelGroupMap, groupMap, errors } = validateAzureGroups(
       config.endpoints[EModelEndpoint.azureOpenAI].groups,
     );
+
     if (!isValid) {
-      logger.error('Invalid Azure OpenAI configuration', errors);
-      throw new Error('Invalid Azure OpenAI configuration');
+      const errorString = errors.join('\n');
+      const errorMessage = 'Invalid Azure OpenAI configuration:\n' + errorString;
+      logger.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    for (const modelName of modelNames) {
+      mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
     }
 
     endpointLocals[EModelEndpoint.azureOpenAI] = {
@@ -78,6 +87,7 @@ const AppService = async (app) => {
       groupMap,
     };
   }
+
   if (config?.endpoints?.[EModelEndpoint.assistants]) {
     const { disableBuilder, pollIntervalMs, timeoutMs, supportedIds, excludedIds } =
       config.endpoints[EModelEndpoint.assistants];
