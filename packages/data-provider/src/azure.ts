@@ -1,7 +1,7 @@
 import type { ZodError } from 'zod';
 import type { TAzureGroups, TAzureGroupMap, TAzureModelGroupMap } from '../src/config';
+import { errorsToString, extractEnvVariable, envVarRegex } from '../src/parsers';
 import { azureGroupConfigsSchema } from '../src/config';
-import { errorsToString } from '../src/parsers';
 
 export function validateAzureGroups(configs: TAzureGroups): {
   isValid: boolean;
@@ -32,6 +32,12 @@ export function validateAzureGroups(configs: TAzureGroups): {
         additionalHeaders,
         models,
       } = group;
+
+      if (groupMap[groupName]) {
+        errors.push(`Duplicate group name detected: "${groupName}". Group names must be unique.`);
+        return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
+      }
+
       groupMap[groupName] = {
         apiKey,
         instanceName,
@@ -45,6 +51,13 @@ export function validateAzureGroups(configs: TAzureGroups): {
       for (const modelName in group.models) {
         modelNames.push(modelName);
         const model = group.models[modelName];
+
+        if (modelGroupMap[modelName]) {
+          errors.push(
+            `Duplicate model name detected: "${modelName}". Model names must be unique across groups.`,
+          );
+          return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
+        }
 
         if (typeof model === 'boolean') {
           // For boolean models, check if group-level deploymentName and version are present.
@@ -83,11 +96,11 @@ export function validateAzureGroups(configs: TAzureGroups): {
   return { isValid, modelNames, modelGroupMap, groupMap, errors };
 }
 
-export type AzureOptions = {
+type AzureOptions = {
   azureOpenAIApiKey: string;
   azureOpenAIApiInstanceName: string;
-  azureOpenAIApiDeploymentName?: string;
-  azureOpenAIApiVersion?: string;
+  azureOpenAIApiDeploymentName: string;
+  azureOpenAIApiVersion: string;
 };
 
 export function mapModelToAzureConfig({
@@ -121,12 +134,24 @@ export function mapModelToAzureConfig({
       ? modelDetails.version || groupConfig.version
       : groupConfig.version;
 
-  const clientOptions: AzureOptions = {
-    azureOpenAIApiKey: groupConfig.apiKey,
-    azureOpenAIApiInstanceName: groupConfig.instanceName,
-    azureOpenAIApiDeploymentName: deploymentName,
-    azureOpenAIApiVersion: version,
+  if (!deploymentName || !version) {
+    throw new Error(
+      `Model "${modelName}" in group "${modelConfig.group}" is missing a deploymentName ("${deploymentName}") or version ("${version}").`,
+    );
+  }
+
+  const azureOptions: AzureOptions = {
+    azureOpenAIApiKey: extractEnvVariable(groupConfig.apiKey),
+    azureOpenAIApiInstanceName: extractEnvVariable(groupConfig.instanceName),
+    azureOpenAIApiDeploymentName: extractEnvVariable(deploymentName),
+    azureOpenAIApiVersion: extractEnvVariable(version),
   };
 
-  return clientOptions;
+  for (const value of Object.values(azureOptions)) {
+    if (typeof value === 'string' && envVarRegex.test(value)) {
+      throw new Error(`Azure configuration environment variable "${value}" was not found.`);
+    }
+  }
+
+  return azureOptions;
 }
