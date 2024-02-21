@@ -39,10 +39,6 @@ export const azureGroupSchema = z
 export const azureGroupConfigsSchema = z.array(azureGroupSchema).min(1);
 export type TAzureGroups = z.infer<typeof azureGroupConfigsSchema>;
 
-export const azureEndpointSchema = z.object({
-  groups: azureGroupConfigsSchema,
-});
-
 export type TAzureModelMapSchema = {
   // deploymentName?: string;
   // version?: string;
@@ -109,7 +105,25 @@ export const endpointSchema = z.object({
   headers: z.record(z.any()).optional(),
   addParams: z.record(z.any()).optional(),
   dropParams: z.array(z.string()).optional(),
+  customOrder: z.number().optional(),
 });
+
+export const azureEndpointSchema = z
+  .object({
+    groups: azureGroupConfigsSchema,
+  })
+  .and(
+    endpointSchema
+      .pick({
+        titleConvo: true,
+        titleMethod: true,
+        titleModel: true,
+        summarize: true,
+        summaryModel: true,
+        customOrder: true,
+      })
+      .partial(),
+  );
 
 export const rateLimitSchema = z.object({
   fileUploads: z

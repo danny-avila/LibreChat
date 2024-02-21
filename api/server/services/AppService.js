@@ -67,9 +67,9 @@ const AppService = async (app) => {
   const endpointLocals = {};
 
   if (config?.endpoints?.[EModelEndpoint.azureOpenAI]) {
-    const { isValid, modelNames, modelGroupMap, groupMap, errors } = validateAzureGroups(
-      config.endpoints[EModelEndpoint.azureOpenAI].groups,
-    );
+    const { groups, titleModel, titleConvo, titleMethod } =
+      config.endpoints[EModelEndpoint.azureOpenAI];
+    const { isValid, modelNames, modelGroupMap, groupMap, errors } = validateAzureGroups(groups);
 
     if (!isValid) {
       const errorString = errors.join('\n');
@@ -86,6 +86,9 @@ const AppService = async (app) => {
       modelNames,
       modelGroupMap,
       groupMap,
+      titleConvo,
+      titleMethod,
+      titleModel,
     };
 
     deprecatedAzureVariables.forEach(({ key, description }) => {

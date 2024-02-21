@@ -56,10 +56,13 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   const azureConfig = isAzureOpenAI && req.app.locals[EModelEndpoint.azureOpenAI];
 
   if (isAzureOpenAI && azureConfig) {
-    /** @type {{ groups: TAzureGroups}} */
+    /** @type {{ modelGroupMap: TAzureModelGroupMap, groupMap: TAzureGroupMap }} */
     const { modelGroupMap, groupMap } = azureConfig;
     clientOptions.azure = mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
     apiKey = clientOptions.azure.azureOpenAIApiKey;
+    clientOptions.titleConvo = azureConfig.titleConvo;
+    clientOptions.titleModel = azureConfig.titleModel;
+    clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
   } else if (isAzureOpenAI) {
     clientOptions.azure = isUserProvided ? JSON.parse(userKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;

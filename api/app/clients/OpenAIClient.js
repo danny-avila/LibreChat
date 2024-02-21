@@ -1,10 +1,12 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
+  ImageDetail,
+  EModelEndpoint,
+  ImageDetailCost,
   getResponseSender,
   validateVisionModel,
-  ImageDetailCost,
-  ImageDetail,
+  mapModelToAzureConfig,
 } = require('librechat-data-provider');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
@@ -725,6 +727,16 @@ class OpenAIClient extends BaseClient {
       max_tokens: 16,
     };
 
+    if (this.azure && this.options.req.app.locals[EModelEndpoint.azureOpenAI]) {
+      /** @type {{ modelGroupMap: TAzureModelGroupMap, groupMap: TAzureGroupMap }} */
+      const { modelGroupMap, groupMap } = this.options.req.app.locals[EModelEndpoint.azureOpenAI];
+      this.azure = mapModelToAzureConfig({
+        modelName: modelOptions.model,
+        modelGroupMap,
+        groupMap,
+      });
+    }
+
     const titleChatCompletion = async () => {
       modelOptions.model = model;
 
@@ -973,6 +985,21 @@ ${convo}
 
       if (this.isVisionModel) {
         modelOptions.max_tokens = 4000;
+      }
+
+      if (
+        this.azure &&
+        this.isVisionModel &&
+        this.options.req.app.locals[EModelEndpoint.azureOpenAI]
+      ) {
+        /** @type {{ modelGroupMap: TAzureModelGroupMap, groupMap: TAzureGroupMap }} */
+        const { modelGroupMap, groupMap } = this.options.req.app.locals[EModelEndpoint.azureOpenAI];
+        this.azure = mapModelToAzureConfig({
+          modelName: modelOptions.model,
+          modelGroupMap,
+          groupMap,
+        });
+        this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
       }
 
       if (this.azure || this.options.azure) {
