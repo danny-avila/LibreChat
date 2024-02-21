@@ -191,7 +191,7 @@ describe('validateAzureGroups', () => {
   });
 });
 
-describe('validateAzureGroups with modelGroupMap and regionMap', () => {
+describe('validateAzureGroups with modelGroupMap and groupMap', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
@@ -203,7 +203,7 @@ describe('validateAzureGroups with modelGroupMap and regionMap', () => {
     process.env = originalEnv;
   });
 
-  it('should provide a valid modelGroupMap and regionMap for a correct configuration', () => {
+  it('should provide a valid modelGroupMap and groupMap for a correct configuration', () => {
     const validConfigs: TAzureGroups = [
       {
         group: 'us-east',
