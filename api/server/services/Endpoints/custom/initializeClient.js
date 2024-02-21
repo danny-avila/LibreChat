@@ -1,12 +1,15 @@
-const { EModelEndpoint, CacheKeys } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  CacheKeys,
+  extractEnvVariable,
+  envVarRegex,
+} = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
-const { isUserProvided, extractEnvVariable } = require('~/server/utils');
 const { fetchModels } = require('~/server/services/ModelService');
 const getLogStores = require('~/cache/getLogStores');
+const { isUserProvided } = require('~/server/utils');
 const { OpenAIClient } = require('~/app');
-
-const envVarRegex = /^\${(.+)}$/;
 
 const { PROXY } = process.env;
 

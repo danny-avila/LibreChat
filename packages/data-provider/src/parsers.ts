@@ -54,6 +54,19 @@ export function errorsToString(errors: ZodIssue[]) {
     .join(' ');
 }
 
+export const envVarRegex = /^\${(.+)}$/;
+
+/**
+ * Extracts the value of an environment variable from a string.
+ */
+export function extractEnvVariable(value: string) {
+  const envVarMatch = value.match(envVarRegex);
+  if (envVarMatch) {
+    return process.env[envVarMatch[1]] || value;
+  }
+  return value;
+}
+
 export function getFirstDefinedValue(possibleValues: string[]) {
   let returnValue;
   for (const value of possibleValues) {
