@@ -1,5 +1,10 @@
 import type { ZodError } from 'zod';
-import type { TAzureGroups, TAzureGroupMap, TAzureModelGroupMap } from '../src/config';
+import type {
+  TAzureGroups,
+  TAzureGroupMap,
+  TAzureModelGroupMap,
+  TValidatedAzureConfig,
+} from '../src/config';
 import { errorsToString, extractEnvVariable, envVarRegex } from '../src/parsers';
 import { azureGroupConfigsSchema } from '../src/config';
 
@@ -28,11 +33,8 @@ export const deprecatedAzureVariables = [
   },
 ];
 
-export function validateAzureGroups(configs: TAzureGroups): {
+export function validateAzureGroups(configs: TAzureGroups): TValidatedAzureConfig & {
   isValid: boolean;
-  modelNames: string[];
-  modelGroupMap: TAzureModelGroupMap;
-  groupMap: TAzureGroupMap;
   errors: (ZodError | string)[];
 } {
   let isValid = true;
@@ -132,10 +134,8 @@ export function mapModelToAzureConfig({
   modelName,
   modelGroupMap,
   groupMap,
-}: {
+}: Omit<TValidatedAzureConfig, 'modelNames'> & {
   modelName: string;
-  modelGroupMap: TAzureModelGroupMap;
-  groupMap: TAzureGroupMap;
 }): AzureOptions {
   const modelConfig = modelGroupMap[modelName];
   if (!modelConfig) {

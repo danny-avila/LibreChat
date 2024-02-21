@@ -55,6 +55,12 @@ export type TAzureGroupMap = Record<
   TAzureBaseSchema & { models: Record<string, TAzureModelConfig> }
 >;
 
+export type TValidatedAzureConfig = {
+  modelNames: string[];
+  modelGroupMap: TAzureModelGroupMap;
+  groupMap: TAzureGroupMap;
+};
+
 export const assistantEndpointSchema = z.object({
   /* assistants specific */
   disableBuilder: z.boolean().optional(),

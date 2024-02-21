@@ -39,6 +39,12 @@
  */
 
 /**
+ * @exports TValidatedAzureConfig
+ * @typedef {import('librechat-data-provider').TValidatedAzureConfig} TValidatedAzureConfig
+ * @memberof typedefs
+ */
+
+/**
  * @exports TModelsConfig
  * @typedef {import('librechat-data-provider').TModelsConfig} TModelsConfig
  * @memberof typedefs
