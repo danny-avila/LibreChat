@@ -1,7 +1,7 @@
-// import type { TAzureGroupConfigs } from '../src/config';
-import { validateAzureGroupConfigs } from '../src/azure';
+import type { TAzureGroups } from '../src/config';
+import { validateAzureGroups } from '../src/azure';
 
-describe('validateAzureGroupConfigs', () => {
+describe('validateAzureGroups', () => {
   it('should validate a correct configuration', () => {
     const configs = [
       {
@@ -22,7 +22,7 @@ describe('validateAzureGroupConfigs', () => {
         },
       },
     ];
-    const { isValid, modelNames } = validateAzureGroupConfigs(configs);
+    const { isValid, modelNames } = validateAzureGroups(configs);
     expect(isValid).toBe(true);
     expect(modelNames).toEqual(['gpt-4-turbo']);
   });
@@ -40,8 +40,9 @@ describe('validateAzureGroupConfigs', () => {
         },
       },
     ];
-    const { isValid } = validateAzureGroupConfigs(configs);
+    const { isValid, errors } = validateAzureGroups(configs);
     expect(isValid).toBe(false);
+    expect(errors.length).toBe(1);
   });
 
   it('should return invalid for a configuration with a boolean model where group lacks deploymentName and version', () => {
@@ -55,8 +56,9 @@ describe('validateAzureGroupConfigs', () => {
         },
       },
     ];
-    const { isValid } = validateAzureGroupConfigs(configs);
+    const { isValid, errors } = validateAzureGroups(configs);
     expect(isValid).toBe(false);
+    expect(errors.length).toBe(1);
   });
 
   it('should allow a boolean model when group has both deploymentName and version', () => {
@@ -72,8 +74,12 @@ describe('validateAzureGroupConfigs', () => {
         },
       },
     ];
-    const { isValid, modelNames } = validateAzureGroupConfigs(configs);
+    const { isValid, modelNames, modelGroupMap, groupMap } = validateAzureGroups(configs);
     expect(isValid).toBe(true);
+    const modelGroup = modelGroupMap['gpt-5-turbo'];
+    expect(modelGroup).toBeDefined();
+    expect(modelGroup.group).toBe('japan-east');
+    expect(groupMap[modelGroup.group]).toBeDefined();
     expect(modelNames).toContain('gpt-5-turbo');
   });
 
@@ -91,7 +97,7 @@ describe('validateAzureGroupConfigs', () => {
         },
       },
     ];
-    const { isValid, modelNames } = validateAzureGroupConfigs(configs);
+    const { isValid, modelNames } = validateAzureGroups(configs);
     expect(isValid).toBe(true);
     expect(modelNames).toEqual(['gpt-6']);
   });
@@ -108,8 +114,9 @@ describe('validateAzureGroupConfigs', () => {
       },
     ];
     // @ts-expect-error This error is expected because the 'group' property should be a string.
-    const { isValid } = validateAzureGroupConfigs(configs);
+    const { isValid, errors } = validateAzureGroups(configs);
     expect(isValid).toBe(false);
+    expect(errors.length).toBe(1);
   });
 
   it('should correctly handle a mix of valid and invalid model configurations', () => {
@@ -127,9 +134,10 @@ describe('validateAzureGroupConfigs', () => {
         },
       },
     ];
-    const { isValid, modelNames } = validateAzureGroupConfigs(configs);
+    const { isValid, modelNames, errors } = validateAzureGroups(configs);
     expect(isValid).toBe(false);
     expect(modelNames).toEqual(expect.arrayContaining(['valid-model', 'invalid-model']));
+    expect(errors.length).toBe(1);
   });
 
   it('should return invalid for configuration missing required fields at the group level', () => {
@@ -147,12 +155,13 @@ describe('validateAzureGroupConfigs', () => {
       },
     ];
     // @ts-expect-error This error is expected because the 'instanceName' property is intentionally left out.
-    const { isValid } = validateAzureGroupConfigs(configs);
+    const { isValid, errors } = validateAzureGroups(configs);
     expect(isValid).toBe(false);
+    expect(errors.length).toBe(1);
   });
 });
 
-describe('validateAzureGroupConfigs with modelGroupMap and regionMap', () => {
+describe('validateAzureGroups with modelGroupMap and regionMap', () => {
   it('should provide a valid modelGroupMap and regionMap for a correct configuration', () => {
     const validConfigs = [
       {
@@ -190,14 +199,97 @@ describe('validateAzureGroupConfigs with modelGroupMap and regionMap', () => {
         },
       },
     ];
-    const { isValid, modelGroupMap, groupMap } = validateAzureGroupConfigs(validConfigs);
+    const { isValid, modelGroupMap, groupMap } = validateAzureGroups(validConfigs);
     expect(isValid).toBe(true);
     expect(modelGroupMap['gpt-4-turbo']).toBeDefined();
     expect(modelGroupMap['gpt-4-turbo'].group).toBe('us-east');
     expect(groupMap['us-east']).toBeDefined();
     expect(groupMap['us-east'].apiKey).toBe('prod-1234');
     expect(groupMap['us-east'].models['gpt-4-turbo']).toBeDefined();
-    console.dir(modelGroupMap, { depth: null });
-    console.dir(groupMap, { depth: null });
+  });
+
+  it('should list all expected models in both modelGroupMap and groupMap', () => {
+    const validConfigs: TAzureGroups = [
+      {
+        group: 'librechat-westus',
+        apiKey: '${WESTUS_API_KEY}',
+        instanceName: 'librechat-westus',
+        version: '2023-12-01-preview',
+        models: {
+          'gpt-4-vision-preview': {
+            deploymentName: 'gpt-4-vision-preview',
+            version: '2024-02-15-preview',
+          },
+          'gpt-3.5-turbo': {
+            deploymentName: 'gpt-35-turbo',
+          },
+          'gpt-3.5-turbo-1106': {
+            deploymentName: 'gpt-35-turbo-1106',
+          },
+          'gpt-4': {
+            deploymentName: 'gpt-4',
+          },
+          'gpt-4-1106-preview': {
+            deploymentName: 'gpt-4-1106-preview',
+          },
+        },
+      },
+      {
+        group: 'librechat-eastus',
+        apiKey: '${EASTUS_API_KEY}',
+        instanceName: 'librechat-eastus',
+        deploymentName: 'gpt-4-turbo',
+        version: '2024-02-15-preview',
+        models: {
+          'gpt-4-turbo': true,
+        },
+      },
+    ];
+    const { isValid, modelGroupMap, groupMap, modelNames } = validateAzureGroups(validConfigs);
+    expect(isValid).toBe(true);
+    expect(modelNames).toEqual([
+      'gpt-4-vision-preview',
+      'gpt-3.5-turbo',
+      'gpt-3.5-turbo-1106',
+      'gpt-4',
+      'gpt-4-1106-preview',
+      'gpt-4-turbo',
+    ]);
+
+    // Check modelGroupMap
+    modelNames.forEach((modelName) => {
+      expect(modelGroupMap[modelName]).toBeDefined();
+    });
+
+    // Check groupMap for 'librechat-westus'
+    expect(groupMap).toHaveProperty('librechat-westus');
+    expect(groupMap['librechat-westus']).toEqual(
+      expect.objectContaining({
+        apiKey: '${WESTUS_API_KEY}',
+        instanceName: 'librechat-westus',
+        version: '2023-12-01-preview',
+        models: expect.objectContaining({
+          'gpt-4-vision-preview': expect.any(Object),
+          'gpt-3.5-turbo': expect.any(Object),
+          'gpt-3.5-turbo-1106': expect.any(Object),
+          'gpt-4': expect.any(Object),
+          'gpt-4-1106-preview': expect.any(Object),
+        }),
+      }),
+    );
+
+    // Check groupMap for 'librechat-eastus'
+    expect(groupMap).toHaveProperty('librechat-eastus');
+    expect(groupMap['librechat-eastus']).toEqual(
+      expect.objectContaining({
+        apiKey: '${EASTUS_API_KEY}',
+        instanceName: 'librechat-eastus',
+        deploymentName: 'gpt-4-turbo',
+        version: '2024-02-15-preview',
+        models: expect.objectContaining({
+          'gpt-4-turbo': true,
+        }),
+      }),
+    );
   });
 });

@@ -37,7 +37,7 @@ export const azureGroupSchema = z
   .and(azureBaseSchema);
 
 export const azureGroupConfigsSchema = z.array(azureGroupSchema).min(1);
-export type TAzureGroupConfigs = z.infer<typeof azureGroupConfigsSchema>;
+export type TAzureGroups = z.infer<typeof azureGroupConfigsSchema>;
 
 export const azureEndpointSchema = z.object({
   groups: azureGroupConfigsSchema,
