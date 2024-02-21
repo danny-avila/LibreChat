@@ -1,4 +1,4 @@
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { getAzureCredentials } = require('~/utils');
 const { isEnabled } = require('~/server/utils');
@@ -14,7 +14,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     OPENAI_SUMMARIZE,
     DEBUG_OPENAI,
   } = process.env;
-  const { key: expiresAt, endpoint } = req.body;
+  const { key: expiresAt, endpoint, model: modelName } = req.body;
   const contextStrategy = isEnabled(OPENAI_SUMMARIZE) ? 'summarize' : null;
 
   const baseURLOptions = {
@@ -51,8 +51,16 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   let apiKey = isUserProvided ? userKey : credentials[endpoint];
+  const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
+  /** @type {false | TValidatedAzureConfig} */
+  const azureConfig = isAzureOpenAI && req.app.locals[EModelEndpoint.azureOpenAI];
 
-  if (endpoint === EModelEndpoint.azureOpenAI) {
+  if (isAzureOpenAI && azureConfig) {
+    /** @type {{ groups: TAzureGroups}} */
+    const { modelGroupMap, groupMap } = azureConfig;
+    clientOptions.azure = mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
+    apiKey = clientOptions.azure.azureOpenAIApiKey;
+  } else if (isAzureOpenAI) {
     clientOptions.azure = isUserProvided ? JSON.parse(userKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;
   }
