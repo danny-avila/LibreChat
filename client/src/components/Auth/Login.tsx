@@ -1,18 +1,48 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { getLoginError } from '~/utils';
-import { useLocalize } from '~/hooks';
+import { useLocalize, ThemeContext } from '~/hooks';
 import LoginForm from './LoginForm';
 import SocialButton from './SocialButton';
+import { Sun, Moon } from 'lucide-react';
+
+const ThemeSelector = ({
+  theme,
+  onChange,
+}: {
+  theme: string;
+  onChange: (value: string) => void;
+}) => {
+  const themeIcons = {
+    system: <Sun />,
+    dark: <Moon color="white" />,
+    light: <Sun />,
+  };
+
+  return (
+    <div className="flex items-center justify-between">
+      <div className="cursor-pointer" onClick={() => onChange(theme === 'dark' ? 'light' : 'dark')}>
+        {themeIcons[theme]}
+      </div>
+    </div>
+  );
+};
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
   const navigate = useNavigate();
+  const { theme, setTheme } = useContext(ThemeContext);
+  const changeTheme = useCallback(
+    (value: string) => {
+      setTheme(value);
+    },
+    [setTheme],
+  );
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -91,9 +121,10 @@ function Login() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
-      <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
+      <ThemeSelector theme={theme} onChange={changeTheme} />
+      <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
+        <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
           {localize('com_auth_welcome_back')}
         </h1>
         {error && (
@@ -106,7 +137,7 @@ function Login() {
         )}
         {startupConfig.emailLoginEnabled && <LoginForm onSubmit={login} />}
         {startupConfig.registrationEnabled && (
-          <p className="my-4 text-center text-sm font-light text-gray-700">
+          <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-gray-100">
             {' '}
             {localize('com_auth_no_account')}{' '}
             <a href="/register" className="p-1 font-medium text-green-500">
@@ -119,7 +150,7 @@ function Login() {
             {startupConfig.emailLoginEnabled && (
               <>
                 <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-                  <div className="absolute bg-white px-3 text-xs">Or</div>
+                  <div className="absolute bg-white px-3 text-xs dark:bg-gray-900">Or</div>
                 </div>
                 <div className="mt-8" />
               </>
