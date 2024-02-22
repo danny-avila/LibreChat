@@ -7,7 +7,7 @@ services:
   api:
     container_name: LibreChat
     ports:
-      - 3080:3080
+      - "${PORT}:${PORT}"
     depends_on:
       - mongodb
     image: ghcr.io/danny-avila/librechat-dev:latest
