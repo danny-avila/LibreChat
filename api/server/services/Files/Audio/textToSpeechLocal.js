@@ -25,11 +25,10 @@ async function textToSpeechLocal(req, res) {
   try {
     const response = await axios.post(url, data, { headers, responseType: 'arraybuffer' });
     const buffer = Buffer.from(response.data, 'binary');
-    const blob = new Blob([buffer], { type: 'audio/mpeg' });
 
     res.set('Content-Disposition', 'attachment; filename="audio.mp3"');
     res.set('Content-Type', 'audio/mpeg');
-    res.send(blob);
+    res.send(buffer);
   } catch (error) {
     console.error(error);
     res.status(500).send('An error occurred');
