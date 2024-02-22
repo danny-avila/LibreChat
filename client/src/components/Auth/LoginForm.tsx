@@ -40,7 +40,6 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
             aria-label={localize('com_auth_email')}
             {...register('email', {
               required: localize('com_auth_email_required'),
-              minLength: { value: 3, message: localize('com_auth_email_min_length') },
               maxLength: { value: 120, message: localize('com_auth_email_max_length') },
               pattern: { value: /\S+@\S+\.\S+/, message: localize('com_auth_email_pattern') },
             })}

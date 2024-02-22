@@ -191,7 +191,7 @@ const Registration: React.FC = () => {
           {renderInput('email', 'com_auth_email', 'email', {
             required: localize('com_auth_email_required'),
             minLength: {
-              value: 3,
+              value: 1,
               message: localize('com_auth_email_min_length'),
             },
             maxLength: {
@@ -230,11 +230,7 @@ const Registration: React.FC = () => {
         </form>
         <p className="my-4 text-center text-sm font-light text-gray-700">
           {localize('com_auth_already_have_account')}{' '}
-          <a
-            href="/login"
-            aria-label="Login"
-            className="p-1 font-medium text-green-500 hover:underline"
-          >
+          <a href="/login" aria-label="Login" className="p-1 font-medium text-green-500">
             {localize('com_auth_login')}
           </a>
         </p>
