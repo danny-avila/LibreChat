@@ -1,48 +1,19 @@
-import { useEffect, useCallback, useContext } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { getLoginError } from '~/utils';
-import { useLocalize, ThemeContext } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
 import SocialButton from './SocialButton';
-import { Sun, Moon } from 'lucide-react';
-
-const ThemeSelector = ({
-  theme,
-  onChange,
-}: {
-  theme: string;
-  onChange: (value: string) => void;
-}) => {
-  const themeIcons = {
-    system: <Sun />,
-    dark: <Moon color="white" />,
-    light: <Sun />,
-  };
-
-  return (
-    <div className="flex items-center justify-between">
-      <div className="cursor-pointer" onClick={() => onChange(theme === 'dark' ? 'light' : 'dark')}>
-        {themeIcons[theme]}
-      </div>
-    </div>
-  );
-};
+import { ThemeSelector } from '~/components/ui';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
   const navigate = useNavigate();
-  const { theme, setTheme } = useContext(ThemeContext);
-  const changeTheme = useCallback(
-    (value: string) => {
-      setTheme(value);
-    },
-    [setTheme],
-  );
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -122,9 +93,14 @@ function Login() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
-      <ThemeSelector theme={theme} onChange={changeTheme} />
+      <div className="absolute bottom-0 left-0 m-4">
+        <ThemeSelector />
+      </div>
       <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
+        <h1
+          className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
+          style={{ userSelect: 'none' }}
+        >
           {localize('com_auth_welcome_back')}
         </h1>
         {error && (

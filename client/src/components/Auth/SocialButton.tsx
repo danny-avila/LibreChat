@@ -30,7 +30,7 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => 
     // Define Tailwind CSS classes based on state
     const baseStyles = 'border border-solid border-gray-300 dark:border-gray-800 transition-colors';
 
-    const pressedStyles = 'bg-blue-200 border-blue-200';
+    const pressedStyles = 'bg-blue-200 border-blue-200 dark:bg-blue-900 dark:border-blue-600';
     const hoverStyles = 'bg-gray-100 dark:bg-gray-700';
 
     return `${baseStyles} ${
