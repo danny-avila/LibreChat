@@ -6,6 +6,7 @@ import {
 } from 'librechat-data-provider/react-query';
 import type { TRequestPasswordReset, TRequestPasswordResetResponse } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
+import { ThemeSelector } from '~/components/ui';
 
 function RequestPasswordReset() {
   const localize = useLocalize();
@@ -140,6 +141,9 @@ function RequestPasswordReset() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
+      <div className="absolute bottom-0 left-0 m-4">
+        <ThemeSelector />
+      </div>
       <div className="mt-5 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
         <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
           {headerText}

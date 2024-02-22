@@ -6,6 +6,7 @@ import type { TRegisterUser } from 'librechat-data-provider';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 import { useLocalize } from '~/hooks';
 import SocialButton from './SocialButton';
+import { ThemeSelector } from '~/components/ui';
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
@@ -148,8 +149,14 @@ const Registration: React.FC = () => {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
+      <div className="absolute bottom-0 left-0 m-4">
+        <ThemeSelector />
+      </div>
       <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
+        <h1
+          className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
+          style={{ userSelect: 'none' }}
+        >
           {localize('com_auth_create_account')}
         </h1>
         {error && (
