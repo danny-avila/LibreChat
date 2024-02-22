@@ -67,7 +67,7 @@ export default function ChatRoute() {
   }, [initialConvoQuery.data, modelsQuery.data, endpointsQuery.data]);
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
-    return <Spinner className="m-auto dark:text-white" />;
+    return <Spinner className="m-auto text-black dark:text-white" />;
   }
 
   if (!isAuthenticated) {

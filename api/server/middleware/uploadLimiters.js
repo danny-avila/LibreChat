@@ -1,5 +1,5 @@
 const rateLimit = require('express-rate-limit');
-const { CacheKeys } = require('librechat-data-provider');
+const { ViolationTypes } = require('librechat-data-provider');
 const logViolation = require('~/cache/logViolation');
 
 const getEnvironmentVariables = () => {
@@ -35,7 +35,7 @@ const createFileUploadHandler = (ip = true) => {
   } = getEnvironmentVariables();
 
   return async (req, res) => {
-    const type = CacheKeys.FILE_UPLOAD_LIMIT;
+    const type = ViolationTypes.FILE_UPLOAD_LIMIT;
     const errorMessage = {
       type,
       max: ip ? fileUploadIpMax : fileUploadUserMax,

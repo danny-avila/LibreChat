@@ -506,9 +506,6 @@ export const compactOpenAISchema = tConversationSchema
   })
   .transform((obj: Partial<TConversation>) => {
     const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.model === 'gpt-3.5-turbo') {
-      delete newObj.model;
-    }
     if (newObj.temperature === 1) {
       delete newObj.temperature;
     }
@@ -545,9 +542,6 @@ export const compactGoogleSchema = tConversationSchema
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.model === google.model.default) {
-      delete newObj.model;
-    }
     if (newObj.temperature === google.temperature.default) {
       delete newObj.temperature;
     }
@@ -577,9 +571,6 @@ export const compactAnthropicSchema = tConversationSchema
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.model === 'claude-1') {
-      delete newObj.model;
-    }
     if (newObj.temperature === 1) {
       delete newObj.temperature;
     }
@@ -603,11 +594,6 @@ export const compactChatGPTSchema = tConversationSchema
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
-    // model: obj.model ?? 'text-davinci-002-render-sha',
-    if (newObj.model === 'text-davinci-002-render-sha') {
-      delete newObj.model;
-    }
-
     return removeNullishValues(newObj);
   })
   .catch(() => ({}));
@@ -626,9 +612,6 @@ export const compactPluginsSchema = tConversationSchema
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.model === 'gpt-3.5-turbo') {
-      delete newObj.model;
-    }
     if (newObj.chatGptLabel === null) {
       delete newObj.chatGptLabel;
     }

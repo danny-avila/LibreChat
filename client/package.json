@@ -25,7 +25,7 @@
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://github.com/danny-avila/LibreChat#readme",
+  "homepage": "https://librechat.ai",
   "dependencies": {
     "@headlessui/react": "^1.7.13",
     "@radix-ui/react-accordion": "^1.1.2",

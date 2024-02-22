@@ -1,7 +1,8 @@
 // gptPlugins/initializeClient.spec.js
-const { PluginsClient } = require('~/app');
+const { EModelEndpoint } = require('librechat-data-provider');
+const { getUserKey } = require('~/server/services/UserService');
 const initializeClient = require('./initializeClient');
-const { getUserKey } = require('../../UserService');
+const { PluginsClient } = require('~/app');
 
 // Mock getUserKey since it's the only function we want to mock
 jest.mock('~/server/services/UserService', () => ({
@@ -112,7 +113,7 @@ describe('gptPlugins/initializeClient', () => {
     const endpointOption = { modelOptions: { model: 'default-model' } };
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      'API key not provided.',
+      `${EModelEndpoint.openAI} API key not provided.`,
     );
   });
 
