@@ -137,7 +137,7 @@ function Login() {
         )}
         {startupConfig.emailLoginEnabled && <LoginForm onSubmit={login} />}
         {startupConfig.registrationEnabled && (
-          <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-gray-100">
+          <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
             {' '}
             {localize('com_auth_no_account')}{' '}
             <a href="/register" className="p-1 font-medium text-green-500">
@@ -150,7 +150,9 @@ function Login() {
             {startupConfig.emailLoginEnabled && (
               <>
                 <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-                  <div className="absolute bg-white px-3 text-xs dark:bg-gray-900">Or</div>
+                  <div className="absolute bg-white px-3 text-xs text-black dark:bg-gray-900 dark:text-white">
+                    Or
+                  </div>
                 </div>
                 <div className="mt-8" />
               </>
