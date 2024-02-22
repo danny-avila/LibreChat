@@ -26,10 +26,10 @@ import { useAuthStore } from '~/zustand';
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
-  const chatHelpers = useVeraChat(index, conversationId);
+  const chatHelpers = useVeraChat(conversationId, conversationId);
   const { data = null, isLoading } = useConversationMessages(conversationId ?? ''); // 'c985dc60-0f72-4de4-a774-38b39dc22e19'
   const messagesTree = buildMessageTreeFromMessages({ messages: data });
-  const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
+  const submissionAtIndex = useRecoilValue(store.submissionByIndex(conversationId));
   useSSE(submissionAtIndex);
 
   return (
@@ -47,7 +47,7 @@ function ChatView({ index = 0 }: { index?: number }) {
         {/* <OptionsBar messagesTree={messagesTree} /> */}
         {/* <GenerationButtons endpoint={chatHelpers.conversation.endpoint ?? ''} /> */}
         <div className="w-full border-t-0 pl-0 pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
-          <ChatForm index={index} />
+          <ChatForm index={conversationId} />
           <Footer />
         </div>
       </Presentation>

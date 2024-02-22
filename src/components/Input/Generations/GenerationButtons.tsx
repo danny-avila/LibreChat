@@ -5,6 +5,7 @@ import { cn } from '~/utils';
 import Regenerate from './Regenerate';
 import Continue from './Continue';
 import Stop from './Stop';
+import { useParams } from 'react-router-dom';
 
 type GenerationButtonsProps = {
   endpoint: string;
@@ -17,6 +18,7 @@ export default function GenerationButtons({
   showPopover,
   opacityClass,
 }: GenerationButtonsProps) {
+  const { conversationId } = useParams();
   const {
     messages,
     isSubmitting,
@@ -24,7 +26,8 @@ export default function GenerationButtons({
     handleContinue,
     handleRegenerate,
     handleStopGenerating,
-  } = useVeraChat(0, '');
+  } = useVeraChat(conversationId, conversationId);
+
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { continueSupported, regenerateEnabled } = useGenerations({
     endpoint,

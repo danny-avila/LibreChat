@@ -1,30 +1,20 @@
 import { useRecoilValue } from 'recoil';
 import { useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { EModelEndpoint } from 'librechat-data-provider';
-//import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
-import { useConversations } from '~/hooks';
-import { useUpdateConversationMutation } from '~/data-provider';
-import { MinimalIcon } from '~/components/Endpoints';
-import { NotificationSeverity } from '~/common';
-import { useChatContext, useToastContext } from '~/Providers';
+import type { MouseEvent, KeyboardEvent } from 'react';
 import DeleteButton from './NewDeleteButton';
 import RenameButton from './RenameButton';
 import store from '~/store';
 import VeraWhiteLogo from '../svg/VeraWhiteLogo';
+import { useVeraChat } from '~/hooks';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
 export default function Conversation({ conversation, retainView, toggleNav, isLatestConvo }) {
   const navigate = useNavigate();
   const { conversationId: currentConvoId } = useParams();
-  const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
-  const { refreshConversations } = useConversations();
-  const { showToast } = useToastContext();
-
-  const { conversation_id: conversationId, description: title = 'Prev Chat' } = conversation;
+  const { conversation_id: conversationId, description: title } = conversation;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [titleInput, setTitleInput] = useState(title);
   const [renaming, setRenaming] = useState(false);
@@ -42,11 +32,12 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
     toggleNav();
 
-    // // set document title
+    // set document title
     // document.title = title;
 
     // set conversation to the new conversation
     navigate(`/c/${conversationId}`, { replace: true });
+    console.log('[CONVO] conversation: ', conversation);
   };
 
   const renameHandler = (e: MouseEvent<HTMLButtonElement>) => {
@@ -59,34 +50,6 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       }
       inputRef.current.focus();
     }, 25);
-  };
-
-  const onRename = (e: MouseEvent<HTMLButtonElement> | FocusEvent<HTMLInputElement> | KeyEvent) => {
-    e.preventDefault();
-    setRenaming(false);
-    if (titleInput === title) {
-      return;
-    }
-    updateConvoMutation.mutate(
-      { conversationId, title: titleInput },
-      {
-        onSuccess: () => refreshConversations(),
-        onError: () => {
-          setTitleInput(title);
-          showToast({
-            message: 'Failed to rename conversation',
-            severity: NotificationSeverity.ERROR,
-            showIcon: true,
-          });
-        },
-      },
-    );
-  };
-
-  const handleKeyDown = (e: KeyEvent) => {
-    if (e.key === 'Enter') {
-      onRename(e);
-    }
   };
 
   const aProps = {
@@ -122,8 +85,6 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             className="m-0 mr-0 w-full border border-blue-500 bg-transparent p-0 text-sm leading-tight outline-none"
             value={titleInput}
             onChange={(e) => setTitleInput(e.target.value)}
-            onBlur={onRename}
-            onKeyDown={handleKeyDown}
           />
         ) : (
           title
@@ -135,15 +96,17 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
         <div className="from--gray-900 absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%"></div>
       )}
       {activeConvo ? (
-        <div className="visible absolute right-1 z-10 flex text-gray-400">
-          <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
-          <DeleteButton
-            conversationId={conversationId}
-            retainView={retainView}
-            renaming={renaming}
-            title={title}
-          />
-        </div>
+        <>
+          {/* <div className="visible absolute right-1 z-10 flex text-gray-400">
+        <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
+        <DeleteButton
+          conversationId={conversationId}
+          retainView={retainView}
+          renaming={renaming}
+          title={title}
+        />
+      </div> */}
+        </>
       ) : (
         <div className="absolute bottom-0 right-0 top-0 w-20 rounded-lg bg-gradient-to-l from-black from-0% to-transparent  group-hover:from-gray-900" />
       )}

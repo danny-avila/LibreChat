@@ -35,7 +35,6 @@ export default function ChatForm({ index = 0 }) {
     setText('');
   };
 
-  const { requiresKey } = useRequiresKey();
   // TODO: change back to null after proto
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: 'used to be null' };
   const endpoint = endpointType ?? _endpoint;
@@ -63,15 +62,15 @@ export default function ChatForm({ index = 0 }) {
             <Images files={files} setFiles={setFiles} setFilesLoading={setFilesLoading} />
 
             <Textarea
+              disabled={false}
               value={text}
-              disabled={requiresKey}
               onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
               setText={setText}
               submitMessage={sendMessage}
-              endpoint={endpoint}
+              supportsFiles={false}
             />
 
-            <AttachFile endpoint={endpoint ?? ''} disabled={requiresKey} />
+            <AttachFile endpoint={endpoint ?? ''} disabled={true} />
             {isSubmitting && showStopButton ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
@@ -82,7 +81,7 @@ export default function ChatForm({ index = 0 }) {
                     sendMessage();
                   }}
                   text={text}
-                  disabled={filesLoading || isSubmitting || requiresKey}
+                  disabled={filesLoading || isSubmitting}
                 />
               )
             )}

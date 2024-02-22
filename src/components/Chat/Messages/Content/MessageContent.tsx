@@ -46,9 +46,11 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
         )}
       >
         {!isCreatedByUser ? (
-          <Markdown content={text} message={message} showCursor={showCursor} />
+          <>
+            hello <Markdown content={text} message={message} showCursor={false} />
+          </>
         ) : (
-          <>{text}</>
+          <>hi{text}</>
         )}
       </div>
     </Container>
@@ -120,7 +122,7 @@ const MessageContent = ({
           {showText ? (
             <DisplayMessage
               key={`display-${messageId}-${idx}`}
-              showCursor={isLastIndex && isLast}
+              showCursor={false} //isLastIndex && isLast
               text={currentText}
               {...props}
             />

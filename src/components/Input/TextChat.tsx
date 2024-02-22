@@ -16,8 +16,12 @@ interface TextChatProps {
 }
 
 export default function TextChat({ isSearchView = false }: TextChatProps) {
-  const { ask, isSubmitting, handleStopGenerating, latestMessage, endpointsConfig } = useVeraChat();
   const conversation = useRecoilValue(store.conversation);
+  const { ask, isSubmitting, handleStopGenerating, latestMessage } = useVeraChat(
+    conversation.conversation_id,
+    conversation.conversation_id,
+  );
+
   const setShowBingToneSetting = useSetRecoilState(store.showBingToneSetting);
   const [text, setText] = useRecoilState(store.text);
   const { theme } = useContext(ThemeContext);

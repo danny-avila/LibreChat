@@ -8,6 +8,7 @@ import { useVeraChat } from '~/hooks';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
+import { useParams } from 'react-router-dom';
 
 function ChatView({
   messagesTree,
@@ -16,10 +17,12 @@ function ChatView({
   messagesTree?: TMessage[] | null;
   index?: number;
 }) {
+  const { conversationId } = useParams();
+
   return (
-    <ChatContext.Provider value={useVeraChat(index)}>
+    <ChatContext.Provider value={useVeraChat(conversationId, conversationId)}>
       <div className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800">
-        <CreationPanel index={index} />
+        <CreationPanel index={conversationId} />
         <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-10 dark:bg-gray-800 md:pt-0">
           <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
             {messagesTree && messagesTree.length !== 0 ? (
@@ -29,7 +32,7 @@ function ChatView({
             )}
             <OptionsBar messagesTree={messagesTree} />
             <div className="gizmo:border-t-0 gizmo:pl-0 gizmo:md:pl-0 w-full border-t pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-2 md:pt-0 md:dark:border-transparent">
-              <ChatForm index={index} />
+              <ChatForm index={conversationId} />
             </div>
           </div>
         </div>

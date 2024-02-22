@@ -59,6 +59,8 @@ export function buildMessagesFromEvents({ events, user }) {
 
   let interactionId = null;
   let conversationId = null;
+  let modelId = null;
+  let modelReason = null;
   let message: any = {};
   events.forEach((event: any) => {
     switch (event.event_type) {
@@ -74,8 +76,9 @@ export function buildMessagesFromEvents({ events, user }) {
         message.systemMessage = event.event.system_message;
         break;
       case EVENT_TYPES.ROUTE_PROMPT:
-        message.modelId = event.event.selected_model_id;
-        message.modelReason = event.event.reason;
+        modelId = event.event.selected_model_id;
+        modelReason = event.event.reason;
+
         break;
       case EVENT_TYPES.GENERATE_RESPONSE:
         message.isCacheResult = event.event.is_cache_result;
@@ -95,11 +98,15 @@ export function buildMessagesFromEvents({ events, user }) {
         message.conversationId = conversationId;
         message.interactionId = interactionId;
 
+        if (!message.isCreatedByUser) {
+          message.modelId = modelId;
+          message.modelReason = modelReason;
+        }
+
         messages.push(message);
         message = {};
         break;
       default:
-        console.log('uncaught event: ', event);
         throw Error('Unexpected event caught: ', event);
     }
   });
@@ -130,6 +137,7 @@ export function buildMessageTreeFromMessages({ messages }) {
     }
   });
 
+  console.log('[BUILD] messagesTree: ', messagesTree);
   return messagesTree;
 }
 

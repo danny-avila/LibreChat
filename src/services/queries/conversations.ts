@@ -31,5 +31,11 @@ export function useConversations() {
     queryKey: ['conversations'],
     queryFn: () => getAllUserConversations(user?.user_id!),
     enabled: !!user?.user_id,
+    onSuccess(data) {
+      console.log('got conversations: ', data);
+    },
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
   });
 }

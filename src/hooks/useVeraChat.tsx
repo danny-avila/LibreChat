@@ -11,7 +11,6 @@ import { useAuthStore } from '~/zustand';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { VERA_HEADER } from '~/utils/constants';
 import { EVENT_TYPES } from '~/types/events';
-import { buildMessagesFromEvents } from '~/utils/buildTree';
 
 // this to be set somewhere else
 export default function useVeraChat(index = 0, paramId: string | undefined) {
@@ -65,13 +64,12 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
   ) => {
     setError('');
     const messages = getMessages() ?? [];
-    console.log('[ASK] messages: ', messages);
     const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
 
     // console.log('ask', conversation, conversationId);
     setShowStopButton(true);
     setIsSubmitting(true);
-    setCurrEvent('Starting');
+    setCurrEvent('Analyzing');
 
     const convoId =
       conversationId ?? conversation?.conversation_id ?? lastMessage?.conversationId ?? null;
@@ -85,6 +83,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
       messageId: 'tempMessage',
       error: false,
     };
+    console.log('[ASK] parentMessageId', parentMessageId);
     setMessages([...messages, tempMessage]);
 
     const apiUrl = 'https://dev-app.askvera.io/api/v1/chat';
@@ -97,6 +96,9 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
       'Content-Type': 'application/json',
       [VERA_HEADER]: apiKey,
     };
+
+    console.log('[ASK] Messages after adding temp message: ', messages);
+
     // console.log(`[PROTO] ESTABLISHING CONNECTION WITH TOKEN: \n${apiKey}\n and PROMPT: \n${text}`);
 
     fetchEventSource(apiUrl, {
@@ -135,6 +137,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         throw Error(e);
       },
       onclose() {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
         setCurrEvent('');
         setShowStopButton(false);
         setIsSubmitting(false);
@@ -147,8 +150,9 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     let currentMessages: TMessage[] | null = getMessages() ?? [];
     switch (data.event_type) {
       case EVENT_TYPES.INIT_CONVERSATION:
+        console.log('conversation:', data);
+        // navigate(`/c/${data.event.conversation_id}`);
         // console.log(EVENT_TYPES.INIT_CONVERSATION, ':', data);
-        setConversation(data.event);
         break;
       case EVENT_TYPES.INIT_INTERACTION:
         // console.log(EVENT_TYPES.INIT_INTERACTION, ':', data);
@@ -229,6 +233,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
 
         setMessages([...currentMessages]);
         setLatestMessage(msg);
+        console.log('[ASK] Messages after adding USER message: ', currentMessages);
         break;
       }
       case 'temp__bot_message': {
@@ -264,6 +269,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         setMessages([...currentMessages, msg]);
 
         setLatestMessage(msg);
+        console.log('[ASK] Messages after adding BOT message: ', currentMessages);
         break;
       }
       default:

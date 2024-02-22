@@ -53,7 +53,7 @@ export default function HoverButtons({
 
   return (
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
-      {isCreatedByUser && (
+      {/* {isCreatedByUser && (
         <button
           className={cn(
             'hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
@@ -68,7 +68,7 @@ export default function HoverButtons({
         >
           <EditIcon />
         </button>
-      )}
+      )} */}
       <button
         className={cn(
           'ml-0 flex items-center gap-1.5 rounded-md p-1 pl-0 text-xs hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',

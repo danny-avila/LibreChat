@@ -1,8 +1,9 @@
 import React from 'react';
 import { Icon } from '~/components/Endpoints';
+import ErrorAlertIcon from '~/components/svg/ErrorAlertIcon';
 import { cn } from '~/utils';
 
-function VeraMessage({ children }) {
+function VeraMessage({ children, isError = false }) {
   const icon = Icon({
     iconURL: '',
     model: '',
@@ -28,6 +29,7 @@ function VeraMessage({ children }) {
                       icon
                     )}
                   </div>
+                  {isError && <ErrorAlertIcon className="absolute top-3 left-3 w-4" />}
                 </div>
               </div>
             </div>

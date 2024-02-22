@@ -61,7 +61,7 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
 
       const sender = ''; //getSender(conversation as TEndpointOption);
 
-      return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
+      return `${localize('com_endpoint_message')} ${sender ? sender : 'Vera'}…`;
     };
 
     const placeholder = getPlaceholderText();

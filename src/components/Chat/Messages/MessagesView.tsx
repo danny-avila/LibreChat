@@ -20,7 +20,7 @@ export default function MessagesView({
   const { conversationId } = useParams();
   const { screenshotTargetRef } = useScreenshot();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
-  const { isSubmitting, currEvent, error } = useVeraChat(0, '');
+  const { isSubmitting, currEvent, error } = useVeraChat(conversationId, conversationId);
   const {
     conversation,
     scrollableRef,
@@ -29,7 +29,7 @@ export default function MessagesView({
     handleSmoothToRef,
     debouncedHandleScroll,
   } = useMessageScrolling(_messagesTree);
-  //const { conversationId } = conversation ?? {};
+  console.log('[MESSAGESVIEW] conversation: ', conversation);
 
   return (
     <div className="flex-1 overflow-hidden overflow-y-auto">
@@ -50,7 +50,8 @@ export default function MessagesView({
               </div>
             ) : (
               <>
-                {Header && Header}
+                {/* uncomment this to reactivate presets and model selection */}
+                {/* {Header && Header} */}
                 <div ref={screenshotTargetRef}>
                   <MultiMessage
                     key={conversationId} // avoid internal state mixture
@@ -60,7 +61,7 @@ export default function MessagesView({
                     currentEditId={currentEditId ?? null}
                   />
 
-                  {isSubmitting && <ProcessingSpinner event={currEvent} />}
+                  {isSubmitting && conversationId && <ProcessingSpinner event={currEvent} />}
 
                   {!!error && <VeraErrorMessage />}
                 </div>
