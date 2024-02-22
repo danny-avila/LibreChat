@@ -112,8 +112,9 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   };
 
   const aProps = {
-    className:
-      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg bg-gray-800 py-2 px-2',
+    className: `group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg bg-gray-800 py-2 px-2 ${
+      renaming ? 'pr-14' : ''
+    }`,
   };
 
   const activeConvo =
@@ -150,7 +151,11 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
         )}
       </div>
       {activeConvo ? (
-        <div className="absolute bottom-0 right-1 top-0 w-20 bg-gradient-to-l from-gray-800 from-60% to-transparent"></div>
+        <div
+          className={`absolute bottom-0 right-1 top-0 w-20 bg-gradient-to-l ${
+            !renaming ? 'from-gray-800 from-60% to-transparent' : ''
+          }`}
+        ></div>
       ) : (
         <div className="from--gray-900 absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%"></div>
       )}

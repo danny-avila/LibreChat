@@ -3,6 +3,7 @@
 export default {
   com_ui_examples: 'Voorbeelden',
   com_ui_new_chat: 'Nieuwe chat',
+  com_ui_happy_birthday: 'Het is mijn eerste verjaardag!',
   com_ui_example_quantum_computing: 'Leg quantumcomputing in eenvoudige termen uit',
   com_ui_example_10_year_old_b_day: 'Heb je creatieve ideeën voor de verjaardag van een 10-jarige?',
   com_ui_example_http_in_js: 'Hoe maak ik een HTTP-aanvraag in Javascript?',

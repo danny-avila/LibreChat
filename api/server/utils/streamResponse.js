@@ -16,12 +16,12 @@ const handleError = (res, message) => {
 
 /**
  * Sends message data in Server Sent Events format.
- * @param {object} res - - The server response.
- * @param {string} message - The message to be sent.
+ * @param {Express.Response} res - - The server response.
+ * @param {string | Object} message - The message to be sent.
  * @param {'message' | 'error' | 'cancel'} event - [Optional] The type of event. Default is 'message'.
  */
 const sendMessage = (res, message, event = 'message') => {
-  if (message.length === 0) {
+  if (typeof message === 'string' && message.length === 0) {
     return;
   }
   res.write(`event: ${event}\ndata: ${JSON.stringify(message)}\n\n`);

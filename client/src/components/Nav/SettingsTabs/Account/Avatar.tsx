@@ -1,22 +1,24 @@
 import { FileImage } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import { useState, useEffect } from 'react';
+import { fileConfig as defaultFileConfig, mergeFileConfig } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
-import { useUploadAvatarMutation } from '~/data-provider';
+import { useUploadAvatarMutation, useGetFileConfig } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { Spinner } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 import store from '~/store';
 
-const sizeLimit = 2 * 1024 * 1024; // 2MB
-
 function Avatar() {
   const setUser = useSetRecoilState(store.user);
   const [input, setinput] = useState<File | null>(null);
   const [isDialogOpen, setDialogOpen] = useState<boolean>(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
+    select: (data) => mergeFileConfig(data),
+  });
 
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -49,7 +51,7 @@ function Avatar() {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
 
-    if (file && file.size <= sizeLimit) {
+    if (fileConfig.avatarSizeLimit && file && file.size <= fileConfig.avatarSizeLimit) {
       setinput(file);
       setDialogOpen(true);
     } else {

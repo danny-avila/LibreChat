@@ -1,4 +1,14 @@
-import { parseISO, isToday, isWithinInterval, subDays, getYear } from 'date-fns';
+import {
+  parseISO,
+  isToday,
+  isWithinInterval,
+  subDays,
+  getMonth,
+  getYear,
+  startOfDay,
+  startOfYear,
+  format,
+} from 'date-fns';
 import type {
   TConversation,
   ConversationData,
@@ -11,11 +21,17 @@ const getGroupName = (date: Date) => {
   if (isToday(date)) {
     return 'Today';
   }
+  if (isWithinInterval(date, { start: startOfDay(subDays(now, 1)), end: now })) {
+    return 'Yesterday';
+  }
   if (isWithinInterval(date, { start: subDays(now, 7), end: now })) {
-    return 'Last 7 days';
+    return 'Previous 7 days';
   }
   if (isWithinInterval(date, { start: subDays(now, 30), end: now })) {
-    return 'Last 30 days';
+    return 'Previous 30 days';
+  }
+  if (isWithinInterval(date, { start: startOfYear(now), end: now })) {
+    return ' ' + format(date, 'MMMM');
   }
   return ' ' + getYear(date).toString();
 };

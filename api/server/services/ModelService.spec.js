@@ -210,3 +210,49 @@ describe('getOpenAIModels with mocked config', () => {
     expect(models).toContain('some-default-model');
   });
 });
+
+describe('getOpenAIModels sorting behavior', () => {
+  beforeEach(() => {
+    axios.get.mockResolvedValue({
+      data: {
+        data: [
+          { id: 'gpt-3.5-turbo-instruct-0914' },
+          { id: 'gpt-3.5-turbo-instruct' },
+          { id: 'gpt-3.5-turbo' },
+          { id: 'gpt-4-0314' },
+          { id: 'gpt-4-turbo-preview' },
+        ],
+      },
+    });
+  });
+
+  it('ensures instruct models are listed last', async () => {
+    const models = await getOpenAIModels({ user: 'user456' });
+
+    // Check if the last model is an "instruct" model
+    expect(models[models.length - 1]).toMatch(/instruct/);
+
+    // Check if the "instruct" models are placed at the end
+    const instructIndexes = models
+      .map((model, index) => (model.includes('instruct') ? index : -1))
+      .filter((index) => index !== -1);
+    const nonInstructIndexes = models
+      .map((model, index) => (!model.includes('instruct') ? index : -1))
+      .filter((index) => index !== -1);
+
+    expect(Math.max(...nonInstructIndexes)).toBeLessThan(Math.min(...instructIndexes));
+
+    const expectedOrder = [
+      'gpt-3.5-turbo',
+      'gpt-4-0314',
+      'gpt-4-turbo-preview',
+      'gpt-3.5-turbo-instruct-0914',
+      'gpt-3.5-turbo-instruct',
+    ];
+    expect(models).toEqual(expectedOrder);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+});

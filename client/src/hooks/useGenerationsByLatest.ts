@@ -21,7 +21,7 @@ export default function useGenerationsByLatest({
     EModelEndpoint.openAI,
     EModelEndpoint.custom,
     EModelEndpoint.google,
-    EModelEndpoint.assistant,
+    EModelEndpoint.assistants,
     EModelEndpoint.anthropic,
     EModelEndpoint.gptPlugins,
     EModelEndpoint.azureOpenAI,

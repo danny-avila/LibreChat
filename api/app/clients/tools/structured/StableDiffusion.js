@@ -10,6 +10,9 @@ const { logger } = require('~/config');
 class StableDiffusionAPI extends StructuredTool {
   constructor(fields) {
     super();
+    /* Used to initialize the Tool without necessary variables. */
+    this.override = fields.override ?? false;
+
     this.name = 'stable-diffusion';
     this.url = fields.SD_WEBUI_URL || this.getServerURL();
     this.description_for_model = `// Generate images and visuals using text.
@@ -52,7 +55,7 @@ class StableDiffusionAPI extends StructuredTool {
 
   getServerURL() {
     const url = process.env.SD_WEBUI_URL || '';
-    if (!url) {
+    if (!url && !this.override) {
       throw new Error('Missing SD_WEBUI_URL environment variable.');
     }
     return url;
