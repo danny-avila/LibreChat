@@ -117,23 +117,21 @@ For more info see:
       - MEILI_HOST=http://meilisearch:7700
 ```
 
-- If for some reason you're not able to build the app image, you can pull the latest image from **Dockerhub**.
-- Create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` with this content:
+- If you want your docker install to reflect changes made to your local folder, you can build the image locally using this method:
+    - Create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` with this content:
 
-```yaml
-version: '3.4'
+    ```yaml
+    version: '3.4'
 
-services:
-  api:
-    image: ghcr.io/danny-avila/librechat-dev:latest
-```
+    services:
+      api:
+        image: librechat
+        build:
+          context: .
+          target: node
+    ```
 
-- Then use `docker compose build` as you would normally
-
-- **Note:** There are different Dockerhub images. the `librechat:latest` image is only updated with new release tags, so it may not have the latest changes to the main branch. To get the latest changes you can use `librechat-dev:latest` instead
-
-
-### **[LibreChat on Docker Hub](https://hub.docker.com/r/chatgptclone/app/tags)**
+    - Then use `docker compose build` as you would normally
 
 ### **[Create a MongoDB database](../configuration/mongodb.md)** (Not required if you'd like to use the local database installed by Docker)
 
