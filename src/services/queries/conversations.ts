@@ -11,6 +11,9 @@ export function useConversationEvents(conversationId: string | null) {
     queryKey: ['events', conversationId],
     queryFn: () => getConversationEvents(conversationId!),
     enabled: !!conversationId,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
   });
 }
 
@@ -21,6 +24,9 @@ export function useConversationMessages(conversationId: string | null) {
     queryKey: ['messages', conversationId],
     queryFn: () => getConversationMessages(conversationId!, user!),
     enabled: !!conversationId && !!user,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
   });
 }
 

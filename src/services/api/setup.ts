@@ -1,9 +1,12 @@
 import axios_ from 'axios';
-import { VERA_HEADER } from '../../utils/constants';
-import { Auth } from '../../types/auth';
+import { VERA_HEADER } from '~/utils/constants';
+import { Auth } from '~/types/auth';
 //import secureLocalStorage from 'react-secure-storage';
 
-export const BASE_API_URL = 'https://dev-app.askvera.io/api/v1'; // import.meta.env.VITE_VERA_API;
+export const BASE_API_URL =
+  process.env.NODE_ENV === 'development'
+    ? 'https://dev-app.askvera.io/api/v1'
+    : 'https://demo-app.askvera.io/api/v1';
 export const axios = axios_.create({
   baseURL: BASE_API_URL,
 });

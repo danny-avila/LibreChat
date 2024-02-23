@@ -47,10 +47,10 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
       >
         {!isCreatedByUser ? (
           <>
-            hello <Markdown content={text} message={message} showCursor={false} />
+            <Markdown content={text} message={message} showCursor={false} />
           </>
         ) : (
-          <>hi{text}</>
+          <>{text}</>
         )}
       </div>
     </Container>

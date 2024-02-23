@@ -52,7 +52,7 @@ export default function HoverButtons({
   };
 
   return (
-    <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
+    <div className="visible mt-0 flex  gap-1 text-gray-400 justify-start">
       {/* {isCreatedByUser && (
         <button
           className={cn(

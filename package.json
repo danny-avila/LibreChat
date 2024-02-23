@@ -4,16 +4,12 @@
   "description": "",
   "type": "module",
   "scripts": {
-    "data-provider": "cd .. && npm run build:data-provider",
-    "build": "cross-env NODE_ENV=production vite build",
-    "build:ci": "cross-env NODE_ENV=development vite build --mode ci",
     "dev": "cross-env NODE_ENV=development vite",
-    "preview-prod": "cross-env NODE_ENV=development vite preview",
     "test": "cross-env NODE_ENV=development jest --watch",
-    "test:ci": "cross-env NODE_ENV=development jest --ci",
-    "b:test": "NODE_ENV=test bunx jest --watch",
-    "b:build": "NODE_ENV=production bun --bun vite build",
-    "b:dev": "NODE_ENV=development bunx vite"
+    "build:dev": "cross-env NODE_ENV=development vite build --mode development",
+    "build:demo": "cross-env NODE_ENV=demo vite build --mode demo",
+    "build:prod": "cross-env NODE_ENV=demo vite build --mode demo",
+    "preview": "vite preview"
   },
   "repository": {
     "type": "git",

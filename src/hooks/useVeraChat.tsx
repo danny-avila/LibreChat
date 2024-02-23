@@ -11,6 +11,7 @@ import { useAuthStore } from '~/zustand';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { VERA_HEADER } from '~/utils/constants';
 import { EVENT_TYPES } from '~/types/events';
+import { BASE_API_URL } from '~/services/api/setup';
 
 // this to be set somewhere else
 export default function useVeraChat(index = 0, paramId: string | undefined) {
@@ -86,7 +87,7 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     console.log('[ASK] parentMessageId', parentMessageId);
     setMessages([...messages, tempMessage]);
 
-    const apiUrl = 'https://dev-app.askvera.io/api/v1/chat';
+    const apiUrl = `${BASE_API_URL}/chat`;
     const apiKey = token!;
     const payload = {
       prompt_text: text.trim(),

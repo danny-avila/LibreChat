@@ -122,7 +122,7 @@ export default function Message(props: TMessageProps) {
                   setSiblingIdx={setSiblingIdx}
                 />
 
-                <div>
+                <div className="flex flex-col-reverse gap-1 lg:flex-row lg:items-center lg:gap-2 ">
                   <HoverButtons
                     isEditing={edit}
                     message={message}
@@ -134,31 +134,39 @@ export default function Message(props: TMessageProps) {
                     handleContinue={handleContinue}
                     latestMessage={latestMessage}
                   />
+
+                  {!isCreatedByUser && (
+                    <>
+                      <span
+                        className="hidden lg:block"
+                        style={{ background: '#DADCE5', height: '16px', width: 1 }}
+                      />
+                      <div className="flex items-center gap-2 mt-1 lg:mt-0">
+                        {message.modelId && (
+                          <MessageInfoChip text={message.modelId} color={VERA_TEAL} bg="#30A9E51A">
+                            {message.modelReason}
+                          </MessageInfoChip>
+                        )}
+
+                        {message.systemMessage && (
+                          <MessageInfoChip text={'System info'} color="#192C6B" bg="#192C6B1A">
+                            {message.systemMessage}
+                          </MessageInfoChip>
+                        )}
+
+                        {message.isCacheResult && (
+                          <MessageInfoChip
+                            text={'Cached response'}
+                            bg="#3F5AFF1A"
+                            color={VERA_BLUE}
+                          >
+                            This response was generated from Cache
+                          </MessageInfoChip>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
-
-                {!isCreatedByUser && (
-                  <>
-                    <span style={{ background: '#DADCE5', height: '16px', width: 1 }} />
-
-                    {message.modelId && (
-                      <MessageInfoChip text={message.modelId} color={VERA_TEAL} bg="#30A9E51A">
-                        {message.modelReason}
-                      </MessageInfoChip>
-                    )}
-
-                    {message.systemMessage && (
-                      <MessageInfoChip text={'System info'} color="#192C6B" bg="#192C6B1A">
-                        {message.systemMessage}
-                      </MessageInfoChip>
-                    )}
-
-                    {message.isCacheResult && (
-                      <MessageInfoChip text={'Cached response'} bg="#3F5AFF1A" color={VERA_BLUE}>
-                        This response was generated from Cache
-                      </MessageInfoChip>
-                    )}
-                  </>
-                )}
               </SubRow>
 
               {/* )} */}
