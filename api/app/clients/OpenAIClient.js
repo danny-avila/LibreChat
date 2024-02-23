@@ -738,8 +738,8 @@ class OpenAIClient extends BaseClient {
       max_tokens: 16,
     };
 
-    /** @type {TAzureConfig} */
-    const azureConfig = this.options.req.app.locals[EModelEndpoint.azureOpenAI];
+    /** @type {TAzureConfig | undefined} */
+    const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
     if (this.azure && azureConfig) {
       const { modelGroupMap, groupMap } = azureConfig;
       const {
@@ -1007,8 +1007,8 @@ ${convo}
         modelOptions.max_tokens = 4000;
       }
 
-      /** @type {TAzureConfig} */
-      const azureConfig = this.options.req.app.locals[EModelEndpoint.azureOpenAI];
+      /** @type {TAzureConfig | undefined} */
+      const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
 
       if (this.azure && this.isVisionModel && azureConfig) {
         const { modelGroupMap, groupMap } = azureConfig;
