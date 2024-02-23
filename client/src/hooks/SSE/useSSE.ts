@@ -24,7 +24,12 @@ import type {
   TSubmission,
   ConversationData,
 } from 'librechat-data-provider';
-import { addConversation, deleteConversation, updateConversation } from '~/utils';
+import {
+  addConversation,
+  deleteConversation,
+  updateConversation,
+  getConversationById,
+} from '~/utils';
 import { useGenTitleMutation } from '~/data-provider';
 import useContentHandler from './useContentHandler';
 import { useAuthContext } from '../AuthContext';
@@ -231,13 +236,21 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       ]);
     }
 
-    const { conversationId } = message;
+    const { conversationId, parentMessageId } = message;
 
     let update = {} as TConversation;
     setConversation((prevState) => {
+      let title = prevState?.title;
+      if (parentMessageId !== Constants.NO_PARENT && title?.toLowerCase()?.includes('new chat')) {
+        const convos = queryClient.getQueryData<ConversationData>([QueryKeys.allConversations]);
+        const cachedConvo = getConversationById(convos, conversationId);
+        title = cachedConvo?.title;
+      }
+
       update = tConvoUpdateSchema.parse({
         ...prevState,
         conversationId,
+        title,
       }) as TConversation;
 
       setStorage(update);
@@ -248,7 +261,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       if (!convoData) {
         return convoData;
       }
-      if (message.parentMessageId === Constants.NO_PARENT) {
+      if (parentMessageId === Constants.NO_PARENT) {
         return addConversation(convoData, update);
       } else {
         return updateConversation(convoData, update);
