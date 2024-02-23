@@ -844,6 +844,31 @@ Mail address for from field. It is **REQUIRED** to set a value here (even if it'
 ```bash
 EMAIL_FROM=noreply@librechat.ai 
 ```
+### UI
+
+  - **Help and FAQ button:** 
+
+Empty or commented `HELP_AND_FAQ_URL`, button enabled
+
+`HELP_AND_FAQ_URL=https://example.com`, button enabled and goes to `https://example.com`
+
+`HELP_AND_FAQ_URL=/`, button disabled
+
+```bash
+HELP_AND_FAQ_URL=
+```
+
+  - **Birthday Hat:** Give the AI Icon a Birthday Hat 🥳
+
+> Will show automatically on February 11th (LibreChat's birthday)
+ 
+> Set this to `false` to disable the birthday hat
+
+> Set to `true` to enable all the time.
+
+```bash
+SHOW_BIRTHDAY_ICON=true
+```
 
 ### Other
 
@@ -854,16 +879,4 @@ EMAIL_FROM=noreply@librechat.ai
 ```bash
 REDIS_URI=
 USE_REDIS=
-```
-
-- **Birthday Hat:** Give the AI Icon a Birthday Hat 🥳
-
-> Will show automatically on February 11th (LibreChat's birthday)
- 
-> Set this to `false` to disable the birthday hat
-
-> Set to `true` to enable all the time.
-
-```bash
-SHOW_BIRTHDAY_ICON=true
 ```
