@@ -30,16 +30,6 @@ For more info see:
 
 ## Server Configuration
 
-### Customization
-- Here you can change the app title and footer
-- Uncomment to add a custom footer.
-    - Uncomment and make empty "" to remove the footer.
-
-```bash
-APP_TITLE=LibreChat
-CUSTOM_FOOTER="My custom footer"
-```
-
 ### Port
 
 - The server will listen to localhost:3080 by default. You can change the target IP as you want. If you want to make this server available externally, for example to share the server with others or expose this from a Docker container, set host to 0.0.0.0 or your external IP interface. 
@@ -846,7 +836,7 @@ EMAIL_FROM=noreply@librechat.ai
 ```
 ### UI
 
-  - **Help and FAQ button:** 
+- **Help and FAQ button:** 
 
 Empty or commented `HELP_AND_FAQ_URL`, button enabled
 
@@ -858,7 +848,18 @@ Empty or commented `HELP_AND_FAQ_URL`, button enabled
 HELP_AND_FAQ_URL=
 ```
 
-  - **Birthday Hat:** Give the AI Icon a Birthday Hat 🥳
+- **App title and footer:**
+
+Uncomment to add a custom footer
+
+Uncomment and make empty "" to remove the footer
+
+```bash
+APP_TITLE=LibreChat
+CUSTOM_FOOTER="My custom footer"
+```
+
+- **Birthday Hat:** Give the AI Icon a Birthday Hat 🥳
 
 > Will show automatically on February 11th (LibreChat's birthday)
  
