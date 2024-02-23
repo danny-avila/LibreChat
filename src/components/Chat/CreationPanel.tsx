@@ -1,6 +1,5 @@
 import { Controller, useWatch } from 'react-hook-form';
 import { Tools, EModelEndpoint } from 'librechat-data-provider';
-import { useCreateAssistantMutation } from 'librechat-data-provider/react-query';
 import type { CreationForm, Actions } from '~/common';
 import type { Tool } from 'librechat-data-provider';
 import { Separator } from '~/components/ui/Separator';
@@ -11,7 +10,7 @@ import { useNewConvo } from '~/hooks';
 
 export default function CreationPanel({ index = 0 }) {
   const { switchToConversation } = useNewConvo(index);
-  const create = useCreateAssistantMutation();
+  const create = {};
   const { control, handleSubmit, reset, setValue } = useAssistantsContext();
 
   const onSubmit = (data: CreationForm) => {
