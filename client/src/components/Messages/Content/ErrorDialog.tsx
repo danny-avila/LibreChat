@@ -27,7 +27,7 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
 
   // Define token options with different price strings for each domain
   const tokenOptions =
-    domain === '1b7c-70-39-70-194.ngrok-free.app'
+    domain === 'gptchina.io'
       ? [
         { tokens: 100000, label: '10万', price: '¥10' },
         { tokens: 500000, label: '50万', price: '¥35' },
