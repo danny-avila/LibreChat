@@ -43,8 +43,7 @@ router.get('/', async function (req, res) {
         isBirthday() ||
         isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
         process.env.SHOW_BIRTHDAY_ICON === '',
-      showHelpAndFaq: isEnabled(process.env.SHOW_HELP_AND_FAQ),
-      helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://docs.librechat.ai',
+      helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
     };
 
     if (typeof process.env.CUSTOM_FOOTER === 'string') {

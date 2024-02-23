@@ -118,7 +118,7 @@ function NavLinks() {
                     clickHandler={() => setShowFiles(true)}
                   />
                 </Menu.Item>
-                {startupConfig?.showHelpAndFaq && (
+                {startupConfig?.helpAndFaqURL !== '/' && (
                   <Menu.Item as="div">
                     <NavLink
                       className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
