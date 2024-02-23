@@ -3,6 +3,7 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
   ImageDetail,
   EModelEndpoint,
+  resolveHeaders,
   ImageDetailCost,
   getResponseSender,
   validateVisionModel,
@@ -667,6 +668,16 @@ class OpenAIClient extends BaseClient {
       };
     }
 
+    const { headers } = this.options;
+    if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
+      configOptions.baseOptions = {
+        headers: resolveHeaders({
+          ...headers,
+          ...configOptions?.baseOptions?.headers,
+        }),
+      };
+    }
+
     if (this.options.proxy) {
       configOptions.httpAgent = new HttpsProxyAgent(this.options.proxy);
       configOptions.httpsAgent = new HttpsProxyAgent(this.options.proxy);
@@ -731,12 +742,19 @@ class OpenAIClient extends BaseClient {
     const azureConfig = this.options.req.app.locals[EModelEndpoint.azureOpenAI];
     if (this.azure && azureConfig) {
       const { modelGroupMap, groupMap } = azureConfig;
-      const { azureOptions } = mapModelToAzureConfig({
+      const {
+        azureOptions,
+        baseURL,
+        headers = {},
+      } = mapModelToAzureConfig({
         modelName: modelOptions.model,
         modelGroupMap,
         groupMap,
       });
       this.azure = azureOptions;
+      this.options.headers = resolveHeaders(headers);
+      this.options.reverseProxyUrl = baseURL ?? null;
+      this.langchainProxy = extractBaseURL(this.options.reverseProxyUrl);
     }
 
     const titleChatCompletion = async () => {
@@ -994,13 +1012,19 @@ ${convo}
 
       if (this.azure && this.isVisionModel && azureConfig) {
         const { modelGroupMap, groupMap } = azureConfig;
-        const { azureOptions } = mapModelToAzureConfig({
+        const {
+          azureOptions,
+          baseURL,
+          headers = {},
+        } = mapModelToAzureConfig({
           modelName: modelOptions.model,
           modelGroupMap,
           groupMap,
         });
         this.azure = azureOptions;
         this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
+        opts.defaultHeaders = resolveHeaders(headers);
+        this.langchainProxy = extractBaseURL(baseURL);
       }
 
       if (this.azure || this.options.azure) {
@@ -1054,11 +1078,19 @@ ${convo}
           ...modelOptions,
           ...this.options.addParams,
         };
+        logger.debug('[OpenAIClient] chatCompletion: added params', {
+          addParams: this.options.addParams,
+          modelOptions,
+        });
       }
 
       if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
         this.options.dropParams.forEach((param) => {
           delete modelOptions[param];
+        });
+        logger.debug('[OpenAIClient] chatCompletion: dropped params', {
+          dropParams: this.options.dropParams,
+          modelOptions,
         });
       }
 

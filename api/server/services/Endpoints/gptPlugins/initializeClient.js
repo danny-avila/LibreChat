@@ -1,4 +1,8 @@
-const { EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  mapModelToAzureConfig,
+  resolveHeaders,
+} = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { getAzureCredentials } = require('~/utils');
 const { isEnabled } = require('~/server/utils');
@@ -69,7 +73,11 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   let apiKey = isUserProvided ? userKey : credentials[endpoint];
   if (useAzure && azureConfig) {
     const { modelGroupMap, groupMap } = azureConfig;
-    const { azureOptions } = mapModelToAzureConfig({
+    const {
+      azureOptions,
+      baseURL,
+      headers = {},
+    } = mapModelToAzureConfig({
       modelName,
       modelGroupMap,
       groupMap,
@@ -78,6 +86,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     clientOptions.titleConvo = azureConfig.titleConvo;
     clientOptions.titleModel = azureConfig.titleModel;
     clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
+    clientOptions.reverseProxyUrl = baseURL ?? clientOptions.reverseProxyUrl;
+    clientOptions.headers = resolveHeaders({ ...headers, ...(clientOptions.headers ?? {}) });
 
     apiKey = clientOptions.azure.azureOpenAIApiKey;
   } else if (useAzure || (apiKey && apiKey.includes('{"azure') && !clientOptions.azure)) {
