@@ -24,7 +24,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   /** @type {false | TValidatedAzureConfig} */
   const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
-  useAzure = useAzure || azureConfig.plugins;
+  useAzure = useAzure || azureConfig?.plugins;
 
   if (useAzure && endpoint !== EModelEndpoint.azureOpenAI) {
     endpoint = EModelEndpoint.azureOpenAI;

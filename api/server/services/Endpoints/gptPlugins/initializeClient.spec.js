@@ -13,6 +13,9 @@ jest.mock('~/server/services/UserService', () => ({
 describe('gptPlugins/initializeClient', () => {
   // Set up environment variables
   const originalEnvironment = process.env;
+  const app = {
+    locals: {},
+  };
 
   beforeEach(() => {
     jest.resetModules(); // Clears the cache
@@ -32,6 +35,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -56,6 +60,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'test-model' } };
@@ -73,6 +78,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -89,6 +95,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -108,6 +115,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -129,6 +137,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: futureDate },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -148,6 +157,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: futureDate },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'test-model' } };
@@ -171,6 +181,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: expiresAt },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -187,6 +198,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: new Date(Date.now() + 10000).toISOString() },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -207,6 +219,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
