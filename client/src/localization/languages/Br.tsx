@@ -209,7 +209,7 @@ export default {
   com_endpoint_openai_resend:
     'Reenvie todas as imagens anexadas anteriormente. Nota: isso pode aumentar significativamente o custo do token e você pode experimentar erros com muitos anexos de imagem.',
   com_endpoint_openai_detail:
-    'A resolução para solicitações de Visão. "Baixo" é mais barato e rápido, "Alto" é mais detalhado e caro, e "Auto" escolherá automaticamente entre os dois com base na resolução da imagem.',
+    'A resolução para solicitações do Vision. "Low" é mais barato e rápido, "High" é mais detalhado e caro, e "Auto" escolherá automaticamente entre os dois com base na resolução da imagem.',
   com_endpoint_openai_custom_name_placeholder: 'Defina um nome personalizado para ChatGPT',
   com_endpoint_openai_prompt_prefix_placeholder:
     'Defina instruções personalizadas para incluir na Mensagem do Sistema. Padrão: nenhum',
@@ -226,7 +226,7 @@ export default {
   com_endpoint_presence_penalty: 'Penalidade de Presença',
   com_endpoint_plug_use_functions: 'Use Funções',
   com_endpoint_plug_resend_images: 'Reenviar Imagens',
-  com_endpoint_plug_image_detail: 'Detalhe da Imagem',
+  com_endpoint_plug_image_detail: 'Detalhes da Imagem',
   com_endpoint_plug_skip_completion: 'Pular Conclusão',
   com_endpoint_disabled_with_tools: 'desativado com ferramentas',
   com_endpoint_disabled_with_tools_placeholder: 'Desativado com Ferramentas Selecionadas',
