@@ -31,6 +31,10 @@ export const deprecatedAzureVariables = [
     key: 'AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME',
     description: 'setting a single Azure embeddings deployment name',
   },
+  {
+    key: 'PLUGINS_USE_AZURE',
+    description: 'using Azure for Plugins',
+  },
 ];
 
 export function validateAzureGroups(configs: TAzureGroups): TValidatedAzureConfig & {

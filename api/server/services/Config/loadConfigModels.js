@@ -17,15 +17,15 @@ async function loadConfigModels(req) {
 
   const { endpoints = {} } = customConfig ?? {};
   const modelsConfig = {};
+  const azureModels = req.app.locals[EModelEndpoint.azureOpenAI]?.modelNames;
+  const azureEndpoint = endpoints[EModelEndpoint.azureOpenAI];
 
-  if (
-    endpoints[EModelEndpoint.azureOpenAI] &&
-    req.app.locals[EModelEndpoint.azureOpenAI]?.modelNames
-  ) {
-    /** @type {TValidatedAzureConfig} */
-    const validatedAzureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
-    const { modelNames } = validatedAzureConfig;
-    modelsConfig[EModelEndpoint.azureOpenAI] = modelNames;
+  if (azureModels && azureEndpoint) {
+    modelsConfig[EModelEndpoint.azureOpenAI] = azureModels;
+  }
+
+  if (azureModels && azureEndpoint && azureEndpoint.plugins) {
+    modelsConfig[EModelEndpoint.gptPlugins] = azureModels;
   }
 
   if (!Array.isArray(endpoints[EModelEndpoint.custom])) {

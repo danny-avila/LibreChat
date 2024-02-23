@@ -4,11 +4,11 @@ const { config } = require('./EndpointService');
 
 /**
  * Load async endpoints and return a configuration object
- * @function loadDefaultEndpointsConfig
+ * @param {Express.Request} req - The request object
  * @returns {Promise<Object.<string, EndpointWithOrder>>} An object whose keys are endpoint names and values are objects that contain the endpoint configuration and an order.
  */
-async function loadDefaultEndpointsConfig() {
-  const { google, gptPlugins } = await loadAsyncEndpoints();
+async function loadDefaultEndpointsConfig(req) {
+  const { google, gptPlugins } = await loadAsyncEndpoints(req);
   const { openAI, assistants, bingAI, anthropic, azureOpenAI, chatGPTBrowser } = config;
 
   const enabledEndpoints = getEnabledEndpoints();

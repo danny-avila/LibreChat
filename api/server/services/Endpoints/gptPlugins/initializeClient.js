@@ -1,4 +1,4 @@
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, mapModelToAzureConfig } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { getAzureCredentials } = require('~/utils');
 const { isEnabled } = require('~/server/utils');
@@ -16,11 +16,19 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     DEBUG_PLUGINS,
   } = process.env;
 
-  const { key: expiresAt } = req.body;
+  const { key: expiresAt, model: modelName } = req.body;
   const contextStrategy = isEnabled(OPENAI_SUMMARIZE) ? 'summarize' : null;
 
-  const useAzure = isEnabled(PLUGINS_USE_AZURE);
-  const endpoint = useAzure ? EModelEndpoint.azureOpenAI : EModelEndpoint.openAI;
+  let useAzure = isEnabled(PLUGINS_USE_AZURE);
+  let endpoint = useAzure ? EModelEndpoint.azureOpenAI : EModelEndpoint.openAI;
+
+  /** @type {false | TValidatedAzureConfig} */
+  const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
+  useAzure = useAzure || azureConfig.plugins;
+
+  if (useAzure && endpoint !== EModelEndpoint.azureOpenAI) {
+    endpoint = EModelEndpoint.azureOpenAI;
+  }
 
   const baseURLOptions = {
     [EModelEndpoint.openAI]: OPENAI_REVERSE_PROXY,
@@ -59,8 +67,15 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   let apiKey = isUserProvided ? userKey : credentials[endpoint];
-
-  if (useAzure || (apiKey && apiKey.includes('{"azure') && !clientOptions.azure)) {
+  if (useAzure && azureConfig) {
+    /** @type {{ modelGroupMap: TAzureModelGroupMap, groupMap: TAzureGroupMap }} */
+    const { modelGroupMap, groupMap } = azureConfig;
+    clientOptions.azure = mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
+    apiKey = clientOptions.azure.azureOpenAIApiKey;
+    clientOptions.titleConvo = azureConfig.titleConvo;
+    clientOptions.titleModel = azureConfig.titleModel;
+    clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
+  } else if (useAzure || (apiKey && apiKey.includes('{"azure') && !clientOptions.azure)) {
     clientOptions.azure = isUserProvided ? JSON.parse(userKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;
   }

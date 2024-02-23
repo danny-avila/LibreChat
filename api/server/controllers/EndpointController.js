@@ -10,7 +10,7 @@ async function endpointController(req, res) {
     return;
   }
 
-  const defaultEndpointsConfig = await loadDefaultEndpointsConfig();
+  const defaultEndpointsConfig = await loadDefaultEndpointsConfig(req);
   const customConfigEndpoints = await loadConfigEndpoints(req);
 
   /** @type {TEndpointsConfig} */

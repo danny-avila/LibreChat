@@ -18,12 +18,18 @@ async function loadDefaultModels(req) {
   const openAI = await getOpenAIModels({ user: req.user.id });
   const anthropic = getAnthropicModels();
   const chatGPTBrowser = getChatGPTBrowserModels();
-  const azureOpenAI = await getOpenAIModels({ user: req.user.id, azure: true });
-  const gptPlugins = await getOpenAIModels({
-    user: req.user.id,
-    azure: useAzurePlugins,
-    plugins: true,
-  });
+  let azureOpenAI;
+  if (!req.app.locals[EModelEndpoint.azureOpenAI]?.modelNames) {
+    azureOpenAI = await getOpenAIModels({ user: req.user.id, azure: true });
+  }
+  let gptPlugins;
+  if (!req.app.locals[EModelEndpoint.azureOpenAI]?.plugins) {
+    gptPlugins = await getOpenAIModels({
+      user: req.user.id,
+      azure: useAzurePlugins,
+      plugins: true,
+    });
+  }
   const assistant = await getOpenAIModels({ assistants: true });
 
   return {

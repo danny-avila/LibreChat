@@ -37,6 +37,7 @@
  * @typedef {import('librechat-data-provider').TAzureGroups} TAzureGroups
  * @memberof typedefs
  */
+
 /**
  * @exports TAzureModelGroupMap
  * @typedef {import('librechat-data-provider').TAzureModelGroupMap} TAzureModelGroupMap
@@ -51,6 +52,12 @@
 /**
  * @exports TValidatedAzureConfig
  * @typedef {import('librechat-data-provider').TValidatedAzureConfig} TValidatedAzureConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAzureEndpoint
+ * @typedef {import('librechat-data-provider').TAzureEndpoint} TAzureEndpoint
  * @memberof typedefs
  */
 

@@ -111,6 +111,7 @@ export const endpointSchema = z.object({
 export const azureEndpointSchema = z
   .object({
     groups: azureGroupConfigsSchema,
+    plugins: z.boolean().optional(),
   })
   .and(
     endpointSchema
@@ -124,6 +125,8 @@ export const azureEndpointSchema = z
       })
       .partial(),
   );
+
+export type TAzureEndpoint = z.infer<typeof azureEndpointSchema>;
 
 export const rateLimitSchema = z.object({
   fileUploads: z
