@@ -731,11 +731,12 @@ class OpenAIClient extends BaseClient {
     const azureConfig = this.options.req.app.locals[EModelEndpoint.azureOpenAI];
     if (this.azure && azureConfig) {
       const { modelGroupMap, groupMap } = azureConfig;
-      this.azure = mapModelToAzureConfig({
+      const { azureOptions } = mapModelToAzureConfig({
         modelName: modelOptions.model,
         modelGroupMap,
         groupMap,
       });
+      this.azure = azureOptions;
     }
 
     const titleChatCompletion = async () => {
@@ -993,11 +994,12 @@ ${convo}
 
       if (this.azure && this.isVisionModel && azureConfig) {
         const { modelGroupMap, groupMap } = azureConfig;
-        this.azure = mapModelToAzureConfig({
+        const { azureOptions } = mapModelToAzureConfig({
           modelName: modelOptions.model,
           modelGroupMap,
           groupMap,
         });
+        this.azure = azureOptions;
         this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
       }
 

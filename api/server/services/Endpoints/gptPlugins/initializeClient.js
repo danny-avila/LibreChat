@@ -69,11 +69,17 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   let apiKey = isUserProvided ? userKey : credentials[endpoint];
   if (useAzure && azureConfig) {
     const { modelGroupMap, groupMap } = azureConfig;
-    clientOptions.azure = mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
-    apiKey = clientOptions.azure.azureOpenAIApiKey;
+    const { azureOptions } = mapModelToAzureConfig({
+      modelName,
+      modelGroupMap,
+      groupMap,
+    });
+    clientOptions.azure = azureOptions;
     clientOptions.titleConvo = azureConfig.titleConvo;
     clientOptions.titleModel = azureConfig.titleModel;
     clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
+
+    apiKey = clientOptions.azure.azureOpenAIApiKey;
   } else if (useAzure || (apiKey && apiKey.includes('{"azure') && !clientOptions.azure)) {
     clientOptions.azure = isUserProvided ? JSON.parse(userKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;

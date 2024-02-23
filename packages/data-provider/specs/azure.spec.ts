@@ -26,7 +26,7 @@ describe('validateAzureGroups', () => {
     expect(isValid).toBe(true);
     expect(modelNames).toEqual(['gpt-4-turbo']);
 
-    const azureOptions = mapModelToAzureConfig({
+    const { azureOptions, baseURL, headers } = mapModelToAzureConfig({
       modelName: 'gpt-4-turbo',
       modelGroupMap,
       groupMap,
@@ -36,6 +36,10 @@ describe('validateAzureGroups', () => {
       azureOpenAIApiInstanceName: 'prod-instance',
       azureOpenAIApiDeploymentName: 'gpt-4-turbo-deployment',
       azureOpenAIApiVersion: '2023-11-06',
+    });
+    expect(baseURL).toBe('https://prod.example.com');
+    expect(headers).toEqual({
+      'X-Custom-Header': 'value',
     });
   });
 
@@ -93,7 +97,7 @@ describe('validateAzureGroups', () => {
     expect(modelGroup.group).toBe('japan-east');
     expect(groupMap[modelGroup.group]).toBeDefined();
     expect(modelNames).toContain('gpt-5-turbo');
-    const azureOptions = mapModelToAzureConfig({
+    const { azureOptions } = mapModelToAzureConfig({
       modelName: 'gpt-5-turbo',
       modelGroupMap,
       groupMap,
@@ -123,7 +127,7 @@ describe('validateAzureGroups', () => {
     const { isValid, modelNames, modelGroupMap, groupMap } = validateAzureGroups(configs);
     expect(isValid).toBe(true);
     expect(modelNames).toEqual(['gpt-6']);
-    const azureOptions = mapModelToAzureConfig({ modelName: 'gpt-6', modelGroupMap, groupMap });
+    const { azureOptions } = mapModelToAzureConfig({ modelName: 'gpt-6', modelGroupMap, groupMap });
     expect(azureOptions).toEqual({
       azureOpenAIApiKey: 'canada-key',
       azureOpenAIApiInstanceName: 'canada-instance',
@@ -247,7 +251,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
     expect(groupMap['us-east']).toBeDefined();
     expect(groupMap['us-east'].apiKey).toBe('prod-1234');
     expect(groupMap['us-east'].models['gpt-4-turbo']).toBeDefined();
-    const azureOptions = mapModelToAzureConfig({
+    const { azureOptions, baseURL, headers } = mapModelToAzureConfig({
       modelName: 'gpt-4-turbo',
       modelGroupMap,
       groupMap,
@@ -257,6 +261,10 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       azureOpenAIApiInstanceName: 'prod-instance',
       azureOpenAIApiDeploymentName: 'gpt-4-turbo-deployment',
       azureOpenAIApiVersion: '2023-11-06',
+    });
+    expect(baseURL).toBe('https://prod.example.com');
+    expect(headers).toEqual({
+      'X-Custom-Header': 'value',
     });
   });
 
@@ -423,6 +431,10 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
         models: {
           'gpt-4-turbo': true,
         },
+        baseURL: 'https://eastus.example.com',
+        additionalHeaders: {
+          'x-api-key': 'x-api-key-value',
+        },
       },
     ];
     const { isValid, modelGroupMap, groupMap, modelNames } = validateAzureGroups(validConfigs);
@@ -472,7 +484,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       }),
     );
 
-    const azureOptions1 = mapModelToAzureConfig({
+    const { azureOptions: azureOptions1 } = mapModelToAzureConfig({
       modelName: 'gpt-4-vision-preview',
       modelGroupMap,
       groupMap,
@@ -484,7 +496,11 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       azureOpenAIApiVersion: '2024-02-15-preview',
     });
 
-    const azureOptions2 = mapModelToAzureConfig({
+    const {
+      azureOptions: azureOptions2,
+      baseURL,
+      headers,
+    } = mapModelToAzureConfig({
       modelName: 'gpt-4-turbo',
       modelGroupMap,
       groupMap,
@@ -495,8 +511,16 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       azureOpenAIApiDeploymentName: 'gpt-4-turbo',
       azureOpenAIApiVersion: '2024-02-15-preview',
     });
+    expect(baseURL).toBe('https://eastus.example.com');
+    expect(headers).toEqual({
+      'x-api-key': 'x-api-key-value',
+    });
 
-    const azureOptions3 = mapModelToAzureConfig({ modelName: 'gpt-4', modelGroupMap, groupMap });
+    const { azureOptions: azureOptions3 } = mapModelToAzureConfig({
+      modelName: 'gpt-4',
+      modelGroupMap,
+      groupMap,
+    });
     expect(azureOptions3).toEqual({
       azureOpenAIApiKey: 'westus-key',
       azureOpenAIApiInstanceName: 'librechat-westus',
@@ -504,7 +528,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       azureOpenAIApiVersion: '2023-12-01-preview',
     });
 
-    const azureOptions4 = mapModelToAzureConfig({
+    const { azureOptions: azureOptions4 } = mapModelToAzureConfig({
       modelName: 'gpt-3.5-turbo',
       modelGroupMap,
       groupMap,
@@ -516,7 +540,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       azureOpenAIApiVersion: '2023-12-01-preview',
     });
 
-    const azureOptions5 = mapModelToAzureConfig({
+    const { azureOptions: azureOptions5 } = mapModelToAzureConfig({
       modelName: 'gpt-3.5-turbo-1106',
       modelGroupMap,
       groupMap,
@@ -528,7 +552,7 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       azureOpenAIApiVersion: '2023-12-01-preview',
     });
 
-    const azureOptions6 = mapModelToAzureConfig({
+    const { azureOptions: azureOptions6 } = mapModelToAzureConfig({
       modelName: 'gpt-4-1106-preview',
       modelGroupMap,
       groupMap,

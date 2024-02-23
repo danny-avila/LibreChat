@@ -134,13 +134,19 @@ type AzureOptions = {
   azureOpenAIApiVersion: string;
 };
 
+type MappedAzureConfig = {
+  azureOptions: AzureOptions;
+  baseURL?: string;
+  headers?: Record<string, string>;
+};
+
 export function mapModelToAzureConfig({
   modelName,
   modelGroupMap,
   groupMap,
 }: Omit<TValidatedAzureConfig, 'modelNames'> & {
   modelName: string;
-}): AzureOptions {
+}): MappedAzureConfig {
   const modelConfig = modelGroupMap[modelName];
   if (!modelConfig) {
     throw new Error(`Model named "${modelName}" not found in configuration.`);
@@ -182,5 +188,15 @@ export function mapModelToAzureConfig({
     }
   }
 
-  return azureOptions;
+  const result: MappedAzureConfig = { azureOptions };
+
+  if (groupConfig.baseURL) {
+    result.baseURL = groupConfig.baseURL;
+  }
+
+  if (groupConfig.additionalHeaders) {
+    result.headers = groupConfig.additionalHeaders;
+  }
+
+  return result;
 }
