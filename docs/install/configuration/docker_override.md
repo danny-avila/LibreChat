@@ -49,7 +49,7 @@ services:
       - ./librechat.yaml:/app/librechat.yaml
 ```
 
-Or, if you want to use a prebuilt image for the `api` service, use the LibreChat config file, and use the older Mongo that doesn't requires AVX support, your `docker-compose.override.yml` might look like this:
+Or, if you want to locally build the image for the `api` service, use the LibreChat config file, and use the older Mongo that doesn't requires AVX support, your `docker-compose.override.yml` might look like this:
 
 ```yaml
 version: '3.4'
@@ -58,7 +58,10 @@ services:
   api:
     volumes:
       - ./librechat.yaml:/app/librechat.yaml
-    image: ghcr.io/danny-avila/librechat-dev:latest
+    image: librechat
+    build:
+      context: .
+      target: node
 
   mongodb:
     image: mongo:4.4.18
