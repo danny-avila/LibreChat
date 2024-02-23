@@ -514,6 +514,13 @@ See detailed instructions here: **[Stable Diffusion](../../features/plugins/stab
 SD_WEBUI_URL=http://host.docker.internal:7860
 ```
 
+### Tavily
+Get your API key here: [https://tavily.com/#api](https://tavily.com/#api)
+
+```bash
+TAVILY_API_KEY=
+```
+
 #### WolframAlpha
 See detailed instructions here: **[Wolfram Alpha](../../features/plugins/wolfram.md)**
 
