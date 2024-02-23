@@ -52,7 +52,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   let apiKey = isUserProvided ? userKey : credentials[endpoint];
   const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
-  /** @type {false | TValidatedAzureConfig} */
+  /** @type {false | TAzureConfig} */
   const azureConfig = isAzureOpenAI && req.app.locals[EModelEndpoint.azureOpenAI];
 
   if (isAzureOpenAI && azureConfig) {

@@ -22,7 +22,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   let useAzure = isEnabled(PLUGINS_USE_AZURE);
   let endpoint = useAzure ? EModelEndpoint.azureOpenAI : EModelEndpoint.openAI;
 
-  /** @type {false | TValidatedAzureConfig} */
+  /** @type {false | TAzureConfig} */
   const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
   useAzure = useAzure || azureConfig?.plugins;
 
@@ -68,7 +68,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   let apiKey = isUserProvided ? userKey : credentials[endpoint];
   if (useAzure && azureConfig) {
-    /** @type {{ modelGroupMap: TAzureModelGroupMap, groupMap: TAzureGroupMap }} */
     const { modelGroupMap, groupMap } = azureConfig;
     clientOptions.azure = mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
     apiKey = clientOptions.azure.azureOpenAIApiKey;

@@ -50,14 +50,8 @@
  */
 
 /**
- * @exports TValidatedAzureConfig
- * @typedef {import('librechat-data-provider').TValidatedAzureConfig} TValidatedAzureConfig
- * @memberof typedefs
- */
-
-/**
- * @exports TAzureEndpoint
- * @typedef {import('librechat-data-provider').TAzureEndpoint} TAzureEndpoint
+ * @exports TAzureConfig
+ * @typedef {import('librechat-data-provider').TAzureConfig} TAzureConfig
  * @memberof typedefs
  */
 

@@ -126,7 +126,8 @@ export const azureEndpointSchema = z
       .partial(),
   );
 
-export type TAzureEndpoint = z.infer<typeof azureEndpointSchema>;
+export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
+  TValidatedAzureConfig;
 
 export const rateLimitSchema = z.object({
   fileUploads: z
