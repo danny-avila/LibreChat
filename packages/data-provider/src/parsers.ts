@@ -125,6 +125,19 @@ export function extractEnvVariable(value: string) {
   return value;
 }
 
+/** Resolves header values to env variables if detected */
+export function resolveHeaders(headers: Record<string, string> | undefined) {
+  const resolvedHeaders = { ...(headers ?? {}) };
+
+  if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
+    Object.keys(headers).forEach((key) => {
+      resolvedHeaders[key] = extractEnvVariable(headers[key]);
+    });
+  }
+
+  return resolvedHeaders;
+}
+
 export function getFirstDefinedValue(possibleValues: string[]) {
   let returnValue;
   for (const value of possibleValues) {
