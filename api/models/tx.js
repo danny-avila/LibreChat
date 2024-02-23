@@ -11,9 +11,9 @@ const tokenValues = {
   '32k': { prompt: 60, completion: 120 },
   '4k': { prompt: 1.5, completion: 2 },
   '16k': { prompt: 3, completion: 4 },
-  'gpt-3.5-turbo-1106': { prompt: 1, completion: 1 },
-  'gpt-4-1106': { prompt: 5, completion: 15 },
-  'gpt-3.5-turbo-0125': { prompt: 0.5, completion: 1.5 },
+  'gpt-3.5-turbo-1106': { prompt: 0.5, completion: 0.75 },
+  'gpt-4-1106': { prompt: 5, completion: 10 },
+  'gpt-3.5-turbo-0125': { prompt: 0.5, completion: 1 },
 };
 
 /**
