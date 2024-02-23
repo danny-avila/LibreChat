@@ -3,11 +3,15 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_ui_payment_title: '购买算力',
+  com_ui_payment_tokens: '算力',
+  com_ui_buy_token: '购买算力',
   com_ui_examples: '示例',
   com_ui_new_chat: '创建新对话',
   com_ui_example_quantum_computing: '如何给7岁小孩讲解量子计算？',
   com_ui_example_10_year_old_b_day: '如何举办生日宴才能耳目一新？',
   com_ui_example_http_in_js: '如何在Python中实现HTTP请求？',
+  test: '购买算力',
   com_ui_capabilities: '功能',
   com_ui_capability_remember: '记忆历史对话',
   com_ui_capability_correction: '允许更正内容',
@@ -75,6 +79,21 @@ export default {
   com_auth_email_max_length: '邮箱地址最多120个字符',
   com_auth_email_pattern: '请输入正确的电子邮箱格式',
   com_auth_email_address: '电子邮箱地址',
+  com_nav_help_faq: '帮助',
+  com_nav_settings: '设置',
+  com_nav_search_placeholder: '搜索对话及对话内容',
+  com_nav_setting_general: '通用',
+  com_nav_setting_data: '数据管理',
+  com_nav_setting_account: '账户',
+  // New translations related to token purchase
+  purchase_tokens: '购买算力',
+  please_note: 'Please Note!', // Left in English as per instruction
+  token_amount_100k: '10万',
+  token_amount_500k: '50万',
+  token_amount_1m: '100万',
+  token_amount_10m: '1000万',
+  tokens_label: '标记',
+  purchase_action: '购买',
   com_auth_password: '密码',
   com_auth_password_required: '密码为必填项',
   com_auth_password_min_length: '密码至少8个字符',

@@ -3,6 +3,9 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_ui_payment_title: 'Purchase Tokens',
+  com_ui_payment_tokens: 'Tokens',
+  com_ui_buy_token: 'Buy Tokens',
   com_ui_examples: 'Examples',
   com_ui_new_chat: 'New Chat',
   com_ui_example_quantum_computing: 'Explain quantum computing in simple terms',

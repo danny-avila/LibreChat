@@ -116,7 +116,7 @@ function NavLinks() {
                   onClick={() => setShowBuyTokens(true)}
                   className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"
                 >
-                  Buy Tokens
+                  {localize('com_ui_buy_token')}
                 </button>
               </div>
             )}

@@ -6,6 +6,7 @@ import { useAuthContext } from '../../../hooks/AuthContext.tsx';
 import { Spinner } from '~/components';
 import { SiVisa, SiMastercard, SiWechat, SiAlipay, SiBitcoin } from 'react-icons/si';
 import { FaCreditCard } from 'react-icons/fa';
+import { useLocalize } from '~/hooks';
 
 const stripePromise = loadStripe(
   'pk_live_51MwvEEHKD0byXXCl8IzAvUl0oZ7RE6vIz72lWUVYl5rW3zy0u3FiGtIAgsbmqSHbhkTJeZjs5VEbQMNStaaQL9xQ001pwxI3RP',
@@ -19,22 +20,22 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
   const [processingTokenAmount, setProcessingTokenAmount] = useState(null);
   const [tokenBalance, setTokenBalance] = useState(null);
   const [selectedTokens, setSelectedTokens] = useState(null);
-  const title = 'Purchase Tokens';
+  const localize = useLocalize();
 
   // Determine the domain
   const domain = window.location.hostname;
 
   // Define token options with different price strings for each domain
   const tokenOptions =
-    domain === 'gptchina.io'
+    domain === '1b7c-70-39-70-194.ngrok-free.app'
       ? [
-        { tokens: 100000, label: '100k', price: '10 RMB' },
-        { tokens: 500000, label: '500k', price: '35 RMB' },
-        { tokens: 1000000, label: '1 Million', price: '50 RMB' },
-        { tokens: 10000000, label: '10 Million', price: '250 RMB' },
+        { tokens: 100000, label: '10万', price: '¥10' },
+        { tokens: 500000, label: '50万', price: '¥35' },
+        { tokens: 1000000, label: '100万', price: '¥50' },
+        { tokens: 10000000, label: '1000万', price: '¥250' },
       ]
       : [
-        { tokens: 100000, label: '100k', price: '2 USD' }, // Example alternative prices
+        { tokens: 100000, label: '100k', price: '2 USD' },
         { tokens: 500000, label: '500k', price: '6 USD' },
         { tokens: 1000000, label: '1 Million', price: '10 USD' },
         { tokens: 10000000, label: '10 Million', price: '50 USD' },
@@ -140,7 +141,7 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title={title}
+        title={localize('com_ui_payment_title')}
         className="max-w-[450px]"
         main={
           <>
@@ -161,7 +162,7 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
                   }`}
                   >
                     <div className="text-lg font-bold">{label}</div>
-                    <div>Tokens</div>
+                    <div>{localize('com_ui_payment_tokens')}</div>
                     <div className="text-sm">{price}</div>
                   </button>
                 ))}
@@ -170,14 +171,13 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
                 <SiAlipay size="2.5em" className="dark:text-white" />
                 <SiWechat size="2.5em" className="dark:text-white" />
                 <FaCreditCard size="2.5em" className="dark:text-white" />
-                {/* <SiBitcoin size="2.5em" className='dark:text-white'/> */}
               </div>
               <button
                 onClick={handlePurchase}
                 disabled={selectedTokens === null || processingTokenAmount !== null} // Disable button if no selection or processing
                 className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"
               >
-                {processingTokenAmount !== null ? <Spinner /> : 'Purchase'}
+                {processingTokenAmount !== null ? <Spinner /> : 'Purchase - 购买'}
               </button>
             </div>
           </>
