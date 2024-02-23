@@ -243,7 +243,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       let title = prevState?.title;
       if (parentMessageId !== Constants.NO_PARENT && title?.toLowerCase()?.includes('new chat')) {
         const convos = queryClient.getQueryData<ConversationData>([QueryKeys.allConversations]);
-
         const cachedConvo = getConversationById(convos, conversationId);
         title = cachedConvo?.title;
       }
