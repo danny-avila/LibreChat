@@ -35,7 +35,7 @@ function Login() {
           </div>
         )}
         <LoginForm onSubmit={login} />
-        {startupConfig?.registrationEnabled && (
+        {startupConfig?.registrationEnabled && window.location.hostname !== "drhu.aitok.ai" && (
           <p className="my-4 text-center text-sm font-light text-gray-700">
             {' '}
             {localize('com_auth_no_account')}{' '}
