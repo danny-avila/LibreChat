@@ -52,7 +52,7 @@ function Login() {
             <div className="mt-8" />
           </>
         )}
-        {startupConfig?.googleLoginEnabled && startupConfig?.socialLoginEnabled && (
+        {startupConfig?.googleLoginEnabled && window.location.hostname !== "drhu.aitok.ai" && startupConfig?.socialLoginEnabled && (
           <>
             <div className="mt-2 flex gap-x-2">
               <a
