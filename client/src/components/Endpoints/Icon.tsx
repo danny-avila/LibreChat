@@ -3,20 +3,32 @@ import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
 import {
   Plugin,
   GPTIcon,
-  AnthropicIcon,
-  AzureMinimalIcon,
-  CustomMinimalIcon,
   PaLMIcon,
   CodeyIcon,
   GeminiIcon,
+  AssistantIcon,
+  AnthropicIcon,
+  AzureMinimalIcon,
+  CustomMinimalIcon,
 } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
+import useAvatar from '~/hooks/Messages/useAvatar';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
 const Icon: React.FC<IconProps> = (props) => {
   const { user } = useAuthContext();
-  const { size = 30, isCreatedByUser, button, model = '', endpoint, jailbreak } = props;
+  const {
+    size = 30,
+    isCreatedByUser,
+    button,
+    model = '',
+    endpoint,
+    jailbreak,
+    assistantName,
+  } = props;
+
+  const avatarSrc = useAvatar(user);
 
   if (isCreatedByUser) {
     const username = user?.name || 'User';
@@ -30,18 +42,32 @@ const Icon: React.FC<IconProps> = (props) => {
         }}
         className={cn('relative flex items-center justify-center', props.className ?? '')}
       >
-        <img
-          className="rounded-sm"
-          src={
-            user?.avatar ||
-            `https://api.dicebear.com/6.x/initials/svg?seed=${username}&fontFamily=Verdana&fontSize=36`
-          }
-          alt="avatar"
-        />
+        <img className="rounded-sm" src={user?.avatar || avatarSrc} alt="avatar" />
       </div>
     );
   } else {
     const endpointIcons = {
+      [EModelEndpoint.assistants]: {
+        icon: props.iconURL ? (
+          <div
+            title={assistantName}
+            style={{
+              width: size,
+              height: size,
+            }}
+            className={cn('relative flex items-center justify-center', props.className ?? '')}
+          >
+            <img className="rounded-sm" src={props.iconURL} alt={assistantName} />
+          </div>
+        ) : (
+          <div className="h-6 w-6">
+            <div className="relative flex h-full items-center justify-center rounded-full bg-white text-black">
+              <AssistantIcon />
+            </div>
+          </div>
+        ),
+        name: endpoint,
+      },
       [EModelEndpoint.azureOpenAI]: {
         icon: <AzureMinimalIcon size={size * 0.5555555555555556} />,
         bg: 'linear-gradient(0.375turn, #61bde2, #4389d0)',

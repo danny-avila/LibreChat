@@ -31,8 +31,8 @@ In this video, you will learn how to install and run LibreChat, using Docker on 
 - Install Docker: `sudo apt install docker.io && apt install docker-compose -y`
 - Enter the folder: `cd LibreChat`
 - Create the .env file: `cp .env.example .env`
-- Build the Docker image: `docker-compose build`
-- Start LibreChat: `docker-compose up -d`
+- Build the Docker image: `docker compose build`
+- Start LibreChat: `docker compose up -d`
 
 Note: If you run the command on the same computer and want to access it, navigate to `localhost:3080`. You should see a login page where you can create or sign in to your account. Then you can choose an AI model and start chatting.
 
@@ -190,4 +190,4 @@ The above assumes that you're using the default terminal application on Linux an
 
 ---
 
->⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+>⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

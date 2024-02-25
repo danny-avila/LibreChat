@@ -60,7 +60,7 @@ services:
 - Save the `docker-compose.override.yml` file and run the following command from the directory where your `docker-compose.yml` file is located to start Mongo-Express along with your other Docker services:
 
 ```
-docker-compose up -d
+docker compose up -d
 ```
 This command will merge the `docker-compose.override.yml` with your `docker-compose.yml` and apply the configuration.
 
@@ -74,14 +74,14 @@ If you wish to remove Mongo-Express from your Docker environment, follow these s
 
 - Bring down the current Docker environment, which will stop and remove all running containers defined in the `docker-compose.yml` and `docker-compose.override.yml` files. Use the following command:
 ```sh
-docker-compose down
+docker compose down
 ```
 
 - Now you can either rename or delete the `docker-compose.override.yml` file, which contains the Mongo Express configuration.
 
 - Finally, bring your Docker environment back up, which will now exclude Mongo Express:
 ```
-docker-compose up -d
+docker compose up -d
 ```
 
 > By following these steps, you will have successfully removed Mongo Express from your Docker environment. If you want to reinstate Mongo Express at a later time, you can either rename the backup file back to `docker-compose.override.yml` or recreate the original `docker-compose.override.yml` file with the Mongo Express configuration.

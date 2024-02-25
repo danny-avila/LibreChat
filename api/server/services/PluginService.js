@@ -100,8 +100,7 @@ const deleteUserPluginAuth = async (userId, authField, all = false) => {
   }
 
   try {
-    const response = await PluginAuth.deleteOne({ userId, authField });
-    return response;
+    return await PluginAuth.deleteOne({ userId, authField });
   } catch (err) {
     logger.error('[deleteUserPluginAuth]', err);
     return err;

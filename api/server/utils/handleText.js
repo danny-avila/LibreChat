@@ -1,7 +1,6 @@
 const partialRight = require('lodash/partialRight');
 const { sendMessage } = require('./streamResponse');
 const { getCitations, citeText } = require('./citations');
-const cursor = '<span className="result-streaming">█</span>';
 const citationRegex = /\[\^\d+?\^]/g;
 
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
@@ -51,7 +50,7 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   const sendIntermediateMessage = (res, payload, extraTokens = '') => {
     tokens += extraTokens;
     sendMessage(res, {
-      text: tokens?.length === 0 ? cursor : tokens,
+      text: tokens?.length === 0 ? '' : tokens,
       message: true,
       initial: i === 0,
       ...payload,

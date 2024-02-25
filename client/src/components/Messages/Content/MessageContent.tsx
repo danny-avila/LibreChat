@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import type { TResPlugin } from 'librechat-data-provider';
-import type { TMessageContent, TText, TDisplayProps } from '~/common';
+import type { TMessageContentProps, TText, TDisplayProps } from '~/common';
 import { useAuthContext } from '~/hooks';
 import { cn } from '~/utils';
 import EditMessage from './EditMessage';
@@ -57,7 +57,7 @@ const MessageContent = ({
   isSubmitting,
   isLast,
   ...props
-}: TMessageContent) => {
+}: TMessageContentProps) => {
   if (error) {
     return <ErrorMessage text={text} />;
   } else if (edit) {

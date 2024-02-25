@@ -9,18 +9,7 @@ Welcome to the comprehensive guide for configuring your application's environmen
 
 While the default settings provide a solid foundation for a standard `docker` installation, delving into this guide will unveil the full potential of LibreChat. This guide empowers you to tailor LibreChat to your precise needs. Discover how to adjust language model availability, integrate social logins, manage the automatic moderation system, and much more. It's all about giving you the control to fine-tune LibreChat for an optimal user experience.
 
-**If you use docker, you should rebuild the docker image each time you update your environment variables**
-
-Rebuild command:
-```bash
-npm run update:docker
-
-# OR, if you don't have npm
-docker-compose build --no-cache
-
-# OR, if you the latest version of docker with docker compose as a plugin
-docker compose build --no-cache
-```
+> **Reminder: Please restart LibreChat for the configuration changes to take effect**
 
 Alternatively, you can create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat, where you can set your .env variables as needed under `environment`, or modify the default configuration provided by the main `docker-compose.yml`, without the need to directly edit or duplicate the whole file.
 
@@ -135,7 +124,7 @@ In this section you can configure the endpoints and models selection, their API 
 - `PROXY` is to be used by all endpoints (leave blank by default)
 
 ```bash
-ENDPOINTS=openAI,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
+ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
 PROXY=
 ```
 
@@ -361,6 +350,37 @@ OPENAI_REVERSE_PROXY=
 OPENAI_FORCE_PROMPT=true
 ```
 
+### Assistants
+
+- The [Assistants API by OpenAI](https://platform.openai.com/docs/assistants/overview) has a dedicated endpoint.
+- To get your OpenAI API key, you need to:
+    - Go to [https://platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys)
+    - Create an account or log in with your existing one
+    - Add a payment method to your account (this is not free, sorry 😬)
+    - Copy your secret key (sk-...) to `ASSISTANTS_API_KEY`
+
+- Leave `ASSISTANTS_API_KEY=` blank to disable this endpoint
+- Set `ASSISTANTS_API_KEY=` to `user_provided` to allow users to provide their own API key from the WebUI
+
+- Customize the available models, separated by commas, **without spaces**.
+    - The first will be default.
+    - Leave it blank or commented out to use internal settings:
+        - The models list will be fetched from OpenAI but only Assistants-API-compatible models will be shown; at the time of writing, they are as shown in the example below.
+
+```bash
+ASSISTANTS_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
+```
+
+- If necessary, you can also set an alternate base URL instead of the official one with `ASSISTANTS_BASE_URL`, which is similar to the OpenAI counterpart `OPENAI_REVERSE_PROXY`
+
+```bash
+ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
+```
+
+- If you have previously set the [`ENDPOINTS` value in your .env file](#endpoints), you will need to add the value `assistants`
+
+- There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, and determining which assistants can be used, that are available via the [`librechat.yaml` custom config file](./custom_config.md#assistants-endpoint-object-structure).
+
 ### OpenRouter
 See [OpenRouter](./free_ai_apis.md#openrouter-preferred) for more info.
 
@@ -417,6 +437,8 @@ AZURE_AI_SEARCH_SEARCH_OPTION_SELECT=
 ```
 
 #### DALL-E:
+
+**Note:** Make sure the `gptPlugins` endpoint is set in the [`ENDPOINTS`](#endpoints) environment variable if it was configured before.
 
 **API Keys:**
 - `DALLE_API_KEY`: This environment variable is intended for storing the OpenAI API key that grants access to both DALL-E 2 and DALL-E 3 services. Typically, this key should be kept private. If you are distributing a plugin or software that integrates with DALL-E, you may choose to leave this commented out, requiring the end user to input their own API key. If you have a shared API key you want to distribute with your software (not recommended for security reasons), you can uncomment this and provide the key.
@@ -490,6 +512,13 @@ See detailed instructions here: **[Stable Diffusion](../../features/plugins/stab
 
 ```bash
 SD_WEBUI_URL=http://host.docker.internal:7860
+```
+
+### Tavily
+Get your API key here: [https://tavily.com/#api](https://tavily.com/#api)
+
+```bash
+TAVILY_API_KEY=
 ```
 
 #### WolframAlpha
@@ -580,7 +609,10 @@ REGISTRATION_VIOLATION_SCORE=1
 CONCURRENT_VIOLATION_SCORE=1
 MESSAGE_VIOLATION_SCORE=1
 NON_BROWSER_VIOLATION_SCORE=20
+ILLEGAL_MODEL_REQ_SCORE=5
 ```
+
+> Note: Non-browser access and Illegal model requests are almost always nefarious as it means a 3rd party is attempting to access the server through an automated script.
 
 #### Login and registration rate limiting.
 - `LOGIN_MAX`: The max amount of logins allowed per IP per `LOGIN_WINDOW`
@@ -818,4 +850,27 @@ Mail address for from field. It is **REQUIRED** to set a value here (even if it'
 
 ```bash
 EMAIL_FROM=noreply@librechat.ai 
+```
+
+### Other
+
+- **Redis:** Redis support is experimental, you may encounter some problems when using it. 
+
+> If using Redis, you should flush the cache after changing any LibreChat settings
+
+```bash
+REDIS_URI=
+USE_REDIS=
+```
+
+- **Birthday Hat:** Give the AI Icon a Birthday Hat 🥳
+
+> Will show automatically on February 11th (LibreChat's birthday)
+ 
+> Set this to `false` to disable the birthday hat
+
+> Set to `true` to enable all the time.
+
+```bash
+SHOW_BIRTHDAY_ICON=true
 ```

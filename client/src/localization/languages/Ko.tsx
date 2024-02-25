@@ -3,6 +3,7 @@
 export default {
   com_ui_examples: '예시',
   com_ui_new_chat: '새 채팅',
+  com_ui_happy_birthday: '내 첫 생일이야!',
   com_ui_example_quantum_computing: '양자 컴퓨팅을 간단하게 설명해줄래?',
   com_ui_example_10_year_old_b_day: '10살 아이 생일 파티를 위한 참신한 아이디어 있을까?',
   com_ui_example_http_in_js: '자바스크립트에서 HTTP 요청을 어떻게 만드나요?',

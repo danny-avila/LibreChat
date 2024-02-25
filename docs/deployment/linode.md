@@ -60,7 +60,7 @@ if you want, you can use NGINX, Apache, or any other proxy manager.
 
 ### Start NGINX Proxy Manager
 
- - By executing: `docker-compose up -d`
+ - By executing: `docker compose up -d`
 
 ### Login to NGINX Proxy Manager
   - **Important: You need to update the default credentials**
@@ -87,4 +87,4 @@ Password: changeme
 
 ---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

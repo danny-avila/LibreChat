@@ -5,6 +5,7 @@
 export default {
   com_ui_examples: 'Contoh',
   com_ui_new_chat: 'Chat Baru',
+  com_ui_happy_birthday: 'Ini ulang tahun pertamaku!',
   com_ui_example_quantum_computing: 'Jelaskan komputasi kuantum dengan istilah yang sederhana',
   com_ui_example_10_year_old_b_day: 'Ada ide kreatif untuk ulang tahun anak 10 tahun?',
   com_ui_example_http_in_js: 'Bagaimana cara membuat permintaan HTTP dalam Javascript?',

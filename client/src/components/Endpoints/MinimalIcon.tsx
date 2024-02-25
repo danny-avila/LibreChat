@@ -9,6 +9,7 @@ import {
   GoogleMinimalIcon,
   CustomMinimalIcon,
   AnthropicIcon,
+  Sparkles,
 } from '~/components/svg';
 import { cn } from '~/utils';
 import { IconProps } from '~/common';
@@ -40,6 +41,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     },
     [EModelEndpoint.bingAI]: { icon: <BingAIMinimalIcon />, name: 'BingAI' },
     [EModelEndpoint.chatGPTBrowser]: { icon: <LightningIcon />, name: 'ChatGPT' },
+    [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     default: {
       icon: (
         <UnknownIcon

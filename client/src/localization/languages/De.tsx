@@ -3,11 +3,14 @@
 export default {
   com_ui_examples: 'Beispiele',
   com_ui_new_chat: 'Neuer Chat',
+  com_ui_happy_birthday: 'Es ist mein erster Geburtstag!',
   com_ui_example_quantum_computing: 'Erkläre Quantencomputing in einfachen Worten',
-  com_ui_example_10_year_old_b_day: 'Hast du eine kreative Idee für den Geburtstag eines 10-Jährigen?',
+  com_ui_example_10_year_old_b_day:
+    'Hast du eine kreative Idee für den Geburtstag eines 10-Jährigen?',
   com_ui_example_http_in_js: 'Wie stelle ich eine HTTP-Anfrage in Javascript?',
   com_ui_capabilities: 'Funktionen',
-  com_ui_capability_remember: 'Erinnert sich daran, was der Benutzer zu einem früheren Zeitpunkt in der Konversation gesagt hat',
+  com_ui_capability_remember:
+    'Erinnert sich daran, was der Benutzer zu einem früheren Zeitpunkt in der Konversation gesagt hat',
   com_ui_capability_correction: 'Ermöglicht es dem Benutzer, nachträgliche Korrekturen vorzunehmen',
   com_ui_capability_decline_requests: 'Ermöglicht es, unangemessene Anfragen abzulehnen',
   com_ui_limitations: 'Beschränkungen',
@@ -29,13 +32,15 @@ export default {
   com_ui_showing: 'Zeigen',
   com_ui_of: 'von',
   com_ui_entries: 'Einträge',
-  com_ui_pay_per_call: 'Alle KI-Chats an einem Ort. Bezahle pro API-Abruf nutzungsbasiert und nicht pro Monat',
+  com_ui_pay_per_call:
+    'Alle KI-Chats an einem Ort. Bezahle pro API-Abruf nutzungsbasiert und nicht pro Monat',
   com_ui_new_footer: 'Alle KI-Chats an einem Ort.',
   com_ui_enter: 'Eingabe',
   com_ui_submit: 'Abschicken',
   com_ui_upload_success: 'Erfolgreich hochgeladene Datei',
   com_ui_upload_error: 'Beim Hochladen deiner Datei ist ein Fehler aufgetreten',
-  com_ui_upload_invalid: 'Ungültige Datei zum Hochladen. Muss ein Bild sein, das nicht größer als 2 MB ist',
+  com_ui_upload_invalid:
+    'Ungültige Datei zum Hochladen. Muss ein Bild sein, das nicht größer als 2 MB ist',
   com_ui_cancel: 'Abbrechen',
   com_ui_save: 'Speichern',
   com_ui_save_submit: 'Speichern & Absenden',
@@ -121,10 +126,10 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'Um Sydney zu aktivieren',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-  'Bing kann bis zu 7k Token für \'context\' verwenden, auf die es in der Konversation Bezug nehmen kann. Der genaue Grenzwert ist nicht bekannt, aber mehr als 7k Token können zu Fehlern führen.',
-com_endpoint_bing_system_message_placeholder:
-  'WARNUNG: Der Missbrauch dieser Funktion kann dazu führen, dass Ihnen die Nutzung von Bing untersagt wird! Klicken Sie auf \'Systemnachricht\', um vollständige Anweisungen und die Standardnachricht zu erhalten, d.h. die als sicher geltende Voreinstellung \'Sydney\'.',
-com_endpoint_system_message: 'System Nachricht',
+    'Bing kann bis zu 7k Token für \'context\' verwenden, auf die es in der Konversation Bezug nehmen kann. Der genaue Grenzwert ist nicht bekannt, aber mehr als 7k Token können zu Fehlern führen.',
+  com_endpoint_bing_system_message_placeholder:
+    'WARNUNG: Der Missbrauch dieser Funktion kann dazu führen, dass Ihnen die Nutzung von Bing untersagt wird! Klicken Sie auf \'Systemnachricht\', um vollständige Anweisungen und die Standardnachricht zu erhalten, d.h. die als sicher geltende Voreinstellung \'Sydney\'.',
+  com_endpoint_system_message: 'System Nachricht',
   com_endpoint_message: 'Nachricht an',
   com_endpoint_message_not_appendable: 'Bearbeite deine Nachricht oder generiere sie neu.',
   com_endpoint_default_blank: 'Standard: leer',
@@ -145,7 +150,8 @@ com_endpoint_system_message: 'System Nachricht',
   com_endpoint_google_maxoutputtokens:
     ' Maximale Anzahl von Token, die in der Antwort erzeugt werden können. Gib einen niedrigeren Wert für kürzere Antworten und einen höheren Wert für längere Antworten an.',
   com_endpoint_google_custom_name_placeholder: 'Setze einen benutzerdefinierten Namen für Google',
-  com_endpoint_prompt_prefix_placeholder: 'Setze benutzerdefinierte Anweisungen oder Kontext. Ignoriert, wenn leer.',
+  com_endpoint_prompt_prefix_placeholder:
+    'Setze benutzerdefinierte Anweisungen oder Kontext. Ignoriert, wenn leer.',
   com_endpoint_custom_name: 'Benutzerdefinierter Name',
   com_endpoint_prompt_prefix: 'Benutzerdefinierte Anweisungen',
   com_endpoint_temperature: 'Temperatur (Kreativität)',
@@ -190,13 +196,18 @@ com_endpoint_system_message: 'System Nachricht',
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Setzt benutzerdefinierte Anweisungen, die in die System Nachricht aufgenommen werden. Standardmäßig: keine',
   com_endpoint_import: 'Importieren',
-  com_endpoint_set_custom_name: 'Lege einen benutzerdefinierten Namen fest, für den Fall, dass du diese Vorgabe finden kannst',
+  com_endpoint_set_custom_name:
+    'Lege einen benutzerdefinierten Namen fest, für den Fall, dass du diese Vorgabe finden kannst',
   com_endpoint_preset_delete_confirm: 'Bist du sicher, dass du diese Vorgabe löschen willst?',
-  com_endpoint_preset_clear_all_confirm: "Bist du sicher, dass du alle deine Voreinstellungen löschen willst?",
+  com_endpoint_preset_clear_all_confirm:
+    'Bist du sicher, dass du alle deine Voreinstellungen löschen willst?',
   com_endpoint_preset_import: 'Voreinstellung importiert!',
-  com_endpoint_preset_import_error: 'Beim Import deiner Voreinstellung ist ein Fehler aufgetreten. Bitte versuche es erneut.',
-  com_endpoint_preset_save_error: 'Es ist ein Fehler beim Speichern deiner Voreinstellung aufgetreten. Bitte versuche es noch einmal.',
-  com_endpoint_preset_delete_error: 'Beim Löschen deiner Voreinstellung ist ein Fehler aufgetreten. Bitte versuche es noch einmal.',
+  com_endpoint_preset_import_error:
+    'Beim Import deiner Voreinstellung ist ein Fehler aufgetreten. Bitte versuche es erneut.',
+  com_endpoint_preset_save_error:
+    'Es ist ein Fehler beim Speichern deiner Voreinstellung aufgetreten. Bitte versuche es noch einmal.',
+  com_endpoint_preset_delete_error:
+    'Beim Löschen deiner Voreinstellung ist ein Fehler aufgetreten. Bitte versuche es noch einmal.',
   com_endpoint_preset_default_removed: 'ist nicht mehr die Standardeinstellung.',
   com_endpoint_preset_default_item: 'Standard:',
   com_endpoint_preset_default_none: 'Keine Standardeinstellung aktiv.',
@@ -222,7 +233,8 @@ com_endpoint_system_message: 'System Nachricht',
   com_endpoint_presets_clear_warning:
     'Bist du sicher, dass du alle Voreinstellungen löschen willst? Dies ist nicht umkehrbar.',
   com_endpoint_not_implemented: 'Nicht implementiert',
-  com_endpoint_no_presets: 'Es gibt noch keine Voreinstellungen, verwende die Schaltfläche "Einstellungen", um eine Vorlage zu erstellen.',
+  com_endpoint_no_presets:
+    'Es gibt noch keine Voreinstellungen, verwende die Schaltfläche "Einstellungen", um eine Vorlage zu erstellen.',
   com_endpoint_not_available: 'Kein Endpunkt verfügbar',
   com_endpoint_view_options: 'Ansichtsoptionen',
   com_endpoint_save_convo_as_preset: 'Konversation als Voreinstellung speichern',
@@ -244,18 +256,23 @@ com_endpoint_system_message: 'System Nachricht',
   com_endpoint_config_google_service_key: 'Google Service Account Key',
   com_endpoint_config_google_cloud_platform: '(von Google Cloud Platform)',
   com_endpoint_config_google_api_key: 'Google API Key',
-  com_endpoint_config_google_gemini_api: "(Gemini API)",
-  com_endpoint_config_google_api_info: 'Um deinen Generative Language API-Schlüssel (für Gemini) zu erhalten,',
+  com_endpoint_config_google_gemini_api: '(Gemini API)',
+  com_endpoint_config_google_api_info:
+    'Um deinen Generative Language API-Schlüssel (für Gemini) zu erhalten,',
   com_endpoint_config_key_import_json_key: 'Importiere Service Account JSON Key.',
-  com_endpoint_config_key_import_json_key_success: 'Erfolgreich importierter Service Account JSON Key',
+  com_endpoint_config_key_import_json_key_success:
+    'Erfolgreich importierter Service Account JSON Key',
   com_endpoint_config_key_import_json_key_invalid:
     'Ungültiger Service Account JSON Key, Hast du die richtige Datei importiert?',
-  com_endpoint_config_key_get_edge_key: 'Um dein Access Token für Bing zu erhalten, melde dich an bei',
+  com_endpoint_config_key_get_edge_key:
+    'Um dein Access Token für Bing zu erhalten, melde dich an bei',
   com_endpoint_config_key_get_edge_key_dev_tool:
     'Verwende Dev-Tools oder eine Erweiterung, während du auf der Website angemeldet bist, um den Inhalt des _U-Cookies zu kopieren. Wenn dies fehlschlägt, befolge die folgenden Anweisungen',
   com_endpoint_config_key_edge_instructions: 'Anweisungen',
-  com_endpoint_config_key_edge_full_key_string: 'um die vollständigen Cookie-Strings zu übermitteln.',
-  com_endpoint_config_key_chatgpt: 'Um dein Zugangstoken für ChatGPT \'Gratis Version\' zu erhalten, melde dich bei',
+  com_endpoint_config_key_edge_full_key_string:
+    'um die vollständigen Cookie-Strings zu übermitteln.',
+  com_endpoint_config_key_chatgpt:
+    'Um dein Zugangstoken für ChatGPT \'Gratis Version\' zu erhalten, melde dich bei',
   com_endpoint_config_key_chatgpt_then_visit: 'danach besuche',
   com_endpoint_config_key_chatgpt_copy_token: 'Kopiere das Zugangstoken.',
   com_endpoint_config_key_google_need_to: 'Du musst',

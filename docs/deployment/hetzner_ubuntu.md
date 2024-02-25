@@ -126,7 +126,7 @@ SEARCH=true
 MEILI_HOST=meilisearch
 ```
 
-### 5. After everything file has been updated, run  `docker-compose build` then `docker-compose up`
+### 5. After everything file has been updated, run  `docker compose build` then `docker compose up`
 
 
 **NOTE: You may need to run these commands with sudo permissions.**
@@ -142,4 +142,4 @@ ALLOW_REGISTRATION:False
 
 ---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

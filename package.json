@@ -1,6 +1,6 @@
 {
   "name": "LibreChat",
-  "version": "0.6.6",
+  "version": "0.6.10",
   "description": "",
   "workspaces": [
     "api",
@@ -50,8 +50,8 @@
     "format": "prettier-eslint --write \"{,!(node_modules)/**/}*.{js,jsx,ts,tsx}\"",
     "b:api": "NODE_ENV=production bun run api/server/index.js",
     "b:api:dev": "NODE_ENV=production bun run --watch api/server/index.js",
-    "b:data-provider": "cd packages/data-provider && bun run b:build",
-    "b:client": "bun --bun run b:data-provider && cd client && bun --bun run b:build",
+    "b:data": "cd packages/data-provider && bun run b:build",
+    "b:client": "bun --bun run b:data && cd client && bun --bun run b:build",
     "b:client:dev": "cd client && bun run b:dev",
     "b:test:client": "cd client && bun run b:test",
     "b:test:api": "cd api && bun run b:test",
@@ -67,7 +67,7 @@
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://github.com/danny-avila/LibreChat#readme",
+  "homepage": "https://librechat.ai/",
   "devDependencies": {
     "@playwright/test": "^1.38.1",
     "@typescript-eslint/eslint-plugin": "^5.62.0",

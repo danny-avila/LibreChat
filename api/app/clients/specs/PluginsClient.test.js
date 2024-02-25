@@ -1,9 +1,10 @@
+const crypto = require('crypto');
+const { Constants } = require('librechat-data-provider');
 const { HumanChatMessage, AIChatMessage } = require('langchain/schema');
 const PluginsClient = require('../PluginsClient');
-const crypto = require('crypto');
 
-jest.mock('../../../lib/db/connectDb');
-jest.mock('../../../models/Conversation', () => {
+jest.mock('~/lib/db/connectDb');
+jest.mock('~/models/Conversation', () => {
   return function () {
     return {
       save: jest.fn(),
@@ -11,6 +12,12 @@ jest.mock('../../../models/Conversation', () => {
     };
   };
 });
+
+const defaultAzureOptions = {
+  azureOpenAIApiInstanceName: 'your-instance-name',
+  azureOpenAIApiDeploymentName: 'your-deployment-name',
+  azureOpenAIApiVersion: '2020-07-01-preview',
+};
 
 describe('PluginsClient', () => {
   let TestAgent;
@@ -60,7 +67,7 @@ describe('PluginsClient', () => {
         TestAgent.setOptions(opts);
       }
       const conversationId = opts.conversationId || crypto.randomUUID();
-      const parentMessageId = opts.parentMessageId || '00000000-0000-0000-0000-000000000000';
+      const parentMessageId = opts.parentMessageId || Constants.NO_PARENT;
       const userMessageId = opts.overrideParentMessageId || crypto.randomUUID();
       this.pastMessages = await TestAgent.loadHistory(
         conversationId,
@@ -185,6 +192,32 @@ describe('PluginsClient', () => {
     test('should return "gpt-3.5-turbo" for input that does not meet any specific condition', () => {
       expect(client.getFunctionModelName('random string')).toBe('gpt-3.5-turbo');
       expect(client.getFunctionModelName('')).toBe('gpt-3.5-turbo');
+    });
+  });
+  describe('Azure OpenAI tests specific to Plugins', () => {
+    // TODO: add more tests for Azure OpenAI integration with Plugins
+    // let client;
+    // beforeEach(() => {
+    //   client = new PluginsClient('dummy_api_key');
+    // });
+
+    test('should not call getFunctionModelName when azure options are set', () => {
+      const spy = jest.spyOn(PluginsClient.prototype, 'getFunctionModelName');
+      const model = 'gpt-4-turbo';
+
+      // note, without the azure change in PR #1766, `getFunctionModelName` is called twice
+      const testClient = new PluginsClient('dummy_api_key', {
+        agentOptions: {
+          model,
+          agent: 'functions',
+        },
+        azure: defaultAzureOptions,
+      });
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(testClient.agentOptions.model).toBe(model);
+
+      spy.mockRestore();
     });
   });
 });
