@@ -314,18 +314,19 @@ export default function Nav({ navVisible, setNavVisible }) {
                     text={localize('com_ui_referrals_leaderboard')}
                     clickHandler={user ? openLeaderboardHandler : navigateToRegister}
                   />
-                  {window.location.hostname !== "drhu.aitok.ai" && (
-                  <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                    svg={() => (copied ? <CheckMark /> : <Clipboard />)}
-                    text={
-                      copied
-                        ? localize('com_ui_copied_success')
-                        : localize('com_ui_copy_invitation_link')
-                    }
-                    clickHandler={user ? copyLinkHandler : navigateToRegister}
-                  />
+                  {window.location.hostname !== 'drhu.aitok.ai' && (
+                    <NavLink
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      svg={() => (copied ? <CheckMark /> : <Clipboard />)}
+                      text={
+                        copied
+                          ? localize('com_ui_copied_success')
+                          : localize('com_ui_copy_invitation_link')
+                      }
+                      clickHandler={user ? copyLinkHandler : navigateToRegister}
+                    />
                   )}
+                  <NavLinks />
                 </nav>
               </div>
             </div>
