@@ -7,10 +7,13 @@ export default {
   com_sidepanel_assistant_builder: 'Construtor de Assistente',
   com_sidepanel_attach_files: 'Anexar Arquivos',
   com_assistants_knowledge: 'Conhecimento',
-  com_assistants_knowledge_info: 'Se você carregar arquivos em Conhecimento, as conversas com seu Assistente podem incluir o conteúdo dos arquivos.',
-  com_assistants_knowledge_disabled: 'O Assistente deve ser criado, e o Interpretador de Código ou Recuperação devem estar habilitados e salvos antes de carregar arquivos como Conhecimento.',
+  com_assistants_knowledge_info:
+    'Se você carregar arquivos em Conhecimento, as conversas com seu Assistente podem incluir o conteúdo dos arquivos.',
+  com_assistants_knowledge_disabled:
+    'O Assistente deve ser criado, e o Interpretador de Código ou Recuperação devem estar habilitados e salvos antes de carregar arquivos como Conhecimento.',
   com_assistants_code_interpreter: 'Interpretador de Código',
-  com_assistants_code_interpreter_files: 'Os seguintes arquivos estão disponíveis apenas para o Interpretador de Código:',
+  com_assistants_code_interpreter_files:
+    'Os seguintes arquivos estão disponíveis apenas para o Interpretador de Código:',
   com_assistants_retrieval: 'Recuperação',
   com_assistants_tools_section: 'Ações, Ferramentas',
   com_assistants_add_tools: 'Adicionar Ferramentas',
@@ -25,7 +28,8 @@ export default {
   com_assistants_create_error: 'Houve um erro ao criar seu assistente.',
   com_ui_attach_error_type: 'Tipo de arquivo não suportado para o endpoint:',
   com_ui_attach_error_size: 'Limite de tamanho de arquivo excedido para o endpoint:',
-  com_ui_attach_error: 'Não é possível anexar arquivo. Crie ou selecione uma conversa, ou tente atualizar a página.',
+  com_ui_attach_error:
+    'Não é possível anexar arquivo. Crie ou selecione uma conversa, ou tente atualizar a página.',
   com_ui_examples: 'Exemplos',
   com_ui_new_chat: 'Nova Conversa',
   com_ui_happy_birthday: 'É meu primeiro aniversário!',
@@ -90,7 +94,8 @@ export default {
   com_ui_create: 'Criar',
   com_ui_delete_conversation: 'Excluir conversa?',
   com_ui_delete_conversation_confirm: 'Isso irá excluir',
-  com_ui_delete_assistant_confirm: 'Tem certeza de que deseja excluir este Assistente? Isso não pode ser desfeito.',
+  com_ui_delete_assistant_confirm:
+    'Tem certeza de que deseja excluir este Assistente? Isso não pode ser desfeito.',
   com_ui_preview: 'Visualizar',
   com_ui_upload: 'Carregar',
   com_ui_connect: 'Conectar',
@@ -181,8 +186,8 @@ export default {
   com_endpoint_google_maxoutputtokens:
     'Número máximo de tokens que podem ser gerados na resposta. Especifique um valor menor para respostas mais curtas e um valor maior para respostas mais longas.',
   com_endpoint_google_custom_name_placeholder: 'Defina um nome personalizado para o Google',
-  com_endpoint_prompt_prefix_placeholder: 
-  'Defina instruções personalizadas ou contexto. Ignorado se vazio.',
+  com_endpoint_prompt_prefix_placeholder:
+    'Defina instruções personalizadas ou contexto. Ignorado se vazio.',
   com_endpoint_instructions_assistants_placeholder:
     'Substitui as instruções do assistente. Isso é útil para modificar o comportamento em uma base por execução.',
   com_endpoint_prompt_prefix_assistants_placeholder:
@@ -233,7 +238,8 @@ export default {
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Defina instruções personalizadas para incluir na Mensagem do Sistema. Padrão: nenhum',
   com_endpoint_import: 'Importar',
-  com_endpoint_set_custom_name: 'Defina um nome personalizado, caso você possa encontrar este preset',
+  com_endpoint_set_custom_name:
+    'Defina um nome personalizado, caso você possa encontrar este preset',
   com_endpoint_preset_delete_confirm: 'Tem certeza de que deseja excluir este preset?',
   com_endpoint_preset_clear_all_confirm: 'Tem certeza de que deseja excluir todos os seus presets?',
   com_endpoint_preset_import: 'Preset Importado!',
@@ -328,7 +334,8 @@ export default {
   com_nav_tool_add: 'Adicionar',
   com_nav_tool_remove: 'Remover',
   com_nav_tool_dialog: 'Ferramentas do Assistente',
-  com_nav_tool_dialog_description: 'O Assistente deve ser salvo para persistir as seleções de ferramentas.',
+  com_nav_tool_dialog_description:
+    'O Assistente deve ser salvo para persistir as seleções de ferramentas.',
   com_show_agent_settings: 'Mostrar Configurações do Agente',
   com_show_completion_settings: 'Mostrar Configurações de Conclusão',
   com_hide_examples: 'Ocultar Exemplos',
