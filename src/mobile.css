@@ -1,0 +1,132 @@
+.hover-button.active {
+  display: block;
+  visibility: visible;
+}
+
+.nav-close-button {
+  margin-left: 8px;
+}
+
+.nav {
+  position: fixed;
+  z-index: 64;
+  top: 0;
+
+  /* max-width: 260px; */
+
+  bottom: 0;
+  opacity: 0;
+}
+
+.nav.active {
+  position: relative;
+  left: 0;
+  opacity: 1;
+}
+
+.nav-mask.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (max-width: 767px) {
+  .nav {
+    width: calc(100% - 10px)  ;
+    transition: all 0.15s;
+  }
+  .nav-mask {
+    position: fixed;
+    z-index: 63;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background-color: rgba(86, 88, 105, 0.75);
+    padding-left: 420px;
+    padding-top: 12px;
+    opacity: 0;
+    transition: all 0.5s;
+    pointer-events: none;
+  }
+
+  .nav-open-button {
+    opacity: 0;
+  }
+
+  .nav-mask.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .nav.active {
+    position: fixed;
+  }
+}
+
+@media (min-width: 1024px) {
+  .switch-container {
+    display: none;
+  }
+}
+
+
+  .switch-result {
+    display: block !important;
+    visibility: visible;
+  }
+
+@media (max-width: 1024px) {
+  /* .sibling-switch {
+        left: 114px;
+        top: unset;
+        bottom: 4px;
+        visibility: visible;
+        z-index: 2;
+    } */
+  .sibling-switch {
+    display: none;
+  }
+
+  .hover-button {
+    display: block;
+    visibility: visible;
+  }
+}
+
+@media (max-width: 767px) {
+  .input-panel-button {
+    border: 0;
+  }
+
+  .input-panel-button svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .input-panel {
+  }
+
+  .nav-open-button
+  {
+    visibility: hidden;
+  }
+}
+
+.hide-scrollbar {
+  /* Hide scrollbar for Chrome, Safari, and Opera */
+  scrollbar-width: none; /* For Firefox */
+  -ms-overflow-style: none; /* For Internet Explorer and Edge */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* For WebKit browsers */
+}
+
+.gemini-gradient {
+  /* Adjust the colors and positioning as necessary to match the image */
+  background-image: radial-gradient(circle at center, #0000ff, #87cefa, #ffffff);
+  /* More styling for demonstration purposes */
+  border-radius: 50%;
+  height: 100px;
+  width: 100px;
+}

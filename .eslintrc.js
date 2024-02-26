@@ -19,6 +19,9 @@ module.exports = {
     'e2e/playwright-report/**/*',
     'packages/data-provider/types/**/*',
     'packages/data-provider/dist/**/*',
+    'data-node/**/*',
+    'meili_data/**/*',
+    'node_modules/**/*',
   ],
   parser: '@typescript-eslint/parser',
   parserOptions: {
@@ -61,6 +64,7 @@ module.exports = {
     'no-restricted-syntax': 'off',
     'react/prop-types': ['off'],
     'react/display-name': ['off'],
+    'no-unused-vars': ['error', { varsIgnorePattern: '^_' }],
     quotes: ['error', 'single'],
   },
   overrides: [

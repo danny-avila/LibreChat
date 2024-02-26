@@ -1,5 +1,0 @@
-**/node_modules
-client/dist/images
-data-node
-.env
-**/.env
