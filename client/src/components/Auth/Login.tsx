@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { ThemeSelector } from '~/components/ui';
+import SocialButton from './SocialButton';
 import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
-import SocialButton from './SocialButton';
-import { ThemeSelector } from '~/components/ui';
 
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
