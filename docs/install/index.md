@@ -20,6 +20,7 @@ weight: 1
   * 🖥️ [Custom Endpoints & Config](./configuration/custom_config.md) 
   * 🐋 [Docker Compose Override](./configuration/docker_override.md)
   * 🤖 [AI Setup](./configuration/ai_setup.md)
+  * 🅰️ [Azure OpenAI](./configuration/azure_openai.md)
   * 🚅 [LiteLLM](./configuration/litellm.md)
   * 💸 [Free AI APIs](./configuration/free_ai_apis.md) 
   * 🛂 [Authentication System](./configuration/user_auth_system.md) 
