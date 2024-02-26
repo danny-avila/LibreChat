@@ -18,7 +18,7 @@ let i = 0;
 async function loadCustomConfig() {
   // Use CONFIG_PATH if set, otherwise fallback to defaultConfigPath
   const configPath = process.env.CONFIG_PATH || defaultConfigPath;
-  
+
   const customConfig = loadYaml(configPath);
   if (!customConfig) {
     i === 0 &&

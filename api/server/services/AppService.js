@@ -1,8 +1,12 @@
 const {
+  Constants,
   FileSources,
   EModelEndpoint,
-  Constants,
   defaultSocialLogins,
+  validateAzureGroups,
+  mapModelToAzureConfig,
+  deprecatedAzureVariables,
+  conflictingAzureVariables,
 } = require('librechat-data-provider');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
@@ -62,6 +66,50 @@ const AppService = async (app) => {
   handleRateLimits(config?.rateLimits);
 
   const endpointLocals = {};
+
+  if (config?.endpoints?.[EModelEndpoint.azureOpenAI]) {
+    const { groups, titleModel, titleConvo, titleMethod, plugins } =
+      config.endpoints[EModelEndpoint.azureOpenAI];
+    const { isValid, modelNames, modelGroupMap, groupMap, errors } = validateAzureGroups(groups);
+
+    if (!isValid) {
+      const errorString = errors.join('\n');
+      const errorMessage = 'Invalid Azure OpenAI configuration:\n' + errorString;
+      logger.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    for (const modelName of modelNames) {
+      mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
+    }
+
+    endpointLocals[EModelEndpoint.azureOpenAI] = {
+      modelNames,
+      modelGroupMap,
+      groupMap,
+      titleConvo,
+      titleMethod,
+      titleModel,
+      plugins,
+    };
+
+    deprecatedAzureVariables.forEach(({ key, description }) => {
+      if (process.env[key]) {
+        logger.warn(
+          `The \`${key}\` environment variable (related to ${description}) should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you will experience conflicts and errors.`,
+        );
+      }
+    });
+
+    conflictingAzureVariables.forEach(({ key }) => {
+      if (process.env[key]) {
+        logger.warn(
+          `The \`${key}\` environment variable should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you may experience with the defined placeholders for mapping to the current model grouping using the same name.`,
+        );
+      }
+    });
+  }
+
   if (config?.endpoints?.[EModelEndpoint.assistants]) {
     const { disableBuilder, pollIntervalMs, timeoutMs, supportedIds, excludedIds } =
       config.endpoints[EModelEndpoint.assistants];

@@ -11,6 +11,7 @@ weight: 2
   * 🐋 [Docker Compose Override](./docker_override.md) 
 ---
   * 🤖 [AI Setup](./ai_setup.md)
+  * 🅰️ [Azure OpenAI](./azure_openai.md)
   * 🚅 [LiteLLM](./litellm.md)
   * 💸 [Free AI APIs](./free_ai_apis.md)
 ---
