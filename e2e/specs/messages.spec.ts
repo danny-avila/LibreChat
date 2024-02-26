@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Response, Page, BrowserContext } from '@playwright/test';
 
-const basePath = 'http://localhost:3080/chat/';
+const basePath = 'http://localhost:3080/c/';
 const initialUrl = `${basePath}new`;
 const endpoints = ['google', 'openAI', 'azureOpenAI', 'bingAI', 'chatGPTBrowser', 'gptPlugins'];
 const endpoint = endpoints[1];
@@ -50,7 +50,7 @@ test.describe('Messaging suite', () => {
   test('textbox should be focused after generation, test expected navigation, & test editing messages', async ({
     page,
   }) => {
-    test.setTimeout(120000);
+    test.setTimeout(10000);
     const message = 'hi';
     await page.goto(initialUrl, { timeout: 5000 });
     await page.locator('#new-conversation-menu').click();

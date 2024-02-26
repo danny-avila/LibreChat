@@ -16,7 +16,7 @@ test.describe('Key suite', () => {
     await page.goto('http://localhost:3080/', { timeout: 5000 });
     const endpoint = 'chatGPTBrowser';
 
-    const newTopicButton = page.locator('.hide-scrollbar > .group');
+    const newTopicButton = page.getByTestId('title-button');
     await newTopicButton.click();
 
     const endpointItem = page.getByTestId(`endpoint-item-${endpoint}`);
@@ -53,7 +53,7 @@ test.describe('Key suite', () => {
     await page.goto('http://localhost:3080/', { timeout: 5000 });
     const endpoint = 'chatGPTBrowser';
 
-    const newTopicButton = page.locator('.hide-scrollbar > .group');
+    const newTopicButton = page.getByTestId('title-button');
     await newTopicButton.click();
 
     const endpointItem = page.getByTestId(`endpoint-item-${endpoint}`);
