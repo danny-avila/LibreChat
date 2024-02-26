@@ -191,7 +191,7 @@ export function mapModelToAzureConfig({
   const result: MappedAzureConfig = { azureOptions };
 
   if (groupConfig.baseURL) {
-    result.baseURL = groupConfig.baseURL;
+    result.baseURL = extractEnvVariable(groupConfig.baseURL);
   }
 
   if (groupConfig.additionalHeaders) {
