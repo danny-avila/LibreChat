@@ -3,8 +3,8 @@ import { expect, test } from '@playwright/test';
 test.describe('Landing suite', () => {
   test('Landing title', async ({ page }) => {
     await page.goto('http://localhost:3080/', { timeout: 5000 });
-    const pageTitle = await page.textContent('#landing-title');
-    expect(pageTitle?.length).toBeGreaterThan(0);
+    const pageTitle = page.getByText('How can I help you today?');
+    expect(pageTitle).toBeTruthy();
   });
 
   test('Create Conversation', async ({ page }) => {
