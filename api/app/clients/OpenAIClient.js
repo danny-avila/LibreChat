@@ -755,6 +755,7 @@ class OpenAIClient extends BaseClient {
       this.options.headers = resolveHeaders(headers);
       this.options.reverseProxyUrl = baseURL ?? null;
       this.langchainProxy = extractBaseURL(this.options.reverseProxyUrl);
+      this.apiKey = azureOptions.azureOpenAIApiKey;
     }
 
     const titleChatCompletion = async () => {
@@ -1025,6 +1026,7 @@ ${convo}
         this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
         opts.defaultHeaders = resolveHeaders(headers);
         this.langchainProxy = extractBaseURL(baseURL);
+        this.apiKey = azureOptions.azureOpenAIApiKey;
       }
 
       if (this.azure || this.options.azure) {
