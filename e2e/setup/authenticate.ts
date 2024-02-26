@@ -10,7 +10,7 @@ async function register(page: Page, user: User) {
   await page.getByRole('link', { name: 'Sign up' }).click();
   await page.getByLabel('Full name').click();
   await page.getByLabel('Full name').fill('test');
-  await page.getByText('Username (optional)').click();
+  await page.getByLabel('Username (optional)').click();
   await page.getByLabel('Username (optional)').fill('test');
   await page.getByLabel('Email').click();
   await page.getByLabel('Email').fill(user.email);
@@ -57,7 +57,7 @@ async function authenticate(config: FullConfig, user: User) {
   await page.goto(baseURL, { timeout });
   await register(page, user);
   try {
-    await page.waitForURL(`${baseURL}/chat/new`, { timeout });
+    await page.waitForURL(`${baseURL}/c/new`, { timeout });
   } catch (error) {
     console.error('Error:', error);
     const userExists = page.getByTestId('registration-error');
@@ -78,7 +78,7 @@ async function authenticate(config: FullConfig, user: User) {
   console.log('🤖: ✔️  user successfully logged out');
 
   await login(page, user);
-  await page.waitForURL(`${baseURL}/chat/new`, { timeout });
+  await page.waitForURL(`${baseURL}/c/new`, { timeout });
   console.log('🤖: ✔️  user successfully authenticated');
 
   await page.context().storageState({ path: storageState as string });

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 const enterTestKey = async (page: Page, endpoint: string) => {
-  await page.getByTestId('new-conversation-menu').click();
+  await page.locator('.hide-scrollbar > .group').click();
   await page.getByTestId(`endpoint-item-${endpoint}`).hover({ force: true });
   await page.getByRole('button', { name: 'Set API Key' }).click();
   await page.getByTestId(`input-${endpoint}`).fill('test');
@@ -16,13 +16,13 @@ test.describe('Key suite', () => {
     await page.goto('http://localhost:3080/', { timeout: 5000 });
     const endpoint = 'chatGPTBrowser';
 
-    const newTopicButton = page.getByTestId('new-conversation-menu');
+    const newTopicButton = page.locator('.hide-scrollbar > .group');
     await newTopicButton.click();
 
     const endpointItem = page.getByTestId(`endpoint-item-${endpoint}`);
     await endpointItem.click();
 
-    let setKeyButton = page.getByRole('button', { name: 'Set API key first' });
+    let setKeyButton = page.getByRole('button', { name: 'Set API Key' });
 
     expect(setKeyButton.count()).toBeTruthy();
 
@@ -51,15 +51,15 @@ test.describe('Key suite', () => {
 
   test('Test Setting and Revoking Keys from Settings', async ({ page }) => {
     await page.goto('http://localhost:3080/', { timeout: 5000 });
-    const endpoint = 'bingAI';
+    const endpoint = 'chatGPTBrowser';
 
-    const newTopicButton = page.getByTestId('new-conversation-menu');
+    const newTopicButton = page.locator('.hide-scrollbar > .group');
     await newTopicButton.click();
 
     const endpointItem = page.getByTestId(`endpoint-item-${endpoint}`);
     await endpointItem.click();
 
-    let setKeyButton = page.getByRole('button', { name: 'Set API key first' });
+    let setKeyButton = page.getByRole('button', { name: 'Set API Key' });
 
     expect(setKeyButton.count()).toBeTruthy();
 
@@ -80,7 +80,7 @@ test.describe('Key suite', () => {
 
     await page.getByRole('button', { name: 'Close' }).click();
 
-    setKeyButton = page.getByRole('button', { name: 'Set API key first' });
+    setKeyButton = page.getByRole('button', { name: 'Set API Key' });
     expect(setKeyButton.count()).toBeTruthy();
   });
 });
