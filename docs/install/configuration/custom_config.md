@@ -30,6 +30,12 @@ You can copy the [example config file](#example-config) as a good starting point
 
 The example config file has some options ready to go for Mistral AI and Openrouter.
 
+**Note:** You can set an alternate filepath for the `librechat.yaml` file through an environment variable:
+
+```bash
+CONFIG_PATH="/alternative/path/to/librechat.yaml"
+```
+
 ## Docker Setup
 
 For Docker, you need to make use of an [override file](./docker_override.md), named `docker-compose.override.yml`, to ensure the config file works for you.
@@ -46,8 +52,10 @@ version: '3.4'
 services:
   api:
     volumes:
-      - ./librechat.yaml:/app/librechat.yaml
+      - ./librechat.yaml:/app/librechat.yaml # local/filepath:container/filepath
 ```
+
+- **Note:** If you are using `CONFIG_PATH` for an alternative filepath for this file, make sure to specify it accordingly.
 
 - Start docker again, and you should see your config file settings apply
 ```bash
