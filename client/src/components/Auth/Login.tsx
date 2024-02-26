@@ -35,8 +35,8 @@ function Login() {
             {localize(getLoginError(error))}
           </div>
         )}
-        {startupConfig?.emailLoginEnabled && <LoginForm onSubmit={login} />}
-        {startupConfig?.registrationEnabled && (
+        <LoginForm onSubmit={login} />
+        {startupConfig?.registrationEnabled && window.location.hostname !== 'drhu.aitok.ai' && (
           <p className="my-4 text-center text-sm font-light text-gray-700">
             {' '}
             {localize('com_auth_no_account')}{' '}
@@ -53,7 +53,9 @@ function Login() {
             <div className="mt-8" />
           </>
         )}
-        {startupConfig?.googleLoginEnabled && startupConfig?.socialLoginEnabled && (
+        {startupConfig?.googleLoginEnabled &&
+          window.location.hostname !== 'drhu.aitok.ai' &&
+          startupConfig?.socialLoginEnabled && (
           <>
             <div className="mt-2 flex gap-x-2">
               <a
