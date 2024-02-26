@@ -5,7 +5,7 @@ const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
-const configPath = path.resolve(projectRoot, 'librechat.yaml');
+const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
 
 let i = 0;
 
@@ -16,6 +16,9 @@ let i = 0;
  * @returns {Promise<TCustomConfig | null>} A promise that resolves to null or the custom config object.
  * */
 async function loadCustomConfig() {
+  // Use CONFIG_PATH if set, otherwise fallback to defaultConfigPath
+  const configPath = process.env.CONFIG_PATH || defaultConfigPath;
+  
   const customConfig = loadYaml(configPath);
   if (!customConfig) {
     i === 0 &&
