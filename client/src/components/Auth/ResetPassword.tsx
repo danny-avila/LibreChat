@@ -3,8 +3,8 @@ import { useForm } from 'react-hook-form';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useResetPasswordMutation } from 'librechat-data-provider/react-query';
 import type { TResetPassword } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
 import { ThemeSelector } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 
 function ResetPassword() {
   const localize = useLocalize();
