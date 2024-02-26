@@ -71,10 +71,26 @@ export function validateAzureGroups(configs: TAzureGroups): TValidatedAzureConfi
         baseURL,
         additionalHeaders,
         models,
+        serverless,
+        ...rest
       } = group;
 
       if (groupMap[groupName]) {
         errors.push(`Duplicate group name detected: "${groupName}". Group names must be unique.`);
+        return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
+      }
+
+      if (serverless && (!apiKey || !baseURL)) {
+        errors.push(
+          `Group "${groupName}" is serverless but missing mandatory "apiKey" or "baseURL".`,
+        );
+        return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
+      }
+
+      if (!instanceName && !serverless) {
+        errors.push(
+          `Group "${groupName}" is missing an "instanceName" for non-serverless configuration.`,
+        );
         return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
       }
 
@@ -86,6 +102,8 @@ export function validateAzureGroups(configs: TAzureGroups): TValidatedAzureConfi
         baseURL,
         additionalHeaders,
         models,
+        serverless,
+        ...rest,
       };
 
       for (const modelName in group.models) {
@@ -97,6 +115,13 @@ export function validateAzureGroups(configs: TAzureGroups): TValidatedAzureConfi
             `Duplicate model name detected: "${modelName}". Model names must be unique across groups.`,
           );
           return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
+        }
+
+        if (serverless) {
+          modelGroupMap[modelName] = {
+            group: groupName,
+          };
+          continue;
         }
 
         if (typeof model === 'boolean') {
@@ -138,15 +163,16 @@ export function validateAzureGroups(configs: TAzureGroups): TValidatedAzureConfi
 
 type AzureOptions = {
   azureOpenAIApiKey: string;
-  azureOpenAIApiInstanceName: string;
-  azureOpenAIApiDeploymentName: string;
-  azureOpenAIApiVersion: string;
+  azureOpenAIApiInstanceName?: string;
+  azureOpenAIApiDeploymentName?: string;
+  azureOpenAIApiVersion?: string;
 };
 
 type MappedAzureConfig = {
   azureOptions: AzureOptions;
   baseURL?: string;
   headers?: Record<string, string>;
+  serverless?: boolean;
 };
 
 export function mapModelToAzureConfig({
@@ -168,6 +194,48 @@ export function mapModelToAzureConfig({
     );
   }
 
+  const instanceName = groupConfig.instanceName;
+
+  if (!instanceName && !groupConfig.serverless) {
+    throw new Error(
+      `Group "${modelConfig.group}" is missing an instanceName for non-serverless configuration.`,
+    );
+  }
+
+  if (groupConfig.serverless && !groupConfig.baseURL) {
+    throw new Error(
+      `Group "${modelConfig.group}" is missing the required base URL for serverless configuration.`,
+    );
+  }
+
+  if (groupConfig.serverless && !groupConfig.apiKey) {
+    throw new Error(
+      `Group "${modelConfig.group}" is missing the required API key for serverless configuration.`,
+    );
+  }
+
+  if (groupConfig.serverless) {
+    const result: MappedAzureConfig = {
+      azureOptions: {
+        azureOpenAIApiKey: extractEnvVariable(groupConfig.apiKey),
+      },
+      baseURL: extractEnvVariable(groupConfig.baseURL as string),
+      serverless: true,
+    };
+
+    if (groupConfig.additionalHeaders) {
+      result.headers = groupConfig.additionalHeaders;
+    }
+
+    return result;
+  }
+
+  if (!instanceName) {
+    throw new Error(
+      `Group "${modelConfig.group}" is missing an instanceName for non-serverless configuration.`,
+    );
+  }
+
   const modelDetails = groupConfig.models[modelName];
   const deploymentName =
     typeof modelDetails === 'object'
@@ -186,7 +254,7 @@ export function mapModelToAzureConfig({
 
   const azureOptions: AzureOptions = {
     azureOpenAIApiKey: extractEnvVariable(groupConfig.apiKey),
-    azureOpenAIApiInstanceName: extractEnvVariable(groupConfig.instanceName),
+    azureOpenAIApiInstanceName: extractEnvVariable(instanceName),
     azureOpenAIApiDeploymentName: extractEnvVariable(deploymentName),
     azureOpenAIApiVersion: extractEnvVariable(version),
   };

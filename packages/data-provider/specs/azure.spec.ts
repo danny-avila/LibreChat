@@ -188,7 +188,6 @@ describe('validateAzureGroups', () => {
         },
       },
     ];
-    // @ts-expect-error This error is expected because the 'instanceName' property is intentionally left out.
     const { isValid, errors } = validateAzureGroups(configs);
     expect(isValid).toBe(false);
     expect(errors.length).toBe(1);
