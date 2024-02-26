@@ -5,8 +5,8 @@ import {
   useRequestPasswordResetMutation,
 } from 'librechat-data-provider/react-query';
 import type { TRequestPasswordReset, TRequestPasswordResetResponse } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
 import { ThemeSelector } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 
 function RequestPasswordReset() {
   const localize = useLocalize();
