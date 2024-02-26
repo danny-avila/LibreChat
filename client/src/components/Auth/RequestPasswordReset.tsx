@@ -5,6 +5,7 @@ import {
   useRequestPasswordResetMutation,
 } from 'librechat-data-provider/react-query';
 import type { TRequestPasswordReset, TRequestPasswordResetResponse } from 'librechat-data-provider';
+import { ThemeSelector } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
 function RequestPasswordReset() {
@@ -102,18 +103,18 @@ function RequestPasswordReset() {
                   },
                 })}
                 aria-invalid={!!errors.email}
-                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
                 placeholder=" "
               ></input>
               <label
                 htmlFor="email"
-                className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
+                className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500 dark:text-gray-200"
               >
                 {localize('com_auth_email_address')}
               </label>
             </div>
             {errors.email && (
-              <span role="alert" className="mt-1 text-sm text-black">
+              <span role="alert" className="mt-1 text-sm text-black dark:text-white">
                 {/* @ts-ignore not sure why */}
                 {errors.email.message}
               </span>
@@ -139,9 +140,14 @@ function RequestPasswordReset() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
-      <div className="mt-5 w-authPageWidth overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">{headerText}</h1>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
+      <div className="absolute bottom-0 left-0 m-4">
+        <ThemeSelector />
+      </div>
+      <div className="mt-5 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
+        <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
+          {headerText}
+        </h1>
         {requestError && (
           <div
             className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"

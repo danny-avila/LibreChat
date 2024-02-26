@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import { useRegisterUserMutation, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TRegisterUser } from 'librechat-data-provider';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
-import { useLocalize } from '~/hooks';
+import { ThemeSelector } from '~/components/ui';
 import SocialButton from './SocialButton';
+import { useLocalize } from '~/hooks';
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
@@ -63,19 +64,19 @@ const Registration: React.FC = () => {
             validation,
           )}
           aria-invalid={!!errors[id]}
-          className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+          className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
           placeholder=" "
           data-testid={id}
         ></input>
         <label
           htmlFor={id}
-          className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
+          className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500 dark:text-gray-200"
         >
           {localize(label)}
         </label>
       </div>
       {errors[id] && (
-        <span role="alert" className="mt-1 text-sm text-black">
+        <span role="alert" className="mt-1 text-sm text-black dark:text-white">
           {String(errors[id]?.message) ?? ''}
         </span>
       )}
@@ -147,9 +148,15 @@ const Registration: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
-      <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
+      <div className="absolute bottom-0 left-0 m-4">
+        <ThemeSelector />
+      </div>
+      <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
+        <h1
+          className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
+          style={{ userSelect: 'none' }}
+        >
           {localize('com_auth_create_account')}
         </h1>
         {error && (
@@ -191,7 +198,7 @@ const Registration: React.FC = () => {
           {renderInput('email', 'com_auth_email', 'email', {
             required: localize('com_auth_email_required'),
             minLength: {
-              value: 3,
+              value: 1,
               message: localize('com_auth_email_min_length'),
             },
             maxLength: {
@@ -228,13 +235,9 @@ const Registration: React.FC = () => {
             </button>
           </div>
         </form>
-        <p className="my-4 text-center text-sm font-light text-gray-700">
+        <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
           {localize('com_auth_already_have_account')}{' '}
-          <a
-            href="/login"
-            aria-label="Login"
-            className="p-1 font-medium text-green-500 hover:underline"
-          >
+          <a href="/login" aria-label="Login" className="p-1 font-medium text-green-500">
             {localize('com_auth_login')}
           </a>
         </p>
@@ -243,7 +246,9 @@ const Registration: React.FC = () => {
             {startupConfig.emailLoginEnabled && (
               <>
                 <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-                  <div className="absolute bg-white px-3 text-xs">Or</div>
+                  <div className="absolute bg-white px-3 text-xs text-black dark:bg-gray-900 dark:text-white">
+                    Or
+                  </div>
                 </div>
                 <div className="mt-8" />
               </>
