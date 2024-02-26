@@ -38,6 +38,10 @@ const fetchModels = async ({
     return models;
   }
 
+  if (!apiKey) {
+    return models;
+  }
+
   try {
     const options = {
       headers: {
@@ -92,9 +96,7 @@ const fetchModels = async ({
         },
       );
     } else {
-      logger.error(`${logMessage} Something happened in setting up the request`, {
-        message: error.message ? error.message : '',
-      });
+      logger.error(`${logMessage} Something happened in setting up the request`, error);
     }
   }
 

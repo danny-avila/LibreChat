@@ -1,10 +1,13 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
+  ImageDetail,
+  EModelEndpoint,
+  resolveHeaders,
+  ImageDetailCost,
   getResponseSender,
   validateVisionModel,
-  ImageDetailCost,
-  ImageDetail,
+  mapModelToAzureConfig,
 } = require('librechat-data-provider');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
@@ -665,6 +668,16 @@ class OpenAIClient extends BaseClient {
       };
     }
 
+    const { headers } = this.options;
+    if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
+      configOptions.baseOptions = {
+        headers: resolveHeaders({
+          ...headers,
+          ...configOptions?.baseOptions?.headers,
+        }),
+      };
+    }
+
     if (this.options.proxy) {
       configOptions.httpAgent = new HttpsProxyAgent(this.options.proxy);
       configOptions.httpsAgent = new HttpsProxyAgent(this.options.proxy);
@@ -724,6 +737,26 @@ class OpenAIClient extends BaseClient {
       frequency_penalty: 0,
       max_tokens: 16,
     };
+
+    /** @type {TAzureConfig | undefined} */
+    const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
+    if (this.azure && azureConfig) {
+      const { modelGroupMap, groupMap } = azureConfig;
+      const {
+        azureOptions,
+        baseURL,
+        headers = {},
+      } = mapModelToAzureConfig({
+        modelName: modelOptions.model,
+        modelGroupMap,
+        groupMap,
+      });
+      this.azure = azureOptions;
+      this.options.headers = resolveHeaders(headers);
+      this.options.reverseProxyUrl = baseURL ?? null;
+      this.langchainProxy = extractBaseURL(this.options.reverseProxyUrl);
+      this.apiKey = azureOptions.azureOpenAIApiKey;
+    }
 
     const titleChatCompletion = async () => {
       modelOptions.model = model;
@@ -975,6 +1008,27 @@ ${convo}
         modelOptions.max_tokens = 4000;
       }
 
+      /** @type {TAzureConfig | undefined} */
+      const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
+
+      if (this.azure && this.isVisionModel && azureConfig) {
+        const { modelGroupMap, groupMap } = azureConfig;
+        const {
+          azureOptions,
+          baseURL,
+          headers = {},
+        } = mapModelToAzureConfig({
+          modelName: modelOptions.model,
+          modelGroupMap,
+          groupMap,
+        });
+        this.azure = azureOptions;
+        this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
+        opts.defaultHeaders = resolveHeaders(headers);
+        this.langchainProxy = extractBaseURL(baseURL);
+        this.apiKey = azureOptions.azureOpenAIApiKey;
+      }
+
       if (this.azure || this.options.azure) {
         // Azure does not accept `model` in the body, so we need to remove it.
         delete modelOptions.model;
@@ -1026,11 +1080,19 @@ ${convo}
           ...modelOptions,
           ...this.options.addParams,
         };
+        logger.debug('[OpenAIClient] chatCompletion: added params', {
+          addParams: this.options.addParams,
+          modelOptions,
+        });
       }
 
       if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
         this.options.dropParams.forEach((param) => {
           delete modelOptions[param];
+        });
+        logger.debug('[OpenAIClient] chatCompletion: dropped params', {
+          dropParams: this.options.dropParams,
+          modelOptions,
         });
       }
 
