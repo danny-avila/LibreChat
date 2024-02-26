@@ -80,10 +80,8 @@ export function validateAzureGroups(configs: TAzureGroups): TValidatedAzureConfi
         return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
       }
 
-      if (serverless && (!apiKey || !baseURL)) {
-        errors.push(
-          `Group "${groupName}" is serverless but missing mandatory "apiKey" or "baseURL".`,
-        );
+      if (serverless && !baseURL) {
+        errors.push(`Group "${groupName}" is serverless but missing mandatory "baseURL."`);
         return { isValid: false, modelNames, modelGroupMap, groupMap, errors };
       }
 
@@ -205,12 +203,6 @@ export function mapModelToAzureConfig({
   if (groupConfig.serverless && !groupConfig.baseURL) {
     throw new Error(
       `Group "${modelConfig.group}" is missing the required base URL for serverless configuration.`,
-    );
-  }
-
-  if (groupConfig.serverless && !groupConfig.apiKey) {
-    throw new Error(
-      `Group "${modelConfig.group}" is missing the required API key for serverless configuration.`,
     );
   }
 
