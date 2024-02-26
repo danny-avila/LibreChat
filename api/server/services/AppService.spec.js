@@ -4,6 +4,7 @@ const {
   defaultSocialLogins,
   validateAzureGroups,
   deprecatedAzureVariables,
+  conflictingAzureVariables,
 } = require('librechat-data-provider');
 
 const AppService = require('./AppService');
@@ -381,7 +382,7 @@ describe('AppService updating app.locals and issuing warnings', () => {
     );
   });
 
-  it('should issue expected warnings when loading Azure Groups', async () => {
+  it('should issue expected warnings when loading Azure Groups with deprecated Environment Variables', async () => {
     require('./Config/loadCustomConfig').mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
@@ -403,6 +404,32 @@ describe('AppService updating app.locals and issuing warnings', () => {
     deprecatedAzureVariables.forEach(({ key, description }) => {
       expect(logger.warn).toHaveBeenCalledWith(
         `The \`${key}\` environment variable (related to ${description}) should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you will experience conflicts and errors.`,
+      );
+    });
+  });
+
+  it('should issue expected warnings when loading conflicting Azure Envrionment Variables', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.azureOpenAI]: {
+            groups: azureGroups,
+          },
+        },
+      }),
+    );
+
+    conflictingAzureVariables.forEach((varInfo) => {
+      process.env[varInfo.key] = 'test';
+    });
+
+    const app = { locals: {} };
+    await require('./AppService')(app);
+
+    const { logger } = require('~/config');
+    conflictingAzureVariables.forEach(({ key }) => {
+      expect(logger.warn).toHaveBeenCalledWith(
+        `The \`${key}\` environment variable should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you may experience with the defined placeholders for mapping to the current model grouping using the same name.`,
       );
     });
   });

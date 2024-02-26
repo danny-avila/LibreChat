@@ -37,6 +37,15 @@ export const deprecatedAzureVariables = [
   },
 ];
 
+export const conflictingAzureVariables = [
+  {
+    key: 'INSTANCE_NAME',
+  },
+  {
+    key: 'DEPLOYMENT_NAME',
+  },
+];
+
 export function validateAzureGroups(configs: TAzureGroups): TValidatedAzureConfig & {
   isValid: boolean;
   errors: (ZodError | string)[];

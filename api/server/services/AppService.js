@@ -6,6 +6,7 @@ const {
   validateAzureGroups,
   mapModelToAzureConfig,
   deprecatedAzureVariables,
+  conflictingAzureVariables,
 } = require('librechat-data-provider');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
@@ -96,6 +97,14 @@ const AppService = async (app) => {
       if (process.env[key]) {
         logger.warn(
           `The \`${key}\` environment variable (related to ${description}) should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you will experience conflicts and errors.`,
+        );
+      }
+    });
+
+    conflictingAzureVariables.forEach(({ key }) => {
+      if (process.env[key]) {
+        logger.warn(
+          `The \`${key}\` environment variable should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you may experience with the defined placeholders for mapping to the current model grouping using the same name.`,
         );
       }
     });
