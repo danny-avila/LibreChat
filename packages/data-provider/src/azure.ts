@@ -215,6 +215,11 @@ export function mapModelToAzureConfig({
       serverless: true,
     };
 
+    const apiKeyValue = result.azureOptions.azureOpenAIApiKey;
+    if (typeof apiKeyValue === 'string' && envVarRegex.test(apiKeyValue)) {
+      throw new Error(`Azure configuration environment variable "${apiKeyValue}" was not found.`);
+    }
+
     if (groupConfig.additionalHeaders) {
       result.headers = groupConfig.additionalHeaders;
     }
