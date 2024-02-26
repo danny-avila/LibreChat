@@ -65,19 +65,27 @@ const initializeClient = async ({ req, res, endpointOption }) => {
       azureOptions,
       baseURL,
       headers = {},
+      serverless,
     } = mapModelToAzureConfig({
       modelName,
       modelGroupMap,
       groupMap,
     });
-    clientOptions.azure = azureOptions;
-    clientOptions.titleConvo = azureConfig.titleConvo;
-    clientOptions.titleModel = azureConfig.titleModel;
-    clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
+
     clientOptions.reverseProxyUrl = baseURL ?? clientOptions.reverseProxyUrl;
     clientOptions.headers = resolveHeaders({ ...headers, ...(clientOptions.headers ?? {}) });
 
-    apiKey = clientOptions.azure.azureOpenAIApiKey;
+    clientOptions.titleConvo = azureConfig.titleConvo;
+    clientOptions.titleModel = azureConfig.titleModel;
+    clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
+
+    const groupName = modelGroupMap[modelName].group;
+    clientOptions.addParams = azureConfig.groupMap[groupName].addParams;
+    clientOptions.dropParams = azureConfig.groupMap[groupName].dropParams;
+    clientOptions.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
+
+    apiKey = azureOptions.azureOpenAIApiKey;
+    clientOptions.azure = !serverless && azureOptions;
   } else if (isAzureOpenAI) {
     clientOptions.azure = isUserProvided ? JSON.parse(userKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;
