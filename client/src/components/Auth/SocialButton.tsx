@@ -3,8 +3,6 @@ import React, { useState } from 'react';
 const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
-
-  // New state to keep track of the currently pressed button
   const [activeButton, setActiveButton] = useState(null);
 
   if (!enabled) {
@@ -29,40 +27,24 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => 
   };
 
   const getButtonStyles = () => {
-    const baseStyles = {
-      border: '1px solid #CCCCCC',
-      transition: 'background-color 0.3s ease, border 0.3s ease',
-    };
+    // Define Tailwind CSS classes based on state
+    const baseStyles = 'border border-solid border-gray-300 dark:border-gray-800 transition-colors';
 
-    if (isPressed && activeButton === id) {
-      return {
-        ...baseStyles,
-        backgroundColor: '#B9DAE9',
-        border: '2px solid #B9DAE9',
-      };
-    }
+    const pressedStyles = 'bg-blue-200 border-blue-200 dark:bg-blue-900 dark:border-blue-600';
+    const hoverStyles = 'bg-gray-100 dark:bg-gray-700';
 
-    if (isHovered) {
-      return {
-        ...baseStyles,
-        backgroundColor: '#E5E5E5',
-      };
-    }
-
-    return {
-      ...baseStyles,
-      backgroundColor: 'transparent',
-    };
+    return `${baseStyles} ${
+      isPressed && activeButton === id ? pressedStyles : isHovered ? hoverStyles : ''
+    }`;
   };
 
   return (
     <div className="mt-2 flex gap-x-2">
       <a
         aria-label={`${label}`}
-        className="justify-left flex w-full items-center space-x-3 rounded-md border px-5 py-3 transition-colors"
+        className={`${getButtonStyles()} flex w-full items-center space-x-3 rounded-md px-5 py-3 text-black transition-colors dark:text-white`}
         href={`${serverDomain}/oauth/${oauthPath}`}
         data-testid={id}
-        style={getButtonStyles()}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         onMouseDown={handleMouseDown}
