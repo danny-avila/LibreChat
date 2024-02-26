@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import { useRegisterUserMutation, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TRegisterUser } from 'librechat-data-provider';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
-import { useLocalize } from '~/hooks';
-import SocialButton from './SocialButton';
 import { ThemeSelector } from '~/components/ui';
+import SocialButton from './SocialButton';
+import { useLocalize } from '~/hooks';
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
