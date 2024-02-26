@@ -33,6 +33,29 @@
  */
 
 /**
+ * @exports TAzureGroups
+ * @typedef {import('librechat-data-provider').TAzureGroups} TAzureGroups
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAzureModelGroupMap
+ * @typedef {import('librechat-data-provider').TAzureModelGroupMap} TAzureModelGroupMap
+ * @memberof typedefs
+ */
+/**
+ * @exports TAzureGroupMap
+ * @typedef {import('librechat-data-provider').TAzureGroupMap} TAzureGroupMap
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAzureConfig
+ * @typedef {import('librechat-data-provider').TAzureConfig} TAzureConfig
+ * @memberof typedefs
+ */
+
+/**
  * @exports TModelsConfig
  * @typedef {import('librechat-data-provider').TModelsConfig} TModelsConfig
  * @memberof typedefs
@@ -47,6 +70,12 @@
 /**
  * @exports TCustomConfig
  * @typedef {import('librechat-data-provider').TCustomConfig} TCustomConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TEndpointsConfig
+ * @typedef {import('librechat-data-provider').TEndpointsConfig} TEndpointsConfig
  * @memberof typedefs
  */
 

@@ -30,6 +30,12 @@ You can copy the [example config file](#example-config) as a good starting point
 
 The example config file has some options ready to go for Mistral AI and Openrouter.
 
+**Note:** You can set an alternate filepath for the `librechat.yaml` file through an environment variable:
+
+```bash
+CONFIG_PATH="/alternative/path/to/librechat.yaml"
+```
+
 ## Docker Setup
 
 For Docker, you need to make use of an [override file](./docker_override.md), named `docker-compose.override.yml`, to ensure the config file works for you.
@@ -46,8 +52,10 @@ version: '3.4'
 services:
   api:
     volumes:
-      - ./librechat.yaml:/app/librechat.yaml
+      - ./librechat.yaml:/app/librechat.yaml # local/filepath:container/filepath
 ```
+
+- **Note:** If you are using `CONFIG_PATH` for an alternative filepath for this file, make sure to specify it accordingly.
 
 - Start docker again, and you should see your config file settings apply
 ```bash
@@ -239,30 +247,18 @@ rateLimits:
 - **Key**: `endpoints`
 - **Type**: Object
 - **Description**: Defines custom API endpoints for the application.
-  - **Sub-Key**: `assistants`
-  - **Type**: Object
-  - **Description**: Assistants endpoint-specific configuration.
-    - **Sub-Key**: `disableBuilder`
-    - **Description**: Controls the visibility and use of the builder interface for assistants.
-    - [More info](#disablebuilder)
-    - **Sub-Key**: `pollIntervalMs`
-    - **Description**: Specifies the polling interval in milliseconds for checking run updates or changes in assistant run states.
-    - [More info](#pollintervalms)
-    - **Sub-Key**: `timeoutMs`
-    - **Description**: Sets a timeout in milliseconds for assistant runs. Helps manage system load by limiting total run operation time.
-    - [More info](#timeoutMs)
-    - **Sub-Key**: `supportedIds`
-    - **Description**: List of supported assistant Ids. Use this or `excludedIds` but not both.
-    - [More info](#supportedIds)
-    - **Sub-Key**: `excludedIds`
-    - **Description**: List of excluded assistant Ids. Use this or `supportedIds` but not both (the `excludedIds` field will be ignored if so).
-    - [More info](#excludedIds)
-  - [Full Assistants Endpoint Object Structure](#assistants-endpoint-object-structure)
   - **Sub-Key**: `custom`
   - **Type**: Array of Objects
   - **Description**: Each object in the array represents a unique endpoint configuration.
   - [Full Custom Endpoint Object Structure](#custom-endpoint-object-structure)
-- **Required**
+  - **Sub-Key**: `azureOpenAI`
+  - **Type**: Object
+  - **Description**: Azure OpenAI endpoint-specific configuration
+  - [Full Azure OpenAI Endpoint Object Structure](#azure-openai-object-structure)
+  - **Sub-Key**: `assistants`
+  - **Type**: Object
+  - **Description**: Assistants endpoint-specific configuration.
+  - [Full Assistants Endpoint Object Structure](#assistants-endpoint-object-structure)
 
 ## Endpoint File Config Object Structure
 
@@ -723,3 +719,188 @@ Custom endpoints share logic with the OpenAI endpoint, and thus have default par
 
 **Note:** The `max_tokens` field is not sent to use the maximum amount of tokens available, which is default OpenAI API behavior. Some alternate APIs require this field, or it may default to a very low value and your responses may appear cut off; in this case, you should add it to `addParams` field as shown in the [Endpoint Object Structure](#endpoint-object-structure).
 
+## Azure OpenAI Object Structure
+
+Integrating Azure OpenAI Service with your application allows you to seamlessly utilize multiple deployments and region models hosted by Azure OpenAI. This section details how to configure the Azure OpenAI endpoint for your needs. 
+
+**[For a detailed guide on setting up Azure OpenAI configurations, click here](./azure_openai.md)**
+
+### Example Configuration
+
+```yaml
+# Example Azure OpenAI Object Structure
+endpoints:
+  azureOpenAI:
+    titleModel: "gpt-4-turbo"
+    plugins: true
+    groups:
+      - group: "my-westus" # arbitrary name
+        apiKey: "${WESTUS_API_KEY}"
+        instanceName: "actual-instance-name" # name of the resource group or instance
+        version: "2023-12-01-preview"
+        # baseURL: https://prod.example.com
+        # additionalHeaders:
+        #   X-Custom-Header: value
+        models:
+          gpt-4-vision-preview:
+            deploymentName: gpt-4-vision-preview
+            version: "2024-02-15-preview"
+          gpt-3.5-turbo:
+            deploymentName: gpt-35-turbo
+          gpt-3.5-turbo-1106:
+            deploymentName: gpt-35-turbo-1106
+          gpt-4:
+            deploymentName: gpt-4
+          gpt-4-1106-preview:
+            deploymentName: gpt-4-1106-preview
+      - group: "my-eastus"
+        apiKey: "${EASTUS_API_KEY}"
+        instanceName: "actual-eastus-instance-name"
+        deploymentName: gpt-4-turbo
+        version: "2024-02-15-preview"
+        baseURL: "https://gateway.ai.cloudflare.com/v1/cloudflareId/azure/azure-openai/${INSTANCE_NAME}/${DEPLOYMENT_NAME}" # uses env variables
+        additionalHeaders:
+          X-Custom-Header: value
+        models:
+          gpt-4-turbo: true
+```
+
+### **groups**:
+
+> Configuration for groups of models by geographic location or purpose.
+
+- Type: Array
+- **Description**: Each item in the `groups` array configures a set of models under a certain grouping, often by geographic region or distinct configuration.
+- **Example**: See above.
+
+### **plugins**:
+
+> Enables or disables plugins for the Azure OpenAI endpoint.
+
+- Type: Boolean
+- **Example**: `plugins: true`
+- **Description**: When set to `true`, activates plugins associated with this endpoint.
+
+### Group Configuration Parameters
+
+#### **group**:
+
+  > Identifier for a group of models.
+
+  - Type: String
+  - **Required**
+  - **Example**: `"my-westus"`
+
+#### **apiKey**:
+
+  > The API key for accessing the Azure OpenAI Service.
+
+  - Type: String
+  - **Required**
+  - **Example**: `"${WESTUS_API_KEY}"`
+  - **Note**: It's highly recommended to use a custom env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
+
+
+#### **instanceName**:
+
+  > Name of the Azure instance.
+
+  - Type: String
+  - **Required**
+  - **Example**: `"my-westus"`
+  - **Note**: It's recommended to use a custom env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
+
+
+#### **version**:
+
+  > API version.
+
+  - Type: String
+  - **Optional**
+  - **Example**: `"2023-12-01-preview"`
+  - **Note**: It's recommended to use a custom env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
+
+#### **baseURL**:
+
+  > The base URL for the Azure OpenAI Service.
+
+  - Type: String
+  - **Optional**
+  - **Example**: `"https://prod.example.com"`
+  - **Note**: It's recommended to use a custom env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
+
+#### **additionalHeaders**:
+
+  > Additional headers for API requests.
+
+  - Type: Dictionary
+  - **Optional**
+  - **Example**:
+    ```yaml
+    additionalHeaders:
+      X-Custom-Header: ${YOUR_SECRET_CUSTOM_VARIABLE}
+    ```
+  - **Note**: It's recommended to use a custom env. variable reference for the values of field, as shown in the example.
+  - **Note**: `api-key` header value is sent on every request
+
+#### **models**:
+
+> Configuration for individual models within a group.
+
+- **Description**: Configures settings for each model, including deployment name and version. Model configurations can adopt the group's deployment name and/or version when configured as a boolean (set to `true`) or an object for detailed settings of either of those fields.
+- **Example**: See above example configuration.
+
+Within each group, models are records, either set to true, or set with a specific `deploymentName` and/or `version` where the key MUST be the matching OpenAI model name; for example, if you intend to use gpt-4-vision, it must be configured like so:
+
+```yaml
+models:
+  gpt-4-vision-preview: # matching OpenAI Model name
+    deploymentName: "arbitrary-deployment-name"
+    version: "2024-02-15-preview" # version can be any that supports vision
+```
+
+### Model Configuration Parameters
+
+#### **deploymentName**:
+
+> The name of the deployment for the model.
+
+- Type: String
+- **Required**
+- **Example**: `"gpt-4-vision-preview"`
+- **Description**: Identifies the deployment of the model within Azure.
+- **Note**: This does not have to be the matching OpenAI model name as is convention, but must match the actual name of your deployment on Azure.
+
+#### **version**:
+
+> Specifies the version of the model.
+
+- Type: String
+- **Required**
+- **Example**: `"2024-02-15-preview"`
+- **Description**: Defines the version of the model to be used.
+
+**When specifying a model as a boolean (`true`):**
+
+When a model is enabled (`true`) without using an object, it uses the group's configuration values for deployment name and version.
+
+**Example**:
+```yaml
+models:
+  gpt-4-turbo: true
+```
+
+**When specifying a model as an object:**
+
+An object allows for detailed configuration of the model, including its `deploymentName` and/or `version`. This mode is used for more granular control over the models, especially when working with multiple versions or deployments under one instance or resource group.
+
+**Example**:
+```yaml
+models:
+  gpt-4-vision-preview:
+    deploymentName: "gpt-4-vision-preview"
+    version: "2024-02-15-preview"
+```
+
+### Notes:
+- **Deployment Names** and **Versions** are critical for ensuring that the correct model is used. Double-check these values for accuracy to prevent unexpected behavior.

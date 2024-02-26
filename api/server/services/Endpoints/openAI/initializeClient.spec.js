@@ -12,6 +12,9 @@ jest.mock('~/server/services/UserService', () => ({
 describe('initializeClient', () => {
   // Set up environment variables
   const originalEnvironment = process.env;
+  const app = {
+    locals: {},
+  };
 
   beforeEach(() => {
     jest.resetModules(); // Clears the cache
@@ -30,6 +33,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
@@ -54,6 +58,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'azureOpenAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'test-model' } };
@@ -71,6 +76,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
@@ -87,6 +93,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
@@ -104,6 +111,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
@@ -124,6 +132,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: expiresAt, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
@@ -141,6 +150,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
@@ -160,6 +170,7 @@ describe('initializeClient', () => {
       user: {
         id: '123',
       },
+      app,
     };
 
     const res = {};
@@ -183,6 +194,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: invalidKey, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
