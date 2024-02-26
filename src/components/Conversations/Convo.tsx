@@ -1,20 +1,22 @@
 import { useRecoilValue } from 'recoil';
 import { useState, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { MouseEvent, KeyboardEvent } from 'react';
 import DeleteButton from './NewDeleteButton';
 import RenameButton from './RenameButton';
 import store from '~/store';
 import VeraWhiteLogo from '../svg/VeraWhiteLogo';
 import { useVeraChat } from '~/hooks';
+import { RedactReplace, formatRedactedString } from '../Chat/Messages/Content/RedactReplace';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
 export default function Conversation({ conversation, retainView, toggleNav, isLatestConvo }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { conversationId: currentConvoId } = useParams();
-  const activeConvos = useRecoilValue(store.allConversationsSelector);
   const { conversation_id: conversationId, description: title } = conversation;
+
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [titleInput, setTitleInput] = useState(title);
   const [renaming, setRenaming] = useState(false);
@@ -58,8 +60,8 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   };
 
   const activeConvo =
-    currentConvoId === conversationId ||
-    (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
+    currentConvoId === conversationId || conversationId === location.pathname.substring(3);
+  //|| (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
 
   if (!activeConvo) {
     aProps.className =
@@ -87,7 +89,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             onChange={(e) => setTitleInput(e.target.value)}
           />
         ) : (
-          title
+          title.replaceAll('&lt;REDACTED&gt;', 'Redacted Conversation')
         )}
       </div>
       {activeConvo ? (

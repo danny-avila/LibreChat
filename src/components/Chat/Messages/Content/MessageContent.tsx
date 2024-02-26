@@ -9,6 +9,7 @@ import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
 import Image from './Image';
+import { RedactReplace } from './RedactReplace';
 
 const ErrorMessage = ({ text }: TText) => {
   return (
@@ -50,7 +51,9 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
             <Markdown content={text} message={message} showCursor={false} />
           </>
         ) : (
-          <>{text}</>
+          <>
+            <RedactReplace content={text} />
+          </>
         )}
       </div>
     </Container>

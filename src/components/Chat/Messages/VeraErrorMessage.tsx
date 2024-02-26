@@ -11,7 +11,7 @@ function VeraErrorMessage() {
           background: '#EE422B1A',
         }}
       >
-        Something went wrong. If the issue persists please contact your administrator.
+        An error has occurred. If the issue persists please contact your administrator.
       </div>
     </VeraMessage>
   );

@@ -12,10 +12,13 @@ import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { VERA_HEADER } from '~/utils/constants';
 import { EVENT_TYPES } from '~/types/events';
 import { BASE_API_URL } from '~/services/api/setup';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 // this to be set somewhere else
 export default function useVeraChat(index = 0, paramId: string | undefined) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const location = useLocation();
   const { token, user } = useAuthStore();
   const [abortController, setAbortController] = useState(new AbortController());
   const [showStopButton, setShowStopButton] = useState(false);
@@ -66,8 +69,6 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     setError('');
     const messages = getMessages() ?? [];
     const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-
-    // console.log('ask', conversation, conversationId);
     setShowStopButton(true);
     setIsSubmitting(true);
     setCurrEvent('Analyzing');
@@ -138,7 +139,16 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
         throw Error(e);
       },
       onclose() {
+        const messages = getMessages() ?? [];
+        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+        const convoId =
+          conversationId ?? conversation?.conversation_id ?? lastMessage?.conversationId ?? null;
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        console.log('convoId', convoId);
+        if (convoId) {
+          const newConvoPathName = `/c/${convoId}`;
+          navigate(newConvoPathName, { state: { shallow: true } });
+        }
         setCurrEvent('');
         setShowStopButton(false);
         setIsSubmitting(false);
@@ -316,6 +326,8 @@ export default function useVeraChat(index = 0, paramId: string | undefined) {
     abortController.abort();
     setAbortController(new AbortController());
     setSubmission(null);
+    setShowStopButton(false);
+    setIsSubmitting(false);
   };
 
   const handleStopGenerating = (e: React.MouseEvent<HTMLButtonElement>) => {

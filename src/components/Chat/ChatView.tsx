@@ -42,7 +42,7 @@ function ChatView({ index = 0 }: { index?: number }) {
         ) : messagesTree && messagesTree.length !== 0 ? (
           <MessagesView messagesTree={messagesTree} Header={<Header />} />
         ) : (
-          <Landing Header={<Header />} />
+          <Landing />
         )}
         {/* <OptionsBar messagesTree={messagesTree} /> */}
         {/* <GenerationButtons endpoint={chatHelpers.conversation.endpoint ?? ''} /> */}

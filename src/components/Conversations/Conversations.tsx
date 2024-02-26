@@ -24,7 +24,7 @@ export default function Conversations({
   );
   const firstTodayConvoId = (conversations ?? []).find((convo) =>
     isToday(parseISO(convo.most_recent_message)),
-  )?.conversationId;
+  )?.conversation_id;
 
   return (
     <div className="text-token-text-primary flex flex-col gap-2 pb-2 text-sm">

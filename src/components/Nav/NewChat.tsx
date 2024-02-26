@@ -5,6 +5,7 @@ import {
   useNewConvo,
   useOriginNavigate,
   useLocalStorage,
+  useVeraChat,
 } from '~/hooks';
 import { NewChatIcon } from '~/components/svg';
 import VeraColorLogo from '../svg/VeraColorLogo';
