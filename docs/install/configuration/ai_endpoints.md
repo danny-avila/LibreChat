@@ -95,6 +95,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
         default: ["gpt-3.5-turbo"]
         fetch: true
       titleConvo: true
+      titleMethod: "completion"
       titleModel: "gpt-3.5-turbo" # change to your preferred model
       modelDisplayLabel: "OpenRouter"
 ```
