@@ -92,6 +92,20 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     const { abortController, onStart } = createAbortController(req, res, getAbortData);
 
+    res.on('close', () => {
+      logger.debug('[AskController] Request closed');
+      if (!abortController) {
+        return;
+      } else if (abortController.signal.aborted) {
+        return;
+      } else if (abortController.requestCompleted) {
+        return;
+      }
+
+      abortController.abort();
+      logger.debug('[AskController] Request aborted on close');
+    });
+
     const messageOptions = {
       user,
       parentMessageId,

@@ -39,6 +39,7 @@ router.post('/abort', handleAbort());
  */
 router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res) => {
   logger.debug('[/assistants/chat/] req.body', req.body);
+
   const {
     text,
     model,
@@ -96,7 +97,73 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
   const cacheKey = `${req.user.id}:${conversationId}`;
 
+  const handleError = async (error) => {
+    if (error.message === 'Run cancelled') {
+      return res.end();
+    }
+    if (error.message === 'Request closed') {
+      logger.debug('[/assistants/chat/] Request aborted on close');
+    }
+
+    logger.error('[/assistants/chat/]', error);
+
+    if (!openai || !thread_id || !run_id) {
+      return res.status(500).json({ error: 'The Assistant run failed to initialize' });
+    }
+
+    try {
+      await cache.delete(cacheKey);
+      const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
+      logger.debug('Cancelled run:', cancelledRun);
+    } catch (error) {
+      logger.error('[abortRun] Error cancelling run', error);
+    }
+
+    await sleep(2000);
+    try {
+      const run = await openai.beta.threads.runs.retrieve(thread_id, run_id);
+      await recordUsage({
+        ...run.usage,
+        model: run.model,
+        user: req.user.id,
+        conversationId,
+      });
+    } catch (error) {
+      logger.error('[/assistants/chat/] Error fetching or processing run', error);
+    }
+
+    try {
+      const runMessages = await checkMessageGaps({
+        openai,
+        run_id,
+        thread_id,
+        conversationId,
+        latestMessageId: responseMessageId,
+      });
+
+      const finalEvent = {
+        title: 'New Chat',
+        final: true,
+        conversation: await getConvo(req.user.id, conversationId),
+        runMessages,
+      };
+
+      if (res.headersSent && finalEvent) {
+        return sendMessage(res, finalEvent);
+      }
+
+      res.json(finalEvent);
+    } catch (error) {
+      logger.error('[/assistants/chat/] Error finalizing error process', error);
+      return res.status(500).json({ error: 'The Assistant run failed' });
+    }
+  };
+
   try {
+    res.on('close', async () => {
+      await handleError(new Error('Request closed'));
+    });
+
     if (convoId && !_thread_id) {
       throw new Error('Missing thread_id for existing conversation');
     }
@@ -318,62 +385,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       });
     }
   } catch (error) {
-    if (error.message === 'Run cancelled') {
-      return res.end();
-    }
-
-    logger.error('[/assistants/chat/]', error);
-
-    if (!openai || !thread_id || !run_id) {
-      return res.status(500).json({ error: 'The Assistant run failed to initialize' });
-    }
-
-    try {
-      await cache.delete(cacheKey);
-      const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
-      logger.debug('Cancelled run:', cancelledRun);
-    } catch (error) {
-      logger.error('[abortRun] Error cancelling run', error);
-    }
-
-    await sleep(2000);
-    try {
-      const run = await openai.beta.threads.runs.retrieve(thread_id, run_id);
-      await recordUsage({
-        ...run.usage,
-        model: run.model,
-        user: req.user.id,
-        conversationId,
-      });
-    } catch (error) {
-      logger.error('[/assistants/chat/] Error fetching or processing run', error);
-    }
-
-    try {
-      const runMessages = await checkMessageGaps({
-        openai,
-        run_id,
-        thread_id,
-        conversationId,
-        latestMessageId: responseMessageId,
-      });
-
-      const finalEvent = {
-        title: 'New Chat',
-        final: true,
-        conversation: await getConvo(req.user.id, conversationId),
-        runMessages,
-      };
-
-      if (res.headersSent && finalEvent) {
-        return sendMessage(res, finalEvent);
-      }
-
-      res.json(finalEvent);
-    } catch (error) {
-      logger.error('[/assistants/chat/] Error finalizing error process', error);
-      return res.status(500).json({ error: 'The Assistant run failed' });
-    }
+    await handleError(error);
   }
 });
 
