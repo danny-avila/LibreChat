@@ -305,7 +305,13 @@ class ChatGPTClient extends BaseClient {
       });
     }
 
-    if (baseURL.includes('v1') && !baseURL.includes('/chat/completions')) {
+    if (baseURL.includes('v1') && !baseURL.includes('/completions') && !this.isChatCompletion) {
+      baseURL = baseURL.split('v1')[0] + 'v1/completions';
+    } else if (
+      baseURL.includes('v1') &&
+      !baseURL.includes('/chat/completions') &&
+      this.isChatCompletion
+    ) {
       baseURL = baseURL.split('v1')[0] + 'v1/chat/completions';
     }
 
