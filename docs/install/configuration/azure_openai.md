@@ -2,7 +2,7 @@
 
 **Azure OpenAI Integration for LibreChat**
 
-To properly utilize Azure OpenAI within LibreChat, it's crucial to configure the [`librechat.yaml` file](./custom_config.md#azure-openai-object-structure) according to your specific needs. This document guides you through the essential setup process which allows seamless use of multiple deployments and models with as much flexibility as needed.
+LibreChat boasts compatibility with Azure OpenAI API services, treating the endpoint as a first-class citizen. To properly utilize Azure OpenAI within LibreChat, it's crucial to configure the [`librechat.yaml` file](./custom_config.md#azure-openai-object-structure) according to your specific needs. This document guides you through the essential setup process which allows seamless use of multiple deployments and models with as much flexibility as needed.
 
 ## Setup
 
@@ -22,6 +22,8 @@ To properly integrate Azure OpenAI with LibreChat, specific fields must be accur
 
 ### Group-Level Configuration
 
+This is a breakdown of the fields configurable as defined for the Custom Config (`librechat.yaml`) file. For more information on each field, see the [Azure OpenAI section in the Custom Config Docs](./custom_config.md#azure-openai-object-structure).
+
 1. **group** (String, Required): Unique identifier name for a group of models. Duplicate group names are not allowed and will result in validation errors.
    
 2. **apiKey** (String, Required): Must be a valid API key for Azure OpenAI services. It could be a direct key string or an environment variable reference (e.g., `${WESTUS_API_KEY}`).
@@ -36,6 +38,14 @@ To properly integrate Azure OpenAI with LibreChat, specific fields must be accur
 
 7. **additionalHeaders** (Object, Optional): Specifies any extra headers for Azure OpenAI API requests as key-value pairs. Environment variable references can be included as values.
 
+8. **serverless** (Boolean, Optional): Specifies if the group is a serverless inference chat completions endpoint from [Azure Model Catalog,](https://ai.azure.com/explore) for which only a model identifier, baseURL, and apiKey are needed. For more info, see [serverless inference endpoints.](#serverless-inference-endpoints)
+
+9. **addParams** (Object, Optional): Adds or overrides additional parameters for Azure OpenAI API requests. Useful for specifying API-specific options as key-value pairs.
+
+10. **dropParams** (Array/List, Optional): Allows for the exclusion of certain default parameters from Azure OpenAI API requests. Useful for APIs that do not accept or recognize specific parameters. This should be specified as a list of strings.
+
+11. **forcePrompt** (Boolean, Optional): Dictates whether to send a `prompt` parameter instead of `messages` in the request body. This option is useful when needing to format the request in a manner consistent with OpenAI's API expectations, particularly for scenarios preferring a single text payload.
+
 ### Model-Level Configuration
 
 Within each group, the `models` field must contain a mapping of records, or model identifiers to either boolean values or object configurations.
@@ -44,9 +54,12 @@ Within each group, the `models` field must contain a mapping of records, or mode
 
 ```yaml
 models:
-  gpt-4-vision-preview: # matching OpenAI Model name
+  # Object setting: must include at least "deploymentName" and/or "version"
+  gpt-4-vision-preview: # Must match OpenAI Model name
     deploymentName: "arbitrary-deployment-name"
     version: "2024-02-15-preview" # version can be any that supports vision
+  # Boolean setting, must be "true"
+  gpt-4-turbo: true
 ```
 
 - See [Model Deployments](#model-deployments) for more examples.
@@ -55,15 +68,19 @@ models:
   
 - If a model is configured as an object, it can specify its own `deploymentName` and `version`. If these are not provided, the model inherits the group's `deploymentName` and `version`.
 
+- If the group represents a [serverless inference endpoint](#serverless-inference-endpoints), the singular model should be set to `true` to add it to the models list.
+
 ### Special Considerations
 
 1. **Unique Names**: Both model and group names must be unique across the entire configuration. Duplicate names lead to validation failures.
 
-2. **Missing Required Fields**: Lack of required `deploymentName` or `version` either at the group level (for boolean-flagged models) or within the models' configurations (if not inheriting or explicitly specified) will result in validation errors.
+2. **Missing Required Fields**: Lack of required `deploymentName` or `version` either at the group level (for boolean-flagged models) or within the models' configurations (if not inheriting or explicitly specified) will result in validation errors, unless the group represents a [serverless inference endpoint](#serverless-inference-endpoints).
 
 3. **Environment Variable References**: The configuration supports environment variable references (e.g., `${VARIABLE_NAME}`). Ensure that all referenced variables are present in your environment to avoid runtime errors. The absence of defined environment variables referenced in the config will cause errors.`${INSTANCE_NAME}` and `${DEPLOYMENT_NAME}` are unique placeholders, and do not correspond to environment variables, but instead correspond to the instance and deployment name of the currently selected model. It is not recommended you use `INSTANCE_NAME` and `DEPLOYMENT_NAME` as environment variable names to avoid any potential conflicts.
 
 4. **Error Handling**: Any issues in the config, like duplicate names, undefined environment variables, or missing required fields, will invalidate the setup and generate descriptive error messages aiming for prompt resolution. You will not be allowed to run the server with an invalid configuration.
+
+5. **Model identifiers**: An unknown model (to the project) can be used as a model identifier, but it must match a known model to reflect its known context length, which is crucial for message/token handling; e.g., `gpt-7000` will be valid but default to a 4k token limit, whereas `gpt-4-turbo` will be recognized as having a 128k context limit.
 
 Applying these setup requirements thoughtfully will ensure a correct and efficient integration of Azure OpenAI services with LibreChat through the `librechat.yaml` configuration. Always validate your configuration against the latest schema definitions and guidelines to maintain compatibility and functionality.
 
@@ -224,6 +241,50 @@ DALLE2_SYSTEM_PROMPT="Your DALL-E-2 System Prompt here"
 ```
 
 - The `DALLE_REVERSE_PROXY` environment variable is ignored when Azure credentials (DALLEx_AZURE_API_VERSION and DALLEx_BASEURL) for DALL-E are configured.
+
+### Serverless Inference Endpoints
+
+Through the `librechat.yaml` file, you can configure Azure AI Studio serverless inference endpoints to access models from the [Azure Model Catalog.](https://ai.azure.com/explore) Only a model identifier, `baseURL`, and `apiKey` are needed along with the `serverless` field to indicate the special handling these endpoints need.
+
+- You will need to follow the instructions in the compatible model cards to set up **MaaS** ("Models as a Service") access on Azure AI Studio.
+
+    - For reference, here are 2 known compatible model cards:
+
+    - [Mistral-large](https://aka.ms/aistudio/landing/mistral-large) | [Llama-2-70b-chat](https://aka.ms/aistudio/landing/Llama-2-70b-chat)
+
+- You can also review [the technical blog for the "Mistral-large" model release](https://techcommunity.microsoft.com/t5/ai-machine-learning-blog/mistral-large-mistral-ai-s-flagship-llm-debuts-on-azure-ai/ba-p/4066996) for more info.
+
+- Then, you will need to add them to your azureOpenAI config in the librechat.yaml file.
+
+- Here are my example configurations for both Mistral-large and LLama-2-70b-chat:
+
+```yaml
+endpoints:
+  azureOpenAI:
+    groups:
+# serverless examples
+    - group: "mistral-inference"
+      apiKey: "${AZURE_MISTRAL_API_KEY}" # arbitrary env var name
+      baseURL: "https://Mistral-large-vnpet-serverless.region.inference.ai.azure.com/v1/chat/completions"
+      serverless: true
+      models:
+        mistral-large: true
+    - group: "llama-70b-chat"
+      apiKey: "${AZURE_LLAMA2_70B_API_KEY}" # arbitrary env var name
+      baseURL: "https://Llama-2-70b-chat-qmvyb-serverless.region.inference.ai.azure.com/v1/chat/completions"
+      serverless: true
+      models:
+        llama-70b-chat: true
+```
+
+**Notes**:
+
+- Make sure to add the appropriate suffix for your deployment, either "/v1/chat/completions" or "/v1/completions"
+- If using "/v1/completions" (without "chat"), you need to set the `forcePrompt` field to `true` in your [group config.](#group-level-configuration)
+- Compatibility with LibreChat relies on parity with OpenAI API specs, which at the time of writing, are typically **"Pay-as-you-go"** or "Models as a Service" (MaaS) deployments on Azure AI Studio, that are OpenAI-SDK-compatible with either v1/completions or v1/chat/completions endpoint handling.
+- At the moment, only ["Mistral-large"](https://azure.microsoft.com/en-us/blog/microsoft-and-mistral-ai-announce-new-partnership-to-accelerate-ai-innovation-and-introduce-mistral-large-first-on-azure/) and [LLama-2 Chat models](https://techcommunity.microsoft.com/t5/ai-machine-learning-blog/announcing-llama-2-inference-apis-and-hosted-fine-tuning-through/ba-p/3979227) are compatible from the Azure model catalog. You can filter by "Chat completion" under inference tasks to see the full list; however, real time endpoint models have not been tested.
+- These serverless inference endpoint/models are likely not compatible with OpenAI function calling, which enables the use of Plugins. As they have yet been tested, they are available on the Plugins endpoint, although they are not expected to work.
+
 
 ---
 
@@ -404,3 +465,7 @@ To use Azure with the Plugins endpoint, make sure the following environment vari
 **Important:**
 
 - If using `AZURE_OPENAI_BASEURL`, you should not specify instance and deployment names instead of placeholders as the plugin request will fail.
+
+**Generate images with Azure OpenAI Service (DALL-E)**
+
+See the [current Azure DALL-E guide](#generate-images-with-azure-openai-service-dall-e) as it applies to legacy configurations

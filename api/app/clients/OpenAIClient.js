@@ -740,22 +740,34 @@ class OpenAIClient extends BaseClient {
 
     /** @type {TAzureConfig | undefined} */
     const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
-    if (this.azure && azureConfig) {
+
+    const resetTitleOptions =
+      (this.azure && azureConfig) ||
+      (azureConfig && this.options.endpoint === EModelEndpoint.azureOpenAI);
+
+    if (resetTitleOptions) {
       const { modelGroupMap, groupMap } = azureConfig;
       const {
         azureOptions,
         baseURL,
         headers = {},
+        serverless,
       } = mapModelToAzureConfig({
         modelName: modelOptions.model,
         modelGroupMap,
         groupMap,
       });
-      this.azure = azureOptions;
+
       this.options.headers = resolveHeaders(headers);
       this.options.reverseProxyUrl = baseURL ?? null;
       this.langchainProxy = extractBaseURL(this.options.reverseProxyUrl);
       this.apiKey = azureOptions.azureOpenAIApiKey;
+
+      const groupName = modelGroupMap[modelOptions.model].group;
+      this.options.addParams = azureConfig.groupMap[groupName].addParams;
+      this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
+      this.options.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
+      this.azure = !serverless && azureOptions;
     }
 
     const titleChatCompletion = async () => {
@@ -1011,22 +1023,33 @@ ${convo}
       /** @type {TAzureConfig | undefined} */
       const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
 
-      if (this.azure && this.isVisionModel && azureConfig) {
+      if (
+        (this.azure && this.isVisionModel && azureConfig) ||
+        (azureConfig && this.isVisionModel && this.options.endpoint === EModelEndpoint.azureOpenAI)
+      ) {
         const { modelGroupMap, groupMap } = azureConfig;
         const {
           azureOptions,
           baseURL,
           headers = {},
+          serverless,
         } = mapModelToAzureConfig({
           modelName: modelOptions.model,
           modelGroupMap,
           groupMap,
         });
-        this.azure = azureOptions;
-        this.azureEndpoint = genAzureChatCompletion(this.azure, modelOptions.model, this);
         opts.defaultHeaders = resolveHeaders(headers);
         this.langchainProxy = extractBaseURL(baseURL);
         this.apiKey = azureOptions.azureOpenAIApiKey;
+
+        const groupName = modelGroupMap[modelOptions.model].group;
+        this.options.addParams = azureConfig.groupMap[groupName].addParams;
+        this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
+        // Note: `forcePrompt` not re-assigned as only chat models are vision models
+
+        this.azure = !serverless && azureOptions;
+        this.azureEndpoint =
+          !serverless && genAzureChatCompletion(this.azure, modelOptions.model, this);
       }
 
       if (this.azure || this.options.azure) {
