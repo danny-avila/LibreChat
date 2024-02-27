@@ -560,7 +560,7 @@ class OpenAIClient extends BaseClient {
     let streamResult = null;
     this.modelOptions.user = this.user;
     const invalidBaseUrl = this.completionsUrl && extractBaseURL(this.completionsUrl) === null;
-    const useOldMethod = !!(invalidBaseUrl || !this.isChatCompletion);
+    const useOldMethod = !!(invalidBaseUrl || !this.isChatCompletion || typeof Bun !== 'undefined');
     if (typeof opts.onProgress === 'function' && useOldMethod) {
       await this.getCompletion(
         payload,
@@ -1154,6 +1154,7 @@ ${convo}
           intermediateReply += token;
           onProgress(token);
           if (abortController.signal.aborted) {
+            stream.controller.abort();
             break;
           }
         }
