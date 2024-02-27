@@ -1,10 +1,12 @@
 ---
-title: 🖥️ Custom Endpoints & Config
+title: 🖥️ Custom Config
 description: Comprehensive guide for configuring the `librechat.yaml` file AKA the LibreChat Config file. This document is your one-stop resource for understanding and customizing endpoints & other integrations.
-weight: -10
+weight: -11
 ---
 
 # LibreChat Configuration Guide
+
+## Intro
 
 Welcome to the guide for configuring the **librechat.yaml** file in LibreChat.
 
@@ -21,6 +23,10 @@ Stay tuned for ongoing enhancements to customize your LibreChat instance!
 > Note: To verify your YAML config, you can use online tools like [yamlchecker.com](https://yamlchecker.com/)
 
 **Note:** To verify your YAML config, you can use online tools like [yamlchecker.com](https://yamlchecker.com/)
+
+## Compatible Endpoints
+
+Any API designed to be compatible with OpenAI's should be supported, but here is a list of **[known compatible endpoints](./ai_endpoints.md) including example setups.**
 
 ## Setup
 
@@ -564,6 +570,7 @@ endpoints:
   - **Note**: The following are "known endpoints" (case-insensitive), which have icons provided for them. If your endpoint `name` matches the following names, you should omit this field:
     - "Mistral"
     - "OpenRouter"
+    - "Groq"
 
 ### **models**:
 

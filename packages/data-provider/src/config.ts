@@ -174,6 +174,7 @@ export type TCustomConfig = z.infer<typeof configSchema>;
 export enum KnownEndpoints {
   mistral = 'mistral',
   openrouter = 'openrouter',
+  groq = 'groq',
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [
