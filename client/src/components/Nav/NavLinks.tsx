@@ -113,14 +113,16 @@ function NavLinks() {
                     clickHandler={() => setShowFiles(true)}
                   />
                 </Menu.Item>
-                <Menu.Item as="div">
-                  <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                    svg={() => <LinkIcon />}
-                    text={localize('com_nav_help_faq')}
-                    clickHandler={() => window.open('https://librechat.ai', '_blank')}
-                  />
-                </Menu.Item>
+                {startupConfig?.helpAndFaqURL !== '/' && (
+                  <Menu.Item as="div">
+                    <NavLink
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      svg={() => <LinkIcon />}
+                      text={localize('com_nav_help_faq')}
+                      clickHandler={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
+                    />
+                  </Menu.Item>
+                )}
                 <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"

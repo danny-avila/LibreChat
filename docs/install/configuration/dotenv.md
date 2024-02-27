@@ -30,16 +30,6 @@ For more info see:
 
 ## Server Configuration
 
-### Customization
-- Here you can change the app title and footer
-- Uncomment to add a custom footer.
-    - Uncomment and make empty "" to remove the footer.
-
-```bash
-APP_TITLE=LibreChat
-CUSTOM_FOOTER="My custom footer"
-```
-
 ### Port
 
 - The server will listen to localhost:3080 by default. You can change the target IP as you want. If you want to make this server available externally, for example to share the server with others or expose this from a Docker container, set host to 0.0.0.0 or your external IP interface. 
@@ -851,16 +841,29 @@ Mail address for from field. It is **REQUIRED** to set a value here (even if it'
 ```bash
 EMAIL_FROM=noreply@librechat.ai 
 ```
+### UI
 
-### Other
+- **Help and FAQ button:** 
 
-- **Redis:** Redis support is experimental, you may encounter some problems when using it. 
+Empty or commented `HELP_AND_FAQ_URL`, button enabled
 
-> If using Redis, you should flush the cache after changing any LibreChat settings
+`HELP_AND_FAQ_URL=https://example.com`, button enabled and goes to `https://example.com`
+
+`HELP_AND_FAQ_URL=/`, button disabled
 
 ```bash
-REDIS_URI=
-USE_REDIS=
+HELP_AND_FAQ_URL=
+```
+
+- **App title and footer:**
+
+Uncomment to add a custom footer
+
+Uncomment and make empty "" to remove the footer
+
+```bash
+APP_TITLE=LibreChat
+CUSTOM_FOOTER="My custom footer"
 ```
 
 - **Birthday Hat:** Give the AI Icon a Birthday Hat 🥳
@@ -873,4 +876,15 @@ USE_REDIS=
 
 ```bash
 SHOW_BIRTHDAY_ICON=true
+```
+
+### Other
+
+- **Redis:** Redis support is experimental, you may encounter some problems when using it. 
+
+> If using Redis, you should flush the cache after changing any LibreChat settings
+
+```bash
+REDIS_URI=
+USE_REDIS=
 ```
