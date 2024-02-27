@@ -84,7 +84,7 @@ export default {
   com_nav_search_placeholder: '搜索对话及对话内容',
   com_nav_setting_general: '通用',
   com_nav_setting_data: '数据管理',
-  com_nav_setting_account: '账户',
+  // com_nav_setting_account: '账户',
   // New translations related to token purchase
   purchase_tokens: '购买算力',
   please_note: 'Please Note!', // Left in English as per instruction
@@ -296,10 +296,5 @@ export default {
   com_nav_user: '默认用户',
   com_nav_clear_conversation: '清空对话',
   com_nav_clear_conversation_confirm_message: '请是否清空所有对话？该操作无法撤销',
-  com_nav_help_faq: '帮助',
-  com_nav_settings: '设置',
-  com_nav_search_placeholder: '搜索对话及对话内容',
-  com_nav_setting_general: '通用',
-  com_nav_setting_data: '数据管理',
   com_nav_setting_account: '账户',
 };
