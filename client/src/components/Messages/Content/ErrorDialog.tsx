@@ -26,20 +26,28 @@ export default function ErrorDialog({ open, onOpenChange, message }) {
   const domain = window.location.hostname;
 
   // Define token options with different price strings for each domain
-  const tokenOptions =
-    domain === 'gptchina.io'
-      ? [
-        { tokens: 100000, label: '10万', price: '¥10' },
-        { tokens: 500000, label: '50万', price: '¥35' },
-        { tokens: 1000000, label: '100万', price: '¥50' },
-        { tokens: 10000000, label: '1000万', price: '¥250' },
-      ]
-      : [
-        { tokens: 100000, label: '100k', price: '2 USD' },
-        { tokens: 500000, label: '500k', price: '6 USD' },
-        { tokens: 1000000, label: '1 Million', price: '10 USD' },
-        { tokens: 10000000, label: '10 Million', price: '50 USD' },
-      ];
+  const tokenOptions = [
+    {
+      tokens: 100000,
+      label: localize('com_token_package_label_100k'),
+      price: localize('com_token_package_price_100k'),
+    },
+    {
+      tokens: 500000,
+      label: localize('com_token_package_label_500k'),
+      price: localize('com_token_package_price_500k'),
+    },
+    {
+      tokens: 1000000,
+      label: localize('com_token_package_label_1m'),
+      price: localize('com_token_package_price_1m'),
+    },
+    {
+      tokens: 10000000,
+      label: localize('com_token_package_label_10m'),
+      price: localize('com_token_package_price_10m'),
+    },
+  ];
 
   const fetchTokenBalance = async () => {
     try {

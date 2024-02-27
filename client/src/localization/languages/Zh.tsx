@@ -297,4 +297,12 @@ export default {
   com_nav_clear_conversation: '清空对话',
   com_nav_clear_conversation_confirm_message: '请是否清空所有对话？该操作无法撤销',
   com_nav_setting_account: '账户',
+  com_token_package_label_100k: '10万',
+  com_token_package_label_500k: '50万',
+  com_token_package_label_1m: '100万',
+  com_token_package_label_10m: '1000万',
+  com_token_package_price_100k: '¥10',
+  com_token_package_price_500k: '¥35',
+  com_token_package_price_1m: '¥50',
+  com_token_package_price_10m: '¥250',
 };

@@ -125,45 +125,43 @@ function Login() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
-      <img src={logoSrc} alt={altText} className="mb-6 h-16 w-auto" />
-      <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">
-          {localize('com_auth_welcome_back')}
-        </h1>
-        {error && (
-          <div
-            className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
-            role="alert"
-          >
-            {localize(getLoginError(error))}
-          </div>
-        )}
-        {startupConfig.emailLoginEnabled && <LoginForm onSubmit={login} />}
+    <div className="flex min-h-screen flex-col justify-center bg-gray-50 py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <img src={logoSrc} alt={altText} className="mx-auto mb-6 h-16 w-auto" />
+        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          Sign in to your account
+        </h2>
         {startupConfig.registrationEnabled && (
-          <p className="my-4 text-center text-sm font-light text-gray-700">
-            {' '}
-            {localize('com_auth_no_account')}{' '}
-            <a href="/register" className="p-1 font-medium text-green-500">
-              {localize('com_auth_sign_up')}
+          <p className="max-w mt-2 text-center text-lg text-gray-600">
+            Or{' '}
+            <a href="/register" className="text-lg text-blue-600 hover:text-blue-500">
+              create an account
             </a>
           </p>
         )}
-        {startupConfig.socialLoginEnabled && (
-          <>
-            {startupConfig.emailLoginEnabled && (
-              <>
-                <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-                  <div className="absolute bg-white px-3 text-xs">Or</div>
-                </div>
-                <div className="mt-8" />
-              </>
-            )}
-            <div className="mt-2">
-              {socialLogins.map((provider) => providerComponents[provider] || null)}
+      </div>
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white px-4 py-8 shadow sm:rounded-lg sm:px-10">
+          {error && (
+            <div
+              className="relative mb-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
+              role="alert"
+            >
+              {localize(getLoginError(error))}
             </div>
-          </>
-        )}
+          )}
+          {startupConfig.emailLoginEnabled && <LoginForm onSubmit={login} />}
+          {startupConfig.socialLoginEnabled && (
+            <div className="mt-6">
+              <div className="relative mt-6 flex w-full items-center justify-center border-t border-gray-300">
+                <div className="absolute bg-white px-3 text-sm text-gray-500">Or sign in with</div>
+              </div>
+              <div className="mt-6 grid grid-cols-3 gap-3">
+                {socialLogins.map((provider) => providerComponents[provider] || null)}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

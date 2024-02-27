@@ -336,4 +336,12 @@ export default {
   com_nav_lang_turkish: 'Türkçe',
   com_nav_lang_dutch: 'Nederlands',
   com_nav_lang_indonesia: 'Indonesia',
+  com_token_package_label_100k: '100k',
+  com_token_package_label_500k: '500k',
+  com_token_package_label_1m: '1 Million',
+  com_token_package_label_10m: '10 Million',
+  com_token_package_price_100k: '2 USD',
+  com_token_package_price_500k: '6 USD',
+  com_token_package_price_1m: '10 USD',
+  com_token_package_price_10m: '50 USD',
 };
