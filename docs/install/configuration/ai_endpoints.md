@@ -35,7 +35,6 @@ Some of the endpoints are marked as **Known,** which means they might have speci
           ]
         fetch: false
       titleConvo: true
-      titleMethod: "completion"
       titleModel: "mixtral-8x7b-32768"
       modelDisplayLabel: "groq"
       iconURL: "https://raw.githubusercontent.com/fuegovic/lc-config-yaml/main/icons/groq.png"
@@ -64,7 +63,6 @@ Some of the endpoints are marked as **Known,** which means they might have speci
         default: ["mistral-tiny", "mistral-small", "mistral-medium", "mistral-large-latest"]
         fetch: true
       titleConvo: true
-      titleMethod: "completion"
       titleModel: "mistral-tiny"
       modelDisplayLabel: "Mistral"
       # Drop Default params parameters from the request. See default params in guide linked below.
@@ -81,7 +79,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 - **Known:** icon provided, fetching list of models is recommended as API token rates and pricing used for token credit balances when models are fetched.
 
-- API may be strict for some models, and may not allow fields like `stop`, in which case, you should use [`dropParams`.](./custom_config.md#dropparams)
+- It's recommended, and for some models required, to use [`dropParams`](./custom_config.md#dropparams) to drop the `stop` as Openrouter models use a variety of stop tokens.
 
 - Known issue: you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
 
@@ -95,9 +93,10 @@ Some of the endpoints are marked as **Known,** which means they might have speci
         default: ["gpt-3.5-turbo"]
         fetch: true
       titleConvo: true
-      titleMethod: "completion"
       titleModel: "gpt-3.5-turbo" # change to your preferred model
       modelDisplayLabel: "OpenRouter"
+      # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
+      dropParams: ["stop"]
 ```
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/c4a0415e-732c-46af-82a6-3598663b7f42)

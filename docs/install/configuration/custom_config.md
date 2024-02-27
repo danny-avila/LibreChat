@@ -80,18 +80,18 @@ fileConfig:
       fileLimit: 5
       fileSizeLimit: 10  # Maximum size for an individual file in MB
       totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
-      supportedMimeTypes:
-        - "image/.*"
-        - "application/pdf"
+      # supportedMimeTypes: # In case you wish to limit certain filetypes
+      #   - "image/.*"
+      #   - "application/pdf"
     openAI:
       disabled: true  # Disables file uploading to the OpenAI endpoint
     default:
       totalSizeLimit: 20
-    YourCustomEndpointName:
-      fileLimit: 2
-      fileSizeLimit: 5
+    # YourCustomEndpointName: # Example for custom endpoints
+    #   fileLimit: 2
+    #   fileSizeLimit: 5
   serverFileSizeLimit: 100  # Global server file size limit in MB
-  avatarSizeLimit: 2  # Limit for user avatar image size in MB
+  avatarSizeLimit: 4  # Limit for user avatar image size in MB, default: 2 MB
 rateLimits:
   fileUploads:
     ipMax: 100
@@ -116,19 +116,15 @@ endpoints:
       apiKey: "${MISTRAL_API_KEY}"
       baseURL: "https://api.mistral.ai/v1"
       models:
-        default: ["mistral-tiny", "mistral-small", "mistral-medium"]
+        default: ["mistral-tiny", "mistral-small", "mistral-medium", "mistral-large-latest"]
         fetch: true  # Attempt to dynamically fetch available models
         userIdQuery: false
       iconURL: "https://example.com/mistral-icon.png"
       titleConvo: true
-      titleMethod: "completion"
       titleModel: "mistral-tiny"
-      summarize: true
-      summaryModel: "mistral-summary"
-      forcePrompt: false
       modelDisplayLabel: "Mistral AI"
-      addParams:
-        safe_prompt: true
+      # addParams:
+      #   safe_prompt: true # Mistral specific value for moderating messages
       dropParams:
         - "stop"
         - "user"
@@ -144,10 +140,9 @@ endpoints:
         fetch: false
       titleConvo: true
       titleModel: "gpt-3.5-turbo"
-      summarize: false
-      forcePrompt: false
       modelDisplayLabel: "OpenRouter"
       dropParams:
+        - "stop"
         - "frequency_penalty"
 ```
 
@@ -521,15 +516,12 @@ endpoints:
       apiKey: "${YOUR_ENV_VAR_KEY}"
       baseURL: "https://api.mistral.ai/v1"
       models: 
-        default: ["mistral-tiny", "mistral-small", "mistral-medium"]
+        default: ["mistral-tiny", "mistral-small", "mistral-medium", "mistral-large-latest"]
       titleConvo: true
       titleModel: "mistral-tiny" 
-      summarize: false
-      summaryModel: "mistral-tiny" 
-      forcePrompt: false 
       modelDisplayLabel: "Mistral"
-      addParams:
-        safe_prompt: true
+      # addParams:
+      #   safe_prompt: true # Mistral specific value for moderating messages
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
 ```
