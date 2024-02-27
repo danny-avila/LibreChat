@@ -1154,7 +1154,6 @@ ${convo}
           intermediateReply += token;
           onProgress(token);
           if (abortController.signal.aborted) {
-            stream.controller.abort();
             break;
           }
         }
