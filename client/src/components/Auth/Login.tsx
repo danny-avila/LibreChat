@@ -129,13 +129,13 @@ function Login() {
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <img src={logoSrc} alt={altText} className="mx-auto mb-6 h-16 w-auto" />
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          Sign in to your account
+          {localize('com_signin_title')}
         </h2>
         {startupConfig.registrationEnabled && (
           <p className="max-w mt-2 text-center text-lg text-gray-600">
-            Or{' '}
+            {localize('com_signin_or')}{' '}
             <a href="/register" className="text-lg text-blue-600 hover:text-blue-500">
-              create an account
+              {localize('com_signin_create_account')}
             </a>
           </p>
         )}

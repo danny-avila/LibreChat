@@ -344,4 +344,7 @@ export default {
   com_token_package_price_500k: '6 USD',
   com_token_package_price_1m: '10 USD',
   com_token_package_price_10m: '50 USD',
+  com_signin_title: 'Sign in to your account',
+  com_signin_or: 'Or',
+  com_signin_create_account: 'create an account',
 };

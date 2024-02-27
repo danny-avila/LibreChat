@@ -305,4 +305,7 @@ export default {
   com_token_package_price_500k: '¥35',
   com_token_package_price_1m: '¥50',
   com_token_package_price_10m: '¥250',
+  com_signin_title: '登录到您的账户',
+  com_signin_or: '或',
+  com_signin_create_account: '创建账户',
 };
