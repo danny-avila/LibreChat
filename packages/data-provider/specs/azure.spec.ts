@@ -188,10 +188,144 @@ describe('validateAzureGroups', () => {
         },
       },
     ];
-    // @ts-expect-error This error is expected because the 'instanceName' property is intentionally left out.
     const { isValid, errors } = validateAzureGroups(configs);
     expect(isValid).toBe(false);
     expect(errors.length).toBe(1);
+  });
+});
+
+describe('validateAzureGroups for Serverless Configurations', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env = { ...originalEnv };
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  it('should validate a correct serverless configuration', () => {
+    const configs = [
+      {
+        group: 'serverless-group',
+        apiKey: '${SERVERLESS_API_KEY}',
+        baseURL: 'https://serverless.example.com/v1/completions',
+        serverless: true,
+        models: {
+          'model-serverless': true,
+        },
+      },
+    ];
+
+    const { isValid, errors } = validateAzureGroups(configs);
+
+    expect(isValid).toBe(true);
+    expect(errors.length).toBe(0);
+  });
+
+  it('should return invalid for a serverless configuration missing baseURL', () => {
+    const configs = [
+      {
+        group: 'serverless-group',
+        apiKey: '${SERVERLESS_API_KEY}',
+        serverless: true,
+        models: {
+          'model-serverless': true,
+        },
+      },
+    ];
+
+    const { isValid, errors } = validateAzureGroups(configs);
+    expect(isValid).toBe(false);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'Group "serverless-group" is serverless but missing mandatory "baseURL."',
+        ),
+      ]),
+    );
+  });
+
+  it('should throw an error when environment variable for apiKey is not set', () => {
+    process.env.SERVERLESS_API_KEY = '';
+
+    expect(() => {
+      mapModelToAzureConfig({
+        modelName: 'model-serverless',
+        modelGroupMap: {
+          'model-serverless': {
+            group: 'serverless-group',
+          },
+        },
+        groupMap: {
+          'serverless-group': {
+            apiKey: '${SERVERLESS_API_KEY}',
+            baseURL: 'https://serverless.example.com/v1/completions',
+            serverless: true,
+            models: { 'model-serverless': true },
+          },
+        },
+      });
+    }).toThrow('Azure configuration environment variable "${SERVERLESS_API_KEY}" was not found.');
+  });
+
+  it('should correctly extract environment variables and prepare serverless config', () => {
+    process.env.SERVERLESS_API_KEY = 'abc123';
+
+    const { azureOptions, baseURL, serverless } = mapModelToAzureConfig({
+      modelName: 'model-serverless',
+      modelGroupMap: {
+        'model-serverless': {
+          group: 'serverless-group',
+        },
+      },
+      groupMap: {
+        'serverless-group': {
+          apiKey: '${SERVERLESS_API_KEY}',
+          baseURL: 'https://serverless.example.com/v1/completions',
+          serverless: true,
+          models: { 'model-serverless': true },
+        },
+      },
+    });
+
+    expect(azureOptions.azureOpenAIApiKey).toEqual('abc123');
+    expect(baseURL).toEqual('https://serverless.example.com/v1/completions');
+    expect(serverless).toBe(true);
+  });
+
+  it('should ensure serverless flag triggers appropriate validations and mappings', () => {
+    const configs = [
+      {
+        group: 'serverless-group-2',
+        apiKey: '${NEW_SERVERLESS_API_KEY}',
+        baseURL: 'https://new-serverless.example.com/v1/completions',
+        serverless: true,
+        models: {
+          'new-model-serverless': true,
+        },
+      },
+    ];
+
+    process.env.NEW_SERVERLESS_API_KEY = 'def456';
+
+    const { isValid, errors, modelGroupMap, groupMap } = validateAzureGroups(configs);
+    expect(isValid).toBe(true);
+    expect(errors.length).toBe(0);
+
+    const { azureOptions, baseURL, serverless } = mapModelToAzureConfig({
+      modelName: 'new-model-serverless',
+      modelGroupMap,
+      groupMap,
+    });
+
+    expect(azureOptions).toEqual({
+      azureOpenAIApiKey: 'def456',
+    });
+    expect(baseURL).toEqual('https://new-serverless.example.com/v1/completions');
+    expect(serverless).toBe(true);
   });
 });
 
@@ -396,6 +530,8 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
   it('should list all expected models in both modelGroupMap and groupMap', () => {
     process.env.WESTUS_API_KEY = 'westus-key';
     process.env.EASTUS_API_KEY = 'eastus-key';
+    process.env.AZURE_MISTRAL_API_KEY = 'mistral-key';
+    process.env.AZURE_LLAMA2_70B_API_KEY = 'llama-key';
 
     const validConfigs: TAzureGroups = [
       {
@@ -436,6 +572,26 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
           'x-api-key': 'x-api-key-value',
         },
       },
+      {
+        group: 'mistral-inference',
+        apiKey: '${AZURE_MISTRAL_API_KEY}',
+        baseURL:
+          'https://Mistral-large-vnpet-serverless.region.inference.ai.azure.com/v1/chat/completions',
+        serverless: true,
+        models: {
+          'mistral-large': true,
+        },
+      },
+      {
+        group: 'llama-70b-chat',
+        apiKey: '${AZURE_LLAMA2_70B_API_KEY}',
+        baseURL:
+          'https://Llama-2-70b-chat-qmvyb-serverless.region.inference.ai.azure.com/v1/chat/completions',
+        serverless: true,
+        models: {
+          'llama-70b-chat': true,
+        },
+      },
     ];
     const { isValid, modelGroupMap, groupMap, modelNames } = validateAzureGroups(validConfigs);
     expect(isValid).toBe(true);
@@ -446,6 +602,8 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       'gpt-4',
       'gpt-4-1106-preview',
       'gpt-4-turbo',
+      'mistral-large',
+      'llama-70b-chat',
     ]);
 
     // Check modelGroupMap
@@ -480,6 +638,34 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
         version: '2024-02-15-preview',
         models: expect.objectContaining({
           'gpt-4-turbo': true,
+        }),
+      }),
+    );
+
+    // Check groupMap for 'mistral-inference'
+    expect(groupMap).toHaveProperty('mistral-inference');
+    expect(groupMap['mistral-inference']).toEqual(
+      expect.objectContaining({
+        apiKey: '${AZURE_MISTRAL_API_KEY}',
+        baseURL:
+          'https://Mistral-large-vnpet-serverless.region.inference.ai.azure.com/v1/chat/completions',
+        serverless: true,
+        models: expect.objectContaining({
+          'mistral-large': true,
+        }),
+      }),
+    );
+
+    // Check groupMap for 'llama-70b-chat'
+    expect(groupMap).toHaveProperty('llama-70b-chat');
+    expect(groupMap['llama-70b-chat']).toEqual(
+      expect.objectContaining({
+        apiKey: '${AZURE_LLAMA2_70B_API_KEY}',
+        baseURL:
+          'https://Llama-2-70b-chat-qmvyb-serverless.region.inference.ai.azure.com/v1/chat/completions',
+        serverless: true,
+        models: expect.objectContaining({
+          'llama-70b-chat': true,
         }),
       }),
     );
@@ -562,6 +748,40 @@ describe('validateAzureGroups with modelGroupMap and groupMap', () => {
       azureOpenAIApiInstanceName: 'librechat-westus',
       azureOpenAIApiDeploymentName: 'gpt-4-1106-preview',
       azureOpenAIApiVersion: '2023-12-01-preview',
+    });
+
+    const {
+      azureOptions: azureOptions7,
+      serverless: serverlessMistral,
+      baseURL: mistralEndpoint,
+    } = mapModelToAzureConfig({
+      modelName: 'mistral-large',
+      modelGroupMap,
+      groupMap,
+    });
+    expect(serverlessMistral).toBe(true);
+    expect(mistralEndpoint).toBe(
+      'https://Mistral-large-vnpet-serverless.region.inference.ai.azure.com/v1/chat/completions',
+    );
+    expect(azureOptions7).toEqual({
+      azureOpenAIApiKey: 'mistral-key',
+    });
+
+    const {
+      azureOptions: azureOptions8,
+      serverless: serverlessLlama,
+      baseURL: llamaEndpoint,
+    } = mapModelToAzureConfig({
+      modelName: 'llama-70b-chat',
+      modelGroupMap,
+      groupMap,
+    });
+    expect(serverlessLlama).toBe(true);
+    expect(llamaEndpoint).toBe(
+      'https://Llama-2-70b-chat-qmvyb-serverless.region.inference.ai.azure.com/v1/chat/completions',
+    );
+    expect(azureOptions8).toEqual({
+      azureOpenAIApiKey: 'llama-key',
     });
   });
 });

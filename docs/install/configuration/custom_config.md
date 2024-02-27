@@ -843,6 +843,47 @@ endpoints:
   - **Note**: It's recommended to use a custom env. variable reference for the values of field, as shown in the example.
   - **Note**: `api-key` header value is sent on every request
 
+#### **serverless**:
+
+  > Indicates the use of a serverless inference endpoint for Azure OpenAI chat completions.
+
+  - Type: Boolean
+  - **Optional**
+  - **Description**: When set to `true`, specifies that the group is configured to use serverless inference endpoints as an Azure "Models as a Service" model.
+  - **Example**: `serverless: true`
+  - **Note**: [More info here](./azure_openai.md#serverless-inference-endpoints)
+
+#### **addParams**:
+
+  > Adds additional parameters to requests.
+
+  - Type: Object/Dictionary
+  - **Description**: Adds/Overrides parameters. Useful for specifying API-specific options.
+  - **Example**: 
+```yaml
+    addParams:
+      safe_prompt: true
+```
+
+#### **dropParams**:
+
+  > Removes [default parameters](#default-parameters) from requests.
+
+  - Type: Array/List of Strings
+  - **Description**: Excludes specified [default parameters](#default-parameters). Useful for APIs that do not accept or recognize certain parameters.
+  - **Example**: `dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]`
+  - **Note**: For a list of default parameters sent with every request, see the ["Default Parameters"](#default-parameters) Section below.
+
+#### **forcePrompt**:
+
+  > If `true`, sends a `prompt` parameter instead of `messages`.
+
+  - Type: Boolean
+  - Example: `forcePrompt: false`
+  - **Note**: This combines all messages into a single text payload, [following OpenAI format](https://github.com/pvicente/openai-python/blob/main/chatml.md), and
+
+ uses the `/completions` endpoint of your baseURL rather than `/chat/completions`.
+
 #### **models**:
 
 > Configuration for individual models within a group.
