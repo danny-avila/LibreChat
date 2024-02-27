@@ -19,8 +19,12 @@ export type TAzureModelConfig = z.infer<typeof modelConfigSchema>;
 
 export const azureBaseSchema = z.object({
   apiKey: z.string(),
-  instanceName: z.string(),
+  serverless: z.boolean().optional(),
+  instanceName: z.string().optional(),
   deploymentName: z.string().optional(),
+  addParams: z.record(z.any()).optional(),
+  dropParams: z.array(z.string()).optional(),
+  forcePrompt: z.boolean().optional(),
   version: z.string().optional(),
   baseURL: z.string().optional(),
   additionalHeaders: z.record(z.any()).optional(),
