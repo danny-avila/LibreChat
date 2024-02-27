@@ -67,7 +67,6 @@ function createLLM({
   return new ChatOpenAI(
     {
       streaming,
-      verbose: true,
       credentials,
       configuration,
       ...azureOptions,
