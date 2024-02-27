@@ -182,113 +182,97 @@ const Registration: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 sm:pt-0">
-      <img src={logoSrc} alt={altText} className="mb-6 h-16 w-auto" />
-      <div className="mt-6 w-96 overflow-hidden bg-white px-6 py-4 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold">
+    <div className="flex min-h-screen flex-col justify-center bg-gray-50 py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <img src={logoSrc} alt={altText} className="mx-auto mb-6 h-16 w-auto" />
+        <h1 className="text-center text-3xl font-extrabold text-gray-900">
           {localize('com_auth_create_account')}
         </h1>
         {error && (
           <div
-            className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
+            className="relative mb-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
             role="alert"
             data-testid="registration-error"
           >
             {localize('com_auth_error_create')} {errorMessage}
           </div>
         )}
-        <form
-          className="mt-6"
-          aria-label="Registration form"
-          method="POST"
-          onSubmit={handleSubmit(onRegisterUserFormSubmit)}
-        >
-          {renderInput('name', 'com_auth_full_name', 'text', {
-            required: localize('com_auth_name_required'),
-            minLength: {
-              value: 3,
-              message: localize('com_auth_name_min_length'),
-            },
-            maxLength: {
-              value: 80,
-              message: localize('com_auth_name_max_length'),
-            },
-          })}
-          {renderInput('username', 'com_auth_username', 'text', {
-            minLength: {
-              value: 2,
-              message: localize('com_auth_username_min_length'),
-            },
-            maxLength: {
-              value: 80,
-              message: localize('com_auth_username_max_length'),
-            },
-          })}
-          {renderInput('email', 'com_auth_email', 'email', {
-            required: localize('com_auth_email_required'),
-            minLength: {
-              value: 3,
-              message: localize('com_auth_email_min_length'),
-            },
-            maxLength: {
-              value: 120,
-              message: localize('com_auth_email_max_length'),
-            },
-            pattern: {
-              value: /\S+@\S+\.\S+/,
-              message: localize('com_auth_email_pattern'),
-            },
-          })}
-          {renderInput('password', 'com_auth_password', 'password', {
-            required: localize('com_auth_password_required'),
-            minLength: {
-              value: 8,
-              message: localize('com_auth_password_min_length'),
-            },
-            maxLength: {
-              value: 128,
-              message: localize('com_auth_password_max_length'),
-            },
-          })}
-          {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
-            validate: (value) => value === password || localize('com_auth_password_not_match'),
-          })}
-          <div className="mt-6">
-            <button
-              disabled={Object.keys(errors).length > 0}
-              type="submit"
-              aria-label="Submit registration"
-              className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-600 focus:bg-green-600 focus:outline-none disabled:cursor-not-allowed disabled:hover:bg-green-500"
-            >
-              {localize('com_auth_continue')}
-            </button>
-          </div>
-        </form>
-        <p className="my-4 text-center text-sm font-light text-gray-700">
-          {localize('com_auth_already_have_account')}{' '}
-          <a
-            href="/login"
-            aria-label="Login"
-            className="p-1 font-medium text-green-500 hover:underline"
+      </div>
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white px-4 py-8 shadow sm:rounded-lg sm:px-10">
+          <form
+            className="space-y-6"
+            aria-label="Registration form"
+            method="POST"
+            onSubmit={handleSubmit(onRegisterUserFormSubmit)}
           >
-            {localize('com_auth_login')}
-          </a>
-        </p>
-        {startupConfig.socialLoginEnabled && (
-          <>
-            {startupConfig.emailLoginEnabled && (
-              <>
-                <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-                  <div className="absolute bg-white px-3 text-xs">Or</div>
-                </div>
-                <div className="mt-8" />
-              </>
-            )}
-            <div className="mt-2">
-              {socialLogins.map((provider) => providerComponents[provider] || null)}
+            {renderInput('name', 'com_auth_full_name', 'text', {
+              required: localize('com_auth_name_required'),
+              minLength: {
+                value: 3,
+                message: localize('com_auth_name_min_length'),
+              },
+              maxLength: {
+                value: 80,
+                message: localize('com_auth_name_max_length'),
+              },
+            })}
+            {renderInput('username', 'com_auth_username', 'text', {
+              minLength: {
+                value: 2,
+                message: localize('com_auth_username_min_length'),
+              },
+              maxLength: {
+                value: 80,
+                message: localize('com_auth_username_max_length'),
+              },
+            })}
+            {renderInput('email', 'com_auth_email', 'email', {
+              required: localize('com_auth_email_required'),
+              minLength: {
+                value: 3,
+                message: localize('com_auth_email_min_length'),
+              },
+              maxLength: {
+                value: 120,
+                message: localize('com_auth_email_max_length'),
+              },
+              pattern: {
+                value: /\S+@\S+\.\S+/,
+                message: localize('com_auth_email_pattern'),
+              },
+            })}
+            {renderInput('password', 'com_auth_password', 'password', {
+              required: localize('com_auth_password_required'),
+              minLength: {
+                value: 8,
+                message: localize('com_auth_password_min_length'),
+              },
+              maxLength: {
+                value: 128,
+                message: localize('com_auth_password_max_length'),
+              },
+            })}
+            {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
+              validate: (value) => value === password || localize('com_auth_password_not_match'),
+            })}
+            <div>
+              <button
+                disabled={Object.keys(errors).length > 0}
+                type="submit"
+                className="flex w-full justify-center rounded-md border border-transparent bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+              >
+                {localize('com_auth_continue')}
+              </button>
             </div>
-          </>
-        )}
+          </form>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            {localize('com_auth_already_have_account')}{' '}
+            <a href="/login" className="font-medium text-green-600 hover:text-green-500">
+              {localize('com_auth_login')}
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   );
