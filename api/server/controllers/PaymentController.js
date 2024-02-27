@@ -11,7 +11,7 @@ exports.createPaymentIntent = async (req, res) => {
       'price_1ORgyJHKD0byXXClfvOyCbp7',
       'price_1ORgyiHKD0byXXClHetdaI3W',
       'price_1ORgzMHKD0byXXClDCm5PkwO',
-      'price_1ORgzyHKD0byXXCl9hIUu3Fn', // New price IDs
+      'price_1ORgzyHKD0byXXCl9hIUu3Fn',
       'price_1ORh0JHKD0byXXCl40t8BtlB',
       'price_1ORh0cHKD0byXXClqFvZXCiA',
       'price_1ORh15HKD0byXXClGtCFxyXf',
@@ -99,16 +99,16 @@ exports.handleWebhook = async (req, res) => {
         tokens = 100000;
         break;
       case 'price_1ORgzyHKD0byXXCl9hIUu3Fn':
-        tokens = 100000; // Adjust as needed
+        tokens = 100000;
         break;
       case 'price_1ORh0JHKD0byXXCl40t8BtlB':
-        tokens = 500000; // Adjust as needed
+        tokens = 500000;
         break;
       case 'price_1ORh0cHKD0byXXClqFvZXCiA':
-        tokens = 1000000; // Adjust as needed
+        tokens = 1000000;
         break;
       case 'price_1ORh15HKD0byXXClGtCFxyXf':
-        tokens = 10000000; // Adjust as needed
+        tokens = 10000000;
         break;
       default:
         console.error('Invalid price ID:', priceId);
