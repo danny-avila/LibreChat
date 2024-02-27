@@ -41,6 +41,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       iconURL: "https://raw.githubusercontent.com/fuegovic/lc-config-yaml/main/icons/groq.png"
 ```
 
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/cc4f0710-7e27-4f82-8b4f-81f788a6cb13)
+
+
 ## Mistral AI
 
 **Notes:**
@@ -69,6 +72,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
 ```
 
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/ddb4b2f3-608e-4034-9a27-3e94fc512034)
+
+
 ## Openrouter
 
 **Notes:**
@@ -92,3 +98,5 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       titleModel: "gpt-3.5-turbo" # change to your preferred model
       modelDisplayLabel: "OpenRouter"
 ```
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/c4a0415e-732c-46af-82a6-3598663b7f42)
