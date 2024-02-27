@@ -68,26 +68,26 @@ endpoints:
       titleConvo: true  # Set to true to enable title conversation
 
       # Title Method: Choose between "completion" or "functions".
-      titleMethod: "completion"  # Defaults to "completion" if omitted.
+      # titleMethod: "completion"  # Defaults to "completion" if omitted.
 
       # Title Model: Specify the model to use for titles.
       titleModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
 
       # Summarize setting: Set to true to enable summarization.
-      summarize: false
+      # summarize: false
 
       # Summary Model: Specify the model to use if summarization is enabled.
-      summaryModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
+      # summaryModel: "mistral-tiny"  # Defaults to "gpt-3.5-turbo" if omitted.
 
       # Force Prompt setting: If true, sends a `prompt` parameter instead of `messages`.
-      forcePrompt: false
+      # forcePrompt: false
 
       # The label displayed for the AI model in messages.
       modelDisplayLabel: "Mistral"  # Default is "AI" when not set.
 
       # Add additional parameters to the request. Default params will be overwritten.
-      addParams:
-        safe_prompt: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
+      # addParams:
+        # safe_prompt: true # This field is specific to Mistral AI: https://docs.mistral.ai/api/
         
       # Drop Default params parameters from the request. See default params in guide linked below.
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
@@ -105,9 +105,8 @@ endpoints:
         fetch: true
       titleConvo: true
       titleModel: "gpt-3.5-turbo"
-      summarize: false
-      summaryModel: "gpt-3.5-turbo"
-      forcePrompt: false
+      # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
+      dropParams: ["stop"]
       modelDisplayLabel: "OpenRouter"
 
 # See the Custom Configuration Guide for more information:
