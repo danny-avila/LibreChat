@@ -1,3 +1,9 @@
+---
+title: 🅰️ Azure OpenAI
+description: Comprehensive guide for configuring Azure OpenAI through the `librechat.yaml` file AKA the LibreChat Config file. This document is your one-stop resource for understanding and customizing Azure settings and models.
+weight: -10
+---
+
 # Azure OpenAI
 
 **Azure OpenAI Integration for LibreChat**
