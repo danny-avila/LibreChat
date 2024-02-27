@@ -30,6 +30,14 @@ export default function UnknownIcon({
     );
   } else if (currentEndpoint === KnownEndpoints.openrouter) {
     return <img className={className} src="/assets/openrouter.png" alt="OpenRouter Icon" />;
+  } else if (currentEndpoint === KnownEndpoints.groq) {
+    return (
+      <img
+        className={context === 'landing' ? '' : className}
+        src="/assets/groq.png"
+        alt="Groq Cloud Icon"
+      />
+    );
   }
 
   return <CustomMinimalIcon className={className} />;

@@ -7,11 +7,12 @@ weight: 2
 # Configuration
 
   * ⚙️ [Environment Variables](./dotenv.md)
-  * 🖥️ [Custom Endpoints & Config](./custom_config.md) 
+  * 🖥️ [Custom Config](./custom_config.md)
+    * 🅰️ [Azure OpenAI](./azure_openai.md)
+    * ✅ [Compatible AI Endpoints](./ai_endpoints.md) 
   * 🐋 [Docker Compose Override](./docker_override.md) 
 ---
   * 🤖 [AI Setup](./ai_setup.md)
-  * 🅰️ [Azure OpenAI](./azure_openai.md)
   * 🚅 [LiteLLM](./litellm.md)
   * 💸 [Free AI APIs](./free_ai_apis.md)
 ---
