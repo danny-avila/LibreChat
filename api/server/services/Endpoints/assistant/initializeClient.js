@@ -29,7 +29,9 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
     try {
       userValues = JSON.parse(userValues);
     } catch (e) {
-      throw new Error(`Invalid JSON provided for ${EModelEndpoint.assistants} user values.`);
+      throw new Error(
+        'Invalid JSON provided for Assistants API user values. Please provide them again.',
+      );
     }
   }
 
@@ -37,7 +39,7 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
   let baseURL = userProvidesURL ? userValues.baseURL : ASSISTANTS_BASE_URL;
 
   if (!apiKey) {
-    throw new Error(`${EModelEndpoint.assistants} API key not provided.`);
+    throw new Error('Assistants API key not provided.');
   }
 
   const opts = {};

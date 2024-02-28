@@ -44,7 +44,9 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     try {
       userValues = JSON.parse(userValues);
     } catch (e) {
-      throw new Error(`Invalid JSON provided for ${endpoint} user values.`);
+      throw new Error(
+        `Invalid JSON provided for ${endpoint} user values. Please provide them again.`,
+      );
     }
   }
 
