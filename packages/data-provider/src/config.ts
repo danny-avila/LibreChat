@@ -171,16 +171,20 @@ export const configSchema = z.object({
 
 export type TCustomConfig = z.infer<typeof configSchema>;
 
-export const KnownEndpoints = {
-  mistral: 'mistral',
-  openrouter: 'openrouter',
-  groq: 'groq',
-  anyscale: 'anyscale',
-  fireworks: 'fireworks',
-  ollama: 'ollama',
-  perplexity: 'perplexity',
-  'together.ai': 'together.ai',
-} as const;
+export enum KnownEndpoints {
+  mistral = 'mistral',
+  openrouter = 'openrouter',
+  groq = 'groq',
+  anyscale = 'anyscale',
+  fireworks = 'fireworks',
+  ollama = 'ollama',
+  perplexity = 'perplexity',
+  'together.ai' = 'together.ai',
+}
+
+export enum FetchTokenConfig {
+  openrouter = KnownEndpoints.openrouter,
+}
 
 export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.openAI,
