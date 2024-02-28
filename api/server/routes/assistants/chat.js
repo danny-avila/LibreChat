@@ -166,10 +166,9 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
   try {
     res.on('close', async () => {
-      if (completedRun) {
-        return;
+      if (!completedRun) {
+        await handleError(new Error('Request closed'));
       }
-      await handleError(new Error('Request closed'));
     });
 
     if (convoId && !_thread_id) {
