@@ -1,8 +1,9 @@
 const {
-  EModelEndpoint,
   CacheKeys,
-  extractEnvVariable,
   envVarRegex,
+  EModelEndpoint,
+  FetchTokenConfig,
+  extractEnvVariable,
 } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
@@ -71,10 +72,19 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
-  let endpointTokenConfig = await cache.get(endpoint);
-  if (endpointConfig && endpointConfig.models.fetch && !endpointTokenConfig) {
-    await fetchModels({ apiKey, baseURL, name: endpoint });
-    endpointTokenConfig = await cache.get(endpoint);
+  const tokenKey =
+    !endpointConfig.tokenConfig && (userProvidesKey || userProvidesURL)
+      ? `${endpoint}:${req.user.id}`
+      : endpoint;
+  let endpointTokenConfig = !endpointConfig.tokenConfig && (await cache.get(tokenKey));
+  if (
+    FetchTokenConfig[endpoint.toLowerCase()] &&
+    endpointConfig &&
+    endpointConfig.models.fetch &&
+    !endpointTokenConfig
+  ) {
+    await fetchModels({ apiKey, baseURL, name: endpoint, user: req.user.id, tokenKey });
+    endpointTokenConfig = await cache.get(tokenKey);
   }
 
   const customOptions = {
