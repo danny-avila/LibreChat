@@ -2,9 +2,9 @@ name: N2A - Build and Push
 
 env:
     # Azure ACR
-    ACR_HOST: ${{ vars.REGISTRY_LOGIN_SERVER_NONPROD }}
-    ACR_USER: ${{ secrets.REGISTRY_USERNAME_NONPROD }}
-    ACR_PASS: ${{ secrets.REGISTRY_PASSWORD_NONPROD }}
+    ACR_HOST: ${{ vars.REGISTRY_LOGIN_SERVER_PROD }}
+    ACR_USER: ${{ secrets.REGISTRY_USERNAME_PROD }}
+    ACR_PASS: ${{ secrets.REGISTRY_PASSWORD_PROD }}
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
 
 jobs:
     build_and_push:
-        runs-on: ubuntu-latest
+        runs-on: [self-hosted, nonprod]
         steps:
             - uses: actions/checkout@v3
 
