@@ -142,7 +142,7 @@ describe('gptPlugins/initializeClient', () => {
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
 
-    getUserKey.mockResolvedValue('test-user-provided-openai-api-key');
+    getUserKey.mockResolvedValue(JSON.stringify({ apiKey: 'test-user-provided-openai-api-key' }));
 
     const { openAIApiKey } = await initializeClient({ req, res, endpointOption });
 
@@ -164,8 +164,10 @@ describe('gptPlugins/initializeClient', () => {
 
     getUserKey.mockResolvedValue(
       JSON.stringify({
-        azureOpenAIApiKey: 'test-user-provided-azure-api-key',
-        azureOpenAIApiDeploymentName: 'test-deployment',
+        apiKey: JSON.stringify({
+          azureOpenAIApiKey: 'test-user-provided-azure-api-key',
+          azureOpenAIApiDeploymentName: 'test-deployment',
+        }),
       }),
     );
 
@@ -186,9 +188,7 @@ describe('gptPlugins/initializeClient', () => {
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
 
-    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      /Your OpenAI API key has expired/,
-    );
+    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(/Your OpenAI API/);
   });
 
   test('should throw an error if the user-provided Azure key is invalid JSON', async () => {
@@ -207,7 +207,7 @@ describe('gptPlugins/initializeClient', () => {
     getUserKey.mockResolvedValue('invalid-json');
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      /Unexpected token/,
+      /Invalid JSON provided/,
     );
   });
 

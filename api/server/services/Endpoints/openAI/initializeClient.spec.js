@@ -137,9 +137,7 @@ describe('initializeClient', () => {
     const res = {};
     const endpointOption = {};
 
-    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      'Your OpenAI API key has expired. Please provide your API key again.',
-    );
+    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(/Your OpenAI API/);
   });
 
   test('should throw an error if no API keys are provided in the environment', async () => {
@@ -180,7 +178,7 @@ describe('initializeClient', () => {
     process.env.OPENAI_API_KEY = 'user_provided';
 
     // Mock getUserKey to return the expected key
-    getUserKey.mockResolvedValue('test-user-provided-openai-api-key');
+    getUserKey.mockResolvedValue(JSON.stringify({ apiKey: 'test-user-provided-openai-api-key' }));
 
     // Call the initializeClient function
     const result = await initializeClient({ req, res, endpointOption });
@@ -205,8 +203,6 @@ describe('initializeClient', () => {
     // Mock getUserKey to return an invalid key
     getUserKey.mockResolvedValue(invalidKey);
 
-    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      /Your OpenAI API key has expired/,
-    );
+    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(/Your OpenAI API/);
   });
 });
