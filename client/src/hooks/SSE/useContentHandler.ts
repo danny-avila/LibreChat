@@ -61,8 +61,6 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       response.content.push(initialResponse.content[0]);
     }
 
-    response.content = response.content.filter((p) => p !== undefined);
-
     setMessages([...messages, response]);
   };
 }
