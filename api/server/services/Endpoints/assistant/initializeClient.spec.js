@@ -83,9 +83,7 @@ describe('initializeClient', () => {
     const req = { user: { id: 'user123' } };
     const res = {};
 
-    await expect(initializeClient({ req, res })).rejects.toThrow(
-      'Assistants API key not provided.',
-    );
+    await expect(initializeClient({ req, res })).rejects.toThrow(/Assistants API key not/);
   });
 
   test('initializes OpenAI client with proxy configuration', async () => {

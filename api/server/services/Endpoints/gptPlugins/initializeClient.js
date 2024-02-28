@@ -109,7 +109,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   if (!apiKey) {
-    throw new Error(`${endpoint} API key not provided.`);
+    throw new Error(`${endpoint} API key not provided. Please provide it again.`);
   }
 
   const client = new PluginsClient(apiKey, clientOptions);

@@ -39,7 +39,7 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
   let baseURL = userProvidesURL ? userValues.baseURL : ASSISTANTS_BASE_URL;
 
   if (!apiKey) {
-    throw new Error('Assistants API key not provided.');
+    throw new Error('Assistants API key not provided. Please provide it again.');
   }
 
   const opts = {};
