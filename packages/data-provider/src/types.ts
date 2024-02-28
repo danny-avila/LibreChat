@@ -210,6 +210,7 @@ export type TStartupConfig = {
   emailEnabled: boolean;
   checkBalance: boolean;
   showBirthdayIcon: boolean;
+  helpAndFaqURL: string;
   customFooter?: string;
 };
 

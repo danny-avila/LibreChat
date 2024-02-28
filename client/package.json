@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.6.9",
+  "version": "0.6.10",
   "description": "",
   "type": "module",
   "scripts": {
@@ -25,8 +25,10 @@
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://github.com/danny-avila/LibreChat#readme",
+  "homepage": "https://librechat.ai",
   "dependencies": {
+    "@dicebear/collection": "^7.0.4",
+    "@dicebear/core": "^7.0.4",
     "@headlessui/react": "^1.7.13",
     "@radix-ui/react-accordion": "^1.1.2",
     "@radix-ui/react-alert-dialog": "^1.0.2",

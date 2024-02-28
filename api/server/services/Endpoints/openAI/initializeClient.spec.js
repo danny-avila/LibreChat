@@ -1,6 +1,7 @@
-const { OpenAIClient } = require('~/app');
-const initializeClient = require('./initializeClient');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey } = require('~/server/services/UserService');
+const initializeClient = require('./initializeClient');
+const { OpenAIClient } = require('~/app');
 
 // Mock getUserKey since it's the only function we want to mock
 jest.mock('~/server/services/UserService', () => ({
@@ -11,6 +12,9 @@ jest.mock('~/server/services/UserService', () => ({
 describe('initializeClient', () => {
   // Set up environment variables
   const originalEnvironment = process.env;
+  const app = {
+    locals: {},
+  };
 
   beforeEach(() => {
     jest.resetModules(); // Clears the cache
@@ -29,6 +33,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
@@ -53,6 +58,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'azureOpenAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'test-model' } };
@@ -70,6 +76,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
@@ -86,6 +93,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
@@ -103,6 +111,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
@@ -123,6 +132,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: expiresAt, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
@@ -140,12 +150,13 @@ describe('initializeClient', () => {
     const req = {
       body: { key: null, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      'API key not provided.',
+      `${EModelEndpoint.openAI} API key not provided.`,
     );
   });
 
@@ -159,6 +170,7 @@ describe('initializeClient', () => {
       user: {
         id: '123',
       },
+      app,
     };
 
     const res = {};
@@ -182,6 +194,7 @@ describe('initializeClient', () => {
     const req = {
       body: { key: invalidKey, endpoint: 'openAI' },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = {};

@@ -1,4 +1,8 @@
-const { EModelEndpoint } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  mapModelToAzureConfig,
+  resolveHeaders,
+} = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { getAzureCredentials } = require('~/utils');
 const { isEnabled } = require('~/server/utils');
@@ -16,11 +20,19 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     DEBUG_PLUGINS,
   } = process.env;
 
-  const { key: expiresAt } = req.body;
+  const { key: expiresAt, model: modelName } = req.body;
   const contextStrategy = isEnabled(OPENAI_SUMMARIZE) ? 'summarize' : null;
 
-  const useAzure = isEnabled(PLUGINS_USE_AZURE);
-  const endpoint = useAzure ? EModelEndpoint.azureOpenAI : EModelEndpoint.openAI;
+  let useAzure = isEnabled(PLUGINS_USE_AZURE);
+  let endpoint = useAzure ? EModelEndpoint.azureOpenAI : EModelEndpoint.openAI;
+
+  /** @type {false | TAzureConfig} */
+  const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
+  useAzure = useAzure || azureConfig?.plugins;
+
+  if (useAzure && endpoint !== EModelEndpoint.azureOpenAI) {
+    endpoint = EModelEndpoint.azureOpenAI;
+  }
 
   const baseURLOptions = {
     [EModelEndpoint.openAI]: OPENAI_REVERSE_PROXY,
@@ -59,14 +71,40 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   let apiKey = isUserProvided ? userKey : credentials[endpoint];
+  if (useAzure && azureConfig) {
+    const { modelGroupMap, groupMap } = azureConfig;
+    const {
+      azureOptions,
+      baseURL,
+      headers = {},
+      serverless,
+    } = mapModelToAzureConfig({
+      modelName,
+      modelGroupMap,
+      groupMap,
+    });
 
-  if (useAzure || (apiKey && apiKey.includes('{"azure') && !clientOptions.azure)) {
+    clientOptions.reverseProxyUrl = baseURL ?? clientOptions.reverseProxyUrl;
+    clientOptions.headers = resolveHeaders({ ...headers, ...(clientOptions.headers ?? {}) });
+
+    clientOptions.titleConvo = azureConfig.titleConvo;
+    clientOptions.titleModel = azureConfig.titleModel;
+    clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
+
+    const groupName = modelGroupMap[modelName].group;
+    clientOptions.addParams = azureConfig.groupMap[groupName].addParams;
+    clientOptions.dropParams = azureConfig.groupMap[groupName].dropParams;
+    clientOptions.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
+
+    apiKey = azureOptions.azureOpenAIApiKey;
+    clientOptions.azure = !serverless && azureOptions;
+  } else if (useAzure || (apiKey && apiKey.includes('{"azure') && !clientOptions.azure)) {
     clientOptions.azure = isUserProvided ? JSON.parse(userKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;
   }
 
   if (!apiKey) {
-    throw new Error('API key not provided.');
+    throw new Error(`${endpoint} API key not provided.`);
   }
 
   const client = new PluginsClient(apiKey, clientOptions);

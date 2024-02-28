@@ -65,16 +65,18 @@ const MenuItem: FC<MenuItemProps> = ({
         getEndpointField(endpointsConfig, currentEndpoint, 'type') ?? currentEndpoint;
       const newEndpointType = getEndpointField(endpointsConfig, newEndpoint, 'type') ?? newEndpoint;
 
-      if (
-        isExistingConversation &&
-        (modularEndpoints.has(endpoint ?? '') ||
-          modularEndpoints.has(currentEndpointType ?? '') ||
-          isAssistantSwitch) &&
-        (modularEndpoints.has(newEndpoint ?? '') ||
-          modularEndpoints.has(newEndpointType ?? '') ||
-          isAssistantSwitch) &&
-        (endpoint === newEndpoint || modularChat || isAssistantSwitch)
-      ) {
+      const hasEndpoint = modularEndpoints.has(currentEndpoint ?? '');
+      const hasCurrentEndpointType = modularEndpoints.has(currentEndpointType ?? '');
+      const isCurrentModular = hasEndpoint || hasCurrentEndpointType || isAssistantSwitch;
+
+      const hasNewEndpoint = modularEndpoints.has(newEndpoint ?? '');
+      const hasNewEndpointType = modularEndpoints.has(newEndpointType ?? '');
+      const isNewModular = hasNewEndpoint || hasNewEndpointType || isAssistantSwitch;
+
+      const endpointsMatch = currentEndpoint === newEndpoint;
+      const shouldSwitch = endpointsMatch || modularChat || isAssistantSwitch;
+
+      if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
         template.endpointType = newEndpointType;
 
         const currentConvo = getDefaultConversation({

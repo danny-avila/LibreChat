@@ -32,7 +32,10 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
 
   let userKey = null;
   if (isUserProvided) {
-    const expiresAt = getUserKeyExpiry({ userId: req.user.id, name: EModelEndpoint.assistants });
+    const expiresAt = await getUserKeyExpiry({
+      userId: req.user.id,
+      name: EModelEndpoint.assistants,
+    });
     checkUserKeyExpiry(
       expiresAt,
       'Your Assistants API key has expired. Please provide your API key again.',
@@ -43,7 +46,7 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
   let apiKey = isUserProvided ? userKey : credentials;
 
   if (!apiKey) {
-    throw new Error('API key not provided.');
+    throw new Error(`${EModelEndpoint.assistants} API key not provided.`);
   }
 
   /** @type {OpenAIClient} */

@@ -7,6 +7,7 @@ import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/
 import type { TConversation } from 'librechat-data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
+import useAvatar from '~/hooks/Messages/useAvatar';
 import { ExportModal } from './ExportConversation';
 import { LinkIcon, GearIcon } from '~/components';
 import { useLocalize } from '~/hooks';
@@ -28,9 +29,12 @@ function NavLinks() {
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
 
-  let conversation;
   const activeConvo = useRecoilValue(store.conversationByIndex(0));
   const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
+
+  const avatarSrc = useAvatar(user);
+
+  let conversation: TConversation | null | undefined;
   if (location.state?.from?.pathname.includes('/chat')) {
     conversation = globalConvo;
   } else {
@@ -68,16 +72,7 @@ function NavLinks() {
             >
               <div className="-ml-0.9 -mt-0.8 h-8 w-7 flex-shrink-0">
                 <div className="relative flex">
-                  <img
-                    className="rounded-full"
-                    src={
-                      user?.avatar ||
-                      `https://api.dicebear.com/6.x/initials/svg?seed=${
-                        user?.name || 'User'
-                      }&fontFamily=Verdana&fontSize=36`
-                    }
-                    alt=""
-                  />
+                  <img className="rounded-full" src={user?.avatar || avatarSrc} alt="" />
                 </div>
               </div>
               <div
@@ -120,14 +115,16 @@ function NavLinks() {
                     clickHandler={() => setShowFiles(true)}
                   />
                 </Menu.Item>
-                <Menu.Item as="div">
-                  <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
-                    svg={() => <LinkIcon />}
-                    text={localize('com_nav_help_faq')}
-                    clickHandler={() => window.open('https://docs.librechat.ai/', '_blank')}
-                  />
-                </Menu.Item>
+                {startupConfig?.helpAndFaqURL !== '/' && (
+                  <Menu.Item as="div">
+                    <NavLink
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
+                      svg={() => <LinkIcon />}
+                      text={localize('com_nav_help_faq')}
+                      clickHandler={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
+                    />
+                  </Menu.Item>
+                )}
                 <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"

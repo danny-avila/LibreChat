@@ -470,13 +470,14 @@ async function processMessages(openai, messages = []) {
       }
 
       text += (content.text?.value ?? '') + ' ';
+      logger.debug('[processMessages] Processing message:', { value: text });
 
       // Process annotations if they exist
-      if (!content.text?.annotations) {
+      if (!content.text?.annotations?.length) {
         continue;
       }
 
-      logger.debug('Processing annotations:', content.text.annotations);
+      logger.debug('[processMessages] Processing annotations:', content.text.annotations);
       for (const annotation of content.text.annotations) {
         logger.debug('Current annotation:', annotation);
         let file;

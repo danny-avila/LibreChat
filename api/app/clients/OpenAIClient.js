@@ -1,10 +1,13 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
+  ImageDetail,
+  EModelEndpoint,
+  resolveHeaders,
+  ImageDetailCost,
   getResponseSender,
   validateVisionModel,
-  ImageDetailCost,
-  ImageDetail,
+  mapModelToAzureConfig,
 } = require('librechat-data-provider');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
@@ -557,7 +560,7 @@ class OpenAIClient extends BaseClient {
     let streamResult = null;
     this.modelOptions.user = this.user;
     const invalidBaseUrl = this.completionsUrl && extractBaseURL(this.completionsUrl) === null;
-    const useOldMethod = !!(invalidBaseUrl || !this.isChatCompletion);
+    const useOldMethod = !!(invalidBaseUrl || !this.isChatCompletion || typeof Bun !== 'undefined');
     if (typeof opts.onProgress === 'function' && useOldMethod) {
       await this.getCompletion(
         payload,
@@ -665,6 +668,16 @@ class OpenAIClient extends BaseClient {
       };
     }
 
+    const { headers } = this.options;
+    if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
+      configOptions.baseOptions = {
+        headers: resolveHeaders({
+          ...headers,
+          ...configOptions?.baseOptions?.headers,
+        }),
+      };
+    }
+
     if (this.options.proxy) {
       configOptions.httpAgent = new HttpsProxyAgent(this.options.proxy);
       configOptions.httpsAgent = new HttpsProxyAgent(this.options.proxy);
@@ -724,6 +737,38 @@ class OpenAIClient extends BaseClient {
       frequency_penalty: 0,
       max_tokens: 16,
     };
+
+    /** @type {TAzureConfig | undefined} */
+    const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
+
+    const resetTitleOptions =
+      (this.azure && azureConfig) ||
+      (azureConfig && this.options.endpoint === EModelEndpoint.azureOpenAI);
+
+    if (resetTitleOptions) {
+      const { modelGroupMap, groupMap } = azureConfig;
+      const {
+        azureOptions,
+        baseURL,
+        headers = {},
+        serverless,
+      } = mapModelToAzureConfig({
+        modelName: modelOptions.model,
+        modelGroupMap,
+        groupMap,
+      });
+
+      this.options.headers = resolveHeaders(headers);
+      this.options.reverseProxyUrl = baseURL ?? null;
+      this.langchainProxy = extractBaseURL(this.options.reverseProxyUrl);
+      this.apiKey = azureOptions.azureOpenAIApiKey;
+
+      const groupName = modelGroupMap[modelOptions.model].group;
+      this.options.addParams = azureConfig.groupMap[groupName].addParams;
+      this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
+      this.options.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
+      this.azure = !serverless && azureOptions;
+    }
 
     const titleChatCompletion = async () => {
       modelOptions.model = model;
@@ -975,6 +1020,38 @@ ${convo}
         modelOptions.max_tokens = 4000;
       }
 
+      /** @type {TAzureConfig | undefined} */
+      const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
+
+      if (
+        (this.azure && this.isVisionModel && azureConfig) ||
+        (azureConfig && this.isVisionModel && this.options.endpoint === EModelEndpoint.azureOpenAI)
+      ) {
+        const { modelGroupMap, groupMap } = azureConfig;
+        const {
+          azureOptions,
+          baseURL,
+          headers = {},
+          serverless,
+        } = mapModelToAzureConfig({
+          modelName: modelOptions.model,
+          modelGroupMap,
+          groupMap,
+        });
+        opts.defaultHeaders = resolveHeaders(headers);
+        this.langchainProxy = extractBaseURL(baseURL);
+        this.apiKey = azureOptions.azureOpenAIApiKey;
+
+        const groupName = modelGroupMap[modelOptions.model].group;
+        this.options.addParams = azureConfig.groupMap[groupName].addParams;
+        this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
+        // Note: `forcePrompt` not re-assigned as only chat models are vision models
+
+        this.azure = !serverless && azureOptions;
+        this.azureEndpoint =
+          !serverless && genAzureChatCompletion(this.azure, modelOptions.model, this);
+      }
+
       if (this.azure || this.options.azure) {
         // Azure does not accept `model` in the body, so we need to remove it.
         delete modelOptions.model;
@@ -994,6 +1071,7 @@ ${convo}
       }
 
       let chatCompletion;
+      /** @type {OpenAI} */
       const openai = new OpenAI({
         apiKey: this.apiKey,
         ...opts,
@@ -1025,11 +1103,19 @@ ${convo}
           ...modelOptions,
           ...this.options.addParams,
         };
+        logger.debug('[OpenAIClient] chatCompletion: added params', {
+          addParams: this.options.addParams,
+          modelOptions,
+        });
       }
 
       if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
         this.options.dropParams.forEach((param) => {
           delete modelOptions[param];
+        });
+        logger.debug('[OpenAIClient] chatCompletion: dropped params', {
+          dropParams: this.options.dropParams,
+          modelOptions,
         });
       }
 
@@ -1045,6 +1131,16 @@ ${convo}
           })
           .on('error', (err) => {
             handleOpenAIErrors(err, errorCallback, 'stream');
+          })
+          .on('finalChatCompletion', (finalChatCompletion) => {
+            const finalMessage = finalChatCompletion?.choices?.[0]?.message;
+            if (finalMessage && finalMessage?.role !== 'assistant') {
+              finalChatCompletion.choices[0].message.role = 'assistant';
+            }
+
+            if (finalMessage && !finalMessage?.content?.trim()) {
+              finalChatCompletion.choices[0].message.content = intermediateReply;
+            }
           })
           .on('finalMessage', (message) => {
             if (message?.role !== 'assistant') {
@@ -1097,6 +1193,14 @@ ${convo}
 
       logger.debug('[OpenAIClient] chatCompletion response', chatCompletion);
 
+      if (!message?.content?.trim() && intermediateReply.length) {
+        logger.debug(
+          '[OpenAIClient] chatCompletion: using intermediateReply due to empty message.content',
+          { intermediateReply },
+        );
+        return intermediateReply;
+      }
+
       return message.content;
     } catch (err) {
       if (
@@ -1108,6 +1212,9 @@ ${convo}
       if (
         err?.message?.includes(
           'OpenAI error: Invalid final message: OpenAI expects final message to include role=assistant',
+        ) ||
+        err?.message?.includes(
+          'stream ended without producing a ChatCompletionMessage with role=assistant',
         ) ||
         err?.message?.includes('The server had an error processing your request') ||
         err?.message?.includes('missing finish_reason') ||

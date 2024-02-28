@@ -3,7 +3,7 @@ import { cn } from '~/utils/';
 export default function Spinner({ className = 'm-auto', size = '1em' }) {
   return (
     <svg
-      stroke="#ffffff"
+      stroke="currentColor"
       fill="none"
       strokeWidth="2"
       viewBox="0 0 24 24"

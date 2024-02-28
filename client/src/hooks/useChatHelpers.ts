@@ -9,7 +9,7 @@ import {
   ContentTypes,
 } from 'librechat-data-provider';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { useGetMessagesByConvoId, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import type {
   TMessage,
   TSubmission,
@@ -21,12 +21,12 @@ import useSetFilesToDelete from './Files/useSetFilesToDelete';
 import useGetSender from './Conversations/useGetSender';
 import { useAuthContext } from './AuthContext';
 import useUserKey from './Input/useUserKey';
+import { getEndpointField } from '~/utils';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId: string | undefined) {
-  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const [filesLoading, setFilesLoading] = useState(false);
@@ -39,7 +39,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
-  const { conversationId, endpoint, endpointType } = conversation ?? {};
+  const { conversationId, endpoint } = conversation ?? {};
 
   const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
 
@@ -141,6 +141,9 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     );
 
     const thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+
+    const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+    const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
 
     // set the endpoint option
     const convo = parseCompactConvo({

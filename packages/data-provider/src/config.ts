@@ -4,7 +4,62 @@ import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
 
+export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
+
 export const fileSourceSchema = z.nativeEnum(FileSources);
+
+export const modelConfigSchema = z
+  .object({
+    deploymentName: z.string().optional(),
+    version: z.string().optional(),
+  })
+  .or(z.boolean());
+
+export type TAzureModelConfig = z.infer<typeof modelConfigSchema>;
+
+export const azureBaseSchema = z.object({
+  apiKey: z.string(),
+  serverless: z.boolean().optional(),
+  instanceName: z.string().optional(),
+  deploymentName: z.string().optional(),
+  addParams: z.record(z.any()).optional(),
+  dropParams: z.array(z.string()).optional(),
+  forcePrompt: z.boolean().optional(),
+  version: z.string().optional(),
+  baseURL: z.string().optional(),
+  additionalHeaders: z.record(z.any()).optional(),
+});
+
+export type TAzureBaseSchema = z.infer<typeof azureBaseSchema>;
+
+export const azureGroupSchema = z
+  .object({
+    group: z.string(),
+    models: z.record(z.string(), modelConfigSchema),
+  })
+  .required()
+  .and(azureBaseSchema);
+
+export const azureGroupConfigsSchema = z.array(azureGroupSchema).min(1);
+export type TAzureGroups = z.infer<typeof azureGroupConfigsSchema>;
+
+export type TAzureModelMapSchema = {
+  // deploymentName?: string;
+  // version?: string;
+  group: string;
+};
+
+export type TAzureModelGroupMap = Record<string, TAzureModelMapSchema>;
+export type TAzureGroupMap = Record<
+  string,
+  TAzureBaseSchema & { models: Record<string, TAzureModelConfig> }
+>;
+
+export type TValidatedAzureConfig = {
+  modelNames: string[];
+  modelGroupMap: TAzureModelGroupMap;
+  groupMap: TAzureGroupMap;
+};
 
 export const assistantEndpointSchema = z.object({
   /* assistants specific */
@@ -54,7 +109,29 @@ export const endpointSchema = z.object({
   headers: z.record(z.any()).optional(),
   addParams: z.record(z.any()).optional(),
   dropParams: z.array(z.string()).optional(),
+  customOrder: z.number().optional(),
 });
+
+export const azureEndpointSchema = z
+  .object({
+    groups: azureGroupConfigsSchema,
+    plugins: z.boolean().optional(),
+  })
+  .and(
+    endpointSchema
+      .pick({
+        titleConvo: true,
+        titleMethod: true,
+        titleModel: true,
+        summarize: true,
+        summaryModel: true,
+        customOrder: true,
+      })
+      .partial(),
+  );
+
+export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
+  TValidatedAzureConfig;
 
 export const rateLimitSchema = z.object({
   fileUploads: z
@@ -81,6 +158,7 @@ export const configSchema = z.object({
   fileConfig: fileConfigSchema.optional(),
   endpoints: z
     .object({
+      [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       custom: z.array(endpointSchema.partial()).optional(),
     })
@@ -96,6 +174,7 @@ export type TCustomConfig = z.infer<typeof configSchema>;
 export enum KnownEndpoints {
   mistral = 'mistral',
   openrouter = 'openrouter',
+  groq = 'groq',
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [
@@ -282,10 +361,20 @@ export enum CacheKeys {
    * Key for the override config cache.
    */
   OVERRIDE_CONFIG = 'overrideConfig',
+}
+
+/**
+ * Enum for violation types, used to identify, log, and cache violations.
+ */
+export enum ViolationTypes {
   /**
-   * Key for accessing File Upload Violations (exceeding limit).
+   * File Upload Violations (exceeding limit).
    */
   FILE_UPLOAD_LIMIT = 'file_upload_limit',
+  /**
+   * Illegal Model Request (not available).
+   */
+  ILLEGAL_MODEL_REQUEST = 'illegal_model_request',
 }
 
 /**
@@ -355,11 +444,11 @@ export enum Constants {
   /**
    * Key for the app's version.
    */
-  VERSION = 'v0.6.9',
+  VERSION = 'v0.6.10',
   /**
    * Key for the Custom Config's version (librechat.yaml).
    */
-  CONFIG_VERSION = '1.0.3',
+  CONFIG_VERSION = '1.0.4',
   /**
    * Standard value for the first message's `parentMessageId` value, to indicate no parent exists.
    */

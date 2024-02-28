@@ -1,7 +1,8 @@
 // gptPlugins/initializeClient.spec.js
-const { PluginsClient } = require('~/app');
+const { EModelEndpoint } = require('librechat-data-provider');
+const { getUserKey } = require('~/server/services/UserService');
 const initializeClient = require('./initializeClient');
-const { getUserKey } = require('../../UserService');
+const { PluginsClient } = require('~/app');
 
 // Mock getUserKey since it's the only function we want to mock
 jest.mock('~/server/services/UserService', () => ({
@@ -12,6 +13,9 @@ jest.mock('~/server/services/UserService', () => ({
 describe('gptPlugins/initializeClient', () => {
   // Set up environment variables
   const originalEnvironment = process.env;
+  const app = {
+    locals: {},
+  };
 
   beforeEach(() => {
     jest.resetModules(); // Clears the cache
@@ -31,6 +35,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -55,6 +60,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'test-model' } };
@@ -72,6 +78,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -88,6 +95,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -107,12 +115,13 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      'API key not provided.',
+      `${EModelEndpoint.openAI} API key not provided.`,
     );
   });
 
@@ -128,6 +137,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: futureDate },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -147,6 +157,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: futureDate },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'test-model' } };
@@ -170,6 +181,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: expiresAt },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -186,6 +198,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: new Date(Date.now() + 10000).toISOString() },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -206,6 +219,7 @@ describe('gptPlugins/initializeClient', () => {
     const req = {
       body: { key: null },
       user: { id: '123' },
+      app,
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };

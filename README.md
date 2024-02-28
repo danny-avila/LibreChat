@@ -1,10 +1,10 @@
 <p align="center">
-  <a href="https://docs.librechat.ai">
+  <a href="https://librechat.ai">
     <img src="docs/assets/LibreChat.svg" height="256">
   </a>
-  <a href="https://docs.librechat.ai">
-    <h1 align="center">LibreChat</h1>
-  </a>
+  <h1 align="center">
+    <a href="https://librechat.ai">LibreChat</a>
+  </h1>
 </p>
 
 <p align="center">

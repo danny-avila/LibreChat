@@ -1,7 +1,7 @@
 ---
 title: ⚙️ Environment Variables
 description: Comprehensive guide for configuring your application's environment with the `.env` file. This document is your one-stop resource for understanding and customizing the environment variables that will shape your application's behavior in different contexts.
-weight: -11
+weight: -12
 ---
 
 # .env File Configuration
@@ -29,16 +29,6 @@ For more info see:
 ---
 
 ## Server Configuration
-
-### Customization
-- Here you can change the app title and footer
-- Uncomment to add a custom footer.
-    - Uncomment and make empty "" to remove the footer.
-
-```bash
-APP_TITLE=LibreChat
-CUSTOM_FOOTER="My custom footer"
-```
 
 ### Port
 
@@ -514,6 +504,13 @@ See detailed instructions here: **[Stable Diffusion](../../features/plugins/stab
 SD_WEBUI_URL=http://host.docker.internal:7860
 ```
 
+### Tavily
+Get your API key here: [https://tavily.com/#api](https://tavily.com/#api)
+
+```bash
+TAVILY_API_KEY=
+```
+
 #### WolframAlpha
 See detailed instructions here: **[Wolfram Alpha](../../features/plugins/wolfram.md)**
 
@@ -602,7 +599,10 @@ REGISTRATION_VIOLATION_SCORE=1
 CONCURRENT_VIOLATION_SCORE=1
 MESSAGE_VIOLATION_SCORE=1
 NON_BROWSER_VIOLATION_SCORE=20
+ILLEGAL_MODEL_REQ_SCORE=5
 ```
+
+> Note: Non-browser access and Illegal model requests are almost always nefarious as it means a 3rd party is attempting to access the server through an automated script.
 
 #### Login and registration rate limiting.
 - `LOGIN_MAX`: The max amount of logins allowed per IP per `LOGIN_WINDOW`
@@ -840,4 +840,51 @@ Mail address for from field. It is **REQUIRED** to set a value here (even if it'
 
 ```bash
 EMAIL_FROM=noreply@librechat.ai 
+```
+### UI
+
+- **Help and FAQ button:** 
+
+Empty or commented `HELP_AND_FAQ_URL`, button enabled
+
+`HELP_AND_FAQ_URL=https://example.com`, button enabled and goes to `https://example.com`
+
+`HELP_AND_FAQ_URL=/`, button disabled
+
+```bash
+HELP_AND_FAQ_URL=
+```
+
+- **App title and footer:**
+
+Uncomment to add a custom footer
+
+Uncomment and make empty "" to remove the footer
+
+```bash
+APP_TITLE=LibreChat
+CUSTOM_FOOTER="My custom footer"
+```
+
+- **Birthday Hat:** Give the AI Icon a Birthday Hat 🥳
+
+> Will show automatically on February 11th (LibreChat's birthday)
+ 
+> Set this to `false` to disable the birthday hat
+
+> Set to `true` to enable all the time.
+
+```bash
+SHOW_BIRTHDAY_ICON=true
+```
+
+### Other
+
+- **Redis:** Redis support is experimental, you may encounter some problems when using it. 
+
+> If using Redis, you should flush the cache after changing any LibreChat settings
+
+```bash
+REDIS_URI=
+USE_REDIS=
 ```

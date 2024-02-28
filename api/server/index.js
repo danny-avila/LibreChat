@@ -2,6 +2,7 @@ require('dotenv').config();
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
+const axios = require('axios');
 const express = require('express');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
@@ -11,6 +12,7 @@ const configureSocialLogins = require('./socialLogins');
 const { connectDb, indexSync } = require('~/lib/db');
 const AppService = require('./services/AppService');
 const noIndex = require('./middleware/noIndex');
+const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const routes = require('./routes');
@@ -21,6 +23,9 @@ const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
 
 const startServer = async () => {
+  if (typeof Bun !== 'undefined') {
+    axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
+  }
   await connectDb();
   logger.info('Connected to MongoDB');
   await indexSync();
@@ -53,7 +58,7 @@ const startServer = async () => {
   passport.use(await jwtLogin());
   passport.use(passportLogin());
 
-  if (ALLOW_SOCIAL_LOGIN?.toLowerCase() === 'true') {
+  if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     configureSocialLogins(app);
   }
 
