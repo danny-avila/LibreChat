@@ -171,11 +171,16 @@ export const configSchema = z.object({
 
 export type TCustomConfig = z.infer<typeof configSchema>;
 
-export enum KnownEndpoints {
-  mistral = 'mistral',
-  openrouter = 'openrouter',
-  groq = 'groq',
-}
+export const KnownEndpoints = {
+  mistral: 'mistral',
+  openrouter: 'openrouter',
+  groq: 'groq',
+  anyscale: 'anyscale',
+  fireworks: 'fireworks',
+  ollama: 'ollama',
+  perplexity: 'perplexity',
+  'together.ai': 'together.ai',
+} as const;
 
 export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.openAI,
