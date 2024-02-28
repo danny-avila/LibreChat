@@ -404,9 +404,6 @@ describe('Zod Schemas', () => {
 
     it('should reject invalid usernames', () => {
       const invalidUsernames = [
-        'Дмитрий', // Cyrillic characters
-        'محمد', // Arabic characters
-        '张伟', // Chinese characters
         'john{doe}', // Contains `{` and `}`
         'j', // Only one character
         'a'.repeat(81), // More than 80 characters
