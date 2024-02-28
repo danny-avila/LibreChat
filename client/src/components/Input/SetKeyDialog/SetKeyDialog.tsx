@@ -20,6 +20,7 @@ const endpointComponents = {
   [EModelEndpoint.custom]: CustomConfig,
   [EModelEndpoint.azureOpenAI]: OpenAIConfig,
   [EModelEndpoint.gptPlugins]: OpenAIConfig,
+  [EModelEndpoint.assistants]: OpenAIConfig,
   default: OtherConfig,
 };
 
@@ -28,6 +29,7 @@ const formSet: Set<string> = new Set([
   EModelEndpoint.custom,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.gptPlugins,
+  EModelEndpoint.assistants,
 ]);
 
 const EXPIRY = {
@@ -92,7 +94,10 @@ const SetKeyDialog = ({
       methods.handleSubmit((data) => {
         const isAzure = endpoint === EModelEndpoint.azureOpenAI;
         const isOpenAIBase =
-          endpoint === EModelEndpoint.openAI || isAzure || endpoint === EModelEndpoint.gptPlugins;
+          isAzure ||
+          endpoint === EModelEndpoint.openAI ||
+          endpoint === EModelEndpoint.gptPlugins ||
+          endpoint === EModelEndpoint.assistants;
         if (isAzure) {
           data.apiKey = 'n/a';
         }
