@@ -63,11 +63,11 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     endpointTokenConfig,
   };
 
-  const useUserKey = isUserProvided(CUSTOM_API_KEY);
-  const useUserURL = isUserProvided(CUSTOM_BASE_URL);
+  const userProvidesKey = isUserProvided(CUSTOM_API_KEY);
+  const userProvidesURL = isUserProvided(CUSTOM_BASE_URL);
 
   let userValues = null;
-  if (expiresAt && (useUserKey || useUserURL)) {
+  if (expiresAt && (userProvidesKey || userProvidesURL)) {
     checkUserKeyExpiry(
       expiresAt,
       `Your API values for ${endpoint} have expired. Please configure them again.`,
@@ -80,8 +80,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     }
   }
 
-  let apiKey = useUserKey ? userValues.apiKey : CUSTOM_API_KEY;
-  let baseURL = useUserURL ? userValues.baseURL : CUSTOM_BASE_URL;
+  let apiKey = userProvidesKey ? userValues.apiKey : CUSTOM_API_KEY;
+  let baseURL = userProvidesURL ? userValues.baseURL : CUSTOM_BASE_URL;
 
   if (!apiKey) {
     throw new Error(`${endpoint} API key not provided.`);
