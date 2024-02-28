@@ -10,7 +10,7 @@ import rehypeHighlight from 'rehype-highlight';
 import type { TMessage } from 'librechat-data-provider';
 import type { PluggableList } from 'unified';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
-import { langSubset, validateIframe, processLaTeX } from '~/utils';
+import { cn, langSubset, validateIframe, processLaTeX } from '~/utils';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
 
@@ -75,7 +75,7 @@ const Markdown = memo(({ content, message, showCursor }: TContentProps) => {
     return (
       <div className="absolute">
         <p className="relative">
-          <span className="result-thinking" />
+          <span className={cn(isSubmitting ? 'result-thinking' : '')} />
         </p>
       </div>
     );
