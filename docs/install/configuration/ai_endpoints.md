@@ -81,7 +81,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 - **Known:** icon provided, fetching list of models is recommended as API token rates and pricing used for token credit balances when models are fetched.
 
-- It's recommended, and for some models required, to use [`dropParams`](./custom_config.md#dropparams) to drop the `stop` as Openrouter models use a variety of stop tokens.
+- It's recommended, and for some models required, to use [`dropParams`](./custom_config.md#dropparams) to drop the `stop` parameter as Openrouter models use a variety of stop tokens.
 
 - **Known issue:** you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
 
