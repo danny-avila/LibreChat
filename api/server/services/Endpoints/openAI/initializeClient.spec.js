@@ -1,4 +1,4 @@
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, validateAzureGroups } = require('librechat-data-provider');
 const { getUserKey } = require('~/server/services/UserService');
 const initializeClient = require('./initializeClient');
 const { OpenAIClient } = require('~/app');
@@ -15,6 +15,69 @@ describe('initializeClient', () => {
   const app = {
     locals: {},
   };
+
+  const validAzureConfigs = [
+    {
+      group: 'librechat-westus',
+      apiKey: 'WESTUS_API_KEY',
+      instanceName: 'librechat-westus',
+      version: '2023-12-01-preview',
+      models: {
+        'gpt-4-vision-preview': {
+          deploymentName: 'gpt-4-vision-preview',
+          version: '2024-02-15-preview',
+        },
+        'gpt-3.5-turbo': {
+          deploymentName: 'gpt-35-turbo',
+        },
+        'gpt-3.5-turbo-1106': {
+          deploymentName: 'gpt-35-turbo-1106',
+        },
+        'gpt-4': {
+          deploymentName: 'gpt-4',
+        },
+        'gpt-4-1106-preview': {
+          deploymentName: 'gpt-4-1106-preview',
+        },
+      },
+    },
+    {
+      group: 'librechat-eastus',
+      apiKey: 'EASTUS_API_KEY',
+      instanceName: 'librechat-eastus',
+      deploymentName: 'gpt-4-turbo',
+      version: '2024-02-15-preview',
+      models: {
+        'gpt-4-turbo': true,
+      },
+      baseURL: 'https://eastus.example.com',
+      additionalHeaders: {
+        'x-api-key': 'x-api-key-value',
+      },
+    },
+    {
+      group: 'mistral-inference',
+      apiKey: 'AZURE_MISTRAL_API_KEY',
+      baseURL:
+        'https://Mistral-large-vnpet-serverless.region.inference.ai.azure.com/v1/chat/completions',
+      serverless: true,
+      models: {
+        'mistral-large': true,
+      },
+    },
+    {
+      group: 'llama-70b-chat',
+      apiKey: 'AZURE_LLAMA2_70B_API_KEY',
+      baseURL:
+        'https://Llama-2-70b-chat-qmvyb-serverless.region.inference.ai.azure.com/v1/chat/completions',
+      serverless: true,
+      models: {
+        'llama-70b-chat': true,
+      },
+    },
+  ];
+
+  const { modelNames, modelGroupMap, groupMap } = validateAzureGroups(validAzureConfigs);
 
   beforeEach(() => {
     jest.resetModules(); // Clears the cache
@@ -38,10 +101,10 @@ describe('initializeClient', () => {
     const res = {};
     const endpointOption = {};
 
-    const client = await initializeClient({ req, res, endpointOption });
+    const result = await initializeClient({ req, res, endpointOption });
 
-    expect(client.openAIApiKey).toBe('test-openai-api-key');
-    expect(client.client).toBeInstanceOf(OpenAIClient);
+    expect(result.openAIApiKey).toBe('test-openai-api-key');
+    expect(result.client).toBeInstanceOf(OpenAIClient);
   });
 
   test('should initialize client with Azure credentials when endpoint is azureOpenAI', async () => {
@@ -137,9 +200,7 @@ describe('initializeClient', () => {
     const res = {};
     const endpointOption = {};
 
-    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      'Your OpenAI API key has expired. Please provide your API key again.',
-    );
+    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(/Your OpenAI API/);
   });
 
   test('should throw an error if no API keys are provided in the environment', async () => {
@@ -180,7 +241,7 @@ describe('initializeClient', () => {
     process.env.OPENAI_API_KEY = 'user_provided';
 
     // Mock getUserKey to return the expected key
-    getUserKey.mockResolvedValue('test-user-provided-openai-api-key');
+    getUserKey.mockResolvedValue(JSON.stringify({ apiKey: 'test-user-provided-openai-api-key' }));
 
     // Call the initializeClient function
     const result = await initializeClient({ req, res, endpointOption });
@@ -205,8 +266,93 @@ describe('initializeClient', () => {
     // Mock getUserKey to return an invalid key
     getUserKey.mockResolvedValue(invalidKey);
 
+    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(/Your OpenAI API/);
+  });
+
+  test('should throw an error when user-provided values are not valid JSON', async () => {
+    process.env.OPENAI_API_KEY = 'user_provided';
+    const req = {
+      body: { key: new Date(Date.now() + 10000).toISOString(), endpoint: 'openAI' },
+      user: { id: '123' },
+      app,
+    };
+    const res = {};
+    const endpointOption = {};
+
+    // Mock getUserKey to return a non-JSON string
+    getUserKey.mockResolvedValue('not-a-json');
+
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      /Your OpenAI API key has expired/,
+      /Invalid JSON provided for openAI user values/,
     );
+  });
+
+  test('should initialize client correctly for Azure OpenAI with valid configuration', async () => {
+    const req = {
+      body: {
+        key: null,
+        endpoint: EModelEndpoint.azureOpenAI,
+        model: modelNames[0],
+      },
+      user: { id: '123' },
+      app: {
+        locals: {
+          [EModelEndpoint.azureOpenAI]: {
+            modelNames,
+            modelGroupMap,
+            groupMap,
+          },
+        },
+      },
+    };
+    const res = {};
+    const endpointOption = {};
+
+    const client = await initializeClient({ req, res, endpointOption });
+    expect(client.client.options.azure).toBeDefined();
+  });
+
+  test('should initialize client with default options when certain env vars are not set', async () => {
+    delete process.env.DEBUG_OPENAI;
+    delete process.env.OPENAI_SUMMARIZE;
+
+    const req = {
+      body: { key: null, endpoint: 'openAI' },
+      user: { id: '123' },
+      app,
+    };
+    const res = {};
+    const endpointOption = {};
+
+    const client = await initializeClient({ req, res, endpointOption });
+
+    expect(client.client.options.debug).toBe(false);
+    expect(client.client.options.contextStrategy).toBe(null);
+  });
+
+  test('should correctly use user-provided apiKey and baseURL when provided', async () => {
+    process.env.OPENAI_API_KEY = 'user_provided';
+    process.env.OPENAI_REVERSE_PROXY = 'user_provided';
+    const req = {
+      body: {
+        key: new Date(Date.now() + 10000).toISOString(),
+        endpoint: 'openAI',
+      },
+      user: {
+        id: '123',
+      },
+      app,
+    };
+    const res = {};
+    const endpointOption = {};
+
+    getUserKey.mockResolvedValue(
+      JSON.stringify({ apiKey: 'test', baseURL: 'https://user-provided-url.com' }),
+    );
+
+    const result = await initializeClient({ req, res, endpointOption });
+
+    expect(result.openAIApiKey).toBe('test');
+    expect(result.client.options.reverseProxyUrl).toBe('https://user-provided-url.com');
   });
 });

@@ -20,6 +20,7 @@ const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService')
  * @param {boolean} [params.azure=false] - Whether to fetch models from Azure.
  * @param {boolean} [params.userIdQuery=false] - Whether to send the user ID as a query parameter.
  * @param {boolean} [params.createTokenConfig=true] - Whether to create a token configuration from the API response.
+ * @param {string} [params.tokenKey] - The cache key to save the token configuration. Uses `name` if omitted.
  * @returns {Promise<string[]>} A promise that resolves to an array of model identifiers.
  * @async
  */
@@ -31,6 +32,7 @@ const fetchModels = async ({
   azure = false,
   userIdQuery = false,
   createTokenConfig = true,
+  tokenKey,
 }) => {
   let models = [];
 
@@ -70,7 +72,7 @@ const fetchModels = async ({
     if (validationResult.success && createTokenConfig) {
       const endpointTokenConfig = processModelData(input);
       const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
-      await cache.set(name, endpointTokenConfig);
+      await cache.set(tokenKey ?? name, endpointTokenConfig);
     }
     models = input.data.map((item) => item.id);
   } catch (error) {
