@@ -76,7 +76,12 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     !endpointConfig.tokenConfig && (userProvidesKey || userProvidesURL)
       ? `${endpoint}:${req.user.id}`
       : endpoint;
-  let endpointTokenConfig = !endpointConfig.tokenConfig && (await cache.get(tokenKey));
+
+  let endpointTokenConfig =
+    !endpointConfig.tokenConfig &&
+    FetchTokenConfig[endpoint.toLowerCase()] &&
+    (await cache.get(tokenKey));
+
   if (
     FetchTokenConfig[endpoint.toLowerCase()] &&
     endpointConfig &&
