@@ -97,11 +97,16 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
   const cache = getLogStores(CacheKeys.ABORT_KEYS);
   const cacheKey = `${req.user.id}:${conversationId}`;
 
+  /** @type {Run | undefined} - The completed run, undefined if incomplete */
+  let completedRun;
+
   const handleError = async (error) => {
     if (error.message === 'Run cancelled') {
       return res.end();
     }
-    if (error.message === 'Request closed') {
+    if (error.message === 'Request closed' && completedRun) {
+      return;
+    } else if (error.message === 'Request closed') {
       logger.debug('[/assistants/chat/] Request aborted on close');
     }
 
@@ -161,7 +166,9 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
   try {
     res.on('close', async () => {
-      await handleError(new Error('Request closed'));
+      if (!completedRun) {
+        await handleError(new Error('Request closed'));
+      }
     });
 
     if (convoId && !_thread_id) {
@@ -322,6 +329,8 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       });
     }
 
+    completedRun = response.run;
+
     /** @type {ResponseMessage} */
     const responseMessage = {
       ...openai.responseMessage,
@@ -367,7 +376,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
     if (!response.run.usage) {
       await sleep(3000);
-      const completedRun = await openai.beta.threads.runs.retrieve(thread_id, run.id);
+      completedRun = await openai.beta.threads.runs.retrieve(thread_id, run.id);
       if (completedRun.usage) {
         await recordUsage({
           ...completedRun.usage,

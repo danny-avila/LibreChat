@@ -7,12 +7,42 @@ const {
   checkUserKeyExpiry,
 } = require('~/server/services/UserService');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
+const { isUserProvided } = require('~/server/utils');
 
 const initializeClient = async ({ req, res, endpointOption, initAppClient = false }) => {
   const { PROXY, OPENAI_ORGANIZATION, ASSISTANTS_API_KEY, ASSISTANTS_BASE_URL } = process.env;
 
+  const userProvidesKey = isUserProvided(ASSISTANTS_API_KEY);
+  const userProvidesURL = isUserProvided(ASSISTANTS_BASE_URL);
+
+  let userValues = null;
+  if (userProvidesKey || userProvidesURL) {
+    const expiresAt = await getUserKeyExpiry({
+      userId: req.user.id,
+      name: EModelEndpoint.assistants,
+    });
+    checkUserKeyExpiry(
+      expiresAt,
+      'Your Assistants API key has expired. Please provide your API key again.',
+    );
+    userValues = await getUserKey({ userId: req.user.id, name: EModelEndpoint.assistants });
+    try {
+      userValues = JSON.parse(userValues);
+    } catch (e) {
+      throw new Error(
+        'Invalid JSON provided for Assistants API user values. Please provide them again.',
+      );
+    }
+  }
+
+  let apiKey = userProvidesKey ? userValues.apiKey : ASSISTANTS_API_KEY;
+  let baseURL = userProvidesURL ? userValues.baseURL : ASSISTANTS_BASE_URL;
+
+  if (!apiKey) {
+    throw new Error('Assistants API key not provided. Please provide it again.');
+  }
+
   const opts = {};
-  const baseURL = ASSISTANTS_BASE_URL ?? null;
 
   if (baseURL) {
     opts.baseURL = baseURL;
@@ -24,29 +54,6 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
 
   if (OPENAI_ORGANIZATION) {
     opts.organization = OPENAI_ORGANIZATION;
-  }
-
-  const credentials = ASSISTANTS_API_KEY;
-
-  const isUserProvided = credentials === 'user_provided';
-
-  let userKey = null;
-  if (isUserProvided) {
-    const expiresAt = await getUserKeyExpiry({
-      userId: req.user.id,
-      name: EModelEndpoint.assistants,
-    });
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your Assistants API key has expired. Please provide your API key again.',
-    );
-    userKey = await getUserKey({ userId: req.user.id, name: EModelEndpoint.assistants });
-  }
-
-  let apiKey = isUserProvided ? userKey : credentials;
-
-  if (!apiKey) {
-    throw new Error(`${EModelEndpoint.assistants} API key not provided.`);
   }
 
   /** @type {OpenAIClient} */

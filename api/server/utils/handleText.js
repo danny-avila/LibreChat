@@ -172,6 +172,27 @@ function isEnabled(value) {
  */
 const isUserProvided = (value) => value === 'user_provided';
 
+/**
+ * Generate the configuration for a given key and base URL.
+ * @param {string} key
+ * @param {string} baseURL
+ * @returns {boolean | { userProvide: boolean, userProvideURL?: boolean }}
+ */
+function generateConfig(key, baseURL) {
+  if (!key) {
+    return false;
+  }
+
+  /** @type {{ userProvide: boolean, userProvideURL?: boolean }} */
+  const config = { userProvide: isUserProvided(key) };
+
+  if (baseURL) {
+    config.userProvideURL = isUserProvided(baseURL);
+  }
+
+  return config;
+}
+
 module.exports = {
   createOnProgress,
   isEnabled,
@@ -180,4 +201,5 @@ module.exports = {
   formatAction,
   addSpaceIfNeeded,
   isUserProvided,
+  generateConfig,
 };
