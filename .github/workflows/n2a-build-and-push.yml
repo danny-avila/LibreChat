@@ -27,9 +27,9 @@ jobs:
 
             - name: build and push docker container
               run: |
-                docker build . -t ${{ env.ACR_HOST }}/librechat:n2a.${{ github.sha }}
-                docker push ${{ env.ACR_HOST }}/librechat:n2a.${{ github.sha }}
+                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}
+                docker push ${{ env.ACR_HOST }}/paychex/librechat:n2a.${{ github.sha }}
 
-                docker build . -t ${{ env.ACR_HOST }}/librechat:n2a.latest
-                docker push ${{ env.ACR_HOST }}/librechat:n2a.latest
+                docker build . -t ${{ env.ACR_HOST }}/paychex/librechat:n2a.latest
+                docker push ${{ env.ACR_HOST }}/paychex/librechat:n2a.latest
                 
