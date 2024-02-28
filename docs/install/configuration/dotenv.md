@@ -106,6 +106,15 @@ UID=1000
 GID=1000
 ```
 
+### librechat.yaml path
+Set an alternative path for the LibreChat config file
+
+> Note: leave commented out to have LibreChat look for the config file in the root folder (default behavior)
+
+```sh
+CONFIG_PATH="/alternative/path/to/librechat.yaml"
+```
+
 ## Endpoints
 In this section you can configure the endpoints and models selection, their API keys, and the proxy and reverse proxy settings for the endpoints that support it. 
 
@@ -116,6 +125,20 @@ In this section you can configure the endpoints and models selection, their API 
 ```bash
 ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
 PROXY=
+```
+
+### Known Endpoints - librechat.yaml
+- see: [AI Endpoints](./ai_endpoints.md)
+- see also: [Custom Configuration](./custom_config.md)
+
+```sh
+GROQ_API_KEY=
+MISTRAL_API_KEY=
+OPENROUTER_KEY=
+ANYSCALE_API_KEY=
+FIREWORKS_API_KEY=
+PERPLEXITY_API_KEY=
+TOGETHERAI_API_KEY=
 ```
 
 ### Anthropic
