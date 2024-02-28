@@ -42,27 +42,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     throw new Error(`Missing Base URL for ${endpoint}.`);
   }
 
-  const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
-  let endpointTokenConfig = await cache.get(endpoint);
-  if (endpointConfig && endpointConfig.models.fetch && !endpointTokenConfig) {
-    await fetchModels({ apiKey: CUSTOM_API_KEY, baseURL: CUSTOM_BASE_URL, name: endpoint });
-    endpointTokenConfig = await cache.get(endpoint);
-  }
-
-  const customOptions = {
-    headers: resolvedHeaders,
-    addParams: endpointConfig.addParams,
-    dropParams: endpointConfig.dropParams,
-    titleConvo: endpointConfig.titleConvo,
-    titleModel: endpointConfig.titleModel,
-    forcePrompt: endpointConfig.forcePrompt,
-    summaryModel: endpointConfig.summaryModel,
-    modelDisplayLabel: endpointConfig.modelDisplayLabel,
-    titleMethod: endpointConfig.titleMethod ?? 'completion',
-    contextStrategy: endpointConfig.summarize ? 'summarize' : null,
-    endpointTokenConfig,
-  };
-
   const userProvidesKey = isUserProvided(CUSTOM_API_KEY);
   const userProvidesURL = isUserProvided(CUSTOM_BASE_URL);
 
@@ -90,6 +69,27 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   if (!baseURL) {
     throw new Error(`${endpoint} Base URL not provided.`);
   }
+
+  const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
+  let endpointTokenConfig = await cache.get(endpoint);
+  if (endpointConfig && endpointConfig.models.fetch && !endpointTokenConfig) {
+    await fetchModels({ apiKey, baseURL, name: endpoint });
+    endpointTokenConfig = await cache.get(endpoint);
+  }
+
+  const customOptions = {
+    headers: resolvedHeaders,
+    addParams: endpointConfig.addParams,
+    dropParams: endpointConfig.dropParams,
+    titleConvo: endpointConfig.titleConvo,
+    titleModel: endpointConfig.titleModel,
+    forcePrompt: endpointConfig.forcePrompt,
+    summaryModel: endpointConfig.summaryModel,
+    modelDisplayLabel: endpointConfig.modelDisplayLabel,
+    titleMethod: endpointConfig.titleMethod ?? 'completion',
+    contextStrategy: endpointConfig.summarize ? 'summarize' : null,
+    endpointTokenConfig,
+  };
 
   const clientOptions = {
     reverseProxyUrl: baseURL ?? null,
