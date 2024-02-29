@@ -624,7 +624,7 @@ class OpenAIClient extends BaseClient {
       const { finish_reason } = streamResult.choices[0];
       opts.addMetadata({ finish_reason });
     }
-    return reply.trim();
+    return (reply ?? '').trim();
   }
 
   initializeLLM({
