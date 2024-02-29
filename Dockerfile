@@ -7,7 +7,8 @@ WORKDIR /app
 # Allow mounting of these files, which have no default
 # values.
 RUN touch .env
-RUN npm ci
+RUN apk --no-cache add curl && \
+    npm install
 
 # React client build
 ENV NODE_OPTIONS="--max-old-space-size=2048"
