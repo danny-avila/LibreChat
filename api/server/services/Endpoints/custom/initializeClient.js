@@ -1,10 +1,16 @@
-const { EModelEndpoint } = require('librechat-data-provider');
+const {
+  CacheKeys,
+  envVarRegex,
+  EModelEndpoint,
+  FetchTokenConfig,
+  extractEnvVariable,
+} = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { isUserProvided, extractEnvVariable } = require('~/server/utils');
-const getCustomConfig = require('~/cache/getCustomConfig');
+const getCustomConfig = require('~/server/services/Config/getCustomConfig');
+const { fetchModels } = require('~/server/services/ModelService');
+const getLogStores = require('~/cache/getLogStores');
+const { isUserProvided } = require('~/server/utils');
 const { OpenAIClient } = require('~/app');
-
-const envVarRegex = /^\${(.+)}$/;
 
 const { PROXY } = process.env;
 
@@ -37,24 +43,11 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     throw new Error(`Missing Base URL for ${endpoint}.`);
   }
 
-  const customOptions = {
-    headers: resolvedHeaders,
-    addParams: endpointConfig.addParams,
-    dropParams: endpointConfig.dropParams,
-    titleConvo: endpointConfig.titleConvo,
-    titleModel: endpointConfig.titleModel,
-    forcePrompt: endpointConfig.forcePrompt,
-    summaryModel: endpointConfig.summaryModel,
-    modelDisplayLabel: endpointConfig.modelDisplayLabel,
-    titleMethod: endpointConfig.titleMethod ?? 'completion',
-    contextStrategy: endpointConfig.summarize ? 'summarize' : null,
-  };
-
-  const useUserKey = isUserProvided(CUSTOM_API_KEY);
-  const useUserURL = isUserProvided(CUSTOM_BASE_URL);
+  const userProvidesKey = isUserProvided(CUSTOM_API_KEY);
+  const userProvidesURL = isUserProvided(CUSTOM_BASE_URL);
 
   let userValues = null;
-  if (expiresAt && (useUserKey || useUserURL)) {
+  if (expiresAt && (userProvidesKey || userProvidesURL)) {
     checkUserKeyExpiry(
       expiresAt,
       `Your API values for ${endpoint} have expired. Please configure them again.`,
@@ -67,8 +60,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     }
   }
 
-  let apiKey = useUserKey ? userValues.apiKey : CUSTOM_API_KEY;
-  let baseURL = useUserURL ? userValues.baseURL : CUSTOM_BASE_URL;
+  let apiKey = userProvidesKey ? userValues.apiKey : CUSTOM_API_KEY;
+  let baseURL = userProvidesURL ? userValues.baseURL : CUSTOM_BASE_URL;
 
   if (!apiKey) {
     throw new Error(`${endpoint} API key not provided.`);
@@ -77,6 +70,41 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   if (!baseURL) {
     throw new Error(`${endpoint} Base URL not provided.`);
   }
+
+  const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
+  const tokenKey =
+    !endpointConfig.tokenConfig && (userProvidesKey || userProvidesURL)
+      ? `${endpoint}:${req.user.id}`
+      : endpoint;
+
+  let endpointTokenConfig =
+    !endpointConfig.tokenConfig &&
+    FetchTokenConfig[endpoint.toLowerCase()] &&
+    (await cache.get(tokenKey));
+
+  if (
+    FetchTokenConfig[endpoint.toLowerCase()] &&
+    endpointConfig &&
+    endpointConfig.models.fetch &&
+    !endpointTokenConfig
+  ) {
+    await fetchModels({ apiKey, baseURL, name: endpoint, user: req.user.id, tokenKey });
+    endpointTokenConfig = await cache.get(tokenKey);
+  }
+
+  const customOptions = {
+    headers: resolvedHeaders,
+    addParams: endpointConfig.addParams,
+    dropParams: endpointConfig.dropParams,
+    titleConvo: endpointConfig.titleConvo,
+    titleModel: endpointConfig.titleModel,
+    forcePrompt: endpointConfig.forcePrompt,
+    summaryModel: endpointConfig.summaryModel,
+    modelDisplayLabel: endpointConfig.modelDisplayLabel,
+    titleMethod: endpointConfig.titleMethod ?? 'completion',
+    contextStrategy: endpointConfig.summarize ? 'summarize' : null,
+    endpointTokenConfig,
+  };
 
   const clientOptions = {
     reverseProxyUrl: baseURL ?? null,

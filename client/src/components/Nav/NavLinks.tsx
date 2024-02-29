@@ -1,13 +1,15 @@
-import { Download } from 'lucide-react';
-import { useRecoilValue } from 'recoil';
-import { Fragment, useState, memo } from 'react';
 import { useLocation } from 'react-router-dom';
+import { Fragment, useState, memo } from 'react';
+import { Download, FileText } from 'lucide-react';
 import { Menu, Transition } from '@headlessui/react';
+import { useRecoilValue, useRecoilState } from 'recoil';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TConversation } from 'librechat-data-provider';
+import FilesView from '~/components/Chat/Input/Files/FilesView';
+import { useAuthContext } from '~/hooks/AuthContext';
+import useAvatar from '~/hooks/Messages/useAvatar';
 import { ExportModal } from './ExportConversation';
 import { LinkIcon, GearIcon } from '~/components';
-import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import NavLink from './NavLink';
@@ -27,10 +29,14 @@ function NavLinks() {
   const [showExports, setShowExports] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
 
-  let conversation;
   const activeConvo = useRecoilValue(store.conversationByIndex(0));
   const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
+
+  const avatarSrc = useAvatar(user);
+
+  let conversation: TConversation | null | undefined;
   if (location.state?.from?.pathname.includes('/chat')) {
     conversation = globalConvo;
   } else {
@@ -72,16 +78,7 @@ function NavLinks() {
             >
               <div className="-ml-0.9 -mt-0.8 h-8 w-7 flex-shrink-0">
                 <div className="relative flex">
-                  <img
-                    className="rounded-full"
-                    src={
-                      user?.avatar ||
-                      `https://api.dicebear.com/6.x/initials/svg?seed=${
-                        user?.name || 'User'
-                      }&fontFamily=Verdana&fontSize=36`
-                    }
-                    alt=""
-                  />
+                  <img className="rounded-full" src={user?.avatar || avatarSrc} alt="" />
                 </div>
               </div>
               <div
@@ -122,6 +119,32 @@ function NavLinks() {
                     clickHandler={() => setShowSettings(true)}
                   />
                 </Menu.Item>
+                <Menu.Item as="div">
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    svg={() => <FileText className="icon-md" />}
+                    text="My Files"
+                    clickHandler={() => setShowFiles(true)}
+                  />
+                </Menu.Item>
+                {startupConfig?.helpAndFaqURL !== '/' && (
+                  <Menu.Item as="div">
+                    <NavLink
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      svg={() => <LinkIcon />}
+                      text={localize('com_nav_help_faq')}
+                      clickHandler={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
+                    />
+                  </Menu.Item>
+                )}
+                <Menu.Item as="div">
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                    svg={() => <GearIcon className="icon-md" />}
+                    text={localize('com_nav_settings')}
+                    clickHandler={() => setShowSettings(true)}
+                  />
+                </Menu.Item>
                 <div className="my-1 h-px bg-white/20" role="none" />
                 <Menu.Item as="div">
                   <Logout />
@@ -134,6 +157,7 @@ function NavLinks() {
       {showExports && (
         <ExportModal open={showExports} onOpenChange={setShowExports} conversation={conversation} />
       )}
+      {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
       {showProfile && <Profile isOpen={showProfile} setIsOpen={setShowProfile} user={user} />}
     </>

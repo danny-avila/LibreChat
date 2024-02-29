@@ -1,6 +1,7 @@
 export enum QueryKeys {
   messages = 'messages',
   allConversations = 'allConversations',
+  searchConversations = 'searchConversations',
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   user = 'user',
@@ -22,13 +23,20 @@ export enum QueryKeys {
   publicConversatons = 'publicConversatons',
   endpointsConfigOverride = 'endpointsConfigOverride',
   files = 'files',
+  fileConfig = 'fileConfig',
+  tools = 'tools',
+  actions = 'actions',
+  assistantDocs = 'assistantDocs',
 }
 
 export enum MutationKeys {
-  imageUpload = 'imageUpload',
+  fileUpload = 'fileUpload',
   fileDelete = 'fileDelete',
   updatePreset = 'updatePreset',
   deletePreset = 'deletePreset',
   logoutUser = 'logoutUser',
   avatarUpload = 'avatarUpload',
+  assistantAvatarUpload = 'assistantAvatarUpload',
+  updateAction = 'updateAction',
+  deleteAction = 'deleteAction',
 }

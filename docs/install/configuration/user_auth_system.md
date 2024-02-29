@@ -202,6 +202,9 @@ EMAIL_FROM_NAME="My LibreChat Server"
 - Paste your `Client ID` and `Client Secret` in the `.env` file:
 
 ```bash
+DOMAIN_CLIENT=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+DOMAIN_SERVER=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+
 DISCORD_CLIENT_ID=your_client_id
 DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_CALLBACK_URL=/oauth/discord/callback
@@ -209,7 +212,7 @@ DISCORD_CALLBACK_URL=/oauth/discord/callback
 
 - Save the `.env` file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 ---
 
@@ -279,6 +282,9 @@ DISCORD_CALLBACK_URL=/oauth/discord/callback
 - Copy the `App ID` and `App Secret` and paste them into the `.env` file as follows:
 
 ```bash
+DOMAIN_CLIENT=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+DOMAIN_SERVER=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+
 FACEBOOK_CLIENT_ID=your_app_id
 FACEBOOK_CLIENT_SECRET=your_app_secret
 FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
@@ -286,7 +292,7 @@ FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
 
 - Save the `.env` file.
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 ---
 
@@ -338,6 +344,9 @@ FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
 ![image](https://github.com/danny-avila/LibreChat/assets/138638445/aaf78840-48a9-44e1-9625-4109ed91d965)
 
 ```bash
+DOMAIN_CLIENT=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+DOMAIN_SERVER=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+
 GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
 GITHUB_CALLBACK_URL=/oauth/github/callback
@@ -345,7 +354,7 @@ GITHUB_CALLBACK_URL=/oauth/github/callback
 
 - Save the `.env` file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 ---
 
@@ -429,6 +438,9 @@ GITHUB_CALLBACK_URL=/oauth/github/callback
 - Add them to your `.env` file:
 
 ```bash
+DOMAIN_CLIENT=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+DOMAIN_SERVER=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+
 GOOGLE_CLIENT_ID=your_client_id
 GOOGLE_CLIENT_SECRET=your_client_secret
 GOOGLE_CALLBACK_URL=/oauth/github/callback
@@ -436,7 +448,7 @@ GOOGLE_CALLBACK_URL=/oauth/github/callback
 
 - Save the `.env` file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 ---
 
@@ -535,6 +547,9 @@ You can now make last minute changes, click on `Create user pool` when you're do
 6. Open the `.env` file at the root of your LibreChat folder and add the following variables with the values you copied:
 
 ```bash
+DOMAIN_CLIENT=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+DOMAIN_SERVER=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+
 OPENID_CLIENT_ID=Your client ID
 OPENID_CLIENT_SECRET=Your client secret
 OPENID_ISSUER=https://cognito-idp.[AWS REGION].amazonaws.com/[USER POOL ID]/.well-known/openid-configuration
@@ -544,7 +559,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 ```
 7. Save the .env file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 
 ---
@@ -563,6 +578,9 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 10. Open the .env file in your project folder and add the following variables with the values you copied:
 
 ```bash
+DOMAIN_CLIENT=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+DOMAIN_SERVER=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+
 OPENID_CLIENT_ID=Your Application (client) ID
 OPENID_CLIENT_SECRET=Your client secret
 OPENID_ISSUER=https://login.microsoftonline.com/Your Directory (tenant ID)/v2.0/
@@ -572,7 +590,7 @@ OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyon
 ```
 11. Save the .env file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 
 
 ---

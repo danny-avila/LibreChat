@@ -18,9 +18,9 @@ To enhance the security of your data, external ports for MongoDB are not exposed
 
 Mongo Express allows you to interact with your MongoDB database through your browser. To set it up, perform the following steps:
 
-1. Create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat.
-
-2. Copy the following contents into the `docker-compose.override.yml` file:
+### Setting up Mongo Express service
+- Create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` file for LibreChat.
+- Copy the following contents into the `docker-compose.override.yml` file:
 
 ```yaml
 version: '3.4'
@@ -39,39 +39,49 @@ services:
       - mongodb
     restart: always
 ```
+### Security Notice
+- Before using this configuration, replace `admin` and `password` with a unique username and password for accessing Mongo Express. These credentials should be strong and not easily guessable to prevent unauthorized access.
+- Optional: You can also add native authentication to your database. See the [`docker-compose.override` guide](../install/configuration/docker_override.md#mongodb-authentication) for instructions on how to do so.
+    - If utilizing authentication, ensure the admin user has the "clusterAdmin" and "readAnyDatabase" permissions. These steps are detailed in the [docker-compose.override guide](../install/configuration/docker_override.md#step-1-creating-an-admin-user).
+    - After following the guide to authenticate MongoDB, you will need these variables under the environment section for mongo-express:
 
-3. **Security Notice:** Before using this configuration, replace `admin` and `password` with a unique username and password for accessing Mongo Express. These credentials should be strong and not easily guessable to prevent unauthorized access.
+    ```yaml
+        environment:
+          ME_CONFIG_MONGODB_SERVER: mongodb
+          ME_CONFIG_BASICAUTH_USERNAME: admin
+          ME_CONFIG_BASICAUTH_PASSWORD: password
+          # database authentication variables, using example credentials from guide
+          ME_CONFIG_MONGODB_URL: 'mongodb://adminUser:securePassword@mongodb:27017'
+          ME_CONFIG_MONGODB_ADMINUSERNAME: adminUser
+          ME_CONFIG_MONGODB_ADMINPASSWORD: securePassword
+    ```
 
-4. Save the `docker-compose.override.yml` file and run the following command from the directory where your `docker-compose.yml` file is located to start Mongo-Express along with your other Docker services:
+### Launching and accessing Mongo Express
+- Save the `docker-compose.override.yml` file and run the following command from the directory where your `docker-compose.yml` file is located to start Mongo-Express along with your other Docker services:
 
 ```
-docker-compose up -d
+docker compose up -d
 ```
-
 This command will merge the `docker-compose.override.yml` with your `docker-compose.yml` and apply the configuration.
 
-5. Once Mongo-Express is up and running, access it by navigating to `http://localhost:8081` in your web browser. You'll need to enter the username and password you specified for `ME_CONFIG_BASICAUTH_USERNAME` and `ME_CONFIG_BASICAUTH_PASSWORD`.
+- Once Mongo-Express is up and running, access it by navigating to `http://localhost:8081` in your web browser. You'll need to enter the username and password you specified for `ME_CONFIG_BASICAUTH_USERNAME` and `ME_CONFIG_BASICAUTH_PASSWORD`.
 
 ---
 
 ## Removing Mongo Express
-
 If you wish to remove Mongo-Express from your Docker environment, follow these straightforward steps:
+- Navigate to the directory containing your `docker-compose.yml` and `docker-compose.override.yml` files.
 
-1. Navigate to the directory containing your `docker-compose.yml` and `docker-compose.override.yml` files.
-
-2. Bring down the current Docker environment, which will stop and remove all running containers defined in the `docker-compose.yml` and `docker-compose.override.yml` files. Use the following command:
-
-```
-docker-compose down
+- Bring down the current Docker environment, which will stop and remove all running containers defined in the `docker-compose.yml` and `docker-compose.override.yml` files. Use the following command:
+```sh
+docker compose down
 ```
 
-3. Now you can either rename or delete the `docker-compose.override.yml` file, which contains the Mongo Express configuration.
+- Now you can either rename or delete the `docker-compose.override.yml` file, which contains the Mongo Express configuration.
 
-4. Finally, bring your Docker environment back up, which will now exclude Mongo Express:
-
+- Finally, bring your Docker environment back up, which will now exclude Mongo Express:
 ```
-docker-compose up -d
+docker compose up -d
 ```
 
-By following these steps, you will have successfully removed Mongo Express from your Docker environment. If you want to reinstate Mongo Express at a later time, you can either rename the backup file back to `docker-compose.override.yml` or recreate the original `docker-compose.override.yml` file with the Mongo Express configuration.
+> By following these steps, you will have successfully removed Mongo Express from your Docker environment. If you want to reinstate Mongo Express at a later time, you can either rename the backup file back to `docker-compose.override.yml` or recreate the original `docker-compose.override.yml` file with the Mongo Express configuration.

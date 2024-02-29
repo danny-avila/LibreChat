@@ -1,4 +1,6 @@
 // Italian phrases
+// file deepcode ignore NoHardcodedPasswords: No hardcoded values present in this file
+// file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
   com_ui_following_no_convo: 'Gli utenti che stai seguendo non hanno conversazioni pubbliche.',
@@ -33,6 +35,7 @@ export default {
     'Nuove conversazioni di default al pubblico. È possibile selezionare una conversazione dal menu di sinistra, e quindi impostare la conversazione come privato.',
   com_ui_examples: 'Esempi',
   com_ui_new_chat: 'Nuova Chat',
+  com_ui_happy_birthday: 'È il mio primo compleanno!',
   com_ui_example_quantum_computing: 'Spiega l\'informatica quantistica in termini semplici',
   com_ui_example_10_year_old_b_day:
     'Hai qualche idea creativa per il compleanno di un bambino di 10 anni?',
@@ -109,10 +112,10 @@ export default {
   com_auth_sign_up: 'Registrati',
   com_auth_sign_in: 'Accedi',
   com_auth_or: 'o',
-  com_auth_google_login: 'Accedi con Google',
-  com_auth_facebook_login: 'Accedi con Facebook',
-  com_auth_github_login: 'Accedi con Github',
-  com_auth_discord_login: 'Accedi con Discord',
+  com_auth_google_login: 'Continua con Google',
+  com_auth_facebook_login: 'Continua con Facebook',
+  com_auth_github_login: 'Continua con Github',
+  com_auth_discord_login: 'Continua con Discord',
   com_auth_email: 'Email',
   com_auth_email_required: 'L\'email è obbligatoria',
   com_auth_email_min_length: 'L\'email deve essere lunga almeno 6 caratteri',

@@ -1,23 +1,30 @@
 import { useParams } from 'react-router-dom';
-import { useDeleteConversationMutation } from 'librechat-data-provider/react-query';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import type { TMessage } from 'librechat-data-provider';
 import { useLocalize, useConversations, useConversation } from '~/hooks';
+import { useDeleteConversationMutation } from '~/data-provider';
 import { Dialog, DialogTrigger, Label } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { TrashIcon, CrossIcon } from '~/components/svg';
 
 export default function DeleteButton({ conversationId, renaming, retainView, title }) {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
   const { newConversation } = useConversation();
   const { refreshConversations } = useConversations();
   const { conversationId: currentConvoId } = useParams();
-  const deleteConvoMutation = useDeleteConversationMutation(conversationId);
+  const deleteConvoMutation = useDeleteConversationMutation();
 
   const confirmDelete = () => {
+    const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
+    const thread_id = messages?.[messages?.length - 1]?.thread_id;
+
     deleteConvoMutation.mutate(
-      { conversationId, source: 'button' },
+      { conversationId, thread_id, source: 'button' },
       {
         onSuccess: () => {
-          if (currentConvoId == conversationId) {
+          if (currentConvoId === conversationId) {
             newConversation();
           }
 

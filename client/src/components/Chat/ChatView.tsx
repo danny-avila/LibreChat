@@ -2,16 +2,13 @@ import { memo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
-import { useChatHelpers, useSSE } from '~/hooks';
-// import GenerationButtons from './Input/GenerationButtons';
+import { ChatContext, useFileMapContext } from '~/Providers';
 import MessagesView from './Messages/MessagesView';
-// import OptionsBar from './Input/OptionsBar';
-import { useGetFiles } from '~/data-provider';
-import { buildTree, mapFiles } from '~/utils';
+import { useChatHelpers, useSSE } from '~/hooks';
 import { Spinner } from '~/components/svg';
-import { ChatContext } from '~/Providers';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
+import { buildTree } from '~/utils';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
@@ -24,9 +21,7 @@ function ChatView({ index = 0 }: { index?: number }) {
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
   useSSE(submissionAtIndex);
 
-  const { data: fileMap } = useGetFiles({
-    select: mapFiles,
-  });
+  const fileMap = useFileMapContext();
 
   const { data: messagesTree = null, isLoading } = useGetMessagesByConvoId(conversationId ?? '', {
     select: (data) => {
@@ -40,7 +35,7 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   return (
     <ChatContext.Provider value={chatHelpers}>
-      <Presentation>
+      <Presentation useSidePanel={true}>
         {isLoading && conversationId !== 'new' ? (
           <div className="flex h-screen items-center justify-center">
             <Spinner className="opacity-0" />

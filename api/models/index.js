@@ -1,6 +1,7 @@
 const {
   getMessages,
   saveMessage,
+  recordMessage,
   updateMessage,
   deleteMessagesSince,
   deleteMessages,
@@ -9,6 +10,7 @@ const {
 } = require('./Message');
 const { getConvoTitle, getConvo, saveConvo, deleteConvos, likeConvo } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
+const { hashPassword, getUser, updateUser } = require('./userMethods');
 const {
   findFileById,
   createFile,
@@ -31,8 +33,13 @@ module.exports = {
   Balance,
   Transaction,
 
+  hashPassword,
+  updateUser,
+  getUser,
+
   getMessages,
   saveMessage,
+  recordMessage,
   updateMessage,
   deleteMessagesSince,
   deleteMessages,

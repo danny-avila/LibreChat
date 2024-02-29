@@ -1,7 +1,6 @@
 const partialRight = require('lodash/partialRight');
 const { sendMessage } = require('./streamResponse');
 const { getCitations, citeText } = require('./citations');
-const cursor = '<span className="result-streaming">█</span>';
 const citationRegex = /\[\^\d+?\^]/g;
 
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
@@ -51,7 +50,7 @@ const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   const sendIntermediateMessage = (res, payload, extraTokens = '') => {
     tokens += extraTokens;
     sendMessage(res, {
-      text: tokens?.length === 0 ? cursor : tokens,
+      text: tokens?.length === 0 ? '' : tokens,
       message: true,
       initial: i === 0,
       ...payload,
@@ -174,16 +173,24 @@ function isEnabled(value) {
 const isUserProvided = (value) => value === 'user_provided';
 
 /**
- * Extracts the value of an environment variable from a string.
- * @param {string} value - The value to be processed, possibly containing an env variable placeholder.
- * @returns {string} - The actual value from the environment variable or the original value.
+ * Generate the configuration for a given key and base URL.
+ * @param {string} key
+ * @param {string} baseURL
+ * @returns {boolean | { userProvide: boolean, userProvideURL?: boolean }}
  */
-function extractEnvVariable(value) {
-  const envVarMatch = value.match(/^\${(.+)}$/);
-  if (envVarMatch) {
-    return process.env[envVarMatch[1]] || value;
+function generateConfig(key, baseURL) {
+  if (!key) {
+    return false;
   }
-  return value;
+
+  /** @type {{ userProvide: boolean, userProvideURL?: boolean }} */
+  const config = { userProvide: isUserProvided(key) };
+
+  if (baseURL) {
+    config.userProvideURL = isUserProvided(baseURL);
+  }
+
+  return config;
 }
 
 module.exports = {
@@ -194,5 +201,5 @@ module.exports = {
   formatAction,
   addSpaceIfNeeded,
   isUserProvided,
-  extractEnvVariable,
+  generateConfig,
 };

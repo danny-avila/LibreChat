@@ -6,8 +6,9 @@ import store from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
 import {
   useLikeConversationMutation,
-  useUpdateConversationMutation,
+  // useUpdateConversationMutation,
 } from 'librechat-data-provider/react-query';
+import { useUpdateConversationMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 export default function MessageHeaderButtons({ conversationId, index = 0 }) {

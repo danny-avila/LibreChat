@@ -183,6 +183,15 @@ const createMeiliMongooseModel = function ({ index, attributesToIndex }) {
       if (object.conversationId && object.conversationId.includes('|')) {
         object.conversationId = object.conversationId.replace(/\|/g, '--');
       }
+
+      if (object.content && Array.isArray(object.content)) {
+        object.text = object.content
+          .filter((item) => item.type === 'text' && item.text && item.text.value)
+          .map((item) => item.text.value)
+          .join(' ');
+        delete object.content;
+      }
+
       return object;
     }
 

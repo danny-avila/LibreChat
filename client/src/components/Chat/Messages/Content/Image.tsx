@@ -9,6 +9,7 @@ const Image = ({
   altText,
   height,
   width,
+  placeholderDimensions,
 }: // n,
 // i,
 {
@@ -16,6 +17,10 @@ const Image = ({
   altText: string;
   height: number;
   width: number;
+  placeholderDimensions?: {
+    height: string;
+    width: string;
+  };
   // n: number;
   // i: number;
 }) => {
@@ -33,7 +38,9 @@ const Image = ({
   // const makeSquare = n >= 3 && i < 2;
 
   let placeholderHeight = '288px';
-  if (height > width) {
+  if (placeholderDimensions?.height && placeholderDimensions?.width) {
+    placeholderHeight = placeholderDimensions.height;
+  } else if (height > width) {
     placeholderHeight = '900px';
   } else if (height === width) {
     placeholderHeight = width + 'px';
@@ -49,6 +56,7 @@ const Image = ({
                 // loading="lazy"
                 alt={altText}
                 onLoad={handleImageLoad}
+                visibleByDefault={true}
                 className={cn(
                   'max-h-[900px] max-w-full opacity-100 transition-opacity duration-300',
                   // n >= 3 && i < 2 ? 'aspect-square object-cover' : '',
@@ -57,14 +65,14 @@ const Image = ({
                 src={imagePath}
                 style={{
                   height: isLoaded && minDisplayTimeElapsed ? 'auto' : placeholderHeight,
-                  width,
+                  width: placeholderDimensions?.width ?? width,
                   color: 'transparent',
                 }}
                 placeholder={
                   <div
                     style={{
                       height: isLoaded && minDisplayTimeElapsed ? 'auto' : placeholderHeight,
-                      width,
+                      width: placeholderDimensions?.width ?? width,
                     }}
                   />
                 }
@@ -73,7 +81,9 @@ const Image = ({
           </Dialog.Trigger>
         </div>
       </div>
-      <DialogImage src={imagePath} height={height} width={width} />
+      {isLoaded && minDisplayTimeElapsed && (
+        <DialogImage src={imagePath} height={height} width={width} />
+      )}
     </Dialog.Root>
   );
 };

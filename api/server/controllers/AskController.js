@@ -1,4 +1,4 @@
-const { getResponseSender } = require('librechat-data-provider');
+const { getResponseSender, Constants } = require('librechat-data-provider');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage, getConvoTitle, getConvo, getMessagesCount } = require('~/models');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
@@ -131,6 +131,20 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       }
     }
 
+    res.on('close', () => {
+      logger.debug('[AskController] Request closed');
+      if (!abortController) {
+        return;
+      } else if (abortController.signal.aborted) {
+        return;
+      } else if (abortController.requestCompleted) {
+        return;
+      }
+
+      abortController.abort();
+      logger.debug('[AskController] Request aborted on close');
+    });
+
     const messageOptions = {
       user,
       parentMessageId,
@@ -179,7 +193,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     await saveMessage(userMessage);
 
-    if (addTitle && parentMessageId === '00000000-0000-0000-0000-000000000000' && newConvo) {
+    if (addTitle && parentMessageId === Constants.NO_PARENT && newConvo) {
       addTitle(req, {
         text,
         response,

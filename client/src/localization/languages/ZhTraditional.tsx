@@ -3,6 +3,7 @@
 export default {
   com_ui_examples: '範例',
   com_ui_new_chat: '新對話',
+  com_ui_happy_birthday: '這是我的第一個生日！',
   com_ui_example_quantum_computing: '用簡單的方式解釋量子計算',
   com_ui_example_10_year_old_b_day: '有沒有創意十足的十歲生日派對點子？',
   com_ui_example_http_in_js: '如何在 JavaScript 中發起 HTTP 請求？',

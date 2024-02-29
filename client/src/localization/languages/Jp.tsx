@@ -1,8 +1,11 @@
-// English phrases
+// Japanese phrases
+// file deepcode ignore NoHardcodedPasswords: No hardcoded values present in this file
+// file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
   com_ui_examples: '例',
   com_ui_new_chat: '新規チャット',
+  com_ui_happy_birthday: '初めての誕生日です！',
   com_ui_example_quantum_computing: '量子コンピュータを簡潔に説明してください',
   com_ui_example_10_year_old_b_day: '10歳の誕生日で行うクリエイティブなアイデアはありますか？',
   com_ui_example_http_in_js: 'JavascriptでHTTPリクエストを作成するにはどうすればよいですか？',
@@ -14,6 +17,7 @@ export default {
   com_ui_limitation_incorrect_info: '誤った情報を生成することがあります',
   com_ui_limitation_harmful_biased: '有害な指示や偏った内容を生成する可能性があります',
   com_ui_limitation_limited_2021: '2021年以降の出来事に関しては知識に制限があります',
+  com_ui_experimental: 'Experimental',
   com_ui_input: '入力',
   com_ui_close: '閉じる',
   com_ui_model: 'モデル',
@@ -32,9 +36,11 @@ export default {
   com_ui_enter: 'Enter',
   com_ui_submit: '送信する',
   com_ui_upload_success: 'アップロード成功',
+  com_ui_upload_error: 'ファイルのアップロード中にエラーが発生しました。',
   com_ui_upload_invalid: '不正なファイルです',
   com_ui_cancel: 'キャンセル',
   com_ui_save: '保存',
+  com_ui_save_submit: '保存 & 送信',
   com_ui_copy_to_clipboard: 'クリップボードへコピー',
   com_ui_copied_to_clipboard: 'コピーしました',
   com_ui_regenerate: '再度 生成する',
@@ -50,6 +56,9 @@ export default {
   com_ui_delete: '削除',
   com_ui_delete_conversation: 'チャットを削除しますか？',
   com_ui_delete_conversation_confirm: 'このチャットは削除されます。',
+  com_ui_preview: 'プレビュー',
+  com_ui_upload: 'アップロード',
+  com_ui_connect: '接続',
   com_auth_error_login:
     '入力された情報ではログインできませんでした。認証情報を確認した上で再度お試しください。',
   com_auth_error_login_rl:
@@ -153,6 +162,10 @@ export default {
     '-2.0から2.0の値。正の値を入力すると、テキストの繰り返し頻度に基づいたペナルティを課し、文字通り「同じ文言」を繰り返す可能性を減少させる。',
   com_endpoint_openai_pres:
     '-2.0から2.0の値。正の値は入力すると、新規トークンの出現に基づいたペナルティを課し、新しいトピックについて話す可能性を高める。',
+  com_endpoint_openai_resend:
+    'これまでに添付した画像を全て再送信します。注意：トークン数が大幅に増加したり、多くの画像を添付するとエラーが発生する可能性があります。',
+  com_endpoint_openai_detail:
+    'Visionリクエストの解像度を選択します。"Low"はコストが安くて低解像度、"Highは"コストが高くて高解像度"、"Auto"は画像の解像度に基づいて自動的に選択します。',
   com_endpoint_openai_custom_name_placeholder: 'ChatGPTのカスタム名を設定する',
   com_endpoint_openai_prompt_prefix_placeholder:
     'システムメッセージに含める Custom Instructions。デフォルト: none',
@@ -168,6 +181,8 @@ export default {
   com_endpoint_frequency_penalty: '頻度によるペナルティ',
   com_endpoint_presence_penalty: '既存性によるペナルティ',
   com_endpoint_plug_use_functions: 'Functionsを使用',
+  com_endpoint_plug_resend_images: '画像の再送信',
+  com_endpoint_plug_image_detail: '画像の詳細',
   com_endpoint_plug_skip_completion: 'Skip Completion',
   com_endpoint_disabled_with_tools: 'disabled with tools',
   com_endpoint_disabled_with_tools_placeholder: 'Disabled with Tools Selected',
@@ -224,6 +239,12 @@ export default {
   com_endpoint_config_key_name_placeholder: 'API key を入力してください',
   com_endpoint_config_key_encryption: '鍵は暗号化されます。削除予定日:',
   com_endpoint_config_key_expiry: 'すでに有効期限切れです',
+  com_endpoint_config_click_here: 'ここをクリック',
+  com_endpoint_config_google_service_key: 'Google Service Account Key',
+  com_endpoint_config_google_cloud_platform: '(from Google Cloud Platform)',
+  com_endpoint_config_google_api_key: 'Google API Key',
+  com_endpoint_config_google_gemini_api: '(Gemini API)',
+  com_endpoint_config_google_api_info: 'Gemeni用のGenerative Language API keyを取得するには',
   com_endpoint_config_key_import_json_key: 'Service Account JSON Key をインポートする。',
   com_endpoint_config_key_import_json_key_success:
     'Service Account JSON Keyのインポートに成功しました。',
@@ -247,8 +268,17 @@ export default {
     '必ず「作成して続行」をクリックして、少なくとも「Vertex AI ユーザー」権限を与えてください。最後にここにインポートするJSONキーを作成してください。',
   com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'チャットを開いたときに最新まで自動でスクロール',
+  com_nav_modular_chat: '会話の途中でのエンドポイント切替を有効化',
+  com_nav_latex_parsing:
+    'メッセージ内の LaTeX の構文解析 (パフォーマンスに影響する可能性があります。)',
+  com_nav_profile_picture: 'プロフィール画像',
+  com_nav_change_picture: '画像を変更',
   com_nav_plugin_store: 'プラグインストア',
   com_nav_plugin_search: 'プラグイン検索',
+  com_show_agent_settings: 'エージェント設定を表示',
+  com_show_completion_settings: 'コンプリーション設定を表示',
+  com_hide_examples: '例を非表示',
+  com_show_examples: '例を表示',
   com_nav_plugin_auth_error:
     'このプラグインの認証中にエラーが発生しました。もう一度お試しください。',
   com_nav_export_filename: 'ファイル名',
@@ -279,5 +309,7 @@ export default {
   com_nav_settings: '設定',
   com_nav_search_placeholder: 'メッセージ検索',
   com_nav_setting_general: '一般',
+  com_nav_setting_beta: 'ベータ版の機能',
   com_nav_setting_data: 'データ管理',
+  com_nav_setting_account: 'アカウント',
 };

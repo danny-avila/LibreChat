@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { supportsBalanceCheck } = require('librechat-data-provider');
+const { supportsBalanceCheck, Constants } = require('librechat-data-provider');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
@@ -77,7 +77,7 @@ class BaseClient {
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
     const conversationId = opts.conversationId ?? crypto.randomUUID();
-    const parentMessageId = opts.parentMessageId ?? '00000000-0000-0000-0000-000000000000';
+    const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
     const userMessageId = opts.overrideParentMessageId ?? crypto.randomUUID();
     let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
     let head = isEdited ? responseMessageId : parentMessageId;
@@ -428,7 +428,10 @@ class BaseClient {
       await this.saveMessageToDatabase(userMessage, saveOptions, user);
     }
 
-    if (isEnabled(process.env.CHECK_BALANCE) && supportsBalanceCheck[this.options.endpoint]) {
+    if (
+      isEnabled(process.env.CHECK_BALANCE) &&
+      supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
+    ) {
       await checkBalance({
         req: this.options.req,
         res: this.options.res,
@@ -438,11 +441,14 @@ class BaseClient {
           amount: promptTokens,
           model: this.modelOptions.model,
           endpoint: this.options.endpoint,
+          endpointTokenConfig: this.options.endpointTokenConfig,
         },
       });
     }
 
     const completion = await this.sendCompletion(payload, opts);
+    this.abortController.requestCompleted = true;
+
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
@@ -549,7 +555,7 @@ class BaseClient {
    *
    * Each message object should have an 'id' or 'messageId' property and may have a 'parentMessageId' property.
    * The 'parentMessageId' is the ID of the message that the current message is a reply to.
-   * If 'parentMessageId' is not present, null, or is '00000000-0000-0000-0000-000000000000',
+   * If 'parentMessageId' is not present, null, or is Constants.NO_PARENT,
    * the message is considered a root message.
    *
    * @param {Object} options - The options for the function.
@@ -604,9 +610,7 @@ class BaseClient {
       }
 
       currentMessageId =
-        message.parentMessageId === '00000000-0000-0000-0000-000000000000'
-          ? null
-          : message.parentMessageId;
+        message.parentMessageId === Constants.NO_PARENT ? null : message.parentMessageId;
     }
 
     orderedMessages.reverse();

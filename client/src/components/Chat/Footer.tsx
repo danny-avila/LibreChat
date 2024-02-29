@@ -12,7 +12,7 @@ export default function Footer() {
         ) : (
           <>
             <a href="https://aitok.ai" target="_blank" rel="noreferrer" className="underline">
-              {config?.appTitle || 'AITok'} v0.6.6
+              {config?.appTitle || 'AITok'} v0.6.10
             </a>
             {' - '} {localize('com_ui_new_footer')}
           </>

@@ -1,18 +1,14 @@
-const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
-const { isUserProvided, extractEnvVariable } = require('~/server/utils');
-const loadCustomConfig = require('./loadCustomConfig');
-const { getLogStores } = require('~/cache');
+const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
+const { isUserProvided } = require('~/server/utils');
+const getCustomConfig = require('./getCustomConfig');
 
 /**
  * Load config endpoints from the cached configuration object
- * @function loadConfigEndpoints */
-async function loadConfigEndpoints() {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  let customConfig = await cache.get(CacheKeys.CUSTOM_CONFIG);
-
-  if (!customConfig) {
-    customConfig = await loadCustomConfig();
-  }
+ * @param {Express.Request} req - The request object
+ * @returns {Promise<TEndpointsConfig>} A promise that resolves to an object containing the endpoints configuration
+ */
+async function loadConfigEndpoints(req) {
+  const customConfig = await getCustomConfig();
 
   if (!customConfig) {
     return {};
@@ -46,6 +42,13 @@ async function loadConfigEndpoints() {
         iconURL,
       };
     }
+  }
+
+  if (req.app.locals[EModelEndpoint.azureOpenAI]) {
+    /** @type {Omit<TConfig, 'order'>} */
+    endpointsConfig[EModelEndpoint.azureOpenAI] = {
+      userProvide: false,
+    };
   }
 
   return endpointsConfig;

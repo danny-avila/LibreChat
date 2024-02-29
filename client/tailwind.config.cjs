@@ -10,10 +10,17 @@ module.exports = {
     //   'gpt-dark-gray': '#343541',
     // },
     fontFamily: {
-      sans: ['Söhne', 'sans-serif'],
-      mono: ['Söhne Mono', 'monospace'],
+      sans: ['Inter', 'sans-serif'],
+      mono: ['Roboto Mono', 'monospace'],
     },
+    // fontFamily: {
+    //   sans: ['Söhne', 'sans-serif'],
+    //   mono: ['Söhne Mono', 'monospace'],
+    // },
     extend: {
+      width: {
+        'authPageWidth': '370px',
+      },
       keyframes: {
         'accordion-down': {
           from: { height: 0 },
@@ -51,11 +58,13 @@ module.exports = {
           300: '#6dc8b9',
           400: '#41a79d',
           500: '#10a37f',
+          550: '#349072',
           600: '#126e6b',
           700: '#0a4f53',
           800: '#06373e',
           900: '#031f29',
         },
+        'brand-purple': '#ab68ff',
         'text-primary': 'var(--gray-800)',
         'text-secondary': 'var(--gray-600)',
         'text-tertiary': 'var(--gray-500)',

@@ -1,16 +1,19 @@
 import { useSearchQuery, useGetConversationsQuery } from 'librechat-data-provider/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TConversation, TSearchResults } from 'librechat-data-provider';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+import type { ConversationListResponse } from 'librechat-data-provider';
 import {
-  useAuthContext,
   useMediaQuery,
+  useAuthContext,
   useConversation,
-  useConversations,
   useLocalStorage,
+  useNavScrolling,
+  useConversations,
 } from '~/hooks';
+import { useSearchInfiniteQuery, useConversationsInfiniteQuery } from '~/data-provider';
 import { TooltipProvider, Tooltip } from '~/components/ui';
-import { Conversations, Pages } from '../Conversations';
+import { Conversations } from '~/components/Conversations';
 import { Spinner } from '~/components/svg';
 import SearchBar from './SearchBar';
 import NavToggle from './NavToggle';
@@ -32,15 +35,17 @@ import ProfileIcon from '../svg/UserIcon';
 import { useLocalize } from '~/hooks';
 
 export default function Nav({ navVisible, setNavVisible }) {
-  const [isToggleHovering, setIsToggleHovering] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
-  const [navWidth, setNavWidth] = useState('260px');
+  const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  // const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollPositionRef = useRef<number | null>(null);
   const localize = useLocalize();
+
+  const [navWidth, setNavWidth] = useState('260px');
+  const [isHovering, setIsHovering] = useState(false);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
+  const [isToggleHovering, setIsToggleHovering] = useState(false);
 
   useEffect(() => {
     if (isSmallScreen) {
@@ -50,31 +55,20 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   }, [isSmallScreen]);
 
-  const [conversations, setConversations] = useState<TConversation[]>([]);
-  // current page
   const [pageNumber, setPageNumber] = useState(1);
-  // total pages
-  const [pages, setPages] = useState(1);
+  const [showLoading, setShowLoading] = useState(false);
 
-  // data provider
-  const getConversationsQuery = useGetConversationsQuery(pageNumber + '', {
-    enabled: isAuthenticated,
-  });
-
-  // search
   const searchQuery = useRecoilValue(store.searchQuery);
   const isSearchEnabled = useRecoilValue(store.isSearchEnabled);
-  const isSearching = useRecoilValue(store.isSearching);
   const { newConversation, searchPlaceholderConversation } = useConversation();
 
-  // current conversation
-  const conversation = useRecoilValue(store.conversation);
-  const { conversationId } = conversation || {};
-  const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
-  const refreshConversationsHint = useRecoilValue(store.refreshConversationsHint);
   const { refreshConversations } = useConversations();
+  const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
 
-  const [isFetching, setIsFetching] = useState(false);
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
+    { pageNumber: pageNumber.toString() },
+    { enabled: isAuthenticated },
+  );
 
   const [refLink, setRefLink] = useState('');
   const [copied, setCopied] = useState(false);
@@ -83,18 +77,31 @@ export default function Nav({ navVisible, setNavVisible }) {
   const { userId } = useParams();
   const navigate = useNavigate();
 
-  const searchQueryFn = useSearchQuery(searchQuery, pageNumber + '', {
-    enabled: !!(!!searchQuery && searchQuery.length > 0 && isSearchEnabled && isSearching),
+  // const searchQueryFn = useSearchQuery(searchQuery, pageNumber + '', {
+  //   enabled: !!(!!searchQuery && searchQuery.length > 0 && isSearchEnabled && isSearching),
+  // });
+
+  const searchQueryRes = useSearchInfiniteQuery(
+    { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
+    { enabled: isAuthenticated && !!searchQuery.length },
+  );
+
+  const { containerRef, moveToTop } = useNavScrolling({
+    setShowLoading,
+    hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
+    fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
+    isFetchingNextPage: searchQuery ? searchQueryRes.isFetchingNextPage : isFetchingNextPage,
   });
 
-  const onSearchSuccess = useCallback((data: TSearchResults, expectedPage?: number) => {
+  const conversations = useMemo(
+    () =>
+      (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
+      [],
+    [data, searchQuery, searchQueryRes?.data],
+  );
+
+  const onSearchSuccess = useCallback(({ data }: { data: ConversationListResponse }) => {
     const res = data;
-    setConversations(res.conversations);
-    if (expectedPage) {
-      setPageNumber(expectedPage);
-    }
-    setPages(Number(res.pages));
-    setIsFetching(false);
     searchPlaceholderConversation();
     setSearchResultMessages(res.messages);
     /* disabled due recoil methods not recognized as state setters */
@@ -103,12 +110,10 @@ export default function Nav({ navVisible, setNavVisible }) {
 
   useEffect(() => {
     //we use isInitialLoading here instead of isLoading because query is disabled by default
-    if (searchQueryFn.isInitialLoading) {
-      setIsFetching(true);
-    } else if (searchQueryFn.data) {
-      onSearchSuccess(searchQueryFn.data);
+    if (searchQueryRes.data) {
+      onSearchSuccess({ data: searchQueryRes.data.pages[0] });
     }
-  }, [searchQueryFn.data, searchQueryFn.isInitialLoading, onSearchSuccess]);
+  }, [searchQueryRes.data, searchQueryRes.isInitialLoading, onSearchSuccess]);
 
   const clearSearch = () => {
     setPageNumber(1);
@@ -117,51 +122,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       newConversation();
     }
   };
-
-  const moveToTop = useCallback(() => {
-    const container = containerRef.current;
-    if (container) {
-      scrollPositionRef.current = container.scrollTop;
-    }
-  }, [containerRef, scrollPositionRef]);
-
-  const nextPage = async () => {
-    moveToTop();
-    setPageNumber(pageNumber + 1);
-  };
-
-  const previousPage = async () => {
-    moveToTop();
-    setPageNumber(pageNumber - 1);
-  };
-
-  useEffect(() => {
-    if (getConversationsQuery.data) {
-      if (isSearching) {
-        return;
-      }
-      let { conversations, pages } = getConversationsQuery.data;
-      pages = Number(pages);
-      if (pageNumber > pages) {
-        setPageNumber(pages);
-      } else {
-        if (!isSearching) {
-          conversations = conversations.sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-          );
-        }
-        setConversations(conversations);
-        setPages(pages);
-      }
-    }
-  }, [getConversationsQuery.isSuccess, getConversationsQuery.data, isSearching, pageNumber]);
-
-  useEffect(() => {
-    if (!isSearching) {
-      getConversationsQuery.refetch();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageNumber, conversationId, refreshConversationsHint]);
 
   const toggleNavVisible = () => {
     setNavVisible((prev: boolean) => !prev);
@@ -223,11 +183,6 @@ export default function Nav({ navVisible, setNavVisible }) {
     }
   };
 
-  const containerClasses =
-    getConversationsQuery.isLoading && pageNumber === 1
-      ? 'flex flex-col gap-2 text-gray-100 text-sm h-full justify-center items-center'
-      : 'flex flex-col gap-2 text-gray-100 text-sm';
-
   return (
     <TooltipProvider delayDuration={150}>
       <Tooltip>
@@ -245,95 +200,95 @@ export default function Nav({ navVisible, setNavVisible }) {
             <div className="flex h-full min-h-0 flex-col">
               <div
                 className={cn(
-                  'scrollbar-trigger relative flex h-full w-full flex-1 items-start border-white/20 transition-opacity',
+                  'flex h-full min-h-0 flex-col transition-opacity',
                   isToggleHovering && !isSmallScreen ? 'opacity-50' : 'opacity-100',
                 )}
               >
-                <nav className="relative flex h-full flex-1 flex-col space-y-1 p-2">
-                  <div className="mb-1 flex h-11 flex-row">
-                    <NewChat toggleNav={itemToggleNav} />
-                  </div>
-                  {isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
-                  <div
-                    className={`flex-1 flex-col overflow-y-auto ${
-                      isHovering ? '' : 'scrollbar-transparent'
-                    } border-b border-white/20`}
-                    onMouseEnter={() => setIsHovering(true)}
-                    onMouseLeave={() => setIsHovering(false)}
-                    ref={containerRef}
-                  >
-                    <div className={containerClasses}>
-                      {(getConversationsQuery.isLoading && pageNumber === 1) || isFetching ? (
-                        <Spinner />
-                      ) : (
-                        <Conversations
-                          conversations={conversations}
-                          moveToTop={moveToTop}
-                          toggleNav={itemToggleNav}
-                        />
+                <div
+                  className={cn(
+                    'scrollbar-trigger relative h-full w-full flex-1 items-start border-white/20',
+                  )}
+                >
+                  <nav className="flex h-full w-full flex-col px-3 pb-3.5">
+                    <div
+                      className={cn(
+                        '-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
+                        isHovering ? '' : 'scrollbar-transparent',
                       )}
-                      <Pages
-                        pageNumber={pageNumber}
-                        pages={pages}
-                        nextPage={nextPage}
-                        previousPage={previousPage}
-                        setPageNumber={setPageNumber}
+                      onMouseEnter={() => setIsHovering(true)}
+                      onMouseLeave={() => setIsHovering(false)}
+                      ref={containerRef}
+                    >
+                      <NewChat
+                        toggleNav={itemToggleNav}
+                        subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
+                      />
+                      <Conversations
+                        conversations={conversations}
+                        moveToTop={moveToTop}
+                        toggleNav={itemToggleNav}
+                      />
+                      <Spinner
+                        className={cn(
+                          'm-1 mx-auto mb-4 h-4 w-4',
+                          isFetchingNextPage || showLoading ? 'opacity-1' : 'opacity-0',
+                        )}
                       />
                     </div>
-                  </div>
-                  {user && (
+                    {user && (
+                      <NavLink
+                        className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                        // Add an SVG or icon for the Profile link here
+                        svg={() => <ProfileIcon />}
+                        text={localize('com_ui_homepage')}
+                        clickHandler={openProfileHandler}
+                      />
+                    )}
                     <NavLink
                       className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                      // Add an SVG or icon for the Profile link here
-                      svg={() => <ProfileIcon />}
-                      text={localize('com_ui_homepage')}
-                      clickHandler={openProfileHandler}
+                      svg={() => <HomeIcon />}
+                      text={localize('com_ui_recommendation')}
+                      clickHandler={user ? openHomepageHandler : navigateToRegister}
                     />
-                  )}
-                  <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                    svg={() => <HomeIcon />}
-                    text={localize('com_ui_recommendation')}
-                    clickHandler={user ? openHomepageHandler : navigateToRegister}
-                  />
-                  <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                    svg={() => <NotebookIcon />}
-                    text={localize('com_ui_writing_assistant')}
-                    clickHandler={user ? openWritingAssistantHandler : navigateToRegister}
-                  />
-                  <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                    svg={() => <ComputerIcon />}
-                    text={localize('com_ui_coding_assistant')}
-                    clickHandler={user ? openCodingAssistantHandler : navigateToRegister}
-                  />
-                  <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                    svg={() => <LightBulbIcon />}
-                    text={localize('com_ui_ask_me_anything')}
-                    clickHandler={user ? openAskMeAnythingHandler : navigateToRegister}
-                  />
-                  <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                    svg={() => <LeaderboardIcon />}
-                    text={localize('com_ui_referrals_leaderboard')}
-                    clickHandler={user ? openLeaderboardHandler : navigateToRegister}
-                  />
-                  {window.location.hostname !== 'drhu.aitok.ai' && (
                     <NavLink
                       className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
-                      svg={() => (copied ? <CheckMark /> : <Clipboard />)}
-                      text={
-                        copied
-                          ? localize('com_ui_copied_success')
-                          : localize('com_ui_copy_invitation_link')
-                      }
-                      clickHandler={user ? copyLinkHandler : navigateToRegister}
+                      svg={() => <NotebookIcon />}
+                      text={localize('com_ui_writing_assistant')}
+                      clickHandler={user ? openWritingAssistantHandler : navigateToRegister}
                     />
-                  )}
-                  <NavLinks />
-                </nav>
+                    <NavLink
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      svg={() => <ComputerIcon />}
+                      text={localize('com_ui_coding_assistant')}
+                      clickHandler={user ? openCodingAssistantHandler : navigateToRegister}
+                    />
+                    <NavLink
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      svg={() => <LightBulbIcon />}
+                      text={localize('com_ui_ask_me_anything')}
+                      clickHandler={user ? openAskMeAnythingHandler : navigateToRegister}
+                    />
+                    <NavLink
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      svg={() => <LeaderboardIcon />}
+                      text={localize('com_ui_referrals_leaderboard')}
+                      clickHandler={user ? openLeaderboardHandler : navigateToRegister}
+                    />
+                    {window.location.hostname !== 'drhu.aitok.ai' && (
+                      <NavLink
+                        className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                        svg={() => (copied ? <CheckMark /> : <Clipboard />)}
+                        text={
+                          copied
+                            ? localize('com_ui_copied_success')
+                            : localize('com_ui_copy_invitation_link')
+                        }
+                        clickHandler={user ? copyLinkHandler : navigateToRegister}
+                      />
+                    )}
+                    <NavLinks />
+                  </nav>
+                </div>
               </div>
             </div>
           </div>
@@ -343,6 +298,7 @@ export default function Nav({ navVisible, setNavVisible }) {
           setIsHovering={setIsToggleHovering}
           onToggle={toggleNavVisible}
           navVisible={navVisible}
+          className="fixed left-0 top-1/2 z-40"
         />
         <div className={`nav-mask${navVisible ? ' active' : ''}`} onClick={toggleNavVisible} />
       </Tooltip>

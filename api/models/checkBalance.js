@@ -14,6 +14,7 @@ const { logViolation } = require('../cache');
  * @param {('prompt' | 'completion')} params.txData.tokenType - The type of token.
  * @param {number} params.txData.amount - The amount of tokens.
  * @param {string} params.txData.model - The model name or identifier.
+ * @param {string} [params.txData.endpointTokenConfig] - The token configuration for the endpoint.
  * @returns {Promise<boolean>} Returns true if the user can spend the amount, otherwise denies the request.
  * @throws {Error} Throws an error if there's an issue with the balance check.
  */

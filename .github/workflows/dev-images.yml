@@ -8,6 +8,7 @@ on:
     paths:
       - 'api/**'
       - 'client/**'
+      - 'packages/**'
 
 jobs:
   build:
@@ -30,6 +31,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Login to Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       # Build Docker images
       - name: Build Docker images
         run: |
@@ -38,7 +46,7 @@ jobs:
           docker build -f Dockerfile -t librechat-dev .
 
       # Tag and push the images to GitHub Container Registry
-      - name: Tag and push images
+      - name: Tag and push images to GHCR
         run: |
           docker tag librechat-dev-api:latest ghcr.io/${{ github.repository_owner }}/librechat-dev-api:${{ github.sha }}
           docker push ghcr.io/${{ github.repository_owner }}/librechat-dev-api:${{ github.sha }}
@@ -49,3 +57,16 @@ jobs:
           docker push ghcr.io/${{ github.repository_owner }}/librechat-dev:${{ github.sha }}
           docker tag librechat-dev:latest ghcr.io/${{ github.repository_owner }}/librechat-dev:latest
           docker push ghcr.io/${{ github.repository_owner }}/librechat-dev:latest
+
+      # Tag and push the images to Docker Hub
+      - name: Tag and push images to Docker Hub
+        run: |
+          docker tag librechat-dev-api:latest ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev-api:${{ github.sha }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev-api:${{ github.sha }}
+          docker tag librechat-dev-api:latest ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev-api:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev-api:latest
+
+          docker tag librechat-dev:latest ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev:${{ github.sha }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev:${{ github.sha }}
+          docker tag librechat-dev:latest ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev:latest

@@ -1,19 +1,15 @@
-const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
-const { isUserProvided, extractEnvVariable } = require('~/server/utils');
+const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
+const { isUserProvided } = require('~/server/utils');
 const { fetchModels } = require('~/server/services/ModelService');
-const loadCustomConfig = require('./loadCustomConfig');
-const { getLogStores } = require('~/cache');
+const getCustomConfig = require('./getCustomConfig');
 
 /**
  * Load config endpoints from the cached configuration object
- * @function loadConfigModels */
-async function loadConfigModels() {
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  let customConfig = await cache.get(CacheKeys.CUSTOM_CONFIG);
-
-  if (!customConfig) {
-    customConfig = await loadCustomConfig();
-  }
+ * @function loadConfigModels
+ * @param {Express.Request} req - The Express request object.
+ */
+async function loadConfigModels(req) {
+  const customConfig = await getCustomConfig();
 
   if (!customConfig) {
     return {};
@@ -21,6 +17,16 @@ async function loadConfigModels() {
 
   const { endpoints = {} } = customConfig ?? {};
   const modelsConfig = {};
+  const azureModels = req.app.locals[EModelEndpoint.azureOpenAI]?.modelNames;
+  const azureEndpoint = endpoints[EModelEndpoint.azureOpenAI];
+
+  if (azureModels && azureEndpoint) {
+    modelsConfig[EModelEndpoint.azureOpenAI] = azureModels;
+  }
+
+  if (azureModels && azureEndpoint && azureEndpoint.plugins) {
+    modelsConfig[EModelEndpoint.gptPlugins] = azureModels;
+  }
 
   if (!Array.isArray(endpoints[EModelEndpoint.custom])) {
     return modelsConfig;
@@ -49,7 +55,14 @@ async function loadConfigModels() {
 
     if (models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) {
       fetchPromisesMap[BASE_URL] =
-        fetchPromisesMap[BASE_URL] || fetchModels({ baseURL: BASE_URL, apiKey: API_KEY });
+        fetchPromisesMap[BASE_URL] ||
+        fetchModels({
+          user: req.user.id,
+          baseURL: BASE_URL,
+          apiKey: API_KEY,
+          name,
+          userIdQuery: models.userIdQuery,
+        });
       baseUrlToNameMap[BASE_URL] = baseUrlToNameMap[BASE_URL] || [];
       baseUrlToNameMap[BASE_URL].push(name);
       continue;
