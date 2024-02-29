@@ -215,6 +215,8 @@ export default {
   com_endpoint_frequency_penalty: '重复惩罚度',
   com_endpoint_presence_penalty: '话题新鲜度',
   com_endpoint_plug_use_functions: '使用函数',
+  com_endpoint_plug_resend_images: '重新提交图片',
+  com_endpoint_plug_image_detail: '图片细节',
   com_endpoint_plug_skip_completion: '跳过补全',
   com_endpoint_disabled_with_tools: '系统禁用',
   com_endpoint_disabled_with_tools_placeholder: '系统禁用',

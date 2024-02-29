@@ -104,6 +104,7 @@
     "ag-grid-community": "^31.1.1",
     "esbuild": "^0.20.1",
     "js-tiktoken": "^1.0.10",
-    "langchain": "^0.1.24"
+    "langchain": "^0.1.24",
+    "sharp": "^0.32.6"
   }
 }
