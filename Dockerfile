@@ -7,9 +7,7 @@ WORKDIR /app
 # Allow mounting of these files, which have no default
 # values.
 RUN touch .env
-# Install call deps - Install curl for health check
-RUN apk --no-cache add curl && \
-    npm ci
+RUN npm ci
 
 # React client build
 ENV NODE_OPTIONS="--max-old-space-size=2048"
