@@ -13,14 +13,27 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: api-build
+            file: Dockerfile.multi
+            image_name: librechat-dev-api
+          - target: node
+            file: Dockerfile
+            image_name: librechat-dev
 
     steps:
       # Check out the repository
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Set up Docker
-      - name: Set up Docker
+      # Set up QEMU
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # Set up Docker Buildx
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       # Log in to GitHub Container Registry
@@ -38,35 +51,22 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Build Docker images
-      - name: Build Docker images
+      # Prepare the environment
+      - name: Prepare environment
         run: |
           cp .env.example .env
-          docker build -f Dockerfile.multi --target api-build -t librechat-dev-api .
-          docker build -f Dockerfile -t librechat-dev .
 
-      # Tag and push the images to GitHub Container Registry
-      - name: Tag and push images to GHCR
-        run: |
-          docker tag librechat-dev-api:latest ghcr.io/${{ github.repository_owner }}/librechat-dev-api:${{ github.sha }}
-          docker push ghcr.io/${{ github.repository_owner }}/librechat-dev-api:${{ github.sha }}
-          docker tag librechat-dev-api:latest ghcr.io/${{ github.repository_owner }}/librechat-dev-api:latest
-          docker push ghcr.io/${{ github.repository_owner }}/librechat-dev-api:latest
-
-          docker tag librechat-dev:latest ghcr.io/${{ github.repository_owner }}/librechat-dev:${{ github.sha }}
-          docker push ghcr.io/${{ github.repository_owner }}/librechat-dev:${{ github.sha }}
-          docker tag librechat-dev:latest ghcr.io/${{ github.repository_owner }}/librechat-dev:latest
-          docker push ghcr.io/${{ github.repository_owner }}/librechat-dev:latest
-
-      # Tag and push the images to Docker Hub
-      - name: Tag and push images to Docker Hub
-        run: |
-          docker tag librechat-dev-api:latest ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev-api:${{ github.sha }}
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev-api:${{ github.sha }}
-          docker tag librechat-dev-api:latest ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev-api:latest
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev-api:latest
-
-          docker tag librechat-dev:latest ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev:${{ github.sha }}
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev:${{ github.sha }}
-          docker tag librechat-dev:latest ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev:latest
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/librechat-dev:latest
+      # Build and push Docker images for each target
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image_name }}:latest
+          platforms: linux/amd64,linux/arm64
+          target: ${{ matrix.target }}
