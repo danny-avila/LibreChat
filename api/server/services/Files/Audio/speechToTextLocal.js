@@ -30,7 +30,6 @@ async function speechToTextLocal(req, res) {
       res.json({ text });
     }
   } catch (error) {
-    console.error(error);
     console.error('Server response:', error.response.data);
     res.status(500).json({ message: 'An error occurred while processing the audio' });
   }

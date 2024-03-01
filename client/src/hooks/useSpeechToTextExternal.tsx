@@ -46,7 +46,6 @@ const useSpeechToTextExternal = () => {
       setPermission(true);
       audioStream.current = streamData ?? null;
     } catch (err) {
-      console.error('Error getting microphone permission:', err);
       setPermission(false);
     }
   };
