@@ -10,7 +10,7 @@ const {
   saveAssistantMessage,
 } = require('~/server/services/Threads');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
-const { addTitle, initializeClient } = require('~/server/services/Endpoints/assistant');
+const { addTitle, initializeClient } = require('~/server/services/Endpoints/assistants');
 const { sendResponse, sendMessage } = require('~/server/utils');
 const { createRun, sleep } = require('~/server/services/Runs');
 const { getConvo } = require('~/models/Conversation');
