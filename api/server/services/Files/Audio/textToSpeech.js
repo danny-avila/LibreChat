@@ -1,17 +1,17 @@
 const axios = require('axios');
 
-async function textToSpeechLocal(req, res) {
+async function textToSpeech(req, res) {
   let text = req.body.text;
 
   if (!text) {
     return res.status(400).send('Missing text in request body');
   }
+  const url = process.env.TTS_REVERSE_PROXY;
 
-  const url = 'https://api.elevenlabs.io/v1/text-to-speech/zvBAbtHEaG9XNBKqbWMi';
   const headers = {
     Accept: 'audio/mpeg',
     'Content-Type': 'application/json',
-    'xi-api-key': process.env.ELEVENLABS_API_KEY,
+    'xi-api-key': process.env.TTS_API_KEY,
   };
   const data = {
     text: text,
@@ -35,4 +35,4 @@ async function textToSpeechLocal(req, res) {
   }
 }
 
-module.exports = textToSpeechLocal;
+module.exports = textToSpeech;

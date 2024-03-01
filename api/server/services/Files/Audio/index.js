@@ -1,9 +1,7 @@
-const speechToTextLocal = require('./speechToTextLocal');
-const textToSpeechLocal = require('./textToSpeechLocal');
-const speechToTextWhisper = require('./speechToTextWhisper');
+const textToSpeech = require('./textToSpeech');
+const speechToText = require('./speechToText');
 
 module.exports = {
-  speechToTextLocal,
-  textToSpeechLocal,
-  speechToTextWhisper,
+  textToSpeech,
+  speechToText,
 };

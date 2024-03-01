@@ -38,8 +38,8 @@ router.get('/', async function (req, res) {
         !!process.env.EMAIL_PASSWORD &&
         !!process.env.EMAIL_FROM,
       checkBalance: isEnabled(process.env.CHECK_BALANCE),
-      speechToTextExternal: !!process.env.WHISPER_API_KEY,
-      textToSpeechExternal: !!process.env.ELEVENLABS_API_KEY,
+      speechToTextExternal: !!process.env.STT_API_KEY,
+      textToSpeechExternal: !!process.env.TTS_API_KEY,
       showBirthdayIcon:
         isBirthday() ||
         isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
