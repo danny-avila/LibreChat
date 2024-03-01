@@ -63,6 +63,7 @@ export default function ChatForm({ index = 0 }) {
                 submitMessage={submitMessage}
                 endpoint={_endpoint}
                 endpointType={endpointType}
+                filesLoading={filesLoading}
               />
             )}
             <AttachFile

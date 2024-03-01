@@ -7,6 +7,9 @@ import {
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useTextarea } from '~/hooks';
+import { useToastContext } from '~/Providers';
+import { NotificationSeverity } from '~/common';
+import { KeyboardEvent } from 'react';
 
 export default function Textarea({
   value,
@@ -16,18 +19,31 @@ export default function Textarea({
   submitMessage,
   endpoint,
   endpointType,
+  filesLoading,
 }) {
+  const { showToast } = useToastContext();
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
-  const {
-    inputRef,
-    handlePaste,
-    handleKeyUp,
-    handleKeyDown,
-    handleCompositionStart,
-    handleCompositionEnd,
-  } = useTextarea({ setText, submitMessage, disabled });
+  const { inputRef, handlePaste, handleKeyUp, handleCompositionStart, handleCompositionEnd } =
+    useTextarea({ setText, submitMessage, disabled });
+
+  const originalHandleKeyDown = useTextarea({ setText, submitMessage, disabled }).handleKeyDown;
+
+  const customHandleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && filesLoading) {
+      event.preventDefault();
+      showToast({
+        message: 'File upload in progress. Please wait.',
+        severity: NotificationSeverity.WARNING,
+        showIcon: true,
+      });
+      return;
+    }
+
+    originalHandleKeyDown(event);
+  };
+
   const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
   return (
     <TextareaAutosize
@@ -38,7 +54,7 @@ export default function Textarea({
       onChange={onChange}
       onPaste={handlePaste}
       onKeyUp={handleKeyUp}
-      onKeyDown={handleKeyDown}
+      onKeyDown={customHandleKeyDown}
       onCompositionStart={handleCompositionStart}
       onCompositionEnd={handleCompositionEnd}
       id="prompt-textarea"
