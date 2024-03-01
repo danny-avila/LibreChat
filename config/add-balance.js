@@ -84,7 +84,7 @@ const connect = require('./connect');
   }
 
   // Check the result
-  if (!result?.tokenCredits) {
+  if (!result?.balance) {
     console.red('Error: Something went wrong while updating the balance!');
     console.error(result);
     silentExit(1);
