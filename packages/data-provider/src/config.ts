@@ -116,6 +116,7 @@ export const azureEndpointSchema = z
   .object({
     groups: azureGroupConfigsSchema,
     plugins: z.boolean().optional(),
+    assistants: z.boolean().optional(),
   })
   .and(
     endpointSchema
@@ -485,7 +486,7 @@ export enum Constants {
   /**
    * Key for the Custom Config's version (librechat.yaml).
    */
-  CONFIG_VERSION = '1.0.4',
+  CONFIG_VERSION = '1.0.5',
   /**
    * Standard value for the first message's `parentMessageId` value, to indicate no parent exists.
    */
