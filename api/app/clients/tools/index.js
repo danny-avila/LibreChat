@@ -1,7 +1,6 @@
 const availableTools = require('./manifest.json');
 // Basic Tools
 const CodeBrew = require('./CodeBrew');
-// const GoogleSearchAPI = require('./GoogleSearch');
 const WolframAlphaAPI = require('./Wolfram');
 const AzureAiSearch = require('./AzureAiSearch');
 const OpenAICreateImage = require('./DALL-E');
