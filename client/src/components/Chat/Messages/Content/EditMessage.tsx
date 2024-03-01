@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
@@ -27,6 +27,15 @@ const EditMessage = ({
   const endpoint = endpointType ?? _endpoint;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
+
+  useEffect(() => {
+    const textArea = textAreaRef.current;
+    if (textArea) {
+      const length = textArea.value.length;
+      textArea.focus();
+      textArea.setSelectionRange(length, length);
+    }
+  }, []);
 
   const resubmitMessage = () => {
     if (message.isCreatedByUser) {
