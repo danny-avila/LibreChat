@@ -25,28 +25,23 @@ export default function Textarea({
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
-  const {
-    textAreaRef,
-    handlePaste,
-    handleKeyUp,
-    handleCompositionStart,
-    handleCompositionEnd,
-  } = useTextarea({ setText, submitMessage, disabled });
+  const { textAreaRef, handlePaste, handleKeyUp, handleCompositionStart, handleCompositionEnd } =
+    useTextarea({ setText, submitMessage, disabled });
   const originalHandleKeyDown = useTextarea({ setText, submitMessage, disabled }).handleKeyDown;
-  
+
   const customHandleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && filesLoading) {
       event.preventDefault();
       showToast({
         message: 'File upload in progress. Please wait.',
-        severity: NotificationSeverity.WARNING,
+        severity: NotificationSeverity.INFO,
         showIcon: true,
       });
       return;
     }
     originalHandleKeyDown(event);
   };
-  
+
   const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
   return (
     <TextareaAutosize
