@@ -3,6 +3,7 @@ import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
 import {
   Plugin,
   GPTIcon,
+  UserIcon,
   PaLMIcon,
   CodeyIcon,
   GeminiIcon,
@@ -42,7 +43,16 @@ const Icon: React.FC<IconProps> = (props) => {
         }}
         className={cn('relative flex items-center justify-center', props.className ?? '')}
       >
-        <img className="rounded-sm" src={user?.avatar || avatarSrc} alt="avatar" />
+        {!user?.avatar && !user?.username ? (
+          <div
+            style={{ backgroundColor: 'rgb(121, 137, 255)', width: '24px', height: '24px' }}
+            className="relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white"
+          >
+            <UserIcon />
+          </div>
+        ) : (
+          <img className="rounded-sm" src={user?.avatar || avatarSrc} alt="avatar" />
+        )}
       </div>
     );
   } else {

@@ -25,11 +25,15 @@ export default function Textarea({
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
-  const { inputRef, handlePaste, handleKeyUp, handleCompositionStart, handleCompositionEnd } =
-    useTextarea({ setText, submitMessage, disabled });
-
+  const {
+    textAreaRef,
+    handlePaste,
+    handleKeyUp,
+    handleCompositionStart,
+    handleCompositionEnd,
+  } = useTextarea({ setText, submitMessage, disabled });
   const originalHandleKeyDown = useTextarea({ setText, submitMessage, disabled }).handleKeyDown;
-
+  
   const customHandleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && filesLoading) {
       event.preventDefault();
@@ -40,14 +44,13 @@ export default function Textarea({
       });
       return;
     }
-
     originalHandleKeyDown(event);
   };
-
+  
   const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
   return (
     <TextareaAutosize
-      ref={inputRef}
+      ref={textAreaRef}
       autoFocus
       value={value}
       disabled={!!disabled}
@@ -68,7 +71,7 @@ export default function Textarea({
           : 'pl-3 md:pl-4',
         'm-0 w-full resize-none border-0 bg-transparent py-[10px] pr-10 placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5 md:pr-12 ',
         removeFocusOutlines,
-        'max-h-52',
+        'max-h-[65vh] md:max-h-[85vh]',
       )}
     />
   );
