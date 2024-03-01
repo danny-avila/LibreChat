@@ -103,7 +103,7 @@ const EditMessage = ({
         }}
         data-testid="message-text-editor"
         className={cn(
-          'markdown prose dark:prose-invert light whitespace-pre-wrap break-words',
+          'markdown prose dark:prose-invert light whitespace-pre-wrap break-words dark:text-gray-20',
           'm-0 w-full resize-none border-0 bg-transparent p-0',
           removeFocusOutlines,
         )}
