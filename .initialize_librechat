@@ -1,0 +1,141 @@
+#!/bin/bash
+
+# Define colors
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+working_dir=$(pwd)
+
+# Initialize variables
+update=false
+terminal="konsole"
+
+# Parse arguments
+while (( "$#" )); do
+  case "$1" in
+    update)
+      update=true
+      shift
+      ;;
+    *)
+      echo -e "${RED}Error: Invalid argument${NC}"
+      echo -e "${CYAN}Usage: $0 [update]${NC}"
+      echo -e "${CYAN}update: Optional. If provided, the script will update the repository and clean the npm cache before running.${NC}"
+      exit 1
+      ;;
+  esac
+done
+
+# if [ "$1" == "-h" ]; then
+#     echo -e "${CYAN}Usage: $0 [update]${NC}"
+#     exit 0
+# fi
+
+# Check if "update" is passed as an argument
+if [ "$1" == "update" ]; then
+    echo -e "${CYAN}Updating the repository...${NC}"
+    # Step 1: Get the latest changes
+    git fetch origin
+    git checkout main
+    git pull origin main
+    echo -e "${GREEN}Repository updated successfully.${NC}"
+
+    echo -e "${CYAN}Deleting node_modules directories...${NC}"
+    # Step 2: Delete all node_modules directories
+    directories=(
+        "${working_dir}"
+        "${working_dir}/packages/data-provider"
+        "${working_dir}/client"
+        "${working_dir}/api"
+    )
+    for dir in "${directories[@]}"; do
+        nodeModulesPath="$dir/node_modules"
+        if [ -d "$nodeModulesPath" ]; then
+            echo -e "${CYAN}Deleting node_modules in ${dir}${NC}"
+            rm -rf "$nodeModulesPath"
+        fi
+    done
+    echo -e "${GREEN}node_modules directories deleted successfully.${NC}"
+
+    echo -e "${CYAN}Cleaning the npm cache...${NC}"
+    # Step 3: Clean the npm cache
+    npm cache clean --force
+    echo -e "${GREEN}npm cache cleaned successfully.${NC}"
+fi
+
+# Check for .env file
+if [ -f .env ]; then
+    echo -e "${GREEN}.env file found.${NC}"
+    # Read MEILI_MASTER_KEY from .env file
+    MEILI_MASTER_KEY=$(grep -oP 'MEILI_MASTER_KEY=\K.*' .env)
+    if [ -z "$MEILI_MASTER_KEY" ]; then
+        echo -e "${RED}MEILI_MASTER_KEY not set in .env file, using default key.${NC}"
+        MEILI_MASTER_KEY="G0qsv5HYAL4WD6HGz6srAEp9Qo6Vj_OdZ0zVtcSnFeM"
+    else
+        echo -e "${GREEN}Using MEILI_MASTER_KEY from .env file.${NC}"
+    fi
+else
+    echo -e "${RED}.env file not found, using default MEILI_MASTER_KEY.${NC}"
+    MEILI_MASTER_KEY="G0qsv5HYAL4WD6HGz6srAEp9Qo6Vj_OdZ0zVtcSnFeM"
+fi
+
+echo -e "${CYAN}If you want to generate a new MEILI_MASTER_KEY, download MeiliSearch from github.com/meilisearch and run it in the source directory without any arguments. Then copy the generated key.${NC}"
+
+# Define the Docker container name
+mongodb_container="chat-mongodb"
+meilisearch_container="chat-meilisearch"
+
+# Check if the Docker container is running
+if [ $(docker ps -q -f name=$mongodb_container) ]; then
+    echo -e "${GREEN}The $mongodb_container container is already running.${NC}"
+else
+    echo -e "${CYAN}Starting the $mongodb_container container...${NC}"
+    docker run -d -p 27017:27017 -v ${working_dir}/data-node:/data/db --name $mongodb_container mongo --noauth
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}The $mongodb_container container started successfully.${NC}"
+    else
+        echo -e "${RED}Failed to start the $mongodb_container container.${NC}"
+    fi
+fi
+
+if [ $(docker ps -q -f name=$meilisearch_container) ]; then
+    echo -e "${GREEN}The $meilisearch_container container is already running.${NC}"
+else
+    echo -e "${CYAN}Starting the $meilisearch_container container...${NC}"
+    docker run -d -p 7700:7700 -v ${working_dir}/meili_data_v1.5:/meili_data --name $meilisearch_container -e MEILI_NO_ANALYTICS=true -e MEILI_MASTER_KEY="G0qsv5HYAL4WD6HGz6srAEp9Qo6Vj_OdZ0zVtcSnFeM" getmeili/meilisearch:v1.5
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}The $meilisearch_container container started successfully.${NC}"
+    else
+        echo -e "${RED}Failed to start the $meilisearch_container container.${NC}"
+    fi
+fi
+
+# Install dependencies
+echo -e "${CYAN}Installing dependencies...${NC}"
+npm ci
+npm install -g cross-env # install cross-env globally to prevent errors when running the project
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}Dependencies installed successfully.${NC}"
+else
+    echo -e "${RED}Failed to install dependencies.${NC}"
+fi
+
+# Run frontend
+echo -e "${CYAN}Building frontend...${NC}"
+npm run frontend
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}Frontend building successfully.${NC}"
+else
+    echo -e "${RED}Failed to build frontend.${NC}"
+fi
+
+# Run backend
+echo -e "${CYAN}Running backend...${NC}"
+npm run backend
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}Backend started successfully.${NC}"
+else
+    echo -e "${RED}Failed to start backend.${NC}"
+fi
