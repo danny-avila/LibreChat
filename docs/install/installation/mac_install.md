@@ -54,8 +54,10 @@ weight: 0
 - Remember to include the MeiliSearch URL and Master Key in your .env file. Your .env file should include the following lines:
 
 ```
-MEILISEARCH_URL=http://127.0.0.1:7700
-MEILISEARCH_KEY=your_master_key_goes_here
+SEARCH=true
+MEILI_NO_ANALYTICS=true
+MEILI_HOST=http://0.0.0.0:7700
+MEILI_MASTER_KEY=your_master_key_goes_here
 ```
 
 >  **Important:** use the same master key here and in your .env file.
