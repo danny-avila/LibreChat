@@ -92,3 +92,69 @@ version: '3.4'
 #   meilisearch:
 #     ports:
 #       - 7700:7700
+
+# # ADD OLLAMA
+#  ollama:
+#    image: ollama/ollama:latest
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              capabilities: [compute, utility]
+#    ports:
+#      - "11434:11434"
+#    volumes:
+#      - ./ollama:/root/.ollama
+
+# # ADD LITELLM BASIC - NEED TO CONFIGURE litellm-config.yaml, ONLY NEED ENV TO ENABLE REDIS FOR CACHING OR LANGFUSE FOR MONITORING
+#  litellm:
+#    image: ghcr.io/berriai/litellm:main-latest
+#    volumes:
+#      - ./litellm/litellm-config.yaml:/app/config.yaml
+#    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
+#    environment:
+#      REDIS_HOST: redis
+#      REDIS_PORT: 6379
+#      REDIS_PASSWORD: RedisChangeMe
+#      LANGFUSE_PUBLIC_KEY: pk-lf-RandomStringFromLangfuseWebInterface
+#      LANGFUSE_SECRET_KEY: sk-lf-RandomStringFromLangfuseWebInterface
+#      LANGFUSE_HOST: http://langfuse-server:3000
+
+# # ADD LITELLM CACHING
+#  redis:
+#    image: redis:7-alpine
+#    command:
+#    - sh
+#    - -c # this is to evaluate the $REDIS_PASSWORD from the env
+#    - redis-server --appendonly yes --requirepass $$REDIS_PASSWORD ## $$ because of docker-compose
+#    environment:
+#      REDIS_PASSWORD: RedisChangeMe
+#    volumes:
+#    - ./redis:/data
+  
+# # ADD LITELLM MONITORING
+#  langfuse-server:
+#    image: ghcr.io/langfuse/langfuse:latest
+#    depends_on:
+#      - db
+#    ports:
+#      - "3000:3000"
+#    environment:
+#      - NODE_ENV=production
+#      - DATABASE_URL=postgresql://postgres:PostgresChangeMe@db:5432/postgres
+#      - NEXTAUTH_SECRET=ChangeMe
+#      - SALT=ChangeMe
+#      - NEXTAUTH_URL=http://localhost:3000
+#      - TELEMETRY_ENABLED=${TELEMETRY_ENABLED:-true}
+#      - NEXT_PUBLIC_SIGN_UP_DISABLED=${NEXT_PUBLIC_SIGN_UP_DISABLED:-false}
+#      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+#  db:
+#    image: postgres
+#    restart: always
+#    environment:
+#      - POSTGRES_USER=postgres
+#      - POSTGRES_PASSWORD=PostgresChangeMe
+#      - POSTGRES_DB=postgres
+#    volumes:
+#      - ./postgres:/var/lib/postgresql/data
