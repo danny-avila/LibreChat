@@ -269,7 +269,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 ```yaml
     - name: "LiteLLM"
       apiKey: "sk-from-config-file"
-      baseURL: "http://localhost:8000/"
+      baseURL: "http://localhost:8000/v1"
       models:
         default: ["gpt-3.5-turbo"]
         fetch: true
