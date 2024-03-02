@@ -70,7 +70,6 @@ const useSpeechToTextExternal = () => {
 
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.wav');
-      console.log('Sending audio for processing');
       setIsRequestBeingMade(true);
       cleanup();
       processAudio(formData);
@@ -98,7 +97,6 @@ const useSpeechToTextExternal = () => {
         mediaRecorderRef.current.start(100);
         setIsListening(true);
         setRecordingStatus('recording');
-        console.log('MediaRecorder state:', mediaRecorderRef.current?.state);
       } catch (error) {
         showToast({ message: `Error starting recording: ${error}`, status: 'error' });
       }
