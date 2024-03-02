@@ -22,8 +22,11 @@ const useSpeechToTextExternal = () => {
       setText(extractedText);
       setIsRequestBeingMade(false);
     },
-    onError: (error) => {
-      showToast({ message: `Error: ${error}`, status: 'error' });
+    onError: () => {
+      showToast({
+        message: 'An error occurred while processing the audio, maybe the audio was too short',
+        status: 'error',
+      });
       setIsRequestBeingMade(false);
     },
   });
@@ -72,7 +75,7 @@ const useSpeechToTextExternal = () => {
       cleanup();
       processAudio(formData);
     } else {
-      showToast({ message: 'No audio chunks available for processing', status: 'warning' });
+      showToast({ message: 'The audio was too short', status: 'warning' });
     }
   };
 

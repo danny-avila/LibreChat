@@ -1,6 +1,19 @@
 const axios = require('axios');
 const FormData = require('form-data');
 const { Readable } = require('stream');
+const { logger } = require('~/config');
+
+async function handleResponse(response) {
+  if (response.status !== 200) {
+    throw new Error('Invalid response from the STT API');
+  }
+
+  if (!response.data || !response.data.text) {
+    throw new Error('Missing data in response from the STT API');
+  }
+
+  return response.data.text.trim();
+}
 
 async function speechToText(req, res) {
   try {
@@ -37,15 +50,11 @@ async function speechToText(req, res) {
       },
     });
 
-    if (response && response.status && response.data && response.data.text) {
-      const text = response.data.text.trim();
-      res.json({ text });
-    } else {
-      throw new Error('Invalid response from server');
-    }
+    const text = await handleResponse(response);
+    res.json({ text });
   } catch (error) {
-    console.error('Server response:', error.response?.data);
-    res.status(500).json({ message: 'An error occurred while processing the audio' });
+    logger.error('An error occurred while processing the audio:', error);
+    res.sendStatus(500);
   }
 }
 
