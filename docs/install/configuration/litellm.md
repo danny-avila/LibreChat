@@ -66,9 +66,9 @@ general_settings:
   master_key: sk_live_SetToRandomValue
 ```
 
-## 3. Configure LibreChat
+### 3. Configure LibreChat
 
-Use `librechat.yaml` [Configuration file (guide here)](./custom_config.md) to add Reverse Proxies as separate endpoints.
+Use `librechat.yaml` [Configuration file (guide here)](./ai_endpoints.md) to add Reverse Proxies as separate endpoints.
 
 ---
 
