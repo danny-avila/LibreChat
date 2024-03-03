@@ -45,7 +45,8 @@ function Login() {
             </a>
           </p>
         )}
-        {startupConfig?.socialLoginEnabled && (
+        {startupConfig?.socialLoginEnabled &&
+          !window.location.hostname.match(/^(.*\.)?toatu\.com$/) && (
           <>
             <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
               <div className="absolute bg-white px-3 text-xs">Or</div>
