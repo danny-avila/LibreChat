@@ -99,7 +99,7 @@ function LoginForm({ onSubmit }: TLoginFormProps) {
           </span>
         )}
       </div>
-      {window.location.hostname !== 'drhu.aitok.ai' && (
+      {!window.location.hostname.match(/^(.*\.)?toatu\.com$/) && (
         <a href="/forgot-password" className="text-sm font-medium text-green-500 hover:underline">
           {localize('com_auth_password_forgot')}
         </a>
