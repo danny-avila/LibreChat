@@ -16,10 +16,12 @@ import Vietnamese from './languages/Vi';
 import Turkish from './languages/Tr';
 import Dutch from './languages/Nl';
 import Indonesia from './languages/Id';
+import Hebrew from './languages/He';
 
 // === import additional language files here === //
 
 const languageMap: { [key: string]: unknown } = {
+  'he-HE': Hebrew,
   'en-US': English,
   'ar-EG': Arabic,
   'zh-CN': Chinese,
