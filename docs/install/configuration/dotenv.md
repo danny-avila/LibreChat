@@ -247,10 +247,10 @@ BINGAI_TOKEN=user_provided
 BINGAI_HOST=
 ```
 
-### ChatGPT
+<!-- ### ChatGPT
 see: [ChatGPT Free Access token](../configuration/ai_setup.md#chatgptbrowser)
 
-> **Warning**: To use this endpoint you'll have to set up your own reverse proxy. Here is the installation guide to deploy your own (based on [Ninja](https://github.com/gngpp/ninja)): **[Ninja Deployment Guide](../../features/ninja.md)**
+> **Warning**: To use this endpoint you'll have to set up your own reverse proxy.
 
 ```bash
 CHATGPT_REVERSE_PROXY=<YOUR-REVERSE-PROXY>
@@ -267,7 +267,7 @@ CHATGPT_REVERSE_PROXY=<YOUR-REVERSE-PROXY>
 ```bash
 CHATGPT_TOKEN=
 CHATGPT_MODELS=text-davinci-002-render-sha
-```
+``` -->
 
 ### Google
 Follow these instructions to setup the [Google Endpoint](./ai_setup.md#google)
