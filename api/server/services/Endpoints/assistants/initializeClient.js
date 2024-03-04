@@ -45,6 +45,14 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
 
   const opts = {};
 
+  const clientOptions = {
+    reverseProxyUrl: baseURL ?? null,
+    proxy: PROXY ?? null,
+    req,
+    res,
+    ...endpointOption,
+  };
+
   /** @type {TAzureConfig | undefined} */
   const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
 
@@ -53,12 +61,14 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
 
   if (azureConfig && azureConfig.assistants) {
     const { modelGroupMap, groupMap, modelNames } = azureConfig;
+    const modelName = req.body.model ?? req.query.model ?? modelNames[0];
     const {
       azureOptions: currentOptions,
       baseURL: azureBaseURL,
       headers = {},
+      serverless,
     } = mapModelToAzureConfig({
-      modelName: req.body.model ?? req.query.model ?? modelNames[0],
+      modelName,
       modelGroupMap,
       groupMap,
     });
@@ -74,6 +84,21 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
     opts.defaultQuery = { 'api-version': azureOptions.azureOpenAIApiVersion };
     opts.defaultHeaders = resolveHeaders({ ...headers, 'api-key': apiKey });
     opts.model = azureOptions.azureOpenAIApiDeploymentName;
+
+    if (initAppClient) {
+      clientOptions.titleConvo = azureConfig.titleConvo;
+      clientOptions.titleModel = azureConfig.titleModel;
+      clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
+
+      const groupName = modelGroupMap[modelName].group;
+      clientOptions.addParams = azureConfig.groupMap[groupName].addParams;
+      clientOptions.dropParams = azureConfig.groupMap[groupName].dropParams;
+      clientOptions.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
+
+      clientOptions.reverseProxyUrl = baseURL ?? clientOptions.reverseProxyUrl;
+      clientOptions.headers = opts.defaultHeaders;
+      clientOptions.azure = !serverless && azureOptions;
+    }
   }
 
   if (!apiKey) {
@@ -106,14 +131,6 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
   }
 
   if (endpointOption && initAppClient) {
-    const clientOptions = {
-      reverseProxyUrl: baseURL,
-      proxy: PROXY ?? null,
-      req,
-      res,
-      ...endpointOption,
-    };
-
     const client = new OpenAIClient(apiKey, clientOptions);
     return {
       client,
