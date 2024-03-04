@@ -93,7 +93,7 @@ const connect = require('./connect');
   // Done!
   console.green('Transaction created successfully!');
   console.purple(`Amount: ${amount}
-New Balance: ${result.tokenCredits}`);
+New Balance: ${result.balance}`);
   silentExit(0);
 })();
 
