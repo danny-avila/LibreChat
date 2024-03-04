@@ -14,6 +14,7 @@ weight: 2
 ---
   * 🤖 [AI Setup](./ai_setup.md)
   * 🚅 [LiteLLM](./litellm.md)
+  * 🦙 [Ollama](./ollama.md)
   * 💸 [Free AI APIs](./free_ai_apis.md)
 ---
   * 🛂 [Authentication System](./user_auth_system.md) 
