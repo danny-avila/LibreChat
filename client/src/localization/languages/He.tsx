@@ -357,5 +357,4 @@ export default {
   com_nav_setting_beta: 'תכונות ביטא',
   com_nav_setting_data: 'בקרות נתונים',
   com_nav_setting_account: 'חשבון',
-  com_nav_language: 'שפה',
 };
