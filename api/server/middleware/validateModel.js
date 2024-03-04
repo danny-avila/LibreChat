@@ -1,4 +1,4 @@
-const { EModelEndpoint, CacheKeys, ViolationTypes } = require('librechat-data-provider');
+const { CacheKeys, ViolationTypes } = require('librechat-data-provider');
 const { loadModels } = require('~/server/controllers/ModelController');
 const { logViolation, getLogStores } = require('~/cache');
 const { handleError } = require('~/server/utils');
@@ -33,9 +33,6 @@ const validateModel = async (req, res, next) => {
   }
 
   let validModel = !!availableModels.find((availableModel) => availableModel === model);
-  if (endpoint === EModelEndpoint.gptPlugins) {
-    validModel = validModel && availableModels.includes(req.body.agentOptions?.model);
-  }
 
   if (validModel) {
     return next();
