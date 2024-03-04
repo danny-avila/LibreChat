@@ -108,6 +108,8 @@ const EditMessage = ({
           removeFocusOutlines,
         )}
         onPaste={(e) => {
+          e.preventDefault();
+
           const pastedData = e.clipboardData.getData('text/plain');
           const textArea = textAreaRef.current;
           if (!textArea) {
