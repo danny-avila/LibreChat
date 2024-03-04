@@ -1,0 +1,50 @@
+name: Question
+description: Ask your question
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill this!
+  - type: textarea
+    id: what-is-your-question
+    attributes:
+      label: What is your question?
+      description: Please give as many details as possible
+      placeholder: Please give as many details as possible
+    validations:
+      required: true
+  - type: textarea
+    id: more-details
+    attributes:
+      label: More Details
+      description: Please provide more details if needed.
+      placeholder: Please provide more details if needed.
+    validations:
+      required: true
+  - type: dropdown
+    id: browsers
+    attributes:
+      label: What is the main subject of your question?
+      multiple: true
+      options:
+        - Documentation
+        - Installation
+        - UI
+        - Endpoints
+        - User System/OAuth
+        - Other
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain your problem. You can drag and drop, paste images directly here or link to them.
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/danny-avila/LibreChat/blob/main/CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

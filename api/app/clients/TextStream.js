@@ -1,4 +1,5 @@
 const { Readable } = require('stream');
+const { logger } = require('~/config');
 
 class TextStream extends Readable {
   constructor(text, options = {}) {
@@ -38,7 +39,7 @@ class TextStream extends Readable {
       });
 
       this.on('end', () => {
-        // console.log('Stream ended');
+        // logger.debug('[processTextStream] Stream ended');
         resolve();
       });
 
@@ -50,7 +51,7 @@ class TextStream extends Readable {
     try {
       await streamPromise;
     } catch (err) {
-      console.error('Error processing text stream:', err);
+      logger.error('[processTextStream] Error in text stream:', err);
       // Handle the error appropriately, e.g., return an error message or throw an error
     }
   }

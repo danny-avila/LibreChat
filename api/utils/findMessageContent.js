@@ -1,3 +1,5 @@
+const { logger } = require('~/config');
+
 function findContent(obj) {
   if (obj && typeof obj === 'object') {
     if ('kwargs' in obj && 'content' in obj.kwargs) {
@@ -21,7 +23,7 @@ function findMessageContent(message) {
   try {
     jsonObjectOrArray = JSON.parse(jsonString);
   } catch (error) {
-    console.error('Failed to parse JSON:', error);
+    logger.error('[findMessageContent] Failed to parse JSON:', error);
     return null;
   }
 

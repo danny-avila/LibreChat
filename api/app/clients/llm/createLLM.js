@@ -1,38 +1,6 @@
 const { ChatOpenAI } = require('langchain/chat_models/openai');
-const { sanitizeModelName } = require('../../../utils');
-const { isEnabled } = require('../../../server/utils');
-
-/**
- * @typedef {Object} ModelOptions
- * @property {string} modelName - The name of the model.
- * @property {number} [temperature] - The temperature setting for the model.
- * @property {number} [presence_penalty] - The presence penalty setting.
- * @property {number} [frequency_penalty] - The frequency penalty setting.
- * @property {number} [max_tokens] - The maximum number of tokens to generate.
- */
-
-/**
- * @typedef {Object} ConfigOptions
- * @property {string} [basePath] - The base path for the API requests.
- * @property {Object} [baseOptions] - Base options for the API requests, including headers.
- * @property {Object} [httpAgent] - The HTTP agent for the request.
- * @property {Object} [httpsAgent] - The HTTPS agent for the request.
- */
-
-/**
- * @typedef {Object} Callbacks
- * @property {Function} [handleChatModelStart] - A callback function for handleChatModelStart
- * @property {Function} [handleLLMEnd] - A callback function for handleLLMEnd
- * @property {Function} [handleLLMError] - A callback function for handleLLMError
- */
-
-/**
- * @typedef {Object} AzureOptions
- * @property {string} [azureOpenAIApiKey] - The Azure OpenAI API key.
- * @property {string} [azureOpenAIApiInstanceName] - The Azure OpenAI API instance name.
- * @property {string} [azureOpenAIApiDeploymentName] - The Azure OpenAI API deployment name.
- * @property {string} [azureOpenAIApiVersion] - The Azure OpenAI API version.
- */
+const { sanitizeModelName, constructAzureURL } = require('~/utils');
+const { isEnabled } = require('~/server/utils');
 
 /**
  * Creates a new instance of a language model (LLM) for chat interactions.
@@ -68,6 +36,7 @@ function createLLM({
     apiKey: openAIApiKey,
   };
 
+  /**  @type {AzureOptions} */
   let azureOptions = {};
   if (azure) {
     const useModelName = isEnabled(process.env.AZURE_USE_MODEL_AS_DEPLOYMENT_NAME);
@@ -85,8 +54,12 @@ function createLLM({
     modelOptions.modelName = process.env.AZURE_OPENAI_DEFAULT_MODEL;
   }
 
-  // console.debug('createLLM: configOptions');
-  // console.debug(configOptions);
+  if (azure && configOptions.basePath) {
+    configOptions.basePath = constructAzureURL({
+      baseURL: configOptions.basePath,
+      azure: azureOptions,
+    });
+  }
 
   return new ChatOpenAI(
     {
@@ -96,6 +69,7 @@ function createLLM({
       configuration,
       ...azureOptions,
       ...modelOptions,
+      ...credentials,
       callbacks,
     },
     configOptions,

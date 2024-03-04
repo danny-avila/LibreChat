@@ -1,10 +1,13 @@
-const express = require('express');
 const crypto = require('crypto');
+const express = require('express');
+const { Constants } = require('librechat-data-provider');
+const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('~/models');
+const { handleError, sendMessage, createOnProgress, handleText } = require('~/server/utils');
+const { setHeaders } = require('~/server/middleware');
+const { browserClient } = require('~/app/');
+const { logger } = require('~/config');
+
 const router = express.Router();
-const { browserClient } = require('../../../app/');
-const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('../../../models');
-const { handleError, sendMessage, createOnProgress, handleText } = require('../../utils');
-const { setHeaders } = require('../../middleware');
 
 router.post('/', setHeaders, async (req, res) => {
   const {
@@ -25,7 +28,7 @@ router.post('/', setHeaders, async (req, res) => {
   const conversationId = oldConversationId || crypto.randomUUID();
   const isNewConversation = !oldConversationId;
   const userMessageId = crypto.randomUUID();
-  const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
+  const userParentMessageId = parentMessageId || Constants.NO_PARENT;
   const userMessage = {
     messageId: userMessageId,
     sender: 'User',
@@ -41,10 +44,10 @@ router.post('/', setHeaders, async (req, res) => {
     key: req.body?.key ?? null,
   };
 
-  console.log('ask log', {
+  logger.debug('[/ask/chatGPTBrowser]', {
     userMessage,
-    endpointOption,
     conversationId,
+    ...endpointOption,
   });
 
   if (!overrideParentMessageId) {
@@ -97,7 +100,6 @@ const ask = async ({
             parentMessageId: overrideParentMessageId || userMessageId,
             text: text,
             unfinished: true,
-            cancelled: false,
             error: false,
             isCreatedByUser: false,
             user,
@@ -136,7 +138,7 @@ const ask = async ({
       },
     });
 
-    console.log('CLIENT RESPONSE', response);
+    logger.debug('[/ask/chatGPTBrowser]', response);
 
     const newConversationId = response.conversationId || conversationId;
     const newUserMassageId = response.parentMessageId || userMessageId;
@@ -153,7 +155,6 @@ const ask = async ({
       text: await handleText(response),
       sender: endpointOption?.chatGptLabel || 'ChatGPT',
       unfinished: false,
-      cancelled: false,
       error: false,
       isCreatedByUser: false,
     };
@@ -209,7 +210,7 @@ const ask = async ({
     });
     res.end();
 
-    if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (userParentMessageId == Constants.NO_PARENT) {
       // const title = await titleConvo({ endpoint: endpointOption?.endpoint, text, response: responseMessage });
       const title = await response.details.title;
       await saveConvo(user, {
@@ -224,7 +225,6 @@ const ask = async ({
       conversationId,
       parentMessageId: overrideParentMessageId || userMessageId,
       unfinished: false,
-      cancelled: false,
       error: true,
       isCreatedByUser: false,
       text: `${getPartialMessage() ?? ''}\n\nError message: "${error.message}"`,

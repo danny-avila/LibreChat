@@ -1,12 +1,23 @@
 const {
   getMessages,
   saveMessage,
+  recordMessage,
   updateMessage,
   deleteMessagesSince,
   deleteMessages,
 } = require('./Message');
 const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
+const { hashPassword, getUser, updateUser } = require('./userMethods');
+const {
+  findFileById,
+  createFile,
+  updateFile,
+  deleteFile,
+  deleteFiles,
+  getFiles,
+  updateFileUsage,
+} = require('./File');
 const Key = require('./Key');
 const User = require('./User');
 const Session = require('./Session');
@@ -20,8 +31,13 @@ module.exports = {
   Balance,
   Transaction,
 
+  hashPassword,
+  updateUser,
+  getUser,
+
   getMessages,
   saveMessage,
+  recordMessage,
   updateMessage,
   deleteMessagesSince,
   deleteMessages,
@@ -35,4 +51,12 @@ module.exports = {
   getPresets,
   savePreset,
   deletePresets,
+
+  findFileById,
+  createFile,
+  updateFile,
+  deleteFile,
+  deleteFiles,
+  getFiles,
+  updateFileUsage,
 };

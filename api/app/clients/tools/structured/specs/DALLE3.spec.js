@@ -1,10 +1,30 @@
-const fs = require('fs');
-const path = require('path');
 const OpenAI = require('openai');
 const DALLE3 = require('../DALLE3');
-const saveImageFromUrl = require('../../saveImageFromUrl');
+
+const { logger } = require('~/config');
 
 jest.mock('openai');
+
+const processFileURL = jest.fn();
+
+jest.mock('~/server/services/Files/images', () => ({
+  getImageBasename: jest.fn().mockImplementation((url) => {
+    // Split the URL by '/'
+    const parts = url.split('/');
+
+    // Get the last part of the URL
+    const lastPart = parts.pop();
+
+    // Check if the last part of the URL matches the image extension regex
+    const imageExtensionRegex = /\.(jpg|jpeg|png|gif|bmp|tiff|svg)$/i;
+    if (imageExtensionRegex.test(lastPart)) {
+      return lastPart;
+    }
+
+    // If the regex test fails, return an empty string
+    return '';
+  }),
+}));
 
 const generate = jest.fn();
 OpenAI.mockImplementation(() => ({
@@ -20,15 +40,14 @@ jest.mock('fs', () => {
   };
 });
 
-jest.mock('../../saveImageFromUrl', () => {
-  return jest.fn();
-});
-
 jest.mock('path', () => {
   return {
     resolve: jest.fn(),
     join: jest.fn(),
     relative: jest.fn(),
+    extname: jest.fn().mockImplementation((filename) => {
+      return filename.slice(filename.lastIndexOf('.'));
+    }),
   };
 });
 
@@ -47,7 +66,7 @@ describe('DALLE3', () => {
     jest.resetModules();
     process.env = { ...originalEnv, DALLE_API_KEY: mockApiKey };
     // Instantiate DALLE3 for tests that do not depend on DALLE3_SYSTEM_PROMPT
-    dalle = new DALLE3();
+    dalle = new DALLE3({ processFileURL });
   });
 
   afterEach(() => {
@@ -56,7 +75,8 @@ describe('DALLE3', () => {
     process.env = originalEnv;
   });
 
-  it('should throw an error if DALLE_API_KEY is missing', () => {
+  it('should throw an error if all potential API keys are missing', () => {
+    delete process.env.DALLE3_API_KEY;
     delete process.env.DALLE_API_KEY;
     expect(() => new DALLE3()).toThrow('Missing DALLE_API_KEY environment variable.');
   });
@@ -69,10 +89,8 @@ describe('DALLE3', () => {
 
   it('should generate markdown image URL correctly', () => {
     const imageName = 'test.png';
-    path.join.mockReturnValue('images/test.png');
-    path.relative.mockReturnValue('images/test.png');
-    const markdownImage = dalle.getMarkdownImageUrl(imageName);
-    expect(markdownImage).toBe('![generated image](/images/test.png)');
+    const markdownImage = dalle.wrapInMarkdown(imageName);
+    expect(markdownImage).toBe('![generated image](test.png)');
   });
 
   it('should call OpenAI API with correct parameters', async () => {
@@ -92,11 +110,9 @@ describe('DALLE3', () => {
     };
 
     generate.mockResolvedValue(mockResponse);
-    saveImageFromUrl.mockResolvedValue(true);
-    fs.existsSync.mockReturnValue(true);
-    path.resolve.mockReturnValue('/fakepath/images');
-    path.join.mockReturnValue('/fakepath/images/img-test.png');
-    path.relative.mockReturnValue('images/img-test.png');
+    processFileURL.mockResolvedValue({
+      filepath: 'http://example.com/img-test.png',
+    });
 
     const result = await dalle._call(mockData);
 
@@ -108,6 +124,7 @@ describe('DALLE3', () => {
       prompt: mockData.prompt,
       n: 1,
     });
+
     expect(result).toContain('![generated image]');
   });
 
@@ -134,7 +151,7 @@ describe('DALLE3', () => {
     await expect(dalle._call(mockData)).rejects.toThrow('Missing required field: prompt');
   });
 
-  it('should log to console if no image name is found in the URL', async () => {
+  it('should log appropriate debug values', async () => {
     const mockData = {
       prompt: 'A test prompt',
     };
@@ -145,27 +162,17 @@ describe('DALLE3', () => {
         },
       ],
     };
-    console.log = jest.fn(); // Mock console.log
-    generate.mockResolvedValue(mockResponse);
-    await dalle._call(mockData);
-    expect(console.log).toHaveBeenCalledWith('No image name found in the string.');
-  });
 
-  it('should create the directory if it does not exist', async () => {
-    const mockData = {
-      prompt: 'A test prompt',
-    };
-    const mockResponse = {
-      data: [
-        {
-          url: 'http://example.com/img-test.png',
-        },
-      ],
-    };
     generate.mockResolvedValue(mockResponse);
-    fs.existsSync.mockReturnValue(false); // Simulate directory does not exist
     await dalle._call(mockData);
-    expect(fs.mkdirSync).toHaveBeenCalledWith(expect.any(String), { recursive: true });
+    expect(logger.debug).toHaveBeenCalledWith('[DALL-E-3]', {
+      data: { url: 'http://example.com/invalid-url' },
+      theImageUrl: 'http://example.com/invalid-url',
+      extension: expect.any(String),
+      imageBasename: expect.any(String),
+      imageExt: expect.any(String),
+      imageName: expect.any(String),
+    });
   });
 
   it('should log an error and return the image URL if there is an error saving the image', async () => {
@@ -181,10 +188,25 @@ describe('DALLE3', () => {
     };
     const error = new Error('Error while saving the image');
     generate.mockResolvedValue(mockResponse);
-    saveImageFromUrl.mockRejectedValue(error);
-    console.error = jest.fn(); // Mock console.error
+    processFileURL.mockRejectedValue(error);
     const result = await dalle._call(mockData);
-    expect(console.error).toHaveBeenCalledWith('Error while saving the image:', error);
-    expect(result).toBe(mockResponse.data[0].url);
+    expect(logger.error).toHaveBeenCalledWith('Error while saving the image:', error);
+    expect(result).toBe('Failed to save the image locally. Error while saving the image');
+  });
+
+  it('should handle error when saving image to Firebase Storage fails', async () => {
+    const mockData = {
+      prompt: 'A test prompt',
+    };
+    const mockImageUrl = 'http://example.com/img-test.png';
+    const mockResponse = { data: [{ url: mockImageUrl }] };
+    const error = new Error('Error while saving to Firebase');
+    generate.mockResolvedValue(mockResponse);
+    processFileURL.mockRejectedValue(error);
+
+    const result = await dalle._call(mockData);
+
+    expect(logger.error).toHaveBeenCalledWith('Error while saving the image:', error);
+    expect(result).toContain('Failed to save the image');
   });
 });

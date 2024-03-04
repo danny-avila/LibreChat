@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { KeyvFile } = require('keyv-file');
-const { getUserKey, checkUserKeyExpiry } = require('../server/services/UserService');
+const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { logger } = require('~/config');
 
 const askBing = async ({
   text,
@@ -100,7 +101,7 @@ const askBing = async ({
     }
   }
 
-  console.log('bing options', options);
+  logger.debug('bing options', options);
 
   const res = await bingAIClient.sendMessage(text, options);
 

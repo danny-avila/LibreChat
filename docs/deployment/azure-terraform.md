@@ -1,3 +1,8 @@
+---
+title: ⚡ Azure
+description: How to deploy LibreChat in Azure using Terraform. 
+weight: -6
+---
 # Azure deployment
 
 There are different ways of how a deployment can be done in Azure. 

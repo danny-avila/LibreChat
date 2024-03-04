@@ -1,5 +1,4 @@
-import React from 'react';
-import { useGetStartupConfig } from 'librechat-data-provider';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
 
 export default function Footer() {
@@ -18,7 +17,7 @@ export default function Footer() {
             rel="noreferrer"
             className="underline"
           >
-            {config?.appTitle || 'LibreChat'} v0.6.1
+            {config?.appTitle || 'LibreChat'} v0.6.10
           </a>
           {' - '}. {localize('com_ui_pay_per_call')}
         </>

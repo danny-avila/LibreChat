@@ -3,6 +3,7 @@
 export default {
   com_ui_examples: '예시',
   com_ui_new_chat: '새 채팅',
+  com_ui_happy_birthday: '내 첫 생일이야!',
   com_ui_example_quantum_computing: '양자 컴퓨팅을 간단하게 설명해줄래?',
   com_ui_example_10_year_old_b_day: '10살 아이 생일 파티를 위한 참신한 아이디어 있을까?',
   com_ui_example_http_in_js: '자바스크립트에서 HTTP 요청을 어떻게 만드나요?',
@@ -124,7 +125,7 @@ export default {
     'Top-k는 모델이 출력에 사용할 토큰을 선택하는 방식을 변경합니다. top-k가 1인 경우 모델의 어휘 중 가장 확률이 높은 토큰이 선택됩니다(greedy decoding). top-k가 3인 경우 다음 토큰은 가장 확률이 높은 3개의 토큰 중에서 선택됩니다(temperature 사용).',
   com_endpoint_google_maxoutputtokens:
     '응답에서 생성할 수 있는 최대 토큰 수입니다. 짧은 응답에는 낮은 값을, 긴 응답에는 높은 값을 지정하세요.',
-  com_endpoint_google_custom_name_placeholder: 'PaLM2에 대한 사용자 정의 이름 설정',
+  com_endpoint_google_custom_name_placeholder: 'Google에 대한 사용자 정의 이름 설정',
   com_endpoint_prompt_prefix_placeholder:
     '사용자 정의 지시사항 또는 컨텍스트를 설정하세요. 비어 있으면 무시됩니다.',
   com_endpoint_custom_name: '사용자 정의 이름',

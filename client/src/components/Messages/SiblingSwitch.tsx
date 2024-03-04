@@ -44,7 +44,7 @@ export default function SiblingSwitch({
         </svg>
       </button>
       <span className="flex-shrink-0 flex-grow">
-        {siblingIdx + 1}/{siblingCount}
+        {siblingIdx + 1} / {siblingCount}
       </span>
       <button
         className="disabled:text-gray-300 dark:text-white dark:disabled:text-gray-400"

@@ -1,3 +1,12 @@
+export function isJson(str: string) {
+  try {
+    JSON.parse(str);
+  } catch (e) {
+    return false;
+  }
+  return true;
+}
+
 export function formatJSON(json: string) {
   try {
     return JSON.stringify(JSON.parse(json), null, 2);

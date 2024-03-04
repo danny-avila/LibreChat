@@ -86,10 +86,9 @@ const Dropdown: FC<DropdownProps> = ({
               </svg>
             </span>
           </Listbox.Button>
-
           <Listbox.Options
             className={cn(
-              'max-h-90 absolute z-50 mt-1 overflow-auto rounded-md shadow-lg transition-opacity focus:outline-none',
+              'absolute z-50 mt-1 max-h-[40vh] overflow-auto rounded-md shadow-lg transition-opacity focus:outline-none',
               currentThemeStyle,
               className,
             )}

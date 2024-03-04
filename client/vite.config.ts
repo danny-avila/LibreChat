@@ -1,3 +1,4 @@
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path, { resolve } from 'path';
@@ -6,6 +7,9 @@ import type { Plugin } from 'vite';
 // https://vitejs.dev/config/
 export default defineConfig({
   server: {
+    fs: {
+      cachedChecks: false,
+    },
     host: 'localhost',
     port: 3090,
     strictPort: false,
@@ -25,7 +29,7 @@ export default defineConfig({
   // All other env variables are filtered out
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
-  plugins: [react(), sourcemapExclude({ excludeNodeModules: true })],
+  plugins: [react(), nodePolyfills(), sourcemapExclude({ excludeNodeModules: true })],
   publicDir: './public',
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
@@ -38,6 +42,19 @@ export default defineConfig({
             return 'vendor';
           }
         },
+      },
+      /**
+       * Ignore "use client" waning since we are not using SSR
+       * @see {@link https://github.com/TanStack/query/pull/5161#issuecomment-1477389761 Preserve 'use client' directives TanStack/query#5161}
+       */
+      onwarn(warning, warn) {
+        if (
+          // warning.code === 'MODULE_LEVEL_DIRECTIVE' &&
+          warning.message.includes('Error when using sourcemap')
+        ) {
+          return;
+        }
+        warn(warning);
       },
     },
   },

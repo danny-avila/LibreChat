@@ -1,18 +1,33 @@
 import OpenAI from 'openai';
-import type { UseMutationResult } from '@tanstack/react-query';
-import type { TResPlugin, TMessage, TConversation, TEndpointOption } from './schemas';
+import type { TResPlugin, TMessage, TConversation, EModelEndpoint, ImageDetail } from './schemas';
 
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
 export type TOpenAIFunctionCall = OpenAI.Chat.ChatCompletionCreateParams.FunctionCallOption;
-
-export type TMutation = UseMutationResult<unknown>;
 
 export * from './schemas';
 
 export type TMessages = TMessage[];
 
 export type TMessagesAtom = TMessages | null;
+
+/* TODO: Cleanup EndpointOption types */
+export type TEndpointOption = {
+  endpoint: EModelEndpoint;
+  endpointType?: EModelEndpoint;
+  modelDisplayLabel?: string;
+  resendImages?: boolean;
+  imageDetail?: ImageDetail;
+  model?: string | null;
+  promptPrefix?: string;
+  temperature?: number;
+  chatGptLabel?: string | null;
+  modelLabel?: string | null;
+  jailbreak?: boolean;
+  key?: string | null;
+  /* assistant */
+  thread_id?: string;
+};
 
 export type TSubmission = {
   plugin?: TResPlugin;
@@ -24,7 +39,7 @@ export type TSubmission = {
   isRegenerate?: boolean;
   conversationId?: string;
   initialResponse: TMessage;
-  conversation: TConversation;
+  conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
 };
 
@@ -32,9 +47,13 @@ export type TPluginAction = {
   pluginKey: string;
   action: 'install' | 'uninstall';
   auth?: unknown;
+  isAssistantTool?: boolean;
 };
 
+export type GroupedConversations = [key: string, TConversation[]][];
+
 export type TUpdateUserPlugins = {
+  isAssistantTool?: boolean;
   pluginKey: string;
   action: string;
   auth?: unknown;
@@ -89,12 +108,11 @@ export type TUpdateConversationRequest = {
   title: string;
 };
 
-export type TUpdateConversationResponse = {
-  data: TConversation;
-};
+export type TUpdateConversationResponse = TConversation;
 
 export type TDeleteConversationRequest = {
   conversationId?: string;
+  thread_id?: string;
   source?: string;
 };
 
@@ -117,16 +135,24 @@ export type TSearchResults = {
 };
 
 export type TConfig = {
-  availableModels?: [];
-  userProvide?: boolean | null;
+  order: number;
+  type?: EModelEndpoint;
+  azure?: boolean;
   availableTools?: [];
   plugins?: Record<string, string>;
-  azure?: boolean;
+  name?: string;
+  iconURL?: string;
+  modelDisplayLabel?: string;
+  userProvide?: boolean | null;
+  userProvideURL?: boolean | null;
+  disableBuilder?: boolean;
 };
 
-export type TModelsConfig = Record<string, string[]>;
+export type TEndpointsConfig =
+  | Record<EModelEndpoint | string, TConfig | null | undefined>
+  | undefined;
 
-export type TEndpointsConfig = Record<string, TConfig | null>;
+export type TModelsConfig = Record<string, string[]>;
 
 export type TUpdateTokenCountResponse = {
   count: number;
@@ -169,18 +195,21 @@ export type TResetPassword = {
 
 export type TStartupConfig = {
   appTitle: string;
-  googleLoginEnabled: boolean;
+  socialLogins?: string[];
+  discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
-  openidLoginEnabled: boolean;
   githubLoginEnabled: boolean;
+  googleLoginEnabled: boolean;
+  openidLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
-  discordLoginEnabled: boolean;
   serverDomain: string;
+  emailLoginEnabled: boolean;
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
   emailEnabled: boolean;
   checkBalance: boolean;
+  showBirthdayIcon: boolean;
   customFooter?: string;
 };
 

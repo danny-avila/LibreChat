@@ -1,4 +1,6 @@
-export { default as General } from './General';
-export { ClearChatsButton } from './General';
-export { default as Data } from './Data';
-export { RevokeKeysButton } from './Data';
+export { default as General } from './General/General';
+export { ClearChatsButton } from './General/General';
+export { default as Data } from './Data/Data';
+export { default as Beta } from './Beta/Beta';
+export { RevokeKeysButton } from './Data/Data';
+export { default as Account } from './Account/Account';

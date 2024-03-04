@@ -1,11 +1,13 @@
 const express = require('express');
-const router = express.Router();
 const openAI = require('./openAI');
+const custom = require('./custom');
 const google = require('./google');
 const bingAI = require('./bingAI');
+const anthropic = require('./anthropic');
 const gptPlugins = require('./gptPlugins');
 const askChatGPTBrowser = require('./askChatGPTBrowser');
-const anthropic = require('./anthropic');
+const { isEnabled } = require('~/server/utils');
+const { EModelEndpoint } = require('librechat-data-provider');
 const {
   uaParser,
   checkBan,
@@ -13,10 +15,11 @@ const {
   concurrentLimiter,
   messageIpLimiter,
   messageUserLimiter,
-} = require('../../middleware');
-const { isEnabled } = require('../../utils');
+} = require('~/server/middleware');
 
 const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
+
+const router = express.Router();
 
 router.use(requireJwtAuth);
 router.use(checkBan);
@@ -34,11 +37,12 @@ if (isEnabled(LIMIT_MESSAGE_USER)) {
   router.use(messageUserLimiter);
 }
 
-router.use(['/azureOpenAI', '/openAI'], openAI);
-router.use('/google', google);
-router.use('/bingAI', bingAI);
-router.use('/chatGPTBrowser', askChatGPTBrowser);
-router.use('/gptPlugins', gptPlugins);
-router.use('/anthropic', anthropic);
+router.use([`/${EModelEndpoint.azureOpenAI}`, `/${EModelEndpoint.openAI}`], openAI);
+router.use(`/${EModelEndpoint.chatGPTBrowser}`, askChatGPTBrowser);
+router.use(`/${EModelEndpoint.gptPlugins}`, gptPlugins);
+router.use(`/${EModelEndpoint.anthropic}`, anthropic);
+router.use(`/${EModelEndpoint.google}`, google);
+router.use(`/${EModelEndpoint.bingAI}`, bingAI);
+router.use(`/${EModelEndpoint.custom}`, custom);
 
 module.exports = router;

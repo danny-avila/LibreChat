@@ -15,6 +15,8 @@ const openAI = {
   topp: 'com_endpoint_openai_topp',
   freq: 'com_endpoint_openai_freq',
   pres: 'com_endpoint_openai_pres',
+  resend: 'com_endpoint_openai_resend',
+  detail: 'com_endpoint_openai_detail',
 };
 
 const types = {
@@ -47,7 +49,7 @@ function OptionHover({ endpoint, type, side }: TOptionHoverProps) {
   }
   return (
     <HoverCardPortal>
-      <HoverCardContent side={side} className="w-80 ">
+      <HoverCardContent side={side} className="z-[80]  w-80">
         <div className="space-y-2">
           <p className="text-sm text-gray-600 dark:text-gray-300">{localize(text)}</p>
         </div>

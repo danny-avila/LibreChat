@@ -10,6 +10,10 @@ const {
 } = require('../strategies');
 const client = require('../cache/redis');
 
+/**
+ *
+ * @param {Express.Application} app
+ */
 const configureSocialLogins = (app) => {
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     passport.use(googleLogin());

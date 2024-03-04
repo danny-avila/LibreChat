@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { z } = require('zod');
-const { createOpenAPIPlugin } = require('../dynamic/OpenAPIPlugin');
+const { logger } = require('~/config');
+const { createOpenAPIPlugin } = require('~/app/clients/tools/dynamic/OpenAPIPlugin');
 
 // The minimum Manifest definition
 const ManifestDefinition = z.object({
@@ -26,28 +27,17 @@ const ManifestDefinition = z.object({
   legal_info_url: z.string().optional(),
 });
 
-function validateJson(json, verbose = true) {
+function validateJson(json) {
   try {
     return ManifestDefinition.parse(json);
   } catch (error) {
-    if (verbose) {
-      console.debug('validateJson error', error);
-    }
+    logger.debug('[validateJson] manifest parsing error', error);
     return false;
   }
 }
 
 // omit the LLM to return the well known jsons as objects
-async function loadSpecs({
-  llm,
-  user,
-  message,
-  tools = [],
-  map = false,
-  memory,
-  signal,
-  verbose = false,
-}) {
+async function loadSpecs({ llm, user, message, tools = [], map = false, memory, signal }) {
   const directoryPath = path.join(__dirname, '..', '.well-known');
   let files = [];
 
@@ -60,7 +50,7 @@ async function loadSpecs({
       await fs.promises.access(filePath, fs.constants.F_OK);
       files.push(tools[i] + '.json');
     } catch (err) {
-      console.error(`File ${tools[i] + '.json'} does not exist`);
+      logger.error(`[loadSpecs] File ${tools[i] + '.json'} does not exist`, err);
     }
   }
 
@@ -73,9 +63,7 @@ async function loadSpecs({
   const validJsons = [];
   const constructorMap = {};
 
-  if (verbose) {
-    console.debug('files', files);
-  }
+  logger.debug('[validateJson] files', files);
 
   for (const file of files) {
     if (path.extname(file) === '.json') {
@@ -84,7 +72,7 @@ async function loadSpecs({
       const json = JSON.parse(fileContent);
 
       if (!validateJson(json)) {
-        verbose && console.debug('Invalid json', json);
+        logger.debug('[validateJson] Invalid json', json);
         continue;
       }
 
@@ -97,13 +85,12 @@ async function loadSpecs({
             memory,
             signal,
             user,
-            verbose,
           });
         continue;
       }
 
       if (llm) {
-        validJsons.push(createOpenAPIPlugin({ data: json, llm, verbose }));
+        validJsons.push(createOpenAPIPlugin({ data: json, llm }));
         continue;
       }
 
@@ -117,10 +104,8 @@ async function loadSpecs({
 
   const plugins = (await Promise.all(validJsons)).filter((plugin) => plugin);
 
-  // if (verbose) {
-  //   console.debug('plugins', plugins);
-  //   console.debug(plugins[0].name);
-  // }
+  //   logger.debug('[validateJson] plugins', plugins);
+  //   logger.debug(plugins[0].name);
 
   return plugins;
 }

@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useLocalize } from '~/hooks';
-import { useGetStartupConfig } from 'librechat-data-provider';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { OpenIDIcon } from '~/components';
 import { getLoginError } from '~/utils';
 

@@ -4,7 +4,7 @@
  * All rights reserved.
  */
 
-import { refreshToken } from './data-service';
+import request from './request';
 import { setTokenHeader } from './headers-helpers';
 
 var SSE = function (url, options) {
@@ -113,7 +113,7 @@ var SSE = function (url, options) {
     if (this.xhr.status === 401 && !this._retry) {
       this._retry = true;
       try {
-        const refreshResponse = await refreshToken();
+        const refreshResponse = await request.refreshToken();
         this.headers = {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${refreshResponse.token}`,

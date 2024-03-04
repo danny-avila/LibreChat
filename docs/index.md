@@ -1,3 +1,9 @@
+---
+title: Home
+description: 🪶 Introducing LibreChat
+weight: -10
+---
+
 <p align="center">
   <a href="https://discord.gg/NGaa9RPCft">
     <img src="assets/LibreChat.svg" style="margin-left: 40px; height: 256px; width: 256px;>
@@ -22,13 +28,31 @@
     <img 
       src="https://img.shields.io/badge/GITHUB-blue.svg?style=for-the-badge&logo=github&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
-<a aria-label="Sponsors" href="#sponsors">
+<a aria-label="Sponsors" href="https://github.com/sponsors/danny-avila">
     <img
       src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&logo=github-sponsors&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
 </p>
 
-## All-In-One AI Conversations with LibreChat ##
+
+## 🪶 Features
+ - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
+ - 💬 Multimodal Chat:
+     - Upload and analyze images with GPT-4 and Gemini Vision 📸 
+     - More filetypes and Assistants API integration in Active Development 🚧 
+ - 🌎 Multilingual UI:
+     - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro, Русский
+     - 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands
+ - 🤖 AI model selection: OpenAI API, Azure, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins
+ - 💾 Create, Save, & Share Custom Presets
+ - 🔄 Edit, Resubmit, and Continue messages with conversation branching
+ - 📤 Export conversations as screenshots, markdown, text, json.
+ - 🔍 Search all messages/conversations
+ - 🔌 Plugins, including web access, image generation with DALL-E-3 and more
+ - 👥 Multi-User, Secure Authentication with Moderation and Token spend tools
+ - ⚙️ Configure Proxy, Reverse Proxy, Docker, many Deployment options, and completely Open-Source
+
+## 📃 All-In-One AI Conversations with LibreChat
 LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
@@ -45,48 +69,25 @@ With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use f
   </iframe>
 </p>
 
-# Features
+---
 
-- Response streaming identical to ChatGPT through server-sent events
-- UI from original ChatGPT, including Dark mode
-- AI model selection (through 5 endpoints: OpenAI API, BingAI, ChatGPT Browser, PaLM2, Plugins)
-- Create, Save, & Share custom presets - [More info on prompt presets here](https://github.com/danny-avila/LibreChat/releases/tag/v0.3.0)
-- Edit and Resubmit messages with conversation branching
-- Search all messages/conversations - [More info here](https://github.com/danny-avila/LibreChat/releases/tag/v0.1.0)
-- Plugins now available (including web access, image generation and more)
+## ⭐ Star History
+
+<a href="https://star-history.com/#danny-avila/LibreChat&Date">
+  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
+</a>
 
 ---
 
-## ⚠️ [Breaking Changes](general_info/breaking_changes.md) ⚠️
-**Applies to [v0.5.4](general_info/breaking_changes.md#v054) & [v0.5.5](general_info/breaking_changes.md#v055)**
-
-**Please read this before updating from a previous version**
-
----
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date)](https://star-history.com/#danny-avila/LibreChat&Date)
-
----
-
-## Sponsors
-
-  Sponsored by <a href="https://github.com/mjtechguy"><b>@mjtechguy</b></a>, <a href="https://github.com/SphaeroX"><b>@SphaeroX</b></a>, <a href="https://github.com/DavidDev1334"><b>@DavidDev1334</b></a>, <a href="https://github.com/fuegovic"><b>@fuegovic</b></a>, <a href="https://github.com/Pharrcyde"><b>@Pharrcyde</b></a> 
-
----
-
-## Contributors
+## ✨ Contributors
 Contributions and suggestions bug reports and fixes are welcome!
 Please read the documentation before you do!
-
----
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR. 
 
 - Join the [Discord community](https://discord.gg/uDyZ5Tzhct)
 
-This project exists in its current state thanks to all the people who contribute
+## 💖 This project exists in its current state thanks to all the people who contribute
 ---
 <a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />

@@ -1,13 +1,87 @@
+import { FileSources } from 'librechat-data-provider';
+import type { ColumnDef } from '@tanstack/react-table';
+import type { SetterOrUpdater } from 'recoil';
 import type {
   TConversation,
   TMessage,
   TPreset,
-  TMutation,
   TLoginUser,
   TUser,
+  EModelEndpoint,
+  Action,
+  AuthTypeEnum,
+  AuthorizationTypeEnum,
+  TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
+import type { UseMutationResult } from '@tanstack/react-query';
+import type { LucideIcon } from 'lucide-react';
 
-export type TSetOption = (param: number | string) => (newValue: number | string | boolean) => void;
+export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
+
+export type NavLink = {
+  title: string;
+  label?: string;
+  icon: LucideIcon;
+  Component?: React.ComponentType;
+  variant?: 'default' | 'ghost';
+  id: string;
+};
+
+export interface NavProps {
+  isCollapsed: boolean;
+  links: NavLink[];
+  resize?: (size: number) => void;
+  defaultActive?: string;
+}
+
+interface ColumnMeta {
+  meta: {
+    size: number | string;
+  };
+}
+
+export enum Panel {
+  builder = 'builder',
+  actions = 'actions',
+}
+
+export type FileSetter =
+  | SetterOrUpdater<Map<string, ExtendedFile>>
+  | React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
+
+export type ActionAuthForm = {
+  /* General */
+  type: AuthTypeEnum;
+  saved_auth_fields: boolean;
+  /* API key */
+  api_key: string; // not nested
+  authorization_type: AuthorizationTypeEnum;
+  custom_auth_header: string;
+  /* OAuth */
+  oauth_client_id: string; // not nested
+  oauth_client_secret: string; // not nested
+  authorization_url: string;
+  client_url: string;
+  scope: string;
+  token_exchange_method: TokenExchangeMethodEnum;
+};
+
+export type AssistantPanelProps = {
+  index?: number;
+  action?: Action;
+  actions?: Action[];
+  assistant_id?: string;
+  activePanel?: string;
+  setAction: React.Dispatch<React.SetStateAction<Action | undefined>>;
+  setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
+  setActivePanel: React.Dispatch<React.SetStateAction<Panel>>;
+};
+
+export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
+
+export type TSetOption = (
+  param: number | string,
+) => (newValue: number | string | boolean | Partial<TPreset>) => void;
 export type TSetExample = (
   i: number,
   type: string,
@@ -32,6 +106,8 @@ export type TShowToast = {
   message: string;
   severity?: NotificationSeverity;
   showIcon?: boolean;
+  duration?: number;
+  status?: 'error' | 'success' | 'warning' | 'info';
 };
 
 export type TBaseSettingsProps = {
@@ -47,6 +123,8 @@ export type TSettingsProps = TBaseSettingsProps & {
 
 export type TModels = {
   models: string[];
+  showAbove?: boolean;
+  popover?: boolean;
 };
 
 export type TModelSelectProps = TSettingsProps & TModels;
@@ -64,9 +142,9 @@ export type TSetOptionsPayload = {
   addExample: () => void;
   removeExample: () => void;
   setAgentOption: TSetOption;
-  getConversation: () => TConversation | TPreset | null;
+  // getConversation: () => TConversation | TPreset | null;
   checkPluginSelection: (value: string) => boolean;
-  setTools: (newValue: string) => void;
+  setTools: (newValue: string, remove?: boolean) => void;
 };
 
 export type TPresetItemProps = {
@@ -109,7 +187,6 @@ export type TMessageProps = {
   isSearchView?: boolean;
   siblingIdx?: number;
   siblingCount?: number;
-  scrollToBottom?: () => void;
   setCurrentEditId?: React.Dispatch<React.SetStateAction<string | number | null>> | null;
   setSiblingIdx?: ((value: number) => void | React.Dispatch<React.SetStateAction<number>>) | null;
 };
@@ -131,7 +208,7 @@ export type TAdditionalProps = {
   setSiblingIdx: (value: number) => void;
 };
 
-export type TMessageContent = TInitialProps & TAdditionalProps;
+export type TMessageContentProps = TInitialProps & TAdditionalProps;
 
 export type TText = Pick<TInitialProps, 'text'>;
 export type TEditProps = Pick<TInitialProps, 'text' | 'isSubmitting'> &
@@ -144,7 +221,7 @@ export type TDisplayProps = TText &
 export type TConfigProps = {
   userKey: string;
   setUserKey: React.Dispatch<React.SetStateAction<string>>;
-  endpoint: string;
+  endpoint: EModelEndpoint | string;
 };
 
 export type TDangerButtonProps = {
@@ -153,7 +230,7 @@ export type TDangerButtonProps = {
   className?: string;
   disabled?: boolean;
   showText?: boolean;
-  mutation?: TMutation;
+  mutation?: UseMutationResult<unknown>;
   onClick: () => void;
   infoTextCode: string;
   actionTextCode: string;
@@ -165,6 +242,11 @@ export type TDangerButtonProps = {
 export type TDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+};
+
+export type TPluginStoreDialogProps = {
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
 };
 
 export type TResError = {
@@ -193,11 +275,43 @@ export type TAuthConfig = {
   test?: boolean;
 };
 
-export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model' | 'error'> &
+export type IconProps = Pick<TMessage, 'isCreatedByUser' | 'model'> &
   Pick<TConversation, 'chatGptLabel' | 'modelLabel' | 'jailbreak'> & {
     size?: number;
     button?: boolean;
+    iconURL?: string;
     message?: boolean;
     className?: string;
-    endpoint?: string | null;
+    endpoint?: EModelEndpoint | string | null;
+    endpointType?: EModelEndpoint | null;
+    assistantName?: string;
+    error?: boolean;
   };
+
+export type Option = Record<string, unknown> & {
+  label?: string;
+  value: string | number | null;
+};
+
+export type TOptionSettings = {
+  showExamples?: boolean;
+  isCodeChat?: boolean;
+};
+
+export interface ExtendedFile {
+  file?: File;
+  file_id: string;
+  temp_file_id?: string;
+  type?: string;
+  filepath?: string;
+  filename?: string;
+  width?: number;
+  height?: number;
+  size: number;
+  preview?: string;
+  progress: number;
+  source?: FileSources;
+  attached?: boolean;
+}
+
+export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

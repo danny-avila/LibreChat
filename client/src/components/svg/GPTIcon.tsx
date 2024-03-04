@@ -1,6 +1,12 @@
 import { cn } from '~/utils/';
 
-export default function GPTIcon({ size = 25, className = '' }) {
+export default function GPTIcon({
+  size = 25,
+  className = '',
+}: {
+  size?: number;
+  className?: string;
+}) {
   const unit = '41';
   const height = size;
   const width = size;

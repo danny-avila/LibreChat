@@ -1,3 +1,8 @@
+---
+title: 🔨 Automated Moderation
+description: The Automated Moderation System uses a scoring mechanism to track user violations. As users commit actions like excessive logins, registrations, or messaging, they accumulate violation scores. Upon reaching a set threshold, the user and their IP are temporarily banned. This system ensures platform security by monitoring and penalizing rapid or suspicious activities.
+weight: -8
+---
 ## Automated Moderation System (optional)
 The Automated Moderation System uses a scoring mechanism to track user violations. As users commit actions like excessive logins, registrations, or messaging, they accumulate violation scores. Upon reaching a set threshold, the user and their IP are temporarily banned. This system ensures platform security by monitoring and penalizing rapid or suspicious activities.
 
@@ -29,7 +34,7 @@ The project's current rate limiters are as follows (see below under setup for de
 
 ### Setup
 
-The following are all of the related env variables to make use of and configure the mod system. Note this is also found in the [/.env.example](/.env.example) file, to be set in your own `.env` file.
+The following are all of the related env variables to make use of and configure the mod system. Note this is also found in the [/.env.example](https://github.com/danny-avila/LibreChat/blob/main/.env.example) file, to be set in your own `.env` file.
 
 ```bash
 BAN_VIOLATIONS=true # Whether or not to enable banning users for violations (they will still be logged)
@@ -64,4 +69,29 @@ MESSAGE_IP_WINDOW=1 # in minutes, determines the window of time for MESSAGE_IP_M
 LIMIT_MESSAGE_USER=false # Whether to limit the amount of messages an IP can send per MESSAGE_USER_WINDOW
 MESSAGE_USER_MAX=40 # The max amount of messages an IP can send per MESSAGE_USER_WINDOW
 MESSAGE_USER_WINDOW=1 # in minutes, determines the window of time for MESSAGE_USER_MAX messages
+```
+
+## OpenAI moderation text
+
+### OPENAI_MODERATION
+enable or disable OpenAI moderation
+
+Values:
+`true`: OpenAI moderation is enabled
+`false`: OpenAI moderation is disabled
+
+### OPENAI_MODERATION_API_KEY
+Specify your OpenAI moderation API key here
+
+### OPENAI_MODERATION_REVERSE_PROXY
+enable or disable reverse proxy compatibility for OpenAI moderation. Note that it may not work with some reverse proxies
+
+Values:
+`true`: Enable reverse proxy compatibility
+`false`: Disable reverse proxy compatibility
+
+```bash
+OPENAI_MODERATION=true
+OPENAI_MODERATION_API_KEY=sk-1234
+# OPENAI_MODERATION_REVERSE_PROXY=false
 ```

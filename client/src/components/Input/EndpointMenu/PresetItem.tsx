@@ -1,5 +1,6 @@
 import type { TPresetItemProps } from '~/common';
 import type { TPreset } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { DropdownMenuRadioItem, EditIcon, TrashIcon } from '~/components';
 import { Icon } from '~/components/Endpoints';
 
@@ -24,32 +25,32 @@ export default function PresetItem({
     let _title = `${endpoint}`;
     const { chatGptLabel, modelLabel, model, jailbreak, toneStyle } = preset;
 
-    if (endpoint === 'azureOpenAI' || endpoint === 'openAI') {
+    if (endpoint === EModelEndpoint.azureOpenAI || endpoint === EModelEndpoint.openAI) {
       if (model) {
         _title += `: ${model}`;
       }
       if (chatGptLabel) {
         _title += ` as ${chatGptLabel}`;
       }
-    } else if (endpoint === 'google') {
+    } else if (endpoint === EModelEndpoint.google) {
       if (model) {
         _title += `: ${model}`;
       }
       if (modelLabel) {
         _title += ` as ${modelLabel}`;
       }
-    } else if (endpoint === 'bingAI') {
+    } else if (endpoint === EModelEndpoint.bingAI) {
       if (toneStyle) {
         _title += `: ${toneStyle}`;
       }
       if (jailbreak) {
         _title += ' as Sydney';
       }
-    } else if (endpoint === 'chatGPTBrowser') {
+    } else if (endpoint === EModelEndpoint.chatGPTBrowser) {
       if (model) {
         _title += `: ${model}`;
       }
-    } else if (endpoint === 'gptPlugins') {
+    } else if (endpoint === EModelEndpoint.gptPlugins) {
       if (model) {
         _title += `: ${model}`;
       }

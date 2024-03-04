@@ -18,7 +18,7 @@ const messages = atom<TMessagesAtom>({
 const messagesTree = selector({
   key: 'messagesTree',
   get: ({ get }) => {
-    return buildTree(get(messages), false);
+    return buildTree({ messages: get(messages) });
   },
 });
 
@@ -27,7 +27,7 @@ const latestMessage = atom<TMessage | null>({
   default: null,
 });
 
-const messagesSiblingIdxFamily = atomFamily({
+const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   key: 'messagesSiblingIdx',
   default: 0,
 });

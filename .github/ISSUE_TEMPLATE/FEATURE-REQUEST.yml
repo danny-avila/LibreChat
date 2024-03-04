@@ -1,0 +1,49 @@
+name: Feature Request
+description: File a feature request
+title: "Enhancement: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to fill this out!
+  - type: textarea
+    id: what
+    attributes:
+      label: What features would you like to see added?
+      description: Please provide as many details as possible.
+      placeholder: Please provide as many details as possible.
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: More details
+      description: Please provide additional details if needed.
+      placeholder: Please provide additional details if needed.
+    validations:
+      required: true
+  - type: dropdown
+    id: subject
+    attributes:
+      label: Which components are impacted by your request?
+      multiple: true
+      options:
+        - General
+        - UI
+        - Endpoints
+        - Plugins
+        - Other
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Pictures
+      description: If relevant, please include images to help clarify your request. You can drag and drop images directly here, paste them, or provide a link to them.
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/danny-avila/LibreChat/blob/main/CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

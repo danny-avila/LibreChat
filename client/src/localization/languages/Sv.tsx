@@ -3,6 +3,7 @@
 export default {
   com_ui_examples: 'Exempel', // Examples
   com_ui_new_chat: 'Ny chatt', // New chat
+  com_ui_happy_birthday: 'Det är min första födelsedag!', // It's my first birthday!
   com_ui_example_quantum_computing: 'Förklara kvantberäkning på enkla termer', // Explain quantum computing in simple terms
   com_ui_example_10_year_old_b_day: 'Har du några kreativa idéer till ett 10-årings födelsedag?', // Got any creative ideas for a 10 year old's birthday?
   com_ui_example_http_in_js: 'Hur gör jag en HTTP-förfrågan i Javascript?', // How do I make an HTTP request in Javascript?
@@ -129,11 +130,11 @@ export default {
     'Top-k ändrar hur modellen väljer tokens för utdata. Ett top-k av 1 innebär att den valda token är den mest sannolika bland alla tokens i modellens vokabulär (kallas också girig avkodning), medan ett top-k av 3 innebär att nästa token väljs bland de 3 mest sannolika tokens (med temperatur).', // Top-k changes how the model selects tokens for output. A top-k of 1 means the selected token is the most probable among all tokens in the model's vocabulary (also called greedy decoding), while a top-k of 3 means that the next token is selected from among the 3 most probable tokens (using temperature).
   com_endpoint_google_maxoutputtokens:
     'Maximalt antal tokens som kan genereras i svaret. Ange ett lägre värde för kortare svar och ett högre värde för längre svar.', // Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses.
-  com_endpoint_google_custom_name_placeholder: 'Ange ett anpassat namn för PaLM2', // Set a custom name for PaLM2
+  com_endpoint_google_custom_name_placeholder: 'Ange ett anpassat namn för Google', // Set a custom name for Google
   com_endpoint_prompt_prefix_placeholder:
     'Ange anpassade instruktioner eller kontext. Ignoreras om tom.', // Set custom instructions or context. Ignored if empty.
   com_endpoint_custom_name: 'Anpassat namn', // Custom Name
-  com_endpoint_prompt_prefix: 'Uppmaningsprefix', // Prompt Prefix
+  com_endpoint_prompt_prefix: 'Uppmaningsprefix', // Custom Instructions
   com_endpoint_temperature: 'Temperatur', // Temperature
   com_endpoint_default: 'standard', // default
   com_endpoint_top_p: 'Top P', // Top P

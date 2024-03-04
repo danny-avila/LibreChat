@@ -7,14 +7,14 @@ const { logViolation } = require('../cache');
  * @async
  * @function
  * @param {Object} params - The function parameters.
- * @param {Object} params.req - The Express request object.
- * @param {Object} params.res - The Express response object.
+ * @param {Express.Request} params.req - The Express request object.
+ * @param {Express.Response} params.res - The Express response object.
  * @param {Object} params.txData - The transaction data.
  * @param {string} params.txData.user - The user ID or identifier.
  * @param {('prompt' | 'completion')} params.txData.tokenType - The type of token.
  * @param {number} params.txData.amount - The amount of tokens.
- * @param {boolean} params.txData.debug - Debug flag.
  * @param {string} params.txData.model - The model name or identifier.
+ * @param {string} [params.txData.endpointTokenConfig] - The token configuration for the endpoint.
  * @returns {Promise<boolean>} Returns true if the user can spend the amount, otherwise denies the request.
  * @throws {Error} Throws an error if there's an issue with the balance check.
  */

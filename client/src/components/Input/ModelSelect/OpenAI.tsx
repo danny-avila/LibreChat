@@ -1,14 +1,21 @@
-import { SelectDropDown } from '~/components/ui';
-import { cn, cardStyle } from '~/utils/';
+import { SelectDropDown, SelectDropDownPop } from '~/components/ui';
 import type { TModelSelectProps } from '~/common';
+import { cn, cardStyle } from '~/utils/';
 
-export default function OpenAI({ conversation, setOption, models }: TModelSelectProps) {
+export default function OpenAI({
+  conversation,
+  setOption,
+  models,
+  showAbove = true,
+  popover = false,
+}: TModelSelectProps) {
+  const Menu = popover ? SelectDropDownPop : SelectDropDown;
   return (
-    <SelectDropDown
+    <Menu
       value={conversation?.model ?? ''}
       setValue={setOption('model')}
       availableValues={models}
-      showAbove={true}
+      showAbove={showAbove}
       showLabel={false}
       className={cn(
         cardStyle,

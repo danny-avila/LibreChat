@@ -75,7 +75,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             placeholder={localize('com_endpoint_prompt_prefix_placeholder')}
             className={cn(
               defaultTextProps,
-              'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2 ',
+              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
             )}
           />
         </div>
@@ -86,7 +86,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <div className="flex justify-between">
               <Label htmlFor="temp-int" className="text-left text-sm font-medium">
                 {localize('com_endpoint_temperature')}{' '}
-                <small className="opacity-40">({localize('com_endpoint_default')}: 0.2)</small>
+                <small className="opacity-40">({localize('com_endpoint_default')}: 1)</small>
               </Label>
               <InputNumber
                 id="temp-int"

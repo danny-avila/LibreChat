@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import {
+  useGetStartupConfig,
   useGetMessagesByConvoId,
   useGetConversationByIdMutation,
-  useGetStartupConfig,
-} from 'librechat-data-provider';
+} from 'librechat-data-provider/react-query';
 
 import Landing from '~/components/ui/Landing';
 import Messages from '~/components/Messages/Messages';
@@ -67,7 +67,7 @@ export default function Chat() {
         onError: (error) => {
           console.error('Failed to fetch the conversation');
           console.error(error);
-          navigate('/chat/new');
+          navigate('/c/new');
           newConversation();
           setShouldNavigate(true);
         },
@@ -76,7 +76,7 @@ export default function Chat() {
     }
     // No current conversation and no conversationId
     else if (conversation === null) {
-      navigate('/chat/new');
+      navigate('/c/new');
       setShouldNavigate(true);
     }
     // Current conversationId is 'search'

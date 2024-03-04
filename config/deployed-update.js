@@ -40,6 +40,19 @@ const shouldRebase = process.argv.includes('--rebase');
   console.orange(downCommand);
   execSync(downCommand, { stdio: 'inherit' });
 
+  console.purple('Removing all tags for LibreChat `deployed` images...');
+  const repositories = ['ghcr.io/danny-avila/librechat-dev-api', 'librechat-client'];
+  repositories.forEach((repo) => {
+    const tags = execSync(`sudo docker images ${repo} -q`, { encoding: 'utf8' })
+      .split('\n')
+      .filter(Boolean);
+    tags.forEach((tag) => {
+      const removeImageCommand = `sudo docker rmi ${tag}`;
+      console.orange(removeImageCommand);
+      execSync(removeImageCommand, { stdio: 'inherit' });
+    });
+  });
+
   console.purple('Pulling latest LibreChat images...');
   const pullCommand = 'sudo docker-compose -f ./deploy-compose.yml pull api';
   console.orange(pullCommand);

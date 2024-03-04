@@ -1,8 +1,13 @@
+---
+title: 🔎 Meilisearch in Render
+description: Setup Meilisearch on Render (for use with the Render deployment guide)
+weight: -3
+---
 # Utilize Meilisearch by running LibreChat on Render
 
 ## Create a new account or a new project on Render
 
-**1.** Visit [https://render.com/](https://render.com/) and click on `Start Free` to create an account and sign in
+**1.** Visit **[https://render.com/](https://render.com/)** and click on `Start Free` to create an account and sign in
 
 **2.** Access your control panel
 
@@ -35,7 +40,7 @@
 | --- | --- |
 | MEILI_HOST | http://meilisearch:7700 |
 | MEILI_HTTP_ADDR | meilisearch:7700 |
-| MEILI_MASTER_KEY | DrhYf7zENyR6AlUCKmnz0eYASOQdl6zxH7s7MKFSfFCt | 
+| MEILI_MASTER_KEY | Create a 44 character alphanunmeric key | 
 | MEILI_NO_ANALYTICS | true |
 
 **Deployment**
@@ -58,13 +63,13 @@ Once you get the message: `your service is live 🎉`, copy the URL address of y
 
 Now, insert the below environment variable values into your LibreChat project (Replace MEILI_HOST by adding the URL address of your Render's Meilisearch project that you copied):
 
-| Key | Value |
-| --- | --- |
-| MEILI_HOST | Your Render project's Meilisearch URL|
-| MEILI_HTTP_ADDR | meilisearch:7700 |
-| MEILI_MASTER_KEY | DrhYf7zENyR6AlUCKmnz0eYASOQdl6zxH7s7MKFSfFCt | 
-| MEILI_NO_ANALYTICS | true |
-| SEARCH | true |
+| Key | Value                                 |
+| --- |---------------------------------------|
+| MEILI_HOST | Your Render project's Meilisearch URL |
+| MEILI_HTTP_ADDR | meilisearch:7700                      |
+| MEILI_MASTER_KEY | Use the key created for Meilisearch   | 
+| MEILI_NO_ANALYTICS | true                                  |
+| SEARCH | true                                  |
 
   ![image](https://github.com/danny-avila/LibreChat/assets/32828263/f4ff1310-dc6b-4a81-944e-0eece8606b86)
 

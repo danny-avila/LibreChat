@@ -1,5 +1,6 @@
 const Keyv = require('keyv');
 const { KeyvFile } = require('keyv-file');
+const { logger } = require('~/config');
 
 const addToCache = async ({ endpoint, endpointOption, userMessage, responseMessage }) => {
   try {
@@ -57,7 +58,7 @@ const addToCache = async ({ endpoint, endpointOption, userMessage, responseMessa
 
     await conversationsCache.set(conversationId, conversation);
   } catch (error) {
-    console.error('Trouble adding to cache', error);
+    logger.error('[addToCache] Error adding conversation to cache', error);
   }
 };
 

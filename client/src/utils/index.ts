@@ -1,8 +1,14 @@
+export * from './map';
 export * from './json';
+export * from './files';
+export * from './latex';
+export * from './convos';
+export * from './presets';
+export * from './content';
 export * from './languages';
+export * from './endpoints';
 export { default as cn } from './cn';
 export { default as buildTree } from './buildTree';
-export { default as mapEndpoints } from './mapEndpoints';
 export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
 export { default as validateIframe } from './validateIframe';
@@ -39,16 +45,6 @@ export const languages = [
   'perl',
   'pascal',
 ];
-
-export const alternateName = {
-  openAI: 'OpenAI',
-  azureOpenAI: 'Azure OpenAI',
-  bingAI: 'Bing',
-  chatGPTBrowser: 'ChatGPT',
-  gptPlugins: 'Plugins',
-  google: 'PaLM',
-  anthropic: 'Anthropic',
-};
 
 export const removeFocusOutlines =
   'focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0';

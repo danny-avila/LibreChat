@@ -42,14 +42,14 @@ class RunCode extends StructuredTool {
   }
 
   async _call({ code, language = 'python' }) {
-    // console.log('<--------------- Running Code --------------->', { code, language });
+    // logger.debug('<--------------- Running Code --------------->', { code, language });
     const response = await axios({
       url: `${this.url}/repl`,
       method: 'post',
       headers: this.headers,
       data: { code, language },
     });
-    // console.log('<--------------- Sucessfully ran Code --------------->', response.data);
+    // logger.debug('<--------------- Sucessfully ran Code --------------->', response.data);
     return response.data.result;
   }
 }

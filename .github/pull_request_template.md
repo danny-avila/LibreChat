@@ -1,7 +1,7 @@
 # Pull Request Template
 
 
-### ⚠️ Before Submitting a PR, read the [Contributing Docs](./CONTRIBUTING.md) in full!
+### ⚠️ Before Submitting a PR, read the [Contributing Docs](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md) in full!
 
 ## Summary
 
@@ -15,7 +15,8 @@ Please delete any irrelevant options.
 - [ ] New feature (non-breaking change which adds functionality)
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] This change requires a documentation update
-- [ ] Documentation update 
+- [ ] Documentation update
+- [ ] Translation update
 
 ## Testing
 

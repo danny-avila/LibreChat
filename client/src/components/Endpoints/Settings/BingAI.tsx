@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { useUpdateTokenCountMutation, TUpdateTokenCountResponse } from 'librechat-data-provider';
-import type { TSettingsProps } from '~/common';
-import { Label, Checkbox, SelectDropDown } from '~/components/ui';
+import { useUpdateTokenCountMutation } from 'librechat-data-provider/react-query';
+import type { TUpdateTokenCountResponse } from 'librechat-data-provider';
 import { cn, defaultTextProps, removeFocusOutlines } from '~/utils/';
+import { Label, Checkbox, SelectDropDown } from '~/components/ui';
 import { useLocalize, useDebounce } from '~/hooks';
+import type { TSettingsProps } from '~/common';
 
 export default function Settings({ conversation, setOption, readonly }: TSettingsProps) {
   const localize = useLocalize();
@@ -76,7 +77,7 @@ export default function Settings({ conversation, setOption, readonly }: TSetting
             placeholder={localize('com_endpoint_bing_context_placeholder')}
             className={cn(
               defaultTextProps,
-              'flex max-h-[300px] min-h-[100px] w-full resize-none px-3 py-2',
+              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2',
             )}
           />
           <small className="mb-5 text-black dark:text-white">{`${localize(

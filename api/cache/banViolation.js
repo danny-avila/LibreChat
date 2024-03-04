@@ -1,6 +1,8 @@
-const Session = require('../models/Session');
+const Session = require('~/models/Session');
 const getLogStores = require('./getLogStores');
-const { isEnabled, math, removePorts } = require('../server/utils');
+const { isEnabled, math, removePorts } = require('~/server/utils');
+const { logger } = require('~/config');
+
 const { BAN_VIOLATIONS, BAN_INTERVAL } = process.env ?? {};
 const interval = math(BAN_INTERVAL, 20);
 
@@ -54,7 +56,7 @@ const banViolation = async (req, res, errorMessage) => {
   }
 
   req.ip = removePorts(req);
-  console.log(
+  logger.info(
     `[BAN] Banning user ${user_id} ${req.ip ? `@ ${req.ip} ` : ''}for ${
       duration / 1000 / 60
     } minutes`,

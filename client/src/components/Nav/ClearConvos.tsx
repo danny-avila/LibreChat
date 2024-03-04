@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Dialog } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { ClearChatsButton } from './SettingsTabs/';
-import { useClearConversationsMutation } from 'librechat-data-provider';
+import { useClearConversationsMutation } from 'librechat-data-provider/react-query';
 import { useLocalize, useConversation, useConversations } from '~/hooks';
 
 const ClearConvos = ({ open, onOpenChange }) => {

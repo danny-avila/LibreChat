@@ -1,14 +1,18 @@
 // Generates image using stable diffusion webui's api (automatic1111)
 const fs = require('fs');
-const { StructuredTool } = require('langchain/tools');
 const { z } = require('zod');
 const path = require('path');
 const axios = require('axios');
 const sharp = require('sharp');
+const { StructuredTool } = require('langchain/tools');
+const { logger } = require('~/config');
 
 class StableDiffusionAPI extends StructuredTool {
   constructor(fields) {
     super();
+    /* Used to initialize the Tool without necessary variables. */
+    this.override = fields.override ?? false;
+
     this.name = 'stable-diffusion';
     this.url = fields.SD_WEBUI_URL || this.getServerURL();
     this.description_for_model = `// Generate images and visuals using text.
@@ -51,7 +55,7 @@ class StableDiffusionAPI extends StructuredTool {
 
   getServerURL() {
     const url = process.env.SD_WEBUI_URL || '';
-    if (!url) {
+    if (!url && !this.override) {
       throw new Error('Missing SD_WEBUI_URL environment variable.');
     }
     return url;
@@ -107,7 +111,7 @@ class StableDiffusionAPI extends StructuredTool {
         .toFile(this.outputPath + '/' + imageName);
       this.result = this.getMarkdownImageUrl(imageName);
     } catch (error) {
-      console.error('Error while saving the image:', error);
+      logger.error('[StableDiffusion] Error while saving the image:', error);
       // this.result = theImageUrl;
     }
 

@@ -1,6 +1,6 @@
-import React from 'react';
+import { cn } from '~/utils';
 
-export default function LightningIcon() {
+export default function LightningIcon({ className = '' }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -9,7 +9,7 @@ export default function LightningIcon() {
       strokeWidth="1.5"
       stroke="currentColor"
       aria-hidden="true"
-      className="h-6 w-6"
+      className={cn('h-6 w-6', className)}
     >
       <path
         strokeLinecap="round"

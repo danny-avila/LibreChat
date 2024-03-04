@@ -23,9 +23,9 @@ jobs:
       BAN_INTERVAL: ${{ secrets.BAN_INTERVAL }}
       NODE_ENV: CI
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Use Node.js 20.x
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
@@ -38,6 +38,9 @@ jobs:
 
       - name: Run unit tests
         run: cd api && npm run test:ci
+
+      - name: Run librechat-data-provider unit tests
+        run: cd packages/data-provider && npm run test:ci
 
       - name: Run linters
         uses: wearerequired/lint-action@v2

@@ -7,6 +7,8 @@ const {
   SystemMessagePromptTemplate,
   HumanMessagePromptTemplate,
 } = require('langchain/prompts');
+const { logger } = require('~/config');
+
 const PREFIX = 'You are a helpful AI assistant.';
 
 function parseOutput(message) {
@@ -112,7 +114,7 @@ class FunctionsAgent extends Agent {
       valuesForLLM,
       callbackManager,
     );
-    console.log('message', message);
+    logger.debug('[FunctionsAgent] plan message', message);
     return parseOutput(message);
   }
 }

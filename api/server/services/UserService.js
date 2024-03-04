@@ -1,5 +1,6 @@
-const { User, Key } = require('../../models');
-const { encrypt, decrypt } = require('../utils');
+const { User, Key } = require('~/models');
+const { encrypt, decrypt } = require('~/server/utils');
+const { logger } = require('~/config');
 
 const updateUserPluginsService = async (user, pluginKey, action) => {
   try {
@@ -15,7 +16,7 @@ const updateUserPluginsService = async (user, pluginKey, action) => {
       );
     }
   } catch (err) {
-    console.log(err);
+    logger.error('[updateUserPluginsService]', err);
     return err;
   }
 };

@@ -1,19 +1,27 @@
 import { atom, selector } from 'recoil';
-import { TEndpointsConfig } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 
 const defaultConfig: TEndpointsConfig = {
-  azureOpenAI: null,
-  openAI: null,
-  bingAI: null,
-  chatGPTBrowser: null,
-  gptPlugins: null,
-  google: null,
-  anthropic: null,
+  [EModelEndpoint.azureOpenAI]: null,
+  [EModelEndpoint.assistants]: null,
+  [EModelEndpoint.openAI]: null,
+  [EModelEndpoint.bingAI]: null,
+  [EModelEndpoint.chatGPTBrowser]: null,
+  [EModelEndpoint.gptPlugins]: null,
+  [EModelEndpoint.google]: null,
+  [EModelEndpoint.anthropic]: null,
+  [EModelEndpoint.custom]: null,
 };
 
 const endpointsConfig = atom<TEndpointsConfig>({
   key: 'endpointsConfig',
   default: defaultConfig,
+});
+
+const endpointsQueryEnabled = atom<boolean>({
+  key: 'endpointsQueryEnabled',
+  default: true,
 });
 
 const plugins = selector({
@@ -37,28 +45,10 @@ const endpointsFilter = selector({
   },
 });
 
-const availableEndpoints = selector({
-  key: 'availableEndpoints',
-  get: ({ get }) => {
-    const endpoints = [
-      'azureOpenAI',
-      'openAI',
-      'chatGPTBrowser',
-      'gptPlugins',
-      'bingAI',
-      'google',
-      'anthropic',
-    ];
-    const f = get(endpointsFilter);
-    return endpoints.filter((endpoint) => f[endpoint]);
-  },
-});
-// const modelAvailable
-
 export default {
   plugins,
   endpointsConfig,
   endpointsFilter,
-  availableEndpoints,
   defaultConfig,
+  endpointsQueryEnabled,
 };

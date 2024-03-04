@@ -1,7 +1,13 @@
 /* eslint-disable indent */
 import { cn } from '~/utils/';
 
-export default function AzureMinimalIcon({ size = 25, className = 'h-4 w-4' }) {
+export default function AzureMinimalIcon({
+  size = 25,
+  className = 'h-4 w-4',
+}: {
+  size?: number;
+  className?: string;
+}) {
   const height = size;
   const width = size;
 

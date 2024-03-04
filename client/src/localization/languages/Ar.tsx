@@ -3,6 +3,7 @@
 export default {
   com_ui_balance: 'الرصيد',
   com_ui_examples: 'أمثلة',
+  com_ui_happy_birthday: 'إنه عيد ميلادي الأول!',
   com_ui_new_chat: 'دردشة جديدة',
   com_ui_example_quantum_computing: 'شرح الحوسبة الكمومية ببساطة',
   com_ui_example_10_year_old_b_day: 'هل لديك أفكار إبداعية لعيد ميلاد طفل عمره 10 سنوات؟',
@@ -133,7 +134,7 @@ export default {
     'Top-k يغير كيفية اختيار النموذج للرموز للإخراج. top-k من 1 يعني أن الرمز المحدد هو الأكثر احتمالية بين جميع   الرموز في مفردات النموذج (يسمى أيضًا الترميز الجشعي)، بينما top-k من 3 يعني أن الرمز التالي يتم اختياره من بين الرموز الثلاثة الأكثر احتمالية (باستخدام الحرارة).',
   com_endpoint_google_maxoutputtokens:
     'الحد الأقصى لعدد الرموز التي يمكن إنشاؤها في الرد. حدد قيمة أقل للردود الأقصر وقيمة أعلى للردود الأطول.',
-  com_endpoint_google_custom_name_placeholder: 'قم بتعيين اسم مخصص لـ PaLM2',
+  com_endpoint_google_custom_name_placeholder: 'قم بتعيين اسم مخصص لـ Google',
   com_endpoint_prompt_prefix_placeholder:
     'قم بتعيين تعليمات مخصصة أو سياق. يتم تجاهله إذا كان فارغًا.',
   com_endpoint_custom_name: 'اسم مخصص',
@@ -234,8 +235,6 @@ export default {
   com_nav_plugin_search: 'ابحث عن الإضافات',
   com_nav_plugin_auth_error:
     'حدث خطأ أثناء محاولة المصادقة على هذا البرنامج المساعد. يرجى المحاولة مرة أخرى.',
-  com_nav_close_menu: 'إغلاق القائمة الجانبية',
-  com_nav_open_menu: 'افتح القائمة الجانبية',
   com_nav_export_filename: 'اسم الملف',
   com_nav_export_filename_placeholder: 'قم بتعيين اسم الملف',
   com_nav_export_type: 'النوع',
@@ -264,5 +263,4 @@ export default {
   com_nav_search_placeholder: 'بحث في الرسائل',
   com_nav_setting_general: 'عام',
   com_nav_setting_data: 'تحكم في البيانات',
-  com_nav_language: 'اللغة',
 };

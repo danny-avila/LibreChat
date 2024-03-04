@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const { langPrompt, createTitlePrompt, escapeBraces, getSnippet } = require('../prompts');
 const { createStructuredOutputChainFromZod } = require('langchain/chains/openai_functions');
+const { logger } = require('~/config');
 
 const langSchema = z.object({
   language: z.string().describe('The language of the input text (full noun, no abbreviations).'),
@@ -30,8 +31,7 @@ const runTitleChain = async ({ llm, text, convo, signal, callbacks }) => {
   try {
     snippet = getSnippet(text);
   } catch (e) {
-    console.log('Error getting snippet of text for titleChain');
-    console.log(e);
+    logger.error('[runTitleChain] Error getting snippet of text for titleChain', e);
   }
   const languageChain = createLanguageChain({ llm, callbacks });
   const titleChain = createTitleChain({ llm, callbacks, convo: escapeBraces(convo) });
