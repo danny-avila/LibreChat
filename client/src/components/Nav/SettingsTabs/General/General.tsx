@@ -104,6 +104,7 @@ export const LangSelector = ({
     { value: 'tr-TR', display: localize('com_nav_lang_turkish') },
     { value: 'nl-NL', display: localize('com_nav_lang_dutch') },
     { value: 'id-ID', display: localize('com_nav_lang_indonesia') },
+    { value: 'he-HE', display: localize('com_nav_lang_hebrew') },
   ];
 
   return (
