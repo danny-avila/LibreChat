@@ -12,6 +12,7 @@ export const modelConfigSchema = z
   .object({
     deploymentName: z.string().optional(),
     version: z.string().optional(),
+    assistants: z.boolean().optional(),
   })
   .or(z.boolean());
 
@@ -22,6 +23,7 @@ export const azureBaseSchema = z.object({
   serverless: z.boolean().optional(),
   instanceName: z.string().optional(),
   deploymentName: z.string().optional(),
+  assistants: z.boolean().optional(),
   addParams: z.record(z.any()).optional(),
   dropParams: z.array(z.string()).optional(),
   forcePrompt: z.boolean().optional(),
