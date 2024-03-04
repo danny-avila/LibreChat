@@ -107,6 +107,20 @@ const EditMessage = ({
           'm-0 w-full resize-none border-0 bg-transparent p-0',
           removeFocusOutlines,
         )}
+        onPaste={(e) => {
+          e.preventDefault();
+
+          const pastedData = e.clipboardData.getData('text/plain');
+          const textArea = textAreaRef.current;
+          if (!textArea) {
+            return;
+          }
+          const start = textArea.selectionStart;
+          const end = textArea.selectionEnd;
+          const newValue =
+            textArea.value.substring(0, start) + pastedData + textArea.value.substring(end);
+          setEditedText(newValue);
+        }}
         contentEditable={true}
         value={editedText}
         suppressContentEditableWarning={true}
