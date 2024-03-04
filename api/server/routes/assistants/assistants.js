@@ -1,10 +1,10 @@
 const multer = require('multer');
 const express = require('express');
 const { FileContext, EModelEndpoint } = require('librechat-data-provider');
-const { updateAssistant, getAssistants } = require('~/models/Assistant');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
+const { updateAssistant, getAssistants } = require('~/models/Assistant');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
 const actions = require('./actions');
@@ -47,6 +47,10 @@ router.post('/', async (req, res) => {
         return req.app.locals.availableTools[tool];
       })
       .filter((tool) => tool);
+
+    if (openai.locals?.azureOptions) {
+      assistantData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;
+    }
 
     const assistant = await openai.beta.assistants.create(assistantData);
     logger.debug('/assistants/', assistant);
@@ -100,6 +104,10 @@ router.patch('/:id', async (req, res) => {
         return req.app.locals.availableTools[tool];
       })
       .filter((tool) => tool);
+
+    if (openai.locals?.azureOptions && updateData.model) {
+      updateData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;
+    }
 
     const updatedAssistant = await openai.beta.assistants.update(assistant_id, updateData);
     res.json(updatedAssistant);

@@ -1,6 +1,10 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { EModelEndpoint } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  resolveHeaders,
+  mapModelToAzureConfig,
+} = require('librechat-data-provider');
 const {
   getUserKey,
   getUserKeyExpiry,
@@ -8,6 +12,7 @@ const {
 } = require('~/server/services/UserService');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
 const { isUserProvided } = require('~/server/utils');
+const { constructAzureURL } = require('~/utils');
 
 const initializeClient = async ({ req, res, endpointOption, initAppClient = false }) => {
   const { PROXY, OPENAI_ORGANIZATION, ASSISTANTS_API_KEY, ASSISTANTS_BASE_URL } = process.env;
@@ -38,11 +43,42 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
   let apiKey = userProvidesKey ? userValues.apiKey : ASSISTANTS_API_KEY;
   let baseURL = userProvidesURL ? userValues.baseURL : ASSISTANTS_BASE_URL;
 
+  const opts = {};
+
+  /** @type {TAzureConfig | undefined} */
+  const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
+
+  /** @type {AzureOptions | undefined} */
+  let azureOptions;
+
+  if (azureConfig && azureConfig.assistants) {
+    const { modelGroupMap, groupMap, modelNames } = azureConfig;
+    const {
+      azureOptions: currentOptions,
+      baseURL: azureBaseURL,
+      headers = {},
+    } = mapModelToAzureConfig({
+      modelName: req.body.model ?? modelNames[0],
+      modelGroupMap,
+      groupMap,
+    });
+
+    azureOptions = currentOptions;
+
+    baseURL = constructAzureURL({
+      baseURL: azureBaseURL ?? 'https://${INSTANCE_NAME}.openai.azure.com/openai',
+      azureOptions,
+    });
+
+    apiKey = azureOptions.azureOpenAIApiKey;
+    opts.defaultQuery = { 'api-version': azureOptions.azureOpenAIApiVersion };
+    opts.defaultHeaders = resolveHeaders({ ...headers, 'api-key': apiKey });
+    opts.model = azureOptions.azureOpenAIApiDeploymentName;
+  }
+
   if (!apiKey) {
     throw new Error('Assistants API key not provided. Please provide it again.');
   }
-
-  const opts = {};
 
   if (baseURL) {
     opts.baseURL = baseURL;
@@ -61,8 +97,13 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
     apiKey,
     ...opts,
   });
+
   openai.req = req;
   openai.res = res;
+
+  if (azureOptions) {
+    openai.locals = { ...(openai.locals ?? {}), azureOptions };
+  }
 
   if (endpointOption && initAppClient) {
     const clientOptions = {
