@@ -58,7 +58,7 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
       baseURL: azureBaseURL,
       headers = {},
     } = mapModelToAzureConfig({
-      modelName: req.body.model ?? modelNames[0],
+      modelName: req.body.model ?? req.query.model ?? modelNames[0],
       modelGroupMap,
       groupMap,
     });
