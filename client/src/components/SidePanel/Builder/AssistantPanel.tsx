@@ -57,6 +57,10 @@ export default function AssistantPanel({
   const functions = useWatch({ control, name: 'functions' });
   const model = useWatch({ control, name: 'model' });
 
+  const activeModel = useMemo(() => {
+    return assistantMap?.[assistant_id]?.model;
+  }, [assistantMap, assistant_id]);
+
   useEffect(() => {
     if (model && !supportsRetrieval.has(model)) {
       setValue('retrieval', false);
@@ -421,6 +425,7 @@ export default function AssistantPanel({
             {/* Context Button */}
             <ContextButton
               assistant_id={assistant_id}
+              activeModel={activeModel}
               setCurrentAssistantId={setCurrentAssistantId}
               createMutation={create}
             />

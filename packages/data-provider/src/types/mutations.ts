@@ -86,6 +86,8 @@ export type UpdateAssistantMutationOptions = {
   ) => void;
 };
 
+export type DeleteAssistantBody = { assistant_id: string; model: string };
+
 export type DeleteAssistantMutationOptions = {
   onSuccess?: (data: void, variables: { assistant_id: string }, context?: unknown) => void;
   onMutate?: (variables: { assistant_id: string }) => void | Promise<unknown>;

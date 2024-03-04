@@ -186,8 +186,8 @@ export const updateAssistant = (
   return request.patch(endpoints.assistants(assistant_id), data);
 };
 
-export const deleteAssistant = (assistant_id: string): Promise<void> => {
-  return request.delete(endpoints.assistants(assistant_id));
+export const deleteAssistant = (assistant_id: string, model: string): Promise<void> => {
+  return request.delete(endpoints.assistants(assistant_id, { model }));
 };
 
 export const listAssistants = (
