@@ -1,5 +1,5 @@
 ---
-title: 🚅 Ollama
+title: 🦙 Ollama
 description: Using LibreChat with Ollama 
 weight: -6
 ---
