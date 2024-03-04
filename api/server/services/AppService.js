@@ -68,7 +68,7 @@ const AppService = async (app) => {
   const endpointLocals = {};
 
   if (config?.endpoints?.[EModelEndpoint.azureOpenAI]) {
-    const { groups, ...rest } = config.endpoints[EModelEndpoint.azureOpenAI];
+    const { groups, ...azureConfiguration } = config.endpoints[EModelEndpoint.azureOpenAI];
     const { isValid, modelNames, modelGroupMap, groupMap, errors } = validateAzureGroups(groups);
 
     if (!isValid) {
@@ -78,15 +78,32 @@ const AppService = async (app) => {
       throw new Error(errorMessage);
     }
 
+    const assistantModels = [];
+    const assistantGroups = new Set();
     for (const modelName of modelNames) {
       mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
+      const groupName = modelGroupMap?.[modelName]?.group;
+      const modelGroup = groupMap?.[groupName];
+      let supportsAssistants = modelGroup?.assistants || modelGroup?.[modelName]?.assistants;
+      if (supportsAssistants) {
+        assistantModels.push(modelName);
+        !assistantGroups.has(groupName) && assistantGroups.add(groupName);
+      }
+    }
+
+    if (azureConfiguration.assistants && assistantModels.length === 0) {
+      throw new Error(
+        'No Azure models are configured to support assistants. Please remove the `assistants` field or configure at least one model to support assistants.',
+      );
     }
 
     endpointLocals[EModelEndpoint.azureOpenAI] = {
       modelNames,
       modelGroupMap,
       groupMap,
-      ...rest,
+      assistantModels,
+      assistantGroups: Array.from(assistantGroups),
+      ...azureConfiguration,
     };
 
     deprecatedAzureVariables.forEach(({ key, description }) => {
