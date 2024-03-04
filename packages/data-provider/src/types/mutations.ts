@@ -46,6 +46,7 @@ export type LogoutOptions = {
 
 export type AssistantAvatarVariables = {
   assistant_id: string;
+  model: string;
   formData: FormData;
   postCreation?: boolean;
 };

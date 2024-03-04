@@ -225,7 +225,10 @@ export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> =>
 };
 
 export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise<a.Assistant> => {
-  return request.postMultiPart(endpoints.assistants(`avatar/${data.assistant_id}`), data.formData);
+  return request.postMultiPart(
+    endpoints.assistants(`avatar/${data.assistant_id}`, { model: data.model }),
+    data.formData,
+  );
 };
 
 export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
