@@ -1,9 +1,15 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
-const { getResponseSender, EModelEndpoint } = require('librechat-data-provider');
+const {
+  getResponseSender,
+  EModelEndpoint,
+  validateVisionModel,
+} = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const spendTokens = require('~/models/spendTokens');
 const { getModelMaxTokens } = require('~/utils');
 const { formatMessage } = require('./prompts');
+const { getFiles } = require('~/models/File');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -23,6 +29,9 @@ class AnthropicClient extends BaseClient {
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
     this.userLabel = HUMAN_PROMPT;
     this.assistantLabel = AI_PROMPT;
+    this.contextStrategy = options.contextStrategy
+      ? options.contextStrategy.toLowerCase()
+      : 'discard';
     this.setOptions(options);
   }
 
@@ -55,10 +64,10 @@ class AnthropicClient extends BaseClient {
     };
 
     this.isClaude3 = this.modelOptions.model.includes('claude-3');
+    this.useMessages = this.isClaude3 || !!this.options.attachments;
 
-    if (this.isClaude3) {
-      this.useMessages = true;
-    }
+    this.defaultVisionModel = this.options.visionModel ?? 'claude-3-sonnet-20240229';
+    this.checkVisionRequest(this.options.attachments);
 
     this.maxContextTokens =
       getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ?? 100000;
@@ -112,6 +121,45 @@ class AnthropicClient extends BaseClient {
     return new Anthropic(options);
   }
 
+  getTokenCountForResponse(response) {
+    return this.getTokenCountForMessage({
+      role: 'assistant',
+      content: response.text,
+    });
+  }
+
+  /**
+   *
+   * Checks if the model is a vision model based on request attachments and sets the appropriate options:
+   * - Sets `this.modelOptions.model` to `gpt-4-vision-preview` if the request is a vision request.
+   * - Sets `this.isVisionModel` to `true` if vision request.
+   * - Deletes `this.modelOptions.stop` if vision request.
+   * @param {Array<Promise<MongoFile[]> | MongoFile[]> | Record<string, MongoFile[]>} attachments
+   */
+  checkVisionRequest(attachments) {
+    this.isVisionModel = validateVisionModel(this.modelOptions.model);
+
+    if (attachments && !this.isVisionModel) {
+      this.modelOptions.model = this.defaultVisionModel;
+      this.isVisionModel = true;
+    }
+  }
+
+  /**
+   * Calculate the token cost in tokens for an image based on its dimensions and detail level.
+   *
+   * For reference, see: https://docs.anthropic.com/claude/docs/vision#image-costs
+   *
+   * @param {Object} image - The image object.
+   * @param {number} image.width - The width of the image.
+   * @param {number} image.height - The height of the image.
+   * @returns {number} The calculated token cost measured by tokens.
+   *
+   */
+  calculateImageTokenCost({ width, height }) {
+    return Math.ceil((width * height) / 750);
+  }
+
   async addImageURLs(message, attachments) {
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
@@ -120,6 +168,68 @@ class AnthropicClient extends BaseClient {
     );
     message.image_urls = image_urls;
     return files;
+  }
+
+  async recordTokenUsage({ promptTokens, completionTokens }) {
+    logger.debug('[AnthropicClient] recordTokenUsage:', { promptTokens, completionTokens });
+    await spendTokens(
+      {
+        user: this.user,
+        model: this.modelOptions.model,
+        context: 'message',
+        conversationId: this.conversationId,
+        endpointTokenConfig: this.options.endpointTokenConfig,
+      },
+      { promptTokens, completionTokens },
+    );
+  }
+
+  /**
+   *
+   * @param {TMessage[]} _messages
+   * @returns {TMessage[]}
+   */
+  async addPreviousAttachments(_messages) {
+    if (!this.options.resendImages) {
+      return _messages;
+    }
+
+    /**
+     *
+     * @param {TMessage} message
+     */
+    const processMessage = async (message) => {
+      if (!this.message_file_map) {
+        /** @type {Record<string, MongoFile[]> */
+        this.message_file_map = {};
+      }
+
+      const fileIds = message.files.map((file) => file.file_id);
+      const files = await getFiles({
+        file_id: { $in: fileIds },
+      });
+
+      await this.addImageURLs(message, files);
+
+      this.message_file_map[message.messageId] = files;
+      return message;
+    };
+
+    const promises = [];
+
+    for (const message of _messages) {
+      if (!message.files) {
+        promises.push(message);
+        continue;
+      }
+
+      promises.push(processMessage(message));
+    }
+
+    const messages = await Promise.all(promises);
+
+    this.checkVisionRequest(this.message_file_map);
+    return messages;
   }
 
   async buildMessages(messages, parentMessageId) {
@@ -152,24 +262,63 @@ class AnthropicClient extends BaseClient {
       this.options.attachments = files;
     }
 
-    const formattedMessages = orderedMessages.map((message) => {
-      if (this.useMessages) {
-        return formatMessage({
+    const formattedMessages = orderedMessages.map((message, i) => {
+      const formattedMessage = this.useMessages
+        ? formatMessage({
           message,
           endpoint: EModelEndpoint.anthropic,
-        });
+        })
+        : {
+          author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
+          content: message?.content ?? message.text,
+        };
+
+      const needsTokenCount = this.contextStrategy && !orderedMessages[i].tokenCount;
+      /* If tokens were never counted, or, is a Vision request and the message has files, count again */
+      if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
+        orderedMessages[i].tokenCount = this.getTokenCountForMessage(formattedMessage);
       }
 
-      return {
-        author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
-        content: message?.content ?? message.text,
-      };
+      /* If message has files, calculate image token cost */
+      if (this.message_file_map && this.message_file_map[message.messageId]) {
+        const attachments = this.message_file_map[message.messageId];
+        for (const file of attachments) {
+          orderedMessages[i].tokenCount += this.calculateImageTokenCost({
+            width: file.width,
+            height: file.height,
+          });
+        }
+      }
+
+      formattedMessage.tokenCount = orderedMessages[i].tokenCount;
+      return formattedMessage;
+    });
+
+    let { context: messagesInWindow, remainingContextTokens } =
+      await this.getMessagesWithinTokenLimit(formattedMessages);
+
+    const tokenCountMap = orderedMessages
+      .slice(orderedMessages.length - messagesInWindow.length)
+      .reduce((map, message, index) => {
+        const { messageId } = message;
+        if (!messageId) {
+          return map;
+        }
+
+        map[messageId] = orderedMessages[index].tokenCount;
+        return map;
+      }, {});
+
+    logger.debug('[AnthropicClient]', {
+      messagesInWindow: messagesInWindow.length,
+      remainingContextTokens,
     });
 
     let lastAuthor = '';
     let groupedMessages = [];
 
-    for (let message of formattedMessages) {
+    for (let i = 0; i < messagesInWindow.length; i++) {
+      const message = messagesInWindow[i];
       const author = message.role ?? message.author;
       // If last author is not same as current author, add to new group
       if (lastAuthor !== author) {
@@ -205,6 +354,10 @@ class AnthropicClient extends BaseClient {
         };
       }
 
+      if (!this.useMessages && msg.tokenCount) {
+        delete msg.tokenCount;
+      }
+
       return msg;
     });
 
@@ -233,9 +386,10 @@ class AnthropicClient extends BaseClient {
     // Prompt AI to respond, empty if last message was from AI
     let isEdited = lastAuthor === this.assistantLabel;
     const promptSuffix = isEdited ? '' : `${promptPrefix}${this.assistantLabel}\n`;
-    let currentTokenCount = isEdited
-      ? this.getTokenCount(promptPrefix)
-      : this.getTokenCount(promptSuffix);
+    let currentTokenCount =
+      isEdited || this.useMEssages
+        ? this.getTokenCount(promptPrefix)
+        : this.getTokenCount(promptSuffix);
 
     let promptBody = '';
     const maxTokenCount = this.maxPromptTokens;
@@ -311,15 +465,11 @@ class AnthropicClient extends BaseClient {
         this.systemMessage = promptPrefix;
       }
 
-      let i = 0;
       while (currentTokenCount < maxTokenCount && groupedMessages.length > 0 && canContinue) {
         const message = groupedMessages.pop();
 
-        let tokenCountForMessage = this.getTokenCountForMessage(message);
-        if (i === 0) {
-          tokenCountForMessage += this.getTokenCount(promptPrefix);
-          i++;
-        }
+        let tokenCountForMessage = message.tokenCount ?? this.getTokenCountForMessage(message);
+
         const newTokenCount = currentTokenCount + tokenCountForMessage;
         const exceededMaxCount = newTokenCount > maxTokenCount;
 
@@ -332,6 +482,7 @@ class AnthropicClient extends BaseClient {
           break;
         }
 
+        delete message.tokenCount;
         messagesPayload.unshift(message);
         currentTokenCount = newTokenCount;
 
@@ -359,7 +510,12 @@ class AnthropicClient extends BaseClient {
     if (this.modelOptions.model.startsWith('claude-3')) {
       await buildMessagesPayload();
       processTokens();
-      return { prompt: messagesPayload, context };
+      return {
+        prompt: messagesPayload,
+        context: messagesInWindow,
+        promptTokens: currentTokenCount,
+        tokenCountMap,
+      };
     } else {
       await buildPromptBody();
       processTokens();
@@ -373,7 +529,7 @@ class AnthropicClient extends BaseClient {
 
     let prompt = `${promptBody}${promptSuffix}`;
 
-    return { prompt, context };
+    return { prompt, context, promptTokens: currentTokenCount };
   }
 
   getCompletion() {

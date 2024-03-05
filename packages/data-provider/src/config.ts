@@ -303,6 +303,7 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
 
 export const supportsBalanceCheck = {
   [EModelEndpoint.openAI]: true,
+  [EModelEndpoint.anthropic]: true,
   [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.gptPlugins]: true,
   [EModelEndpoint.custom]: true,
