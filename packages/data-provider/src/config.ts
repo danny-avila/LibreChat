@@ -308,7 +308,7 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.custom]: true,
 };
 
-export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision'];
+export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision', 'claude-3'];
 
 export function validateVisionModel(
   model: string | undefined,
