@@ -198,7 +198,10 @@ class AnthropicClient extends BaseClient {
         return {
           ...msg,
           // reason: final assistant content cannot end with trailing whitespace
-          content: isLast && msg.role === 'assistant' ? content?.trim() : content,
+          content:
+            isLast && msg.role === 'assistant' && typeof content === 'string'
+              ? content?.trim()
+              : content,
         };
       }
 
