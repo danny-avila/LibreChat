@@ -241,6 +241,8 @@ export const defaultModels = {
     'code-bison-32k',
   ],
   [EModelEndpoint.anthropic]: [
+    'claude-3-opus-20240229',
+    'claude-3-sonnet-20240229',
     'claude-2.1',
     'claude-2',
     'claude-1.2',
