@@ -1,7 +1,9 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { getResponseSender, EModelEndpoint } = require('librechat-data-provider');
+const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { getModelMaxTokens } = require('~/utils');
+const { formatMessage } = require('./prompts');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -9,6 +11,11 @@ const HUMAN_PROMPT = '\n\nHuman:';
 const AI_PROMPT = '\n\nAssistant:';
 
 const tokenizersCache = {};
+
+/** Helper function to introduce a delay before retrying */
+function delayBeforeRetry(attempts, baseDelay = 1000) {
+  return new Promise((resolve) => setTimeout(resolve, baseDelay * attempts));
+}
 
 class AnthropicClient extends BaseClient {
   constructor(apiKey, options = {}) {
@@ -46,6 +53,12 @@ class AnthropicClient extends BaseClient {
       topK: typeof modelOptions.topK === 'undefined' ? 40 : modelOptions.topK, // 1-40, default: 40
       stop: modelOptions.stop, // no stop method for now
     };
+
+    this.isClaude3 = this.modelOptions.model.includes('claude-3');
+
+    if (this.isClaude3) {
+      this.useMessages = true;
+    }
 
     this.maxContextTokens =
       getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ?? 100000;
@@ -99,6 +112,16 @@ class AnthropicClient extends BaseClient {
     return new Anthropic(options);
   }
 
+  async addImageURLs(message, attachments) {
+    const { files, image_urls } = await encodeAndFormat(
+      this.options.req,
+      attachments,
+      EModelEndpoint.anthropic,
+    );
+    message.image_urls = image_urls;
+    return files;
+  }
+
   async buildMessages(messages, parentMessageId) {
     const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
@@ -107,27 +130,80 @@ class AnthropicClient extends BaseClient {
 
     logger.debug('[AnthropicClient] orderedMessages', { orderedMessages, parentMessageId });
 
-    const formattedMessages = orderedMessages.map((message) => ({
-      author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
-      content: message?.content ?? message.text,
-    }));
+    if (!this.isClaude3 && this.options.attachments) {
+      throw new Error('Attachments are only supported with the Claude 3 family of models');
+    } else if (this.options.attachments) {
+      const attachments = (await this.options.attachments).filter((file) =>
+        file.type.includes('image'),
+      );
+
+      const latestMessage = orderedMessages[orderedMessages.length - 1];
+
+      if (this.message_file_map) {
+        this.message_file_map[latestMessage.messageId] = attachments;
+      } else {
+        this.message_file_map = {
+          [latestMessage.messageId]: attachments,
+        };
+      }
+
+      const files = await this.addImageURLs(latestMessage, attachments);
+
+      this.options.attachments = files;
+    }
+
+    const formattedMessages = orderedMessages.map((message) => {
+      if (this.useMessages) {
+        return formatMessage({
+          message,
+          endpoint: EModelEndpoint.anthropic,
+        });
+      }
+
+      return {
+        author: message.isCreatedByUser ? this.userLabel : this.assistantLabel,
+        content: message?.content ?? message.text,
+      };
+    });
 
     let lastAuthor = '';
     let groupedMessages = [];
 
     for (let message of formattedMessages) {
+      const author = message.role ?? message.author;
       // If last author is not same as current author, add to new group
-      if (lastAuthor !== message.author) {
-        groupedMessages.push({
-          author: message.author,
+      if (lastAuthor !== author) {
+        const newMessage = {
           content: [message.content],
-        });
-        lastAuthor = message.author;
+        };
+
+        if (message.role) {
+          newMessage.role = message.role;
+        } else {
+          newMessage.author = message.author;
+        }
+
+        groupedMessages.push(newMessage);
+        lastAuthor = author;
         // If same author, append content to the last group
       } else {
         groupedMessages[groupedMessages.length - 1].content.push(message.content);
       }
     }
+
+    groupedMessages = groupedMessages.map((msg, i) => {
+      const isLast = i === groupedMessages.length - 1;
+      if (msg.content.length === 1) {
+        const content = msg.content[0];
+        return {
+          ...msg,
+          // reason: final assistant content cannot end with trailing whitespace
+          content: isLast && msg.role === 'assistant' ? content?.trim() : content,
+        };
+      }
+
+      return msg;
+    });
 
     let identityPrefix = '';
     if (this.options.userLabel) {
@@ -224,7 +300,67 @@ class AnthropicClient extends BaseClient {
       return true;
     };
 
-    await buildPromptBody();
+    const messagesPayload = [];
+    const buildMessagesPayload = async () => {
+      let canContinue = true;
+
+      if (promptPrefix) {
+        this.systemMessage = promptPrefix;
+      }
+
+      let i = 0;
+      while (currentTokenCount < maxTokenCount && groupedMessages.length > 0 && canContinue) {
+        const message = groupedMessages.pop();
+
+        let tokenCountForMessage = this.getTokenCountForMessage(message);
+        if (i === 0) {
+          tokenCountForMessage += this.getTokenCount(promptPrefix);
+          i++;
+        }
+        const newTokenCount = currentTokenCount + tokenCountForMessage;
+        const exceededMaxCount = newTokenCount > maxTokenCount;
+
+        if (exceededMaxCount && messagesPayload.length === 0) {
+          throw new Error(
+            `Prompt is too long. Max token count is ${maxTokenCount}, but prompt is ${newTokenCount} tokens long.`,
+          );
+        } else if (exceededMaxCount) {
+          canContinue = false;
+          break;
+        }
+
+        messagesPayload.unshift(message);
+        currentTokenCount = newTokenCount;
+
+        // Switch off isEdited after using it once
+        if (isEdited && message.role === 'assistant') {
+          isEdited = false;
+        }
+
+        // Wait for next tick to avoid blocking the event loop
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    };
+
+    const processTokens = () => {
+      // Add 2 tokens for metadata after all messages have been counted.
+      currentTokenCount += 2;
+
+      // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
+      this.modelOptions.maxOutputTokens = Math.min(
+        this.maxContextTokens - currentTokenCount,
+        this.maxResponseTokens,
+      );
+    };
+
+    if (this.modelOptions.model.startsWith('claude-3')) {
+      await buildMessagesPayload();
+      processTokens();
+      return { prompt: messagesPayload, context };
+    } else {
+      await buildPromptBody();
+      processTokens();
+    }
 
     if (nextMessage.remove) {
       promptBody = promptBody.replace(nextMessage.messageString, '');
@@ -234,20 +370,17 @@ class AnthropicClient extends BaseClient {
 
     let prompt = `${promptBody}${promptSuffix}`;
 
-    // Add 2 tokens for metadata after all messages have been counted.
-    currentTokenCount += 2;
-
-    // Use up to `this.maxContextTokens` tokens (prompt + response), but try to leave `this.maxTokens` tokens for the response.
-    this.modelOptions.maxOutputTokens = Math.min(
-      this.maxContextTokens - currentTokenCount,
-      this.maxResponseTokens,
-    );
-
     return { prompt, context };
   }
 
   getCompletion() {
     logger.debug('AnthropicClient doesn\'t use getCompletion (all handled in sendCompletion)');
+  }
+
+  async createResponse(client, options) {
+    return this.useMessages
+      ? await client.messages.create(options)
+      : await client.completions.create(options);
   }
 
   async sendCompletion(payload, { onProgress, abortController }) {
@@ -279,36 +412,88 @@ class AnthropicClient extends BaseClient {
       topP: top_p,
       topK: top_k,
     } = this.modelOptions;
+
     const requestOptions = {
-      prompt: payload,
       model,
       stream: stream || true,
-      max_tokens_to_sample: maxOutputTokens || 1500,
       stop_sequences,
       temperature,
       metadata,
       top_p,
       top_k,
     };
-    logger.debug('[AnthropicClient]', { ...requestOptions });
-    const response = await client.completions.create(requestOptions);
 
-    signal.addEventListener('abort', () => {
-      logger.debug('[AnthropicClient] message aborted!');
-      response.controller.abort();
-    });
-
-    for await (const completion of response) {
-      // Uncomment to debug message stream
-      // logger.debug(completion);
-      text += completion.completion;
-      onProgress(completion.completion);
+    if (this.useMessages) {
+      requestOptions.messages = payload;
+      requestOptions.max_tokens = maxOutputTokens || 1500;
+    } else {
+      requestOptions.prompt = payload;
+      requestOptions.max_tokens_to_sample = maxOutputTokens || 1500;
     }
 
-    signal.removeEventListener('abort', () => {
-      logger.debug('[AnthropicClient] message aborted!');
-      response.controller.abort();
-    });
+    if (this.systemMessage) {
+      requestOptions.system = this.systemMessage;
+    }
+
+    logger.debug('[AnthropicClient]', { ...requestOptions });
+
+    const handleChunk = (currentChunk) => {
+      if (currentChunk) {
+        text += currentChunk;
+        onProgress(currentChunk);
+      }
+    };
+
+    const maxRetries = 3;
+    async function processResponse() {
+      let attempts = 0;
+
+      while (attempts < maxRetries) {
+        let response;
+        try {
+          response = await this.createResponse(client, requestOptions);
+
+          signal.addEventListener('abort', () => {
+            logger.debug('[AnthropicClient] message aborted!');
+            if (response.controller?.abort) {
+              response.controller.abort();
+            }
+          });
+
+          for await (const completion of response) {
+            // Handle each completion as before
+            if (completion?.delta?.text) {
+              handleChunk(completion.delta.text);
+            } else if (completion.completion) {
+              handleChunk(completion.completion);
+            }
+          }
+
+          // Successful processing, exit loop
+          break;
+        } catch (error) {
+          attempts += 1;
+          logger.warn(
+            `User: ${this.user} | Anthropic Request ${attempts} failed: ${error.message}`,
+          );
+
+          if (attempts < maxRetries) {
+            await delayBeforeRetry(attempts, 350);
+          } else {
+            throw new Error(`Operation failed after ${maxRetries} attempts: ${error.message}`);
+          }
+        } finally {
+          signal.removeEventListener('abort', () => {
+            logger.debug('[AnthropicClient] message aborted!');
+            if (response.controller?.abort) {
+              response.controller.abort();
+            }
+          });
+        }
+      }
+    }
+
+    await processResponse.bind(this)();
 
     return text.trim();
   }
