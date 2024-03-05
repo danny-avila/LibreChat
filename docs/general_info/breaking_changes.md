@@ -11,6 +11,11 @@ Certain changes in the updates may impact cookies, leading to unexpected behavio
 
 ---
 
+## 🥷🪦 Ninja - March 4, 2024
+- Since Ninja has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
+
+---
+
 ## 🐋 docker-compose.yml - February 22nd, 2024
 
 ### Update to `docker-compose.yml`
@@ -89,7 +94,7 @@ see [⚙️ Environment Variables](../install/configuration/dotenv.md) for more 
 ## January 31th 2024
 - A new method to use the ChatGPT endpoint is now documented. It uses "Ninja"
 - For more info:
-    - [Ninja Deployment Guide](../features/ninja.md)
+    - ~~[Ninja Deployment Guide](../general_info/breaking_changes.md)~~
     - [Ninja GitHub repo](https://github.com/gngpp/ninja/tree/main)
 
 ---
