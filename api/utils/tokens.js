@@ -75,6 +75,7 @@ const googleModels = {
 };
 
 const anthropicModels = {
+  'claude-3': 200000,
   'claude-2.1': 200000,
   'claude-': 100000,
 };
