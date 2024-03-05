@@ -405,7 +405,6 @@ describe('Zod Schemas', () => {
     it('should reject invalid usernames', () => {
       const invalidUsernames = [
         'john{doe}', // Contains `{` and `}`
-        'j', // Only one character
         'a'.repeat(81), // More than 80 characters
         '\' OR \'1\'=\'1\'; --', // SQL Injection
         '{$ne: null}', // MongoDB Injection

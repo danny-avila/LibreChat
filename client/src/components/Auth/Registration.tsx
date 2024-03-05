@@ -209,7 +209,7 @@ const Registration: React.FC = () => {
             {renderInput('name', 'com_auth_full_name', 'text', {
               required: localize('com_auth_name_required'),
               minLength: {
-                value: 3,
+                value: 1,
                 message: localize('com_auth_name_min_length'),
               },
               maxLength: {
@@ -219,7 +219,7 @@ const Registration: React.FC = () => {
             })}
             {renderInput('username', 'com_auth_username', 'text', {
               minLength: {
-                value: 2,
+                value: 1,
                 message: localize('com_auth_username_min_length'),
               },
               maxLength: {

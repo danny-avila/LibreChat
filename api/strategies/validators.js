@@ -30,7 +30,7 @@ const injectionPatternsRegex = /('|--|\$ne|\$gt|\$lt|\$or|\{|\}|\*|;|<|>|\/|=)/i
 
 const usernameSchema = z
   .string()
-  .min(2)
+  .min(1)
   .max(80)
   .refine((value) => allowedCharactersRegex.test(value), {
     message: 'Invalid characters in username',
@@ -52,7 +52,7 @@ const loginSchema = z.object({
 
 const registerSchema = z
   .object({
-    name: z.string().min(3).max(80),
+    name: z.string().min(1).max(80),
     username: z
       .union([z.literal(''), usernameSchema])
       .transform((value) => (value === '' ? null : value))
