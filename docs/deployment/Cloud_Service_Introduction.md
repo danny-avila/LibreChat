@@ -36,6 +36,6 @@ Welcome to your first journey into deploying a web application. Here are some es
 
 4. **Mandatory Use of HTTPS**: Never deploy your web application without HTTPS. The lack of encryption poses a severe risk to both your application's security and the privacy of your users.
 
-5. **Setting Up HTTPS**: To implement HTTPS, you must configure a reverse proxy that handles HTTPS connections in front of your application. Tools such as Nginx or Apache are commonly used for this purpose. Detailed instructions on setting up a secure reverse proxy will be forthcoming (TBA).
+5. **Setting Up HTTPS**: To implement HTTPS, you must configure a reverse proxy that handles HTTPS connections in front of your application. Tools such as Nginx or Apache are commonly used for this purpose. See instructions on setting up a secure reverse proxy in [reverse proxy guide)](NGINX_Deployment_Guide.md).
 
 Remember, these guidelines are not exhaustive but serve as a starting point for securing your web deployment. Further steps should include regular security audits, updates, and adherence to best practices in web security.
