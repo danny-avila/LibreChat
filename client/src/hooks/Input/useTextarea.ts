@@ -1,5 +1,5 @@
 import debounce from 'lodash/debounce';
-import { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
@@ -158,6 +158,8 @@ export default function useTextarea({
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      e.preventDefault();
+
       const pastedData = e.clipboardData.getData('text/plain');
       const textArea = textAreaRef.current;
 

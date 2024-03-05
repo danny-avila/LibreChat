@@ -259,5 +259,55 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       forcePrompt: false
       modelDisplayLabel: "together.ai"
 ```
+## LiteLLM
+> LiteLLM API key: master_key value [LiteLLM](./litellm.md)
 
-![image](https://github.com/danny-avila/LibreChat/assets/32828263/fe3eae7a-d157-4f21-bb98-00688f261967)
+**Notes:**
+
+- Reference [LiteLLM](./litellm.md) for configuration.
+
+```yaml
+    - name: "LiteLLM"
+      apiKey: "sk-from-config-file"
+      baseURL: "http://localhost:8000/v1"
+      models:
+        default: ["gpt-3.5-turbo"]
+        fetch: true
+      titleConvo: true
+      titleModel: "gpt-3.5-turbo"
+      summarize: false
+      summaryModel: "gpt-3.5-turbo"
+      forcePrompt: false
+      modelDisplayLabel: "LiteLLM"
+```
+
+## Ollama
+> Ollama API key: Required but ignored - [Ollama OpenAI Compatibility](https://github.com/ollama/ollama/blob/main/docs/openai.md)
+
+**Notes:**
+
+- **Known:** icon provided.
+- **Known issue:** fetching list of models is not supported. See [Pull Request 2728](https://github.com/ollama/ollama/pull/2728).
+- Download models with ollama run command. See [Ollama Library](https://ollama.com/library)
+- The example includes a top 5 popular model list from the Ollama Library, which was last updated on March 1, 2024, for your convenience.
+
+```yaml
+    - name: "Ollama"
+      apiKey: "ollama"
+      baseURL: "http://localhost:11434/v1/"
+      models:
+        default: [
+          "llama2",
+          "mistral",
+          "codellama",
+          "dolphin-mixtral",
+          "mistral-openorca"
+          ]
+        fetch: false # fetching list of models is not supported
+      titleConvo: true
+      titleModel: "llama2"
+      summarize: false
+      summaryModel: "llama2"
+      forcePrompt: false
+      modelDisplayLabel: "Ollama"
+```

@@ -23,6 +23,7 @@ weight: 1
   * 🐋 [Docker Compose Override](./configuration/docker_override.md)
   * 🤖 [AI Setup](./configuration/ai_setup.md)
   * 🚅 [LiteLLM](./configuration/litellm.md)
+  * 🦙 [Ollama](./configuration/ollama.md)
   * 💸 [Free AI APIs](./configuration/free_ai_apis.md) 
   * 🛂 [Authentication System](./configuration/user_auth_system.md) 
   * 🍃 [Online MongoDB](./configuration/mongodb.md) 
