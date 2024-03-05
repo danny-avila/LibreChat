@@ -11,6 +11,13 @@ Certain changes in the updates may impact cookies, leading to unexpected behavio
 
 ---
 
+## 🔎Meilisearch v1.6
+
+- **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data_v1.5` may be present in your root directory. This folder is no longer required and **can be safely deleted** to free up space.
+- **New Indexing Data Location**: With the current Meilisearch version `1.6`, the new indexing data location folder will be `meili_data_v1.6`.
+
+---
+
 ## 🥷🪦 Ninja - March 4, 2024
 - Since Ninja has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
 
