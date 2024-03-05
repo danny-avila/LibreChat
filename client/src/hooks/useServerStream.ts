@@ -286,5 +286,5 @@ export default function useServerStream(submission: TSubmission | null) {
       setIsSubmitting(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [submission]);
+  }, []);
 }

@@ -53,6 +53,9 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   try {
     const { client } = await initializeClient({ req, res, endpointOption });
 
+    console.log('azure:', client.azure);
+    console.log('azureEndpoint:', client.azureEndpoint);
+
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
       onProgress: ({ text: partialText }) => {
         const currentTimestamp = Date.now();

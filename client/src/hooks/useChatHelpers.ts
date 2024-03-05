@@ -68,26 +68,11 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
   }, [queryParam, queryClient]);
 
-  /* Conversation */
-  // const setActiveConvos = useSetRecoilState(store.activeConversations);
-
-  // const setConversation = useCallback(
-  //   (convoUpdate: TConversation) => {
-  //     _setConversation(prev => {
-  //       const { conversationId: convoId } = prev ?? { conversationId: null };
-  //       const { conversationId: currentId } = convoUpdate;
-  //       if (currentId && convoId && convoId !== 'new' && convoId !== currentId) {
-  //         // for now, we delete the prev convoId from activeConversations
-  //         const newActiveConvos = { [currentId]: true };
-  //         setActiveConvos(newActiveConvos);
-  //       }
-  //       return convoUpdate;
-  //     });
-  //   },
-  //   [_setConversation, setActiveConvos],
-  // );
   const { getExpiry } = useUserKey(endpoint ?? '');
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
+
+  console.log('setSubmission:', setSubmission);
+  console.log('store.submissionByIndex(index):', store.submissionByIndex(index));
 
   const ask: TAskFunction = (
     { text, parentMessageId = null, conversationId = null, messageId = null },
@@ -247,6 +232,8 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       isRegenerate,
       initialResponse,
     };
+
+    console.log('submission:', submission);
 
     if (isRegenerate) {
       setMessages([...submission.messages, initialResponse]);

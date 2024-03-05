@@ -10,11 +10,11 @@ const errorController = require('./controllers/ErrorController');
 const { jwtLogin, passportLogin } = require('~/strategies');
 const configureSocialLogins = require('./socialLogins');
 const { connectDb, indexSync } = require('~/lib/db');
-const AppService = require('./services/AppService');
 const noIndex = require('./middleware/noIndex');
 const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
+const AppService = require('./services/AppService');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};

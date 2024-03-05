@@ -2,6 +2,7 @@ import { useRecoilState } from 'recoil';
 import type { ChangeEvent } from 'react';
 import { useChatContext } from '~/Providers';
 import { useRequiresKey } from '~/hooks';
+import AudioRecorderButton from './AudioRecorderButton';
 import AttachFile from './Files/AttachFile';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -32,6 +33,26 @@ export default function ChatForm({ index = 0 }) {
   const { requiresKey } = useRequiresKey();
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
+
+  const handleTranscription = (transcription: string) => {
+    setText(transcription);
+  };
+
+  let buttonComponent;
+
+  if (text !== '') {
+    if (isSubmitting && showStopButton) {
+      buttonComponent = (
+        <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
+      );
+    } else if (endpoint) {
+      buttonComponent = (
+        <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
+      );
+    }
+  } else {
+    buttonComponent = <AudioRecorderButton index={index} onTranscription={handleTranscription} />;
+  }
 
   return (
     <form
@@ -70,13 +91,8 @@ export default function ChatForm({ index = 0 }) {
               endpointType={endpointType}
               disabled={requiresKey}
             />
-            {isSubmitting && showStopButton ? (
-              <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
-            ) : (
-              endpoint && (
-                <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
-              )
-            )}
+
+            {buttonComponent}
           </div>
         </div>
       </div>

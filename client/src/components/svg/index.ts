@@ -50,3 +50,5 @@ export { default as GoogleIconChat } from './GoogleIconChat';
 export { default as BirthdayIcon } from './BirthdayIcon';
 export { default as AssistantIcon } from './AssistantIcon';
 export { default as Sparkles } from './Sparkles';
+export { default as MicrophoneIcon } from './MicrophoneIcon';
+export { default as StopRecordingIcon } from './StopRecordingIcon';

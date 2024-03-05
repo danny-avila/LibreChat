@@ -27,6 +27,7 @@
   },
   "homepage": "https://librechat.ai",
   "dependencies": {
+    "@azure/openai": "^1.0.0-beta.11",
     "@dicebear/collection": "^7.0.4",
     "@dicebear/core": "^7.0.4",
     "@headlessui/react": "^1.7.13",
@@ -89,6 +90,7 @@
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
     "url": "^0.11.0",
+    "uuid": "^9.0.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {
