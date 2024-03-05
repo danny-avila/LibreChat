@@ -324,6 +324,8 @@ describe('initializeClient', () => {
     const res = {};
     const endpointOption = {};
 
+    getUserKey.mockResolvedValue(JSON.stringify({ apiKey: 'test', baseURL: '' }));
+
     const client = await initializeClient({ req, res, endpointOption });
 
     expect(client.client.options.debug).toBe(false);
