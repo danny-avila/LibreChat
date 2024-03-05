@@ -94,7 +94,7 @@ describe('initializeClient', () => {
     process.env.OPENAI_SUMMARIZE = 'false';
 
     const req = {
-      body: { key: null, endpoint: 'openAI' },
+      body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
     };
@@ -137,7 +137,7 @@ describe('initializeClient', () => {
     process.env.DEBUG_OPENAI = 'true';
 
     const req = {
-      body: { key: null, endpoint: 'openAI' },
+      body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
     };
@@ -154,7 +154,7 @@ describe('initializeClient', () => {
     process.env.OPENAI_SUMMARIZE = 'true';
 
     const req = {
-      body: { key: null, endpoint: 'openAI' },
+      body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
     };
@@ -172,7 +172,7 @@ describe('initializeClient', () => {
     process.env.PROXY = 'http://proxy';
 
     const req = {
-      body: { key: null, endpoint: 'openAI' },
+      body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
     };
@@ -193,7 +193,7 @@ describe('initializeClient', () => {
 
     const expiresAt = new Date(Date.now() - 10000).toISOString(); // Expired
     const req = {
-      body: { key: expiresAt, endpoint: 'openAI' },
+      body: { key: expiresAt, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
     };
@@ -209,7 +209,7 @@ describe('initializeClient', () => {
     delete process.env.AZURE_API_KEY;
 
     const req = {
-      body: { key: null, endpoint: 'openAI' },
+      body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
     };
@@ -226,7 +226,7 @@ describe('initializeClient', () => {
     const req = {
       body: {
         key: new Date(Date.now() + 10000).toISOString(),
-        endpoint: 'openAI',
+        endpoint: EModelEndpoint.openAI,
       },
       user: {
         id: '123',
@@ -253,7 +253,7 @@ describe('initializeClient', () => {
   test('should throw an error if the user-provided key is invalid', async () => {
     const invalidKey = new Date(Date.now() - 100000).toISOString();
     const req = {
-      body: { key: invalidKey, endpoint: 'openAI' },
+      body: { key: invalidKey, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
     };
@@ -272,7 +272,7 @@ describe('initializeClient', () => {
   test('should throw an error when user-provided values are not valid JSON', async () => {
     process.env.OPENAI_API_KEY = 'user_provided';
     const req = {
-      body: { key: new Date(Date.now() + 10000).toISOString(), endpoint: 'openAI' },
+      body: { key: new Date(Date.now() + 10000).toISOString(), endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
     };
@@ -315,9 +315,10 @@ describe('initializeClient', () => {
   test('should initialize client with default options when certain env vars are not set', async () => {
     delete process.env.DEBUG_OPENAI;
     delete process.env.OPENAI_SUMMARIZE;
+    process.env.OPENAI_API_KEY = 'some-api-key';
 
     const req = {
-      body: { key: null, endpoint: 'openAI' },
+      body: { key: null, endpoint: EModelEndpoint.openAI },
       user: { id: '123' },
       app,
     };
@@ -336,7 +337,7 @@ describe('initializeClient', () => {
     const req = {
       body: {
         key: new Date(Date.now() + 10000).toISOString(),
-        endpoint: 'openAI',
+        endpoint: EModelEndpoint.openAI,
       },
       user: {
         id: '123',
