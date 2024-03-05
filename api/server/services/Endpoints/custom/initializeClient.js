@@ -60,8 +60,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     }
   }
 
-  let apiKey = userProvidesKey ? userValues.apiKey : CUSTOM_API_KEY;
-  let baseURL = userProvidesURL ? userValues.baseURL : CUSTOM_BASE_URL;
+  let apiKey = userProvidesKey ? userValues?.apiKey : CUSTOM_API_KEY;
+  let baseURL = userProvidesURL ? userValues?.baseURL : CUSTOM_BASE_URL;
 
   if (!apiKey) {
     throw new Error(`${endpoint} API key not provided.`);
