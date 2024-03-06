@@ -166,14 +166,14 @@ export default function AssistantSelect({
       emptyTitle={true}
       containerClassName="flex-grow"
       optionsClass="hover:bg-gray-20/50 dark:border-gray-700"
-      optionsListClass="rounded-lg shadow-lg dark:bg-black dark:border-gray-700 dark:last:border"
+      optionsListClass="rounded-lg shadow-lg dark:bg-gray-900 dark:border-gray-700 dark:last:border"
       currentValueClass={cn(
         'text-md font-semibold text-gray-900 dark:text-white',
         value === '' ? 'text-gray-500' : '',
       )}
       className={cn(
-        'mt-1 rounded-md dark:border-gray-700 dark:bg-black',
-        'z-50 flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer hover:border-green-500 focus:border-green-500',
+        'mt-1 rounded-md dark:border-gray-700 dark:bg-gray-900',
+        'z-50 flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer hover:border-green-500 focus:border-gray-400',
       )}
       renderOption={() => (
         <span className="flex items-center gap-1.5 truncate">

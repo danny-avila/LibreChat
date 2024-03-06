@@ -150,11 +150,11 @@ export default function TextChat({ isSearchView = false }: TextChatProps) {
         className="no-gradient-sm fixed bottom-0 left-0 w-full pt-6 sm:bg-gradient-to-b md:absolute md:w-[calc(100%-.5rem)]"
         style={{
           background: `linear-gradient(to bottom, 
-                ${isDark ? 'rgba(52, 53, 65, 0)' : 'rgba(255, 255, 255, 0)'}, 
-                ${isDark ? 'rgba(52, 53, 65, 0.08)' : 'rgba(255, 255, 255, 0.08)'}, 
-                ${isDark ? 'rgba(52, 53, 65, 0.38)' : 'rgba(255, 255, 255, 0.38)'}, 
-                ${isDark ? 'rgba(52, 53, 65, 1)' : 'rgba(255, 255, 255, 1)'}, 
-                ${isDark ? '#343541' : '#ffffff'})`,
+                ${isDark ? 'rgba(23, 23, 23, 0)' : 'rgba(255, 255, 255, 0)'}, 
+                ${isDark ? 'rgba(23, 23, 23, 0.08)' : 'rgba(255, 255, 255, 0.08)'}, 
+                ${isDark ? 'rgba(23, 23, 23, 0.38)' : 'rgba(255, 255, 255, 0.38)'}, 
+                ${isDark ? 'rgba(23, 23, 23, 1)' : 'rgba(255, 255, 255, 1)'}, 
+                ${isDark ? '#171717' : '#ffffff'})`,
         }}
       >
         <OptionsBar />
@@ -165,8 +165,8 @@ export default function TextChat({ isSearchView = false }: TextChatProps) {
                 className={cn(
                   'relative flex flex-grow flex-row rounded-xl border border-black/10 py-[10px] md:py-4 md:pl-4',
                   'shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:shadow-[0_0_15px_rgba(0,0,0,0.10)]',
-                  'dark:border-gray-900/50 dark:text-white',
-                  disabled ? 'bg-gray-100 dark:bg-gray-900' : 'bg-white dark:bg-gray-700',
+                  'dark:border-gray-800/50 dark:text-white',
+                  disabled ? 'bg-gray-200 dark:bg-gray-800' : 'bg-white dark:bg-gray-700',
                 )}
               >
                 <EndpointMenu />
