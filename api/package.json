@@ -27,7 +27,7 @@
   },
   "homepage": "https://librechat.ai",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.5.4",
+    "@anthropic-ai/sdk": "^0.16.1",
     "@azure/search-documents": "^12.0.0",
     "@keyv/mongo": "^2.1.8",
     "@keyv/redis": "^2.8.1",
