@@ -43,9 +43,10 @@ transactionSchema.statics.create = async function (transactionData) {
   ).lean();
 
   return {
+    rate: transaction.rate,
     user: transaction.user.toString(),
-    [transaction.tokenType]: transaction.tokenValue,
     balance: updatedBalance.tokenCredits,
+    [transaction.tokenType]: transaction.tokenValue,
   };
 };
 

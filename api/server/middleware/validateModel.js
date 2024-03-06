@@ -1,8 +1,7 @@
-const { CacheKeys, ViolationTypes } = require('librechat-data-provider');
-const { loadModels } = require('~/server/controllers/ModelController');
-const { logViolation, getLogStores } = require('~/cache');
+const { ViolationTypes } = require('librechat-data-provider');
+const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { handleError } = require('~/server/utils');
-
+const { logViolation } = require('~/cache');
 /**
  * Validates the model of the request.
  *
@@ -17,11 +16,7 @@ const validateModel = async (req, res, next) => {
     return handleError(res, { text: 'Model not provided' });
   }
 
-  const cache = getLogStores(CacheKeys.CONFIG_STORE);
-  let modelsConfig = await cache.get(CacheKeys.MODELS_CONFIG);
-  if (!modelsConfig) {
-    modelsConfig = await loadModels(req);
-  }
+  const modelsConfig = await getModelsConfig(req);
 
   if (!modelsConfig) {
     return handleError(res, { text: 'Models not loaded' });

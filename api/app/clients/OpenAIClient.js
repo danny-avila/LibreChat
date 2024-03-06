@@ -91,6 +91,7 @@ class OpenAIClient extends BaseClient {
       };
     }
 
+    this.defaultVisionModel = this.options.visionModel ?? 'gpt-4-vision-preview';
     this.checkVisionRequest(this.options.attachments);
 
     const { OPENROUTER_API_KEY, OPENAI_FORCE_PROMPT } = process.env ?? {};
@@ -225,10 +226,12 @@ class OpenAIClient extends BaseClient {
    * @param {Array<Promise<MongoFile[]> | MongoFile[]> | Record<string, MongoFile[]>} attachments
    */
   checkVisionRequest(attachments) {
-    this.isVisionModel = validateVisionModel(this.modelOptions.model);
+    const availableModels = this.options.modelsConfig?.[this.options.endpoint];
+    this.isVisionModel = validateVisionModel({ mmodel: this.modelOptions.model, availableModels });
 
-    if (attachments && !this.isVisionModel) {
-      this.modelOptions.model = 'gpt-4-vision-preview';
+    const visionModelAvailable = availableModels?.includes(this.defaultVisionModel);
+    if (attachments && visionModelAvailable && !this.isVisionModel) {
+      this.modelOptions.model = this.defaultVisionModel;
       this.isVisionModel = true;
     }
 
