@@ -23,6 +23,8 @@ async function fetchImageToBase64(url) {
   }
 }
 
+const base64Only = new Set([EModelEndpoint.google, EModelEndpoint.anthropic]);
+
 /**
  * Encodes and formats the given files.
  * @param {Express.Request} req - The request object.
@@ -50,7 +52,7 @@ async function encodeAndFormat(req, files, endpoint) {
     encodingMethods[source] = prepareImagePayload;
 
     /* Google doesn't support passing URLs to payload */
-    if (source !== FileSources.local && endpoint === EModelEndpoint.google) {
+    if (source !== FileSources.local && base64Only.has(endpoint)) {
       const [_file, imageURL] = await prepareImagePayload(req, file);
       promises.push([_file, await fetchImageToBase64(imageURL)]);
       continue;
@@ -81,6 +83,14 @@ async function encodeAndFormat(req, files, endpoint) {
 
     if (endpoint && endpoint === EModelEndpoint.google) {
       imagePart.image_url = imagePart.image_url.url;
+    } else if (endpoint && endpoint === EModelEndpoint.anthropic) {
+      imagePart.type = 'image';
+      imagePart.source = {
+        type: 'base64',
+        media_type: file.type,
+        data: imageContent,
+      };
+      delete imagePart.image_url;
     }
 
     result.image_urls.push(imagePart);
