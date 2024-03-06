@@ -240,7 +240,7 @@ class AnthropicClient extends BaseClient {
 
     logger.debug('[AnthropicClient] orderedMessages', { orderedMessages, parentMessageId });
 
-    if (!this.isClaude3 && this.options.attachments) {
+    if (!this.isVisionModel && this.options.attachments) {
       throw new Error('Attachments are only supported with the Claude 3 family of models');
     } else if (this.options.attachments) {
       const attachments = (await this.options.attachments).filter((file) =>
