@@ -1,5 +1,18 @@
 [
   {
+    "name": "Traversaal",
+    "pluginKey": "traversaal_search",
+    "description": "Traversaal is a robust search API tailored for LLM Agents. Get an API key here: https://api.traversaal.ai",
+    "icon": "https://traversaal.ai/favicon.ico",
+    "authConfig": [
+      {
+        "authField": "TRAVERSAAL_API_KEY",
+        "label": "Traversaal API Key",
+        "description": "Get your API key here: <a href=\"https://api.traversaal.ai\" target=\"_blank\">https://api.traversaal.ai</a>"
+      }
+    ]
+  },
+  {
     "name": "Google",
     "pluginKey": "google",
     "description": "Use Google Search to find information about the weather, news, sports, and more.",
@@ -111,7 +124,7 @@
   {
     "name": "Tavily Search",
     "pluginKey": "tavily_search_results_json",
-    "description": "Tavily Search is a robust search API tailored specifically for LLM Agents. It seamlessly integrates with diverse data sources to ensure a superior, relevant search experience.",
+    "description": "Tavily Search is a robust search API tailored for LLM Agents. It seamlessly integrates with diverse data sources to ensure a superior, relevant search experience.",
     "icon": "https://tavily.com/favicon.ico",
     "authConfig": [
       {
