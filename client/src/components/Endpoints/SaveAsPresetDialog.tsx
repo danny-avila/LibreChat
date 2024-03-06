@@ -50,7 +50,8 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={localize('com_endpoint_save_as_preset')}
-        className="w-full sm:w-1/4"
+        className="w-11/12 sm:w-1/4"
+        showCloseButton={false}
         main={
           <div className="flex w-full flex-col items-center gap-2">
             <div className="grid w-full items-center gap-2">
@@ -64,7 +65,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
                 placeholder="Set a custom name for this preset"
                 className={cn(
                   defaultTextPropsLabel,
-                  'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+                  'flex h-10 max-h-10 w-full resize-none border-gray-100 px-3 py-2 dark:border-gray-600',
                   removeFocusOutlines,
                 )}
               />
@@ -73,7 +74,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
         }
         selection={{
           selectHandler: submitPreset,
-          selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
+          selectClasses: 'bg-green-500 hover:bg-green-600 dark:hover:bg-green-600 text-white',
           selectText: localize('com_ui_save'),
         }}
       />

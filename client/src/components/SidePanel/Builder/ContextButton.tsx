@@ -65,7 +65,7 @@ export default function ContextButton({
         <Popover.Trigger asChild>
           <button
             className={cn(
-              'btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium',
+              'btn border-token-border-light relative h-9 rounded-lg bg-transparent font-medium hover:bg-gray-100 dark:hover:bg-gray-800',
               removeFocusOutlines,
             )}
             type="button"
@@ -103,7 +103,7 @@ export default function ContextButton({
           <Popover.Content
             side="top"
             role="menu"
-            className="bg-token-surface-primary min-w-[180px] max-w-xs rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-black"
+            className="bg-token-surface-primary min-w-[180px] max-w-xs rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-900 dark:bg-gray-900"
             style={{ outline: 'none', pointerEvents: 'auto' }}
             sideOffset={8}
             tabIndex={-1}

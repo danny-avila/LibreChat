@@ -31,8 +31,8 @@ const Dropdown: FC<DropdownProps> = ({
   const [selectedValue, setSelectedValue] = useState(initialValue);
 
   const themeStyles = {
-    light: 'bg-white text-gray-700 hover:bg-gray-200 border-gray-300',
-    dark: 'bg-[#202123] text-white hover:bg-[#323236] border-gray-600',
+    light: 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300',
+    dark: 'bg-gray-800 text-white hover:bg-gray-700 border-gray-600',
   };
 
   const isSystemDark =

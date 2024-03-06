@@ -123,17 +123,17 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       className="relative z-[102]"
     >
       {/* The backdrop, rendered as a fixed sibling to the panel container */}
-      <div className="fixed inset-0 bg-gray-500/90 transition-opacity dark:bg-gray-800/90" />
+      <div className="fixed inset-0 bg-gray-600/65 transition-opacity dark:bg-black/80" />
       {/* Full-screen container to center the panel */}
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <Dialog.Panel
-          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl dark:bg-gray-900"
+          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-800 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
           style={{ minHeight: '610px' }}
         >
-          <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 sm:p-6 dark:border-white/10">
+          <div className="flex items-center justify-between border-b-[1px] border-black/10 px-4 pb-4 pt-5 dark:border-white/10 sm:p-6">
             <div className="flex items-center">
               <div className="text-center sm:text-left">
-                <Dialog.Title className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
+                <Dialog.Title className="text-lg font-medium leading-6 text-gray-800 dark:text-gray-200">
                   {localize('com_nav_plugin_store')}
                 </Dialog.Title>
               </div>
@@ -145,7 +145,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                     setIsOpen(false);
                     setCurrentPage(1);
                   }}
-                  className="inline-block text-gray-500 hover:text-gray-100"
+                  className="inline-block text-gray-500 hover:text-gray-200"
                   tabIndex={0}
                 >
                   <X />
@@ -178,7 +178,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                   value={searchValue}
                   onChange={handleSearch}
                   placeholder={localize('com_nav_plugin_search')}
-                  className="w-64 rounded border border-gray-300 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                  className="w-64 rounded border border-gray-300 px-2 py-1 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
                 />
               </div>
               <div
