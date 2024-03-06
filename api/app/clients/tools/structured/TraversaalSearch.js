@@ -25,7 +25,7 @@ class TraversaalSearch extends Tool {
         ),
     });
 
-    this.apiKey = fields?.apiKey ?? this.getApiKey();
+    this.apiKey = fields?.TRAVERSAAL_API_KEY ?? this.getApiKey();
   }
 
   getApiKey() {
