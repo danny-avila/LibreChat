@@ -125,12 +125,18 @@ class GoogleClient extends BaseClient {
     };
 
     /* Validation vision request */
+    this.defaultVisionModel = this.options.visionModel ?? 'gemini-pro-vision';
     const availableModels = this.options.modelsConfig?.[EModelEndpoint.google];
-    if (this.options.attachments && availableModels.includes('gemini-pro-vision')) {
-      this.modelOptions.model = 'gemini-pro-vision';
-    }
-
     this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
+
+    if (
+      this.options.attachments &&
+      availableModels?.includes(this.defaultVisionModel) &&
+      !this.isVisionModel
+    ) {
+      this.modelOptions.model = this.defaultVisionModel;
+      this.isVisionModel = true;
+    }
 
     if (this.isVisionModel && !this.options.attachments) {
       this.modelOptions.model = 'gemini-pro';

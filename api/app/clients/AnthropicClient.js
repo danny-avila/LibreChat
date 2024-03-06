@@ -140,7 +140,8 @@ class AnthropicClient extends BaseClient {
     const availableModels = this.options.modelsConfig?.[EModelEndpoint.anthropic];
     this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
 
-    if (attachments && !this.isVisionModel) {
+    const visionModelAvailable = availableModels?.includes(this.defaultVisionModel);
+    if (attachments && visionModelAvailable && !this.isVisionModel) {
       this.modelOptions.model = this.defaultVisionModel;
       this.isVisionModel = true;
     }
