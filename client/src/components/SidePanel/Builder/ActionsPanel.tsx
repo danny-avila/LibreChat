@@ -107,7 +107,7 @@ export default function ActionsPanel({
                 <button
                   type="button"
                   disabled={!assistant_id || !action.action_id}
-                  className="btn btn-neutral relative text-red-500"
+                  className="btn relative bg-transparent text-red-500 hover:bg-gray-100 dark:hover:bg-gray-800"
                   onClick={() => {
                     if (!assistant_id) {
                       return prompt('No assistant_id found, is the assistant created?');

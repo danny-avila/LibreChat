@@ -31,7 +31,7 @@ export default {
   com_ui_attach_error:
     'Cannot attach file. Create or select a conversation, or try refreshing the page.',
   com_ui_examples: 'Examples',
-  com_ui_new_chat: 'New Chat',
+  com_ui_new_chat: 'New chat',
   com_ui_happy_birthday: 'It\'s my 1st birthday!',
   com_ui_example_quantum_computing: 'Explain quantum computing in simple terms',
   com_ui_example_10_year_old_b_day: 'Got any creative ideas for a 10 year old\'s birthday?',

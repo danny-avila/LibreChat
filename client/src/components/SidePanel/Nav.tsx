@@ -75,7 +75,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                                 variant === 'default'
                                   ? 'dark:bg-muted dark:hover:bg-muted dark:text-white dark:hover:text-white'
                                   : '',
-                                'data-[state=open]:bg-gray-900 data-[state=open]:text-white dark:data-[state=open]:bg-gray-800',
+                                'hover:bg-gray-50 data-[state=open]:bg-gray-50 data-[state=open]:text-black dark:data-[state=open]:bg-gray-800 dark:data-[state=open]:text-white',
                                 'w-full justify-start rounded-md border dark:border-gray-600',
                               )}
                             >

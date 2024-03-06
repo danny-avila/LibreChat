@@ -61,7 +61,7 @@ function SelectDropDownPop({
               <span className="inline-flex w-full ">
                 <span
                   className={cn(
-                    'flex h-6 items-center gap-1  text-sm text-gray-900 dark:text-white',
+                    'flex h-6 items-center gap-1  text-sm text-gray-800 dark:text-white',
                     !showLabel ? 'text-xs' : '',
                     'min-w-[75px] font-normal',
                   )}
@@ -95,7 +95,7 @@ function SelectDropDownPop({
             <Content
               side="bottom"
               align="start"
-              className="mt-2 max-h-[52vh] min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white lg:max-h-[52vh]"
+              className="mt-2 max-h-[52vh] min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-white lg:max-h-[52vh]"
             >
               {availableValues.map((option) => {
                 return (

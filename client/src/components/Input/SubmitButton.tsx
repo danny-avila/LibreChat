@@ -69,7 +69,7 @@ export default function SubmitButton({
   if (isSubmitting && isSmallScreen) {
     return (
       <button onClick={handleStopGenerating} type="button">
-        <div className="m-1 mr-0 rounded-md p-2 pb-[10px] pt-[10px] group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+        <div className="m-1 mr-0 rounded-md p-2 pb-[10px] pt-[10px] group-hover:bg-gray-200 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-800 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
           <StopGeneratingIcon />
         </div>
       </button>
@@ -93,7 +93,7 @@ export default function SubmitButton({
           type="button"
           className="group absolute bottom-0 right-0 z-[101] flex h-[100%] w-auto items-center justify-center bg-transparent pr-1 text-gray-500"
         >
-          <div className="flex items-center justify-center rounded-md text-xs group-hover:bg-gray-100 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-900 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
+          <div className="flex items-center justify-center rounded-md text-xs group-hover:bg-gray-200 group-disabled:hover:bg-transparent dark:group-hover:bg-gray-800 dark:group-hover:text-gray-400 dark:group-disabled:hover:bg-transparent">
             <div className="m-0 mr-0 flex items-center justify-center rounded-md p-2 sm:p-2">
               <Settings className="mr-1 inline-block h-auto w-[18px]" />
               {localize('com_endpoint_config_key_name_placeholder')}
@@ -107,7 +107,7 @@ export default function SubmitButton({
     );
   } else {
     return (
-      <TooltipProvider delayDuration={50}>
+      <TooltipProvider delayDuration={250}>
         <Tooltip>
           <TooltipTrigger asChild>
             <button

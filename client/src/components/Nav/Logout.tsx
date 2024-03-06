@@ -9,7 +9,7 @@ const Logout = forwardRef(() => {
 
   return (
     <button
-      className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+      className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
       onClick={() => logout()}
     >
       <LogOutIcon />
