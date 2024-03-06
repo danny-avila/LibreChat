@@ -52,7 +52,7 @@ const DialogContent = React.forwardRef<
           'fixed z-[999] grid w-full gap-4 rounded-b-lg bg-white pb-6 animate-in data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10 sm:rounded-lg',
           'dark:bg-slate-900',
           isSmallScreen
-            ? 'fixed left-1/2 top-24 z-[999] m-auto grid w-11/12 -translate-x-1/2 gap-4 rounded-xl bg-white pb-6'
+            ? 'fixed left-1/2 top-1/2 z-[999] m-auto grid w-11/12 -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-white pb-6'
             : '',
           className ?? '',
         )}
