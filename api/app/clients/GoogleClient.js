@@ -4,7 +4,6 @@ const { GoogleVertexAI } = require('langchain/llms/googlevertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
 const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
-const { encodeAndFormat } = require('~/server/services/Files/images');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
   validateVisionModel,
@@ -13,6 +12,7 @@ const {
   EModelEndpoint,
   AuthKeys,
 } = require('librechat-data-provider');
+const { encodeAndFormat } = require('~/server/services/Files/images');
 const { getModelMaxTokens } = require('~/utils');
 const { formatMessage } = require('./prompts');
 const BaseClient = require('./BaseClient');
@@ -124,18 +124,28 @@ class GoogleClient extends BaseClient {
       // stop: modelOptions.stop // no stop method for now
     };
 
-    if (this.options.attachments) {
-      this.modelOptions.model = 'gemini-pro-vision';
+    /* Validation vision request */
+    this.defaultVisionModel = this.options.visionModel ?? 'gemini-pro-vision';
+    const availableModels = this.options.modelsConfig?.[EModelEndpoint.google];
+    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
+
+    if (
+      this.options.attachments &&
+      availableModels?.includes(this.defaultVisionModel) &&
+      !this.isVisionModel
+    ) {
+      this.modelOptions.model = this.defaultVisionModel;
+      this.isVisionModel = true;
     }
 
-    // TODO: as of 12/14/23, only gemini models are "Generative AI" models provided by Google
-    this.isGenerativeModel = this.modelOptions.model.includes('gemini');
-    this.isVisionModel = validateVisionModel(this.modelOptions.model);
-    const { isGenerativeModel } = this;
     if (this.isVisionModel && !this.options.attachments) {
       this.modelOptions.model = 'gemini-pro';
       this.isVisionModel = false;
     }
+
+    // TODO: as of 12/14/23, only gemini models are "Generative AI" models provided by Google
+    this.isGenerativeModel = this.modelOptions.model.includes('gemini');
+    const { isGenerativeModel } = this;
     this.isChatModel = !isGenerativeModel && this.modelOptions.model.includes('chat');
     const { isChatModel } = this;
     this.isTextModel =

@@ -309,9 +309,8 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         ...conversation,
       };
 
-      // Revert to previous model if the model was auto-switched by backend due to message attachments
-      if (conversation.model?.includes('vision') && !submissionConvo.model?.includes('vision')) {
-        update.model = submissionConvo?.model;
+      if (prevState?.model && prevState.model !== submissionConvo.model) {
+        update.model = prevState.model;
       }
 
       setStorage(update);

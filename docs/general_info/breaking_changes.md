@@ -11,6 +11,18 @@ Certain changes in the updates may impact cookies, leading to unexpected behavio
 
 ---
 
+## 🔎Meilisearch v1.6
+
+- **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data_v1.5` may be present in your root directory. This folder is no longer required and **can be safely deleted** to free up space.
+- **New Indexing Data Location**: With the current Meilisearch version `1.6`, the new indexing data location folder will be `meili_data_v1.6`.
+
+---
+
+## 🥷🪦 Ninja - March 4, 2024
+- Since Ninja has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
+
+---
+
 ## 🐋 docker-compose.yml - February 22nd, 2024
 
 ### Update to `docker-compose.yml`
@@ -89,7 +101,7 @@ see [⚙️ Environment Variables](../install/configuration/dotenv.md) for more 
 ## January 31th 2024
 - A new method to use the ChatGPT endpoint is now documented. It uses "Ninja"
 - For more info:
-    - [Ninja Deployment Guide](../features/ninja.md)
+    - ~~[Ninja Deployment Guide](../general_info/breaking_changes.md)~~
     - [Ninja GitHub repo](https://github.com/gngpp/ninja/tree/main)
 
 ---

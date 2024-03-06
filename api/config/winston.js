@@ -106,7 +106,7 @@ if (
   transports.push(
     new winston.transports.Console({
       level: 'debug',
-      format: winston.format.combine(consoleFormat, debugTraverse),
+      format: winston.format.combine(fileFormat, debugTraverse),
     }),
   );
 } else {

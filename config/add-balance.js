@@ -84,7 +84,7 @@ const connect = require('./connect');
   }
 
   // Check the result
-  if (!result?.tokenCredits) {
+  if (!result?.balance) {
     console.red('Error: Something went wrong while updating the balance!');
     console.error(result);
     silentExit(1);
@@ -93,7 +93,7 @@ const connect = require('./connect');
   // Done!
   console.green('Transaction created successfully!');
   console.purple(`Amount: ${amount}
-New Balance: ${result.tokenCredits}`);
+New Balance: ${result.balance}`);
   silentExit(0);
 })();
 
