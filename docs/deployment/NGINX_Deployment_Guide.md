@@ -129,7 +129,7 @@ For example configuration with Basic Authentication see [🌀 Miscellaneous](../
 
 4. **Configure NGINX without Basic Authentication**:
 
-   - Open the default NGINX configuration file: `sudo nano /etc/nginx/sites-available/default`
+   - Open the LibreChat NGINX configuration file: `sudo nano /etc/nginx/sites-available/default`
    - Replace the file content with the following, ensuring to replace `your_domain.com` with your domain and `app_port` with your application's port:
 
    ```
