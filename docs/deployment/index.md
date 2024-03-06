@@ -20,6 +20,8 @@ weight: 3
 - 🌈 [Heroku](heroku.md)
 - 🦓 [Zeabur](zeabur.md)
 
-# Deploying with HTTPS and NGINX
+# Security
+
+## Deploying with HTTPS and NGINX
 
 - [Reverse Proxy Guide)](NGINX_Deployment_Guide.md)

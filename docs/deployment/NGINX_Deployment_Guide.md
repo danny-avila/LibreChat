@@ -1,6 +1,26 @@
+---
+title: Deployment
+description: 🌐 Step-by-step guides on how to deploy LibreChat on various cloud platforms.
+weight: 10
+---
+
 # Deploying Application in the Cloud with HTTPS and NGINX
 
-This guide covers the essential steps for deploying an Express.js application in the cloud, securing it with an SSL/TLS certificate for HTTPS, setting up NGINX as a reverse proxy, and configuring your domain.
+This guide covers the essential steps for deploying your LibreChat application in the cloud, securing it with an SSL/TLS certificate for HTTPS, setting up NGINX as a reverse proxy, and configuring your domain.
+
+## Why Do I need HTTPS?
+
+Implementing HTTPS in your Nginx configuration is vital when deploying an application for several reasons:
+
+Data Security: HTTPS encrypts the data transmitted between the client (user's browser) and the server, protecting sensitive information from being intercepted by third parties. This is particularly important for applications handling personal, financial, or otherwise confidential information.
+
+Authentication: HTTPS provides a mechanism for users to verify that they are communicating with the intended website, reducing the risk of man-in-the-middle attacks, phishing, and other threats where an attacker might impersonate your site.
+
+SEO and Trust: Search engines like Google give preference to HTTPS-enabled websites, potentially improving your site's search ranking. Additionally, browsers display security warnings for sites not using HTTPS, which can erode trust and deter users from using your application.
+
+Regulatory Compliance: For many types of applications, particularly those dealing with personal data, HTTPS may be required to comply with legal standards and regulations, such as GDPR, HIPAA, or PCI-DSS.
+
+By configuring HTTPS in Nginx, you ensure that your application benefits from enhanced security, improved trust and compliance, and better user experience.
 
 ## Prerequisites:
 
@@ -27,7 +47,7 @@ Comment: remember to replace `your_domain.com` with your actual domain name.
 
 ## Step 1: Obtain a SSL/TLS Certificate
 
-To secure your Express.js application with HTTPS, you'll need an SSL/TLS certificate. Let's Encrypt offers free certificates:
+To secure your LibreChat application with HTTPS, you'll need an SSL/TLS certificate. Let's Encrypt offers free certificates:
 
 1. **Install Certbot**:
    - For Ubuntu: `sudo apt-get install certbot python3-certbot-nginx`
@@ -39,7 +59,7 @@ To secure your Express.js application with HTTPS, you'll need an SSL/TLS certifi
 
 ## Step 2: Set Up NGINX as a Reverse Proxy
 
-NGINX acts as a reverse proxy, forwarding client requests to your Express.js application.
+NGINX acts as a reverse proxy, forwarding client requests to your LibreChat application.
 
 1. **Install NGINX**:
 
@@ -53,7 +73,61 @@ NGINX acts as a reverse proxy, forwarding client requests to your Express.js app
    - Follow the on-screen instructions. Press Enter for any screen that opens during the process.
    - You might be asked to execute `sudo reboot` to restart your server. This will apply any kernel updates and restart your services.
 
-3. **Configure NGINX**:
+3. **What type of Nginx Nginx Configuration I want?**
+
+There are 2 different use cases, each calling for a bit different configuration.
+
+### Configuration without Basic Authentication
+
+#### Use Case
+
+Suitable for production environments or when application has a built-in robust authentication system. Ideal for dynamic user management scenarios.
+
+#### User Perspective
+
+- Seamless access after application login.
+- No additional Nginx login required.
+
+#### Administrator Perspective
+
+- No `.htpasswd` maintenance required.
+- Focus on application security and SSL certificate management.
+
+#### Configuration Example
+
+This guide assumes the use case of installing without Basic Authentication, so if this is your case, jump over to `Configure NGINX without Basic Authentication` below.
+
+---
+
+### Configuration with Basic Authentication
+
+#### Use Case
+
+Appropriate for smaller environments like staging, internal tools, or additional security layers. Useful if application lacks its own authentication.
+
+#### User Perspective
+
+- Additional login prompt for Nginx access.
+- Separate credentials for Nginx and application.
+
+#### Administrator Perspective
+
+- Maintenance of `.htpasswd` file required.
+- Extra security layer management.
+
+#### Configuration Example
+
+For example configuration with Basic Authentication see [🌀 Miscellaneous](../install/configuration/misc.md)
+
+---
+
+### Summary of Differences
+
+- **User Experience**: Direct application access vs. additional Nginx login.
+- **Administration**: Less overhead vs. `.htpasswd` management.
+- **Security**: Application security vs. added Nginx layer.
+
+4. **Configure NGINX without Basic Authentication**:
 
    - Open the default NGINX configuration file: `sudo nano /etc/nginx/sites-available/default`
    - Replace the file content with the following, ensuring to replace `your_domain.com` with your domain and `app_port` with your application's port:
@@ -74,7 +148,7 @@ NGINX acts as a reverse proxy, forwarding client requests to your Express.js app
    }
    ```
 
-4. **Check NGINX Configuration & Restart**:
+5. **Check NGINX Configuration & Restart**:
    - Validate the configuration: `sudo nginx -t`
    - Reload NGINX: `sudo systemctl reload nginx`
 

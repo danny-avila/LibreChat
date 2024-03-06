@@ -1,3 +1,9 @@
+---
+title: Deployment
+description: 🌐 starting point for deploying the LibreChat application across various environments and platforms.
+weight: -20
+---
+
 # Deployment Guides for LibreChat Open Source Application
 
 This documentation aims to provide you with a clear and concise starting point for deploying the LibreChat application across various environments and platforms.
