@@ -151,7 +151,7 @@ see: [Anthropic Endpoint](./ai_setup.md#anthropic)
 
 ```bash
 ANTHROPIC_API_KEY=user_provided
-ANTHROPIC_MODELS=claude-1,claude-instant-1,claude-2
+ANTHROPIC_MODELS=claude-1,claude-instant-1,claude-2,claude-2.1,claude-3-haiku,claude-3-sonnet,claude-3-opus
 ANTHROPIC_REVERSE_PROXY=
 ```
 
@@ -532,6 +532,14 @@ Get your API key here: [https://tavily.com/#api](https://tavily.com/#api)
 
 ```bash
 TAVILY_API_KEY=
+```
+
+### Traversaal
+LLM-enhanced search tool.
+Get API key here: https://api.traversaal.ai/dashboard
+
+```bash
+TRAVERSAAL_API_KEY=
 ```
 
 #### WolframAlpha
