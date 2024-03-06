@@ -151,7 +151,7 @@ see: [Anthropic Endpoint](./ai_setup.md#anthropic)
 
 ```bash
 ANTHROPIC_API_KEY=user_provided
-ANTHROPIC_MODELS=claude-1,claude-instant-1,claude-2,claude-2.1,claude-3-haiku,claude-3-sonnet,claude-3-opus
+ANTHROPIC_MODELS=claude-3-opus-20240229,claude-3-sonnet-20240229,claude-2.1,claude-2,claude-1.2,claude-1,claude-1-100k,claude-instant-1,claude-instant-1-100k
 ANTHROPIC_REVERSE_PROXY=
 ```
 
