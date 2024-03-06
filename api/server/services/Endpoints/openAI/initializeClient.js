@@ -101,15 +101,11 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     apiKey = clientOptions.azure.azureOpenAIApiKey;
   }
 
-  // console.log(clientOptions);
-
   if (!apiKey) {
     throw new Error(`${endpoint} API key not provided. Please provide it again.`);
   }
 
   const client = new OpenAIClient(apiKey, clientOptions);
-
-  // client.azureEndpoint;
 
   return {
     client,

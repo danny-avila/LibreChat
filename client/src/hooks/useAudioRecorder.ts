@@ -1,34 +1,51 @@
 import { useState, useRef, useCallback } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import {
+  /* @ts-ignore */
+  dataService,
+} from 'librechat-data-provider';
 import store from '~/store';
+import { useAuthContext } from './AuthContext';
 
 const useAudioRecorder = (onTranscription: (text: string) => void, index = 0) => {
-  const setSubmission = useSetRecoilState(store.submissionByIndex(index));
   const [isRecording, setIsRecording] = useState(false);
-  const modelsConfig = useRecoilValue(store.modelsConfig);
+  const [isFetching, setIsFetching] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
 
-  // const whisperModel = modelsConfig.azureOpenAI.find((model) => model.includes('whisper'));
+  const { token } = useAuthContext();
+
+  const { useCreateConversationAtom } = store;
+  const { conversation } = useCreateConversationAtom(index);
+  const { endpoint } = conversation ?? {};
 
   const sendAudioToOpenAI = useCallback(
     async (audioBlob: Blob) => {
       try {
-        const audioBuffer = await audioBlob.arrayBuffer();
-        // const audioUint8Array = new Uint8Array(audioBuffer);
+        if (audioBlob === null || !endpoint) {
+          return;
+        }
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'audio.wav');
+        formData.append('endpoint', endpoint);
 
-        const response = { text: 'Texto transcribido simulado' };
+        const response = await dataService.getTextFromAudio(formData, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        setIsFetching(true);
 
         if (response.text) {
           onTranscription(response.text);
-          // setSubmission();
         } else {
           throw new Error('Failed to transcribe audio');
         }
+
+        setIsFetching(false);
       } catch (error) {
         console.error('Error sending audio to OpenAI:', error);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [onTranscription],
   );
 
@@ -76,7 +93,7 @@ const useAudioRecorder = (onTranscription: (text: string) => void, index = 0) =>
     }
   }, [isRecording, startRecording, stopRecording]);
 
-  return { isRecording, handleRecording };
+  return { isRecording, handleRecording, isFetching };
 };
 
 export default useAudioRecorder;

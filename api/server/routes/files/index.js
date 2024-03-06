@@ -5,6 +5,7 @@ const { uaParser, checkBan, requireJwtAuth, createFileLimiters } = require('~/se
 const files = require('./files');
 const images = require('./images');
 const avatar = require('./avatar');
+const stt = require('./stt');
 
 const initialize = async () => {
   const router = express.Router();
@@ -21,6 +22,7 @@ const initialize = async () => {
   router.use('/', files);
   router.use('/images', images);
   router.use('/images/avatar', avatar);
+  router.use('/stt', stt);
   return router;
 };
 

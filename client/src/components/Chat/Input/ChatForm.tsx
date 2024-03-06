@@ -40,18 +40,23 @@ export default function ChatForm({ index = 0 }) {
 
   let buttonComponent;
 
-  if (text !== '') {
-    if (isSubmitting && showStopButton) {
+  if (isSubmitting && showStopButton) {
+    buttonComponent = (
+      <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
+    );
+  } else if (endpoint) {
+    buttonComponent = (
+      <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
+    );
+
+    if (text === '') {
       buttonComponent = (
-        <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
-      );
-    } else if (endpoint) {
-      buttonComponent = (
-        <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
+        <>
+          <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
+          <AudioRecorderButton index={index} onTranscription={handleTranscription} />
+        </>
       );
     }
-  } else {
-    buttonComponent = <AudioRecorderButton index={index} onTranscription={handleTranscription} />;
   }
 
   return (

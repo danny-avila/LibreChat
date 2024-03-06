@@ -208,6 +208,13 @@ export const getFiles = (): Promise<f.TFile[]> => {
   return request.get(endpoints.files());
 };
 
+export const getTextFromAudio = (
+  data: FormData,
+  headers: { Authorization: string },
+): Promise<string> => {
+  return request.postBasic(endpoints.stt(), data, headers);
+};
+
 export const getFileConfig = (): Promise<f.FileConfig> => {
   return request.get(`${endpoints.files()}/config`);
 };
