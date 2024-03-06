@@ -41,7 +41,7 @@ class TraversaalSearch extends Tool {
   // eslint-disable-next-line no-unused-vars
   async _call({ query }, _runManager) {
     const body = {
-      data: [query],
+      query: [query],
     };
     try {
       const response = await fetch('https://api-ares.traversaal.ai/live/predict', {
@@ -61,7 +61,24 @@ class TraversaalSearch extends Tool {
       if (!json.data) {
         throw new Error('Could not parse Traversaal API results. Please try again.');
       }
-      return JSON.stringify(json.data);
+
+      const baseText = json.data?.response_text ?? '';
+      const sources = json.data?.web_url;
+      const noResponse = 'No response found in Traversaal API results';
+
+      if (!baseText && !sources) {
+        return noResponse;
+      }
+
+      const sourcesText = sources?.length ? '\n\nSources:\n - ' + sources.join('\n - ') : '';
+
+      const result = baseText + sourcesText;
+
+      if (!result) {
+        return noResponse;
+      }
+
+      return result;
     } catch (error) {
       logger.error('Traversaal API request failed', error);
       return `Traversaal API request failed: ${error.message}`;
