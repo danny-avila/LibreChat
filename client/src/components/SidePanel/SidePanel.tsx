@@ -172,7 +172,7 @@ export default function SidePanel({
               localStorage.setItem('react-resizable-panels:collapsed', 'true');
             }}
             className={cn(
-              'sidenav border-l border-gray-200 bg-white dark:border-gray-800/50 dark:bg-gray-900',
+              'sidenav hide-scrollbar border-l border-gray-200 bg-white dark:border-gray-800/50 dark:bg-gray-900',
               isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
               minSize === 0 ? 'min-w-0' : '',
             )}
