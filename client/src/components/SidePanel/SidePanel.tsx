@@ -185,7 +185,7 @@ export default function SidePanel({
                 )}
               >
                 <Switcher isCollapsed={isCollapsed} />
-                <Separator className="bg-gray-100/50" />
+                <Separator className="bg-gray-100/50 dark:bg-gray-600" />
               </div>
             )}
 

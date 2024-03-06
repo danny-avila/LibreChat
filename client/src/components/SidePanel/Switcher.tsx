@@ -59,7 +59,7 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
           isCollapsed
             ? 'flex h-9 w-9 shrink-0 items-center justify-center p-0 [&>span]:w-auto [&>svg]:hidden'
             : '',
-          'bg-white text-black dark:bg-gray-900 dark:text-white',
+          'bg-white text-black hover:bg-gray-50 dark:bg-gray-900 dark:text-white',
         )}
         aria-label={localize('com_sidepanel_select_assistant')}
       >
@@ -80,8 +80,12 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
       </SelectTrigger>
       <SelectContent className="bg-white dark:bg-gray-800">
         {assistants.map((assistant) => (
-          <SelectItem key={assistant.id} value={assistant.id}>
-            <div className="[&_svg]:text-foreground flex items-center justify-center gap-3 dark:text-white [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ">
+          <SelectItem
+            key={assistant.id}
+            value={assistant.id}
+            className="hover:bg-gray-50 dark:text-white"
+          >
+            <div className="[&_svg]:text-foreground flex items-center justify-center gap-3 dark:text-white [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0">
               <div className="assistant-item overflow-hidden rounded-full ">
                 <Icon
                   isCreatedByUser={false}
