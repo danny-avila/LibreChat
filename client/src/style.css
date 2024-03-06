@@ -1410,7 +1410,7 @@ html {
 .dark body,
 .dark html {
  --tw-bg-opacity:1;
- background-color:rgba(52,53,65,var(--tw-bg-opacity))
+ background-color:rgba(33,33,33,var(--tw-bg-opacity))
 }
 #__next,
 #root {

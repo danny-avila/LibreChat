@@ -20,7 +20,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
   return (
     <div
       data-collapsed={isCollapsed}
-      className="bg-token-sidebar-surface-primary group flex-shrink-0 overflow-x-hidden py-2 data-[collapsed=true]:py-2"
+      className="bg-token-sidebar-surface-primary hide-scrollbar group flex-shrink-0 overflow-x-hidden py-2 data-[collapsed=true]:py-2"
     >
       <div className="h-full">
         <div className="flex h-full min-h-0 flex-col">
