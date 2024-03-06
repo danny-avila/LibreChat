@@ -137,7 +137,8 @@ class AnthropicClient extends BaseClient {
    * @param {Array<Promise<MongoFile[]> | MongoFile[]> | Record<string, MongoFile[]>} attachments
    */
   checkVisionRequest(attachments) {
-    this.isVisionModel = validateVisionModel(this.modelOptions.model);
+    const availableModels = this.options.modelsConfig?.[EModelEndpoint.anthropic];
+    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
 
     if (attachments && !this.isVisionModel) {
       this.modelOptions.model = this.defaultVisionModel;
