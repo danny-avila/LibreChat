@@ -219,7 +219,7 @@ export default function NewConversationMenu() {
                   <DialogTrigger asChild>
                     <label
                       htmlFor="file-upload"
-                      className="mr-1 flex h-[32px] h-auto cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
+                      className="mr-1 flex h-[32px] h-auto cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-gray-100 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
                     >
                       <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
                       {localize('com_ui_clear')} {localize('com_ui_all')}
