@@ -227,7 +227,7 @@ class OpenAIClient extends BaseClient {
    */
   checkVisionRequest(attachments) {
     const availableModels = this.options.modelsConfig?.[this.options.endpoint];
-    this.isVisionModel = validateVisionModel({ mmodel: this.modelOptions.model, availableModels });
+    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
 
     const visionModelAvailable = availableModels?.includes(this.defaultVisionModel);
     if (attachments && visionModelAvailable && !this.isVisionModel) {
