@@ -309,6 +309,10 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         ...conversation,
       };
 
+      if (prevState?.model && prevState.model !== submissionConvo.model) {
+        update.model = prevState.model;
+      }
+
       setStorage(update);
       return update;
     });
