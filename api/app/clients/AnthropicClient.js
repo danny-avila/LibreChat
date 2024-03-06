@@ -531,7 +531,7 @@ class AnthropicClient extends BaseClient {
 
     let prompt = `${promptBody}${promptSuffix}`;
 
-    return { prompt, context, promptTokens: currentTokenCount };
+    return { prompt, context, promptTokens: currentTokenCount, tokenCountMap };
   }
 
   getCompletion() {
