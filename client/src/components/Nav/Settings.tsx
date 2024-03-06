@@ -15,8 +15,8 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          'translate-y-1/2 shadow-2xl dark:bg-gray-800 dark:text-white md:min-h-[373px] md:w-[680px]',
-          isSmallScreen && 'top-44 -translate-y-0',
+          'shadow-2xl dark:bg-gray-800 dark:text-white md:min-h-[373px] md:w-[680px]',
+          isSmallScreen ? 'top-44 -translate-y-0' : '',
         )}
       >
         <DialogHeader>
