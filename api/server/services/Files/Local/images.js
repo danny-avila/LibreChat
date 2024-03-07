@@ -46,7 +46,7 @@ async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'hi
     fs.mkdirSync(userPath, { recursive: true });
   }
 
-  const fileName = `${file_id}-${path.basename(inputFilePath)}`;
+  const fileName = `${file_id}__${path.basename(inputFilePath)}`;
   const newPath = path.join(userPath, fileName);
 
   if (extension.toLowerCase() === '.webp') {

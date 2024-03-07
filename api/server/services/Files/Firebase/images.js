@@ -38,7 +38,7 @@ async function uploadImageToFirebase({ req, file, file_id, endpoint, resolution 
   const userId = req.user.id;
 
   let webPBuffer;
-  let fileName = `${file_id}-${path.basename(inputFilePath)}`;
+  let fileName = `${file_id}__${path.basename(inputFilePath)}`;
   if (extension.toLowerCase() === '.webp') {
     webPBuffer = resizedBuffer;
   } else {
