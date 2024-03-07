@@ -32,6 +32,13 @@ const sendMessage = (res, message, event = 'message') => {
  * @async
  * @param {object} res - The server response.
  * @param {object} options - The options for handling the error containing message properties.
+ * @param {object} options.user - The user ID.
+ * @param {string} options.sender - The sender of the message.
+ * @param {string} options.conversationId - The conversation ID.
+ * @param {string} options.messageId - The message ID.
+ * @param {string} options.parentMessageId - The parent message ID.
+ * @param {string} options.text - The error message.
+ * @param {boolean} options.shouldSaveMessage - [Optional] Whether the message should be saved. Default is true.
  * @param {function} callback - [Optional] The callback function to be executed.
  */
 const sendError = async (res, options, callback) => {
@@ -43,7 +50,7 @@ const sendError = async (res, options, callback) => {
     parentMessageId,
     text,
     shouldSaveMessage,
-    overrideProps = {},
+    ...rest
   } = options;
   const errorMessage = {
     sender,
@@ -55,7 +62,7 @@ const sendError = async (res, options, callback) => {
     final: true,
     text,
     isCreatedByUser: false,
-    ...overrideProps,
+    ...rest,
   };
   if (callback && typeof callback === 'function') {
     await callback();
@@ -88,7 +95,28 @@ const sendError = async (res, options, callback) => {
   handleError(res, errorMessage);
 };
 
+/**
+ * Sends the response based on whether headers have been sent or not.
+ * @param {Express.Response} res - The server response.
+ * @param {Object} data - The data to be sent.
+ * @param {string} [errorMessage] - The error message, if any.
+ */
+const sendResponse = (res, data, errorMessage) => {
+  if (!res.headersSent) {
+    if (errorMessage) {
+      return res.status(500).json({ error: errorMessage });
+    }
+    return res.json(data);
+  }
+
+  if (errorMessage) {
+    return sendError(res, { ...data, text: errorMessage });
+  }
+  return sendMessage(res, data);
+};
+
 module.exports = {
+  sendResponse,
   handleError,
   sendMessage,
   sendError,
