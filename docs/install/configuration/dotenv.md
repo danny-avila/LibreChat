@@ -375,6 +375,10 @@ OPENAI_FORCE_PROMPT=true
 - Leave `ASSISTANTS_API_KEY=` blank to disable this endpoint
 - Set `ASSISTANTS_API_KEY=` to `user_provided` to allow users to provide their own API key from the WebUI
 
+```bash
+ASSISTANTS_API_KEY=user_provided
+```
+
 - Customize the available models, separated by commas, **without spaces**.
     - The first will be default.
     - Leave it blank or commented out to use internal settings:
