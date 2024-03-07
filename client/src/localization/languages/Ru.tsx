@@ -1,6 +1,14 @@
 // Russian phrases
 
 export default {
+  com_sidepanel_select_assistant: 'Выбрать Ассистента',
+  com_sidepanel_assistant_builder: 'Конструктор Ассистента',
+  com_sidepanel_attach_files: 'Прикрепить файлы',
+  com_sidepanel_manage_files: 'Управление файлами',
+  com_assistants_code_interpreter: 'Интерпретатор кода',
+  com_assistants_code_interpreter_files:
+    'Следующие файлы доступны только для Интерпретатора кода:',
+  com_assistants_retrieval: 'Поиск',
   com_ui_examples: 'Примеры',
   com_ui_new_chat: 'Создать чат',
   com_ui_happy_birthday: 'Это мой первый день рождения!',

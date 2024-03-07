@@ -25,6 +25,7 @@ const Icon: React.FC<IconProps> = (props) => {
     button,
     model = '',
     endpoint,
+    error,
     jailbreak,
     assistantName,
   } = props;
@@ -51,7 +52,7 @@ const Icon: React.FC<IconProps> = (props) => {
               height: '20px', 
               boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px', 
             }}
-            className="relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white"
+            className="relative flex h-9 w-9 items-center justify-center rounded-full p-1 text-white"
           >
             <UserIcon />
           </div>
@@ -170,11 +171,11 @@ const Icon: React.FC<IconProps> = (props) => {
         )}
       >
         {icon}
-        {/* {error && (
+        {error && (
           <span className="absolute right-0 top-[20px] -mr-2 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
             !
           </span>
-        )} */}
+        )}
       </div>
     );
   }
