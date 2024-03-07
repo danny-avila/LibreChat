@@ -418,7 +418,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
   const abortConversation = useCallback(
     async (conversationId = '', submission: TSubmission) => {
-      console.log(submission);
       let runAbortKey = '';
       try {
         const conversation = (JSON.parse(localStorage.getItem('lastConversationSetup') ?? '') ??
