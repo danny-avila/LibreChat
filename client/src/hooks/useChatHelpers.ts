@@ -68,6 +68,24 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     return queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]);
   }, [queryParam, queryClient]);
 
+  /* Conversation */
+  // const setActiveConvos = useSetRecoilState(store.activeConversations);
+
+  // const setConversation = useCallback(
+  //   (convoUpdate: TConversation) => {
+  //     _setConversation(prev => {
+  //       const { conversationId: convoId } = prev ?? { conversationId: null };
+  //       const { conversationId: currentId } = convoUpdate;
+  //       if (currentId && convoId && convoId !== 'new' && convoId !== currentId) {
+  //         // for now, we delete the prev convoId from activeConversations
+  //         const newActiveConvos = { [currentId]: true };
+  //         setActiveConvos(newActiveConvos);
+  //       }
+  //       return convoUpdate;
+  //     });
+  //   },
+  //   [_setConversation, setActiveConvos],
+  // );
   const { getExpiry } = useUserKey(endpoint ?? '');
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
 
@@ -122,7 +140,10 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
 
-    const thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+    let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+    if (!thread_id) {
+      thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
+    }
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');

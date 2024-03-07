@@ -20,7 +20,6 @@ async function loadCustomConfig() {
   const configPath = process.env.CONFIG_PATH || defaultConfigPath;
 
   const customConfig = loadYaml(configPath);
-
   if (!customConfig) {
     i === 0 &&
       logger.info(
@@ -44,6 +43,8 @@ async function loadCustomConfig() {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
   }
+
+  // TODO: handle remote config
 
   return customConfig;
 }

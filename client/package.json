@@ -27,7 +27,6 @@
   },
   "homepage": "https://librechat.ai",
   "dependencies": {
-    "@azure/openai": "^1.0.0-beta.11",
     "@dicebear/collection": "^7.0.4",
     "@dicebear/core": "^7.0.4",
     "@headlessui/react": "^1.7.13",

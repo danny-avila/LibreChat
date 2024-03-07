@@ -14,7 +14,7 @@ import Header from './Header';
 import Footer from './Footer';
 import store from '~/store';
 
-function ChatView({ index = 0 }: Readonly<{ index?: number }>) {
+function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
   useSSE(submissionAtIndex);
