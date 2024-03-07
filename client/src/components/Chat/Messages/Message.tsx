@@ -115,6 +115,7 @@ export default function Message(props: TMessageProps) {
                     copyToClipboard={copyToClipboard}
                     handleContinue={handleContinue}
                     latestMessage={latestMessage}
+                    isLast={isLast}
                   />
                 </SubRow>
               )}
