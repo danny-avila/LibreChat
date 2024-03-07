@@ -7,35 +7,12 @@ const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? tex
 
 const createOnProgress = ({ generation = '', onProgress: _onProgress }) => {
   let i = 0;
-  let code = '';
-  let precode = '';
-  let codeBlock = false;
   let tokens = addSpaceIfNeeded(generation);
 
   const progressCallback = async (partial, { res, text, bing = false, ...rest }) => {
     let chunk = partial === text ? '' : partial;
     tokens += chunk;
-    precode += chunk;
     tokens = tokens.replaceAll('[DONE]', '');
-
-    if (codeBlock) {
-      code += chunk;
-    }
-
-    if (precode.includes('```') && codeBlock) {
-      codeBlock = false;
-      precode = precode.replace(/```/g, '');
-      code = '';
-    }
-
-    if (precode.includes('```') && code === '') {
-      precode = precode.replace(/```/g, '');
-      codeBlock = true;
-    }
-
-    if (tokens.match(/^\n(?!:::plugins:::)/)) {
-      tokens = tokens.replace(/^\n/, '');
-    }
 
     if (bing) {
       tokens = citeText(tokens, true);
@@ -173,16 +150,24 @@ function isEnabled(value) {
 const isUserProvided = (value) => value === 'user_provided';
 
 /**
- * Extracts the value of an environment variable from a string.
- * @param {string} value - The value to be processed, possibly containing an env variable placeholder.
- * @returns {string} - The actual value from the environment variable or the original value.
+ * Generate the configuration for a given key and base URL.
+ * @param {string} key
+ * @param {string} baseURL
+ * @returns {boolean | { userProvide: boolean, userProvideURL?: boolean }}
  */
-function extractEnvVariable(value) {
-  const envVarMatch = value.match(/^\${(.+)}$/);
-  if (envVarMatch) {
-    return process.env[envVarMatch[1]] || value;
+function generateConfig(key, baseURL) {
+  if (!key) {
+    return false;
   }
-  return value;
+
+  /** @type {{ userProvide: boolean, userProvideURL?: boolean }} */
+  const config = { userProvide: isUserProvided(key) };
+
+  if (baseURL) {
+    config.userProvideURL = isUserProvided(baseURL);
+  }
+
+  return config;
 }
 
 module.exports = {
@@ -193,5 +178,5 @@ module.exports = {
   formatAction,
   addSpaceIfNeeded,
   isUserProvided,
-  extractEnvVariable,
+  generateConfig,
 };

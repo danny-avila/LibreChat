@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "0.6.9",
+  "version": "0.6.10",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -25,9 +25,9 @@
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://github.com/danny-avila/LibreChat#readme",
+  "homepage": "https://librechat.ai",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.5.4",
+    "@anthropic-ai/sdk": "^0.16.1",
     "@azure/search-documents": "^12.0.0",
     "@keyv/mongo": "^2.1.8",
     "@keyv/redis": "^2.8.1",
@@ -46,7 +46,7 @@
     "express-rate-limit": "^6.9.0",
     "express-session": "^1.17.3",
     "file-type": "^18.7.0",
-    "firebase": "^10.6.0",
+    "firebase": "^10.8.0",
     "googleapis": "^126.0.1",
     "handlebars": "^4.7.7",
     "html": "^1.0.0",
@@ -59,7 +59,7 @@
     "langchain": "^0.0.214",
     "librechat-data-provider": "*",
     "lodash": "^4.17.21",
-    "meilisearch": "^0.33.0",
+    "meilisearch": "^0.37.0",
     "mime": "^3.0.0",
     "module-alias": "^2.2.3",
     "mongoose": "^7.1.1",

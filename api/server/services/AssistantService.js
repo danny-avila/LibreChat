@@ -286,6 +286,9 @@ function createInProgressHandler(openai, thread_id, messages) {
       openai.seenCompletedMessages.add(message_id);
 
       const message = await openai.beta.threads.messages.retrieve(thread_id, message_id);
+      if (!message?.content?.length) {
+        return;
+      }
       messages.push(message);
 
       let messageIndex = openai.mappedOrder.get(step.id);
@@ -470,13 +473,14 @@ async function processMessages(openai, messages = []) {
       }
 
       text += (content.text?.value ?? '') + ' ';
+      logger.debug('[processMessages] Processing message:', { value: text });
 
       // Process annotations if they exist
-      if (!content.text?.annotations) {
+      if (!content.text?.annotations?.length) {
         continue;
       }
 
-      logger.debug('Processing annotations:', content.text.annotations);
+      logger.debug('[processMessages] Processing annotations:', content.text.annotations);
       for (const annotation of content.text.annotations) {
         logger.debug('Current annotation:', annotation);
         let file;

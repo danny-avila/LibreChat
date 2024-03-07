@@ -44,7 +44,8 @@ async function retrieveRun({ thread_id, run_id, timeout, openai }) {
     return response.data;
   } catch (error) {
     const logMessage = '[retrieveRun] Failed to retrieve run data:';
-    if (error.response) {
+    const timedOutMessage = 'Cannot read properties of undefined (reading \'status\')';
+    if (error?.response && error?.response?.status) {
       logger.error(
         `${logMessage} The request was made and the server responded with a status code that falls out of the range of 2xx: ${
           error.message ? error.message : ''
@@ -64,9 +65,9 @@ async function retrieveRun({ thread_id, run_id, timeout, openai }) {
           request: error.request,
         },
       );
-    } else {
+    } else if (error?.message && !error?.message?.includes(timedOutMessage)) {
       logger.error(`${logMessage} Something happened in setting up the request`, {
-        message: error.message ? error.message : '',
+        message: error.message,
       });
     }
     throw error;

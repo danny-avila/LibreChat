@@ -212,6 +212,7 @@ export type TStartupConfig = {
   speechToTextExternal: boolean;
   textToSpeechExternal: boolean;
   showBirthdayIcon: boolean;
+  helpAndFaqURL: string;
   customFooter?: string;
 };
 

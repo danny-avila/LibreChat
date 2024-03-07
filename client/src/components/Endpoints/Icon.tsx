@@ -3,6 +3,7 @@ import UnknownIcon from '~/components/Chat/Menus/Endpoints/UnknownIcon';
 import {
   Plugin,
   GPTIcon,
+  UserIcon,
   PaLMIcon,
   CodeyIcon,
   GeminiIcon,
@@ -12,6 +13,7 @@ import {
   CustomMinimalIcon,
 } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
+import useAvatar from '~/hooks/Messages/useAvatar';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
@@ -27,6 +29,8 @@ const Icon: React.FC<IconProps> = (props) => {
     assistantName,
   } = props;
 
+  const avatarSrc = useAvatar(user);
+
   if (isCreatedByUser) {
     const username = user?.name || 'User';
 
@@ -39,14 +43,16 @@ const Icon: React.FC<IconProps> = (props) => {
         }}
         className={cn('relative flex items-center justify-center', props.className ?? '')}
       >
-        <img
-          className="rounded-sm"
-          src={
-            user?.avatar ||
-            `https://api.dicebear.com/6.x/initials/svg?seed=${username}&fontFamily=Verdana&fontSize=36`
-          }
-          alt="avatar"
-        />
+        {!user?.avatar && !user?.username ? (
+          <div
+            style={{ backgroundColor: 'rgb(121, 137, 255)', width: '24px', height: '24px' }}
+            className="relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white"
+          >
+            <UserIcon />
+          </div>
+        ) : (
+          <img className="rounded-sm" src={user?.avatar || avatarSrc} alt="avatar" />
+        )}
       </div>
     );
   } else {

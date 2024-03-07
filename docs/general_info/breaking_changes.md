@@ -9,11 +9,102 @@ weight: -10
 **If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
 Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
 
+---
+
+## 🔎Meilisearch v1.6
+
+- **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data_v1.5` may be present in your root directory. This folder is no longer required and **can be safely deleted** to free up space.
+- **New Indexing Data Location**: With the current Meilisearch version `1.6`, the new indexing data location folder will be `meili_data_v1.6`.
+
+---
+
+## 🥷🪦 Ninja - March 4, 2024
+- Since Ninja has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
+
+---
+
+## 🐋 docker-compose.yml - February 22nd, 2024
+
+### Update to `docker-compose.yml`
+
+We have made changes to the `docker-compose.yml` file to enhance the default behavior. Starting now, the file uses the pre-built image by default. If you prefer to build the image yourself, you'll need to utilize the override file to specify your custom build configuration.
+
+Here's an example of the `docker-compose.override.yml`:
+
+```yaml
+version: '3.4'
+
+services:
+  api:
+    image: librechat
+    build:
+      context: .
+      target: node
+```
+
+For more detailed information on using the `docker-compose.override.yaml`, please refer to our documentation: [docker_override](https://docs.librechat.ai/install/configuration/docker_override.html)
+
+---
+
+## **.env** changes v0.6.6 -> v0.6.9
+see [⚙️ Environment Variables](../install/configuration/dotenv.md) for more info
+
+- Assistants added to the list
+```sh
+# ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
+```
+- Updated OpenAI models
+```sh
+# OPENAI_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k
+```
+- Assistants configuration
+```sh
+#====================#
+#   Assistants API   #
+#====================#
+
+# ASSISTANTS_API_KEY=
+# ASSISTANTS_BASE_URL=
+# ASSISTANTS_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
+```
+- Updated Plugin models
+```sh
+# PLUGIN_MODELS=gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
+```
+- Birthday hat
+```sh
+# SHOW_BIRTHDAY_ICON=true
+```
+### Previous changes:
+- DALL-E
+```sh
+# DALL·E
+#----------------
+# DALLE_API_KEY=
+# DALLE3_API_KEY=
+# DALLE2_API_KEY=
+# DALLE3_SYSTEM_PROMPT=
+# DALLE2_SYSTEM_PROMPT=
+# DALLE_REVERSE_PROXY=
+# DALLE3_BASEURL=
+# DALLE2_BASEURL=
+
+# DALL·E (via Azure OpenAI)
+# Note: requires some of the variables above to be set
+#----------------
+# DALLE3_AZURE_API_VERSION=
+# DALLE2_AZURE_API_VERSION=
+```
+
+---
+
 ## January 31th 2024
 - A new method to use the ChatGPT endpoint is now documented. It uses "Ninja"
 - For more info:
-    - [Ninja Deployment Guide](../features/ninja.md)
+    - ~~[Ninja Deployment Guide](../general_info/breaking_changes.md)~~
     - [Ninja GitHub repo](https://github.com/gngpp/ninja/tree/main)
+
+---
 
 ## January 30th 2024
 - Since PandoraNext has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
@@ -21,15 +112,21 @@ Certain changes in the updates may impact cookies, leading to unexpected behavio
     - [https://github.com/danny-avila/LibreChat/discussions/1663](https://github.com/danny-avila/LibreChat/discussions/1663#discussioncomment-8314025)
     - [https://linux.do/t/topic/1051](https://linux.do/t/topic/1051)
 
+---
+
 ## v0.6.6
 
 - **DALL-E Update**: user-provided keys for DALL-E are now specific to each DALL-E version, i.e.: `DALLE3_API_KEY` and `DALLE2_API_KEY`
 - Note: `DALLE_API_KEY` will work for both DALL-E-3 and DALL-E-2 when the admin provides the credential; in other words, this may only affect your users if DALLE_API_KEY is not set in the `.env` file. In this case, they will simply have to "uninstall" the plugin, and provide their API key again.
 
+---
+
 ## v0.6.x
 
 - **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data` may be present in your root directory. This folder is no longer required and can be **safely deleted** to free up space.
 - **New Indexing Data Location**: The indexing data has been relocated. It will now be stored in a new folder named `meili_data_v1.x`, where `1.x` represents the version of Meilisearch. For instance, with the current Meilisearch version `1.5`, the folder will be `meili_data_v1.5`.
+
+---
 
 ## v0.5.9
 
@@ -40,10 +137,14 @@ Certain changes in the updates may impact cookies, leading to unexpected behavio
 
   - *See **[.env.example](https://github.com/danny-avila/LibreChat/blob/1378eb5097b666a4add27923e47be73919957e5b/.env.example#L314)** for exact values in millisecond calculation*
 
+---
+
 ## v0.5.8
 
 - It's now required to name manifest JSON files (for [ChatGPT Plugins](../features/plugins/chatgpt_plugins_openapi.md)) in the `api\app\clients\tools\.well-known` directory after their `name_for_model` property should you add one yourself.
     - This was a recommended convention before, but is now required.
+
+---
 
 ## v0.5.7
 
@@ -56,6 +157,7 @@ for a docker install:
 for a local install:
 - `npm run update:local`
 
+---
 
 ## v0.5.5
 Some users have reported an error after updating their docker containers.
@@ -70,6 +172,8 @@ Some users have reported an error after updating their docker containers.
   - Repeat the docker update process: 🚀
     - `docker compose build`
     - `docker compose up -d`
+
+---
 
 ## v0.5.4
 Some changes were made in the .env file
@@ -109,11 +213,15 @@ ANTHROPIC_MODELS=claude-1,claude-instant-1,claude-2
 
   - Choose from ANTHROPIC_MODELS which models you want to enable 🤖
 
+---
+
 ## v0.5.3
 
 Changed **AZURE_OPENAI_API_KEY** to **AZURE_API_KEY**:
 
 I had to change the environment variable from AZURE_OPENAI_API_KEY to AZURE_API_KEY, because the former would be read by langchain and cause issues when a user has both Azure and OpenAI keys set. This is a [known issue in the langchain library](https://github.com/hwchase17/langchainjs/issues/1687)
+
+---
 
 ## v0.5.0
 
@@ -122,7 +230,7 @@ I had to change the environment variable from AZURE_OPENAI_API_KEY to AZURE_API_
 ### Summary
 - In this version, we have simplified the configuration process, improved the security of your credentials, and updated the docker instructions. 🚀
 - Please read the following sections carefully to learn how to upgrade your app and avoid any issues. 🙏
-- **Note:** If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+- **Note:** If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
 
 ---
 

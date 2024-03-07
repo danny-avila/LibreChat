@@ -22,7 +22,7 @@ export const defaultAssistantFormValues = {
   name: '',
   description: '',
   instructions: '',
-  model: 'gpt-3.5-turbo-1106',
+  model: '',
   functions: [],
   code_interpreter: false,
   retrieval: false,
@@ -391,6 +391,7 @@ export const anthropicSchema = tConversationSchema
     maxOutputTokens: true,
     topP: true,
     topK: true,
+    resendImages: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -401,6 +402,7 @@ export const anthropicSchema = tConversationSchema
     maxOutputTokens: obj.maxOutputTokens ?? 4000,
     topP: obj.topP ?? 0.7,
     topK: obj.topK ?? 5,
+    resendImages: obj.resendImages ?? false,
   }))
   .catch(() => ({
     model: 'claude-1',
@@ -410,6 +412,7 @@ export const anthropicSchema = tConversationSchema
     maxOutputTokens: 4000,
     topP: 0.7,
     topK: 5,
+    resendImages: false,
   }));
 
 export const chatGPTBrowserSchema = tConversationSchema
@@ -506,9 +509,6 @@ export const compactOpenAISchema = tConversationSchema
   })
   .transform((obj: Partial<TConversation>) => {
     const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.model === 'gpt-3.5-turbo') {
-      delete newObj.model;
-    }
     if (newObj.temperature === 1) {
       delete newObj.temperature;
     }
@@ -545,9 +545,6 @@ export const compactGoogleSchema = tConversationSchema
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.model === google.model.default) {
-      delete newObj.model;
-    }
     if (newObj.temperature === google.temperature.default) {
       delete newObj.temperature;
     }
@@ -574,12 +571,10 @@ export const compactAnthropicSchema = tConversationSchema
     maxOutputTokens: true,
     topP: true,
     topK: true,
+    resendImages: true,
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.model === 'claude-1') {
-      delete newObj.model;
-    }
     if (newObj.temperature === 1) {
       delete newObj.temperature;
     }
@@ -592,6 +587,9 @@ export const compactAnthropicSchema = tConversationSchema
     if (newObj.topK === 5) {
       delete newObj.topK;
     }
+    if (newObj.resendImages !== true) {
+      delete newObj.resendImages;
+    }
 
     return removeNullishValues(newObj);
   })
@@ -603,11 +601,6 @@ export const compactChatGPTSchema = tConversationSchema
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
-    // model: obj.model ?? 'text-davinci-002-render-sha',
-    if (newObj.model === 'text-davinci-002-render-sha') {
-      delete newObj.model;
-    }
-
     return removeNullishValues(newObj);
   })
   .catch(() => ({}));
@@ -626,9 +619,6 @@ export const compactPluginsSchema = tConversationSchema
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
-    if (newObj.model === 'gpt-3.5-turbo') {
-      delete newObj.model;
-    }
     if (newObj.chatGptLabel === null) {
       delete newObj.chatGptLabel;
     }

@@ -36,11 +36,18 @@ transactionSchema.statics.create = async function (transactionData) {
   }
 
   // Adjust the user's balance
-  return await Balance.findOneAndUpdate(
+  const updatedBalance = await Balance.findOneAndUpdate(
     { user: transaction.user },
     { $inc: { tokenCredits: transaction.tokenValue } },
     { upsert: true, new: true },
   ).lean();
+
+  return {
+    rate: transaction.rate,
+    user: transaction.user.toString(),
+    balance: updatedBalance.tokenCredits,
+    [transaction.tokenType]: transaction.tokenValue,
+  };
 };
 
 module.exports = mongoose.model('Transaction', transactionSchema);

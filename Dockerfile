@@ -7,9 +7,11 @@ WORKDIR /app
 # Allow mounting of these files, which have no default
 # values.
 RUN touch .env
-# Install call deps - Install curl for health check
+RUN npm config set fetch-retry-maxtimeout 300000
+RUN apk add --no-cache g++ make python3 py3-pip
+RUN npm install -g node-gyp
 RUN apk --no-cache add curl && \
-    npm ci
+    npm install
 
 # React client build
 ENV NODE_OPTIONS="--max-old-space-size=2048"

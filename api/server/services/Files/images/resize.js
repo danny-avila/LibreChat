@@ -1,4 +1,5 @@
 const sharp = require('sharp');
+const { EModelEndpoint } = require('librechat-data-provider');
 
 /**
  * Resizes an image from a given buffer based on the specified resolution.
@@ -7,13 +8,14 @@ const sharp = require('sharp');
  * @param {'low' | 'high'} resolution - The resolution to resize the image to.
  *                                      'low' for a maximum of 512x512 resolution,
  *                                      'high' for a maximum of 768x2000 resolution.
+ * @param {EModelEndpoint} endpoint - Identifier for specific endpoint handling
  * @returns {Promise<{buffer: Buffer, width: number, height: number}>} An object containing the resized image buffer and its dimensions.
  * @throws Will throw an error if the resolution parameter is invalid.
  */
-async function resizeImageBuffer(inputBuffer, resolution) {
+async function resizeImageBuffer(inputBuffer, resolution, endpoint) {
   const maxLowRes = 512;
   const maxShortSideHighRes = 768;
-  const maxLongSideHighRes = 2000;
+  const maxLongSideHighRes = endpoint === EModelEndpoint.anthropic ? 1568 : 2000;
 
   let newWidth, newHeight;
   let resizeOptions = { fit: 'inside', withoutEnlargement: true };

@@ -1,11 +1,12 @@
 const { parseConvo, EModelEndpoint } = require('librechat-data-provider');
+const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { processFiles } = require('~/server/services/Files/process');
 const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
 const anthropic = require('~/server/services/Endpoints/anthropic');
+const assistant = require('~/server/services/Endpoints/assistant');
 const openAI = require('~/server/services/Endpoints/openAI');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
-const assistant = require('~/server/services/Endpoints/assistant');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
@@ -17,7 +18,7 @@ const buildFunction = {
   [EModelEndpoint.assistants]: assistant.buildOptions,
 };
 
-function buildEndpointOption(req, res, next) {
+async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
   const parsedBody = parseConvo({ endpoint, endpointType, conversation: req.body });
   req.body.endpointOption = buildFunction[endpointType ?? endpoint](
@@ -25,6 +26,10 @@ function buildEndpointOption(req, res, next) {
     parsedBody,
     endpointType,
   );
+
+  const modelsConfig = await getModelsConfig(req);
+  req.body.endpointOption.modelsConfig = modelsConfig;
+
   if (req.body.files) {
     // hold the promise
     req.body.endpointOption.attachments = processFiles(req.body.files);

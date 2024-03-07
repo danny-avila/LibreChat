@@ -106,12 +106,12 @@ export default function Conversation({ conversation, retainView }) {
 
   const aProps = {
     className:
-      'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-800 py-3 px-3 pr-14 hover:bg-gray-800',
+      'animate-flash group relative flex cursor-pointer items-center gap-3 break-all rounded-md bg-gray-300 dark:bg-gray-800 py-3 px-3 pr-14',
   };
 
   if (currentConversation?.conversationId !== conversationId) {
     aProps.className =
-      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-900 hover:pr-4';
+      'group relative flex cursor-pointer items-center gap-3 break-all rounded-md py-3 px-3 hover:bg-gray-200 dark:hover:bg-gray-800 hover:pr-4';
   }
 
   return (
@@ -149,7 +149,7 @@ export default function Conversation({ conversation, retainView }) {
           />
         </div>
       ) : (
-        <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-black group-hover:from-gray-900" />
+        <div className="absolute inset-y-0 right-0 z-10 w-8 rounded-r-md bg-gradient-to-l from-gray-50 group-hover:from-gray-50 dark:from-gray-900 dark:group-hover:from-gray-800" />
       )}
     </a>
   );

@@ -55,7 +55,7 @@ function MultiSelectPop({
               <span className="inline-flex" id={excludeIds[2]}>
                 <span
                   className={cn(
-                    'flex h-6 items-center gap-1 text-sm text-gray-900 dark:text-white',
+                    'flex h-6 items-center gap-1 text-sm text-gray-800 dark:text-white',
                     !showLabel ? 'text-xs' : '',
                   )}
                 >
@@ -106,7 +106,7 @@ function MultiSelectPop({
             <Content
               side="bottom"
               align="center"
-              className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+              className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-white"
             >
               {availableValues.map((option) => {
                 if (!option) {

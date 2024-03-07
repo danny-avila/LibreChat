@@ -1,3 +1,4 @@
+const { ToolCallTypes } = require('librechat-data-provider');
 const { logger } = require('~/config');
 
 /**
@@ -17,6 +18,53 @@ const { logger } = require('~/config');
  * @property {Function} fetchRunSteps - Fetches run steps based on run status.
  * @property {Function} handleStep - Handles a run step based on its status.
  */
+
+/**
+ * Generates a signature string for a given tool call object. This signature includes
+ * the tool call's id, type, and other distinguishing features based on its type.
+ *
+ * @param {ToolCall} toolCall The tool call object for which to generate a signature.
+ * @returns {string} The generated signature for the tool call.
+ */
+function getToolCallSignature(toolCall) {
+  if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
+    const inputLength = toolCall.code_interpreter?.input?.length ?? 0;
+    const outputsLength = toolCall.code_interpreter?.outputs?.length ?? 0;
+    return `${toolCall.id}-${toolCall.type}-${inputLength}-${outputsLength}`;
+  }
+  if (toolCall.type === ToolCallTypes.RETRIEVAL) {
+    return `${toolCall.id}-${toolCall.type}`;
+  }
+  if (toolCall.type === ToolCallTypes.FUNCTION) {
+    const argsLength = toolCall.function?.arguments?.length ?? 0;
+    const hasOutput = toolCall.function?.output ? 1 : 0;
+    return `${toolCall.id}-${toolCall.type}-${argsLength}-${hasOutput}`;
+  }
+
+  return `${toolCall.id}-unknown-type`;
+}
+
+/**
+ * Generates a signature based on the specifics of the step details.
+ * This function supports 'message_creation' and 'tool_calls' types, and returns a default signature
+ * for any other type or in case the details are undefined.
+ *
+ * @param {MessageCreationStepDetails | ToolCallsStepDetails | undefined} details - The detailed content of the step, which can be undefined.
+ * @returns {string} A signature string derived from the content of step details.
+ */
+function getDetailsSignature(details) {
+  if (!details) {
+    return 'undefined-details';
+  }
+
+  if (details.type === 'message_creation') {
+    return `${details.type}-${details.message_creation.message_id}`;
+  } else if (details.type === 'tool_calls') {
+    const toolCallsSignature = details.tool_calls.map(getToolCallSignature).join('|');
+    return `${details.type}-${toolCallsSignature}`;
+  }
+  return 'unknown-type';
+}
 
 /**
  * Manages the retrieval and processing of run steps based on run status.
@@ -55,12 +103,14 @@ class RunManager {
     );
     const steps = _steps.sort((a, b) => a.created_at - b.created_at);
     for (const [i, step] of steps.entries()) {
-      if (!final && this.seenSteps.has(`${step.id}-${step.status}`)) {
+      const detailsSignature = getDetailsSignature(step.step_details);
+      const stepKey = `${step.id}-${step.status}-${detailsSignature}`;
+      if (!final && this.seenSteps.has(stepKey)) {
         continue;
       }
 
       const isLast = i === steps.length - 1;
-      this.seenSteps.add(`${step.id}-${step.status}`);
+      this.seenSteps.add(stepKey);
       this.stepsByStatus[runStatus] = this.stepsByStatus[runStatus] || [];
 
       const currentStepPromise = (async () => {

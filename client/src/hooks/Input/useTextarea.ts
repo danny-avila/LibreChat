@@ -1,7 +1,8 @@
 import debounce from 'lodash/debounce';
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
+import type { SetterOrUpdater } from 'recoil';
 import type { KeyboardEvent } from 'react';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -25,18 +26,28 @@ const getAssistantName = ({
   }
 };
 
-export default function useTextarea({ setText, submitMessage, disabled = false }) {
+export default function useTextarea({
+  setText,
+  submitMessage,
+  disabled = false,
+}: {
+  setText: SetterOrUpdater<string>;
+  submitMessage: () => void;
+  disabled?: boolean;
+}) {
   const assistantMap = useAssistantsMapContext();
   const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
     useChatContext();
   const isComposing = useRef(false);
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const { handleFiles } = useFileHandling();
   const getSender = useGetSender();
   const localize = useLocalize();
 
   const { conversationId, jailbreak, endpoint = '', assistant_id } = conversation || {};
-  const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
+  const isNotAppendable =
+    ((latestMessage?.unfinished && !isSubmitting) || latestMessage?.error) &&
+    endpoint !== EModelEndpoint.assistants;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
   const assistant = endpoint === EModelEndpoint.assistants && assistantMap?.[assistant_id ?? ''];
@@ -54,7 +65,7 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
     }
 
     if (conversationId !== 'search') {
-      inputRef.current?.focus();
+      textAreaRef.current?.focus();
     }
     // setShowBingToneSetting is a recoil setter, so it doesn't need to be in the dependency array
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,14 +73,14 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      inputRef.current?.focus();
+      textAreaRef.current?.focus();
     }, 100);
 
     return () => clearTimeout(timeoutId);
   }, [isSubmitting]);
 
   useEffect(() => {
-    if (inputRef.current?.value) {
+    if (textAreaRef.current?.value) {
       return;
     }
 
@@ -91,15 +102,15 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
 
     const placeholder = getPlaceholderText();
 
-    if (inputRef.current?.getAttribute('placeholder') === placeholder) {
+    if (textAreaRef.current?.getAttribute('placeholder') === placeholder) {
       return;
     }
 
     const setPlaceholder = () => {
       const placeholder = getPlaceholderText();
 
-      if (inputRef.current?.getAttribute('placeholder') !== placeholder) {
-        inputRef.current?.setAttribute('placeholder', placeholder);
+      if (textAreaRef.current?.getAttribute('placeholder') !== placeholder) {
+        textAreaRef.current?.setAttribute('placeholder', placeholder);
       }
     };
 
@@ -147,16 +158,42 @@ export default function useTextarea({ setText, submitMessage, disabled = false }
     isComposing.current = false;
   };
 
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (e.clipboardData && e.clipboardData.files.length > 0) {
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       e.preventDefault();
-      setFilesLoading(true);
-      handleFiles(e.clipboardData.files);
-    }
-  };
+
+      const pastedData = e.clipboardData.getData('text/plain');
+      const textArea = textAreaRef.current;
+
+      if (!textArea) {
+        return;
+      }
+
+      const start = textArea.selectionStart;
+      const end = textArea.selectionEnd;
+
+      const newValue =
+        textArea.value.substring(0, start) + pastedData + textArea.value.substring(end);
+      setText(newValue);
+
+      if (e.clipboardData && e.clipboardData.files.length > 0) {
+        e.preventDefault();
+        setFilesLoading(true);
+        const timestampedFiles: File[] = [];
+        for (const file of e.clipboardData.files) {
+          const newFile = new File([file], `clipboard_${+new Date()}_${file.name}`, {
+            type: file.type,
+          });
+          timestampedFiles.push(newFile);
+        }
+        handleFiles(timestampedFiles);
+      }
+    },
+    [handleFiles, setFilesLoading, setText],
+  );
 
   return {
-    inputRef,
+    textAreaRef,
     handleKeyDown,
     handleKeyUp,
     handlePaste,

@@ -86,7 +86,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
               <div
                 className={cn(
                   plugin.loading ? 'bg-green-100' : 'bg-gray-20',
-                  'my-1 flex items-center rounded p-3 text-xs text-gray-900',
+                  'my-1 flex items-center rounded p-3 text-xs text-gray-800',
                 )}
               >
                 <div>
@@ -94,7 +94,7 @@ const Plugin: React.FC<PluginProps> = ({ plugin }) => {
                     <div>{generateStatus()}</div>
                   </div>
                 </div>
-                {plugin.loading && <Spinner className="ml-1" />}
+                {plugin.loading && <Spinner className="ml-1 text-black" />}
                 <Disclosure.Button className="ml-12 flex items-center gap-2">
                   <ChevronDownIcon {...iconProps} />
                 </Disclosure.Button>

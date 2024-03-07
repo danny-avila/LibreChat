@@ -1,7 +1,7 @@
 const { getResponseSender } = require('librechat-data-provider');
-const { sendMessage, createOnProgress } = require('~/server/utils');
-const { saveMessage, getConvoTitle, getConvo } = require('~/models');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
+const { sendMessage, createOnProgress } = require('~/server/utils');
+const { saveMessage, getConvo } = require('~/models');
 const { logger } = require('~/config');
 
 const EditController = async (req, res, next, initializeClient) => {
@@ -90,6 +90,20 @@ const EditController = async (req, res, next, initializeClient) => {
 
   const { abortController, onStart } = createAbortController(req, res, getAbortData);
 
+  res.on('close', () => {
+    logger.debug('[EditController] Request closed');
+    if (!abortController) {
+      return;
+    } else if (abortController.signal.aborted) {
+      return;
+    } else if (abortController.requestCompleted) {
+      return;
+    }
+
+    abortController.abort();
+    logger.debug('[EditController] Request aborted on close');
+  });
+
   try {
     const { client } = await initializeClient({ req, res, endpointOption });
 
@@ -117,11 +131,19 @@ const EditController = async (req, res, next, initializeClient) => {
       response = { ...response, ...metadata };
     }
 
+    const conversation = await getConvo(user, conversationId);
+    conversation.title =
+      conversation && !conversation.title ? null : conversation?.title || 'New Chat';
+
+    if (client.options.attachments) {
+      conversation.model = endpointOption.modelOptions.model;
+    }
+
     if (!abortController.signal.aborted) {
       sendMessage(res, {
-        title: await getConvoTitle(user, conversationId),
         final: true,
-        conversation: await getConvo(user, conversationId),
+        conversation,
+        title: conversation.title,
         requestMessage: userMessage,
         responseMessage: response,
       });
