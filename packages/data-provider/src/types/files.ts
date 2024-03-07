@@ -31,6 +31,10 @@ export type FileConfig = {
   checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
 };
 
+export type TText = {
+  text: string;
+};
+
 export type TFile = {
   _id?: string;
   __v?: number;

@@ -28,10 +28,6 @@ async function speechToText(req, res) {
     if (endpoint === 'azureOpenAI') {
       const azureConfig = req.app.locals[endpoint];
 
-      console.log();
-      console.log('azureConfig:', azureConfig);
-      console.log();
-
       const { apiKey, instanceName, whisperModel, apiVersion } = Object.entries(
         azureConfig.groupMap,
       ).reduce((acc, [, value]) => {
@@ -55,17 +51,9 @@ async function speechToText(req, res) {
         return null;
       }, null);
 
-      console.log();
-      console.log({ apiKey, instanceName, whisperModel, apiVersion });
-      console.log();
-
       const baseURL = `https://${instanceName}.openai.azure.com`;
 
       const url = `${baseURL}/openai/deployments/${whisperModel}/audio/transcriptions?api-version=${apiVersion}`;
-
-      console.log();
-      console.log(url);
-      console.log();
 
       const formData = new FormData();
       formData.append('file', audioFile.buffer, {

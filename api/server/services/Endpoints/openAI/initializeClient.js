@@ -80,8 +80,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
       groupMap,
     });
 
-    // console.log('azure:', azureOptions);
-
     clientOptions.reverseProxyUrl = baseURL ?? clientOptions.reverseProxyUrl;
     clientOptions.headers = resolveHeaders({ ...headers, ...(clientOptions.headers ?? {}) });
 

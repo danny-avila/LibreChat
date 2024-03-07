@@ -211,7 +211,7 @@ export const getFiles = (): Promise<f.TFile[]> => {
 export const getTextFromAudio = (
   data: FormData,
   headers: { Authorization: string },
-): Promise<string> => {
+): Promise<f.TText> => {
   return request.postBasic(endpoints.stt(), data, headers);
 };
 

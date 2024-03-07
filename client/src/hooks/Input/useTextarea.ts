@@ -29,11 +29,15 @@ const getAssistantName = ({
 export default function useTextarea({
   setText,
   submitMessage,
+  isRecording = false,
+  isFetching = false,
   disabled = false,
 }: {
   setText: SetterOrUpdater<string>;
   submitMessage: () => void;
   disabled?: boolean;
+  isRecording: boolean;
+  isFetching: boolean;
 }) {
   const assistantMap = useAssistantsMapContext();
   const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
@@ -83,6 +87,14 @@ export default function useTextarea({
     }
 
     const getPlaceholderText = () => {
+      if (isRecording || isFetching) {
+        const sender =
+          conversation?.endpoint === EModelEndpoint.assistants
+            ? getAssistantName({ name: assistantName, localize })
+            : getSender(conversation as TEndpointOption);
+
+        return `${localize('com_endpoint_message')} ${sender ? sender : 'ChatGPT'}…`;
+      }
       if (disabled) {
         return localize('com_endpoint_config_placeholder');
       }

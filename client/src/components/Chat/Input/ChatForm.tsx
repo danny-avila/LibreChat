@@ -1,5 +1,5 @@
 import { useRecoilState } from 'recoil';
-import type { ChangeEvent } from 'react';
+import { useState, type ChangeEvent } from 'react';
 import { useChatContext } from '~/Providers';
 import { useRequiresKey } from '~/hooks';
 import AudioRecorderButton from './AudioRecorderButton';
@@ -13,6 +13,8 @@ import store from '~/store';
 export default function ChatForm({ index = 0 }) {
   const [text, setText] = useRecoilState(store.textByIndex(index));
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
+  const [isRecording, setIsRecording] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
 
   const {
     ask,
@@ -34,11 +36,19 @@ export default function ChatForm({ index = 0 }) {
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
 
+  const handleRecordingChange = (recording: boolean) => {
+    setIsRecording(recording);
+  };
+
+  const handleFetchingChange = (recording: boolean) => {
+    setIsFetching(recording);
+  };
+
   const handleTranscription = (transcription: string) => {
     setText(transcription);
   };
 
-  let buttonComponent;
+  let buttonComponent: React.JSX.Element | undefined;
 
   if (isSubmitting && showStopButton) {
     buttonComponent = (
@@ -46,14 +56,25 @@ export default function ChatForm({ index = 0 }) {
     );
   } else if (endpoint) {
     buttonComponent = (
-      <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
+      <SendButton
+        text={text}
+        disabled={filesLoading || isSubmitting || requiresKey || isRecording || isFetching}
+      />
     );
 
     if (text === '') {
       buttonComponent = (
         <>
-          <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
-          <AudioRecorderButton index={index} onTranscription={handleTranscription} />
+          <SendButton
+            text={text}
+            disabled={filesLoading || isSubmitting || requiresKey || isRecording || isFetching}
+          />
+          <AudioRecorderButton
+            index={index}
+            onTranscription={handleTranscription}
+            onFetchingChange={handleFetchingChange}
+            onRecordingChange={handleRecordingChange}
+          />
         </>
       );
     }
@@ -83,7 +104,9 @@ export default function ChatForm({ index = 0 }) {
             {endpoint && (
               <Textarea
                 value={text}
-                disabled={requiresKey}
+                disabled={requiresKey || isRecording || isFetching}
+                isRecording={isRecording}
+                isFetching={isFetching}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
                 setText={setText}
                 submitMessage={submitMessage}

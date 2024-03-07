@@ -16,6 +16,8 @@ export default function Textarea({
   submitMessage,
   endpoint,
   endpointType,
+  isRecording = false,
+  isFetching = false,
 }) {
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -27,7 +29,7 @@ export default function Textarea({
     handleKeyDown,
     handleCompositionStart,
     handleCompositionEnd,
-  } = useTextarea({ setText, submitMessage, disabled });
+  } = useTextarea({ setText, submitMessage, disabled, isRecording, isFetching });
   const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
   return (
     <TextareaAutosize

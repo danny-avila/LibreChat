@@ -27,7 +27,7 @@ COPY api/ ./
 # Copy data-provider to API's node_modules
 RUN mkdir -p /app/api/node_modules/librechat-data-provider/
 RUN cp -R /app/packages/data-provider/* /app/api/node_modules/librechat-data-provider/
-RUN npm install
+RUN npm install --fetch-timeout=600000
 COPY --from=client-build /app/client/dist /app/client/dist
 EXPOSE 3080
 ENV HOST=0.0.0.0
