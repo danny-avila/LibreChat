@@ -66,7 +66,7 @@ function NavLinks() {
             )}
             <Menu.Button
               className={cn(
-                'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm mb-1 flex w-full items-center gap-3 rounded-md px-3 py-3 transition-colors hover:bg-gray-100 dark:hover:bg-gray-700',
+                'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm mb-1 flex w-full items-center gap-3 text-sm rounded-md px-3 py-3 transition-colors hover:bg-gray-100 dark:hover:bg-gray-700',
                 open ? 'bg-gray-100 dark:bg-gray-700' : '',
               )}
               data-testid="nav-user"
@@ -91,7 +91,7 @@ function NavLinks() {
                 </div>
               </div>
               <div
-                className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-black dark:text-white"
+                className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left font-bold text-black dark:text-white"
                 style={{ marginTop: '0', marginLeft: '0' }}
               >
                 {user?.name || localize('com_nav_user')}
