@@ -1113,6 +1113,11 @@ button {
   border-radius: 9999px;
 }
 
+::-webkit-scrollbar-thumb:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgba(170, 170, 170, 0.5);
+}
+
 
 body,
 html {
