@@ -1,7 +1,6 @@
 const availableTools = require('./manifest.json');
 // Basic Tools
 const CodeBrew = require('./CodeBrew');
-const GoogleSearchAPI = require('./GoogleSearch');
 const WolframAlphaAPI = require('./Wolfram');
 const AzureAiSearch = require('./AzureAiSearch');
 const OpenAICreateImage = require('./DALL-E');
@@ -16,6 +15,7 @@ const CodeSherpa = require('./structured/CodeSherpa');
 const StructuredSD = require('./structured/StableDiffusion');
 const StructuredACS = require('./structured/AzureAISearch');
 const CodeSherpaTools = require('./structured/CodeSherpaTools');
+const GoogleSearchAPI = require('./structured/GoogleSearch');
 const StructuredWolfram = require('./structured/Wolfram');
 const TavilySearchResults = require('./structured/TavilySearchResults');
 const TraversaalSearch = require('./structured/TraversaalSearch');
