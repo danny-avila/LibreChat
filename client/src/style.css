@@ -1085,12 +1085,16 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: hsla(0,0%,100%,.1);
+  --tw-border-opacity: 1;
+  /* background-color: rgba(217,217,227,.8); Original */
+  background-color: rgba(170, 170, 170, 0.4);
+  border-color: rgba(255, 255, 255, var(--tw-border-opacity));
   border-radius: 9999px;
+  border-width: 1px;
 }
 
 .scrollbar-transparent::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.1);
+  background-color: rgba(0, 0, 0, 0);
 }
 
 .bg-token-surface-secondary {
@@ -1108,10 +1112,7 @@ button {
   background-color: transparent;
   border-radius: 9999px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background-color: hsla(0,0%,100%,.3);
-  
-}
+
 
 body,
 html {
