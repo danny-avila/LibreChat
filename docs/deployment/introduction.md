@@ -34,7 +34,7 @@ As said the cloud providers / platforms differ in many aspects. For our purpose 
 The list goes from the more effort more controlled, to the lease effort less controlled.
 Generally speaking Iaas will consume more time and expertise then Iac, Iac more the PaaS etc.
 
-## 1. Iaas - VM + Docker compose installation Guide
+### 1. Iaas - VM + Docker compose installation Guide
 
 IaaS (Infrastructure as a Service): Provides fundamental computing resources like virtual servers, network, and storage on a pay-per-use basis.
 
@@ -42,11 +42,11 @@ IaaS (Infrastructure as a Service): Provides fundamental computing resources lik
 - [Linode](linode.md): Renowned for excellent customer support and straightforward pricing.
 - [Hetzner](hetzner_ubuntu.md): Prioritizes privacy and cost-effectiveness, ideal for European-centric deployments.
 
-### For Iaas we recommend Docker Compose
+#### For Iaas we recommend Docker Compose
 
 **Why Docker Compose?** We advocate the use of Docker Compose to ensure a seamless and uniform deployment experience across all platforms. This guide elucidates each step, ensuring clarity and ease of understanding throughout the deployment lifecycle.
 
-#### Beware there are 2 versions of Docker Compose in the repo
+##### Beware there are 2 versions of Docker Compose in the repo
 
 Beware that LibraChat has to docker compose versions
 
@@ -57,7 +57,7 @@ The main difference is that `deploy-compose.yml` includes nginx in the docker (a
 
 don't know what is nginx and what it is used for? See [Reverse Proxy Guide)](nginx.md)
 
-## 2. IaC - Terraform
+### 2. IaC - Terraform
 
 IaC ("Infrastructure as Code"): managing and provisioning computing infrastructures through machine-readable definition files, rather than physical hardware configuration or interactive configuration tools. This practice supports reproducibility, disposability, and scalability in modern cloud environments.
 
@@ -68,7 +68,7 @@ IaC ("Infrastructure as Code"): managing and provisioning computing infrastructu
 - Digital Ocean, Linode, Hetzner also support IaC. But currently we don't have a dedicated guide for this.
   So you are welcome to try it with the Azure Guide and help us update it to make it Terraform IaC guide for all platforms.
 
-## 3. PaaS (Platform as a Service)
+### 3. PaaS (Platform as a Service)
 
 PaaS (Platform as a Service): Offers a development and deployment environment in the cloud, with resources enabling users to deliver simple cloud-based apps to sophisticated enterprise applications.
 
@@ -76,28 +76,28 @@ PaaS (Platform as a Service): Offers a development and deployment environment in
 - [Render](render.md): Simplifies deployments with integrated CI/CD pipelines.
 - [Heroku](heroku.md): Optimal for startups and quick deployment scenarios.
 
-## 4. Feature PaaS
+### 4. Feature PaaS
 
 - [Meilisearch in Render](meilisearch_in_render.md): Quick setup guide for integrating the fast search engine with LibreChat on Render.
 
-5. One Click Deployment of PaaS
+### 5. One Click Deployment of PaaS
 
 - [Zeabur](zeabur.md): Pioneering effortless one-click deployment solutions.
 
-##Other Categories
+## Other Categories
 
-1. Tunneling Services
+### 1. Tunneling Services
 
 Tunneling services allow you to expose a local development server to the internet, making it accessible via a public URL. This is particularly useful for sharing work, testing, and integrating with third-party services. It allows you to deploy your development computer for testing or for on-prem installation.
 
 - [Ngrok](ngrok.md): Facilitates secure local tunneling to the internet.
 - [Cloudflare](cloudflare.md): Enhances web performance and security.
 
-2. DNS Service
+### 2. DNS Service
 
 - Cloudflare Domain Setup part of the Cloudflare guide (we should make it DNS service and put Cloudflare as the provider ...)
 
-## The Voyage Commences
+# The Voyage Commences
 
 Before you chart your course through the cloud archipelago, ponder your heart's desires: the serenity of ease, the bastion of security, or the treasure trove of affordability. Your chosen path will illuminate the way to your destined cloud realm.
 
