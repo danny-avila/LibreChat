@@ -345,6 +345,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursive or sequential?',
   com_nav_export_recursive: 'Recursive',
   com_nav_export_conversation: 'Export conversation',
+  com_nav_my_files: 'My Files',
   com_nav_theme: 'Theme',
   com_nav_theme_system: 'System',
   com_nav_theme_dark: 'Dark',

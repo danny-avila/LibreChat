@@ -53,7 +53,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
       className={cn('shadow-2xl dark:bg-gray-800', className || '')}
       onClick={(e) => e.stopPropagation()}
     >
-      <DialogHeader className={cn('sm:pb-7', headerClassName ?? '')}>
+      <DialogHeader className={cn(headerClassName ?? '')}>
         <DialogTitle className="text-lg font-medium leading-6 text-gray-800 dark:text-gray-200">
           {title}
         </DialogTitle>

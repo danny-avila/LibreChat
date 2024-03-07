@@ -49,7 +49,7 @@ const EditPresetDialog = ({
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">
             <div className="grid w-full grid-cols-5 gap-6">
-              <div className="col-span-4 flex items-start justify-start gap-4">
+              <div className="col-span-4 flex items-start md:flex-row justify-start flex-col gap-6 pb-4">
                 <div className="flex w-full flex-col">
                   <Label htmlFor="preset-name" className="mb-1 text-left text-sm font-medium">
                     {localize('com_endpoint_preset_name')}

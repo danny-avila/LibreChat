@@ -105,7 +105,7 @@ function Login() {
         </h1>
         {error && (
           <div
-            className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
+            className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700 dark:bg-gray-900 dark:text-red-500"
             role="alert"
           >
             {localize(getLoginError(error))}

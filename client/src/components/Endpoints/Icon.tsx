@@ -45,7 +45,12 @@ const Icon: React.FC<IconProps> = (props) => {
       >
         {!user?.avatar && !user?.username ? (
           <div
-            style={{ backgroundColor: 'rgb(121, 137, 255)', width: '24px', height: '24px' }}
+            style={{ 
+              backgroundColor: 'rgb(121, 137, 255)', 
+              width: '20px', 
+              height: '20px', 
+              boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px', 
+            }}
             className="relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white"
           >
             <UserIcon />
@@ -156,18 +161,17 @@ const Icon: React.FC<IconProps> = (props) => {
       <div
         title={name}
         style={{
-          background: bg || 'transparent',
           width: size,
           height: size,
         }}
         className={cn(
-          'relative flex items-center justify-center rounded-sm text-white ',
+          'relative flex items-center justify-center rounded-full text-black dark:text-white',
           props.className || '',
         )}
       >
         {icon}
         {/* {error && (
-          <span className="absolute right-0 top-[20px] -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
+          <span className="absolute right-0 top-[20px] -mr-2 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
             !
           </span>
         )} */}

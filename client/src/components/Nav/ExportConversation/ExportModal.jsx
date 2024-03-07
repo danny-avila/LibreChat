@@ -332,7 +332,7 @@ export default function ExportModal({ open, onOpenChange, conversation }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title="Export conversation"
+        title={localize('com_nav_export_conversation')}
         className="max-w-full sm:max-w-2xl"
         main={
           <div className="flex w-full flex-col items-center gap-6">
