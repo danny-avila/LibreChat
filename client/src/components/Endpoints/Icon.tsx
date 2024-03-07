@@ -57,7 +57,7 @@ const Icon: React.FC<IconProps> = (props) => {
             <UserIcon />
           </div>
         ) : (
-          <img className="rounded-sm" src={user?.avatar || avatarSrc} alt="avatar" />
+          <img className="rounded-full" src={user?.avatar || avatarSrc} alt="avatar" />
         )}
       </div>
     );
@@ -73,7 +73,7 @@ const Icon: React.FC<IconProps> = (props) => {
             }}
             className={cn('relative flex items-center justify-center', props.className ?? '')}
           >
-            <img className="rounded-sm" src={props.iconURL} alt={assistantName} />
+            <img className="rounded-full" src={props.iconURL} alt={assistantName} />
           </div>
         ) : (
           <div className="h-6 w-6">
