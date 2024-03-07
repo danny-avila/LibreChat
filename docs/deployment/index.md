@@ -4,7 +4,7 @@ description: 🌐 Step-by-step guides on how to deploy LibreChat on various clou
 weight: 3
 ---
 
-[Introduction)](Cloud_Service_Introduction.md)
+[Introduction)](introduction.md)
 
 # Deployment
 
@@ -24,4 +24,4 @@ weight: 3
 
 ## Deploying with HTTPS and NGINX
 
-- [Reverse Proxy Guide)](NGINX_Deployment_Guide.md)
+- [Reverse Proxy Guide)](nginx.md)
