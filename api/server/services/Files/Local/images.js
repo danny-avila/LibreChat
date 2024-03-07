@@ -18,6 +18,7 @@ const { updateFile } = require('~/models/File');
  *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
+ * @param {string} params.file_id - The file ID.
  * @param {EModelEndpoint} params.endpoint - The params object.
  * @param {string} [params.resolution='high'] - Optional. The desired resolution for the image resizing. Default is 'high'.
  *
@@ -28,7 +29,7 @@ const { updateFile } = require('~/models/File');
  *            - width: The width of the converted image.
  *            - height: The height of the converted image.
  */
-async function uploadLocalImage({ req, file, endpoint, resolution = 'high' }) {
+async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'high' }) {
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
   const {
@@ -45,7 +46,8 @@ async function uploadLocalImage({ req, file, endpoint, resolution = 'high' }) {
     fs.mkdirSync(userPath, { recursive: true });
   }
 
-  const newPath = path.join(userPath, path.basename(inputFilePath));
+  const fileName = `${file_id}__${path.basename(inputFilePath)}`;
+  const newPath = path.join(userPath, fileName);
 
   if (extension.toLowerCase() === '.webp') {
     const bytes = Buffer.byteLength(resizedBuffer);
