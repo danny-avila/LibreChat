@@ -104,6 +104,7 @@ export const LangSelector = ({
     { value: 'tr-TR', display: localize('com_nav_lang_turkish') },
     { value: 'nl-NL', display: localize('com_nav_lang_dutch') },
     { value: 'id-ID', display: localize('com_nav_lang_indonesia') },
+    { value: 'he-HE', display: localize('com_nav_lang_hebrew') },
   ];
 
   return (
@@ -173,7 +174,7 @@ function General() {
       className="w-full md:min-h-[300px]"
       ref={contentRef}
     >
-      <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-300">
+      <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <ThemeSelector theme={theme} onChange={changeTheme} />
         </div>

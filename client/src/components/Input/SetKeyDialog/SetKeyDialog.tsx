@@ -188,7 +188,7 @@ const SetKeyDialog = ({
         }
         selection={{
           selectHandler: submit,
-          selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
+          selectClasses: 'bg-green-500 hover:bg-green-600 dark:hover:bg-green-600 text-white',
           selectText: localize('com_ui_submit'),
         }}
         leftButtons={

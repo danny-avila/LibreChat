@@ -110,7 +110,7 @@ const handleAbortError = async (res, req, error, data) => {
   }
 
   const respondWithError = async (partialText) => {
-    const options = {
+    let options = {
       sender,
       messageId,
       conversationId,
@@ -121,7 +121,8 @@ const handleAbortError = async (res, req, error, data) => {
     };
 
     if (partialText) {
-      options.overrideProps = {
+      options = {
+        ...options,
         error: false,
         unfinished: true,
         text: partialText,

@@ -340,9 +340,10 @@ describe('gptPlugins/initializeClient', () => {
   test('should initialize client with default options when certain env vars are not set', async () => {
     delete process.env.DEBUG_OPENAI;
     delete process.env.OPENAI_SUMMARIZE;
+    process.env.OPENAI_API_KEY = 'some-api-key';
 
     const req = {
-      body: { key: null, endpoint: 'openAI' },
+      body: { key: null, endpoint: EModelEndpoint.gptPlugins },
       user: { id: '123' },
       app,
     };

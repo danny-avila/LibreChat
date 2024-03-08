@@ -75,8 +75,12 @@ const googleModels = {
 };
 
 const anthropicModels = {
-  'claude-2.1': 200000,
   'claude-': 100000,
+  'claude-2': 100000,
+  'claude-2.1': 200000,
+  'claude-3-haiku': 200000,
+  'claude-3-sonnet': 200000,
+  'claude-3-opus': 200000,
 };
 
 // Order is important here: by model series and context size (gpt-4 then gpt-3, ascending)
