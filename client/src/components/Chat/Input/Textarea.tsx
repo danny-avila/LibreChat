@@ -1,4 +1,5 @@
 import TextareaAutosize from 'react-textarea-autosize';
+import { useEffect } from 'react';
 import {
   supportsFiles,
   fileConfig as defaultFileConfig,
@@ -31,6 +32,13 @@ export default function Textarea({
     handleCompositionEnd,
   } = useTextarea({ setText, submitMessage, disabled, isRecording, isFetching });
   const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
+
+  useEffect(() => {
+    if (!isFetching && value.trim() !== '') {
+      textAreaRef.current?.focus();
+    }
+  }, [isFetching, value, textAreaRef]);
+
   return (
     <TextareaAutosize
       ref={textAreaRef}
