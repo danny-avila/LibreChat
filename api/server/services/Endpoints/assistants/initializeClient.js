@@ -60,8 +60,8 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
   let azureOptions;
 
   if (azureConfig && azureConfig.assistants) {
-    const { modelGroupMap, groupMap, modelNames } = azureConfig;
-    const modelName = req.body.model ?? req.query.model ?? modelNames[0];
+    const { modelGroupMap, groupMap, assistantModels } = azureConfig;
+    const modelName = req.body.model ?? req.query.model ?? assistantModels[0];
     const {
       azureOptions: currentOptions,
       baseURL: azureBaseURL,
