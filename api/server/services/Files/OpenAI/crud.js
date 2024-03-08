@@ -24,6 +24,14 @@ async function uploadOpenAIFile(req, file, openai) {
       headers['OpenAI-Organization'] = organization;
     }
 
+    const formData = new FormData();
+    formData.append('purpose', 'assistants');
+    const fileBlob = new Blob([file.buffer], {
+      filename: file.originalname,
+      contentType: file.mimetype,
+    });
+    formData.append('file', fileBlob, file.originalname);
+
     /** @type {TAzureConfig | undefined} */
     const azureConfig = openai.req.app.locals[EModelEndpoint.azureOpenAI];
 
@@ -32,18 +40,13 @@ async function uploadOpenAIFile(req, file, openai) {
       headers = {
         ...headers,
         ...openai._options.defaultHeaders,
+        'Content-Type': 'multipart/form-data',
       };
       const queryParams = new URLSearchParams(openai._options.defaultQuery).toString();
       url = `${baseURL}/files?${queryParams}`;
     } else {
       url = `${baseURL}/files`;
     }
-
-    const formData = new FormData();
-    formData.append('purpose', 'assistants');
-
-    const fileBlob = new Blob([file.buffer], { type: file.mimetype });
-    formData.append('file', fileBlob, file.originalname);
 
     const axiosConfig = {
       headers,
