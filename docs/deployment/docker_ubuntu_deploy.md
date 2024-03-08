@@ -1,37 +1,16 @@
 ---
-title: 🌊 Docker Compose guide
+title: 🐳 Ubuntu Docker Deployment Guide
 description: These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server
-weight: -10
+weight: -9
 ---
 
-# Docker Compose guide
+# Ubuntu Docker Deployment Guide
 
-This document originally part of teh Digital Ocean guide moved here since there are not specific to Digital Ocean, In order to use this guide you need a remote computer or VM deployed.
-You can use it for local installation , but take in mind that it was written originally for deployment at he cloud.
-The document starts from Part II - since it assumes that you already did part one in the Digital Ocean guide.
+In order to use this guide you need a remote computer or VM deployed. While you can use this guide with a local installation, keep in mind that it was originally written for cloud deployment.
 
-## Table of Contents
+> ⚠️ This guide was originally designed for [Digital Ocean](./digitalocean.md), so you may have to modify the instruction for other platforms, but the main idea remains unchanged.
 
-- **[Part II: Installing Docker & Other Dependencies](#part-ii-installing-docker-and-other-dependencies)**
-  - [1. Update and Install Docker dependencies](#1-update-and-install-docker-dependencies)
-  - [2. Add Docker Repository to APT Sources](#2-add-docker-repository-to-apt-sources)
-  - [3. Install Docker](#3-install-docker)
-  - [4. Verify Docker](#4-verify-that-docker-is-running-on-ubuntu)
-  - [5. Install the Latest Version of Docker Compose](#5-install-the-latest-version-of-docker-compose)
-  - [6. Install git & npm](#6-as-part-of-this-guide-i-will-recommend-you-have-git-and-npm-installed)
-- **[Part III: Setup LibreChat](#part-iii-setup-librechat)**
-  - [1. Clone down the repo](#1-clone-down-the-repo)
-  - [2. Create a global environment file](#2-create-a-global-environment-file)
-  - [3. Start docker and run LibreChat](#3-start-docker-and-then-run-the-installationupdate-script)
-  - [4. Access LibreChat](#4-once-the-app-is-running-you-can-access-it-at-httpyourserverip)
-- **[Part IV: Updating LibreChat](#part-iv-updating-librechat)**
-
-> The last sections are all optional configurations
-
-- **[Part V: Editing the NGINX file](#part-v-editing-the-nginx-file-for-custom-domains-and-advanced-configs)**
-- **[Part VI: Use the Latest Stable Release instead of Latest Main Branch](#part-vi-use-the-latest-stable-release-instead-of-latest-main-branch)**
-
-### Part II: Installing Docker and Other Dependencies:
+### Part I: Installing Docker and Other Dependencies:
 
 There are many ways to setup Docker on Debian systems. I'll walk you through the best and the recommended way [based on this guide](https://www.smarthomebeginner.com/install-docker-on-ubuntu-22-04/).
 
@@ -190,7 +169,7 @@ npm -v
 
 ---
 
-## Part III: Setup LibreChat
+## Part II: Setup LibreChat
 
 ### **1. Clone down the repo**
 
@@ -268,7 +247,7 @@ It's safe to close the terminal if you wish -- the docker app will continue to r
 
 ### **4. Once the app is running, you can access it at `http://yourserverip`**
 
-### Go back to the DigitalOcean droplet page to get your server ip, copy it, and paste it into your browser!
+### Go back to the droplet page to get your server ip, copy it, and paste it into your browser!
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/d8bbad29-6015-46ec-88ce-a72a43d8a313)
 
@@ -278,7 +257,7 @@ It's safe to close the terminal if you wish -- the docker app will continue to r
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/b3fc2152-4b6f-46f9-81e7-4200b76bc468)
 
-## Part IV: Updating LibreChat
+## Part III: Updating LibreChat
 
 I've made this step pretty painless, provided everything above was installed successfully and you haven't edited the git history.
 
@@ -312,7 +291,7 @@ npm run start:deployed
 docker ps
 ```
 
-## Part V: Editing the NGINX file (for custom domains and advanced configs)
+## Part IV: Editing the NGINX file (for custom domains and advanced configs)
 
 In case you would like to edit the NGINX file for whatever reason, such as pointing your server to a custom domain, use the following:
 
@@ -324,7 +303,7 @@ npm run stop:deployed
 nano client/nginx.conf
 ```
 
-I won't be walking you through custom domain setup or any other changes to NGINX, you can look into the [Cloudflare setup guide](./cloudflare.md) to get you started with custom domains.
+I won't be walking you through custom domain setup or any other changes to NGINX, you can look into the [Cloudflare guide](./cloudflare.md) or the [NGINX guide](./nginx.md) to get you started with custom domains.
 
 However, I will show you what to edit on the LibreChat side for a custom domain with this setup.
 
@@ -376,9 +355,9 @@ You should be all set!
 
 > Note that any changes to the code in this environment won't be reflected because the compose file is pulling the docker images built automatically by GitHub
 
-## Part VI: Use the Latest Stable Release instead of Latest Main Branch
+## Part V: Use the Latest Stable Release instead of Latest Main Branch
 
-By default, this setup will pull the latest updates to the main branch of Librechat. If you would rather have the latest "stable" release, which is defined by the [latest tags](https://github.com/danny-avila/LibreChat/releases), you will need to edit deploy-compose.yml and commit your changes exactly as above in Part V.
+By default, this setup will pull the latest updates to the main branch of Librechat. If you would rather have the latest "stable" release, which is defined by the [latest tags](https://github.com/danny-avila/LibreChat/releases), you will need to edit deploy-compose.yml and commit your changes exactly as above in Part V. Be aware that you won't benefit from the latest feature as soon as they come if you do so.
 
 Let's edit `deploy-compose.yml`:
 
