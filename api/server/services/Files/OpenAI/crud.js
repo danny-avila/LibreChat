@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { FilePurpose } = require('librechat-data-provider');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 
@@ -14,7 +15,7 @@ const { logger } = require('~/config');
 async function uploadOpenAIFile(req, file, openai) {
   const uploadedFile = await openai.files.create({
     file: fs.createReadStream(file.path),
-    purpose: 'assistants',
+    purpose: FilePurpose.Assistants,
   });
 
   logger.debug(
