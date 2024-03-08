@@ -1,5 +1,5 @@
-const axios = require('axios');
-const { EModelEndpoint } = require('librechat-data-provider');
+const fs = require('fs');
+const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 
 /**
@@ -12,67 +12,27 @@ const { logger } = require('~/config');
  * @returns {Promise<OpenAIFile>}
  */
 async function uploadOpenAIFile(req, file, openai) {
-  try {
-    let url;
-    const { apiKey, baseURL, httpAgent, organization } = openai;
-    let headers = {
-      Authorization: `Bearer ${apiKey}`,
-      'OpenAI-Beta': 'assistants=v1',
-    };
+  const uploadedFile = await openai.files.create({
+    file: fs.createReadStream(file.path),
+    purpose: 'assistants',
+  });
 
-    if (organization) {
-      headers['OpenAI-Organization'] = organization;
-    }
+  logger.debug(
+    `[uploadOpenAIFile] User ${req.user.id} successfully uploaded file to OpenAI`,
+    uploadedFile,
+  );
 
-    const formData = new FormData();
-    formData.append('purpose', 'assistants');
-    const fileBlob = new Blob([file.buffer], {
-      filename: file.originalname,
-      contentType: file.mimetype,
-    });
-    formData.append('file', fileBlob, file.originalname);
-
-    /** @type {TAzureConfig | undefined} */
-    const azureConfig = openai.req.app.locals[EModelEndpoint.azureOpenAI];
-
-    if (azureConfig && azureConfig.assistants) {
-      delete headers.Authorization;
-      headers = {
-        ...headers,
-        ...openai._options.defaultHeaders,
-        'Content-Type': 'multipart/form-data',
-      };
-      const queryParams = new URLSearchParams(openai._options.defaultQuery).toString();
-      url = `${baseURL}/files?${queryParams}`;
-    } else {
-      url = `${baseURL}/files`;
-    }
-
-    const axiosConfig = {
-      headers,
-      // timeout: timeout,
-    };
-
-    if (httpAgent) {
-      axiosConfig.httpAgent = httpAgent;
-      axiosConfig.httpsAgent = httpAgent;
-    }
-
-    const response = await axios.post(url, formData, axiosConfig);
+  if (uploadedFile.status !== 'processed') {
+    const sleepTime = 2500;
     logger.debug(
-      `[uploadOpenAIFile] User ${req.user.id} successfully uploaded file to OpenAI`,
-      response.data,
+      `[uploadOpenAIFile] File ${
+        uploadedFile.id
+      } is not yet processed. Waiting for it to be processed (${sleepTime / 1000}s)...`,
     );
-    return response.data;
-  } catch (error) {
-    const errorData = error?.response?.data?.error;
-    const message =
-      errorData?.message?.includes('purpose') && openai.locals?.azureOptions
-        ? `The file purpose \`assistants\` is invalid. Please ensure your Azure config is using version \`2024-02-15-preview\` or later.\n${errorData?.code}: ${errorData?.message}`
-        : error.message + (errorData ? `: ${errorData.code} - ${errorData.message}` : '');
-    const errorMessage = '[uploadOpenAIFile] Error uploading file to OpenAI: ' + message;
-    throw new Error(errorMessage);
+    await sleep(sleepTime);
   }
+
+  return uploadedFile;
 }
 
 /**
