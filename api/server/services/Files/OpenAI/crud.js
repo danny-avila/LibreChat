@@ -1,4 +1,6 @@
-const fs = require('fs');
+const axios = require('axios');
+const { EModelEndpoint } = require('librechat-data-provider');
+const { logger } = require('~/config');
 
 /**
  * Uploads a file that can be used across various OpenAI services.
@@ -6,22 +8,67 @@ const fs = require('fs');
  * @param {Express.Request} req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
  * @param {Express.Multer.File} file - The file uploaded to the server via multer.
- * @param {OpenAI} openai - The initialized OpenAI client.
+ * @param {OpenAIClient} openai - The initialized OpenAI client.
  * @returns {Promise<OpenAIFile>}
  */
 async function uploadOpenAIFile(req, file, openai) {
   try {
-    const uploadedFile = await openai.files.create({
-      file: fs.createReadStream(file.path),
-      purpose: 'assistants',
-    });
+    let url;
+    const { apiKey, baseURL, httpAgent, organization } = openai;
+    let headers = {
+      Authorization: `Bearer ${apiKey}`,
+      'OpenAI-Beta': 'assistants=v1',
+    };
 
-    console.log('File uploaded successfully to OpenAI');
+    if (organization) {
+      headers['OpenAI-Organization'] = organization;
+    }
 
-    return uploadedFile;
+    /** @type {TAzureConfig | undefined} */
+    const azureConfig = openai.req.app.locals[EModelEndpoint.azureOpenAI];
+
+    if (azureConfig && azureConfig.assistants) {
+      delete headers.Authorization;
+      headers = {
+        ...headers,
+        ...openai._options.defaultHeaders,
+      };
+      const queryParams = new URLSearchParams(openai._options.defaultQuery).toString();
+      url = `${baseURL}/files?${queryParams}`;
+    } else {
+      url = `${baseURL}/files`;
+    }
+
+    const formData = new FormData();
+    formData.append('purpose', 'assistants');
+
+    const fileBlob = new Blob([file.buffer], { type: file.mimetype });
+    formData.append('file', fileBlob, file.originalname);
+
+    const axiosConfig = {
+      headers,
+      // timeout: timeout,
+    };
+
+    if (httpAgent) {
+      axiosConfig.httpAgent = httpAgent;
+      axiosConfig.httpsAgent = httpAgent;
+    }
+
+    const response = await axios.post(url, formData, axiosConfig);
+    logger.debug(
+      `[uploadOpenAIFile] User ${req.user.id} successfully uploaded file to OpenAI`,
+      response.data,
+    );
+    return response.data;
   } catch (error) {
-    console.error('Error uploading file to OpenAI:', error.message);
-    throw error;
+    const errorData = error?.response?.data?.error;
+    const message =
+      errorData?.message?.includes('purpose') && openai.locals?.azureOptions
+        ? `The file purpose \`assistants\` is invalid. Please ensure your Azure config is using version \`2024-02-15-preview\` or later.\n${errorData?.code}: ${errorData?.message}`
+        : error.message + (errorData ? `: ${errorData.code} - ${errorData.message}` : '');
+    const errorMessage = '[uploadOpenAIFile] Error uploading file to OpenAI: ' + message;
+    throw new Error(errorMessage);
   }
 }
 
@@ -39,9 +86,11 @@ async function deleteOpenAIFile(req, file, openai) {
     if (!res.deleted) {
       throw new Error('OpenAI returned `false` for deleted status');
     }
-    console.log('File deleted successfully from OpenAI');
+    logger.debug(
+      `[deleteOpenAIFile] User ${req.user.id} successfully deleted ${file.file_id} from OpenAI`,
+    );
   } catch (error) {
-    console.error('Error deleting file from OpenAI:', error.message);
+    logger.error('[deleteOpenAIFile] Error deleting file from OpenAI: ' + error.message);
     throw error;
   }
 }
