@@ -106,7 +106,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     let currentTime = new Date();
     const cur_user = await User.findById(req.user.id).exec();
     let quota = 0;
-    if ('proMemberExpiredAt' in cur_user && cur_user.proMemberExpiredAt > currentTime) {
+    if (cur_user && 'proMemberExpiredAt' in cur_user && cur_user.proMemberExpiredAt > currentTime) {
       // If not proMember, check quota
       quota = JSON.parse(process.env['CHAT_QUOTA_PER_DAY_PRO_MEMBER']);
     } else {
