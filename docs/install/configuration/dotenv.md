@@ -151,7 +151,7 @@ see: [Anthropic Endpoint](./ai_setup.md#anthropic)
 
 ```bash
 ANTHROPIC_API_KEY=user_provided
-ANTHROPIC_MODELS=claude-1,claude-instant-1,claude-2
+ANTHROPIC_MODELS=claude-3-opus-20240229,claude-3-sonnet-20240229,claude-2.1,claude-2,claude-1.2,claude-1,claude-1-100k,claude-instant-1,claude-instant-1-100k
 ANTHROPIC_REVERSE_PROXY=
 ```
 
@@ -375,6 +375,10 @@ OPENAI_FORCE_PROMPT=true
 - Leave `ASSISTANTS_API_KEY=` blank to disable this endpoint
 - Set `ASSISTANTS_API_KEY=` to `user_provided` to allow users to provide their own API key from the WebUI
 
+```bash
+ASSISTANTS_API_KEY=user_provided
+```
+
 - Customize the available models, separated by commas, **without spaces**.
     - The first will be default.
     - Leave it blank or commented out to use internal settings:
@@ -532,6 +536,14 @@ Get your API key here: [https://tavily.com/#api](https://tavily.com/#api)
 
 ```bash
 TAVILY_API_KEY=
+```
+
+### Traversaal
+LLM-enhanced search tool.
+Get API key here: https://api.traversaal.ai/dashboard
+
+```bash
+TRAVERSAAL_API_KEY=
 ```
 
 #### WolframAlpha

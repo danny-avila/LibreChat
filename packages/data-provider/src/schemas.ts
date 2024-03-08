@@ -22,7 +22,7 @@ export const defaultAssistantFormValues = {
   name: '',
   description: '',
   instructions: '',
-  model: 'gpt-3.5-turbo-1106',
+  model: '',
   functions: [],
   code_interpreter: false,
   retrieval: false,

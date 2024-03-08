@@ -7,7 +7,7 @@ import {
   useCreatePresetMutation,
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
-import { Icon, EditPresetDialog } from '~/components/Endpoints';
+import { Icon } from '~/components/Endpoints';
 import EndpointItems from './EndpointItems';
 import PresetItems from './PresetItems';
 import FileUpload from './FileUpload';
@@ -37,8 +37,6 @@ export default function NewConversationMenu() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPresets, setShowPresets] = useState(true);
   const [showEndpoints, setShowEndpoints] = useState(true);
-  const [presetModalVisible, setPresetModalVisible] = useState(false);
-  const [preset, setPreset] = useState(false);
   const [conversation, setConversation] = useRecoilState(store.conversation) ?? {};
   const [messages, setMessages] = useRecoilState(store.messages);
 
@@ -130,11 +128,6 @@ export default function NewConversationMenu() {
     newConversation({}, newPreset);
   };
 
-  const onChangePreset = (preset) => {
-    setPresetModalVisible(true);
-    setPreset(preset);
-  };
-
   const clearAllPresets = () => {
     deletePresetsMutation.mutate({ arg: {} });
   };
@@ -158,7 +151,7 @@ export default function NewConversationMenu() {
   };
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delayDuration={250}>
       <Tooltip>
         <Dialog className="z-[100]">
           <DropdownMenu open={menuOpen} onOpenChange={onOpenChange}>
@@ -180,7 +173,7 @@ export default function NewConversationMenu() {
               {localize('com_endpoint_open_menu')}
             </TooltipContent>
             <DropdownMenuContent
-              className="z-[100] w-[375px] dark:bg-gray-900 md:w-96"
+              className="z-[100] w-[375px] dark:bg-gray-800 md:w-96"
               onCloseAutoFocus={(event) => event.preventDefault()}
               side="top"
             >
@@ -226,7 +219,7 @@ export default function NewConversationMenu() {
                   <DialogTrigger asChild>
                     <label
                       htmlFor="file-upload"
-                      className="mr-1 flex h-[32px] h-auto cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
+                      className="mr-1 flex h-[32px] h-auto cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-gray-100 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
                     >
                       <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
                       {localize('com_ui_clear')} {localize('com_ui_all')}
@@ -257,7 +250,6 @@ export default function NewConversationMenu() {
                     <PresetItems
                       presets={presets}
                       onSelect={onSelectPreset}
-                      onChangePreset={onChangePreset}
                       onDeletePreset={onDeletePreset}
                     />
                   ) : (
@@ -268,11 +260,6 @@ export default function NewConversationMenu() {
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-          <EditPresetDialog
-            open={presetModalVisible}
-            onOpenChange={setPresetModalVisible}
-            preset={preset}
-          />
         </Dialog>
       </Tooltip>
     </TooltipProvider>

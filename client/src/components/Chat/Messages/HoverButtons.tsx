@@ -55,10 +55,10 @@ export default function HoverButtons({
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
       <button
         className={cn(
-          'hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+          'hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
           isCreatedByUser ? '' : 'active',
           hideEditButton ? 'opacity-0' : '',
-          isEditing ? 'active bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200' : '',
+          isEditing ? 'active bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200' : '',
         )}
         onClick={onEdit}
         type="button"
@@ -69,7 +69,7 @@ export default function HoverButtons({
       </button>
       <button
         className={cn(
-          'ml-0 flex items-center gap-1.5 rounded-md p-1 pl-0 text-xs hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+          'ml-0 flex items-center gap-1.5 rounded-md p-1 pl-0 text-xs hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
           isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
         )}
         onClick={() => copyToClipboard(setIsCopied)}
@@ -82,7 +82,7 @@ export default function HoverButtons({
       </button>
       {regenerateEnabled ? (
         <button
-          className="hover-button active rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible md:group-[.final-completion]:visible"
+          className="hover-button active rounded-md p-1 pl-0 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible md:group-[.final-completion]:visible"
           onClick={regenerate}
           type="button"
           title={localize('com_ui_regenerate')}
@@ -92,7 +92,7 @@ export default function HoverButtons({
       ) : null}
       {continueSupported ? (
         <button
-          className="hover-button active rounded-md p-1 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible "
+          className="hover-button active rounded-md p-1 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible "
           onClick={handleContinue}
           type="button"
           title={localize('com_ui_continue')}

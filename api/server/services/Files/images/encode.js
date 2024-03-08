@@ -39,25 +39,24 @@ async function encodeAndFormat(req, files, endpoint) {
   for (let file of files) {
     const source = file.source ?? FileSources.local;
 
-    if (encodingMethods[source]) {
-      promises.push(encodingMethods[source](req, file));
-      continue;
+    if (!encodingMethods[source]) {
+      const { prepareImagePayload } = getStrategyFunctions(source);
+      if (!prepareImagePayload) {
+        throw new Error(`Encoding function not implemented for ${source}`);
+      }
+
+      encodingMethods[source] = prepareImagePayload;
     }
 
-    const { prepareImagePayload } = getStrategyFunctions(source);
-    if (!prepareImagePayload) {
-      throw new Error(`Encoding function not implemented for ${source}`);
-    }
+    const preparePayload = encodingMethods[source];
 
-    encodingMethods[source] = prepareImagePayload;
-
-    /* Google doesn't support passing URLs to payload */
+    /* Google & Anthropic don't support passing URLs to payload */
     if (source !== FileSources.local && base64Only.has(endpoint)) {
-      const [_file, imageURL] = await prepareImagePayload(req, file);
+      const [_file, imageURL] = await preparePayload(req, file);
       promises.push([_file, await fetchImageToBase64(imageURL)]);
       continue;
     }
-    promises.push(prepareImagePayload(req, file));
+    promises.push(preparePayload(req, file));
   }
 
   const detail = req.body.imageDetail ?? 'auto';

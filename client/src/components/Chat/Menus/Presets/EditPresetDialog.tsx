@@ -92,7 +92,7 @@ const EditPresetDialog = ({
                 </div>
               </div>
             </div>
-            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
+            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-700" />
             <div className="w-full p-0">
               <EndpointSettings
                 conversation={preset}
@@ -106,12 +106,15 @@ const EditPresetDialog = ({
         }
         buttons={
           <div className="mb-6 md:mb-2">
-            <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
+            <DialogButton
+              onClick={exportPreset}
+              className="border-gray-100 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-600"
+            >
               {localize('com_endpoint_export')}
             </DialogButton>
             <DialogClose
               onClick={submitPreset}
-              className="dark:hover:gray-400 ml-2 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
+              className="ml-2 bg-green-500 text-white hover:bg-green-600 dark:hover:bg-green-600"
             >
               {localize('com_ui_save')}
             </DialogClose>

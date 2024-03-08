@@ -42,7 +42,7 @@ export default function ModelItem({
       <DropdownMenuRadioItem
         value={value}
         className={cn(
-          'group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800',
+          'group dark:font-semibold dark:text-gray-200 dark:hover:bg-gray-800',
           isSelected ? 'active bg-gray-50 dark:bg-gray-800' : '',
         )}
         id={endpoint}

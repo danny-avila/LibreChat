@@ -45,7 +45,9 @@ export default function useTextarea({
   const localize = useLocalize();
 
   const { conversationId, jailbreak, endpoint = '', assistant_id } = conversation || {};
-  const isNotAppendable = (latestMessage?.unfinished && !isSubmitting) || latestMessage?.error;
+  const isNotAppendable =
+    ((latestMessage?.unfinished && !isSubmitting) || latestMessage?.error) &&
+    endpoint !== EModelEndpoint.assistants;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
   const assistant = endpoint === EModelEndpoint.assistants && assistantMap?.[assistant_id ?? ''];
@@ -177,7 +179,14 @@ export default function useTextarea({
       if (e.clipboardData && e.clipboardData.files.length > 0) {
         e.preventDefault();
         setFilesLoading(true);
-        handleFiles(e.clipboardData.files);
+        const timestampedFiles: File[] = [];
+        for (const file of e.clipboardData.files) {
+          const newFile = new File([file], `clipboard_${+new Date()}_${file.name}`, {
+            type: file.type,
+          });
+          timestampedFiles.push(newFile);
+        }
+        handleFiles(timestampedFiles);
       }
     },
     [handleFiles, setFilesLoading, setText],
