@@ -117,16 +117,6 @@ You may specify an **absolute path**, a **relative path**, or a **URL**. The fil
 # CONFIG_PATH="/your/alternative/path/to/config.yaml"
 ```
 
----
-
-I'm glad I could help. If there's anything else you need assistance with, feel free to ask!
-
-> Note: leave commented out to have LibreChat look for the config file in the root folder (default behavior)
-
-```sh
-CONFIG_PATH="/alternative/path/to/librechat.yaml"
-```
-
 ## Endpoints
 In this section you can configure the endpoints and models selection, their API keys, and the proxy and reverse proxy settings for the endpoints that support it. 
 
