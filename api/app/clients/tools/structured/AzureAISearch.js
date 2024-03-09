@@ -16,6 +16,16 @@ class AzureAISearch extends StructuredTool {
 
   constructor(fields = {}) {
     super();
+    this.name = 'azure-ai-search';
+    this.description =
+      'Use the \'azure-ai-search\' tool to retrieve search results relevant to your input';
+    /* Used to initialize the Tool without necessary variables. */
+    this.override = fields.override ?? false;
+
+    // Define schema
+    this.schema = z.object({
+      query: z.string().describe('Search word or phrase to Azure AI Search'),
+    });
 
     // Initialize properties using helper function
     this.serviceEndpoint = this._initializeField(
@@ -48,10 +58,14 @@ class AzureAISearch extends StructuredTool {
     );
 
     // Check for required fields
-    if (!this.serviceEndpoint || !this.indexName || !this.apiKey) {
+    if (!this.override && (!this.serviceEndpoint || !this.indexName || !this.apiKey)) {
       throw new Error(
         'Missing AZURE_AI_SEARCH_SERVICE_ENDPOINT, AZURE_AI_SEARCH_INDEX_NAME, or AZURE_AI_SEARCH_API_KEY environment variable.',
       );
+    }
+
+    if (this.override) {
+      return;
     }
 
     // Create SearchClient
@@ -61,20 +75,6 @@ class AzureAISearch extends StructuredTool {
       new AzureKeyCredential(this.apiKey),
       { apiVersion: this.apiVersion },
     );
-
-    // Define schema
-    this.schema = z.object({
-      query: z.string().describe('Search word or phrase to Azure AI Search'),
-    });
-  }
-
-  // Simplified getter methods
-  get name() {
-    return 'azure-ai-search';
-  }
-
-  get description() {
-    return 'Use the \'azure-ai-search\' tool to retrieve search results relevant to your input';
   }
 
   // Improved error handling and logging

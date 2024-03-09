@@ -20,7 +20,7 @@ const searchResultMessages = atom<TMessage[] | null>({
 const searchResultMessagesTree = selector({
   key: 'searchResultMessagesTree',
   get: ({ get }) => {
-    return buildTree(get(searchResultMessages), true);
+    return buildTree({ messages: get(searchResultMessages), groupAll: true });
   },
 });
 

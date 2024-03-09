@@ -1,3 +1,8 @@
+---
+title: ⏹️ Render
+description: How to deploy LibreChat on Render
+weight: -4
+---
 # Render Deployment
 
 ## Note:
@@ -77,8 +82,9 @@ Also:
 ## Create and Configure your Database
 
 The last thing you need is to create a MongoDB Atlas Database and get your connection string.
+You can also restrict access to your Mongodb to only the [static outgoing IP addresses](https://docs.render.com/static-outbound-ip-addresses) for your Render hosted web service.
 
-Follow the instructions in this document: [Online MongoDB Database](../install/mongodb.md)
+Follow the instructions in this document but add each of the outgoing IP addresses to the list instead of all hosts: [Online MongoDB Database](../install/configuration/mongodb.md)
 
 ## Complete the Environment Variables configuration 
 
@@ -114,4 +120,4 @@ Follow the instructions in this document: [Online MongoDB Database](../install/m
 ## Conclusion
 You can now access it by clicking the link, congrattulation, you've sucessfully deployed LibreChat on render.com
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

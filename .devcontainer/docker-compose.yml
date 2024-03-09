@@ -2,7 +2,9 @@ version: "3.8"
 
 services:
   app:
-    image: node:19-bullseye
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
     # restart: always
     links:
       - mongodb
@@ -30,8 +32,8 @@ services:
     # Use "forwardPorts" in **devcontainer.json** to forward an app port locally. 
     # (Adding the "ports" property to this file will not forward from a Codespace.)
 
-    # Uncomment the next line to use a non-root user for all processes - See https://aka.ms/vscode-remote/containers/non-root for details.
-    # user: vscode
+    # Use a non-root user for all processes - See https://aka.ms/vscode-remote/containers/non-root for details.
+    user: vscode
 
     # Overrides default command so things don't shut down after the process ends.
     command: /bin/sh -c "while sleep 1000; do :; done"  
@@ -57,7 +59,6 @@ services:
     # ports: 
     #   - 7700:7700 # if exposing these ports, make sure your master key is not the default value
     environment:
-      - MEILI_HTTP_ADDR=meilisearch:7700
       - MEILI_NO_ANALYTICS=true
       - MEILI_MASTER_KEY=5c71cf56d672d009e36070b5bc5e47b743535ae55c818ae3b735bb6ebfb4ba63
     volumes:

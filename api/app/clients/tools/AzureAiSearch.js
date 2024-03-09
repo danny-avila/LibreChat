@@ -16,6 +16,9 @@ class AzureAISearch extends StructuredTool {
 
   constructor(fields = {}) {
     super();
+    this.name = 'azure-ai-search';
+    this.description =
+      'Use the \'azure-ai-search\' tool to retrieve search results relevant to your input';
 
     // Initialize properties using helper function
     this.serviceEndpoint = this._initializeField(
@@ -66,15 +69,6 @@ class AzureAISearch extends StructuredTool {
     this.schema = z.object({
       query: z.string().describe('Search word or phrase to Azure AI Search'),
     });
-  }
-
-  // Simplified getter methods
-  get name() {
-    return 'azure-ai-search';
-  }
-
-  get description() {
-    return 'Use the \'azure-ai-search\' tool to retrieve search results relevant to your input';
   }
 
   // Improved error handling and logging

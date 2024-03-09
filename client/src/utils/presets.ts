@@ -12,6 +12,8 @@ export const getPresetIcon = (preset: TPreset, Icon) => {
   });
 };
 
+type TEndpoints = Array<string | EModelEndpoint>;
+
 export const getPresetTitle = (preset: TPreset) => {
   const {
     endpoint,
@@ -26,9 +28,16 @@ export const getPresetTitle = (preset: TPreset) => {
   let modelInfo = model || '';
   let label = '';
 
-  if (endpoint && [EModelEndpoint.azureOpenAI, EModelEndpoint.openAI].includes(endpoint)) {
+  const usesChatGPTLabel: TEndpoints = [
+    EModelEndpoint.azureOpenAI,
+    EModelEndpoint.openAI,
+    EModelEndpoint.custom,
+  ];
+  const usesModelLabel: TEndpoints = [EModelEndpoint.google, EModelEndpoint.anthropic];
+
+  if (endpoint && usesChatGPTLabel.includes(endpoint)) {
     label = chatGptLabel || '';
-  } else if (endpoint && [EModelEndpoint.google, EModelEndpoint.anthropic].includes(endpoint)) {
+  } else if (endpoint && usesModelLabel.includes(endpoint)) {
     label = modelLabel || '';
   } else if (endpoint === EModelEndpoint.bingAI) {
     modelInfo = jailbreak ? 'Sydney' : modelInfo;

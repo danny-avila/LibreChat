@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import { Settings } from 'lucide-react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { useRecoilValue } from 'recoil';
+import { EModelEndpoint, modularEndpoints } from 'librechat-data-provider';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import type { TPreset, TConversation } from 'librechat-data-provider';
 import type { FC } from 'react';
-import { useLocalize, useUserKey } from '~/hooks';
+import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
+import { cn, getEndpointField } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { icons } from './Icons';
-import { cn } from '~/utils';
+import store from '~/store';
 
 type MenuItemProps = {
   title: string;
@@ -26,9 +30,12 @@ const MenuItem: FC<MenuItemProps> = ({
   userProvidesKey,
   ...rest
 }) => {
-  const Icon = icons[endpoint] ?? icons.unknown;
+  const modularChat = useRecoilValue(store.modularChat);
   const [isDialogOpen, setDialogOpen] = useState(false);
-  const { newConversation } = useChatContext();
+  const { data: endpointsConfig } = useGetEndpointsQuery();
+  const { conversation, newConversation } = useChatContext();
+  const getDefaultConversation = useDefaultConvo();
+
   const { getExpiry } = useUserKey(endpoint);
   const localize = useLocalize();
   const expiryTime = getExpiry();
@@ -40,9 +47,55 @@ const MenuItem: FC<MenuItemProps> = ({
       if (!expiryTime) {
         setDialogOpen(true);
       }
-      newConversation({ template: { endpoint: newEndpoint, conversationId: 'new' } });
+
+      const currentEndpoint = conversation?.endpoint;
+      const template: Partial<TPreset> = {
+        ...conversation,
+        endpoint: newEndpoint,
+        conversationId: 'new',
+      };
+      const isAssistantSwitch =
+        newEndpoint === EModelEndpoint.assistants &&
+        currentEndpoint === EModelEndpoint.assistants &&
+        currentEndpoint === newEndpoint;
+
+      const { conversationId } = conversation ?? {};
+      const isExistingConversation = conversationId && conversationId !== 'new';
+      const currentEndpointType =
+        getEndpointField(endpointsConfig, currentEndpoint, 'type') ?? currentEndpoint;
+      const newEndpointType = getEndpointField(endpointsConfig, newEndpoint, 'type') ?? newEndpoint;
+
+      const hasEndpoint = modularEndpoints.has(currentEndpoint ?? '');
+      const hasCurrentEndpointType = modularEndpoints.has(currentEndpointType ?? '');
+      const isCurrentModular = hasEndpoint || hasCurrentEndpointType || isAssistantSwitch;
+
+      const hasNewEndpoint = modularEndpoints.has(newEndpoint ?? '');
+      const hasNewEndpointType = modularEndpoints.has(newEndpointType ?? '');
+      const isNewModular = hasNewEndpoint || hasNewEndpointType || isAssistantSwitch;
+
+      const endpointsMatch = currentEndpoint === newEndpoint;
+      const shouldSwitch = endpointsMatch || modularChat || isAssistantSwitch;
+
+      if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
+        template.endpointType = newEndpointType;
+
+        const currentConvo = getDefaultConversation({
+          /* target endpointType is necessary to avoid endpoint mixing */
+          conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
+          preset: template,
+        });
+
+        /* We don't reset the latest message, only when changing settings mid-converstion */
+        newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
+        return;
+      }
+      newConversation({ template: { ...(template as Partial<TConversation>) } });
     }
   };
+
+  const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
+  const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
+  const Icon = icons[iconKey];
 
   return (
     <>
@@ -56,7 +109,15 @@ const MenuItem: FC<MenuItemProps> = ({
         <div className="flex grow items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              {<Icon size={18} className="icon-md shrink-0 dark:text-white" />}
+              {Icon && (
+                <Icon
+                  size={18}
+                  endpoint={endpoint}
+                  context={'menu-item'}
+                  className="icon-md shrink-0 dark:text-white"
+                  iconURL={getEndpointField(endpointsConfig, endpoint, 'iconURL')}
+                />
+              )}
               <div>
                 {title}
                 <div className="text-token-text-tertiary">{description}</div>
@@ -71,7 +132,7 @@ const MenuItem: FC<MenuItemProps> = ({
                     'invisible flex gap-x-1 group-hover:visible',
                     selected ? 'visible' : '',
                     expiryTime
-                      ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-900'
+                      ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-800'
                       : '',
                   )}
                   onClick={(e) => {
@@ -128,7 +189,13 @@ const MenuItem: FC<MenuItemProps> = ({
         </div>
       </div>
       {userProvidesKey && (
-        <SetKeyDialog open={isDialogOpen} onOpenChange={setDialogOpen} endpoint={endpoint} />
+        <SetKeyDialog
+          open={isDialogOpen}
+          endpoint={endpoint}
+          endpointType={endpointType}
+          onOpenChange={setDialogOpen}
+          userProvideURL={getEndpointField(endpointsConfig, endpoint, 'userProvideURL')}
+        />
       )}
     </>
   );

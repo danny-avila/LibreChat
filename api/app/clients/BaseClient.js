@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { supportsBalanceCheck } = require('librechat-data-provider');
+const { supportsBalanceCheck, Constants } = require('librechat-data-provider');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
@@ -46,6 +46,10 @@ class BaseClient {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', response);
   }
 
+  async addPreviousAttachments(messages) {
+    return messages;
+  }
+
   async recordTokenUsage({ promptTokens, completionTokens }) {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', {
       promptTokens,
@@ -73,7 +77,7 @@ class BaseClient {
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
     const conversationId = opts.conversationId ?? crypto.randomUUID();
-    const parentMessageId = opts.parentMessageId ?? '00000000-0000-0000-0000-000000000000';
+    const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
     const userMessageId = opts.overrideParentMessageId ?? crypto.randomUUID();
     let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
     let head = isEdited ? responseMessageId : parentMessageId;
@@ -357,11 +361,11 @@ class BaseClient {
 
     const promptTokens = this.maxContextTokens - remainingContextTokens;
 
-    logger.debug('[BaseClient] Payload size:', payload.length);
     logger.debug('[BaseClient] tokenCountMap:', tokenCountMap);
     logger.debug('[BaseClient]', {
       promptTokens,
       remainingContextTokens,
+      payloadSize: payload.length,
       maxContextTokens: this.maxContextTokens,
     });
 
@@ -414,7 +418,6 @@ class BaseClient {
       logger.debug('[BaseClient] tokenCountMap', tokenCountMap);
       if (tokenCountMap[userMessage.messageId]) {
         userMessage.tokenCount = tokenCountMap[userMessage.messageId];
-        logger.debug('[BaseClient] userMessage.tokenCount', userMessage.tokenCount);
         logger.debug('[BaseClient] userMessage', userMessage);
       }
 
@@ -425,7 +428,10 @@ class BaseClient {
       await this.saveMessageToDatabase(userMessage, saveOptions, user);
     }
 
-    if (isEnabled(process.env.CHECK_BALANCE) && supportsBalanceCheck[this.options.endpoint]) {
+    if (
+      isEnabled(process.env.CHECK_BALANCE) &&
+      supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
+    ) {
       await checkBalance({
         req: this.options.req,
         res: this.options.res,
@@ -435,11 +441,14 @@ class BaseClient {
           amount: promptTokens,
           model: this.modelOptions.model,
           endpoint: this.options.endpoint,
+          endpointTokenConfig: this.options.endpointTokenConfig,
         },
       });
     }
 
     const completion = await this.sendCompletion(payload, opts);
+    this.abortController.requestCompleted = true;
+
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
@@ -485,20 +494,22 @@ class BaseClient {
       mapMethod = this.getMessageMapMethod();
     }
 
-    const orderedMessages = this.constructor.getMessagesForConversation({
+    let _messages = this.constructor.getMessagesForConversation({
       messages,
       parentMessageId,
       mapMethod,
     });
 
+    _messages = await this.addPreviousAttachments(_messages);
+
     if (!this.shouldSummarize) {
-      return orderedMessages;
+      return _messages;
     }
 
     // Find the latest message with a 'summary' property
-    for (let i = orderedMessages.length - 1; i >= 0; i--) {
-      if (orderedMessages[i]?.summary) {
-        this.previous_summary = orderedMessages[i];
+    for (let i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i]?.summary) {
+        this.previous_summary = _messages[i];
         break;
       }
     }
@@ -513,14 +524,15 @@ class BaseClient {
       });
     }
 
-    return orderedMessages;
+    return _messages;
   }
 
   async saveMessageToDatabase(message, endpointOptions, user = null) {
-    await saveMessage({ ...message, user, unfinished: false, cancelled: false });
+    await saveMessage({ ...message, endpoint: this.options.endpoint, user, unfinished: false });
     await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,
+      endpointType: this.options.endpointType,
       ...endpointOptions,
     });
   }
@@ -542,7 +554,7 @@ class BaseClient {
    *
    * Each message object should have an 'id' or 'messageId' property and may have a 'parentMessageId' property.
    * The 'parentMessageId' is the ID of the message that the current message is a reply to.
-   * If 'parentMessageId' is not present, null, or is '00000000-0000-0000-0000-000000000000',
+   * If 'parentMessageId' is not present, null, or is Constants.NO_PARENT,
    * the message is considered a root message.
    *
    * @param {Object} options - The options for the function.
@@ -597,9 +609,7 @@ class BaseClient {
       }
 
       currentMessageId =
-        message.parentMessageId === '00000000-0000-0000-0000-000000000000'
-          ? null
-          : message.parentMessageId;
+        message.parentMessageId === Constants.NO_PARENT ? null : message.parentMessageId;
     }
 
     orderedMessages.reverse();
@@ -618,6 +628,11 @@ class BaseClient {
    * An additional 3 tokens need to be added for assistant label priming after all messages have been counted.
    * In our implementation, this is accounted for in the getMessagesWithinTokenLimit method.
    *
+   * The content parts example was adapted from the following example:
+   * https://github.com/openai/openai-cookbook/pull/881/files
+   *
+   * Note: image token calculation is to be done elsewhere where we have access to the image metadata
+   *
    * @param {Object} message
    */
   getTokenCountForMessage(message) {
@@ -631,11 +646,18 @@ class BaseClient {
     }
 
     const processValue = (value) => {
-      if (typeof value === 'object' && value !== null) {
-        for (let [nestedKey, nestedValue] of Object.entries(value)) {
-          if (nestedKey === 'image_url' || nestedValue === 'image_url') {
+      if (Array.isArray(value)) {
+        for (let item of value) {
+          if (!item || !item.type || item.type === 'image_url') {
             continue;
           }
+
+          const nestedValue = item[item.type];
+
+          if (!nestedValue) {
+            continue;
+          }
+
           processValue(nestedValue);
         }
       } else {

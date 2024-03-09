@@ -5,12 +5,14 @@ import { useRequiresKey } from '~/hooks';
 import AttachFile from './Files/AttachFile';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
-import Images from './Files/Images';
+import FileRow from './Files/FileRow';
 import Textarea from './Textarea';
 import store from '~/store';
 
 export default function ChatForm({ index = 0 }) {
   const [text, setText] = useRecoilState(store.textByIndex(index));
+  const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
+
   const {
     ask,
     files,
@@ -20,8 +22,6 @@ export default function ChatForm({ index = 0 }) {
     handleStopGenerating,
     filesLoading,
     setFilesLoading,
-    showStopButton,
-    setShowStopButton,
   } = useChatContext();
 
   const submitMessage = () => {
@@ -30,6 +30,8 @@ export default function ChatForm({ index = 0 }) {
   };
 
   const { requiresKey } = useRequiresKey();
+  const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
+  const endpoint = endpointType ?? _endpoint;
 
   return (
     <form
@@ -41,21 +43,39 @@ export default function ChatForm({ index = 0 }) {
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
         <div className="flex w-full items-center">
-          <div className="[&:has(textarea:focus)]:border-token-border-xheavy border-token-border-heavy shadow-xs dark:shadow-xs relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-[0_0_0_2px_rgba(255,255,255,0.95)] dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:shadow-[0_0_0_2px_rgba(52,53,65,0.95)] [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]">
-            <Images files={files} setFiles={setFiles} setFilesLoading={setFilesLoading} />
-            <Textarea
-              value={text}
-              disabled={requiresKey}
-              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
-              setText={setText}
-              submitMessage={submitMessage}
-              endpoint={conversation?.endpoint}
+          <div className="[&:has(textarea:focus)]:border-token-border-xheavy dark:border-token-border-medium border-token-border-medium bg-token-main-surface-primary relative flex w-full flex-grow flex-col overflow-hidden rounded-2xl border dark:text-white [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]">
+            <FileRow
+              files={files}
+              setFiles={setFiles}
+              setFilesLoading={setFilesLoading}
+              Wrapper={({ children }) => (
+                <div className="mx-2 mt-2 flex flex-wrap gap-2 px-2.5 md:pl-0 md:pr-4">
+                  {children}
+                </div>
+              )}
             />
-            <AttachFile endpoint={conversation?.endpoint ?? ''} disabled={requiresKey} />
+            {endpoint && (
+              <Textarea
+                value={text}
+                disabled={requiresKey}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
+                setText={setText}
+                submitMessage={submitMessage}
+                endpoint={_endpoint}
+                endpointType={endpointType}
+              />
+            )}
+            <AttachFile
+              endpoint={_endpoint ?? ''}
+              endpointType={endpointType}
+              disabled={requiresKey}
+            />
             {isSubmitting && showStopButton ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
-              <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
+              endpoint && (
+                <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
+              )
             )}
           </div>
         </div>

@@ -1,7 +1,12 @@
-const { OpenAIClient } = require('~/app');
-const { isEnabled } = require('~/server/utils');
-const { getAzureCredentials } = require('~/utils');
+const {
+  EModelEndpoint,
+  mapModelToAzureConfig,
+  resolveHeaders,
+} = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { isEnabled, isUserProvided } = require('~/server/utils');
+const { getAzureCredentials } = require('~/utils');
+const { OpenAIClient } = require('~/app');
 
 const initializeClient = async ({ req, res, endpointOption }) => {
   const {
@@ -9,46 +14,93 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     OPENAI_API_KEY,
     AZURE_API_KEY,
     OPENAI_REVERSE_PROXY,
+    AZURE_OPENAI_BASEURL,
     OPENAI_SUMMARIZE,
     DEBUG_OPENAI,
   } = process.env;
-  const { key: expiresAt, endpoint } = req.body;
+  const { key: expiresAt, endpoint, model: modelName } = req.body;
   const contextStrategy = isEnabled(OPENAI_SUMMARIZE) ? 'summarize' : null;
+
+  const credentials = {
+    [EModelEndpoint.openAI]: OPENAI_API_KEY,
+    [EModelEndpoint.azureOpenAI]: AZURE_API_KEY,
+  };
+
+  const baseURLOptions = {
+    [EModelEndpoint.openAI]: OPENAI_REVERSE_PROXY,
+    [EModelEndpoint.azureOpenAI]: AZURE_OPENAI_BASEURL,
+  };
+
+  const userProvidesKey = isUserProvided(credentials[endpoint]);
+  const userProvidesURL = isUserProvided(baseURLOptions[endpoint]);
+
+  let userValues = null;
+  if (expiresAt && (userProvidesKey || userProvidesURL)) {
+    checkUserKeyExpiry(
+      expiresAt,
+      'Your OpenAI API values have expired. Please provide them again.',
+    );
+    userValues = await getUserKey({ userId: req.user.id, name: endpoint });
+    try {
+      userValues = JSON.parse(userValues);
+    } catch (e) {
+      throw new Error(
+        `Invalid JSON provided for ${endpoint} user values. Please provide them again.`,
+      );
+    }
+  }
+
+  let apiKey = userProvidesKey ? userValues?.apiKey : credentials[endpoint];
+  let baseURL = userProvidesURL ? userValues?.baseURL : baseURLOptions[endpoint];
+
   const clientOptions = {
     debug: isEnabled(DEBUG_OPENAI),
     contextStrategy,
-    reverseProxyUrl: OPENAI_REVERSE_PROXY ?? null,
+    reverseProxyUrl: baseURL ? baseURL : null,
     proxy: PROXY ?? null,
     req,
     res,
     ...endpointOption,
   };
 
-  const credentials = {
-    openAI: OPENAI_API_KEY,
-    azureOpenAI: AZURE_API_KEY,
-  };
+  const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
+  /** @type {false | TAzureConfig} */
+  const azureConfig = isAzureOpenAI && req.app.locals[EModelEndpoint.azureOpenAI];
 
-  const isUserProvided = credentials[endpoint] === 'user_provided';
+  if (isAzureOpenAI && azureConfig) {
+    const { modelGroupMap, groupMap } = azureConfig;
+    const {
+      azureOptions,
+      baseURL,
+      headers = {},
+      serverless,
+    } = mapModelToAzureConfig({
+      modelName,
+      modelGroupMap,
+      groupMap,
+    });
 
-  let userKey = null;
-  if (expiresAt && isUserProvided) {
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your OpenAI API key has expired. Please provide your API key again.',
-    );
-    userKey = await getUserKey({ userId: req.user.id, name: endpoint });
-  }
+    clientOptions.reverseProxyUrl = baseURL ?? clientOptions.reverseProxyUrl;
+    clientOptions.headers = resolveHeaders({ ...headers, ...(clientOptions.headers ?? {}) });
 
-  let apiKey = isUserProvided ? userKey : credentials[endpoint];
+    clientOptions.titleConvo = azureConfig.titleConvo;
+    clientOptions.titleModel = azureConfig.titleModel;
+    clientOptions.titleMethod = azureConfig.titleMethod ?? 'completion';
 
-  if (endpoint === 'azureOpenAI') {
-    clientOptions.azure = isUserProvided ? JSON.parse(userKey) : getAzureCredentials();
+    const groupName = modelGroupMap[modelName].group;
+    clientOptions.addParams = azureConfig.groupMap[groupName].addParams;
+    clientOptions.dropParams = azureConfig.groupMap[groupName].dropParams;
+    clientOptions.forcePrompt = azureConfig.groupMap[groupName].forcePrompt;
+
+    apiKey = azureOptions.azureOpenAIApiKey;
+    clientOptions.azure = !serverless && azureOptions;
+  } else if (isAzureOpenAI) {
+    clientOptions.azure = userProvidesKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
     apiKey = clientOptions.azure.azureOpenAIApiKey;
   }
 
   if (!apiKey) {
-    throw new Error('API key not provided.');
+    throw new Error(`${endpoint} API key not provided. Please provide it again.`);
   }
 
   const client = new OpenAIClient(apiKey, clientOptions);

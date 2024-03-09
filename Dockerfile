@@ -1,17 +1,17 @@
 # Base node image
-FROM node:19-alpine AS node
+FROM node:18-alpine AS node
 
 COPY . /app
 WORKDIR /app
 
-# Install call deps - Install curl for health check
+# Allow mounting of these files, which have no default
+# values.
+RUN touch .env
+RUN npm config set fetch-retry-maxtimeout 300000
+RUN apk add --no-cache g++ make python3 py3-pip
+RUN npm install -g node-gyp
 RUN apk --no-cache add curl && \
-    # We want to inherit env from the container, not the file
-    # This will preserve any existing env file if it's already in source
-    # otherwise it will create a new one
-    touch .env && \
-    # Build deps in seperate 
-    npm ci
+    npm install
 
 # React client build
 ENV NODE_OPTIONS="--max-old-space-size=2048"

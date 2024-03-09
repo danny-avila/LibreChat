@@ -1,22 +1,35 @@
-const { processFiles } = require('~/server/services/Files');
-const openAI = require('~/server/services/Endpoints/openAI');
-const google = require('~/server/services/Endpoints/google');
-const anthropic = require('~/server/services/Endpoints/anthropic');
-const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
 const { parseConvo, EModelEndpoint } = require('librechat-data-provider');
+const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { processFiles } = require('~/server/services/Files/process');
+const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
+const anthropic = require('~/server/services/Endpoints/anthropic');
+const assistant = require('~/server/services/Endpoints/assistant');
+const openAI = require('~/server/services/Endpoints/openAI');
+const custom = require('~/server/services/Endpoints/custom');
+const google = require('~/server/services/Endpoints/google');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
   [EModelEndpoint.google]: google.buildOptions,
+  [EModelEndpoint.custom]: custom.buildOptions,
   [EModelEndpoint.azureOpenAI]: openAI.buildOptions,
   [EModelEndpoint.anthropic]: anthropic.buildOptions,
   [EModelEndpoint.gptPlugins]: gptPlugins.buildOptions,
+  [EModelEndpoint.assistants]: assistant.buildOptions,
 };
 
-function buildEndpointOption(req, res, next) {
-  const { endpoint } = req.body;
-  const parsedBody = parseConvo(endpoint, req.body);
-  req.body.endpointOption = buildFunction[endpoint](endpoint, parsedBody);
+async function buildEndpointOption(req, res, next) {
+  const { endpoint, endpointType } = req.body;
+  const parsedBody = parseConvo({ endpoint, endpointType, conversation: req.body });
+  req.body.endpointOption = buildFunction[endpointType ?? endpoint](
+    endpoint,
+    parsedBody,
+    endpointType,
+  );
+
+  const modelsConfig = await getModelsConfig(req);
+  req.body.endpointOption.modelsConfig = modelsConfig;
+
   if (req.body.files) {
     // hold the promise
     req.body.endpointOption.attachments = processFiles(req.body.files);

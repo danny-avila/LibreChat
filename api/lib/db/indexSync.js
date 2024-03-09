@@ -65,6 +65,8 @@ async function indexSync(req, res, next) {
           logger.error('[indexSync] Trouble creating indices, try restarting the server.', err);
         }
       }, 750);
+    } else if (err.message.includes('Meilisearch not configured')) {
+      logger.info('[indexSync] Meilisearch not configured, search will be disabled.');
     } else {
       logger.error('[indexSync] error', err);
       // res.status(500).json({ error: 'Server error' });

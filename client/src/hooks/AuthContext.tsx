@@ -7,6 +7,7 @@ import {
   createContext,
   useContext,
 } from 'react';
+import { useRecoilState } from 'recoil';
 import { TUser, TLoginResponse, setTokenHeader, TLoginUser } from 'librechat-data-provider';
 import {
   useGetUserQuery,
@@ -17,6 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import { useLogoutUserMutation } from '~/data-provider';
 import useTimeout from './useTimeout';
+import store from '~/store';
 
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
@@ -27,11 +29,13 @@ const AuthContextProvider = ({
   authConfig?: TAuthConfig;
   children: ReactNode;
 }) => {
-  const navigate = useNavigate();
-  const [user, setUser] = useState<TUser | undefined>(undefined);
+  const [user, setUser] = useRecoilState(store.user);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  const navigate = useNavigate();
+
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
       const { token, isAuthenticated, user, redirect } = userContext;
@@ -46,7 +50,7 @@ const AuthContextProvider = ({
         navigate(redirect, { replace: true });
       }
     },
-    [navigate],
+    [navigate, setUser],
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 

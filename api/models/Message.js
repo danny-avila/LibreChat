@@ -9,23 +9,23 @@ module.exports = {
 
   async saveMessage({
     user,
+    endpoint,
     messageId,
     newMessageId,
     conversationId,
     parentMessageId,
     sender,
     text,
-    isCreatedByUser = false,
+    isCreatedByUser,
     error,
     unfinished,
-    cancelled,
     files,
-    isEdited = false,
-    finish_reason = null,
-    tokenCount = null,
-    plugin = null,
-    plugins = null,
-    model = null,
+    isEdited,
+    finish_reason,
+    tokenCount,
+    plugin,
+    plugins,
+    model,
   }) {
     try {
       const validConvoId = idSchema.safeParse(conversationId);
@@ -35,6 +35,7 @@ module.exports = {
 
       const update = {
         user,
+        endpoint,
         messageId: newMessageId || messageId,
         conversationId,
         parentMessageId,
@@ -45,7 +46,6 @@ module.exports = {
         finish_reason,
         error,
         unfinished,
-        cancelled,
         tokenCount,
         plugin,
         plugins,
@@ -72,11 +72,49 @@ module.exports = {
       throw new Error('Failed to save message.');
     }
   },
+  /**
+   * Records a message in the database.
+   *
+   * @async
+   * @function recordMessage
+   * @param {Object} params - The message data object.
+   * @param {string} params.user - The identifier of the user.
+   * @param {string} params.endpoint - The endpoint where the message originated.
+   * @param {string} params.messageId - The unique identifier for the message.
+   * @param {string} params.conversationId - The identifier of the conversation.
+   * @param {string} [params.parentMessageId] - The identifier of the parent message, if any.
+   * @param {Partial<TMessage>} rest - Any additional properties from the TMessage typedef not explicitly listed.
+   * @returns {Promise<Object>} The updated or newly inserted message document.
+   * @throws {Error} If there is an error in saving the message.
+   */
+  async recordMessage({ user, endpoint, messageId, conversationId, parentMessageId, ...rest }) {
+    try {
+      // No parsing of convoId as may use threadId
+      const message = {
+        user,
+        endpoint,
+        messageId,
+        conversationId,
+        parentMessageId,
+        ...rest,
+      };
+
+      return await Message.findOneAndUpdate({ user, messageId }, message, {
+        upsert: true,
+        new: true,
+      });
+    } catch (err) {
+      logger.error('Error saving message:', err);
+      throw new Error('Failed to save message.');
+    }
+  },
   async updateMessage(message) {
     try {
       const { messageId, ...update } = message;
       update.isEdited = true;
-      const updatedMessage = await Message.findOneAndUpdate({ messageId }, update, { new: true });
+      const updatedMessage = await Message.findOneAndUpdate({ messageId }, update, {
+        new: true,
+      });
 
       if (!updatedMessage) {
         throw new Error('Message not found.');

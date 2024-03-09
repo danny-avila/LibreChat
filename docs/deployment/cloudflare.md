@@ -1,3 +1,8 @@
+---
+title: ☁️ Cloudflare
+description: How to setup a domain with Cloudflare and use Cloudflare Tunnels to securely expose your local web servers or services to the internet.
+weight: 10
+---
 <img src="https://github.com/danny-avila/LibreChat/assets/32828263/cfbc7ca5-b51e-4f1d-aa89-b9b4cb13eead" width="350">
 
 # Cloudflare
@@ -5,12 +10,12 @@
 
 ## Google Domains and Cloudflare
 
-- buy a domain at https://domains.google.com/
-- register a Cloudflare account at https://dash.cloudflare.com/sign-up
+- buy a domain at **[https://domains.google.com/](https://domains.google.com)**
+- register a Cloudflare account at **[https://dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up)**
 - click on `add site` and add your domain
 - select `Free` and tap `continue` twice
 - copy the 2 Cloudflare's nameservers
-- go to https://domains.google.com/registrar/ and select your domain
+- go to **[https://domains.google.com/registrar/](https://domains.google.com/registrar)** and select your domain
 - in the dns tab select `Custom name servers`
 - click on `Switch to these settings` and enter the two Cloudflare nameservers that you copied before, then save
 - return to the cloudflare tab and tap on `Done, check nameservers`, then `finish later` and `Check nameservers` (this process can take about 5 minutes)
@@ -69,7 +74,7 @@ Here's a straightforward guide on how to install it!
 ### Installation Steps
 
 
-1. Go to `https://dash.cloudflare.com/`.
+1. Go to **[https://dash.cloudflare.com/](https://dash.cloudflare.com/)**.
 2. On the left side, click on **Zero Trust**.
 3. Provide a casual name (which you can change later).
 4. Select the free plan and proceed to payment (if you choose the free plan, you will not be charged).
@@ -113,4 +118,4 @@ Now that you have installed the tunnel, it's time to configure it. Follow these 
 
 ---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

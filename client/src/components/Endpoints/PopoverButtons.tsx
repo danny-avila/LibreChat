@@ -18,7 +18,7 @@ export default function PopoverButtons({
   buttonClass,
   iconClass = '',
 }: {
-  endpoint: EModelEndpoint;
+  endpoint: EModelEndpoint | string;
   buttonClass?: string;
   iconClass?: string;
 }) {
@@ -32,7 +32,9 @@ export default function PopoverButtons({
   const buttons: { [key: string]: TPopoverButton[] } = {
     google: [
       {
-        label: (showExamples ? localize('com_endpoint_hide') : localize('com_endpoint_show')) + localize('com_endpoint_examples'),
+        label:
+          (showExamples ? localize('com_endpoint_hide') : localize('com_endpoint_show')) +
+          localize('com_endpoint_examples'),
         buttonClass: isCodeChat ? 'disabled' : '',
         handler: triggerExamples,
         icon: <MessagesSquared className={cn('mr-1 w-[14px]', iconClass)} />,
@@ -40,7 +42,10 @@ export default function PopoverButtons({
     ],
     gptPlugins: [
       {
-        label: localize('com_endpoint_show_what_settings', showAgentSettings ? localize('com_endpoint_completion') : localize('com_endpoint_agent')),
+        label: localize(
+          'com_endpoint_show_what_settings',
+          showAgentSettings ? localize('com_endpoint_completion') : localize('com_endpoint_agent'),
+        ),
         buttonClass: '',
         handler: () => setShowAgentSettings((prev) => !prev),
         icon: <GPTIcon className={cn('mr-1 w-[14px]', iconClass)} size={24} />,
@@ -61,7 +66,7 @@ export default function PopoverButtons({
           type="button"
           className={cn(
             button.buttonClass,
-            'ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0',
+            'ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0',
             buttonClass ?? '',
           )}
           onClick={button.handler}

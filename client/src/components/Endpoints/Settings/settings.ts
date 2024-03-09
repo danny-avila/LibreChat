@@ -1,13 +1,16 @@
 import { EModelEndpoint } from 'librechat-data-provider';
-import OpenAISettings from './OpenAI';
-import BingAISettings from './BingAI';
-import AnthropicSettings from './Anthropic';
-import { Google, Plugins, GoogleSettings, PluginSettings } from './MultiView';
 import type { FC } from 'react';
 import type { TModelSelectProps, TBaseSettingsProps, TModels } from '~/common';
+import { Google, Plugins, GoogleSettings, PluginSettings } from './MultiView';
+import AssistantsSettings from './Assistants';
+import AnthropicSettings from './Anthropic';
+import BingAISettings from './BingAI';
+import OpenAISettings from './OpenAI';
 
 const settings: { [key: string]: FC<TModelSelectProps> } = {
+  [EModelEndpoint.assistants]: AssistantsSettings,
   [EModelEndpoint.openAI]: OpenAISettings,
+  [EModelEndpoint.custom]: OpenAISettings,
   [EModelEndpoint.azureOpenAI]: OpenAISettings,
   [EModelEndpoint.bingAI]: BingAISettings,
   [EModelEndpoint.anthropic]: AnthropicSettings,

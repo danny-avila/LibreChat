@@ -1,5 +1,6 @@
-const express = require('express');
 const crypto = require('crypto');
+const express = require('express');
+const { Constants } = require('librechat-data-provider');
 const { handleError, sendMessage, createOnProgress, handleText } = require('~/server/utils');
 const { saveMessage, getConvoTitle, saveConvo, getConvo } = require('~/models');
 const { setHeaders } = require('~/server/middleware');
@@ -28,7 +29,7 @@ router.post('/', setHeaders, async (req, res) => {
   const conversationId = oldConversationId || crypto.randomUUID();
   const isNewConversation = !oldConversationId;
   const userMessageId = messageId;
-  const userParentMessageId = parentMessageId || '00000000-0000-0000-0000-000000000000';
+  const userParentMessageId = parentMessageId || Constants.NO_PARENT;
   let userMessage = {
     messageId: userMessageId,
     sender: 'User',
@@ -125,7 +126,6 @@ const ask = async ({
           model,
           text: text,
           unfinished: true,
-          cancelled: false,
           error: false,
           isCreatedByUser: false,
           user,
@@ -193,7 +193,6 @@ const ask = async ({
         response.details.suggestedResponses &&
         response.details.suggestedResponses.map((s) => s.text),
       unfinished,
-      cancelled: false,
       error: false,
       isCreatedByUser: false,
     };
@@ -240,7 +239,7 @@ const ask = async ({
     });
     res.end();
 
-    if (userParentMessageId == '00000000-0000-0000-0000-000000000000') {
+    if (userParentMessageId == Constants.NO_PARENT) {
       const title = await titleConvoBing({
         text,
         response: responseMessage,
@@ -263,7 +262,6 @@ const ask = async ({
         text: partialText,
         model,
         unfinished: true,
-        cancelled: false,
         error: false,
         isCreatedByUser: false,
       };
@@ -285,7 +283,6 @@ const ask = async ({
         conversationId,
         parentMessageId: overrideParentMessageId || userMessageId,
         unfinished: false,
-        cancelled: false,
         error: true,
         text: error.message,
         model,

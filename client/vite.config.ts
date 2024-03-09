@@ -7,6 +7,9 @@ import type { Plugin } from 'vite';
 // https://vitejs.dev/config/
 export default defineConfig({
   server: {
+    fs: {
+      cachedChecks: false,
+    },
     host: 'localhost',
     port: 3090,
     strictPort: false,
@@ -56,7 +59,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '~': path.join(__dirname, 'src/'),
-      $fonts: resolve('/fonts'),
+      $fonts: resolve('public/fonts'),
     },
   },
 });

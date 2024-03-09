@@ -1,4 +1,5 @@
 import * as f from './types/files';
+import * as q from './types/queries';
 import * as m from './types/mutations';
 import * as a from './types/assistants';
 import * as t from './types';
@@ -50,6 +51,10 @@ export function updateConversation(
   payload: t.TUpdateConversationRequest,
 ): Promise<t.TUpdateConversationResponse> {
   return request.post(endpoints.updateConversation(), { arg: payload });
+}
+
+export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
+  return request.post(endpoints.genTitle(), payload);
 }
 
 export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown> {
@@ -191,13 +196,81 @@ export const listAssistants = (
   return request.get(endpoints.assistants(), { params });
 };
 
+/* Tools */
+
+export const getAvailableTools = (): Promise<s.TPlugin[]> => {
+  return request.get(`${endpoints.assistants()}/tools`);
+};
+
 /* Files */
 
-export const uploadImage = (data: FormData): Promise<f.FileUploadResponse> => {
+export const getFiles = (): Promise<f.TFile[]> => {
+  return request.get(endpoints.files());
+};
+
+export const getFileConfig = (): Promise<f.FileConfig> => {
+  return request.get(`${endpoints.files()}/config`);
+};
+
+export const uploadImage = (data: FormData): Promise<f.TFileUpload> => {
   return request.postMultiPart(endpoints.images(), data);
 };
 
-export const deleteFiles = async (files: f.BatchFile[]): Promise<f.DeleteFilesResponse> =>
+export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
+  return request.postMultiPart(endpoints.files(), data);
+};
+
+export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
+  return request.postMultiPart(endpoints.avatar(), data);
+};
+
+export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise<a.Assistant> => {
+  return request.postMultiPart(endpoints.assistants(`avatar/${data.assistant_id}`), data.formData);
+};
+
+export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
+  const { assistant_id, ...body } = data;
+  return request.post(endpoints.assistants(`actions/${assistant_id}`), body);
+};
+
+export function getActions(): Promise<a.Action[]> {
+  return request.get(endpoints.assistants('actions'));
+}
+
+export function getAssistantDocs(): Promise<a.AssistantDocument[]> {
+  return request.get(endpoints.assistants('documents'));
+}
+
+export const deleteFiles = async (
+  files: f.BatchFile[],
+  assistant_id?: string,
+): Promise<f.DeleteFilesResponse> =>
   request.deleteWithOptions(endpoints.files(), {
-    data: { files },
+    data: { files, assistant_id },
   });
+
+/* conversations */
+
+export const listConversations = (
+  params?: q.ConversationListParams,
+): Promise<q.ConversationListResponse> => {
+  // Assuming params has a pageNumber property
+  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
+  return request.get(endpoints.conversations(pageNumber));
+};
+
+export const listConversationsByQuery = (
+  params?: q.ConversationListParams & { searchQuery?: string },
+): Promise<q.ConversationListResponse> => {
+  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
+  const searchQuery = params?.searchQuery || ''; // If no search query is provided, default to an empty string
+  // Update the endpoint to handle a search query
+  if (searchQuery !== '') {
+    return request.get(endpoints.search(searchQuery, pageNumber));
+  } else {
+    return request.get(endpoints.conversations(pageNumber));
+  }
+};
+
+export const deleteAction = async (assistant_id: string, action_id: string): Promise<void> =>
+  request.delete(endpoints.assistants(`actions/${assistant_id}/${action_id}`));

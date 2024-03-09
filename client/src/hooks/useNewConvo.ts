@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { EModelEndpoint, FileSources, defaultOrderQuery } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import {
   useSetRecoilState,
@@ -7,9 +8,15 @@ import {
   useRecoilState,
   useRecoilValue,
 } from 'recoil';
-import type { TConversation, TSubmission, TPreset, TModelsConfig } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
-import { useDeleteFilesMutation } from '~/data-provider';
+import type {
+  TConversation,
+  TSubmission,
+  TPreset,
+  TModelsConfig,
+  TEndpointsConfig,
+} from 'librechat-data-provider';
+import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
+import { useDeleteFilesMutation, useListAssistantsQuery } from '~/data-provider';
 import useOriginNavigate from './useOriginNavigate';
 import useSetStorage from './useSetStorage';
 import store from '~/store';
@@ -22,7 +29,11 @@ const useNewConvo = (index = 0) => {
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
-  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
+  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+
+  const { data: assistants = [] } = useListAssistantsQuery(defaultOrderQuery, {
+    select: (res) => res.data.map(({ id, name, metadata }) => ({ id, name, metadata })),
+  });
 
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
@@ -37,9 +48,10 @@ const useNewConvo = (index = 0) => {
     ({ snapshot }) =>
       async (
         conversation: TConversation,
-        preset: TPreset | null = null,
+        preset: Partial<TPreset> | null = null,
         modelsData?: TModelsConfig,
         buildDefault?: boolean,
+        keepLatestMessage?: boolean,
       ) => {
         const modelsConfig = modelsData ?? snapshot.getLoadable(store.modelsConfig).contents;
         const { endpoint = null } = conversation;
@@ -62,6 +74,19 @@ const useNewConvo = (index = 0) => {
             endpointsConfig,
           });
 
+          const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
+          if (!conversation.endpointType && endpointType) {
+            conversation.endpointType = endpointType;
+          } else if (conversation.endpointType && !endpointType) {
+            conversation.endpointType = undefined;
+          }
+
+          if (!conversation.assistant_id && defaultEndpoint === EModelEndpoint.assistants) {
+            const assistant_id =
+              localStorage.getItem(`assistant_id__${index}`) ?? assistants[0]?.id;
+            conversation.assistant_id = assistant_id;
+          }
+
           const models = modelsConfig?.[defaultEndpoint] ?? [];
           conversation = buildDefaultConvo({
             conversation,
@@ -74,13 +99,19 @@ const useNewConvo = (index = 0) => {
         setStorage(conversation);
         setConversation(conversation);
         setSubmission({} as TSubmission);
-        resetLatestMessage();
+        if (!keepLatestMessage) {
+          resetLatestMessage();
+        }
 
         if (conversation.conversationId === 'new' && !modelsData) {
+          const appTitle = localStorage.getItem('appTitle');
+          if (appTitle) {
+            document.title = appTitle;
+          }
           navigate('new');
         }
       },
-    [endpointsConfig, defaultPreset],
+    [endpointsConfig, defaultPreset, assistants],
   );
 
   const newConversation = useCallback(
@@ -89,11 +120,13 @@ const useNewConvo = (index = 0) => {
       preset,
       modelsData,
       buildDefault = true,
+      keepLatestMessage = false,
     }: {
       template?: Partial<TConversation>;
-      preset?: TPreset;
+      preset?: Partial<TPreset>;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
+      keepLatestMessage?: boolean;
     } = {}) => {
       const conversation = {
         conversationId: 'new',
@@ -106,10 +139,11 @@ const useNewConvo = (index = 0) => {
 
       if (conversation.conversationId === 'new' && !modelsData) {
         const filesToDelete = Array.from(files.values())
-          .filter((file) => file.filepath)
+          .filter((file) => file.filepath && file.source)
           .map((file) => ({
             file_id: file.file_id,
             filepath: file.filepath as string,
+            source: file.source as FileSources, // Ensure that the source is of type FileSources
           }));
 
         setFiles(new Map());
@@ -120,7 +154,7 @@ const useNewConvo = (index = 0) => {
         }
       }
 
-      switchToConversation(conversation, preset, modelsData, buildDefault);
+      switchToConversation(conversation, preset, modelsData, buildDefault, keepLatestMessage);
     },
     [switchToConversation, files, mutateAsync, setFiles],
   );

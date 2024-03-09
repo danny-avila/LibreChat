@@ -1,8 +1,7 @@
 const path = require('path');
 const winston = require('winston');
 require('winston-daily-rotate-file');
-const { redact, deepObjectFormat } = require('./parsers');
-const { isEnabled } = require('~/server/utils/handleText');
+const { redactFormat, redactMessage, debugTraverse } = require('./parsers');
 
 const logDir = path.join(__dirname, '..', 'logs');
 
@@ -33,10 +32,11 @@ const level = () => {
 };
 
 const fileFormat = winston.format.combine(
+  redactFormat(),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
-  winston.format((info) => redact(info))(),
+  // redactErrors(),
 );
 
 const transports = [
@@ -67,7 +67,10 @@ const transports = [
 //   );
 // }
 
-if (isEnabled && isEnabled(DEBUG_LOGGING)) {
+if (
+  (typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING?.toLowerCase() === 'true') ||
+  DEBUG_LOGGING === true
+) {
   transports.push(
     new winston.transports.DailyRotateFile({
       level: 'debug',
@@ -76,23 +79,34 @@ if (isEnabled && isEnabled(DEBUG_LOGGING)) {
       zippedArchive: true,
       maxSize: '20m',
       maxFiles: '14d',
-      format: winston.format.combine(fileFormat, deepObjectFormat),
+      format: winston.format.combine(fileFormat, debugTraverse),
     }),
   );
 }
 
 const consoleFormat = winston.format.combine(
+  redactFormat(),
   winston.format.colorize({ all: true }),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format((info) => redact(info))(),
-  winston.format.printf((info) => `${info.timestamp} ${info.level}: ${info.message}`),
+  // redactErrors(),
+  winston.format.printf((info) => {
+    const message = `${info.timestamp} ${info.level}: ${info.message}`;
+    if (info.level.includes('error')) {
+      return redactMessage(message);
+    }
+
+    return message;
+  }),
 );
 
-if (isEnabled && isEnabled(DEBUG_CONSOLE)) {
+if (
+  (typeof DEBUG_CONSOLE === 'string' && DEBUG_CONSOLE?.toLowerCase() === 'true') ||
+  DEBUG_CONSOLE === true
+) {
   transports.push(
     new winston.transports.Console({
       level: 'debug',
-      format: winston.format.combine(consoleFormat, deepObjectFormat),
+      format: winston.format.combine(fileFormat, debugTraverse),
     }),
   );
 } else {

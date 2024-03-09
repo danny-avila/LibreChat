@@ -63,6 +63,12 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     if (isSubmitting && scrollToBottom && !abortScroll) {
       scrollToBottom();
     }
+
+    return () => {
+      if (abortScroll) {
+        scrollToBottom && scrollToBottom?.cancel();
+      }
+    };
   }, [isSubmitting, messagesTree, scrollToBottom, abortScroll]);
 
   useEffect(() => {

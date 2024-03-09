@@ -11,14 +11,17 @@ const buildDefaultConvo = ({
   conversation: TConversation;
   endpoint: EModelEndpoint;
   models: string[];
+  // TODO: fix this type as we should allow undefined
   lastConversationSetup: TConversation;
 }) => {
   const { lastSelectedModel, lastSelectedTools, lastBingSettings } = getLocalStorageItems();
   const { jailbreak, toneStyle } = lastBingSettings;
+  const endpointType = lastConversationSetup?.endpointType ?? conversation?.endpointType;
 
   if (!endpoint) {
     return {
       ...conversation,
+      endpointType,
       endpoint,
     };
   }
@@ -44,13 +47,20 @@ const buildDefaultConvo = ({
     secondaryModels = [...availableModels];
   }
 
-  const convo = parseConvo(endpoint, lastConversationSetup, {
-    models: possibleModels,
-    secondaryModels,
+  const convo = parseConvo({
+    endpoint,
+    endpointType,
+    conversation: lastConversationSetup,
+    possibleValues: {
+      models: possibleModels,
+      secondaryModels,
+    },
   });
+
   const defaultConvo = {
     ...conversation,
     ...convo,
+    endpointType,
     endpoint,
   };
 

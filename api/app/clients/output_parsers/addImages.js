@@ -60,12 +60,10 @@ function addImages(intermediateSteps, responseMessage) {
     if (!observation || !observation.includes('![')) {
       return;
     }
-    const observedImagePath = observation.match(/\(\/images\/.*\.\w*\)/g);
+    const observedImagePath = observation.match(/!\[.*\]\([^)]*\)/g);
     if (observedImagePath && !responseMessage.text.includes(observedImagePath[0])) {
       responseMessage.text += '\n' + observation;
-      if (process.env.DEBUG_PLUGINS) {
-        logger.debug('[addImages] added image from intermediateSteps:', observation);
-      }
+      logger.debug('[addImages] added image from intermediateSteps:', observation);
     }
   });
 }

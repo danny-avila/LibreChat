@@ -96,7 +96,7 @@ const EditMessage = ({
           disabled={isSubmitting}
           onClick={resubmitMessage}
         >
-          {localize('com_ui_save')} {'&'} {localize('com_ui_submit')}
+          {localize('com_ui_save_submit')}
         </button>
         <button
           className="btn btn-secondary relative mr-2"

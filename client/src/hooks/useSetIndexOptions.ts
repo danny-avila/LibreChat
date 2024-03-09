@@ -1,5 +1,11 @@
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { TPreset, TPlugin, tConversationSchema, EModelEndpoint } from 'librechat-data-provider';
+import {
+  TPreset,
+  TPlugin,
+  tConvoUpdateSchema,
+  EModelEndpoint,
+  TConversation,
+} from 'librechat-data-provider';
 import type { TSetExample, TSetOption, TSetOptionsPayload } from '~/common';
 import usePresetIndexOptions from './usePresetIndexOptions';
 import { useChatContext } from '~/Providers/ChatContext';
@@ -8,7 +14,7 @@ import store from '~/store';
 
 type TUseSetOptions = (preset?: TPreset | boolean | null) => TSetOptionsPayload;
 
-const useSetOptions: TUseSetOptions = (preset = false) => {
+const useSetIndexOptions: TUseSetOptions = (preset = false) => {
   const setShowPluginStoreDialog = useSetRecoilState(store.showPluginStoreDialog);
   const availableTools = useRecoilValue(store.availableTools);
   const { conversation, setConversation } = useChatContext();
@@ -34,13 +40,20 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
       setLastModel(lastModelUpdate);
     } else if (param === 'jailbreak' && endpoint) {
       setLastBingSettings({ ...lastBingSettings, jailbreak: newValue });
+    } else if (param === 'presetOverride') {
+      const currentOverride = conversation?.presetOverride || {};
+      update['presetOverride'] = {
+        ...currentOverride,
+        ...(newValue as unknown as Partial<TPreset>),
+      };
     }
 
-    setConversation((prevState) =>
-      tConversationSchema.parse({
-        ...prevState,
-        ...update,
-      }),
+    setConversation(
+      (prevState) =>
+        tConvoUpdateSchema.parse({
+          ...prevState,
+          ...update,
+        }) as TConversation,
     );
   };
 
@@ -51,11 +64,12 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
     currentExample[type] = { content: newValue };
     current[i] = currentExample;
     update['examples'] = current;
-    setConversation((prevState) =>
-      tConversationSchema.parse({
-        ...prevState,
-        ...update,
-      }),
+    setConversation(
+      (prevState) =>
+        tConvoUpdateSchema.parse({
+          ...prevState,
+          ...update,
+        }) as TConversation,
     );
   };
 
@@ -64,11 +78,12 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
     const current = conversation?.examples?.slice() || [];
     current.push({ input: { content: '' }, output: { content: '' } });
     update['examples'] = current;
-    setConversation((prevState) =>
-      tConversationSchema.parse({
-        ...prevState,
-        ...update,
-      }),
+    setConversation(
+      (prevState) =>
+        tConvoUpdateSchema.parse({
+          ...prevState,
+          ...update,
+        }) as TConversation,
     );
   };
 
@@ -77,21 +92,23 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
     const current = conversation?.examples?.slice() || [];
     if (current.length <= 1) {
       update['examples'] = [{ input: { content: '' }, output: { content: '' } }];
-      setConversation((prevState) =>
-        tConversationSchema.parse({
-          ...prevState,
-          ...update,
-        }),
+      setConversation(
+        (prevState) =>
+          tConvoUpdateSchema.parse({
+            ...prevState,
+            ...update,
+          }) as TConversation,
       );
       return;
     }
     current.pop();
     update['examples'] = current;
-    setConversation((prevState) =>
-      tConversationSchema.parse({
-        ...prevState,
-        ...update,
-      }),
+    setConversation(
+      (prevState) =>
+        tConvoUpdateSchema.parse({
+          ...prevState,
+          ...update,
+        }) as TConversation,
     );
   };
 
@@ -113,15 +130,16 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
       lastModelUpdate.secondaryModel = newValue;
       setLastModel(lastModelUpdate);
     }
-    setConversation((prevState) =>
-      tConversationSchema.parse({
-        ...prevState,
-        agentOptions,
-      }),
+    setConversation(
+      (prevState) =>
+        tConvoUpdateSchema.parse({
+          ...prevState,
+          agentOptions,
+        }) as TConversation,
     );
   };
 
-  const setTools: (newValue: string) => void = (newValue) => {
+  const setTools: (newValue: string, remove?: boolean) => void = (newValue, remove) => {
     if (newValue === 'pluginStore') {
       setShowPluginStoreDialog(true);
       return;
@@ -132,18 +150,19 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
     const isSelected = checkPluginSelection(newValue);
     const tool =
       availableTools[availableTools.findIndex((el: TPlugin) => el.pluginKey === newValue)];
-    if (isSelected) {
+    if (isSelected || remove) {
       update['tools'] = current.filter((el) => el.pluginKey !== newValue);
     } else {
       update['tools'] = [...current, tool];
     }
 
     localStorage.setItem('lastSelectedTools', JSON.stringify(update['tools']));
-    setConversation((prevState) =>
-      tConversationSchema.parse({
-        ...prevState,
-        ...update,
-      }),
+    setConversation(
+      (prevState) =>
+        tConvoUpdateSchema.parse({
+          ...prevState,
+          ...update,
+        }) as TConversation,
     );
   };
 
@@ -158,4 +177,4 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
   };
 };
 
-export default useSetOptions;
+export default useSetIndexOptions;

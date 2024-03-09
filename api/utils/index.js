@@ -1,3 +1,4 @@
+const loadYaml = require('./loadYaml');
 const tokenHelpers = require('./tokens');
 const azureUtils = require('./azureUtils');
 const extractBaseURL = require('./extractBaseURL');
@@ -8,4 +9,5 @@ module.exports = {
   ...tokenHelpers,
   extractBaseURL,
   findMessageContent,
+  loadYaml,
 };

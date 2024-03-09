@@ -19,8 +19,9 @@ export default function useGenerationsByLatest({
   const { error, messageId, searchResult, finish_reason, isCreatedByUser } = message ?? {};
   const isEditableEndpoint = !![
     EModelEndpoint.openAI,
+    EModelEndpoint.custom,
     EModelEndpoint.google,
-    EModelEndpoint.assistant,
+    EModelEndpoint.assistants,
     EModelEndpoint.anthropic,
     EModelEndpoint.gptPlugins,
     EModelEndpoint.azureOpenAI,
@@ -39,6 +40,7 @@ export default function useGenerationsByLatest({
     !![
       EModelEndpoint.azureOpenAI,
       EModelEndpoint.openAI,
+      EModelEndpoint.custom,
       EModelEndpoint.chatGPTBrowser,
       EModelEndpoint.google,
       EModelEndpoint.bingAI,

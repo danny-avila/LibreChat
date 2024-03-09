@@ -2,15 +2,16 @@ import { Trash2 } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Close } from '@radix-ui/react-popover';
 import { Flipper, Flipped } from 'react-flip-toolkit';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import type { TPreset } from 'librechat-data-provider';
 import FileUpload from '~/components/Input/EndpointMenu/FileUpload';
 import { PinIcon, EditIcon, TrashIcon } from '~/components/svg';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { Dialog, DialogTrigger } from '~/components/ui/';
+import { getPresetTitle, getEndpointField } from '~/utils';
+import { Dialog, DialogTrigger, Label } from '~/components/ui/';
 import { MenuSeparator, MenuItem } from '../UI';
 import { icons } from '../Endpoints/Icons';
-import { getPresetTitle } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -31,6 +32,7 @@ const PresetItems: FC<{
   clearAllPresets,
   onFileSelected,
 }) => {
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const localize = useLocalize();
   return (
@@ -53,21 +55,32 @@ const PresetItems: FC<{
             <DialogTrigger asChild>
               <label
                 htmlFor="file-upload"
-                className="mr-1 flex h-[32px] cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-slate-200 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
+                className="mr-1 flex h-[32px] cursor-pointer  items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal text-gray-600 transition-colors hover:bg-gray-100 hover:text-red-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-green-500"
               >
                 <Trash2 className="mr-1 flex w-[22px] items-center stroke-1" />
                 {localize('com_ui_clear')} {localize('com_ui_all')}
               </label>
             </DialogTrigger>
             <DialogTemplate
+              showCloseButton={false}
               title={`${localize('com_ui_clear')} ${localize('com_endpoint_presets')}`}
-              description={localize('com_endpoint_presets_clear_warning')}
+              className="max-w-[450px]"
+              main={
+                <>
+                  <div className="flex w-full flex-col items-center gap-2">
+                    <div className="grid w-full items-center gap-2">
+                      <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
+                        {localize('com_endpoint_presets_clear_warning')}
+                      </Label>
+                    </div>
+                  </div>
+                </>
+              }
               selection={{
                 selectHandler: clearAllPresets,
                 selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
                 selectText: localize('com_ui_clear'),
               }}
-              className="max-w-[500px]"
             />
             <FileUpload onFileSelected={onFileSelected} />
           </Dialog>
@@ -93,6 +106,11 @@ const PresetItems: FC<{
               return null;
             }
 
+            const iconKey = getEndpointField(endpointsConfig, preset.endpoint, 'type')
+              ? 'unknown'
+              : preset.endpointType ?? preset.endpoint ?? 'unknown';
+            const Icon = icons[iconKey];
+
             return (
               <Close asChild key={`preset-${preset.presetId}`}>
                 <div key={`preset-${preset.presetId}`}>
@@ -103,15 +121,21 @@ const PresetItems: FC<{
                       title={getPresetTitle(preset)}
                       disableHover={true}
                       onClick={() => onSelectPreset(preset)}
-                      icon={icons[preset.endpoint ?? 'unknown']({
-                        className: 'icon-md mr-1 dark:text-white',
-                      })}
+                      icon={
+                        Icon &&
+                        Icon({
+                          context: 'menu-item',
+                          iconURL: getEndpointField(endpointsConfig, preset.endpoint, 'iconURL'),
+                          className: 'icon-md mr-1 dark:text-white',
+                          endpoint: preset.endpoint,
+                        })
+                      }
                       selected={false}
                       data-testid={`preset-item-${preset}`}
                     >
                       <div className="flex h-full items-center justify-end gap-1">
                         <button
-                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -121,7 +145,7 @@ const PresetItems: FC<{
                           <PinIcon unpin={defaultPreset?.presetId === preset.presetId} />
                         </button>
                         <button
-                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -131,7 +155,7 @@ const PresetItems: FC<{
                           <EditIcon />
                         </button>
                         <button
-                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();

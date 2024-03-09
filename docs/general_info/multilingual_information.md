@@ -1,3 +1,8 @@
+---
+title: 🌍 Multilingual Information
+description: To set up the project, please follow the instructions in the documentation. The documentation is in English only, so you may need to use a translation tool or an AI assistant (e.g. ChatGPT) if you have difficulty understanding it.
+weight: -9
+---
 # Multilingual Information
 To set up the project, please follow the instructions in the documentation. The documentation is in English only, so you may need to use a translation tool or an AI assistant (e.g. ChatGPT) if you have difficulty understanding it.
 
@@ -31,7 +36,7 @@ Para configurar o projeto, siga as instruções na documentação. Esta document
 
 ---
 
-Pour installer projet, veuillez suivre les instructions de la documentation. La documentation est disponible uniquement en anglais, donc si vous avez des difficultés à la comprendre, il peut être nécessaire d’utiliser un outil de traduction ou un assistant d’intelligence artificielle (comme ChatGPT).
+Pour installer ce projet, veuillez suivre les instructions de la documentation. La documentation est disponible uniquement en anglais, donc si vous avez des difficultés à la comprendre, il peut être nécessaire d’utiliser un outil de traduction ou un assistant d’intelligence artificielle (comme ChatGPT).
 
 ---
 

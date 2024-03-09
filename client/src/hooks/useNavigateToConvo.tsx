@@ -1,11 +1,15 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useResetRecoilState } from 'recoil';
-import type { TConversation } from 'librechat-data-provider';
+import { QueryKeys } from 'librechat-data-provider';
+import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
+import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
 import useOriginNavigate from './useOriginNavigate';
 import useSetStorage from './useSetStorage';
 import store from '~/store';
 
 const useNavigateToConvo = (index = 0) => {
   const setStorage = useSetStorage();
+  const queryClient = useQueryClient();
   const navigate = useOriginNavigate();
   const { setConversation } = store.useCreateConversationAtom(index);
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
@@ -21,9 +25,34 @@ const useNavigateToConvo = (index = 0) => {
     if (_resetLatestMessage) {
       resetLatestMessage();
     }
-    setStorage(conversation);
-    setConversation(conversation);
-    navigate(conversation?.conversationId);
+
+    let convo = { ...conversation };
+    if (!convo?.endpoint) {
+      /* undefined endpoint edge case */
+      const modelsConfig = queryClient.getQueryData<TModelsConfig>([QueryKeys.models]);
+      const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
+      const defaultEndpoint = getDefaultEndpoint({
+        convoSetup: conversation,
+        endpointsConfig,
+      });
+
+      const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
+      if (!conversation.endpointType && endpointType) {
+        conversation.endpointType = endpointType;
+      }
+
+      const models = modelsConfig?.[defaultEndpoint ?? ''] ?? [];
+
+      convo = buildDefaultConvo({
+        conversation,
+        endpoint: defaultEndpoint,
+        lastConversationSetup: conversation,
+        models,
+      });
+    }
+    setStorage(convo);
+    setConversation(convo);
+    navigate(convo?.conversationId);
   };
 
   return {

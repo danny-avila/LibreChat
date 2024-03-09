@@ -4,9 +4,9 @@ import { alternateName } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { DropdownMenuRadioItem } from '~/components';
 import { SetKeyDialog } from '../SetKeyDialog';
+import { cn, getEndpointField } from '~/utils';
 import { Icon } from '~/components/Endpoints';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 export default function ModelItem({
   endpoint,
@@ -29,7 +29,11 @@ export default function ModelItem({
     isCreatedByUser: false,
   });
 
-  const userProvidesKey = endpointsConfig?.[endpoint]?.userProvide;
+  const userProvidesKey: boolean | null | undefined = getEndpointField(
+    endpointsConfig,
+    endpoint,
+    'userProvide',
+  );
   const localize = useLocalize();
 
   // regular model
@@ -38,7 +42,7 @@ export default function ModelItem({
       <DropdownMenuRadioItem
         value={value}
         className={cn(
-          'group dark:font-semibold dark:text-gray-100 dark:hover:bg-gray-800',
+          'group dark:font-semibold dark:text-gray-200 dark:hover:bg-gray-800',
           isSelected ? 'active bg-gray-50 dark:bg-gray-800' : '',
         )}
         id={endpoint}

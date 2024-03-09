@@ -1,3 +1,8 @@
+---
+title: 🐧 Linode
+description: How to deploy LibreChat on Linode.
+weight: -8
+---
 <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d6e430db-518a-4779-83d3-a2d177907df1" width="250">
 
 # Linode
@@ -5,7 +10,7 @@
 ⚠️**Note: Payment is required**
 
 ## Create a Linode Account and a Linode Server
-- Go to the Linode website (https://www.linode.com/) and click on the "Sign Up" or "Get Started" button.
+- Go to the Linode website (**[https://www.linode.com/](https://www.linode.com/)**) and click on the "Sign Up" or "Get Started" button.
 - Follow the instructions to create a new account by providing your personal details and payment information.
 - Once your account is created, you will have access to the Linode Cloud Manager.
 - Click on the "Create" button to create a new Linode server.
@@ -21,7 +26,7 @@
   sudo apt update
   sudo apt install docker.io && apt install docker-compose
   ```
-## [Install LibreChat](../install/docker_compose_install.md)
+## [Install LibreChat](../install/installation/docker_compose_install.md)
 
 ## Install and Setup NGINX Proxy Manager:
 
@@ -55,7 +60,7 @@ if you want, you can use NGINX, Apache, or any other proxy manager.
 
 ### Start NGINX Proxy Manager
 
- - By executing: `docker-compose up -d`
+ - By executing: `docker compose up -d`
 
 ### Login to NGINX Proxy Manager
   - **Important: You need to update the default credentials**
@@ -82,4 +87,4 @@ Password: changeme
 
 ---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

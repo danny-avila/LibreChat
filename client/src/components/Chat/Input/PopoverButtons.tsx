@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { MessagesSquared, GPTIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
 import { Button } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 
 type TPopoverButton = {
@@ -26,8 +27,10 @@ export default function PopoverButtons({
     showAgentSettings,
     setShowAgentSettings,
   } = useChatContext();
+  const localize = useLocalize();
 
-  const { model, endpoint } = conversation ?? {};
+  const { model, endpoint: _endpoint, endpointType } = conversation ?? {};
+  const endpoint = endpointType ?? _endpoint;
   const isGenerativeModel = model?.toLowerCase()?.includes('gemini');
   const isChatModel = !isGenerativeModel && model?.toLowerCase()?.includes('chat');
   const isTextModel = !isGenerativeModel && !isChatModel && /code|text/.test(model ?? '');
@@ -41,7 +44,7 @@ export default function PopoverButtons({
   const buttons: { [key: string]: TPopoverButton[] } = {
     [EModelEndpoint.google]: [
       {
-        label: (showExamples ? 'Hide' : 'Show') + ' Examples',
+        label: localize(showExamples ? 'com_hide_examples' : 'com_show_examples'),
         buttonClass: isGenerativeModel || isTextModel ? 'disabled' : '',
         handler: triggerExamples,
         icon: <MessagesSquared className={cn('mr-1 w-[14px]', iconClass)} />,
@@ -49,7 +52,9 @@ export default function PopoverButtons({
     ],
     [EModelEndpoint.gptPlugins]: [
       {
-        label: `Show ${showAgentSettings ? 'Completion' : 'Agent'} Settings`,
+        label: localize(
+          showAgentSettings ? 'com_show_completion_settings' : 'com_show_agent_settings',
+        ),
         buttonClass: '',
         handler: () => setShowAgentSettings((prev) => !prev),
         icon: <GPTIcon className={cn('mr-1 w-[14px]', iconClass)} size={24} />,
@@ -70,11 +75,11 @@ export default function PopoverButtons({
     <div>
       {endpointButtons.map((button, index) => (
         <Button
-          key={`${endpoint}-button-${index}`}
+          key={`button-${index}`}
           type="button"
           className={cn(
             button.buttonClass,
-            'ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0',
+            'ml-1 h-auto justify-start bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black focus:ring-0 focus:ring-offset-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0',
             buttonClass ?? '',
           )}
           onClick={button.handler}

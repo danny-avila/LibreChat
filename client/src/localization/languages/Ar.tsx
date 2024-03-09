@@ -1,8 +1,8 @@
 // Arabic phrases
 
 export default {
-  com_ui_balance: 'الرصيد',
   com_ui_examples: 'أمثلة',
+  com_ui_happy_birthday: 'إنه عيد ميلادي الأول!',
   com_ui_new_chat: 'دردشة جديدة',
   com_ui_example_quantum_computing: 'شرح الحوسبة الكمومية ببساطة',
   com_ui_example_10_year_old_b_day: 'هل لديك أفكار إبداعية لعيد ميلاد طفل عمره 10 سنوات؟',
@@ -262,5 +262,4 @@ export default {
   com_nav_search_placeholder: 'بحث في الرسائل',
   com_nav_setting_general: 'عام',
   com_nav_setting_data: 'تحكم في البيانات',
-  com_nav_language: 'اللغة',
 };

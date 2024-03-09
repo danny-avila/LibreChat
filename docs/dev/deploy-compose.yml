@@ -16,7 +16,6 @@ services:
       - HOST=0.0.0.0
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       - MEILI_HOST=http://meilisearch:7700
-      - MEILI_HTTP_ADDR=meilisearch:7700
   client:
     image: client
     ports:
@@ -43,7 +42,6 @@ services:
       - .env
     environment:
       - MEILI_HOST=http://meilisearch:7700
-      - MEILI_HTTP_ADDR=meilisearch:7700
       - MEILI_NO_ANALYTICS=true
     volumes:
       - ./meili_data:/meili_data
