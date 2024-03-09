@@ -563,6 +563,11 @@ endpoints:
     - "Mistral"
     - "OpenRouter"
     - "Groq"
+    - "Anyscale"
+    - "Fireworks"
+    - "Perplexity"
+    - "together.ai"
+    - "Ollama"
 
 ### **models**:
 
