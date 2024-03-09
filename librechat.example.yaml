@@ -2,7 +2,7 @@
 # https://docs.librechat.ai/install/configuration/custom_config.html
 
 # Configuration version (required)
-version: 1.0.3
+version: 1.0.4
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -48,7 +48,22 @@ endpoints:
   #   supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
   #   # excludedIds: ["asst_excludedAssistantId"]
   custom:
-    # Mistral AI API
+    # Groq Example
+    - name: "groq"
+      apiKey: "${GROQ_API_KEY}"
+      baseURL: "https://api.groq.com/openai/v1/"
+      models:
+        default: [
+          "llama2-70b-4096",
+          "mixtral-8x7b-32768",
+          "gemma-7b-it"
+          ]
+        fetch: false
+      titleConvo: true
+      titleModel: "mixtral-8x7b-32768"
+      modelDisplayLabel: "groq"
+
+    # Mistral AI Example
     - name: "Mistral"  # Unique name for the endpoint
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
       # recommended environment variables:
@@ -92,8 +107,8 @@ endpoints:
       # Drop Default params parameters from the request. See default params in guide linked below.
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
-      
-    # OpenRouter.ai Example
+
+    # OpenRouter Example
     - name: "OpenRouter"
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
       # recommended environment variables:
