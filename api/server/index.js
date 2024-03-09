@@ -4,20 +4,16 @@ require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
-const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
 const errorController = require('./controllers/ErrorController');
-const { jwtLogin, passportLogin } = require('~/strategies');
-const configureSocialLogins = require('./socialLogins');
 const { connectDb, indexSync } = require('~/lib/db');
 const AppService = require('./services/AppService');
 const noIndex = require('./middleware/noIndex');
-const { isEnabled } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const routes = require('./routes');
 
-const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
+const { PORT, HOST } = process.env ?? {};
 
 const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
@@ -46,21 +42,6 @@ const startServer = async () => {
   app.use(express.static(app.locals.paths.publicPath));
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
-
-  if (!ALLOW_SOCIAL_LOGIN) {
-    console.warn(
-      'Social logins are disabled. Set Environment Variable "ALLOW_SOCIAL_LOGIN" to true to enable them.',
-    );
-  }
-
-  // OAUTH
-  app.use(passport.initialize());
-  passport.use(await jwtLogin());
-  passport.use(passportLogin());
-
-  if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-    configureSocialLogins(app);
-  }
 
   // API Endpoints
   app.use('/api/keys', routes.keys);
