@@ -6,44 +6,33 @@ import { useLocalize } from '~/hooks';
 export default function AudioRecorder({ isListening, isLoading, startRecording, stopRecording }) {
   const localize = useLocalize();
 
-  if (isListening) {
-    console.log('Speech recognition is active');
-  } else {
-    console.log('Speech recognition is not active');
-  }
+  const handleStartRecording = async () => {
+    await startRecording();
+  };
+
+  const handleStopRecording = async () => {
+    await stopRecording();
+  };
 
   return (
     <TooltipProvider delayDuration={250}>
       <Tooltip>
         <TooltipTrigger asChild>
-          {isListening ? (
-            <button
-              className="absolute bottom-1.5 right-12 rounded-lg border border-black bg-black p-0.5 transition-colors dark:border-white dark:bg-white md:bottom-3 md:right-12"
-              onClick={stopRecording}
-            >
-              <span className="" data-state="closed">
-                <AudioLinesIcon className="icon-sm m-auto text-white" />
-              </span>
-            </button>
-          ) : isLoading ? (
-            <button className="absolute bottom-1.5 right-12 rounded-lg border border-black bg-black p-0.5 transition-colors dark:border-white dark:bg-white md:bottom-3 md:right-12">
-              <span className="" data-state="closed">
-                <Spinner className="icon-sm m-auto text-white" />
-              </span>
-            </button>
-          ) : (
-            <button
-              className="absolute bottom-1.5 right-12 rounded-lg border border-black bg-black p-0.5 transition-colors dark:border-white dark:bg-white md:bottom-3 md:right-12"
-              onClick={startRecording}
-            >
-              <span className="" data-state="closed">
-                <ListeningIcon className="stroke-white dark:stroke-black" />
-              </span>
-            </button>
-          )}
+          <button
+            className="absolute bottom-1.5 right-12 flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-black bg-black p-0.5 transition-colors dark:border-white dark:bg-white md:bottom-3 md:right-12"
+            onClick={isListening ? handleStopRecording : handleStartRecording}
+          >
+            {isListening ? (
+              <AudioLinesIcon className="stroke-white dark:stroke-black" />
+            ) : isLoading ? (
+              <Spinner className="stroke-white dark:stroke-black" />
+            ) : (
+              <ListeningIcon className="stroke-white dark:stroke-black" />
+            )}
+          </button>
         </TooltipTrigger>
         <TooltipContent side="top" sideOffset={10}>
-          STT
+          TTS
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

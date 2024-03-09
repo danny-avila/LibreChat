@@ -44,6 +44,7 @@ export default function ChatForm({ index = 0 }) {
     isLoading: speechIsLoading,
     text: speechText,
     startRecording: startSpeechRecording,
+    stopRecording: stopSpeechRecording,
   } = useSpeechToText();
 
   const {
@@ -57,7 +58,7 @@ export default function ChatForm({ index = 0 }) {
   const isListening = useExternalSpeech ? externalIsListening : speechIsListening;
   const isLoading = useExternalSpeech ? externalIsLoading : speechIsLoading;
   const startRecording = useExternalSpeech ? startExternalRecording : startSpeechRecording;
-  const stopRecording = useExternalSpeech ? stopExternalRecording : null;
+  const stopRecording = useExternalSpeech ? stopExternalRecording : stopSpeechRecording;
   const speechTextForm = useExternalSpeech ? externalSpeechText : speechText;
   const finalText = speechText || externalSpeechText ? speechTextForm : text;
 
@@ -115,16 +116,16 @@ export default function ChatForm({ index = 0 }) {
                   />
                 )
               )}
+              <AudioRecorder
+                isListening={isListening}
+                isLoading={isLoading}
+                startRecording={startRecording}
+                stopRecording={stopRecording}
+              />
             </div>
           </div>
         </div>
       </form>
-      <AudioRecorder
-        isListening={isListening}
-        isLoading={isLoading}
-        startRecording={startRecording}
-        stopRecording={stopRecording}
-      />
     </>
   );
 }
