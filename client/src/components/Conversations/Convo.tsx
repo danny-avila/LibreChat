@@ -115,7 +115,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   };
 
   const aProps = {
-    className: `group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg bg-gray-200 dark:bg-gray-800 py-2 px-2 ${
+    className: `group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg bg-gray-300 dark:bg-gray-800 py-2 px-2 ${
       renaming ? 'pr-14' : ''
     }`,
   };
@@ -126,7 +126,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
   if (!activeConvo) {
     aProps.className =
-      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg py-2 px-2 hover:bg-gray-200 dark:hover:bg-gray-800';
+      'group relative rounded-lg active:opacity-50 bg-token-sidebar-surface-tertiary flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg py-2 px-2 hover:bg-gray-200 dark:hover:bg-gray-800';
   }
 
   return (
@@ -155,15 +155,15 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       </div>
       {activeConvo ? (
         <div
-          className={`absolute bottom-0 right-1 top-0 w-20 bg-gradient-to-l ${
-            !renaming ? 'from-gray-100 from-60% to-transparent dark:from-gray-800' : ''
+          className={`absolute bottom-0 right-1 top-0 w-20 bg-gradient-to-l rounded-r-lg ${
+            !renaming ? 'from-gray-300 from-60% to-transparent dark:from-gray-800' : ''
           }`}
         ></div>
       ) : (
         <div className="absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:w-1 group-hover:from-60% dark:from-gray-900"></div>
       )}
       {activeConvo ? (
-        <div className="visible absolute right-1 z-10 flex text-gray-400">
+        <div className="visible absolute right-1 z-10 flex from-gray-900 dark:text-gray-200">
           <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
           <DeleteButton
             conversationId={conversationId}
@@ -173,7 +173,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           />
         </div>
       ) : (
-        <div className="absolute bottom-0 right-0 top-0 w-20 rounded-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-50  dark:from-gray-900 dark:group-hover:from-gray-900" />
+        <div className="absolute bottom-0 right-0 top-0 w-20 bg-transparent group-hover:bg-gradient-to-l group-hover:from-gray-50 group-hover:from-0% group-hover:to-transparent dark:group-hover:from-gray-900" />
       )}
     </a>
   );
