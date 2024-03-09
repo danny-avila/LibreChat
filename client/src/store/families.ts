@@ -53,11 +53,6 @@ const submissionByIndex = atomFamily<TSubmission | null, string | number>({
   default: null,
 });
 
-const textByIndex = atomFamily<string, string | number>({
-  key: 'textByIndex',
-  default: '',
-});
-
 const showStopButtonByIndex = atomFamily<boolean, string | number>({
   key: 'showStopButtonByIndex',
   default: false,
@@ -117,7 +112,6 @@ export default {
   filesByIndex,
   presetByIndex,
   submissionByIndex,
-  textByIndex,
   showStopButtonByIndex,
   abortScrollFamily,
   isSubmittingFamily,
