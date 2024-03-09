@@ -85,7 +85,14 @@ const useSpeechToText = () => {
     };
   });
 
-  return { isListening, isLoading, text };
+  const startRecording = (e) => {
+    if (isSpeechSupported) {
+      setIsListening(true);
+      toggleListening(e);
+    }
+  };
+
+  return { isListening, isLoading, text, startRecording };
 };
 
 export default useSpeechToText;

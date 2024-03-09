@@ -117,6 +117,28 @@ const useSpeechToTextExternal = () => {
       showToast({ message: 'MediaRecorder is not recording', status: 'error' });
     }
   };
+
+  const externalStartRecording = () => {
+    if (isListening) {
+      showToast({ message: 'Already listening. Please stop recording first.', status: 'warning' });
+      return;
+    }
+
+    startRecording();
+  };
+
+  const externalStopRecording = () => {
+    if (!isListening) {
+      showToast({
+        message: 'Not currently recording. Please start recording first.',
+        status: 'warning',
+      });
+      return;
+    }
+
+    stopRecording();
+  };
+
   const handleKeyDown = async (e: KeyboardEvent) => {
     if (e.shiftKey && e.altKey && e.code === 'KeyL') {
       if (!window.MediaRecorder) {
@@ -150,7 +172,13 @@ const useSpeechToTextExternal = () => {
     };
   }, [isExternalSpeechEnabled, isListening]);
 
-  return { isListening, isLoading: isProcessing, text };
+  return {
+    isListening,
+    isLoading: isProcessing,
+    text,
+    externalStartRecording,
+    externalStopRecording,
+  };
 };
 
 export default useSpeechToTextExternal;
