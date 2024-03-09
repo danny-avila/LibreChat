@@ -49,6 +49,19 @@ export const ThemeProvider = ({ initialTheme, children }) => {
     localStorage.setItem('color-theme', rawTheme);
   };
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const changeThemeOnSystemChange = () => {
+      rawSetTheme(mediaQuery.matches ? 'dark' : 'light');
+    };
+
+    mediaQuery.addEventListener('change', changeThemeOnSystemChange);
+
+    return () => {
+      mediaQuery.removeEventListener('change', changeThemeOnSystemChange);
+    };
+  }, []);
+
   if (initialTheme) {
     rawSetTheme(initialTheme);
   }
