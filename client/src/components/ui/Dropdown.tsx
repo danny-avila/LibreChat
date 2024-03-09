@@ -1,7 +1,6 @@
 import React, { FC, useContext, useState } from 'react';
 import { Listbox } from '@headlessui/react';
 import { cn } from '~/utils/';
-import { ThemeContext } from '~/hooks';
 
 type OptionType = {
   value: string;
@@ -27,22 +26,7 @@ const Dropdown: FC<DropdownProps> = ({
   width,
   testId = 'dropdown-menu',
 }) => {
-  const { theme } = useContext(ThemeContext);
   const [selectedValue, setSelectedValue] = useState(initialValue);
-
-  const themeStyles = {
-    light: 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300',
-    dark: 'bg-gray-800 text-white hover:bg-gray-700 border-gray-600',
-  };
-
-  const isSystemDark =
-    window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const currentThemeStyle =
-    theme === 'system'
-      ? isSystemDark
-        ? themeStyles.dark
-        : themeStyles.light
-      : themeStyles[theme] || themeStyles.light;
 
   return (
     <div className={cn('relative', className)}>
@@ -57,8 +41,8 @@ const Dropdown: FC<DropdownProps> = ({
           <Listbox.Button
             data-testid={testId}
             className={cn(
-              'relative inline-flex items-center justify-between rounded-md py-2 pl-3 pr-10',
-              currentThemeStyle,
+              'relative inline-flex items-center justify-between rounded-md border-gray-300 bg-white py-2 pl-3 pr-10 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700',
+
               'w-auto',
               className,
             )}
@@ -88,8 +72,7 @@ const Dropdown: FC<DropdownProps> = ({
           </Listbox.Button>
           <Listbox.Options
             className={cn(
-              'absolute z-50 mt-1 max-h-[40vh] overflow-auto rounded-md shadow-lg transition-opacity focus:outline-none',
-              currentThemeStyle,
+              'absolute z-50 mt-1 max-h-[40vh] overflow-auto rounded-md border-gray-300 bg-white text-gray-700 shadow-lg transition-opacity hover:bg-gray-50 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700',
               className,
             )}
             style={{ width: width ? `${width}px` : 'auto' }}
@@ -99,8 +82,7 @@ const Dropdown: FC<DropdownProps> = ({
                 key={index}
                 value={typeof item === 'string' ? item : item.value}
                 className={cn(
-                  'relative cursor-pointer select-none py-1 pl-3 pr-6',
-                  currentThemeStyle,
+                  'relative cursor-pointer select-none border-gray-300 bg-white py-1 pl-3 pr-6 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700',
                 )}
                 style={{ width: width ? `${width}px` : 'auto' }}
                 data-theme={typeof item === 'string' ? item : (item as OptionType).value}
