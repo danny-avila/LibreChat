@@ -8,9 +8,10 @@ const {
   deleteMessages,
 } = require('../../models');
 const { countTokens } = require('../utils');
-const { requireJwtAuth, validateMessageReq } = require('../middleware/');
+const { setCurrentUser, requireSubscription, validateMessageReq } = require('../middleware/');
+const { ClerkExpressRequireAuth } = require('@clerk/clerk-sdk-node');
 
-router.use(requireJwtAuth);
+router.use(ClerkExpressRequireAuth(), setCurrentUser, requireSubscription);
 
 router.get('/:conversationId', validateMessageReq, async (req, res) => {
   const { conversationId } = req.params;

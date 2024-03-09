@@ -1,4 +1,4 @@
-const Session = require('~/models/Session');
+//const Session = require('~/models/Session');
 const getLogStores = require('./getLogStores');
 const { isEnabled, math, removePorts } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -45,8 +45,8 @@ const banViolation = async (req, res, errorMessage) => {
     return;
   }
 
-  await Session.deleteAllUserSessions(user_id);
-  res.clearCookie('refreshToken');
+  // await Session.deleteAllUserSessions(user_id);
+  // res.clearCookie('refreshToken');
 
   const banLogs = getLogStores('ban');
   const duration = errorMessage.duration || banLogs.opts.ttl;

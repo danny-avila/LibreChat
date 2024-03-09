@@ -1,6 +1,13 @@
 const express = require('express');
 const createMulterInstance = require('./multer');
-const { uaParser, checkBan, requireJwtAuth, createFileLimiters } = require('~/server/middleware');
+const {
+  uaParser,
+  checkBan,
+  setCurrentUser,
+  requireSubscription,
+  createFileLimiters,
+} = require('~/server/middleware');
+const { ClerkExpressRequireAuth } = require('@clerk/clerk-sdk-node');
 
 const files = require('./files');
 const images = require('./images');
@@ -8,7 +15,7 @@ const avatar = require('./avatar');
 
 const initialize = async () => {
   const router = express.Router();
-  router.use(requireJwtAuth);
+  router.use(ClerkExpressRequireAuth(), setCurrentUser, requireSubscription);
   router.use(checkBan);
   router.use(uaParser);
 

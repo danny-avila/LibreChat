@@ -11,7 +11,6 @@ import * as s from '../schemas';
 import * as m from '../types/mutations';
 import { defaultOrderQuery } from '../config';
 import * as dataService from '../data-service';
-import request from '../request';
 import { QueryKeys } from '../keys';
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
@@ -278,53 +277,6 @@ export const useUpdateTokenCountMutation = (): UseMutationResult<
   });
 };
 
-export const useLoginUserMutation = (): UseMutationResult<
-  t.TLoginResponse,
-  unknown,
-  t.TLoginUser,
-  unknown
-> => {
-  const queryClient = useQueryClient();
-  return useMutation((payload: t.TLoginUser) => dataService.login(payload), {
-    onMutate: () => {
-      queryClient.removeQueries();
-      localStorage.removeItem('lastConversationSetup');
-      localStorage.removeItem('lastSelectedModel');
-      localStorage.removeItem('lastSelectedTools');
-      localStorage.removeItem('filesToDelete');
-      // localStorage.removeItem('lastAssistant');
-    },
-  });
-};
-
-export const useRegisterUserMutation = (): UseMutationResult<
-  unknown,
-  unknown,
-  t.TRegisterUser,
-  unknown
-> => {
-  const queryClient = useQueryClient();
-  return useMutation((payload: t.TRegisterUser) => dataService.register(payload), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.user]);
-    },
-  });
-};
-
-export const useRefreshTokenMutation = (): UseMutationResult<
-  t.TRefreshTokenResponse,
-  unknown,
-  unknown,
-  unknown
-> => {
-  const queryClient = useQueryClient();
-  return useMutation(() => request.refreshToken(), {
-    onMutate: () => {
-      queryClient.removeQueries();
-    },
-  });
-};
-
 export const useUserKeyQuery = (
   name: string,
   config?: UseQueryOptions<t.TCheckUserKeyResponse>,
@@ -345,26 +297,6 @@ export const useUserKeyQuery = (
       ...config,
     },
   );
-};
-
-export const useRequestPasswordResetMutation = (): UseMutationResult<
-  t.TRequestPasswordResetResponse,
-  unknown,
-  t.TRequestPasswordReset,
-  unknown
-> => {
-  return useMutation((payload: t.TRequestPasswordReset) =>
-    dataService.requestPasswordReset(payload),
-  );
-};
-
-export const useResetPasswordMutation = (): UseMutationResult<
-  unknown,
-  unknown,
-  t.TResetPassword,
-  unknown
-> => {
-  return useMutation((payload: t.TResetPassword) => dataService.resetPassword(payload));
 };
 
 export const useAvailablePluginsQuery = (): QueryObserverResult<s.TPlugin[]> => {

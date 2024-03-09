@@ -195,19 +195,8 @@ export type TResetPassword = {
 
 export type TStartupConfig = {
   appTitle: string;
-  socialLogins?: string[];
-  discordLoginEnabled: boolean;
-  facebookLoginEnabled: boolean;
-  githubLoginEnabled: boolean;
-  googleLoginEnabled: boolean;
-  openidLoginEnabled: boolean;
-  openidLabel: string;
-  openidImageUrl: string;
   serverDomain: string;
-  emailLoginEnabled: boolean;
   registrationEnabled: boolean;
-  socialLoginEnabled: boolean;
-  emailEnabled: boolean;
   checkBalance: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;

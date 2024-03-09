@@ -256,16 +256,14 @@ export type TResError = {
 
 export type TAuthContext = {
   user: TUser | undefined;
-  token: string | undefined;
   isAuthenticated: boolean;
   error: string | undefined;
-  login: (data: TLoginUser) => void;
+  // login: (data: TLoginUser) => void;
   logout: () => void;
 };
 
 export type TUserContext = {
   user?: TUser | undefined;
-  token: string | undefined;
   isAuthenticated: boolean;
   redirect?: string;
 };

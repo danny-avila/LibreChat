@@ -11,17 +11,19 @@ const { EModelEndpoint } = require('librechat-data-provider');
 const {
   uaParser,
   checkBan,
-  requireJwtAuth,
   concurrentLimiter,
+  setCurrentUser,
+  requireSubscription,
   messageIpLimiter,
   messageUserLimiter,
 } = require('~/server/middleware');
+const { ClerkExpressRequireAuth } = require('@clerk/clerk-sdk-node');
 
 const { LIMIT_CONCURRENT_MESSAGES, LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
 const router = express.Router();
 
-router.use(requireJwtAuth);
+router.use(ClerkExpressRequireAuth(), setCurrentUser, requireSubscription);
 router.use(checkBan);
 router.use(uaParser);
 

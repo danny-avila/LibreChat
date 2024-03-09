@@ -2,7 +2,8 @@ const Keyv = require('keyv');
 const express = require('express');
 const { MeiliSearch } = require('meilisearch');
 const { Conversation, getConvosQueried } = require('~/models/Conversation');
-const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { setCurrentUser, requireSubscription } = require('~/server/middleware');
+const { ClerkExpressRequireAuth } = require('@clerk/clerk-sdk-node');
 const { cleanUpPrimaryKeyValue } = require('~/lib/utils/misc');
 const { reduceHits } = require('~/lib/utils/reduceHits');
 const { isEnabled } = require('~/server/utils');
@@ -17,7 +18,7 @@ const cache = isEnabled(process.env.USE_REDIS)
   ? new Keyv({ store: keyvRedis })
   : new Keyv({ namespace: 'search', ttl: expiration });
 
-router.use(requireJwtAuth);
+router.use(ClerkExpressRequireAuth(), setCurrentUser, requireSubscription);
 
 router.get('/sync', async function (req, res) {
   await Message.syncWithMeili();

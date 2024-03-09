@@ -3,16 +3,19 @@ const router = express.Router();
 const {
   uaParser,
   checkBan,
-  requireJwtAuth,
+  setCurrentUser,
+  requireSubscription,
   // concurrentLimiter,
   // messageIpLimiter,
   // messageUserLimiter,
 } = require('../../middleware');
+const { ClerkExpressRequireAuth } = require('@clerk/clerk-sdk-node');
 
 const assistants = require('./assistants');
 const chat = require('./chat');
+// const { set } = require('~/cache/keyvMongo');
 
-router.use(requireJwtAuth);
+router.use(ClerkExpressRequireAuth(), setCurrentUser, requireSubscription);
 router.use(checkBan);
 router.use(uaParser);
 

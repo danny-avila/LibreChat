@@ -6,9 +6,7 @@ const presets = require('./presets');
 const prompts = require('./prompts');
 const search = require('./search');
 const tokenizer = require('./tokenizer');
-const auth = require('./auth');
 const keys = require('./keys');
-const oauth = require('./oauth');
 const endpoints = require('./endpoints');
 const balance = require('./balance');
 const models = require('./models');
@@ -17,6 +15,8 @@ const user = require('./user');
 const config = require('./config');
 const assistants = require('./assistants');
 const files = require('./files');
+const clerk = require('./clerk');
+const subscription = require('./subscription');
 
 module.exports = {
   search,
@@ -26,9 +26,7 @@ module.exports = {
   convos,
   presets,
   prompts,
-  auth,
   keys,
-  oauth,
   user,
   tokenizer,
   endpoints,
@@ -38,4 +36,6 @@ module.exports = {
   config,
   assistants,
   files,
+  clerk,
+  subscription,
 };

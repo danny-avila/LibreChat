@@ -38,6 +38,7 @@ import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librech
 import { updateConversation, deleteConversation, updateConvoFields } from '~/utils';
 import { useSetRecoilState } from 'recoil';
 import store from '~/store';
+import { useClerk } from '@clerk/clerk-react';
 
 /** Conversations */
 export const useGenTitleMutation = (): UseMutationResult<
@@ -250,10 +251,11 @@ export const useDeletePresetMutation = (
 export const useLogoutUserMutation = (
   options?: LogoutOptions,
 ): UseMutationResult<unknown, unknown, undefined, unknown> => {
+  const { signOut } = useClerk();
   const queryClient = useQueryClient();
   const setDefaultPreset = useSetRecoilState(store.defaultPreset);
   return useMutation([MutationKeys.logoutUser], {
-    mutationFn: () => dataService.logout(),
+    mutationFn: () => signOut(),
 
     ...(options || {}),
     onSuccess: (...args) => {

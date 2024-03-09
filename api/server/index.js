@@ -62,9 +62,7 @@ const startServer = async () => {
     configureSocialLogins(app);
   }
 
-  app.use('/oauth', routes.oauth);
   // API Endpoints
-  app.use('/api/auth', routes.auth);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
@@ -82,6 +80,8 @@ const startServer = async () => {
   app.use('/api/config', routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
+  app.use('/api/webhook/clerk', routes.clerk);
+  app.use('/api/subscription', routes.subscription);
 
   app.use((req, res) => {
     res.status(404).sendFile(path.join(app.locals.paths.dist, 'index.html'));

@@ -8,17 +8,14 @@ import {
   useContext,
 } from 'react';
 import { useRecoilState } from 'recoil';
-import { TUser, TLoginResponse, setTokenHeader, TLoginUser } from 'librechat-data-provider';
-import {
-  useGetUserQuery,
-  useLoginUserMutation,
-  useRefreshTokenMutation,
-} from 'librechat-data-provider/react-query';
+import { TUser, setTokenHeader } from 'librechat-data-provider';
+import { useGetUserQuery } from 'librechat-data-provider/react-query';
 import { useNavigate } from 'react-router-dom';
-import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
+import { TAuthConfig, TUserContext, TAuthContext } from '~/common';
 import { useLogoutUserMutation } from '~/data-provider';
 import useTimeout from './useTimeout';
 import store from '~/store';
+import { useAuth } from '@clerk/clerk-react';
 
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
@@ -29,8 +26,8 @@ const AuthContextProvider = ({
   authConfig?: TAuthConfig;
   children: ReactNode;
 }) => {
+  const { isLoaded: isLoadedClerk, isSignedIn, getToken } = useAuth();
   const [user, setUser] = useRecoilState(store.user);
-  const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
@@ -38,13 +35,10 @@ const AuthContextProvider = ({
 
   const setUserContext = useCallback(
     (userContext: TUserContext) => {
-      const { token, isAuthenticated, user, redirect } = userContext;
+      const { isAuthenticated, user, redirect } = userContext;
       if (user) {
         setUser(user);
       }
-      setToken(token);
-      //@ts-ignore - ok for token to be undefined initially
-      setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
       if (redirect) {
         navigate(redirect, { replace: true });
@@ -54,11 +48,9 @@ const AuthContextProvider = ({
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
-  const loginUser = useLoginUserMutation();
   const logoutUser = useLogoutUserMutation({
     onSuccess: () => {
       setUserContext({
-        token: undefined,
         isAuthenticated: false,
         user: undefined,
         redirect: '/login',
@@ -67,7 +59,6 @@ const AuthContextProvider = ({
     onError: (error) => {
       doSetError((error as Error).message);
       setUserContext({
-        token: undefined,
         isAuthenticated: false,
         user: undefined,
         redirect: '/login',
@@ -76,105 +67,45 @@ const AuthContextProvider = ({
   });
 
   const logout = useCallback(() => logoutUser.mutate(undefined), [logoutUser]);
-  const userQuery = useGetUserQuery({ enabled: !!token });
-  const refreshToken = useRefreshTokenMutation();
-
-  const login = (data: TLoginUser) => {
-    loginUser.mutate(data, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
-        setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
-      },
-      onError: (error: TResError | unknown) => {
-        const resError = error as TResError;
-        doSetError(resError.message);
-        navigate('/login', { replace: true });
-      },
-    });
-  };
-
-  const silentRefresh = useCallback(() => {
-    if (authConfig?.test) {
-      console.log('Test mode. Skipping silent refresh.');
-      return;
-    }
-    refreshToken.mutate(undefined, {
-      onSuccess: (data: TLoginResponse) => {
-        const { user, token } = data;
-        if (token) {
-          setUserContext({ token, isAuthenticated: true, user });
-        } else {
-          console.log('Token is not present. User is not authenticated.');
-          if (authConfig?.test) {
-            return;
-          }
-          navigate('/login');
-        }
-      },
-      onError: (error) => {
-        console.log('refreshToken mutation error:', error);
-        if (authConfig?.test) {
-          return;
-        }
-        navigate('/login');
-      },
-    });
-  }, []);
+  const userQuery = useGetUserQuery({ enabled: !!isSignedIn });
 
   useEffect(() => {
-    if (userQuery.data) {
-      setUser(userQuery.data);
-    } else if (userQuery.isError) {
-      doSetError((userQuery?.error as Error).message);
+    getToken()
+      .then((token) => {
+        if (token) {
+          setTokenHeader(token);
+        }
+      })
+      .catch((error) => {
+        doSetError((error as Error).message);
+      });
+  });
+
+  useEffect(() => {
+    if (isSignedIn) {
+      setUserContext({ isAuthenticated: true, user: userQuery.data, redirect: '/c/new' });
+    } else if (isLoadedClerk) {
       navigate('/login', { replace: true });
     }
-    if (error && isAuthenticated) {
-      doSetError(undefined);
-    }
-    if (!token || !isAuthenticated) {
-      silentRefresh();
-    }
   }, [
-    token,
-    isAuthenticated,
+    isLoadedClerk,
+    isSignedIn,
     userQuery.data,
     userQuery.isError,
     userQuery.error,
-    error,
     navigate,
     setUserContext,
   ]);
 
-  useEffect(() => {
-    const handleTokenUpdate = (event) => {
-      console.log('tokenUpdated event received event');
-      const newToken = event.detail;
-      setUserContext({
-        token: newToken,
-        isAuthenticated: true,
-        user: user,
-      });
-    };
-
-    window.addEventListener('tokenUpdated', handleTokenUpdate);
-
-    return () => {
-      window.removeEventListener('tokenUpdated', handleTokenUpdate);
-    };
-  }, [setUserContext, user]);
-
-  // Make the provider update only when it should
   const memoedValue = useMemo(
     () => ({
       user,
-      token,
       isAuthenticated,
       error,
-      login,
       logout,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, error, isAuthenticated, token],
+    [user, error, isAuthenticated],
   );
 
   return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;

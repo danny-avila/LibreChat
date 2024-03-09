@@ -1,19 +1,4 @@
-const bcrypt = require('bcryptjs');
 const User = require('./User');
-
-const hashPassword = async (password) => {
-  const hashedPassword = await new Promise((resolve, reject) => {
-    bcrypt.hash(password, 10, function (err, hash) {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(hash);
-      }
-    });
-  });
-
-  return hashedPassword;
-};
 
 /**
  * Retrieve a user by ID and convert the found user document to a plain object.
@@ -40,7 +25,6 @@ const updateUser = async function (userId, updateData) {
 };
 
 module.exports = {
-  hashPassword,
   updateUser,
   getUser,
 };

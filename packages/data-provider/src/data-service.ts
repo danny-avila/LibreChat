@@ -114,34 +114,8 @@ export const updateTokenCount = (text: string) => {
   return request.post(endpoints.tokenizer(), { arg: text });
 };
 
-export const login = (payload: t.TLoginUser) => {
-  return request.post(endpoints.login(), payload);
-};
-
-export const logout = () => {
-  return request.post(endpoints.logout());
-};
-
-export const register = (payload: t.TRegisterUser) => {
-  return request.post(endpoints.register(), payload);
-};
-
 export const userKeyQuery = (name: string): Promise<t.TCheckUserKeyResponse> =>
   request.get(endpoints.userKeyQuery(name));
-
-export const getLoginGoogle = () => {
-  return request.get(endpoints.loginGoogle());
-};
-
-export const requestPasswordReset = (
-  payload: t.TRequestPasswordReset,
-): Promise<t.TRequestPasswordResetResponse> => {
-  return request.post(endpoints.requestPasswordReset(), payload);
-};
-
-export const resetPassword = (payload: t.TResetPassword) => {
-  return request.post(endpoints.resetPassword(), payload);
-};
 
 export const getAvailablePlugins = (): Promise<s.TPlugin[]> => {
   return request.get(endpoints.plugins());

@@ -89,7 +89,11 @@
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
     "url": "^0.11.0",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "@clerk/clerk-react": "^4.30.7",
+    "@clerk/themes": "^1.7.9",
+    "@stripe/stripe-js": "^3.0.7",
+    "swr": "^2.2.5"
   },
   "devDependencies": {
     "@babel/plugin-transform-runtime": "^7.22.15",

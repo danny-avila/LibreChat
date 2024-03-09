@@ -2,13 +2,14 @@ const express = require('express');
 const { CacheKeys } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistant');
 const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
-const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { setCurrentUser, requireSubscription } = require('~/server/middleware');
+const { ClerkExpressRequireAuth } = require('@clerk/clerk-sdk-node');
 const { sleep } = require('~/server/services/Runs/handle');
 const getLogStores = require('~/cache/getLogStores');
 const { logger } = require('~/config');
 
 const router = express.Router();
-router.use(requireJwtAuth);
+router.use(ClerkExpressRequireAuth(), setCurrentUser, requireSubscription);
 
 router.get('/', async (req, res) => {
   let pageNumber = req.query.pageNumber || 1;

@@ -1,10 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { setCurrentUser, requireSubscription } = require('~/server/middleware');
+const { ClerkExpressRequireAuth } = require('@clerk/clerk-sdk-node');
 const { countTokens } = require('~/server/utils');
 const { logger } = require('~/config');
 
-router.post('/', requireJwtAuth, async (req, res) => {
+router.use(ClerkExpressRequireAuth(), setCurrentUser, requireSubscription);
+router.post('/', async (req, res) => {
   try {
     const { arg } = req.body;
     const count = await countTokens(arg?.text ?? arg);

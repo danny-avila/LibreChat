@@ -46,22 +46,6 @@ export const models = () => '/api/models';
 
 export const tokenizer = () => '/api/tokenizer';
 
-export const login = () => '/api/auth/login';
-
-export const logout = () => '/api/auth/logout';
-
-export const register = () => '/api/auth/register';
-
-export const loginFacebook = () => '/api/auth/facebook';
-
-export const loginGoogle = () => '/api/auth/google';
-
-export const refreshToken = (retry?: boolean) => `/api/auth/refresh${retry ? '?retry=true' : ''}`;
-
-export const requestPasswordReset = () => '/api/auth/requestPasswordReset';
-
-export const resetPassword = () => '/api/auth/resetPassword';
-
 export const plugins = () => '/api/plugins';
 
 export const config = () => '/api/config';

@@ -1,11 +1,13 @@
 const express = require('express');
 const crypto = require('crypto');
 const { getPresets, savePreset, deletePresets } = require('~/models');
-const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { setCurrentUser, requireSubscription } = require('~/server/middleware');
+const { ClerkExpressRequireAuth } = require('@clerk/clerk-sdk-node');
+
 const { logger } = require('~/config');
 
 const router = express.Router();
-router.use(requireJwtAuth);
+router.use(ClerkExpressRequireAuth(), setCurrentUser, requireSubscription);
 
 router.get('/', async (req, res) => {
   const presets = (await getPresets(req.user.id)).map((preset) => preset);

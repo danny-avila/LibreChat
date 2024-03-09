@@ -1,10 +1,10 @@
 const express = require('express');
-const requireJwtAuth = require('../middleware/requireJwtAuth');
+const { ClerkExpressRequireAuth } = require('@clerk/clerk-sdk-node');
 const { getUserController, updateUserPluginsController } = require('../controllers/UserController');
-
+const { setCurrentUser, requireSubscription } = require('~/server/middleware');
 const router = express.Router();
-
-router.get('/', requireJwtAuth, getUserController);
-router.post('/plugins', requireJwtAuth, updateUserPluginsController);
+router.use(ClerkExpressRequireAuth(), setCurrentUser, requireSubscription);
+router.get('/', getUserController);
+router.post('/plugins', updateUserPluginsController);
 
 module.exports = router;
