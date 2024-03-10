@@ -1,7 +1,7 @@
 ---
 title: 🌊 DigitalOcean ✨(Recommended)
 description: These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server using one of the cheapest tiers (6 USD/mo)
-weight: -10
+weight: -9
 ---
 
 # Digital Ocean Setup
@@ -124,11 +124,6 @@ Create a firewall, add your droplet to it, and add these inbound rules (will wor
 
 ---
 
-### Part II: Installing Docker and Other Dependencies:
-
-**Note**
-
-This part and the rest of the document moved to the docker compose guide [docker compose guide](docker_compose.md) since they are not specific to digital ocean.
-Go to - **[Part II: Installing Docker & Other Dependencies in Docker Compose Guide](docker_compose.md#part-ii-installing-docker-and-other-dependencies)**
+This concludes the initial setup. For the subsequent steps, please proceed to the next guide:**[Ubuntu Docker Deployment Guide](./docker_ubuntu_deploy.md)**, which will walk you through the remaining installation process.
 
 ### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
