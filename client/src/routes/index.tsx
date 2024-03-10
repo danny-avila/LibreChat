@@ -8,32 +8,41 @@ import { AuthContextProvider } from '~/hooks/AuthContext';
 import { ClerkProvider } from '@clerk/clerk-react';
 import { SubscriptionProvider, useSubscription } from '~/hooks/useStripeSubscription';
 import { Loader } from 'lucide-react';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
-//@ts-ignore
-const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-//@ts-ignore
-const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-//@ts-ignore
-const VITE_STRIPE_PRICE_ID = import.meta.env.VITE_STRIPE_PRICE_ID;
+const AuthLayout = () => {
+  const { data: startupConfig } = useGetStartupConfig();
+  if (!startupConfig) {
+    return (
+      <div className="grid min-h-screen place-items-center">
+        <Loader className="animate-spin stroke-slate-500" />
+      </div>
+    );
+  }
+  return (
+    <AuthContextProvider>
+      <SubscriptionProvider stripePublishableKey={startupConfig.stripePublishableKey}>
+        <Outlet />
+      </SubscriptionProvider>
+    </AuthContextProvider>
+  );
+};
 
-const AuthLayout = () => (
-  <AuthContextProvider>
-    <SubscriptionProvider stripePublishableKey={STRIPE_PUBLISHABLE_KEY}>
+const ClerkLayout = () => {
+  const { data: startupConfig } = useGetStartupConfig();
+  if (!startupConfig) {return null;}
+  return (
+    <ClerkProvider publishableKey={startupConfig.clerkPublishableKey}>
       <Outlet />
-    </SubscriptionProvider>
-  </AuthContextProvider>
-);
-
-const ClerkLayout = () => (
-  <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
-    <Outlet />
-  </ClerkProvider>
-);
+    </ClerkProvider>
+  );
+};
 
 const PaywallRoot = () => {
   const { isLoaded: isLoadedStripe, subscription, redirectToCheckout } = useSubscription();
+  const { data: startupConfig } = useGetStartupConfig();
 
-  if (!isLoadedStripe) {
+  if (!isLoadedStripe || !startupConfig) {
     return (
       <div className="grid min-h-screen place-items-center">
         <Loader className="animate-spin stroke-slate-500" />
@@ -41,7 +50,7 @@ const PaywallRoot = () => {
     );
   }
   if (isLoadedStripe && !subscription) {
-    redirectToCheckout({ price: VITE_STRIPE_PRICE_ID });
+    redirectToCheckout({ price: startupConfig.stripePriceId });
     return (
       <div className="grid min-h-screen place-items-center">
         <div className="grid place-items-center gap-4">

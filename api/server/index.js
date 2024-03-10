@@ -69,7 +69,7 @@ const startServer = async () => {
     res.status(404).sendFile(path.join(app.locals.paths.dist, 'index.html'));
   });
 
-  app.listen(port, host, () => {
+  app.listen(port, () => {
     if (host == '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,

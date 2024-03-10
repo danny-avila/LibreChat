@@ -13,8 +13,6 @@ router.get('/', async function (req, res) {
   try {
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
-      clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
-      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
       registrationEnabled: isEnabled(process.env.ALLOW_REGISTRATION),
       checkBalance: isEnabled(process.env.CHECK_BALANCE),
@@ -23,6 +21,9 @@ router.get('/', async function (req, res) {
         isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
         process.env.SHOW_BIRTHDAY_ICON === '',
       helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
+      clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+      stripePriceId: process.env.STRIPE_PRICE_ID,
     };
 
     if (typeof process.env.CUSTOM_FOOTER === 'string') {
