@@ -1,5 +1,5 @@
 import { useRecoilState } from 'recoil';
-import type { ChangeEvent } from 'react';
+import { useEffect, type ChangeEvent } from 'react';
 import { useChatContext } from '~/Providers';
 import { useRequiresKey } from '~/hooks';
 import AttachFile from './Files/AttachFile';
@@ -8,6 +8,7 @@ import SendButton from './SendButton';
 import FileRow from './Files/FileRow';
 import Textarea from './Textarea';
 import store from '~/store';
+import Voice from './Voice';
 
 export default function ChatForm({ index = 0 }) {
   const [text, setText] = useRecoilState(store.textByIndex(index));
@@ -22,12 +23,24 @@ export default function ChatForm({ index = 0 }) {
     handleStopGenerating,
     filesLoading,
     setFilesLoading,
+    recordingSate,
+    recordedText,
+    setRecordedText,
   } = useChatContext();
 
   const submitMessage = () => {
-    ask({ text });
-    setText('');
+    if (!recordedText && recordingSate !== 'recording') {
+      ask({ text });
+      setText('');
+    }
   };
+
+  useEffect(() => {
+    if (recordedText) {
+      setText(text + ' ' + recordedText);
+      setRecordedText(undefined);
+    }
+  }, [recordedText]);
 
   const { requiresKey } = useRequiresKey();
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
@@ -54,6 +67,7 @@ export default function ChatForm({ index = 0 }) {
                 </div>
               )}
             />
+
             {endpoint && (
               <Textarea
                 value={text}
@@ -65,16 +79,22 @@ export default function ChatForm({ index = 0 }) {
                 endpointType={endpointType}
               />
             )}
-            <AttachFile
-              endpoint={_endpoint ?? ''}
-              endpointType={endpointType}
-              disabled={requiresKey}
-            />
+            <div className="absolute bottom-1.5 left-2 flex gap-1 md:bottom-3 md:left-4">
+              <AttachFile
+                endpoint={_endpoint ?? ''}
+                endpointType={endpointType}
+                disabled={requiresKey}
+              />
+              <Voice disabled={requiresKey} />
+            </div>
             {isSubmitting && showStopButton ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
             ) : (
               endpoint && (
-                <SendButton text={text} disabled={filesLoading || isSubmitting || requiresKey} />
+                <SendButton
+                  text={text}
+                  disabled={filesLoading || isSubmitting || requiresKey || recordingSate !== 'idle'}
+                />
               )
             )}
           </div>

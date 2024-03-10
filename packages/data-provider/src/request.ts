@@ -1,7 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios, { AxiosRequestConfig } from 'axios';
-import { setTokenHeader } from './headers-helpers';
-import { useAuth } from '@clerk/clerk-react';
 
 async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
   const response = await axios.get(url, { ...options });
@@ -58,24 +56,3 @@ export default {
   deleteWithOptions: _deleteWithOptions,
   patch: _patch,
 };
-
-axios.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const { getToken } = useAuth();
-    const originalRequest = error.config;
-    if (error.response.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      const token = await getToken();
-      if (token) {
-        originalRequest.headers['Authorization'] = 'Bearer ' + token;
-        setTokenHeader(token);
-        return await axios(originalRequest);
-      } else {
-        window.location.href = '/login';
-        return Promise.reject(error);
-      }
-    }
-    return Promise.reject(error);
-  },
-);

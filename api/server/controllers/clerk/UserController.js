@@ -1,5 +1,6 @@
 const { Webhook } = require('svix');
 const { createNewUser } = require('~/server/controllers/UserController');
+const clerkClient = require('@clerk/clerk-sdk-node');
 
 async function userController(req, res) {
   // Check if the 'Signing Secret' from the Clerk Dashboard was correctly provided
@@ -68,7 +69,12 @@ async function userController(req, res) {
       username: clerkUser.username,
       avtar: clerkUser.image_url,
     };
-    await createNewUser(userData);
+    const user = await createNewUser(userData);
+
+    await clerkClient.users.updateUser(req.auth.userId, {
+      externalId: user.id,
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Webhook received',

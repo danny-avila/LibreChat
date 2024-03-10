@@ -32,10 +32,10 @@ import {
 } from '~/utils';
 import { useGenTitleMutation } from '~/data-provider';
 import useContentHandler from './useContentHandler';
+import { useAuthContext } from '../AuthContext';
 import useChatHelpers from '../useChatHelpers';
 import useSetStorage from '../useSetStorage';
 import store from '~/store';
-import { useAuth } from '@clerk/clerk-react';
 
 type TResData = {
   plugin?: TResPlugin;
@@ -64,7 +64,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const genTitle = useGenTitleMutation();
 
   const { conversationId: paramId } = useParams();
-  const { isSignedIn, getToken } = useAuth();
+  const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
 
@@ -80,7 +80,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
-    enabled: !!isSignedIn && startupConfig?.checkBalance,
+    enabled: !!isAuthenticated && startupConfig?.checkBalance,
   });
 
   const messageHandler = useCallback(
@@ -435,7 +435,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${await getToken()}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             abortKey: _endpoint === EModelEndpoint.assistants ? runAbortKey : conversationId,
@@ -498,120 +498,118 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         setIsSubmitting(false);
       }
     },
-    [setIsSubmitting, finalHandler, cancelHandler, setMessages, newConversation],
+    [token, setIsSubmitting, finalHandler, cancelHandler, setMessages, newConversation],
   );
 
   useEffect(() => {
-    getToken().then((token) => {
-      if (submission === null) {
-        return;
-      }
-      if (Object.keys(submission).length === 0) {
-        return;
-      }
+    if (submission === null) {
+      return;
+    }
+    if (Object.keys(submission).length === 0) {
+      return;
+    }
 
-      let { message } = submission;
+    let { message } = submission;
 
-      const payloadData = createPayload(submission);
-      let { payload } = payloadData;
-      if (payload.endpoint === EModelEndpoint.assistants) {
-        payload = removeNullishValues(payload);
-      }
+    const payloadData = createPayload(submission);
+    let { payload } = payloadData;
+    if (payload.endpoint === EModelEndpoint.assistants) {
+      payload = removeNullishValues(payload);
+    }
 
-      let textIndex = null;
+    let textIndex = null;
 
-      const events = new SSE(payloadData.server, {
-        payload: JSON.stringify(payload),
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      });
-
-      events.onmessage = (e: MessageEvent) => {
-        const data = JSON.parse(e.data);
-
-        if (data.final) {
-          const { plugins } = data;
-          finalHandler(data, { ...submission, plugins, message });
-          startupConfig?.checkBalance && balanceQuery.refetch();
-          console.log('final', data);
-        }
-        if (data.created) {
-          message = {
-            ...message,
-            ...data.message,
-            overrideParentMessageId: message?.overrideParentMessageId,
-          };
-          createdHandler(data, { ...submission, message });
-        } else if (data.sync) {
-          /* synchronize messages to Assistants API as well as with real DB ID's */
-          syncHandler(data, { ...submission, message });
-        } else if (data.type) {
-          const { text, index } = data;
-          if (text && index !== textIndex) {
-            textIndex = index;
-          }
-
-          contentHandler({ data, submission });
-        } else {
-          const text = data.text || data.response;
-          const { plugin, plugins } = data;
-
-          if (data.message) {
-            messageHandler(text, { ...submission, plugin, plugins, message });
-          }
-        }
-      };
-
-      events.onopen = () => console.log('connection is opened');
-
-      events.oncancel = async () => {
-        const streamKey = submission?.initialResponse?.messageId;
-        if (completed.has(streamKey)) {
-          setIsSubmitting(false);
-          setCompleted((prev) => {
-            prev.delete(streamKey);
-            return new Set(prev);
-          });
-          return;
-        }
-
-        setCompleted((prev) => new Set(prev.add(streamKey)));
-        return await abortConversation(
-          message?.conversationId ?? submission?.conversationId,
-          submission,
-        );
-      };
-
-      events.onerror = function (e: MessageEvent) {
-        console.log('error in server stream.');
-        startupConfig?.checkBalance && balanceQuery.refetch();
-        events.close();
-
-        let data: TResData | undefined = undefined;
-        try {
-          data = JSON.parse(e.data) as TResData;
-        } catch (error) {
-          console.error(error);
-          console.log(e);
-          setIsSubmitting(false);
-          return;
-        }
-
-        errorHandler({ data, submission: { ...submission, message } });
-      };
-
-      setIsSubmitting(true);
-      events.stream();
-
-      return () => {
-        const isCancelled = events.readyState <= 1;
-        events.close();
-        // setSource(null);
-        if (isCancelled) {
-          const e = new Event('cancel');
-          events.dispatchEvent(e);
-        }
-      };
+    const events = new SSE(payloadData.server, {
+      payload: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
+
+    events.onmessage = (e: MessageEvent) => {
+      const data = JSON.parse(e.data);
+
+      if (data.final) {
+        const { plugins } = data;
+        finalHandler(data, { ...submission, plugins, message });
+        startupConfig?.checkBalance && balanceQuery.refetch();
+        console.log('final', data);
+      }
+      if (data.created) {
+        message = {
+          ...message,
+          ...data.message,
+          overrideParentMessageId: message?.overrideParentMessageId,
+        };
+        createdHandler(data, { ...submission, message });
+      } else if (data.sync) {
+        /* synchronize messages to Assistants API as well as with real DB ID's */
+        syncHandler(data, { ...submission, message });
+      } else if (data.type) {
+        const { text, index } = data;
+        if (text && index !== textIndex) {
+          textIndex = index;
+        }
+
+        contentHandler({ data, submission });
+      } else {
+        const text = data.text || data.response;
+        const { plugin, plugins } = data;
+
+        if (data.message) {
+          messageHandler(text, { ...submission, plugin, plugins, message });
+        }
+      }
+    };
+
+    events.onopen = () => console.log('connection is opened');
+
+    events.oncancel = async () => {
+      const streamKey = submission?.initialResponse?.messageId;
+      if (completed.has(streamKey)) {
+        setIsSubmitting(false);
+        setCompleted((prev) => {
+          prev.delete(streamKey);
+          return new Set(prev);
+        });
+        return;
+      }
+
+      setCompleted((prev) => new Set(prev.add(streamKey)));
+      return await abortConversation(
+        message?.conversationId ?? submission?.conversationId,
+        submission,
+      );
+    };
+
+    events.onerror = function (e: MessageEvent) {
+      console.log('error in server stream.');
+      startupConfig?.checkBalance && balanceQuery.refetch();
+      events.close();
+
+      let data: TResData | undefined = undefined;
+      try {
+        data = JSON.parse(e.data) as TResData;
+      } catch (error) {
+        console.error(error);
+        console.log(e);
+        setIsSubmitting(false);
+        return;
+      }
+
+      errorHandler({ data, submission: { ...submission, message } });
+    };
+
+    setIsSubmitting(true);
+    events.stream();
+
+    return () => {
+      const isCancelled = events.readyState <= 1;
+      events.close();
+      // setSource(null);
+      if (isCancelled) {
+        const e = new Event('cancel');
+        events.dispatchEvent(e);
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submission]);
 }

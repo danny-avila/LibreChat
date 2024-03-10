@@ -111,20 +111,20 @@ var SSE = function (url, options) {
     }
 
     if (this.xhr.status === 401 && !this._retry) {
-      this._retry = true;
-      try {
-        const refreshResponse = await request.refreshToken();
-        this.headers = {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${refreshResponse.token}`,
-        };
-        setTokenHeader(refreshResponse.token);
-        window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: refreshResponse.token }));
-        this.stream();
-      } catch (err) {
-        this._onStreamFailure(e);
-        return;
-      }
+      // this._retry = true;
+      // try {
+      //   const refreshResponse = await request.refreshToken();
+      //   this.headers = {
+      //     'Content-Type': 'application/json',
+      //     Authorization: `Bearer ${refreshResponse.token}`,
+      //   };
+      //   setTokenHeader(refreshResponse.token);
+      //   window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: refreshResponse.token }));
+      //   this.stream();
+      // } catch (err) {
+      this._onStreamFailure(e);
+      return;
+      // }
     } else if (this.xhr.status !== 200) {
       this._onStreamFailure(e);
       return;

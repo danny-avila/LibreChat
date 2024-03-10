@@ -18,15 +18,15 @@ const VITE_STRIPE_PRICE_ID = import.meta.env.VITE_STRIPE_PRICE_ID;
 
 const AuthLayout = () => (
   <AuthContextProvider>
-    <Outlet />
-  </AuthContextProvider>
-);
-
-const StripeClerkLayout = () => (
-  <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
     <SubscriptionProvider stripePublishableKey={STRIPE_PUBLISHABLE_KEY}>
       <Outlet />
     </SubscriptionProvider>
+  </AuthContextProvider>
+);
+
+const ClerkLayout = () => (
+  <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+    <Outlet />
   </ClerkProvider>
 );
 
@@ -59,7 +59,7 @@ const PaywallRoot = () => {
 
 export const router = createBrowserRouter([
   {
-    element: <StripeClerkLayout />,
+    element: <ClerkLayout />,
     children: [
       {
         path: 'register',

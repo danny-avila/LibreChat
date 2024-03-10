@@ -2,8 +2,8 @@ import useSWR, { SWRConfig } from 'swr';
 import { createContext, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { loadStripe, Stripe } from '@stripe/stripe-js';
-import { useAuth } from '@clerk/clerk-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { useAuthContext } from './AuthContext';
 
 const StripeContext = createContext<{
   clientPromise: Promise<Stripe | null>;
@@ -19,12 +19,9 @@ export const SubscriptionProvider = ({
   children: ReactNode;
   endpoint?: string;
 }) => {
-  const { getToken } = useAuth();
+  const { token } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
-  const stripeClient = useMemo(
-    () => loadStripe(stripePublishableKey),
-    [stripePublishableKey, loadStripe],
-  );
+  const stripeClient = useMemo(() => loadStripe(stripePublishableKey), [stripePublishableKey]);
   endpoint = endpoint || startupConfig?.serverDomain + '/api/subscription';
   return (
     <StripeContext.Provider value={{ clientPromise: stripeClient, endpoint: endpoint }}>
@@ -32,7 +29,7 @@ export const SubscriptionProvider = ({
         value={{
           fetcher: async (args) => {
             const data = await fetch(args, {
-              headers: { Authorization: `Bearer ${await getToken()}` },
+              headers: { Authorization: `Bearer ${token}` },
             });
             return await data.json();
           },
@@ -55,8 +52,7 @@ export interface redirectToCustomerPortalArgs {
 }
 
 export function useSubscription() {
-  const { getToken } = useAuth();
-
+  const { token } = useAuthContext();
   // @ts-ignore
   const { clientPromise, endpoint } = useContext(StripeContext);
   const { data, error } = useSWR(`${endpoint}?action=useSubscription`);
@@ -87,7 +83,7 @@ export function useSubscription() {
       method: 'post',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${await getToken()}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(args),
     });
@@ -104,7 +100,7 @@ export function useSubscription() {
       method: 'post',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${await getToken()}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(args),
     });

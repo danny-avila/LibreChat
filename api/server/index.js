@@ -63,6 +63,7 @@ const startServer = async () => {
   app.use('/api/files', await routes.files.initialize());
   app.use('/api/webhook/clerk', routes.clerk);
   app.use('/api/subscription', routes.subscription);
+  app.use('/api/voice', routes.voice);
 
   app.use((req, res) => {
     res.status(404).sendFile(path.join(app.locals.paths.dist, 'index.html'));

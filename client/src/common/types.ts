@@ -256,6 +256,7 @@ export type TResError = {
 
 export type TAuthContext = {
   user: TUser | undefined;
+  token: string | undefined;
   isAuthenticated: boolean;
   error: string | undefined;
   // login: (data: TLoginUser) => void;
@@ -264,6 +265,7 @@ export type TAuthContext = {
 
 export type TUserContext = {
   user?: TUser | undefined;
+  token: string | undefined;
   isAuthenticated: boolean;
   redirect?: string;
 };

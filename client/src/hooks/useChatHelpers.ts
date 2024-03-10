@@ -1,5 +1,5 @@
 import { v4 } from 'uuid';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Constants,
@@ -9,7 +9,7 @@ import {
   ContentTypes,
 } from 'librechat-data-provider';
 import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
-import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
+import { useGetMessagesByConvoId, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type {
   TMessage,
   TSubmission,
@@ -24,6 +24,8 @@ import useUserKey from './Input/useUserKey';
 import { getEndpointField } from '~/utils';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
+import { useAudioRecorder } from 'react-audio-voice-recorder';
+import { useAuth } from '@clerk/clerk-react';
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId: string | undefined) {
@@ -34,7 +36,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const getSender = useGetSender();
 
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useAuthContext();
+  const { token, isAuthenticated } = useAuthContext();
 
   const { newConversation } = useNewConvo(index);
   const { useCreateConversationAtom } = store;
@@ -330,6 +332,67 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     store.showAgentSettingsFamily(index),
   );
 
+  const {
+    startRecording,
+    stopRecording,
+    togglePauseResume,
+    recordingBlob,
+    isRecording,
+    isPaused,
+    recordingTime,
+    mediaRecorder,
+  } = useAudioRecorder();
+
+  const [recordingSate, setRecordingState] = useState<
+    'idle' | 'recording' | 'paused' | 'processing'
+  >('idle');
+  const [recordedText, setRecordedText] = useState<string | undefined>();
+
+  function cancelRecord() {
+    setRecordingState('idle');
+    stopRecording();
+  }
+
+  const { getToken } = useAuth();
+  const { data: startupConfig } = useGetStartupConfig();
+
+  useEffect(() => {
+    if (isRecording) {
+      setRecordedText(undefined);
+      setRecordingState('recording');
+    }
+    if (isPaused) {
+      setRecordingState('paused');
+    }
+  }, [isRecording, isPaused]);
+
+  useEffect(() => {
+    if (!recordingBlob || recordingSate === 'idle') {return;}
+    (async () => {
+      setRecordingState('processing');
+
+      const endpoint = startupConfig?.serverDomain + '/api/voice/stt';
+      const formData = new FormData();
+      formData.append('file', recordingBlob);
+      console.log(recordingBlob);
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        });
+        const data: { text: string } = await res.json();
+        setRecordingState('idle');
+        setRecordedText(data.text);
+      } catch (error) {
+        console.error(error);
+        setRecordingState('idle');
+      }
+    })();
+  }, [recordingBlob]);
+
   return {
     newConversation,
     conversation,
@@ -367,5 +430,14 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     setFiles,
     filesLoading,
     setFilesLoading,
+    startRecording,
+    stopRecording,
+    togglePauseResume,
+    recordingBlob,
+    recordingTime,
+    cancelRecord,
+    recordingSate,
+    recordedText,
+    setRecordedText,
   };
 }

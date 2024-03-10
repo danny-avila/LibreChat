@@ -17,6 +17,7 @@ const assistants = require('./assistants');
 const files = require('./files');
 const clerk = require('./clerk');
 const subscription = require('./subscription');
+const voice = require('./voice');
 
 module.exports = {
   search,
@@ -38,4 +39,5 @@ module.exports = {
   files,
   clerk,
   subscription,
+  voice,
 };

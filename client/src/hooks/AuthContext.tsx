@@ -15,7 +15,7 @@ import { TAuthConfig, TUserContext, TAuthContext } from '~/common';
 import { useLogoutUserMutation } from '~/data-provider';
 import useTimeout from './useTimeout';
 import store from '~/store';
-import { useAuth } from '@clerk/clerk-react';
+import { useAuth, useSession } from '@clerk/clerk-react';
 
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
@@ -27,9 +27,12 @@ const AuthContextProvider = ({
   children: ReactNode;
 }) => {
   const { isLoaded: isLoadedClerk, isSignedIn, getToken } = useAuth();
+  const { session } = useSession();
+
   const [user, setUser] = useRecoilState(store.user);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [token, setToken] = useState<string | undefined>(undefined);
 
   const navigate = useNavigate();
 
@@ -39,18 +42,22 @@ const AuthContextProvider = ({
       if (user) {
         setUser(user);
       }
+      setToken(token);
+      //@ts-ignore - ok for token to be undefined initially
+      setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
       if (redirect) {
         navigate(redirect, { replace: true });
       }
     },
-    [navigate, setUser],
+    [navigate, setUser, token],
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
   const logoutUser = useLogoutUserMutation({
     onSuccess: () => {
       setUserContext({
+        token: undefined,
         isAuthenticated: false,
         user: undefined,
         redirect: '/login',
@@ -59,6 +66,7 @@ const AuthContextProvider = ({
     onError: (error) => {
       doSetError((error as Error).message);
       setUserContext({
+        token: undefined,
         isAuthenticated: false,
         user: undefined,
         redirect: '/login',
@@ -69,25 +77,33 @@ const AuthContextProvider = ({
   const logout = useCallback(() => logoutUser.mutate(undefined), [logoutUser]);
   const userQuery = useGetUserQuery({ enabled: !!isSignedIn });
 
-  useEffect(() => {
-    getToken()
+  function refreshToken() {
+    getToken({ leewayInSeconds: 59, skipCache: false })
       .then((token) => {
         if (token) {
           setTokenHeader(token);
+          setToken(token);
         }
       })
       .catch((error) => {
         doSetError((error as Error).message);
       });
-  });
+  }
+
+  useEffect(() => {
+    if (!isLoadedClerk || !isSignedIn) {return;}
+    refreshToken();
+    setInterval(refreshToken, 45_000);
+  }, [isLoadedClerk, isSignedIn]);
 
   useEffect(() => {
     if (isSignedIn) {
-      setUserContext({ isAuthenticated: true, user: userQuery.data, redirect: '/c/new' });
+      setUserContext({ token, isAuthenticated: true, user: userQuery.data, redirect: '/c/new' });
     } else if (isLoadedClerk) {
       navigate('/login', { replace: true });
     }
   }, [
+    token,
     isLoadedClerk,
     isSignedIn,
     userQuery.data,
@@ -100,12 +116,13 @@ const AuthContextProvider = ({
   const memoedValue = useMemo(
     () => ({
       user,
+      token,
       isAuthenticated,
       error,
       logout,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [user, error, isAuthenticated],
+    [user, error, token, isAuthenticated],
   );
 
   return <AuthContext.Provider value={memoedValue}>{children}</AuthContext.Provider>;

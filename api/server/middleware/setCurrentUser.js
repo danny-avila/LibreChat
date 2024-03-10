@@ -5,10 +5,9 @@ const { createNewUser } = require('~/server/controllers/UserController');
 // Create a middleware function that sets the `req.user` property
 const setCurrentUser = async (req, res, next) => {
   try {
-    // Get the user from the database or another source
+    const externalId = req.auth.sessionClaims.user?.externalId;
     let user;
-    user = await User.findOne({ clerkUserId: req.auth.userId });
-    if (user === null) {
+    if (!externalId) {
       const clerkUser = await clerkClient.users.getUser(req.auth.userId);
       const userData = {
         clerkUserId: clerkUser.id,
@@ -30,9 +29,15 @@ const setCurrentUser = async (req, res, next) => {
       } catch (error) {
         user = await User.findOne({ clerkUserId: req.auth.userId });
       }
+
+      await clerkClient.users.updateUser(req.auth.userId, {
+        externalId: user.id,
+      });
     }
     // Set the `req.user` property
-    req.user = user;
+    req.user = {
+      id: externalId || user.id,
+    };
     // Call the next middleware function
     next();
   } catch (error) {

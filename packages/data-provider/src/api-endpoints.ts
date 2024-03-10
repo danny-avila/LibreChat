@@ -57,3 +57,7 @@ export const files = () => '/api/files';
 export const images = () => `${files()}/images`;
 
 export const avatar = () => `${images()}/avatar`;
+
+export const stt = () => '/api/voice/stt';
+
+export const tts = () => '/api/voice/tts';

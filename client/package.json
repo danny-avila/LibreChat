@@ -91,9 +91,11 @@
     "url": "^0.11.0",
     "zod": "^3.22.4",
     "@clerk/clerk-react": "^4.30.7",
+    "@clerk/nextjs": "",
     "@clerk/themes": "^1.7.9",
     "@stripe/stripe-js": "^3.0.7",
-    "swr": "^2.2.5"
+    "swr": "^2.2.5",
+    "react-audio-voice-recorder": "^2.2.0"
   },
   "devDependencies": {
     "@babel/plugin-transform-runtime": "^7.22.15",
