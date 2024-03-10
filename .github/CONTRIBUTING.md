@@ -28,16 +28,16 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 1. Before starting work, make sure your main branch has the latest commits with `npm run update`
 2. Run linting command to find errors: `npm run lint`. Alternatively, ensure husky pre-commit checks are functioning.
-3. After your changes, reinstall packages in your current branch using `npm run reinstall` and ensure everything still works. 
-    - Restart the ESLint server ("ESLint: Restart ESLint Server" in VS Code command bar) and your IDE after reinstalling or updating.
+3. After your changes, reinstall packages in your current branch using `npm run reinstall` and ensure everything still works.
+   - Restart the ESLint server ("ESLint: Restart ESLint Server" in VS Code command bar) and your IDE after reinstalling or updating.
 4. Clear web app localStorage and cookies before and after changes.
 5. For frontend changes:
-    - Install typescript globally: `npm i -g typescript`.
-    - Compile typescript before and after changes to check for introduced errors: `cd client && tsc --noEmit`.
+   - Install typescript globally: `npm i -g typescript`.
+   - Compile typescript before and after changes to check for introduced errors: `cd client && tsc --noEmit`.
 6. Run tests locally:
-    - Backend unit tests: `npm run test:api`
-    - Frontend unit tests: `npm run test:client`
-    - Integration tests: `npm run e2e` (requires playwright installed, `npx install playwright`)
+   - Backend unit tests: `npm run test:api`
+   - Frontend unit tests: `npm run test:client`
+   - Integration tests: `npm run e2e` (requires playwright installed, `npx install playwright`)
 
 ## 2. Git Workflow
 
@@ -45,7 +45,7 @@ We utilize a GitFlow workflow to manage changes to this project's codebase. Foll
 
 1. Fork the repository and create a new branch with a descriptive slash-based name (e.g., `new/feature/x`).
 2. Implement your changes and ensure that all tests pass.
-3. Commit your changes using conventional commit messages with GitFlow flags. Begin the commit message with a tag indicating the change type, such as "feat" (new feature), "fix" (bug fix), "docs" (documentation), or "refactor" (code refactoring), followed by a brief summary of the changes (e.g., `feat: Add new feature X to the project`).
+3. Commit your changes using conventional commit messages with GitFlow flags. See below [Commit Message Format](#3-commit-message-format)
 4. Submit a pull request with a clear and concise description of your changes and the reasons behind them.
 5. We will review your pull request, provide feedback as needed, and eventually merge the approved changes into the main branch.
 
@@ -64,9 +64,21 @@ feat: add hat wobble
 +-------> Type: chore, docs, feat, fix, refactor, style, or test.
 ```
 
+More Examples:
+
+- feat: (new feature for the user, not a new feature for build script)
+- fix: (bug fix for the user, not a fix to a build script)
+- docs: (changes to the documentation)
+- style: (formatting, missing semi colons, etc; no production code change)
+- refactor: (refactoring production code, eg. renaming a variable)
+- test: (adding missing tests, refactoring tests; no production code change)
+- chore: (updating grunt tasks etc; no production code change)
+
 ### Commit Guidelines
+
 - Do your best to reduce the number of commits, organizing them as much possible. Look into [squashing commits](https://www.freecodecamp.org/news/git-squash-commits/) in order to keep a neat history.
 - For those that care about maximizing commits for stats, adhere to the above as I 'squash and merge' an unorganized and/or unformatted commit history, which reduces the number of your commits to 1,:
+
 ```
 * Update Br.tsx
 
@@ -74,7 +86,6 @@ feat: add hat wobble
 
 * Update Br.tsx
 ```
-
 
 ## 4. Pull Request Process
 
@@ -105,27 +116,28 @@ Apply the following naming conventions to branches, labels, and other Git-relate
 1. **Original State**: The project was initially developed entirely in JavaScript (JS).
 
 2. **Frontend Transition**:
+
    - We are in the process of transitioning the frontend from JS to TypeScript (TS).
    - The transition is nearing completion.
    - This conversion is feasible due to React's capability to intermix JS and TS prior to code compilation. It's standard practice to compile/bundle the code in such scenarios.
 
 3. **Backend Considerations**:
-   - Transitioning the backend to TypeScript would be a more intricate process, especially for an established Express.js server.
-   
-   - **Options for Transition**:
-      - **Single Phase Overhaul**: This involves converting the entire backend to TypeScript in one go. It's the most straightforward approach but can be disruptive, especially for larger codebases.
-      
-      - **Incremental Transition**: Convert parts of the backend progressively. This can be done by:
-         - Maintaining a separate directory for TypeScript files.
-         - Gradually migrating and testing individual modules or routes.
-         - Using a build tool like `tsc` to compile TypeScript files independently until the entire transition is complete.
-         
-   - **Compilation Considerations**: 
-      - Introducing a compilation step for the server is an option. This would involve using tools like `ts-node` for development and `tsc` for production builds.
-      - However, this is not a conventional approach for Express.js servers and could introduce added complexity, especially in terms of build and deployment processes.
-      
-   - **Current Stance**: At present, this backend transition is of lower priority and might not be pursued.
 
+   - Transitioning the backend to TypeScript would be a more intricate process, especially for an established Express.js server.
+
+   - **Options for Transition**:
+
+     - **Single Phase Overhaul**: This involves converting the entire backend to TypeScript in one go. It's the most straightforward approach but can be disruptive, especially for larger codebases.
+
+     - **Incremental Transition**: Convert parts of the backend progressively. This can be done by:
+       - Maintaining a separate directory for TypeScript files.
+       - Gradually migrating and testing individual modules or routes.
+       - Using a build tool like `tsc` to compile TypeScript files independently until the entire transition is complete.
+
+   - **Compilation Considerations**:
+     - Introducing a compilation step for the server is an option. This would involve using tools like `ts-node` for development and `tsc` for production builds.
+     - However, this is not a conventional approach for Express.js servers and could introduce added complexity, especially in terms of build and deployment processes.
+   - **Current Stance**: At present, this backend transition is of lower priority and might not be pursued.
 
 ---
 
