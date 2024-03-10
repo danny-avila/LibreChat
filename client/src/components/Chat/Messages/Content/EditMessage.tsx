@@ -37,6 +37,24 @@ const EditMessage = ({
     }
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        // Call the function to exit edit mode and dismiss changes
+        enterEdit(true);
+      }
+    };
+
+    const textArea = textAreaRef.current;
+    // Add event listener
+    textArea?.addEventListener('keydown', handleKeyDown);
+
+    // Remove event listener on cleanup
+    return () => {
+      textArea?.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [enterEdit]);
+
   const resubmitMessage = () => {
     if (message.isCreatedByUser) {
       ask({
