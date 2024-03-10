@@ -47,7 +47,6 @@ export default function ChatForm({ index = 0 }) {
         return console.warn('No data provided to submitMessage');
       }
       ask({ text: data.text });
-      // textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
       methods.reset();
     },
     [ask, methods],
@@ -86,7 +85,7 @@ export default function ChatForm({ index = 0 }) {
                 <Controller
                   name="text"
                   control={methods.control}
-                  render={({ field: { onChange, onBlur, name, ref } }) => {
+                  render={({ field: { onChange, onBlur, value, name, ref } }) => {
                     return (
                       <TextareaAutosize
                         name={name}
@@ -95,6 +94,7 @@ export default function ChatForm({ index = 0 }) {
                           ref(e);
                           textAreaRef.current = e;
                         }}
+                        value={value}
                         onChange={onChange}
                         onBlur={onBlur}
                         disabled={!!requiresKey}
