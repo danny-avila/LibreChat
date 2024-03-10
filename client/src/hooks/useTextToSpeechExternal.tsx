@@ -2,72 +2,47 @@ import { useEffect } from 'react';
 import { useTextToSpeechMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 
-function useBinaryStringToArrayBuffer(binary) {
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+const useBinaryStringToArrayBuffer = (binaryString) => {
+  const buffer = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    buffer[i] = binaryString.charCodeAt(i);
   }
-  return bytes.buffer;
-}
+  return buffer.buffer;
+};
 
 function useTextToSpeechExternal() {
   const { showToast } = useToastContext();
-
   const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
-    onSuccess: (data) => {
-      console.log('Server response:', data);
-      const binaryStringToArrayBuffer = useBinaryStringToArrayBuffer;
-
-      let arrayBuffer;
-
-      // Check if data is an instance of ArrayBuffer
-      if (data instanceof ArrayBuffer) {
-        arrayBuffer = data;
-      } else if (typeof data === 'string') {
-        // Convert binary string to ArrayBuffer
-        arrayBuffer = binaryStringToArrayBuffer(data);
-      } else {
-        console.error('Unexpected data type:', typeof data);
-        return;
-      }
-
-      const blob = new Blob([arrayBuffer], { type: 'audio/wav' }); // Changed MIME type to 'audio/wav'
+    onSuccess: (data: Blob | ArrayBuffer) => {
+      // If the data is already a Blob, there's no need to convert it
+      const blob = data instanceof Blob ? data : new Blob([data], { type: 'audio/mpeg' });
       const blobUrl = URL.createObjectURL(blob);
-
-      console.log('Blob:', blob);
       console.log('Blob URL:', blobUrl);
 
       const audioElement = new Audio(blobUrl);
-      audioElement.play().catch((error) => {
+      audioElement.play().catch((error: Error) => {
         console.error('Failed to play audio:', error);
+        showToast({ message: `Error playing audio: ${error.message}`, status: 'error' });
+        URL.revokeObjectURL(blobUrl); // Clean up the blob URL
       });
-
-      // Optionally, revoke the Blob URL after playing
-      // URL.revokeObjectURL(blobUrl);
     },
-    onError: (error) => {
-      showToast({ message: `Error: ${error}`, status: 'error' });
+    onError: (error: Error) => {
+      showToast({ message: `Error: ${error.message}`, status: 'error' });
     },
   });
 
-  const synthesizeSpeech = (text, onEnd) => {
-    console.log(text);
-
+  const synthesizeSpeech = (text) => {
     const formData = new FormData();
     formData.append('text', text);
-
     processAudio(formData);
   };
 
   const cancelSpeech = () => {
-    const synth = window.speechSynthesis;
-    synth.cancel();
+    window.speechSynthesis.cancel();
   };
 
   useEffect(() => {
-    return () => {
-      cancelSpeech();
-    };
+    return cancelSpeech;
   }, []);
 
   return { synthesizeSpeech, cancelSpeech, isProcessing };
