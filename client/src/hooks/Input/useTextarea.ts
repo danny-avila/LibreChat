@@ -169,12 +169,7 @@ export default function useTextarea({
         return;
       }
 
-      const start = textArea.selectionStart;
-      const end = textArea.selectionEnd;
-
-      const newValue =
-        textArea.value.substring(0, start) + pastedData + textArea.value.substring(end);
-      setText(newValue);
+      document.execCommand('insertText', false, pastedData);
 
       if (e.clipboardData && e.clipboardData.files.length > 0) {
         e.preventDefault();
@@ -189,7 +184,7 @@ export default function useTextarea({
         handleFiles(timestampedFiles);
       }
     },
-    [handleFiles, setFilesLoading, setText],
+    [handleFiles, setFilesLoading],
   );
 
   return {
