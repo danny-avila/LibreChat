@@ -1,5 +1,5 @@
 import { useRecoilState } from 'recoil';
-import { useCallback, useRef } from 'react';
+import { memo, useCallback, useRef } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useForm } from 'react-hook-form';
 import {
@@ -17,7 +17,7 @@ import SendButton from './SendButton';
 import FileRow from './Files/FileRow';
 import store from '~/store';
 
-export default function ChatForm({ index = 0 }) {
+const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
@@ -133,4 +133,6 @@ export default function ChatForm({ index = 0 }) {
       </div>
     </form>
   );
-}
+};
+
+export default memo(ChatForm);
