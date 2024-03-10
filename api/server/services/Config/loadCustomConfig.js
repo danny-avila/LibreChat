@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const { CacheKeys, configSchema } = require('librechat-data-provider');
 const loadYaml = require('~/utils/loadYaml');
 const { getLogStores } = require('~/cache');
@@ -7,7 +8,7 @@ const { logger } = require('~/config');
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
 
-let i = 0;
+let isConfigInfoLogged = false;
 
 /**
  * Load custom configuration files and caches the object if the `cache` field at root is true.
@@ -19,24 +20,40 @@ async function loadCustomConfig() {
   // Use CONFIG_PATH if set, otherwise fallback to defaultConfigPath
   const configPath = process.env.CONFIG_PATH || defaultConfigPath;
 
-  const customConfig = loadYaml(configPath);
-  if (!customConfig) {
-    i === 0 &&
+  // Check if the config file exists
+  if (!fs.existsSync(configPath)) {
+    if (!isConfigInfoLogged) {
       logger.info(
-        'Custom config file missing or YAML format invalid.\n\nCheck out the latest config file guide for configurable options and features.\nhttps://docs.librechat.ai/install/configuration/custom_config.html\n\n',
+        'Custom config file missing or inaccessible. ' +
+          (process.env.CONFIG_PATH
+            ? `Using CONFIG_PATH: ${configPath}`
+            : `Using defaultConfigPath: ${configPath}`),
       );
-    i === 0 && i++;
+    }
+    isConfigInfoLogged = true; // Ensure the message is not logged again
+    return null;
+  }
+
+  const customConfig = loadYaml(configPath);
+  if (!customConfig && !isConfigInfoLogged) {
+    logger.info('Custom config file is in an invalid YAML format or is empty.');
+    isConfigInfoLogged = true;
     return null;
   }
 
   const result = configSchema.strict().safeParse(customConfig);
   if (!result.success) {
-    logger.error(`Invalid custom config file at ${configPath}`, result.error);
+    logger.error(`Invalid custom config file at "${configPath}"`, result.error);
+    logger.info(
+      '\n\nCheck out the latest config file guide for configurable options and features.\nhttps://docs.librechat.ai/install/configuration/custom_config.html\n\n',
+    );
+    isConfigInfoLogged = true;
     return null;
   } else {
-    logger.info('Custom config file loaded:');
+    logger.info(`Custom config file "${configPath}" loaded:`);
     logger.info(JSON.stringify(customConfig, null, 2));
     logger.debug('Custom config:', customConfig);
+    isConfigInfoLogged = true;
   }
 
   if (customConfig.cache) {
