@@ -97,7 +97,10 @@ export default function Nav({ navVisible, setNavVisible }) {
   };
 
   const toggleNavVisible = () => {
-    setNavVisible((prev: boolean) => !prev);
+    setNavVisible((prev: boolean) => {
+      localStorage.setItem('navVisible', JSON.stringify(!prev));
+      return !prev;
+    });
     if (newUser) {
       setNewUser(false);
     }
