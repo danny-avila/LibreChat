@@ -2,19 +2,11 @@ import { useEffect } from 'react';
 import { useTextToSpeechMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 
-const useBinaryStringToArrayBuffer = (binaryString) => {
-  const buffer = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    buffer[i] = binaryString.charCodeAt(i);
-  }
-  return buffer.buffer;
-};
-
 function useTextToSpeechExternal() {
   const { showToast } = useToastContext();
   const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
     onSuccess: (data: Blob | ArrayBuffer) => {
-      // If the data is already a Blob, there's no need to convert it
+      // If the data is already a Blob, there's no need to convert it (I hope)
       const blob = data instanceof Blob ? data : new Blob([data], { type: 'audio/mpeg' });
       const blobUrl = URL.createObjectURL(blob);
       console.log('Blob URL:', blobUrl);
