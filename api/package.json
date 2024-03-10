@@ -27,7 +27,7 @@
   },
   "homepage": "https://librechat.ai",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.5.4",
+    "@anthropic-ai/sdk": "^0.16.1",
     "@azure/search-documents": "^12.0.0",
     "@keyv/mongo": "^2.1.8",
     "@keyv/redis": "^2.8.1",
@@ -59,7 +59,7 @@
     "langchain": "^0.0.214",
     "librechat-data-provider": "*",
     "lodash": "^4.17.21",
-    "meilisearch": "^0.33.0",
+    "meilisearch": "^0.37.0",
     "mime": "^3.0.0",
     "module-alias": "^2.2.3",
     "mongoose": "^7.1.1",

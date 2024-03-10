@@ -44,7 +44,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
               pattern: { value: /\S+@\S+\.\S+/, message: localize('com_auth_email_pattern') },
             })}
             aria-invalid={!!errors.email}
-            className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
+            className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
             placeholder=" "
           />
           <label
@@ -69,7 +69,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
               maxLength: { value: 128, message: localize('com_auth_password_max_length') },
             })}
             aria-invalid={!!errors.password}
-            className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
+            className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
             placeholder=" "
           />
           <label

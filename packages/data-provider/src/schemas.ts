@@ -22,7 +22,7 @@ export const defaultAssistantFormValues = {
   name: '',
   description: '',
   instructions: '',
-  model: 'gpt-3.5-turbo-1106',
+  model: '',
   functions: [],
   code_interpreter: false,
   retrieval: false,
@@ -395,6 +395,7 @@ export const anthropicSchema = tConversationSchema
     maxOutputTokens: true,
     topP: true,
     topK: true,
+    resendImages: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -405,6 +406,7 @@ export const anthropicSchema = tConversationSchema
     maxOutputTokens: obj.maxOutputTokens ?? 4000,
     topP: obj.topP ?? 0.7,
     topK: obj.topK ?? 5,
+    resendImages: obj.resendImages ?? false,
   }))
   .catch(() => ({
     model: 'claude-1',
@@ -414,6 +416,7 @@ export const anthropicSchema = tConversationSchema
     maxOutputTokens: 4000,
     topP: 0.7,
     topK: 5,
+    resendImages: false,
   }));
 
 export const chatGPTBrowserSchema = tConversationSchema
@@ -572,6 +575,7 @@ export const compactAnthropicSchema = tConversationSchema
     maxOutputTokens: true,
     topP: true,
     topK: true,
+    resendImages: true,
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
@@ -586,6 +590,9 @@ export const compactAnthropicSchema = tConversationSchema
     }
     if (newObj.topK === 5) {
       delete newObj.topK;
+    }
+    if (newObj.resendImages !== true) {
+      delete newObj.resendImages;
     }
 
     return removeNullishValues(newObj);

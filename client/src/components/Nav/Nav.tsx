@@ -184,11 +184,11 @@ export default function Nav({ navVisible, setNavVisible }) {
   };
 
   return (
-    <TooltipProvider delayDuration={150}>
+    <TooltipProvider delayDuration={250}>
       <Tooltip>
         <div
           className={
-            'nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-black md:max-w-[260px]'
+            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-50 dark:bg-gray-900 md:max-w-[260px]'
           }
           style={{
             width: navVisible ? navWidth : '0px',
@@ -237,7 +237,8 @@ export default function Nav({ navVisible, setNavVisible }) {
                     </div>
                     {user && (
                       <NavLink
-                        className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                        // className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                        className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                         // Add an SVG or icon for the Profile link here
                         svg={() => <ProfileIcon />}
                         text={localize('com_ui_homepage')}
@@ -245,38 +246,44 @@ export default function Nav({ navVisible, setNavVisible }) {
                       />
                     )}
                     <NavLink
-                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      // className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                       svg={() => <HomeIcon />}
                       text={localize('com_ui_recommendation')}
                       clickHandler={user ? openHomepageHandler : navigateToRegister}
                     />
                     <NavLink
-                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      // className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                       svg={() => <NotebookIcon />}
                       text={localize('com_ui_writing_assistant')}
                       clickHandler={user ? openWritingAssistantHandler : navigateToRegister}
                     />
                     <NavLink
-                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      // className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                       svg={() => <ComputerIcon />}
                       text={localize('com_ui_coding_assistant')}
                       clickHandler={user ? openCodingAssistantHandler : navigateToRegister}
                     />
                     <NavLink
-                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      // className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                       svg={() => <LightBulbIcon />}
                       text={localize('com_ui_ask_me_anything')}
                       clickHandler={user ? openAskMeAnythingHandler : navigateToRegister}
                     />
                     <NavLink
-                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      // className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                       svg={() => <LeaderboardIcon />}
                       text={localize('com_ui_referrals_leaderboard')}
                       clickHandler={user ? openLeaderboardHandler : navigateToRegister}
                     />
                     {window.location.hostname !== 'drhu.aitok.ai' && (
                       <NavLink
-                        className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                        // className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-white transition-colors duration-200 hover:bg-gray-700"
+                        className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                         svg={() => (copied ? <CheckMark /> : <Clipboard />)}
                         text={
                           copied

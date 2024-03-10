@@ -151,7 +151,7 @@ see: [Anthropic Endpoint](./ai_setup.md#anthropic)
 
 ```bash
 ANTHROPIC_API_KEY=user_provided
-ANTHROPIC_MODELS=claude-1,claude-instant-1,claude-2
+ANTHROPIC_MODELS=claude-3-opus-20240229,claude-3-sonnet-20240229,claude-2.1,claude-2,claude-1.2,claude-1,claude-1-100k,claude-instant-1,claude-instant-1-100k
 ANTHROPIC_REVERSE_PROXY=
 ```
 
@@ -247,10 +247,10 @@ BINGAI_TOKEN=user_provided
 BINGAI_HOST=
 ```
 
-### ChatGPT
+<!-- ### ChatGPT
 see: [ChatGPT Free Access token](../configuration/ai_setup.md#chatgptbrowser)
 
-> **Warning**: To use this endpoint you'll have to set up your own reverse proxy. Here is the installation guide to deploy your own (based on [Ninja](https://github.com/gngpp/ninja)): **[Ninja Deployment Guide](../../features/ninja.md)**
+> **Warning**: To use this endpoint you'll have to set up your own reverse proxy.
 
 ```bash
 CHATGPT_REVERSE_PROXY=<YOUR-REVERSE-PROXY>
@@ -267,7 +267,7 @@ CHATGPT_REVERSE_PROXY=<YOUR-REVERSE-PROXY>
 ```bash
 CHATGPT_TOKEN=
 CHATGPT_MODELS=text-davinci-002-render-sha
-```
+``` -->
 
 ### Google
 Follow these instructions to setup the [Google Endpoint](./ai_setup.md#google)
@@ -374,6 +374,10 @@ OPENAI_FORCE_PROMPT=true
 
 - Leave `ASSISTANTS_API_KEY=` blank to disable this endpoint
 - Set `ASSISTANTS_API_KEY=` to `user_provided` to allow users to provide their own API key from the WebUI
+
+```bash
+ASSISTANTS_API_KEY=user_provided
+```
 
 - Customize the available models, separated by commas, **without spaces**.
     - The first will be default.
@@ -532,6 +536,14 @@ Get your API key here: [https://tavily.com/#api](https://tavily.com/#api)
 
 ```bash
 TAVILY_API_KEY=
+```
+
+### Traversaal
+LLM-enhanced search tool.
+Get API key here: https://api.traversaal.ai/dashboard
+
+```bash
+TRAVERSAAL_API_KEY=
 ```
 
 #### WolframAlpha

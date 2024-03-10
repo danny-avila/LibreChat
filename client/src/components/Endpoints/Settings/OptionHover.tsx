@@ -25,6 +25,7 @@ const types = {
     topp: 'com_endpoint_anthropic_topp',
     topk: 'com_endpoint_anthropic_topk',
     maxoutputtokens: 'com_endpoint_anthropic_maxoutputtokens',
+    resend: openAI.resend,
   },
   google: {
     temp: 'com_endpoint_google_temp',

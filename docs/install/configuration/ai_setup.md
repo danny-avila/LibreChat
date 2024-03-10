@@ -287,7 +287,7 @@ As noted earlier, [review the Custom Config Guide (click here)](./custom_config.
 
 **Important:** Stability for Unofficial APIs are not guaranteed. Access methods to these APIs are hacky, prone to errors, and patching, and are marked lowest in priority in LibreChat's development.
 
-### ChatGPTBrowser
+<!-- ### ChatGPTBrowser
 
 **Backend Access to https://chat.openai.com/api**
 
@@ -295,7 +295,6 @@ This is not to be confused with [OpenAI's Official API](#openai)!
 
 > Note that this is disabled by default and requires additional configuration to work. 
 > Also, using this may have your data exposed to 3rd parties if using a proxy, and OpenAI may flag your account.
-> See: [ChatGPT Reverse Proxy](../../features/ninja.md)
 
 To get your Access token for ChatGPT Browser Access, you need to:
 
@@ -306,7 +305,7 @@ To get your Access token for ChatGPT Browser Access, you need to:
 
 Warning: There may be a chance of your account being banned if you deploy the app to multiple users with this method. Use at your own risk.
 
----
+--- -->
 
 ### BingAI
 I recommend using Microsoft Edge for this:

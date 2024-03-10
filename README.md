@@ -39,30 +39,31 @@
 </p>
 
 # 📃 Features
- - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
- - 💬 Multimodal Chat:
-     - Upload and analyze images with GPT-4 and Gemini Vision 📸
-     - More filetypes and Assistants API integration in Active Development 🚧 
- - 🌎 Multilingual UI:
-     - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro,
-     - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands
- - 🤖 AI model selection: OpenAI API, Azure, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins
- - 💾 Create, Save, & Share Custom Presets
- - 🔄 Edit, Resubmit, and Continue messages with conversation branching
- - 📤 Export conversations as screenshots, markdown, text, json.
- - 🔍 Search all messages/conversations
- - 🔌 Plugins, including web access, image generation with DALL-E-3 and more
- - 👥 Multi-User, Secure Authentication with Moderation and Token spend tools
- - ⚙️ Configure Proxy, Reverse Proxy, Docker, many Deployment options, and completely Open-Source
+
+- 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
+- 💬 Multimodal Chat:
+  - Upload and analyze images with GPT-4 and Gemini Vision 📸
+  - More filetypes and Assistants API integration in Active Development 🚧
+- 🌎 Multilingual UI:
+  - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro,
+  - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
+- 🤖 AI model selection: OpenAI API, Azure, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins
+- 💾 Create, Save, & Share Custom Presets
+- 🔄 Edit, Resubmit, and Continue messages with conversation branching
+- 📤 Export conversations as screenshots, markdown, text, json.
+- 🔍 Search all messages/conversations
+- 🔌 Plugins, including web access, image generation with DALL-E-3 and more
+- 👥 Multi-User, Secure Authentication with Moderation and Token spend tools
+- ⚙️ Configure Proxy, Reverse Proxy, Docker, many Deployment options, and completely Open-Source
 
 [For a thorough review of our features, see our docs here](https://docs.librechat.ai/features/plugins/introduction.html) 📚
 
-
 ## 🪶 All-In-One AI Conversations with LibreChat
+
 LibreChat brings together the future of assistant AIs with the revolutionary technology of OpenAI's ChatGPT. Celebrating the original styling, LibreChat gives you the ability to integrate multiple AI models. It also integrates and enhances original client features such as conversation and message search, prompt templates and plugins.
 
 With LibreChat, you no longer need to opt for ChatGPT Plus and can instead use free or pay-per-call APIs. We welcome contributions, cloning, and forking to enhance the capabilities of this advanced chatbot platform.
-  
+
 <!-- https://github.com/danny-avila/LibreChat/assets/110412045/c1eb0c0f-41f6-4335-b982-84b278b53d59 -->
 
 [![Watch the video](https://img.youtube.com/vi/pNIOs1ovsXw/maxresdefault.jpg)](https://youtu.be/pNIOs1ovsXw)
@@ -71,11 +72,13 @@ Click on the thumbnail to open the video☝️
 ---
 
 ## 📚 Documentation
+
 For more information on how to use our advanced features, install and configure our software, and access our guidelines and tutorials, please check out our documentation at [docs.librechat.ai](https://docs.librechat.ai)
 
 ---
 
-## 📝 Changelog 
+## 📝 Changelog
+
 Keep up with the latest updates by visiting the releases page - [Releases](https://github.com/danny-avila/LibreChat/releases)
 
 **⚠️ [Breaking Changes](docs/general_info/breaking_changes.md)**
@@ -96,14 +99,15 @@ Please consult the breaking changes before updating.
 ---
 
 ## ✨ Contributions
+
 Contributions, suggestions, bug reports and fixes are welcome!
 
-For new features, components, or extensions, please open an issue and discuss before sending a PR. 
+For new features, components, or extensions, please open an issue and discuss before sending a PR.
 
 ---
 
-💖 This project exists in its current state thanks to all the people who contribute
----
+## 💖 This project exists in its current state thanks to all the people who contribute
+
 <a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />
 </a>
