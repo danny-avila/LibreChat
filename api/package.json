@@ -87,7 +87,8 @@
     "zod": "^3.22.4",
     "svix": "^1.21.0",
     "@clerk/clerk-sdk-node": "^4.13.11",
-    "stripe": "^14.20.0"
+    "stripe": "^14.20.0",
+    "use-stripe-subscription": "^1.0.6"
   },
   "devDependencies": {
     "jest": "^29.5.0",
