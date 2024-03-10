@@ -1,7 +1,7 @@
 import { useRecoilState } from 'recoil';
 import { useCallback, useRef } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import {
   supportsFiles,
   mergeFileConfig,
@@ -60,7 +60,6 @@ export default function ChatForm({ index = 0 }) {
   });
 
   const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
-  const text = methods.watch('text');
 
   return (
     <form
@@ -81,44 +80,36 @@ export default function ChatForm({ index = 0 }) {
               )}
             />
             {endpoint && (
-              <Controller
-                name="text"
-                control={methods.control}
-                render={({ field: { onChange, onBlur, value, name, ref } }) => {
-                  return (
-                    <TextareaAutosize
-                      name={name}
-                      autoFocus
-                      ref={(e) => {
-                        ref(e);
-                        textAreaRef.current = e;
-                      }}
-                      value={value}
-                      onBlur={onBlur}
-                      onChange={onChange}
-                      disabled={!!requiresKey}
-                      onPaste={handlePaste}
-                      onKeyUp={handleKeyUp}
-                      onKeyDown={handleKeyDown}
-                      onCompositionStart={handleCompositionStart}
-                      onCompositionEnd={handleCompositionEnd}
-                      id="prompt-textarea"
-                      tabIndex={0}
-                      data-testid="text-input"
-                      style={{ height: 44, overflowY: 'auto' }}
-                      rows={1}
-                      className={cn(
-                        supportsFiles[endpointType ?? endpoint ?? ''] &&
-                          !endpointFileConfig?.disabled
-                          ? ' pl-10 md:pl-[55px]'
-                          : 'pl-3 md:pl-4',
-                        'm-0 w-full resize-none border-0 bg-transparent py-[10px] pr-10 placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5 md:pr-12 ',
-                        removeFocusOutlines,
-                        'max-h-[65vh] md:max-h-[85vh]',
-                      )}
-                    />
-                  );
+              <TextareaAutosize
+                {...methods.register('text', {
+                  required: true,
+                  onChange: (e) => {
+                    methods.setValue('text', e.target.value);
+                  },
+                })}
+                autoFocus
+                ref={(e) => {
+                  textAreaRef.current = e;
                 }}
+                disabled={!!requiresKey}
+                onPaste={handlePaste}
+                onKeyUp={handleKeyUp}
+                onKeyDown={handleKeyDown}
+                onCompositionStart={handleCompositionStart}
+                onCompositionEnd={handleCompositionEnd}
+                id="prompt-textarea"
+                tabIndex={0}
+                data-testid="text-input"
+                style={{ height: 44, overflowY: 'auto' }}
+                rows={1}
+                className={cn(
+                  supportsFiles[endpointType ?? endpoint ?? ''] && !endpointFileConfig?.disabled
+                    ? ' pl-10 md:pl-[55px]'
+                    : 'pl-3 md:pl-4',
+                  'm-0 w-full resize-none border-0 bg-transparent py-[10px] pr-10 placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5 md:pr-12 ',
+                  removeFocusOutlines,
+                  'max-h-[65vh] md:max-h-[85vh]',
+                )}
               />
             )}
             <AttachFile
@@ -132,7 +123,8 @@ export default function ChatForm({ index = 0 }) {
               endpoint && (
                 <SendButton
                   ref={submitButtonRef}
-                  disabled={!text || !!(filesLoading || isSubmitting || requiresKey)}
+                  control={methods.control}
+                  disabled={!!(filesLoading || isSubmitting || requiresKey)}
                 />
               )
             )}
