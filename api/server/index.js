@@ -93,7 +93,6 @@ process.on('uncaughtException', (err) => {
       logger.warn('Meilisearch error, search will be disabled');
       messageCount++;
     }
-
     return;
   }
 
@@ -104,5 +103,5 @@ process.on('uncaughtException', (err) => {
     return;
   }
 
-  process.exit(1);
+  //process.exit(1);
 });

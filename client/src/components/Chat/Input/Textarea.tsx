@@ -48,7 +48,7 @@ export default function Textarea({
       rows={1}
       className={cn(
         supportsFiles[endpointType ?? endpoint ?? ''] && !endpointFileConfig?.disabled
-          ? ' pl-[4.5rem] md:pl-[55px]'
+          ? ' pl-[4.4rem] md:pl-[5rem]'
           : 'pl-10 md:pl-4',
         'm-0 w-full resize-none border-0 bg-transparent py-[10px] pr-10 placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5 md:pr-12 ',
         removeFocusOutlines,

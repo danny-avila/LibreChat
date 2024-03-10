@@ -1,9 +1,10 @@
 import useSWR, { SWRConfig } from 'swr';
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { loadStripe, Stripe } from '@stripe/stripe-js';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useAuthContext } from './AuthContext';
+import EventEmitter from 'eventemitter3';
 
 const StripeContext = createContext<{
   clientPromise: Promise<Stripe | null>;
@@ -22,12 +23,25 @@ export const SubscriptionProvider = ({
   const { token } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const stripeClient = useMemo(() => loadStripe(stripePublishableKey), [stripePublishableKey]);
-  endpoint = endpoint || startupConfig?.serverDomain + '/api/subscription';
+
+  endpoint = (endpoint || startupConfig?.serverDomain || '') + '/api/subscription';
+
+  const configLoadEmitter = new EventEmitter();
+
+  useEffect(() => {
+    if (startupConfig) {configLoadEmitter.emit('recieved');}
+  }, [startupConfig]);
+
   return (
     <StripeContext.Provider value={{ clientPromise: stripeClient, endpoint: endpoint }}>
       <SWRConfig
         value={{
+          errorRetryInterval: 500,
           fetcher: async (args) => {
+            console.time('xx');
+            if (!startupConfig)
+            {await new Promise((resolve) => configLoadEmitter.once('recieved', resolve));}
+            console.timeEnd('xx');
             const data = await fetch(args, {
               headers: { Authorization: `Bearer ${token}` },
             });

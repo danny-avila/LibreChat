@@ -75,7 +75,7 @@ const AuthContextProvider = ({
   });
 
   const logout = useCallback(() => logoutUser.mutate(undefined), [logoutUser]);
-  const userQuery = useGetUserQuery({ enabled: !!isSignedIn });
+  const userQuery = useGetUserQuery({ enabled: !!token });
 
   function refreshToken() {
     getToken({ leewayInSeconds: 59, skipCache: false })
@@ -91,14 +91,16 @@ const AuthContextProvider = ({
   }
 
   useEffect(() => {
-    if (!isLoadedClerk || !isSignedIn) {return;}
+    if (!isLoadedClerk || !isSignedIn) {
+      return;
+    }
     refreshToken();
     setInterval(refreshToken, 45_000);
   }, [isLoadedClerk, isSignedIn]);
 
   useEffect(() => {
     if (isSignedIn) {
-      setUserContext({ token, isAuthenticated: true, user: userQuery.data, redirect: '/c/new' });
+      setUserContext({ token, isAuthenticated: true, user: userQuery.data, redirect: undefined });
     } else if (isLoadedClerk) {
       navigate('/login', { replace: true });
     }
