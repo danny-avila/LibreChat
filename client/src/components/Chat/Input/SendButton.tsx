@@ -11,18 +11,16 @@ type SendButtonProps = {
   control: Control<{ text: string }>;
 };
 
-const SendButton = React.memo(
-  forwardRef((props: SendButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
+const SubmitButton = React.memo(
+  forwardRef((props: { disabled: boolean }, ref: React.ForwardedRef<HTMLButtonElement>) => {
     const localize = useLocalize();
-    const data = useWatch({ control: props.control });
-
     return (
       <TooltipProvider delayDuration={250}>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               ref={ref}
-              disabled={props.disabled || !data?.text}
+              disabled={props.disabled}
               className={cn(
                 'absolute bottom-1.5 right-2 rounded-lg border border-black p-0.5 text-white transition-colors enabled:bg-black disabled:bg-black disabled:text-gray-400 disabled:opacity-10 dark:border-white dark:bg-white dark:disabled:bg-white md:bottom-3 md:right-3',
               )}
@@ -40,6 +38,13 @@ const SendButton = React.memo(
         </Tooltip>
       </TooltipProvider>
     );
+  }),
+);
+
+const SendButton = React.memo(
+  forwardRef((props: SendButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
+    const data = useWatch({ control: props.control });
+    return <SubmitButton ref={ref} disabled={props.disabled || !data?.text} />;
   }),
 );
 
