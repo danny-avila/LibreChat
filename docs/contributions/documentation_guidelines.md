@@ -1,5 +1,5 @@
 ---
-title: 📝 Documentation Contribution Guidelines
+title: 📝 Documentation Guidelines
 description: Learn how to contribute to the LibreChat documentation by following these guidelines.
 weight: -9
 ---
@@ -50,7 +50,7 @@ weight: 0
 ## Testing New Documents
 - When adding new documents, it is important to test them locally using MkDocs to ensure correct formatting and proper organization in the table of contents (index.md and the left panel of the category).
 
-### Setup MkDocs Locally
+### Setup MkDocs Locally 
 - Requirement: Python 3.x
 
 #### Material for MkDocs Installation
