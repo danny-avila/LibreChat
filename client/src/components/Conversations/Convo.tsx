@@ -23,17 +23,16 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const { showToast } = useToastContext();
 
   const { conversationId, title } = conversation;
-  const inputRef = useRef(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const [titleInput, setTitleInput] = useState(title);
   const [renaming, setRenaming] = useState(false);
 
-  useEffect(() => {
-    if (renaming) {
-      inputRef.current;
+  const clickHandler = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (event.button === 0 && event.ctrlKey) {
+      toggleNav();
+      return;
     }
-  }, [renaming]);
 
-  const clickHandler = async (event) => {
     event.preventDefault();
     if (currentConvoId === conversationId) {
       return;
@@ -45,8 +44,13 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     document.title = title;
 
     // set conversation to the new conversation
+    let lastSelectedTools = [];
+    try {
+      lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') ?? [];
+    } catch (e) {
+      // console.error(e);
+    }
     if (conversation?.endpoint === EModelEndpoint.gptPlugins) {
-      const lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') ?? [];
       navigateToConvo({ ...conversation, tools: lastSelectedTools });
     } else {
       navigateToConvo(conversation);
@@ -57,6 +61,12 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     e.preventDefault();
     setTitleInput(title);
     setRenaming(true);
+    setTimeout(() => {
+      if (!inputRef.current) {
+        return;
+      }
+      inputRef.current.focus();
+    }, 25);
   };
 
   const onRename = (e) => {
