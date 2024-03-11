@@ -1,5 +1,5 @@
 ---
-title: 🐳 Ubuntu Docker Deployment Guide
+title: 🐳 Ubuntu Docker Deployment
 description: These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server
 weight: -9
 ---

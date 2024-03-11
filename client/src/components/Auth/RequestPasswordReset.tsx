@@ -49,7 +49,7 @@ function RequestPasswordReset() {
         setBodyText(
           <span>
             {localize('com_auth_click')}{' '}
-            <a className="text-green-600 hover:underline" href={resetLink}>
+            <a className="font-medium text-green-500 hover:underline" href={resetLink}>
               {localize('com_auth_here')}
             </a>{' '}
             {localize('com_auth_to_reset_your_password')}
@@ -66,7 +66,7 @@ function RequestPasswordReset() {
     if (bodyText) {
       return (
         <div
-          className="relative mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-green-700"
+          className="relative mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-green-700 dark:bg-gray-900 dark:text-white"
           role="alert"
         >
           {bodyText}
@@ -150,7 +150,7 @@ function RequestPasswordReset() {
         </h1>
         {requestError && (
           <div
-            className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
+            className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700 dark:bg-gray-900 dark:text-red-500"
             role="alert"
           >
             {localize('com_auth_error_reset_password')}
