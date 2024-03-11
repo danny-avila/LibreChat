@@ -141,7 +141,7 @@ const Icon: React.FC<IconProps> = (props) => {
           <UnknownIcon
             iconURL={props.iconURL}
             endpoint={endpoint ?? ''}
-            className="icon-sm"
+            className="icon-md"
             context="message"
           />
         ),

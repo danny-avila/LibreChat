@@ -119,7 +119,6 @@ const PresetItems: FC<{
                       key={`preset-item-${preset.presetId}`}
                       textClassName="text-xs max-w-[150px] sm:max-w-[200px] truncate md:max-w-full "
                       title={getPresetTitle(preset)}
-                      disableHover={true}
                       onClick={() => onSelectPreset(preset)}
                       icon={
                         Icon &&

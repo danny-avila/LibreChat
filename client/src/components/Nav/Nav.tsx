@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { useCallback, useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo, memo } from 'react';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
@@ -21,7 +21,7 @@ import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function Nav({ navVisible, setNavVisible }) {
+const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
 
@@ -97,7 +97,10 @@ export default function Nav({ navVisible, setNavVisible }) {
   };
 
   const toggleNavVisible = () => {
-    setNavVisible((prev: boolean) => !prev);
+    setNavVisible((prev: boolean) => {
+      localStorage.setItem('navVisible', JSON.stringify(!prev));
+      return !prev;
+    });
     if (newUser) {
       setNewUser(false);
     }
@@ -179,4 +182,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       </Tooltip>
     </TooltipProvider>
   );
-}
+};
+
+export default memo(Nav);
