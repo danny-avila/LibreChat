@@ -341,7 +341,10 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     isPaused,
     recordingTime,
     mediaRecorder,
-  } = useAudioRecorder();
+  } = useAudioRecorder({
+    noiseSuppression: true,
+    echoCancellation: true,
+  });
 
   const [recordingSate, setRecordingState] = useState<
     'idle' | 'recording' | 'paused' | 'processing'
@@ -367,7 +370,9 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   }, [isRecording, isPaused]);
 
   useEffect(() => {
-    if (!recordingBlob || recordingSate === 'idle') {return;}
+    if (!recordingBlob || recordingSate === 'idle') {
+      return;
+    }
     (async () => {
       setRecordingState('processing');
 
