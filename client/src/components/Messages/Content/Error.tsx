@@ -51,7 +51,7 @@ const errorMessages = {
   token_balance: (json: TTokenBalance) => {
     const localize = useLocalize();
     const { balance, tokenCost, promptTokens, generations } = json;
-    const message = `${localize('com_insufficient_funds')}, ${balance}.`;
+    const message = `${localize('com_insufficient_funds')} ${balance}.`;
     return (
       <>
         <ErrorDialog message={message} />
