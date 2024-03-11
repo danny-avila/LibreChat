@@ -103,6 +103,7 @@
   "dependencies": {
     "ag-grid-community": "^31.1.1",
     "esbuild": "^0.20.1",
+    "express-rate-limit": "^7.2.0",
     "js-tiktoken": "^1.0.10",
     "langchain": "^0.1.24",
     "sharp": "^0.32.6"
