@@ -39,7 +39,7 @@ function ResetPassword() {
             {localize('com_auth_reset_password_success')}
           </h1>
           <div
-            className="relative mb-8 mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-center text-green-700"
+            className="relative mb-8 mt-4 rounded border border-green-400 bg-green-100 px-4 py-3 text-center text-green-700 dark:bg-gray-900 dark:text-white"
             role="alert"
           >
             {localize('com_auth_login_with_new_password')}
@@ -66,7 +66,7 @@ function ResetPassword() {
           </h1>
           {resetError && (
             <div
-              className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700 dark:text-red-600 "
+              className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700 dark:bg-gray-900 dark:text-red-500"
               role="alert"
             >
               {localize('com_auth_error_invalid_reset_token')}{' '}
@@ -127,7 +127,7 @@ function ResetPassword() {
               </div>
 
               {errors.password && (
-                <span role="alert" className="mt-1 text-sm text-black">
+                <span role="alert" className="mt-1 text-sm text-black dark:text-white">
                   {/* @ts-ignore not sure why */}
                   {errors.password.message}
                 </span>
@@ -160,19 +160,19 @@ function ResetPassword() {
                 </label>
               </div>
               {errors.confirm_password && (
-                <span role="alert" className="mt-1 text-sm text-black">
+                <span role="alert" className="mt-1 text-sm text-black dark:text-white">
                   {/* @ts-ignore not sure why */}
                   {errors.confirm_password.message}
                 </span>
               )}
               {errors.token && (
-                <span role="alert" className="mt-1 text-sm text-black">
+                <span role="alert" className="mt-1 text-sm text-black dark:text-white">
                   {/* @ts-ignore not sure why */}
                   {errors.token.message}
                 </span>
               )}
               {errors.userId && (
-                <span role="alert" className="mt-1 text-sm text-black">
+                <span role="alert" className="mt-1 text-sm text-black dark:text-white">
                   {/* @ts-ignore not sure why */}
                   {errors.userId.message}
                 </span>

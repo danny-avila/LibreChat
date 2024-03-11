@@ -1,6 +1,14 @@
 // Russian phrases
 
 export default {
+  com_sidepanel_select_assistant: 'Выбрать Ассистента',
+  com_sidepanel_assistant_builder: 'Конструктор Ассистента',
+  com_sidepanel_attach_files: 'Прикрепить файлы',
+  com_sidepanel_manage_files: 'Управление файлами',
+  com_assistants_code_interpreter: 'Интерпретатор кода',
+  com_assistants_code_interpreter_files:
+    'Следующие файлы доступны только для Интерпретатора кода:',
+  com_assistants_retrieval: 'Поиск',
   com_ui_examples: 'Примеры',
   com_ui_new_chat: 'Создать чат',
   com_ui_happy_birthday: 'Это мой первый день рождения!',
@@ -116,6 +124,7 @@ export default {
   com_auth_to_try_again: 'чтобы попробовать снова.',
   com_auth_submit_registration: 'Отправить регистрацию',
   com_auth_welcome_back: 'Добро пожаловать',
+  com_auth_back_to_login: 'Вернуться к авторизации',
   com_endpoint_open_menu: 'Открыть меню',
   com_endpoint_bing_enable_sydney: 'Включить Sydney',
   com_endpoint_bing_to_enable_sydney: 'Чтобы включить Sydney',
@@ -184,7 +193,7 @@ export default {
   com_endpoint_disabled_with_tools_placeholder: 'Отключено при включённых плагинах',
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Задайте кастомные инструкции для включения в системное сообщение. По умолчанию: нет',
-  com_endpoint_import: 'Импортировать',
+  com_endpoint_import: 'Импорт',
   com_endpoint_set_custom_name:
     'Задайте кастомное имя на случай, если вы сможете найти эту предустановку :)',
   com_endpoint_preset_delete_confirm: 'Вы уверены, что хотите удалить этот пресет?',
@@ -198,7 +207,7 @@ export default {
     'Произошла ошибка при удалении вашего пресета. Пожалуйста, попробуйте еще раз.',
   com_endpoint_preset_default_removed: 'больше не пресет по умолчанию.',
   com_endpoint_preset_default_item: 'По умолчанию:',
-  com_endpoint_preset_default_none: 'Нет активных пресетов По умолчанию.',
+  com_endpoint_preset_default_none: 'Активных пресетов по умолчанию нет.',
   com_endpoint_preset_title: 'Пресет',
   com_endpoint_preset_saved: 'Сохранено!',
   com_endpoint_preset_default: 'теперь пресет По умолчаанию.',
@@ -216,7 +225,7 @@ export default {
   com_endpoint_agent: 'Агент',
   com_endpoint_show_what_settings: 'Показать настройки {0}',
   com_endpoint_save: 'Сохранить',
-  com_endpoint_export: 'Экспортировать',
+  com_endpoint_export: 'Экспорт',
   com_endpoint_save_as_preset: 'Сохранить как Пресет',
   com_endpoint_presets_clear_warning:
     'Вы уверены, что хотите удалить все пресеты? Это действие необратимо и восстановление невозможно.',
@@ -268,6 +277,7 @@ export default {
     'Убедитесь что нажали на \'Create and Continue\' чтобы получить как минимум \'Vertex AI User\'. Наконец, создайте JSON-ключ чтобы импортировать его сюда.',
   com_nav_welcome_message: 'Чем я могу помочь вам сегодня?',
   com_nav_auto_scroll: 'Автоматически проматывать к самым новым сообщениям при открытии',
+  com_nav_hide_panel: 'Скрыть правую боковую панель',
   com_nav_modular_chat: 'Разрешить менять точки подключения в середине разговора',
   com_nav_latex_parsing: 'Обработка LaTeX в сообщениях (может повлиять на производительность)',
   com_nav_plugin_store: 'Магазин плагинов',
@@ -284,6 +294,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Рекурсивно или последовательно?',
   com_nav_export_recursive: 'Рекурсивно',
   com_nav_export_conversation: 'Экспортировать разговор',
+  com_nav_my_files: 'Мои файлы',
   com_nav_theme: 'Тема',
   com_nav_theme_system: 'Системная',
   com_nav_theme_dark: 'Темная',
