@@ -90,7 +90,8 @@ const createNewUser = async ({ clerkUserId, email, avatarUrl, username, name, em
 };
 
 const getUserController = async (req, res) => {
-  res.status(200).send(req.user);
+  const user = await User.findOne({ id: req.user.id });
+  res.status(200).send(user);
 };
 
 const updateUserPluginsController = async (req, res) => {
