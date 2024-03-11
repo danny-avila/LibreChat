@@ -11,6 +11,7 @@ import search from './search';
 import preset from './preset';
 import lang from './language';
 import settings from './settings';
+import audioId from './audioId';
 
 export default {
   ...families,
@@ -26,4 +27,5 @@ export default {
   ...preset,
   ...lang,
   ...settings,
+  ...audioId,
 };

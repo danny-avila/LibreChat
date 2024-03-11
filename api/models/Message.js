@@ -167,4 +167,13 @@ module.exports = {
       throw new Error('Failed to delete messages.');
     }
   },
+
+  async getOneMessage(filter) {
+    try {
+      return await Message.findOne(filter).lean();
+    } catch (err) {
+      logger.error('Error getting the message:', err);
+      throw new Error('Failed to get the message.');
+    }
+  },
 };
