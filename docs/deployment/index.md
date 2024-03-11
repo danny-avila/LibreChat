@@ -11,8 +11,9 @@ weight: 3
 ---
 
 - 🌊 [DigitalOcean (✨Recommended)](./digitalocean.md)
-- 🐳 [Ubuntu Docker Deployment Guide](./docker_ubuntu_deploy.md)
+- 🐳 [Ubuntu Docker Deployment](./docker_ubuntu_deploy.md)
 - 🤗 [HuggingFace](./huggingface.md)
+- 🛤️ [Railway](./railway.md)
 - 🐧 [Linode](./linode.md)
 - ⚡ [Azure](./azure-terraform.md)
 - ⏹️ [Render](./render.md)
@@ -25,4 +26,5 @@ weight: 3
 
 - ☁️ [Cloudflare](./cloudflare.md)
 - 🪨 [Ngrok](./ngrok.md)
-- ↪️ [NGINX Guide](./nginx.md)
+- ↪️ [Nginx Guide](./nginx.md)
+- 🚦 [Traefik](./traefik.md)
