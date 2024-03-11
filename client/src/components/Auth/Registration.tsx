@@ -64,7 +64,7 @@ const Registration: React.FC = () => {
             validation,
           )}
           aria-invalid={!!errors[id]}
-          className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
+          className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
           placeholder=" "
           data-testid={id}
         ></input>
@@ -161,7 +161,7 @@ const Registration: React.FC = () => {
         </h1>
         {error && (
           <div
-            className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
+            className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700 dark:bg-gray-900 dark:text-red-500"
             role="alert"
             data-testid="registration-error"
           >

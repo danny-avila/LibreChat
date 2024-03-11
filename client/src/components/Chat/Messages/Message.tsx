@@ -59,7 +59,7 @@ export default function Message(props: TMessageProps) {
             <div className="relative flex flex-shrink-0 flex-col items-end">
               <div>
                 <div className="pt-0.5">
-                  <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
+                  <div className="gizmo-shadow-stroke flex h-5 w-5 items-center justify-center rounded-full">
                     {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
                       <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
                     ) : (
@@ -70,7 +70,7 @@ export default function Message(props: TMessageProps) {
               </div>
             </div>
             <div
-              className={cn('relative flex w-full flex-col', isCreatedByUser ? '' : 'agent-turn')}
+              className={cn('relative flex w-11/12 flex-col', isCreatedByUser ? '' : 'agent-turn')}
             >
               <div className="select-none font-semibold">{messageLabel}</div>
               <div className="flex-col gap-1 md:gap-3">

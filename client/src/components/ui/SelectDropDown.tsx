@@ -122,7 +122,7 @@ function SelectDropDown({
               >
                 <Listbox.Options
                   className={cn(
-                    'absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded border bg-white text-base text-xs ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]',
+                    'absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded border bg-white text-base text-xs ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:border-gray-600 md:w-[100%]',
                     optionsListClass ?? '',
                   )}
                 >
