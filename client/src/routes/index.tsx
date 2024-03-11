@@ -20,21 +20,23 @@ const AuthLayout = () => {
     );
   }
   return (
-    <AuthContextProvider>
-      <SubscriptionProvider stripePublishableKey={startupConfig.stripePublishableKey}>
+    <ClerkProvider publishableKey={startupConfig.clerkPublishableKey}>
+      <AuthContextProvider>
         <Outlet />
-      </SubscriptionProvider>
-    </AuthContextProvider>
+      </AuthContextProvider>
+    </ClerkProvider>
   );
 };
 
-const ClerkLayout = () => {
+const SubscriptionLayout = () => {
   const { data: startupConfig } = useGetStartupConfig();
-  if (!startupConfig) {return null;}
+  if (!startupConfig) {
+    return null;
+  }
   return (
-    <ClerkProvider publishableKey={startupConfig.clerkPublishableKey}>
+    <SubscriptionProvider stripePublishableKey={startupConfig.stripePublishableKey}>
       <Outlet />
-    </ClerkProvider>
+    </SubscriptionProvider>
   );
 };
 
@@ -49,6 +51,7 @@ const PaywallRoot = () => {
       </div>
     );
   }
+
   if (isLoadedStripe && !subscription) {
     redirectToCheckout({ price: startupConfig.stripePriceId });
     return (
@@ -68,7 +71,7 @@ const PaywallRoot = () => {
 
 export const router = createBrowserRouter([
   {
-    element: <ClerkLayout />,
+    element: <AuthLayout />,
     children: [
       {
         path: 'register',
@@ -76,7 +79,7 @@ export const router = createBrowserRouter([
       },
 
       {
-        element: <AuthLayout />,
+        element: <SubscriptionLayout />,
         children: [
           {
             path: 'login',
