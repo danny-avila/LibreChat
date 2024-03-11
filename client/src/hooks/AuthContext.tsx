@@ -102,7 +102,9 @@ const AuthContextProvider = ({
     if (isSignedIn) {
       setUserContext({ token, isAuthenticated: true, user: userQuery.data, redirect: undefined });
     } else if (isLoadedClerk) {
-      navigate('/login', { replace: true });
+      if (!window.location.href.includes('/register')) {
+        navigate('/login', { replace: true });
+      }
     }
   }, [
     token,
