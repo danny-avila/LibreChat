@@ -23,10 +23,10 @@ async function loadCustomConfig() {
 
   let customConfig;
 
-  if (configPath.startsWith('http://') || configPath.startsWith('https://')) {
+  if (/^https?:\/\//.test(configPath)) {
     try {
       const response = await axios.get(configPath);
-      customConfig = response.data; // This is a YAML string when downloaded
+      customConfig = response.data;
     } catch (error) {
       i === 0 && logger.error(`Failed to fetch the remote config file from ${configPath}`, error);
       i === 0 && i++;
