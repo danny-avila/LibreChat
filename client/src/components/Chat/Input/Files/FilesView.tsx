@@ -4,8 +4,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/u
 import { useGetFiles } from '~/data-provider';
 import { DataTable, columns } from './Table';
 import { cn } from '~/utils/';
+import { useLocalize } from '~/hooks';
 
 export default function Files({ open, onOpenChange }) {
+  const localize = useLocalize();
+
   const { data: files = [] } = useGetFiles<TFile[]>({
     select: (files) =>
       files.map((file) => {
@@ -27,7 +30,7 @@ export default function Files({ open, onOpenChange }) {
       <DialogContent className={cn('overflow-x-auto shadow-2xl dark:bg-gray-900 dark:text-white')}>
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-            My Files
+            {localize('com_ui_my_files')}
           </DialogTitle>
         </DialogHeader>
         <div className="overflow-x-auto p-0 sm:p-6 sm:pt-4">

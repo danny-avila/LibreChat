@@ -20,6 +20,7 @@ export default {
   com_ui_experimental: 'Экспериментальный',
   com_ui_input: 'Ввод',
   com_ui_close: 'Закрыть',
+  com_ui_my_files: 'Мои файлы',
   com_ui_model: 'Модель',
   com_ui_select_model: 'Выберите модель',
   com_ui_use_prompt: 'Использовать промт',
