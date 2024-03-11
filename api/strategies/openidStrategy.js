@@ -6,13 +6,20 @@ const { handleExistingUser } = require('./process');
 
 const getFullName = (userinfo) => {
   const { given_name, family_name, username, email } = userinfo;
-  return given_name && family_name
-    ? `${given_name} ${family_name}`
-    : given_name
-      ? given_name
-      : family_name
-        ? family_name
-        : username || email;
+
+  if (given_name && family_name) {
+    return `${given_name} ${family_name}`;
+  }
+
+  if (given_name) {
+    return given_name;
+  }
+
+  if (family_name) {
+    return family_name;
+  }
+
+  return username || email;
 };
 
 const setupOpenId = async () => {
