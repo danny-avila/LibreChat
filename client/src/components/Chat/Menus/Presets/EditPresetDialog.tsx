@@ -19,7 +19,11 @@ const EditPresetDialog = ({
   const localize = useLocalize();
   const { preset, setPreset } = useChatContext();
   const { setOption } = useSetIndexOptions(preset);
-  const [onTitleChange, title] = useDebouncedInput(setOption, 'title', preset?.title);
+  const [onTitleChange, title] = useDebouncedInput({
+    setOption,
+    optionKey: 'title',
+    initialValue: preset?.title,
+  });
   const [presetModalVisible, setPresetModalVisible] = useRecoilState(store.presetModalVisible);
 
   const { data: availableEndpoints = [] } = useGetEndpointsQuery({
