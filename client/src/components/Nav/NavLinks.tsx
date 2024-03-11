@@ -75,9 +75,9 @@ function NavLinks() {
                 <div className="flex items-center">
                   <span
                     data-tooltip-id="token-explain"
-                    data-tooltip-html="GPT-4 burns tokens at a <br /> rate 15x that of GPT-3.5."
+                    data-tooltip-html={localize('gpt4_token_burn_rate')}
                   >
-                    {`Tokens Remaining: ${formatTokenCount(balanceQuery.data)}`}
+                    {`${localize('com_tokens_remaining')} ${formatTokenCount(balanceQuery.data)}`}
 
                     <svg
                       width="18px"

@@ -347,4 +347,7 @@ export default {
   com_signin_title: 'Sign in to your account',
   com_signin_or: 'Or',
   com_signin_create_account: 'create an account',
+  com_insufficient_funds: 'Insufficient Funds',
+  com_tokens_remaining: 'Tokens Remaining:',
+  gpt4_token_burn_rate: 'GPT-4使用的算力是GPT-3.5的15倍。',
 };

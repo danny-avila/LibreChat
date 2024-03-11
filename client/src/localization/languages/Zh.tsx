@@ -308,4 +308,7 @@ export default {
   com_signin_title: '登录到您的账户',
   com_signin_or: '或',
   com_signin_create_account: '创建账户',
+  com_insufficient_funds: '算力不足! 余额:',
+  com_tokens_remaining: '剩余算力:',
+  gpt4_token_burn_rate: 'GPT-4使用的算力是GPT-3.5的15倍。',
 };
