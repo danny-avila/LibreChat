@@ -5,7 +5,7 @@ const { FileSources } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const User = require('~/models/User');
-
+const { getUser } = require('~/models/userMethods');
 /**
  * Updates the avatar URL of an existing user. If the user's avatar URL does not include the query parameter
  * '?manual=true', it updates the user's avatar with the provided URL. For local file storage, it directly updates
@@ -90,7 +90,7 @@ const createNewUser = async ({ clerkUserId, email, avatarUrl, username, name, em
 };
 
 const getUserController = async (req, res) => {
-  const user = await User.findOne({ id: req.user.id });
+  const user = await getUser(req.user.id);
   res.status(200).send(user);
 };
 

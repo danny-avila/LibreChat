@@ -1,6 +1,9 @@
 const { Webhook } = require('svix');
-const { createNewUser } = require('~/server/controllers/UserController');
+const User = require('~/models/User');
 const clerkClient = require('@clerk/clerk-sdk-node');
+const { FileSources } = require('librechat-data-provider');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 
 async function userController(req, res) {
   // Check if the 'Signing Secret' from the Clerk Dashboard was correctly provided
@@ -54,6 +57,7 @@ async function userController(req, res) {
 
   if (eventType === 'user.created') {
     const clerkUser = evt.data;
+
     const userData = {
       clerkUserId: id,
       name: `${
@@ -67,12 +71,28 @@ async function userController(req, res) {
         clerkUser.emailAddresses.find((x) => x.id === clerkUser.primaryEmailAddressId).verification
           .status === 'verified',
       username: clerkUser.username,
-      avtar: clerkUser.image_url,
+      avatar: clerkUser.image_url,
     };
-    const user = await createNewUser(userData);
+
+    const newUser = await new User(userData).save();
+
+    const fileStrategy = process.env.CDN_PROVIDER;
+    const isLocal = fileStrategy === FileSources.local;
+
+    if (!isLocal) {
+      const userId = newUser._id;
+      const webPBuffer = await resizeAvatar({
+        userId,
+        input: newUser.avatar,
+      });
+
+      const { processAvatar } = getStrategyFunctions(fileStrategy);
+      newUser.avatar = await processAvatar({ buffer: webPBuffer, userId });
+      await newUser.save();
+    }
 
     await clerkClient.users.updateUser(req.auth.userId, {
-      externalId: user.id,
+      externalId: newUser._id,
     });
 
     return res.status(200).json({
