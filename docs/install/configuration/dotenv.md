@@ -106,13 +106,15 @@ UID=1000
 GID=1000
 ```
 
-### librechat.yaml path
-Set an alternative path for the LibreChat config file
+### Configuration Path - `librechat.yaml`
+Specify an alternative location for the LibreChat configuration file. 
+You may specify an **absolute path**, a **relative path**, or a **URL**. The filename in the path is flexible and does not have to be `librechat.yaml`; any valid configuration file will work.
 
-> Note: leave commented out to have LibreChat look for the config file in the root folder (default behavior)
+> **Note**: If you prefer LibreChat to search for the configuration file in the root directory (which is the default behavior), simply leave this option commented out.
 
 ```sh
-CONFIG_PATH="/alternative/path/to/librechat.yaml"
+# To set an alternative configuration path or URL, uncomment the line below and replace it with your desired path or URL.
+# CONFIG_PATH="/your/alternative/path/to/config.yaml"
 ```
 
 ## Endpoints
