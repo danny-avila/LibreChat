@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { LucideArrowUpLeft } from 'lucide-react';
+import { useLocalize } from '~/hooks';
 import {
   flexRender,
   getCoreRowModel,
@@ -34,6 +35,7 @@ interface DataTableProps<TData, TValue> {
 }
 
 export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
+  const localize = useLocalize();
   const [rowSelection, setRowSelection] = useState({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -139,7 +141,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           className="flex gap-2"
         >
           <LucideArrowUpLeft className="icon-sm" />
-          Manage Files
+          {localize('com_sidepanel_manage_files')}
         </Button>
         <div className="flex gap-2">
           <Button
