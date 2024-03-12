@@ -6,6 +6,8 @@ import { useLocalize, useOnClickOutside } from '~/hooks';
 import { cn, removeFocusOutlines } from '~/utils';
 import { CrossIcon } from '~/components/svg';
 import { Button } from '~/components/ui';
+import { ExternalLinkIcon } from '@radix-ui/react-icons';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 type TOptionsPopoverProps = {
   children: ReactNode;
@@ -23,6 +25,9 @@ export default function OptionsPopover({
   closePopover,
   PopoverButtons,
 }: TOptionsPopoverProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const popoverRef = useRef(null);
   useOnClickOutside(
     popoverRef,
@@ -60,14 +65,26 @@ export default function OptionsPopover({
               'border-d-0 flex w-full flex-col overflow-hidden rounded-none border-s-0 border-t bg-white px-0 pb-[10px] dark:border-white/10 md:rounded-md md:border lg:w-[736px]',
             )}
           >
-            <div className="flex w-full items-center bg-gray-50 px-2 py-2 dark:bg-gray-800/60">
+            <div className="flex w-full items-center gap-4 bg-gray-50 px-2 py-2 dark:bg-gray-800/60">
               <Button
                 type="button"
-                className="h-auto justify-start rounded-md bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700"
+                className="h-auto justify-start rounded-md bg-transparent px-2 py-1 text-xs font-medium text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700"
                 onClick={saveAsPreset}
               >
                 <Save className="mr-1 w-[14px]" />
                 {localize('com_endpoint_save_as_preset')}
+              </Button>
+              <Button
+                type="button"
+                className="h-auto justify-start rounded-md bg-transparent px-2 py-2 text-xs font-medium text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700"
+                onClick={() =>
+                  navigate('/marketplace?redirectPath=' + encodeURIComponent(location.pathname), {
+                    replace: true,
+                  })
+                }
+              >
+                <ExternalLinkIcon className="mr-1" />
+                Add From Marketplace
               </Button>
               {PopoverButtons}
               <Button

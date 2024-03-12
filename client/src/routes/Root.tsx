@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useGetModelsQuery, useGetSearchEnabledQuery } from 'librechat-data-provider/react-query';
 import type { ContextType } from '~/common';
@@ -23,7 +23,6 @@ export default function Root() {
     const savedNavVisible = localStorage.getItem('navVisible');
     return savedNavVisible !== null ? JSON.parse(savedNavVisible) : true;
   });
-
   const submission = useRecoilValue(store.submission);
   useServerStream(submission ?? null);
 
@@ -69,9 +68,13 @@ export default function Root() {
       <AssistantsMapContext.Provider value={assistantsMap}>
         <div className="flex h-dvh">
           <div className="relative z-0 flex h-full w-full overflow-hidden">
-            <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
+            {location.pathname !== '/marketplace' ? (
+              <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
+            ) : null}
             <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
-              <MobileNav setNavVisible={setNavVisible} />
+              {location.pathname !== '/marketplace' ? (
+                <MobileNav setNavVisible={setNavVisible} />
+              ) : null}
               <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
             </div>
           </div>

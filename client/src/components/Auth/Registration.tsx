@@ -15,7 +15,7 @@ const Registration: React.FC = () => {
 
   useEffect(() => {
     if (startupConfig?.registrationEnabled === false) {
-      navigate('/login');
+      navigate('/login', { replace: true });
     }
   }, [startupConfig, navigate]);
 

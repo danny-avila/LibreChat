@@ -9,6 +9,7 @@ import { ClerkProvider } from '@clerk/clerk-react';
 import { SubscriptionProvider, useSubscription } from '~/hooks/useStripeSubscription';
 import { Loader } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import MarketplaceView from '~/components/Marketplace/MarketplaceView';
 
 const AuthLayout = () => {
   const { data: startupConfig } = useGetStartupConfig();
@@ -104,6 +105,10 @@ export const router = createBrowserRouter([
               {
                 path: 'search/:query?',
                 element: <Search />,
+              },
+              {
+                path: '/marketplace',
+                element: <MarketplaceView />,
               },
             ],
           },

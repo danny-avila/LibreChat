@@ -97,7 +97,8 @@
     "swr": "^2.2.5",
     "react-audio-voice-recorder": "^2.2.0",
     "eventemitter3": "^5.0.1",
-    "react-use-audio-player": "^2.2.0"
+    "react-use-audio-player": "^2.2.0",
+    "fuse.js": "^7.0.0"
   },
   "devDependencies": {
     "@babel/plugin-transform-runtime": "^7.22.15",
