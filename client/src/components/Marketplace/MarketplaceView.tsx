@@ -1,44 +1,35 @@
-import { memo, useEffect, useState } from 'react';
-import { useRecoilState, useRecoilValue } from 'recoil';
-import { Link, redirect, useParams } from 'react-router-dom';
-import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
-import { ChatContext, useFileMapContext } from '~/Providers';
-import { useChatHelpers, useSSE } from '~/hooks';
-import { Spinner } from '~/components/svg';
-import Presentation from '../Chat/Presentation';
-import { buildTree } from '~/utils';
-import store from '~/store';
+import { useState } from 'react';
+
 import {
   Button,
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
   Input,
-  ThemeSelector,
 } from '../ui';
-import { title } from 'process';
-import { Description } from '@radix-ui/react-dialog';
 import Fuse, { FuseResult } from 'fuse.js';
 import { ChevronLeft } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-function MarketplaceView() {
-  type Prompt = {
-    title: string;
-    description: string;
-    image: string;
-    prompt: string;
-  };
+export type Presets = {
+  title: string;
+  description: string;
+  image: string;
+  prompt: string;
+  temperature?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+};
 
+function MarketplaceView() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [preset, setPreset] = useRecoilState(store.preset);
 
-  const prompts: Prompt[] = [
+  const presets: Presets[] = [
     {
       title: 'Gen Z Engagement Specialist',
       description:
@@ -149,7 +140,7 @@ function MarketplaceView() {
     },
   ];
 
-  const searchResultAll = prompts.map((val, index) => ({
+  const searchResultAll = presets.map((val, index) => ({
     item: Object.assign(val, {}),
     refIndex: index,
     matches: [],
@@ -157,10 +148,10 @@ function MarketplaceView() {
   }));
 
   const [searchTerm, setSarchTerm] = useState('');
-  const [searchResult, setSearchResult] = useState<FuseResult<Prompt>[]>(searchResultAll);
+  const [searchResult, setSearchResult] = useState<FuseResult<Presets>[]>(searchResultAll);
   const [lastChangeTime, setLastChangeTime] = useState(Date.now());
 
-  const fuse = new Fuse(prompts, {
+  const fuse = new Fuse(presets, {
     keys: ['title', 'description'],
     includeScore: true,
   });
@@ -182,12 +173,23 @@ function MarketplaceView() {
     .split('&')
     .map((i) => searchParmas.set(i.split('=')[0], i.split('=')[1]));
 
+  const handlePresetSelect = (item: Presets) => {
+    localStorage.setItem('selected-preset', JSON.stringify(item));
+    const redirectPath = decodeURIComponent(searchParmas.get('redirectPath'));
+    if (redirectPath) {
+      return navigate(redirectPath, { replace: true });
+    }
+    navigate('/c/new', { replace: true });
+  };
+
   return (
     <div className="overflow-scroll">
       <Button
         onClick={() => {
           const redirectPath = decodeURIComponent(searchParmas.get('redirectPath'));
-          if (redirectPath) {return navigate(redirectPath, { replace: true });}
+          if (redirectPath) {
+            return navigate(redirectPath, { replace: true });
+          }
           navigate('/c/new', { replace: true });
         }}
         className="mt-2"
@@ -195,8 +197,6 @@ function MarketplaceView() {
       >
         <ChevronLeft /> Go Back to Chat
       </Button>
-
-      {/* <ThemeSelector /> */}
       <div className="sticky top-0 grid h-auto w-full place-content-center bg-white/70 p-3 backdrop-blur-md dark:bg-gray-800/70 dark:text-white">
         <h1 className="font-mono text-2xl font-bold ">Promt Marketplace</h1>
       </div>
@@ -225,7 +225,7 @@ function MarketplaceView() {
               </DialogTrigger>
               <DialogContent className="dark:bg-gray-800">
                 <DialogHeader>
-                  <DialogTitle>Add Prompt to Your Collection</DialogTitle>
+                  <DialogTitle>Add Preset to Your Collection</DialogTitle>
                 </DialogHeader>
                 <div className="mt-[-1rem] max-h-[50vh] overflow-x-scroll p-4 text-center">
                   <div className="grid place-items-center">
@@ -244,8 +244,12 @@ function MarketplaceView() {
                   <div className="h-[1px] bg-gray-300 dark:bg-gray-600/80" />
                 </div>
                 <DialogFooter>
-                  <Button className="hover:dark:bg-gray-500" type="submit">
-                    Add Prompt
+                  <Button
+                    onClick={() => handlePresetSelect(result.item)}
+                    className="hover:dark:bg-gray-500"
+                    type="submit"
+                  >
+                    Add Preset
                   </Button>
                 </DialogFooter>
               </DialogContent>
