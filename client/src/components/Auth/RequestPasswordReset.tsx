@@ -103,7 +103,7 @@ function RequestPasswordReset() {
                   },
                 })}
                 aria-invalid={!!errors.email}
-                className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
+                className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-black/10 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none dark:border-white/20 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
                 placeholder=" "
               ></input>
               <label
@@ -124,7 +124,7 @@ function RequestPasswordReset() {
             <button
               type="submit"
               disabled={!!errors.email}
-              className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-all duration-300 hover:bg-green-550 focus:bg-green-550 focus:outline-none"
+              className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-550 focus:bg-green-550 focus:outline-none disabled:cursor-not-allowed disabled:hover:bg-green-500"
             >
               {localize('com_auth_continue')}
             </button>

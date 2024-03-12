@@ -1972,6 +1972,12 @@ html {
   }
 }
 
+.webkit-dark-styles,
+.webkit-dark-styles:focus {
+  background-clip: content-box;
+  -webkit-box-shadow: 0 0 0 50vh #fff inset;
+}
+
 .dark .webkit-dark-styles,
 .dark .webkit-dark-styles:focus {
   -webkit-text-fill-color: #fff;

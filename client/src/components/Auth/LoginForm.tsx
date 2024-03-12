@@ -44,7 +44,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
               pattern: { value: /\S+@\S+\.\S+/, message: localize('com_auth_email_pattern') },
             })}
             aria-invalid={!!errors.email}
-            className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
+            className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-black/10 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none dark:border-white/20 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
             placeholder=" "
           />
           <label
@@ -69,7 +69,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
               maxLength: { value: 128, message: localize('com_auth_password_max_length') },
             })}
             aria-invalid={!!errors.password}
-            className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
+            className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-black/10 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none dark:border-white/20 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
             placeholder=" "
           />
           <label
@@ -89,7 +89,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
           aria-label="Sign in"
           data-testid="login-button"
           type="submit"
-          className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-all duration-300 hover:bg-green-550 focus:bg-green-550 focus:outline-none dark:text-white"
+          className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-550 focus:bg-green-550 focus:outline-none disabled:cursor-not-allowed disabled:hover:bg-green-500"
         >
           {localize('com_auth_continue')}
         </button>
