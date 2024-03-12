@@ -211,7 +211,7 @@ function MarketplaceView() {
           {searchResult.map((result) => (
             <Dialog key={result.refIndex}>
               <DialogTrigger>
-                <div className="space-y-3 rounded border bg-gradient-to-b from-white from-10% via-gray-50 via-30% to-gray-100 to-90% p-3 shadow hover:border-gray-500 dark:border-gray-600 dark:from-gray-800 dark:via-gray-700 dark:to-gray-600 hover:dark:border-gray-300">
+                <div className="space-y-3 rounded border bg-gradient-to-b from-white from-10% via-gray-50 via-30% to-gray-100 to-90% p-3 text-left shadow hover:border-gray-500 dark:border-gray-600 dark:from-gray-800 dark:via-gray-700 dark:to-gray-600 hover:dark:border-gray-300">
                   <div className="h-16 w-16 rounded-full bg-gray-100 p-2 dark:bg-gray-750">
                     <img src={result.item.image} alt={result.item.title} />
                   </div>
