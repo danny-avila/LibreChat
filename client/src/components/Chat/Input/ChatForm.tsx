@@ -16,12 +16,15 @@ import StopButton from './StopButton';
 import SendButton from './SendButton';
 import FileRow from './Files/FileRow';
 import store from '~/store';
+import { useToastContext } from '~/Providers';
+import { NotificationSeverity } from '~/common';
 
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const { requiresKey } = useRequiresKey();
+  const { showToast } = useToastContext();
 
   const { handlePaste, handleKeyUp, handleKeyDown, handleCompositionStart, handleCompositionEnd } =
     useTextarea({ textAreaRef, submitButtonRef, disabled: !!requiresKey });
@@ -36,6 +39,19 @@ const ChatForm = ({ index = 0 }) => {
     filesLoading,
     setFilesLoading,
   } = useChatContext();
+
+  const customHandleKeyDown = (event) => {
+    if (event.key === 'Enter' && filesLoading) {
+      event.preventDefault();
+      showToast({
+        message: 'File upload in progress. Please wait.',
+        severity: NotificationSeverity.INFO,
+        showIcon: true,
+      });
+      return;
+    }
+    handleKeyDown(event);
+  };
 
   const methods = useForm<{ text: string }>({
     defaultValues: { text: '' },
@@ -95,7 +111,7 @@ const ChatForm = ({ index = 0 }) => {
                 disabled={!!requiresKey}
                 onPaste={handlePaste}
                 onKeyUp={handleKeyUp}
-                onKeyDown={handleKeyDown}
+                onKeyDown={customHandleKeyDown}
                 onCompositionStart={handleCompositionStart}
                 onCompositionEnd={handleCompositionEnd}
                 id="prompt-textarea"
