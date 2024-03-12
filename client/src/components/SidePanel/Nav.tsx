@@ -20,13 +20,13 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
   return (
     <div
       data-collapsed={isCollapsed}
-      className="bg-token-sidebar-surface-primary group flex-shrink-0 overflow-x-hidden py-2 data-[collapsed=true]:py-2"
+      className="bg-token-sidebar-surface-primary hide-scrollbar group flex-shrink-0 overflow-x-hidden py-2 data-[collapsed=true]:py-2"
     >
       <div className="h-full">
         <div className="flex h-full min-h-0 flex-col">
           <div className="flex h-full min-h-0 flex-col opacity-100 transition-opacity">
             <div className="scrollbar-trigger relative h-full w-full flex-1 items-start border-white/20">
-              <nav className="flex h-full w-full flex-col gap-1 px-2 px-3 pb-3.5 group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
+              <nav className="flex h-full w-full flex-col gap-1 px-2 px-3 pb-3.5 group-[[data-collapsed=true]]:items-center group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
                 {links.map((link, index) => {
                   const variant = getVariant(link);
                   return isCollapsed ? (
@@ -75,7 +75,7 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                                 variant === 'default'
                                   ? 'dark:bg-muted dark:hover:bg-muted dark:text-white dark:hover:text-white'
                                   : '',
-                                'data-[state=open]:bg-gray-900 data-[state=open]:text-white dark:data-[state=open]:bg-gray-800',
+                                'hover:bg-gray-50 data-[state=open]:bg-gray-50 data-[state=open]:text-black dark:data-[state=open]:bg-gray-800 dark:data-[state=open]:text-white',
                                 'w-full justify-start rounded-md border dark:border-gray-600',
                               )}
                             >

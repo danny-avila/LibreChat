@@ -6,6 +6,7 @@ export default {
   com_sidepanel_select_assistant: 'Select an Assistant',
   com_sidepanel_assistant_builder: 'Assistant Builder',
   com_sidepanel_attach_files: 'Attach Files',
+  com_sidepanel_manage_files: 'Manage Files',
   com_assistants_knowledge: 'Knowledge',
   com_assistants_knowledge_info:
     'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
@@ -31,7 +32,7 @@ export default {
   com_ui_attach_error:
     'Cannot attach file. Create or select a conversation, or try refreshing the page.',
   com_ui_examples: 'Examples',
-  com_ui_new_chat: 'New Chat',
+  com_ui_new_chat: 'New chat',
   com_ui_happy_birthday: 'It\'s my 1st birthday!',
   com_ui_example_quantum_computing: 'Explain quantum computing in simple terms',
   com_ui_example_10_year_old_b_day: 'Got any creative ideas for a 10 year old\'s birthday?',
@@ -345,6 +346,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursive or sequential?',
   com_nav_export_recursive: 'Recursive',
   com_nav_export_conversation: 'Export conversation',
+  com_nav_my_files: 'My Files',
   com_nav_theme: 'Theme',
   com_nav_theme_system: 'System',
   com_nav_theme_dark: 'Dark',
@@ -387,4 +389,5 @@ export default {
   com_nav_lang_turkish: 'Türkçe',
   com_nav_lang_dutch: 'Nederlands',
   com_nav_lang_indonesia: 'Indonesia',
+  com_nav_lang_hebrew: 'עברית',
 };

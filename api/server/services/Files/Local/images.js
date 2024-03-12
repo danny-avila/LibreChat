@@ -13,12 +13,14 @@ const { updateFile } = require('~/models/File');
  * it converts the image to WebP format before saving.
  *
  * The original image is deleted after conversion.
- *
- * @param {Object} req - The request object from Express. It should have a `user` property with an `id`
+ * @param {Object} params - The params object.
+ * @param {Object} params.req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
- * @param {Express.Multer.File} file - The file object, which is part of the request. The file object should
+ * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
- * @param {string} [resolution='high'] - Optional. The desired resolution for the image resizing. Default is 'high'.
+ * @param {string} params.file_id - The file ID.
+ * @param {EModelEndpoint} params.endpoint - The params object.
+ * @param {string} [params.resolution='high'] - Optional. The desired resolution for the image resizing. Default is 'high'.
  *
  * @returns {Promise<{ filepath: string, bytes: number, width: number, height: number}>}
  *          A promise that resolves to an object containing:
@@ -27,10 +29,14 @@ const { updateFile } = require('~/models/File');
  *            - width: The width of the converted image.
  *            - height: The height of the converted image.
  */
-async function uploadLocalImage(req, file, resolution = 'high') {
+async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'high' }) {
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
-  const { buffer: resizedBuffer, width, height } = await resizeImageBuffer(inputBuffer, resolution);
+  const {
+    buffer: resizedBuffer,
+    width,
+    height,
+  } = await resizeImageBuffer(inputBuffer, resolution, endpoint);
   const extension = path.extname(inputFilePath);
 
   const { imageOutput } = req.app.locals.paths;
@@ -40,7 +46,8 @@ async function uploadLocalImage(req, file, resolution = 'high') {
     fs.mkdirSync(userPath, { recursive: true });
   }
 
-  const newPath = path.join(userPath, path.basename(inputFilePath));
+  const fileName = `${file_id}__${path.basename(inputFilePath)}`;
+  const newPath = path.join(userPath, fileName);
 
   if (extension.toLowerCase() === '.webp') {
     const bytes = Buffer.byteLength(resizedBuffer);

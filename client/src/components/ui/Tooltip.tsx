@@ -25,11 +25,12 @@ const TooltipContent = React.forwardRef<
   <TooltipPortal forceMount={forceMount}>
     <TooltipPrimitive.Content
       className={cn(
-        'shadow-xs relative max-w-xs rounded-lg border border-black/10 bg-black p-1 transition-opacity',
+        'shadow-xs relative max-w-xs rounded-lg border border-gray-900/10 bg-gray-900 p-1 transition-opacity',
         className,
       )}
       ref={ref}
       {...props}
+      style={{ userSelect: 'none' }}
     >
       <span className="flex items-center whitespace-pre-wrap px-2 py-1 text-center text-sm font-medium normal-case text-white">
         {children}

@@ -48,7 +48,7 @@ export default function Part({
     // Access the value property
     return (
       <Container>
-        <div className="markdown prose dark:prose-invert light my-1 w-full break-words dark:text-gray-70">
+        <div className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words">
           <DisplayMessage
             text={part[ContentTypes.TEXT].value}
             isCreatedByUser={message.isCreatedByUser}

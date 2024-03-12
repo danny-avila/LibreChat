@@ -154,7 +154,7 @@ const SetKeyDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={`${localize('com_endpoint_config_key_for')} ${alternateName[endpoint] ?? endpoint}`}
-        className="w-full max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
+        className="w-11/12 max-w-[650px] sm:w-3/4 md:w-3/4 lg:w-3/4"
         main={
           <div className="grid w-full items-center gap-2">
             <small className="text-red-600">
@@ -188,7 +188,7 @@ const SetKeyDialog = ({
         }
         selection={{
           selectHandler: submit,
-          selectClasses: 'bg-green-600 hover:bg-green-700 dark:hover:bg-green-800 text-white',
+          selectClasses: 'bg-green-500 hover:bg-green-600 dark:hover:bg-green-600 text-white',
           selectText: localize('com_ui_submit'),
         }}
         leftButtons={
