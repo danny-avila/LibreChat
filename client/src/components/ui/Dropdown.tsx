@@ -41,13 +41,12 @@ const Dropdown: FC<DropdownProps> = ({
           <Listbox.Button
             data-testid={testId}
             className={cn(
-              'relative inline-flex items-center justify-between rounded-md border-gray-300 bg-white py-2 pl-3 pr-10 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700',
-
+              'relative inline-flex items-center justify-between rounded-md border-gray-300 bg-white py-2 pl-3 pr-8 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700',
               'w-auto',
               className,
             )}
           >
-            <span className="block truncate font-medium">
+            <span className="block truncate">
               {label}
               {options
                 .map((o) => (typeof o === 'string' ? { value: o, display: o } : o))
@@ -58,15 +57,11 @@ const Dropdown: FC<DropdownProps> = ({
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
-                strokeWidth="1.5"
+                strokeWidth="2"
                 stroke="currentColor"
-                className="h-5 w-5 rotate-0 transform text-gray-400 transition-transform duration-300 ease-in-out"
+                className="h-4 w-5 rotate-0 transform text-gray-400 transition-transform duration-300 ease-in-out"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M19.5 8.25l-7.5 7.5-7.5-7.5"
-                />
+              <polyline points="6 9 12 15 18 9"></polyline>
               </svg>
             </span>
           </Listbox.Button>

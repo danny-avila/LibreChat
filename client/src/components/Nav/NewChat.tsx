@@ -1,16 +1,11 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import {
-  useLocalize,
-  useConversation,
-  useNewConvo,
-  useOriginNavigate,
-  useLocalStorage,
-} from '~/hooks';
+import { useLocalize, useNewConvo, useLocalStorage } from '~/hooks';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import { NewChatIcon } from '~/components/svg';
 import { getEndpointField } from '~/utils';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
+import { useNavigate } from 'react-router-dom';
 
 export default function NewChat({
   toggleNav,
@@ -20,8 +15,7 @@ export default function NewChat({
   subHeaders?: React.ReactNode;
 }) {
   const { newConversation: newConvo } = useNewConvo();
-  const { newConversation } = useConversation();
-  const navigate = useOriginNavigate();
+  const navigate = useNavigate();
   const localize = useLocalize();
 
   const { data: endpointsConfig } = useGetEndpointsQuery();
@@ -36,8 +30,7 @@ export default function NewChat({
     if (event.button === 0 && !event.ctrlKey) {
       event.preventDefault();
       newConvo();
-      newConversation();
-      navigate('new');
+      navigate('/c/new');
       toggleNav();
     }
   };

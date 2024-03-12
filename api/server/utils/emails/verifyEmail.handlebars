@@ -93,13 +93,18 @@
 	td {
 		color: #ffffff;
 	}
+	
+	#u_body a {
+		color: #0000ee;
+		text-decoration: underline;
+	}
 	</style>
 </head>
 
 <body class="clean-body u_body" style="margin: 0;padding: 0;-webkit-text-size-adjust: 100%;background-color: #212121;color: #ffffff">
 	<!--[if IE]><div class="ie-container"><![endif]-->
 	<!--[if mso]><div class="mso-container"><![endif]-->
-	<table style="border-collapse: collapse;table-layout: fixed;border-spacing: 0;mso-table-lspace: 0pt;mso-table-rspace: 0pt;vertical-align: top;min-width: 320px;Margin: 0 auto;background-color: #212121;width:100%" cellpadding="0" cellspacing="0">
+	<table id="u_body" style="border-collapse: collapse;table-layout: fixed;border-spacing: 0;mso-table-lspace: 0pt;mso-table-rspace: 0pt;vertical-align: top;min-width: 320px;Margin: 0 auto;background-color: #212121;width:100%" cellpadding="0" cellspacing="0">
 		<tbody>
 			<tr style="vertical-align: top">
 				<td style="word-break: break-word;border-collapse: collapse !important;vertical-align: top">
@@ -118,8 +123,25 @@
 												<tbody>
 													<tr>
 														<td style="overflow-wrap:break-word;word-break:break-word;padding:10px;font-family:arial,helvetica,sans-serif;" align="left">
+															<!--[if mso]><table width="100%"><tr><td><![endif]-->
+															<h1 style="margin: 0px; line-height: 140%; text-align: left; word-wrap: break-word; font-size: 22px; font-weight: 700;">
+                                                                <div>
+                                                                    <div>Welcome to {{appName}}!</div>
+                                                                </div>
+                                                            </h1>
+															<!--[if mso]></td></tr></table><![endif]-->
+														</td>
+													</tr>
+												</tbody>
+											</table>
+											<table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0" cellspacing="0" width="100%" border="0">
+												<tbody>
+													<tr>
+														<td style="overflow-wrap:break-word;word-break:break-word;padding:10px;font-family:arial,helvetica,sans-serif;" align="left">
 															<div style="font-size: 14px; line-height: 140%; text-align: left; word-wrap: break-word;">
-																<div>Hi {{name}},</div>
+																<div>
+																	<div>Dear {{name}},</div>
+																</div>
 															</div>
 														</td>
 													</tr>
@@ -131,7 +153,38 @@
 														<td style="overflow-wrap:break-word;word-break:break-word;padding:10px;font-family:arial,helvetica,sans-serif;" align="left">
 															<div style="font-size: 14px; line-height: 140%; text-align: left; word-wrap: break-word;">
 																<div>
-																	<div>Your password has been updated successfully! </div>
+																	<div>Thank you for registering with {{appName}}. To complete your registration and verify your email address, please click the button below:</div>
+																</div>
+															</div>
+														</td>
+													</tr>
+												</tbody>
+											</table>
+											<table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0" cellspacing="0" width="100%" border="0">
+												<tbody>
+													<tr>
+														<td style="overflow-wrap:break-word;word-break:break-word;padding:10px;font-family:arial,helvetica,sans-serif;" align="left">
+															<!--[if mso]><style>.v-button {background: transparent !important;}</style><![endif]-->
+															<div align="left">
+																<!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="href=&quot;{{verificationLink}}&quot;" style="height:37px; v-text-anchor:middle; width:114px;" arcsize="11%"  stroke="f" fillcolor="#10a37f"><w:anchorlock/><center style="color:#FFFFFF;"><![endif]-->
+																<a href="href=&quot;{{verificationLink}}&quot;" target="_blank" class="v-button" style="box-sizing: border-box;display: inline-block;text-decoration: none;-webkit-text-size-adjust: none;text-align: center;color: #FFFFFF; background-color: #10a37f; border-radius: 4px;-webkit-border-radius: 4px; -moz-border-radius: 4px; width:auto; max-width:100%; overflow-wrap: break-word; word-break: break-word; word-wrap:break-word; mso-border-alt: none;font-size: 14px;"> <span style="display:block;padding:10px 20px;line-height:120%;">
+                                                                        <div>
+                                                                            <div>Verify Email</div>
+                                                                        </div>
+                                                                    </span> </a>
+																<!--[if mso]></center></v:roundrect><![endif]-->
+															</div>
+														</td>
+													</tr>
+												</tbody>
+											</table>
+											<table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0" cellspacing="0" width="100%" border="0">
+												<tbody>
+													<tr>
+														<td style="overflow-wrap:break-word;word-break:break-word;padding:10px;font-family:arial,helvetica,sans-serif;" align="left">
+															<div style="font-size: 14px; line-height: 140%; text-align: left; word-wrap: break-word;">
+																<div>
+																	<div>If you did not create an account with {{appName}}, please ignore this email.</div>
 																</div>
 															</div>
 														</td>
