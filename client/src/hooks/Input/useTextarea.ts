@@ -2,7 +2,6 @@ import debounce from 'lodash/debounce';
 import React, { useEffect, useRef, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
-import type { SetterOrUpdater } from 'recoil';
 import type { KeyboardEvent } from 'react';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -11,6 +10,26 @@ import { useChatContext } from '~/Providers/ChatContext';
 import useLocalize from '~/hooks/useLocalize';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
+
+function insertTextAtCursor(element: HTMLTextAreaElement, textToInsert: string) {
+  // Focus the element to ensure the insertion point is updated
+  element.focus();
+
+  // Use the browser's built-in undoable actions if possible
+  if (window.getSelection() && document.queryCommandSupported('insertText')) {
+    document.execCommand('insertText', false, textToInsert);
+  } else {
+    console.warn('insertTextAtCursor: document.execCommand is not supported');
+    const startPos = element.selectionStart;
+    const endPos = element.selectionEnd;
+    const beforeText = element.value.substring(0, startPos);
+    const afterText = element.value.substring(endPos);
+    element.value = beforeText + textToInsert + afterText;
+    element.selectionStart = element.selectionEnd = startPos + textToInsert.length;
+    const event = new Event('input', { bubbles: true });
+    element.dispatchEvent(event);
+  }
+}
 
 const getAssistantName = ({
   name,
@@ -27,19 +46,18 @@ const getAssistantName = ({
 };
 
 export default function useTextarea({
-  setText,
-  submitMessage,
+  textAreaRef,
+  submitButtonRef,
   disabled = false,
 }: {
-  setText: SetterOrUpdater<string>;
-  submitMessage: () => void;
+  textAreaRef: React.RefObject<HTMLTextAreaElement>;
+  submitButtonRef: React.RefObject<HTMLButtonElement>;
   disabled?: boolean;
 }) {
   const assistantMap = useAssistantsMapContext();
   const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
     useChatContext();
   const isComposing = useRef(false);
-  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const { handleFiles } = useFileHandling();
   const getSender = useGetSender();
   const localize = useLocalize();
@@ -77,7 +95,7 @@ export default function useTextarea({
     }, 100);
 
     return () => clearTimeout(timeoutId);
-  }, [isSubmitting]);
+  }, [isSubmitting, textAreaRef]);
 
   useEffect(() => {
     if (textAreaRef.current?.value) {
@@ -118,7 +136,16 @@ export default function useTextarea({
     debouncedSetPlaceholder();
 
     return () => debouncedSetPlaceholder.cancel();
-  }, [conversation, disabled, latestMessage, isNotAppendable, localize, getSender, assistantName]);
+  }, [
+    conversation,
+    disabled,
+    latestMessage,
+    isNotAppendable,
+    localize,
+    getSender,
+    assistantName,
+    textAreaRef,
+  ]);
 
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Enter' && isSubmitting) {
@@ -130,7 +157,7 @@ export default function useTextarea({
     }
 
     if (e.key === 'Enter' && !e.shiftKey && !isComposing?.current) {
-      submitMessage();
+      submitButtonRef.current?.click();
     }
   };
 
@@ -138,7 +165,7 @@ export default function useTextarea({
     const target = e.target as HTMLTextAreaElement;
 
     if (e.keyCode === 8 && target.value.trim() === '') {
-      setText(target.value);
+      textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
     }
 
     if (e.key === 'Enter' && e.shiftKey) {
@@ -161,20 +188,13 @@ export default function useTextarea({
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       e.preventDefault();
-
-      const pastedData = e.clipboardData.getData('text/plain');
       const textArea = textAreaRef.current;
-
       if (!textArea) {
         return;
       }
 
-      const start = textArea.selectionStart;
-      const end = textArea.selectionEnd;
-
-      const newValue =
-        textArea.value.substring(0, start) + pastedData + textArea.value.substring(end);
-      setText(newValue);
+      const pastedData = e.clipboardData.getData('text/plain');
+      insertTextAtCursor(textArea, pastedData);
 
       if (e.clipboardData && e.clipboardData.files.length > 0) {
         e.preventDefault();
@@ -189,7 +209,7 @@ export default function useTextarea({
         handleFiles(timestampedFiles);
       }
     },
-    [handleFiles, setFilesLoading, setText],
+    [handleFiles, setFilesLoading, textAreaRef],
   );
 
   return {

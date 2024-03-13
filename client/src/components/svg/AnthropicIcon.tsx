@@ -12,7 +12,7 @@ export default function AnthropicIcon({
       overflow="visible"
       width={size}
       height={size}
-      className={cn('fill-current text-black', className)}
+      className={cn('fill-current text-black dark:text-white', className)}
     >
       <g
         style={{

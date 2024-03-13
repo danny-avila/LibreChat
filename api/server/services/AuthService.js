@@ -195,8 +195,10 @@ const requestPasswordReset = async (email) => {
       user.email,
       'Password Reset Request',
       {
+        appName: process.env.APP_TITLE || 'LibreChat',
         name: user.name,
         link: link,
+        year: new Date().getFullYear(),
       },
       'requestPasswordReset.handlebars',
     );
@@ -237,7 +239,9 @@ const resetPassword = async (userId, token, password) => {
     user.email,
     'Password Reset Successfully',
     {
+      appName: process.env.APP_TITLE || 'LibreChat',
       name: user.name,
+      year: new Date().getFullYear(),
     },
     'passwordReset.handlebars',
   );

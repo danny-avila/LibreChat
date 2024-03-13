@@ -1,7 +1,10 @@
-import { useSearchQuery, useGetConversationsQuery } from 'librechat-data-provider/react-query';
+// import { useSearchQuery, useGetConversationsQuery } from 'librechat-data-provider/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
-import type { TConversation, TSearchResults } from 'librechat-data-provider';
-import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+// import type { TConversation, TSearchResults } from 'librechat-data-provider';
+// import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+// import { useParams } from 'react-router-dom';
+// import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useCallback, useEffect, useState, useMemo, memo } from 'react';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
@@ -34,11 +37,11 @@ import ComputerIcon from '../svg/ComputerIcon';
 import ProfileIcon from '../svg/UserIcon';
 import { useLocalize } from '~/hooks';
 
-export default function Nav({ navVisible, setNavVisible }) {
+const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
   // const containerRef = useRef<HTMLDivElement | null>(null);
-  const scrollPositionRef = useRef<number | null>(null);
+  // const scrollPositionRef = useRef<number | null>(null);
   const localize = useLocalize();
 
   const [navWidth, setNavWidth] = useState('260px');
@@ -124,7 +127,10 @@ export default function Nav({ navVisible, setNavVisible }) {
   };
 
   const toggleNavVisible = () => {
-    setNavVisible((prev: boolean) => !prev);
+    setNavVisible((prev: boolean) => {
+      localStorage.setItem('navVisible', JSON.stringify(!prev));
+      return !prev;
+    });
     if (newUser) {
       setNewUser(false);
     }
@@ -311,4 +317,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       </Tooltip>
     </TooltipProvider>
   );
-}
+};
+
+export default memo(Nav);

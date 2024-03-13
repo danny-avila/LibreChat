@@ -21,7 +21,7 @@ In this guide, you will explore various options to efficiently deploy LibreChat 
 | [DigitalOcean](./digitalocean.md)  | Cloud Infrastructure      | Intuitive interface, stable pricing                        | Smaller network footprint              | Optimal for enthusiasts & small to medium businesses    | ✅ Well Known, Reliable |
 | [HuggingFace](./huggingface.md)   | AI/ML Solutions           | ML/NLP specialization                                      | Focused on ML applications             | Excellent for AI/ML initiatives                         | ✅ Free                 |
 | [Azure](./azure-terraform.md)         | Cloud Services            | Comprehensive offerings, Microsoft ecosystem integration   | Can be complex, may incur higher costs | Ideal for large enterprises                             | ✅ Pro                  |
-| [Railway](https://railway.app/template/b5k2mn?referralCode=HI9hWz)       | App Deployment            | Simplified app deployment                                  | Emerging service with limited info     | Further evaluation recommended                          | ✅ Easy                 |
+| [Railway](./railway.md)       | App Deployment            | Simplified app deployment                                  | Emerging service with limited info     | Further evaluation recommended                          | ✅ Easy                 |
 | [Linode](./linode.md)        | Cloud Hosting             | Responsive support, clear pricing                          | Fewer specialized services             | Comparable to DigitalOcean                              |                         |
 | [Hetzner](./hetzner_ubuntu.md)       | Data Hosting              | Emphasizes privacy, economical                             | Primarily European servers             | Suitable for Europe-centric operations                  |                         |
 | [Heroku](./heroku.md)        | Platform as a Service     | User-friendly, scalable                                    | Higher cost potential, less flexibility| A good starting point for startups                      |                         |
@@ -43,7 +43,7 @@ In this guide, you will explore various options to efficiently deploy LibreChat 
 
 ## Cloud Vendor Integration and Configuration
 
-The integration level with cloud vendors varies: from platforms enabling single-click LibreChat deployments like [Zeabur](zeabur.md), through platforms leveraging Infrastructure as Code tools such as [Azure with Terraform](azure-terraform.md), to more traditional VM setups requiring manual configuration, exemplified by [DigitalOcean](digitalocean.md), [Linode](linode.md), and [Hetzner](hetzner_ubuntu.md).
+The integration level with cloud vendors varies: from platforms enabling single-click LibreChat deployments like [Railway](./railway.md), through platforms leveraging Infrastructure as Code tools such as [Azure with Terraform](azure-terraform.md), to more traditional VM setups requiring manual configuration, exemplified by [DigitalOcean](digitalocean.md), [Linode](linode.md), and [Hetzner](hetzner_ubuntu.md).
 
 ## Essential Security Considerations
 
@@ -55,7 +55,7 @@ When deploying applications on a global scale, it is essential to consider the f
 2. Global accessibility implications: Understand the implications of deploying your application globally, including the legal and compliance requirements that vary by region.
 3. Secure configuration: Ensure that your application is configured securely, including the use of secure protocols, secure authentication, and authorization mechanisms.
 
-If you choose to use IaaS or Tunnel services for your deployment, you may need to utilize a reverse proxy such as [Nginx](./nginx.md) or [Cloudflare](./cloudflare.md) to name a few.
+If you choose to use IaaS or Tunnel services for your deployment, you may need to utilize a reverse proxy such as [Nginx](./nginx.md), [Traefik](./traefik.md) or [Cloudflare](./cloudflare.md) to name a few.
 
 Investing in the appropriate security measures is crucial to safeguarding your digital assets and ensuring the success of your global deployment.
 
@@ -113,7 +113,7 @@ Platform as a Service (PaaS) is a model of cloud computing that offers a develop
 
 ### 4. One Click Deployment (PaaS)
 
-- [Railway](https://railway.app/template/b5k2mn?referralCode=HI9hWz): Popular one-click deployment solution
+- [Railway](./railway.md): Popular one-click deployment solution
 - [Zeabur](zeabur.md): Pioneering effortless one-click deployment solutions.
 
 ## Other / Network Services
