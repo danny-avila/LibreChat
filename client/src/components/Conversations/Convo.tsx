@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { useConversations, useNavigateToConvo } from '~/hooks';
 import { useUpdateConversationMutation } from '~/data-provider';
 import { MinimalIcon } from '~/components/Endpoints';
