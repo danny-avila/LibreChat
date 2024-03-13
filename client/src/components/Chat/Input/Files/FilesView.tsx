@@ -30,7 +30,7 @@ export default function Files({ open, onOpenChange }) {
       <DialogContent className={cn('overflow-x-auto shadow-2xl dark:bg-gray-900 dark:text-white')}>
         <DialogHeader>
           <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
-            {localize('com_ui_my_files')}
+            {localize('com_nav_my_files')}
           </DialogTitle>
         </DialogHeader>
         <div className="overflow-x-auto p-0 sm:p-6 sm:pt-4">

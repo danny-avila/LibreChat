@@ -6,8 +6,7 @@ export default {
   com_sidepanel_attach_files: 'Прикрепить файлы',
   com_sidepanel_manage_files: 'Управление файлами',
   com_assistants_code_interpreter: 'Интерпретатор кода',
-  com_assistants_code_interpreter_files:
-    'Следующие файлы доступны только для Интерпретатора кода:',
+  com_assistants_code_interpreter_files: 'Следующие файлы доступны только для Интерпретатора кода:',
   com_assistants_retrieval: 'Поиск',
   com_ui_examples: 'Примеры',
   com_ui_new_chat: 'Создать чат',
@@ -28,7 +27,7 @@ export default {
   com_ui_experimental: 'Экспериментальный',
   com_ui_input: 'Ввод',
   com_ui_close: 'Закрыть',
-  com_ui_my_files: 'Мои файлы',
+  com_nav_my_files: 'Мои файлы',
   com_ui_model: 'Модель',
   com_ui_select_model: 'Выберите модель',
   com_ui_use_prompt: 'Использовать промт',
