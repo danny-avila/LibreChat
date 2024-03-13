@@ -3,8 +3,8 @@ import type { TFile } from 'librechat-data-provider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
 import { useGetFiles } from '~/data-provider';
 import { DataTable, columns } from './Table';
-import { cn } from '~/utils/';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils/';
 
 export default function Files({ open, onOpenChange }) {
   const localize = useLocalize();
