@@ -14,6 +14,8 @@ import { getEndpointField } from '~/utils';
 import RenameButton from './RenameButton';
 import store from '~/store';
 
+type KeyEvent = KeyboardEvent<HTMLInputElement>;
+
 export default function Conversation({ conversation, retainView, toggleNav, isLatestConvo }) {
   const { conversationId: currentConvoId } = useParams();
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
@@ -45,20 +47,20 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     document.title = title;
 
     // set conversation to the new conversation
-    let lastSelectedTools = [];
-    try {
-      lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') ?? [];
-    } catch (e) {
-      // console.error(e);
-    }
     if (conversation?.endpoint === EModelEndpoint.gptPlugins) {
+      let lastSelectedTools = [];
+      try {
+        lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') ?? [];
+      } catch (e) {
+      // console.error(e);
+      }
       navigateToConvo({ ...conversation, tools: lastSelectedTools });
     } else {
       navigateToConvo(conversation);
     }
   };
 
-  const renameHandler = (e) => {
+  const renameHandler = (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     setTitleInput(title);
     setRenaming(true);
@@ -70,7 +72,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     }, 25);
   };
 
-  const onRename = (e) => {
+  const onRename = (e: MouseEvent<HTMLButtonElement> | FocusEvent<HTMLInputElement> | KeyEvent) => {
     e.preventDefault();
     setRenaming(false);
     if (titleInput === title) {
@@ -106,7 +108,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     jailbreak: undefined,
   });
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Enter') {
       onRename(e);
     }
@@ -137,7 +139,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     >
       {icon}
       <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">
-        {renaming ? (
+        {renaming === true ? (
           <input
             ref={inputRef}
             type="text"
