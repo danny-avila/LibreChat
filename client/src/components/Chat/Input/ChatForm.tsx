@@ -21,6 +21,7 @@ const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
+  const [text, setText] = useRecoilState(store.textByIndex(index)); // 从Recoil获取到text状态
   const { requiresKey } = useRequiresKey();
 
   const { handlePaste, handleKeyUp, handleKeyDown, handleCompositionStart, handleCompositionEnd } =
@@ -38,7 +39,7 @@ const ChatForm = ({ index = 0 }) => {
   } = useChatContext();
 
   const methods = useForm<{ text: string }>({
-    defaultValues: { text: '' },
+    defaultValues: { text: text || '' }, // 使用Recoil获取到的text状态进行初始化
   });
 
   const submitMessage = useCallback(
@@ -82,10 +83,12 @@ const ChatForm = ({ index = 0 }) => {
             />
             {endpoint && (
               <TextareaAutosize
+                value={text}
                 {...methods.register('text', {
                   required: true,
                   onChange: (e) => {
                     methods.setValue('text', e.target.value);
+                    setText(e.target.value); // 更新Recoil中text状态的值
                   },
                 })}
                 autoFocus
