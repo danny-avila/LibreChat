@@ -50,8 +50,9 @@ const ChatForm = ({ index = 0 }) => {
       ask({ text: data.text });
       methods.reset();
       textAreaRef.current?.setRangeText('', 0, data.text.length, 'end');
+      setText('');
     },
-    [ask, methods],
+    [ask, methods, setText],
   );
 
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };

@@ -32,6 +32,7 @@ function AskMeAnything() {
 
   const setTextHandler = () => {
     setText(`咨询一个${type === '其他' ? otherTypes : type}类的问题：${topic}`);
+    setWidget(''); //close window
   };
   const showExampleHandler = () => {
     if (showExample) {

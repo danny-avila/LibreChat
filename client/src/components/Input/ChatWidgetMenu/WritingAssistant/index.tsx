@@ -32,7 +32,10 @@ function WritingAssistant() {
   const setExample = template.setExample;
   const restoreFields = template.restoreFields;
 
-  const setTextHandler = () => setText(getPromptText());
+  const setTextHandler = () => {
+    setText(getPromptText());
+    setWidget(''); //close window
+  };
   const showExampleHandler = () => {
     showExample ? restoreFields() : setExample();
     setShowExample(!showExample);

@@ -49,7 +49,7 @@ function ChatView({ index = 0 }: { index?: number }) {
           <Landing Header={<Header />} />
         )}
         {/* <OptionsBar messagesTree={messagesTree} /> */}
-        <div className="relative flex flex-row py-2 md:mb-[-16px] md:py-4 lg:mb-[-32px]">
+        <div className="relative ml-[-16px] flex flex-row py-2 md:mb-[-16px] md:py-4 lg:mb-[+24px]">
           <span className="flex w-full flex-row items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <ChatWidget />
           </span>
