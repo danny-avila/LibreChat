@@ -131,6 +131,25 @@ const UsernameDisplay = atom<boolean>({
   ] as const,
 });
 
+const enterToSend = atom<boolean>({
+  key: 'enterToSend',
+  default: localStorage.getItem('enterToSend') === 'true',
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('enterToSend');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('enterToSend', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 export default {
   abortScroll,
   showFiles,
@@ -140,6 +159,7 @@ export default {
   showBingToneSetting,
   showPopover,
   autoScroll,
+  enterToSend,
   hideSidePanel,
   modularChat,
   LaTeXParsing,

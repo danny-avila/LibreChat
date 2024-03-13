@@ -6,6 +6,7 @@ export default {
   com_sidepanel_select_assistant: 'Select an Assistant',
   com_sidepanel_assistant_builder: 'Assistant Builder',
   com_sidepanel_attach_files: 'Attach Files',
+  com_sidepanel_manage_files: 'Manage Files',
   com_assistants_knowledge: 'Knowledge',
   com_assistants_knowledge_info:
     'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
@@ -315,6 +316,7 @@ export default {
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
   com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
+  com_nav_enter_to_send: 'Do Not Send Message with Enter Key',
   com_nav_hide_panel: 'Hide Right-most Side Panel',
   com_nav_modular_chat: 'Enable switching Endpoints mid-conversation',
   com_nav_latex_parsing: 'Parsing LaTeX in messages (may affect performance)',
@@ -345,6 +347,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursive or sequential?',
   com_nav_export_recursive: 'Recursive',
   com_nav_export_conversation: 'Export conversation',
+  com_nav_my_files: 'My Files',
   com_nav_theme: 'Theme',
   com_nav_theme_system: 'System',
   com_nav_theme_dark: 'Dark',

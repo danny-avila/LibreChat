@@ -6,6 +6,7 @@ export default {
   com_sidepanel_select_assistant: 'Selecione um Assistente',
   com_sidepanel_assistant_builder: 'Construtor de Assistente',
   com_sidepanel_attach_files: 'Anexar Arquivos',
+  com_sidepanel_manage_files: 'Gerenciar Arquivos',
   com_assistants_knowledge: 'Conhecimento',
   com_assistants_knowledge_info:
     'Se você carregar arquivos em Conhecimento, as conversas com seu Assistente podem incluir o conteúdo dos arquivos.',
@@ -324,6 +325,7 @@ export default {
   com_nav_welcome_message: 'Como posso ajudar você hoje?',
   com_nav_auto_scroll: 'Auto-rolagem para o Mais Novo ao Abrir',
   com_nav_hide_panel: 'Ocultar Painel Mais à Direita',
+  com_nav_enter_to_send: 'Não Enviar Mensagem com a Tecla Enter',
   com_nav_modular_chat: 'Habilitar a troca de Endpoints durante a conversa',
   com_nav_latex_parsing: 'Análise de LaTeX em mensagens (pode afetar o desempenho)',
   com_nav_profile_picture: 'Foto do Perfil',
@@ -354,6 +356,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursivo ou sequencial?',
   com_nav_export_recursive: 'Recursivo',
   com_nav_export_conversation: 'Exportar conversa',
+  com_nav_my_files: 'Meus Arquivos',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistema',
   com_nav_theme_dark: 'Escuro',
