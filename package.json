@@ -100,10 +100,12 @@
     ]
   },
   "dependencies": {
+    "@paypal/checkout-server-sdk": "^1.0.3",
     "@stripe/react-stripe-js": "^2.3.1",
     "@stripe/stripe-js": "^2.1.7",
     "body-parser": "^1.20.2",
     "ga-gtag": "^1.1.7",
+    "opennode": "^1.5.0",
     "react-ga": "^3.3.1",
     "react-ga4": "^2.1.0",
     "react-icons": "^4.11.0",

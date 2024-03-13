@@ -16,6 +16,8 @@ const plugins = require('./plugins');
 const user = require('./user');
 const config = require('./config');
 const payment = require('./payment');
+const openNodePayment = require('./openNodePayment');
+const paypalPayment = require('./paypalPayment');
 const assistants = require('./assistants');
 const files = require('./files');
 
@@ -38,6 +40,8 @@ module.exports = {
   plugins,
   config,
   payment,
+  openNodePayment,
+  paypalPayment,
   assistants,
   files,
 };
