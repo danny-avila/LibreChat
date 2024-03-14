@@ -66,7 +66,7 @@ function ResetPassword() {
           </h1>
           {resetError && (
             <div
-              className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700 dark:bg-gray-900 dark:text-red-500"
+              className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
               role="alert"
             >
               {localize('com_auth_error_invalid_reset_token')}{' '}
@@ -115,7 +115,7 @@ function ResetPassword() {
                     },
                   })}
                   aria-invalid={!!errors.password}
-                  className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
+                  className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-black/10 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none dark:border-white/20 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
                   placeholder=" "
                 ></input>
                 <label
@@ -149,7 +149,7 @@ function ResetPassword() {
                       value === password || localize('com_auth_password_not_match'),
                   })}
                   aria-invalid={!!errors.confirm_password}
-                  className="peer block w-full appearance-none rounded-md border border-gray-300 bg-gray-50 px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
+                  className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-black/10 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none dark:border-white/20 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
                   placeholder=" "
                 ></input>
                 <label
