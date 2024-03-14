@@ -29,7 +29,7 @@ async function loadConfigModels(req) {
     modelsConfig[EModelEndpoint.gptPlugins] = modelNames;
   }
 
-  if (azureEndpoint.assistants && azureConfig.assistantModels) {
+  if (azureEndpoint?.assistants && azureConfig.assistantModels) {
     modelsConfig[EModelEndpoint.assistants] = azureConfig.assistantModels;
   }
 
