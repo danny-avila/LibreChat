@@ -201,6 +201,9 @@ export type TStartupConfig = {
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   customFooter?: string;
+  clerkPublishableKey: string;
+  stripePublishableKey: string;
+  stripePriceId: string;
 };
 
 export type TRefreshTokenResponse = {

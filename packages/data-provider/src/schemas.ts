@@ -226,6 +226,23 @@ export const tConversationSchema = z.object({
   presetOverride: z.record(z.unknown()).optional(),
 });
 
+export const tModalComponent = z.object({
+  type: z.enum(['multi_line_text', 'single_line_text', 'button', 'file_upload']),
+  labelTitle: z.string().optional(),
+  labelDescription: z.string().optional(),
+  placeholder: z.string().optional(),
+  example: z.string().optional(),
+  validation: z
+    .object({
+      pattern: z.string(),
+      required: z.boolean(),
+    })
+    .optional(),
+  buttonText: z.string().optional(),
+});
+
+export type TModalComponent = z.infer<typeof tModalComponent>;
+
 export const tPresetSchema = tConversationSchema
   .omit({
     conversationId: true,
@@ -241,6 +258,12 @@ export const tPresetSchema = tConversationSchema
       defaultPreset: z.boolean().optional(),
       order: z.number().optional(),
       endpoint: extendedModelEndpointSchema.nullable(),
+      userPrompt: z
+        .object({
+          modalComponents: z.array(tModalComponent).optional(),
+          prompt: z.string().optional(),
+        })
+        .optional(),
     }),
   );
 

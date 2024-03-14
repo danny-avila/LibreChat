@@ -13,6 +13,10 @@ const presetSchema = mongoose.Schema(
       default: 'New Chat',
       meiliIndex: true,
     },
+    userPrompt: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
     user: {
       type: String,
       default: null,

@@ -80,6 +80,6 @@ module.exports = {
   plugins: [
     require('tailwindcss-animate'),
     require('tailwindcss-radix')(),
-    // require('@tailwindcss/typography'),
+    require('@tailwindcss/typography'),
   ],
 };

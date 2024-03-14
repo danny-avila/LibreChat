@@ -45,7 +45,7 @@ module.exports = {
     try {
       return await Prompt.deleteMany(filter);
     } catch (error) {
-      logger.error('Error deleting prompts', error);
+      logger.erpromptror('Error deleting prompts', error);
       return { prompt: 'Error deleting prompts' };
     }
   },

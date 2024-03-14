@@ -1,142 +1,307 @@
 import { useState } from 'react';
 
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Input,
-} from '../ui';
+import { Button, Input } from '../ui';
 import Fuse, { FuseResult } from 'fuse.js';
 import { ChevronLeft } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
-
-export type Presets = {
-  title: string;
-  description: string;
-  image: string;
-  prompt: string;
-  temperature?: number;
-  topP?: number;
-  frequencyPenalty?: number;
-  presencePenalty?: number;
-};
+import PresetCard from './PresetCard';
+import PresetSidebar from './PresetSidebar';
+import { Preset } from './types';
 
 function MarketplaceView() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const presets: Presets[] = [
+  const presets: Preset[] = [
     {
-      title: 'Gen Z Engagement Specialist',
-      description:
-        'Specializes in engaging Gen Z users with tailored interactions reflecting their preferences and values.',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fzzz.webp&w=96&q=75',
-      prompt:
-        'As a Gen Z bot, your role is to engage with users in a manner that resonates with the characteristics and preferences of the Gen Z demographic. Your interactions should be tailored to appeal to Gen Z individuals, incorporating their communication style, interests, and digital habits.',
+      metadata: {
+        jobTitle: '3D Generalist',
+        taskName: 'AR Development: Develop AR applications or experiences',
+        marketingText:
+          'Empower your AR development process with AI-driven insights. Our tool offers foundational recommendations for creating immersive AR applications or experiences, focusing on design principles, user interface considerations, and interaction design.',
+        limitations:
+          'While the AI can provide general principles and recommendations for AR development, human expertise is crucial for the actual design and implementation. Specialized knowledge in AR development tools and technologies is essential for effective execution.',
+      },
+      modalComponents: [
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Development Goals',
+          labelDescription:
+            'What are the specific goals or objectives for developing the AR application or experience?',
+          placeholder:
+            'Describe the specific goals or objectives for developing the AR application or experience.',
+          example:
+            'Our goal is to create an AR application that enhances the museum experience by providing interactive historical visualizations.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Target Audience',
+          labelDescription: 'Who is the intended audience for the AR application or experience?',
+          placeholder: 'Describe the intended audience for the AR application or experience.',
+          example:
+            'The target audience includes students and educators interested in interactive learning experiences.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Key Features',
+          labelDescription:
+            'List the key features or functionalities you want to incorporate into the AR application or experience.',
+          placeholder:
+            'E.g., Interactive storytelling, 3D object recognition, Real-time information display.',
+          example:
+            'We aim to incorporate interactive storytelling, 3D object recognition, and real-time information display into the AR experience.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        { type: 'button', buttonText: 'Generate Development Guidelines' },
+      ],
+      system_prompt:
+        'As a 3D Generalist, your expertise in crafting immersive AR experiences is invaluable. Your understanding of 3D modeling, animation, and interactive design allows you to create visually stunning and functionally compelling AR applications or experiences. Your role involves understanding user interaction, interface design, and the technical aspects of AR development, ensuring that your contributions captivate and engage users.\n\nYour responsibilities include:\n\n- **Immersive Experiences**: Your focus is on creating AR applications or experiences that provide captivating and engaging interactions, drawing on your expertise in 3D design and interactive storytelling.\n- **User-Centric Design**: You prioritize user experience, ensuring that the AR applications or experiences are intuitive, visually appealing, and seamlessly integrated into users\' environments.\n- **Technical Proficiency**: Your understanding of AR development tools and technologies bridges the gap between creative vision and technical implementation.\n- **Collaborative Mindset**: You excel in multidisciplinary collaboration, working closely with developers, designers, and stakeholders to bring AR concepts to life.\n\nTo proceed with generating the development guidelines, provide the specific goals or objectives for the AR application or experience, the intended audience, and the key features or functionalities you aim to incorporate into the AR application or experience. Based on this information, the AI will offer foundational recommendations for creating immersive AR applications or experiences.',
+      user_prompt:
+        '# AR Development: Creating Immersive Experiences\n\nYour task is to develop AR applications or experiences that captivate and engage users. The AI will provide foundational recommendations for creating immersive AR experiences based on the detailed input you provide. These recommendations will focus on design principles, user interface considerations, and interaction design.\n\nFollow these steps to complete the task:\n\n1. Define the specific goals or objectives for developing the AR application or experience.\n2. Describe the intended audience for the AR application or experience.\n3. List the key features or functionalities you want to incorporate into the AR application or experience.\n\n# Development Goals\n{{Development_Goals}}\n\n# Target Audience\n{{Target_Audience}}\n\n# Key Features\n{{Key_Features}}\n\n# Generated Development Guidelines\n',
+      icon: 'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fbriefcase.webp&w=96&q=75',
     },
     {
-      title: 'Schedule Management Assistant',
-      description:
-        'Schedule Management Assistant, calls the time plugin to handle requests for adding, querying, and deleting schedules, supports multiple operations and reminders',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fcalendar.webp&w=96&q=75',
-      prompt:
-        'You are a schedule management assistant. Every time a user initiates a schedule management request, first call the time assistant plugin to return the time as the current system time, and then proceed with schedule management; When the user uses /add, /list, /del, they correspond to the add, list, and delete actions. If the user does not specify an action, you need to determine which of the three actions the user\'s action belongs to. Please communicate with the user in Chinese throughout.',
+      metadata: {
+        jobTitle: 'UX Designer',
+        taskName: 'Accessibility Design: Ensure Accessibility Compliance',
+        marketingText:
+          'Empower your user interface design with AI-driven accessibility compliance. Leverage expert guidance and tailored recommendations to create an inclusive and accessible user experience.',
+        limitations:
+          'While AI can offer insights and recommendations for accessibility compliance, human expertise is essential for the nuanced implementation and customization of design elements to cater to specific user needs and abilities.',
+      },
+      modalComponents: [
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Design Goals',
+          labelDescription:
+            'Specify your design goals for the user interface and what you aim to achieve.',
+          placeholder:
+            'E.g., Create an intuitive interface accessible to all users, regardless of their abilities.',
+          example:
+            'Our design goals are to ensure an intuitive and user-friendly interface that provides a seamless and inclusive experience for all users.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Target Audience',
+          labelDescription:
+            'Describe the characteristics of your target audience and any specific accessibility considerations.',
+          placeholder:
+            'E.g., Users with visual impairments, motor disabilities, cognitive disabilities.',
+          example:
+            'Our target audience includes individuals with visual impairments, motor disabilities, and cognitive disabilities. We need to ensure our design is accessible to screen readers, supports keyboard navigation, and provides clear content.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'file_upload',
+          labelTitle: 'Design Materials',
+          labelDescription:
+            'Upload any existing design materials or prototypes to provide context for tailored recommendations.',
+          buttonText: 'Upload Design Materials',
+          validation: { pattern: '.*', required: false },
+        },
+        { type: 'button', buttonText: 'Get Accessibility Recommendations' },
+      ],
+      system_prompt:
+        'As a UX Designer, your role in ensuring accessibility compliance is pivotal for creating an inclusive user experience. Your expertise in design principles and interaction considerations equips you to address the diverse needs of users with empathy and precision. Your approach to accessibility design reflects a commitment to barrier-free user experiences.\n\nIn response to your request, the AI will:\n\n1. Review your specified design goals to align recommendations with your vision for an inclusive user interface.\n2. Consider the characteristics and specific accessibility considerations of your target audience to tailor recommendations to their diverse needs.\n3. Utilize existing design materials or prototypes, if provided, to deliver context-aware and accurate accessibility recommendations.\n\nThe generated accessibility recommendations will be customized to your design goals, target audience, and existing materials, ensuring an inclusive and accessible user interface.',
+      user_prompt:
+        '# Ensuring Accessibility Compliance in User Interface Design\n\nAs a UX designer, your task is to ensure accessibility compliance in your user interface design. This includes creating an inclusive and accessible design that caters to users with different abilities. Our AI can provide expert guidance and recommendations to help you achieve accessibility compliance.\n\nFollow these steps to ensure accessibility in your user interface design:\n\n1. Specify your design goals for the user interface and what you aim to achieve. This will help tailor the recommendations to align with your vision.\n2. Describe the characteristics of your target audience and any specific accessibility considerations. This will enable the AI to customize recommendations to their diverse needs.\n3. Upload any existing design materials or prototypes to provide context for tailored recommendations.\n4. Click \'Get Accessibility Recommendations\' to receive expert insights for an inclusive and accessible user interface.',
+      icon: 'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fcalendar.webp&w=96&q=75',
     },
     {
-      title: 'Business Email Writing Expert',
-      description:
-        'Business email writing expert specializing in bilingual business emails in Chinese and English, cross-cultural communication, and engagement in the GitHub open-source community',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fbriefcase.webp&w=96&q=75',
-      prompt:
-        'Business email writing expert specializing in bilingual business emails in Chinese and English, covering areas such as business cooperation and business authorization. Possesses extensive experience in business communication, ensuring precise grasp of email tone and format to ensure clear and professional information delivery. As an independent developer, has in-depth understanding of GitHub and open-source software community habits, enabling effective cross-cultural and cross-lingual business communication.',
+      metadata: {
+        jobTitle: 'UX Designer',
+        taskName: 'Accessibility Design: Ensure Accessibility Compliance',
+        marketingText:
+          'Empower your user interface design with AI-driven accessibility compliance. Leverage expert guidance and tailored recommendations to create an inclusive and accessible user experience.',
+        limitations:
+          'While AI can offer insights and recommendations for accessibility compliance, human expertise is essential for the nuanced implementation and customization of design elements to cater to specific user needs and abilities.',
+      },
+      modalComponents: [
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Design Goals',
+          labelDescription:
+            'Specify your design goals for the user interface and what you aim to achieve.',
+          placeholder:
+            'E.g., Create an intuitive interface accessible to all users, regardless of their abilities.',
+          example:
+            'Our design goals are to ensure an intuitive and user-friendly interface that provides a seamless and inclusive experience for all users.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Target Audience',
+          labelDescription:
+            'Describe the characteristics of your target audience and any specific accessibility considerations.',
+          placeholder:
+            'E.g., Users with visual impairments, motor disabilities, cognitive disabilities.',
+          example:
+            'Our target audience includes individuals with visual impairments, motor disabilities, and cognitive disabilities. We need to ensure our design is accessible to screen readers, supports keyboard navigation, and provides clear content.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'file_upload',
+          labelTitle: 'Design Materials',
+          labelDescription:
+            'Upload any existing design materials or prototypes to provide context for tailored recommendations.',
+          buttonText: 'Upload Design Materials',
+          validation: { pattern: '.*', required: false },
+        },
+        { type: 'button', buttonText: 'Get Accessibility Recommendations' },
+      ],
+      system_prompt:
+        'As a UX Designer, your role in ensuring accessibility compliance is pivotal for creating an inclusive user experience. Your expertise in design principles and interaction considerations equips you to address the diverse needs of users with empathy and precision. Your approach to accessibility design reflects a commitment to barrier-free user experiences.\n\nIn response to your request, the AI will:\n\n1. Review your specified design goals to align recommendations with your vision for an inclusive user interface.\n2. Consider the characteristics and specific accessibility considerations of your target audience to tailor recommendations to their diverse needs.\n3. Utilize existing design materials or prototypes, if provided, to deliver context-aware and accurate accessibility recommendations.\n\nThe generated accessibility recommendations will be customized to your design goals, target audience, and existing materials, ensuring an inclusive and accessible user interface.',
+      user_prompt:
+        '# Ensuring Accessibility Compliance in User Interface Design\n\nAs a UX designer, your task is to ensure accessibility compliance in your user interface design. This includes creating an inclusive and accessible design that caters to users with different abilities. Our AI can provide expert guidance and recommendations to help you achieve accessibility compliance.\n\nFollow these steps to ensure accessibility in your user interface design:\n\n1. Specify your design goals for the user interface and what you aim to achieve. This will help tailor the recommendations to align with your vision.\n2. Describe the characteristics of your target audience and any specific accessibility considerations. This will enable the AI to customize recommendations to their diverse needs.\n3. Upload any existing design materials or prototypes to provide context for tailored recommendations.\n4. Click \'Get Accessibility Recommendations\' to receive expert insights for an inclusive and accessible user interface.',
+      icon: 'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fbriefcase.webp&w=96&q=75',
     },
     {
-      title: 'Gen Z Engagement Specialist',
-      description:
-        'Specializes in engaging Gen Z users with tailored interactions reflecting their preferences and values.',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fzzz.webp&w=96&q=75',
-      prompt:
-        'As a Gen Z bot, your role is to engage with users in a manner that resonates with the characteristics and preferences of the Gen Z demographic. Your interactions should be tailored to appeal to Gen Z individuals, incorporating their communication style, interests, and digital habits.',
+      metadata: {
+        jobTitle: '3D Generalist',
+        taskName: 'AR Development: Develop AR applications or experiences',
+        marketingText:
+          'Empower your AR development process with AI-driven insights. Our tool offers foundational recommendations for creating immersive AR applications or experiences, focusing on design principles, user interface considerations, and interaction design.',
+        limitations:
+          'While the AI can provide general principles and recommendations for AR development, human expertise is crucial for the actual design and implementation. Specialized knowledge in AR development tools and technologies is essential for effective execution.',
+      },
+      modalComponents: [
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Development Goals',
+          labelDescription:
+            'What are the specific goals or objectives for developing the AR application or experience?',
+          placeholder:
+            'Describe the specific goals or objectives for developing the AR application or experience.',
+          example:
+            'Our goal is to create an AR application that enhances the museum experience by providing interactive historical visualizations.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Target Audience',
+          labelDescription: 'Who is the intended audience for the AR application or experience?',
+          placeholder: 'Describe the intended audience for the AR application or experience.',
+          example:
+            'The target audience includes students and educators interested in interactive learning experiences.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Key Features',
+          labelDescription:
+            'List the key features or functionalities you want to incorporate into the AR application or experience.',
+          placeholder:
+            'E.g., Interactive storytelling, 3D object recognition, Real-time information display.',
+          example:
+            'We aim to incorporate interactive storytelling, 3D object recognition, and real-time information display into the AR experience.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        { type: 'button', buttonText: 'Generate Development Guidelines' },
+      ],
+      system_prompt:
+        'As a 3D Generalist, your expertise in crafting immersive AR experiences is invaluable. Your understanding of 3D modeling, animation, and interactive design allows you to create visually stunning and functionally compelling AR applications or experiences. Your role involves understanding user interaction, interface design, and the technical aspects of AR development, ensuring that your contributions captivate and engage users.\n\nYour responsibilities include:\n\n- **Immersive Experiences**: Your focus is on creating AR applications or experiences that provide captivating and engaging interactions, drawing on your expertise in 3D design and interactive storytelling.\n- **User-Centric Design**: You prioritize user experience, ensuring that the AR applications or experiences are intuitive, visually appealing, and seamlessly integrated into users\' environments.\n- **Technical Proficiency**: Your understanding of AR development tools and technologies bridges the gap between creative vision and technical implementation.\n- **Collaborative Mindset**: You excel in multidisciplinary collaboration, working closely with developers, designers, and stakeholders to bring AR concepts to life.\n\nTo proceed with generating the development guidelines, provide the specific goals or objectives for the AR application or experience, the intended audience, and the key features or functionalities you aim to incorporate into the AR application or experience. Based on this information, the AI will offer foundational recommendations for creating immersive AR applications or experiences.',
+      user_prompt:
+        '# AR Development: Creating Immersive Experiences\n\nYour task is to develop AR applications or experiences that captivate and engage users. The AI will provide foundational recommendations for creating immersive AR experiences based on the detailed input you provide. These recommendations will focus on design principles, user interface considerations, and interaction design.\n\nFollow these steps to complete the task:\n\n1. Define the specific goals or objectives for developing the AR application or experience.\n2. Describe the intended audience for the AR application or experience.\n3. List the key features or functionalities you want to incorporate into the AR application or experience.\n\n# Development Goals\n{{Development_Goals}}\n\n# Target Audience\n{{Target_Audience}}\n\n# Key Features\n{{Key_Features}}\n\n# Generated Development Guidelines\n',
+      icon: 'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fzzz.webp&w=96&q=75',
     },
     {
-      title: 'Schedule Management Assistant',
-      description:
-        'Schedule Management Assistant, calls the time plugin to handle requests for adding, querying, and deleting schedules, supports multiple operations and reminders',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fcalendar.webp&w=96&q=75',
-      prompt:
-        'You are a schedule management assistant. Every time a user initiates a schedule management request, first call the time assistant plugin to return the time as the current system time, and then proceed with schedule management; When the user uses /add, /list, /del, they correspond to the add, list, and delete actions. If the user does not specify an action, you need to determine which of the three actions the user\'s action belongs to. Please communicate with the user in Chinese throughout.',
+      metadata: {
+        jobTitle: 'UX Designer',
+        taskName: 'Accessibility Design: Ensure Accessibility Compliance',
+        marketingText:
+          'Empower your user interface design with AI-driven accessibility compliance. Leverage expert guidance and tailored recommendations to create an inclusive and accessible user experience.',
+        limitations:
+          'While AI can offer insights and recommendations for accessibility compliance, human expertise is essential for the nuanced implementation and customization of design elements to cater to specific user needs and abilities.',
+      },
+      modalComponents: [
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Design Goals',
+          labelDescription:
+            'Specify your design goals for the user interface and what you aim to achieve.',
+          placeholder:
+            'E.g., Create an intuitive interface accessible to all users, regardless of their abilities.',
+          example:
+            'Our design goals are to ensure an intuitive and user-friendly interface that provides a seamless and inclusive experience for all users.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Target Audience',
+          labelDescription:
+            'Describe the characteristics of your target audience and any specific accessibility considerations.',
+          placeholder:
+            'E.g., Users with visual impairments, motor disabilities, cognitive disabilities.',
+          example:
+            'Our target audience includes individuals with visual impairments, motor disabilities, and cognitive disabilities. We need to ensure our design is accessible to screen readers, supports keyboard navigation, and provides clear content.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'file_upload',
+          labelTitle: 'Design Materials',
+          labelDescription:
+            'Upload any existing design materials or prototypes to provide context for tailored recommendations.',
+          buttonText: 'Upload Design Materials',
+          validation: { pattern: '.*', required: false },
+        },
+        { type: 'button', buttonText: 'Get Accessibility Recommendations' },
+      ],
+      system_prompt:
+        'As a UX Designer, your role in ensuring accessibility compliance is pivotal for creating an inclusive user experience. Your expertise in design principles and interaction considerations equips you to address the diverse needs of users with empathy and precision. Your approach to accessibility design reflects a commitment to barrier-free user experiences.\n\nIn response to your request, the AI will:\n\n1. Review your specified design goals to align recommendations with your vision for an inclusive user interface.\n2. Consider the characteristics and specific accessibility considerations of your target audience to tailor recommendations to their diverse needs.\n3. Utilize existing design materials or prototypes, if provided, to deliver context-aware and accurate accessibility recommendations.\n\nThe generated accessibility recommendations will be customized to your design goals, target audience, and existing materials, ensuring an inclusive and accessible user interface.',
+      user_prompt:
+        '# Ensuring Accessibility Compliance in User Interface Design\n\nAs a UX designer, your task is to ensure accessibility compliance in your user interface design. This includes creating an inclusive and accessible design that caters to users with different abilities. Our AI can provide expert guidance and recommendations to help you achieve accessibility compliance.\n\nFollow these steps to ensure accessibility in your user interface design:\n\n1. Specify your design goals for the user interface and what you aim to achieve. This will help tailor the recommendations to align with your vision.\n2. Describe the characteristics of your target audience and any specific accessibility considerations. This will enable the AI to customize recommendations to their diverse needs.\n3. Upload any existing design materials or prototypes to provide context for tailored recommendations.\n4. Click \'Get Accessibility Recommendations\' to receive expert insights for an inclusive and accessible user interface.',
+      icon: 'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fcalendar.webp&w=96&q=75',
     },
     {
-      title: 'Business Email Writing Expert',
-      description:
-        'Business email writing expert specializing in bilingual business emails in Chinese and English, cross-cultural communication, and engagement in the GitHub open-source community',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fbriefcase.webp&w=96&q=75',
-      prompt:
-        'Business email writing expert specializing in bilingual business emails in Chinese and English, covering areas such as business cooperation and business authorization. Possesses extensive experience in business communication, ensuring precise grasp of email tone and format to ensure clear and professional information delivery. As an independent developer, has in-depth understanding of GitHub and open-source software community habits, enabling effective cross-cultural and cross-lingual business communication.',
-    },
-    {
-      title: 'Gen Z Engagement Specialist',
-      description:
-        'Specializes in engaging Gen Z users with tailored interactions reflecting their preferences and values.',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fzzz.webp&w=96&q=75',
-      prompt:
-        'As a Gen Z bot, your role is to engage with users in a manner that resonates with the characteristics and preferences of the Gen Z demographic. Your interactions should be tailored to appeal to Gen Z individuals, incorporating their communication style, interests, and digital habits.',
-    },
-    {
-      title: 'Schedule Management Assistant',
-      description:
-        'Schedule Management Assistant, calls the time plugin to handle requests for adding, querying, and deleting schedules, supports multiple operations and reminders',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fcalendar.webp&w=96&q=75',
-      prompt:
-        'You are a schedule management assistant. Every time a user initiates a schedule management request, first call the time assistant plugin to return the time as the current system time, and then proceed with schedule management; When the user uses /add, /list, /del, they correspond to the add, list, and delete actions. If the user does not specify an action, you need to determine which of the three actions the user\'s action belongs to. Please communicate with the user in Chinese throughout.',
-    },
-    {
-      title: 'Business Email Writing Expert',
-      description:
-        'Business email writing expert specializing in bilingual business emails in Chinese and English, cross-cultural communication, and engagement in the GitHub open-source community',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fbriefcase.webp&w=96&q=75',
-      prompt:
-        'Business email writing expert specializing in bilingual business emails in Chinese and English, covering areas such as business cooperation and business authorization. Possesses extensive experience in business communication, ensuring precise grasp of email tone and format to ensure clear and professional information delivery. As an independent developer, has in-depth understanding of GitHub and open-source software community habits, enabling effective cross-cultural and cross-lingual business communication.',
-    },
-    {
-      title: 'Gen Z Engagement Specialist',
-      description:
-        'Specializes in engaging Gen Z users with tailored interactions reflecting their preferences and values.',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fzzz.webp&w=96&q=75',
-      prompt:
-        'As a Gen Z bot, your role is to engage with users in a manner that resonates with the characteristics and preferences of the Gen Z demographic. Your interactions should be tailored to appeal to Gen Z individuals, incorporating their communication style, interests, and digital habits.',
-    },
-    {
-      title: 'Schedule Management Assistant',
-      description:
-        'Schedule Management Assistant, calls the time plugin to handle requests for adding, querying, and deleting schedules, supports multiple operations and reminders',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fcalendar.webp&w=96&q=75',
-      prompt:
-        'You are a schedule management assistant. Every time a user initiates a schedule management request, first call the time assistant plugin to return the time as the current system time, and then proceed with schedule management; When the user uses /add, /list, /del, they correspond to the add, list, and delete actions. If the user does not specify an action, you need to determine which of the three actions the user\'s action belongs to. Please communicate with the user in Chinese throughout.',
-    },
-    {
-      title: 'Business Email Writing Expert',
-      description:
-        'Business email writing expert specializing in bilingual business emails in Chinese and English, cross-cultural communication, and engagement in the GitHub open-source community',
-      image:
-        'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fbriefcase.webp&w=96&q=75',
-      prompt:
-        'Business email writing expert specializing in bilingual business emails in Chinese and English, covering areas such as business cooperation and business authorization. Possesses extensive experience in business communication, ensuring precise grasp of email tone and format to ensure clear and professional information delivery. As an independent developer, has in-depth understanding of GitHub and open-source software community habits, enabling effective cross-cultural and cross-lingual business communication.',
+      metadata: {
+        jobTitle: 'UX Designer',
+        taskName: 'Accessibility Design: Ensure Accessibility Compliance',
+        marketingText:
+          'Empower your user interface design with AI-driven accessibility compliance. Leverage expert guidance and tailored recommendations to create an inclusive and accessible user experience.',
+        limitations:
+          'While AI can offer insights and recommendations for accessibility compliance, human expertise is essential for the nuanced implementation and customization of design elements to cater to specific user needs and abilities.',
+      },
+      modalComponents: [
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Design Goals',
+          labelDescription:
+            'Specify your design goals for the user interface and what you aim to achieve.',
+          placeholder:
+            'E.g., Create an intuitive interface accessible to all users, regardless of their abilities.',
+          example:
+            'Our design goals are to ensure an intuitive and user-friendly interface that provides a seamless and inclusive experience for all users.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'multi_line_text',
+          labelTitle: 'Target Audience',
+          labelDescription:
+            'Describe the characteristics of your target audience and any specific accessibility considerations.',
+          placeholder:
+            'E.g., Users with visual impairments, motor disabilities, cognitive disabilities.',
+          example:
+            'Our target audience includes individuals with visual impairments, motor disabilities, and cognitive disabilities. We need to ensure our design is accessible to screen readers, supports keyboard navigation, and provides clear content.',
+          validation: { pattern: '.{20,}', required: true },
+        },
+        {
+          type: 'file_upload',
+          labelTitle: 'Design Materials',
+          labelDescription:
+            'Upload any existing design materials or prototypes to provide context for tailored recommendations.',
+          buttonText: 'Upload Design Materials',
+          validation: { pattern: '.*', required: false },
+        },
+        { type: 'button', buttonText: 'Get Accessibility Recommendations' },
+      ],
+      system_prompt:
+        'As a UX Designer, your role in ensuring accessibility compliance is pivotal for creating an inclusive user experience. Your expertise in design principles and interaction considerations equips you to address the diverse needs of users with empathy and precision. Your approach to accessibility design reflects a commitment to barrier-free user experiences.\n\nIn response to your request, the AI will:\n\n1. Review your specified design goals to align recommendations with your vision for an inclusive user interface.\n2. Consider the characteristics and specific accessibility considerations of your target audience to tailor recommendations to their diverse needs.\n3. Utilize existing design materials or prototypes, if provided, to deliver context-aware and accurate accessibility recommendations.\n\nThe generated accessibility recommendations will be customized to your design goals, target audience, and existing materials, ensuring an inclusive and accessible user interface.',
+      user_prompt:
+        '# Ensuring Accessibility Compliance in User Interface Design\n\nAs a UX designer, your task is to ensure accessibility compliance in your user interface design. This includes creating an inclusive and accessible design that caters to users with different abilities. Our AI can provide expert guidance and recommendations to help you achieve accessibility compliance.\n\nFollow these steps to ensure accessibility in your user interface design:\n\n1. Specify your design goals for the user interface and what you aim to achieve. This will help tailor the recommendations to align with your vision.\n2. Describe the characteristics of your target audience and any specific accessibility considerations. This will enable the AI to customize recommendations to their diverse needs.\n3. Upload any existing design materials or prototypes to provide context for tailored recommendations.\n4. Click \'Get Accessibility Recommendations\' to receive expert insights for an inclusive and accessible user interface.',
+      icon: 'https://chat-preview.lobehub.com/_next/image?url=https%3A%2F%2Fregistry.npmmirror.com%2F%40lobehub%2Fassets-emoji-anim%2Flatest%2Ffiles%2Fassets%2Fbriefcase.webp&w=96&q=75',
     },
   ];
 
@@ -148,11 +313,12 @@ function MarketplaceView() {
   }));
 
   const [searchTerm, setSarchTerm] = useState('');
-  const [searchResult, setSearchResult] = useState<FuseResult<Presets>[]>(searchResultAll);
+  const [searchResult, setSearchResult] = useState<FuseResult<Preset>[]>(searchResultAll);
+  const [selectedPreset, setSelectedPreset] = useState<Preset>();
   const [lastChangeTime, setLastChangeTime] = useState(Date.now());
 
   const fuse = new Fuse(presets, {
-    keys: ['title', 'description'],
+    keys: ['metadata.jobTitle', 'metadata.taskName', 'metadata.marketingText'],
     includeScore: true,
   });
 
@@ -173,89 +339,55 @@ function MarketplaceView() {
     .split('&')
     .map((i) => searchParmas.set(i.split('=')[0], i.split('=')[1]));
 
-  const handlePresetSelect = (item: Presets) => {
-    localStorage.setItem('selected-preset', JSON.stringify(item));
-    const redirectPath = decodeURIComponent(searchParmas.get('redirectPath'));
-    if (redirectPath) {
-      return navigate(redirectPath, { replace: true });
-    }
-    navigate('/c/new', { replace: true });
-  };
-
   return (
-    <div className="overflow-scroll">
-      <Button
-        onClick={() => {
-          const redirectPath = decodeURIComponent(searchParmas.get('redirectPath'));
-          if (redirectPath) {
-            return navigate(redirectPath, { replace: true });
-          }
-          navigate('/c/new', { replace: true });
-        }}
-        className="mt-2"
-        variant="link"
-      >
-        <ChevronLeft /> Go Back to Chat
-      </Button>
-      <div className="sticky top-0 grid h-auto w-full place-content-center bg-white/70 p-3 backdrop-blur-md dark:bg-gray-800/70 dark:text-white">
+    <div className="h-screen overflow-y-scroll">
+      <div className="sticky top-0 z-10 grid h-auto w-full grid-cols-[1fr_auto_1fr] place-content-center justify-between border-b border-gray-600 bg-white/70 p-3 backdrop-blur-md dark:bg-gray-800/70 dark:text-white">
+        <Button
+          onClick={() => {
+            const redirectPath = decodeURIComponent(searchParmas.get('redirectPath'));
+            if (redirectPath) {
+              return navigate(redirectPath, { replace: true });
+            }
+            navigate('/c/new', { replace: true });
+          }}
+          size="icon"
+          variant="outline"
+          className="dark:bg-gray-700 dark:hover:bg-gray-600"
+        >
+          <ChevronLeft />
+        </Button>
         <h1 className="font-mono text-2xl font-bold ">Promt Marketplace</h1>
+        <div></div>
       </div>
-      <div className="mx-auto w-full max-w-xl p-4 md:max-w-2xl lg:max-w-6xl">
-        <Input
-          value={searchTerm}
-          onChange={handleSearch}
-          placeholder="Search prompts"
-          className="border-0 border-gray-500 bg-gray-100 focus:border dark:bg-gray-600"
-        />
-        <div className="mt-6 grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
-          {searchResult.map((result) => (
-            <Dialog key={result.refIndex}>
-              <DialogTrigger>
-                <div className="space-y-3 rounded border bg-gradient-to-b from-white from-10% via-gray-50 via-30% to-gray-100 to-90% p-3 text-left shadow hover:border-gray-500 dark:border-gray-600 dark:from-gray-800 dark:via-gray-700 dark:to-gray-600 hover:dark:border-gray-300">
-                  <div className="h-16 w-16 rounded-full bg-gray-100 p-2 dark:bg-gray-750">
-                    <img src={result.item.image} alt={result.item.title} />
-                  </div>
-                  <h3 className="line-clamp-1 font-semibold dark:text-gray-50">
-                    {result.item.title}
-                  </h3>
-                  <p className="line-clamp-3 text-sm text-gray-600 dark:text-gray-300">
-                    {result.item.description}
-                  </p>
-                </div>
-              </DialogTrigger>
-              <DialogContent className="dark:bg-gray-800">
-                <DialogHeader>
-                  <DialogTitle>Add Preset to Your Collection</DialogTitle>
-                </DialogHeader>
-                <div className="mt-[-1rem] max-h-[50vh] overflow-x-scroll p-4 text-center">
-                  <div className="grid place-items-center">
-                    <div className="h-16 w-16 rounded-full bg-gray-100 p-2 dark:bg-gray-750">
-                      <img src={result.item.image} alt={result.item.title} />
-                    </div>
-                  </div>
-                  <h3 className=" ont-semibold dark:text-gray-50">{result.item.title}</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    {result.item.description}
-                  </p>
-                  <div className="mt-4 space-y-2 p-2">
-                    <p className="text-left text-lg font-semibold dark:text-white">Prompt:</p>
-                    <p className="text-left dark:text-white">{result.item.prompt}</p>
-                  </div>
-                  <div className="h-[1px] bg-gray-300 dark:bg-gray-600/80" />
-                </div>
-                <DialogFooter>
-                  <Button
-                    onClick={() => handlePresetSelect(result.item)}
-                    className="hover:dark:bg-gray-500"
-                    type="submit"
-                  >
-                    Add Preset
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          ))}
+      <div className={`grid ${selectedPreset ? 'sm:grid-cols-[auto_25rem]' : null}`}>
+        <div className={`${selectedPreset ? 'hidden sm:block' : null}`}>
+          <div className="mx-auto w-full max-w-7xl  p-4 pt-12">
+            <h1 className="bg-gradient-to-b from-neutral-900 to-neutral-500 bg-clip-text text-center text-4xl font-bold text-transparent dark:bg-opacity-50 dark:from-neutral-50 dark:to-neutral-400 md:text-6xl">
+              Find & Use <br /> The Best Agents
+            </h1>
+          </div>
+
+          <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-6">
+            <Input
+              value={searchTerm}
+              onChange={handleSearch}
+              placeholder="Search prompts"
+              className="border-0 border-gray-500 bg-gray-100 focus:border focus:bg-gray-200 dark:bg-gray-750 dark:focus:bg-gray-600"
+            />
+            <div className="grid grid-cols-[repeat(auto-fill,_minmax(17rem,_1fr))] gap-4">
+              {searchResult.map((result) => (
+                <PresetCard
+                  key={result.refIndex}
+                  setSelectedPreset={setSelectedPreset}
+                  preset={result.item}
+                />
+              ))}
+            </div>
+          </div>
         </div>
+        {selectedPreset ? (
+          <PresetSidebar setSelectedPreset={setSelectedPreset} preset={selectedPreset} />
+        ) : null}
       </div>
     </div>
   );

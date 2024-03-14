@@ -25,8 +25,8 @@ export default function EndpointOptionsPopover({
   PopoverButtons,
 }: TEndpointOptionsPopoverProps) {
   const localize = useLocalize();
-  const cardStyle =
-    'shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white';
+  const cardStyle = z;
+  ('shadow-xl rounded-md min-w-[75px] font-normal bg-white border-black/10 border dark:bg-gray-700 text-black dark:text-white');
 
   return (
     <>
