@@ -135,6 +135,7 @@ const AppService = async (app) => {
     availableTools,
     fileStrategy,
     fileConfig: config?.fileConfig,
+    interface: config?.interface,
     paths,
     ...endpointLocals,
   };
