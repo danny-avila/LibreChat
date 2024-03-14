@@ -267,6 +267,57 @@ endpoints:
 
 The above configuration would enable `gpt-4-vision-preview`, `gpt-3.5-turbo` and `gpt-4-turbo` for your users in the order they were defined.
 
+### Using Assistants with Azure
+
+To enable use of Assistants with Azure OpenAI, there are 2 main steps.
+
+1) Set the `assistants` field at the [Endpoint-level](#endpoint-level-configuration) to `true`, like so:
+
+```yaml
+endpoints:
+  azureOpenAI:
+    assistants: true
+```
+
+2) Add the `assistants` field to all groups compatible with Azure's Assistants API integration.
+
+- At least one of your group configurations must be compatible.
+- You can check the [compatible regions and models in the Azure docs here](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models#assistants-preview).
+- The version must also be "2024-02-15-preview" or later, preferably later for access to the latest features.
+
+```yaml
+endpoints:
+  azureOpenAI:
+    assistants: true
+    groups:
+      - group: "my-sweden-group"
+        apiKey: "${SWEDEN_API_KEY}"
+        instanceName: "actual-instance-name"
+      # Mark this group as assistants compatible
+        assistants: true
+      # version must be "2024-02-15-preview" or later
+        version: "2024-03-01-preview"
+        models:
+          # ... (model-level configuration)
+```
+
+**Notes:**
+
+- If you mark multiple regions as assistants-compatible, assistants you create will be aggregated across regions to the main assistant selection list.
+- Files you upload, whether at the message or assistant level, will only be available on a per-region basis.
+- Downloading files that assistants generate will soon be supported.
+- As of March 14th 2024, retrieval and streaming are not supported through Azure OpenAI.
+    - To avoid any errors with retrieval while it's not supported, it's recommended to disable the capability altogether through the `assistants` endpoint config:
+
+    ```yaml
+    endpoints:
+      assistants:
+      # "retrieval" omitted.
+        capabilities: ["code_interpreter", "actions", "tools"]
+    ```
+
+    - By default, all capabilities are enabled.
+
 ### Using Plugins with Azure
 
 To use the Plugins endpoint with Azure OpenAI, you need a deployment supporting **[function calling](https://techcommunity.microsoft.com/t5/azure-ai-services-blog/function-calling-is-now-available-in-azure-openai-service/ba-p/3879241)**. Otherwise, you need to set "Functions" off in the Agent settings. When you are not using "functions" mode, it's recommend to have "skip completion" off as well, which is a review step of what the agent generated.
