@@ -1,5 +1,5 @@
 const { CacheKeys, RunStatus, isUUID } = require('librechat-data-provider');
-const { initializeClient } = require('~/server/services/Endpoints/assistant');
+const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { checkMessageGaps, recordUsage } = require('~/server/services/Threads');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
@@ -11,6 +11,11 @@ async function abortRun(req, res) {
   res.setHeader('Content-Type', 'application/json');
   const { abortKey } = req.body;
   const [conversationId, latestMessageId] = abortKey.split(':');
+  const conversation = await getConvo(req.user.id, conversationId);
+
+  if (conversation?.model) {
+    req.body.model = conversation.model;
+  }
 
   if (!isUUID.safeParse(conversationId).success) {
     logger.error('[abortRun] Invalid conversationId', { conversationId });
@@ -71,7 +76,7 @@ async function abortRun(req, res) {
   const finalEvent = {
     title: 'New Chat',
     final: true,
-    conversation: await getConvo(req.user.id, conversationId),
+    conversation,
     runMessages,
   };
 

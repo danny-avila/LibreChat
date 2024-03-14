@@ -146,6 +146,8 @@ export type TConfig = {
   userProvide?: boolean | null;
   userProvideURL?: boolean | null;
   disableBuilder?: boolean;
+  retrievalModels?: string[];
+  capabilities?: string[];
 };
 
 export type TEndpointsConfig =

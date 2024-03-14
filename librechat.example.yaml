@@ -2,7 +2,7 @@
 # https://docs.librechat.ai/install/configuration/custom_config.html
 
 # Configuration version (required)
-version: 1.0.4
+version: 1.0.5
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -59,6 +59,10 @@ endpoints:
   #   # Should only be one or the other, either `supportedIds` or `excludedIds`
   #   supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
   #   # excludedIds: ["asst_excludedAssistantId"]
+  #   # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
+  #   retrievalModels: ["gpt-4-turbo-preview"]
+  #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+  #   capabilities: ["code_interpreter", "retrieval", "actions", "tools"]
   custom:
     # Groq Example
     - name: 'groq'

@@ -71,33 +71,42 @@ docker compose up # no need to rebuild
 ## Example Config
 
 ```yaml
-version: 1.0.3
+version: 1.0.5
 cache: true
 # fileStrategy: "firebase"  # If using Firebase CDN
 fileConfig:
   endpoints:
     assistants:
       fileLimit: 5
-      fileSizeLimit: 10  # Maximum size for an individual file in MB
-      totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
-      # supportedMimeTypes: # In case you wish to limit certain filetypes
+      # Maximum size for an individual file in MB
+      fileSizeLimit: 10
+      # Maximum total size for all files in a single request in MB
+      totalSizeLimit: 50 
+      # In case you wish to limit certain filetypes
+      # supportedMimeTypes: 
       #   - "image/.*"
       #   - "application/pdf"
     openAI:
-      disabled: true  # Disables file uploading to the OpenAI endpoint
+    # Disables file uploading to the OpenAI endpoint
+      disabled: true
     default:
       totalSizeLimit: 20
-    # YourCustomEndpointName: # Example for custom endpoints
+    # Example for custom endpoints
+    # YourCustomEndpointName:
     #   fileLimit: 2
     #   fileSizeLimit: 5
-  serverFileSizeLimit: 100  # Global server file size limit in MB
-  avatarSizeLimit: 4  # Limit for user avatar image size in MB, default: 2 MB
+  # Global server file size limit in MB
+  serverFileSizeLimit: 100  
+  # Limit for user avatar image size in MB, default: 2 MB
+  avatarSizeLimit: 4 
 rateLimits:
   fileUploads:
     ipMax: 100
-    ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
+    # Rate limit window for file uploads per IP
+    ipWindowInMinutes: 60 
     userMax: 50
-    userWindowInMinutes: 60  # Rate limit window for file uploads per user
+    # Rate limit window for file uploads per user
+    userWindowInMinutes: 60  
 registration:
   socialLogins: ["google", "facebook", "github", "discord", "openid"]
   allowedDomains:
@@ -105,26 +114,35 @@ registration:
     - "anotherdomain.com"
 endpoints:
   assistants:
-    disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
-    pollIntervalMs: 750  # Polling interval for checking assistant updates
-    timeoutMs: 180000  # Timeout for assistant operations
+    # Disable Assistants Builder Interface by setting to `true`
+    disableBuilder: false 
+    # Polling interval for checking assistant updates
+    pollIntervalMs: 750  
+    # Timeout for assistant operations
+    timeoutMs: 180000  
     # Should only be one or the other, either `supportedIds` or `excludedIds`
     supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
     # excludedIds: ["asst_excludedAssistantId"]
+    # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
+    # retrievalModels: ["gpt-4-turbo-preview"]
+    # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    # capabilities: ["code_interpreter", "retrieval", "actions", "tools"]
   custom:
     - name: "Mistral"
       apiKey: "${MISTRAL_API_KEY}"
       baseURL: "https://api.mistral.ai/v1"
       models:
         default: ["mistral-tiny", "mistral-small", "mistral-medium", "mistral-large-latest"]
-        fetch: true  # Attempt to dynamically fetch available models
+        # Attempt to dynamically fetch available models
+        fetch: true  
         userIdQuery: false
       iconURL: "https://example.com/mistral-icon.png"
       titleConvo: true
       titleModel: "mistral-tiny"
       modelDisplayLabel: "Mistral AI"
       # addParams:
-      #   safe_prompt: true # Mistral specific value for moderating messages
+      # Mistral API specific value for moderating messages
+      #   safe_prompt: true 
       dropParams:
         - "stop"
         - "user"
@@ -170,7 +188,7 @@ This example configuration file sets up LibreChat with detailed options across s
 - **Key**: `version`
 - **Type**: String
 - **Description**: Specifies the version of the configuration file.
-- **Example**: `version: 1.0.1`
+- **Example**: `version: 1.0.5`
 - **Required**
 
 ### Cache Settings
@@ -454,6 +472,10 @@ endpoints:
     # Use either `supportedIds` or `excludedIds` but not both
     supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
     # excludedIds: ["asst_excludedAssistantId"]
+    # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
+    # retrievalModels: ["gpt-4-turbo-preview"]
+    # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    # capabilities: ["code_interpreter", "retrieval", "actions", "tools"]
 ```
 > This configuration enables the builder interface for assistants, sets a polling interval of 500ms to check for run updates, and establishes a timeout of 10 seconds for assistant run operations.
 
@@ -501,6 +523,28 @@ In addition to custom endpoints, you can configure settings specific to the assi
   - Type: Array/List of Strings
   - **Description**: List of excluded assistant Ids. Use this or `supportedIds` but not both (the `excludedIds` field will be ignored if so).
   - **Example**: `excludedIds: ["asst_excludedAssistantId1", "asst_excludedAssistantId2"]`
+
+### **retrievalModels**:
+
+> Specifies the models that support retrieval for the assistants endpoint.
+
+- **Type**: Array/List of Strings
+- **Example**: `retrievalModels: ["gpt-4-turbo-preview"]`
+- **Description**: Defines the models that support retrieval capabilities for the assistants endpoint. By default, it uses the latest known OpenAI models that support the official Retrieval feature.
+- **Note**: This field is optional. If omitted, the default behavior is to use the latest known OpenAI models that support retrieval.
+
+### **capabilities**:
+
+> Specifies the assistant capabilities available to all users for the assistants endpoint.
+
+- **Type**: Array/List of Strings
+- **Example**: `capabilities: ["code_interpreter", "retrieval", "actions", "tools"]`
+- **Description**: Defines the assistant capabilities that are available to all users for the assistants endpoint. You can omit the capabilities you wish to exclude from the list. The available capabilities are:
+  - `code_interpreter`: Enables code interpretation capabilities for the assistant.
+  - `retrieval`: Enables retrieval capabilities for the assistant.
+  - `actions`: Enables action capabilities for the assistant.
+  - `tools`: Enables tool capabilities for the assistant.
+- **Note**: This field is optional. If omitted, the default behavior is to include all the capabilities listed in the example.
 
 ## Custom Endpoint Object Structure
 Each endpoint in the `custom` array should have the following structure:

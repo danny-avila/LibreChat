@@ -66,7 +66,20 @@ export const plugins = () => '/api/plugins';
 
 export const config = () => '/api/config';
 
-export const assistants = (id?: string) => `/api/assistants${id ? `/${id}` : ''}`;
+export const assistants = (id?: string, options?: Record<string, string>) => {
+  let url = '/api/assistants';
+
+  if (id) {
+    url += `/${id}`;
+  }
+
+  if (options && Object.keys(options).length > 0) {
+    const queryParams = new URLSearchParams(options).toString();
+    url += `?${queryParams}`;
+  }
+
+  return url;
+};
 
 export const files = () => '/api/files';
 
