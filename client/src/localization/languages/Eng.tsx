@@ -99,6 +99,8 @@ export default {
   com_ui_preview: 'Preview',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
+  com_ui_privacy_policy: 'Privacy policy',
+  com_ui_terms_of_service: 'Terms of service',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
