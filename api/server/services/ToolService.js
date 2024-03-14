@@ -14,7 +14,7 @@ const { loadActionSets, createActionTool } = require('./ActionService');
 const { processFileURL } = require('~/server/services/Files/process');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
-const { sleep } = require('./Runs/handle');
+const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 
 /**

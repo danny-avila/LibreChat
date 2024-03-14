@@ -44,7 +44,7 @@ router.delete('/', async (req, res) => {
         return false;
       }
 
-      if (/^file-/.test(file.file_id)) {
+      if (/^(file|assistant)-/.test(file.file_id)) {
         return true;
       }
 

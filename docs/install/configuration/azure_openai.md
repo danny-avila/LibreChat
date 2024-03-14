@@ -10,23 +10,123 @@ weight: -10
 
 LibreChat boasts compatibility with Azure OpenAI API services, treating the endpoint as a first-class citizen. To properly utilize Azure OpenAI within LibreChat, it's crucial to configure the [`librechat.yaml` file](./custom_config.md#azure-openai-object-structure) according to your specific needs. This document guides you through the essential setup process which allows seamless use of multiple deployments and models with as much flexibility as needed.
 
+## Example
+
+Here's a quick snapshot of what a comprehensive configuration might look like, including many of the options and features discussed below.
+
+```yaml
+endpoints:
+  azureOpenAI:
+    # Endpoint-level configuration
+    titleModel: "llama-70b-chat"
+    plugins: true
+    assistants: true
+    groups:
+    # Group-level configuration
+    - group: "my-resource-westus"
+      apiKey: "${WESTUS_API_KEY}"
+      instanceName: "my-resource-westus"
+      version: "2024-03-01-preview"
+      # Model-level configuration
+      models:
+        gpt-4-vision-preview:
+          deploymentName: gpt-4-vision-preview
+          version: "2024-03-01-preview"
+        gpt-3.5-turbo:
+          deploymentName: gpt-35-turbo
+        gpt-4-1106-preview:
+          deploymentName: gpt-4-1106-preview
+    # Group-level configuration
+    - group: "mistral-inference"
+      apiKey: "${AZURE_MISTRAL_API_KEY}"
+      baseURL: "https://Mistral-large-vnpet-serverless.region.inference.ai.azure.com/v1/chat/completions"
+      serverless: true
+      # Model-level configuration
+      models:
+        mistral-large: true
+    # Group-level configuration
+    - group: "my-resource-sweden"
+      apiKey: "${SWEDEN_API_KEY}"
+      instanceName: "my-resource-sweden"
+      deploymentName: gpt-4-1106-preview
+      version: "2024-03-01-preview"
+      assistants: true
+      # Model-level configuration
+      models:
+        gpt-4-turbo: true
+```
+
+Here's another working example configured according to the specifications of the [Azure OpenAI Endpoint Configuration Docs:](./custom_config.md#azure-openai-object-structure)
+
+Each level of configuration is extensively detailed in their respective sections:
+
+1. [Endpoint-level config](#endpoint-level-configuration)
+
+2. [Group-level config](#group-level-configuration)
+
+3. [Model-level config](#model-level-configuration)
+
 ## Setup
 
 1. **Open `librechat.yaml` for Editing**: Use your preferred text editor or IDE to open and edit the `librechat.yaml` file.
 
+    - Optional: use a remote or custom file path with the following environment variable:
+
+    ```.env
+    CONFIG_PATH="/alternative/path/to/librechat.yaml"
+    ```
+
 2. **Configure Azure OpenAI Settings**: Follow the detailed structure outlined below to populate your Azure OpenAI settings appropriately. This includes specifying API keys, instance names, model groups, and other essential configurations.
 
-3. **Save Your Changes**: After accurately inputting your settings, save the `librechat.yaml` file.
+3. **Make sure to Remove Legacy Settings**: If you are using any of the [legacy configurations](#legacy-setup), be sure to remove. The LibreChat server will also detect these and remind you.
 
-4. **Restart LibreChat**: For the changes to take effect, restart your LibreChat application. This ensures that the updated configurations are loaded and utilized.
+4. **Save Your Changes**: After accurately inputting your settings, save the `librechat.yaml` file.
 
-Here's a working example configured according to the specifications of the [Azure OpenAI Endpoint Configuration Docs:](./custom_config.md#azure-openai-object-structure)
+5. **Restart LibreChat**: For the changes to take effect, restart your LibreChat application. This ensures that the updated configurations are loaded and utilized.
 
 ## Required Fields
 
 To properly integrate Azure OpenAI with LibreChat, specific fields must be accurately configured in your `librechat.yaml` file. These fields are validated through a combination of custom and environmental variables to ensure the correct setup. Here are the detailed requirements based on the validation process:
 
-### Group-Level Configuration
+## Endpoint-Level Configuration
+
+These settings apply globally to all Azure models and groups within the endpoint. Here are the available fields:
+
+1. **titleModel** (String, Optional): Specifies the model to use for generating conversation titles. If not provided, the default model is set as `gpt-3.5-turbo`, which will result in no titles if lacking this model.
+
+2. **plugins** (Boolean, Optional): Enables the use of plugins through Azure. Set to `true` to activate Plugins endpoint support through your Azure config. Default: `false`.
+
+3. **assistants** (Boolean, Optional): Enables the use of assistants through Azure. Set to `true` to activate Assistants endpoint through your Azure config. Default: `false`. Note: this requires an assistants-compatible region.
+
+4. **summarize** (Boolean, Optional): Enables conversation summarization for all Azure models. Set to `true` to activate summarization. Default: `false`.
+
+5. **summaryModel** (String, Optional): Specifies the model to use for generating conversation summaries. If not provided, the default behavior is to use the first model in the `default` array of the first group.
+
+6. **titleConvo** (Boolean, Optional): Enables conversation title generation for all Azure models. Set to `true` to activate title generation. Default: `false`.
+
+7. **titleMethod** (String, Optional): Specifies the method to use for generating conversation titles. Valid options are `"completion"` and `"functions"`. If not provided, the default behavior is to use the `"completion"` method.
+
+8. **groups** (Array/List, Required): Specifies the list of Azure OpenAI model groups. Each group represents a set of models with shared configurations. The groups field is an array of objects, where each object defines the settings for a specific group. This is a required field at the endpoint level, and at least one group must be defined. The group-level configurations are detailed in the Group-Level Configuration section.
+
+<!-- 9. **customOrder** (Number, Optional): Allows you to specify a custom order for the Azure endpoint in the user interface. Higher numbers will appear lower in the list. If not provided, the default order is determined by the order in which the endpoints are defined in the `librechat.yaml` file. -->
+
+Here's an example of how you can configure these endpoint-level settings in your `librechat.yaml` file:
+
+```yaml
+endpoints:
+  azureOpenAI:
+    titleModel: "gpt-3.5-turbo-1106"
+    plugins: true
+    assistants: true
+    summarize: true
+    summaryModel: "gpt-3.5-turbo-1106"
+    titleConvo: true
+    titleMethod: "functions"
+    groups:
+      # ... (group-level and model-level configurations)
+```
+
+## Group-Level Configuration
 
 This is a breakdown of the fields configurable as defined for the Custom Config (`librechat.yaml`) file. For more information on each field, see the [Azure OpenAI section in the Custom Config Docs](./custom_config.md#azure-openai-object-structure).
 
@@ -38,7 +138,7 @@ This is a breakdown of the fields configurable as defined for the Custom Config 
 
 4. **deploymentName** (String, Optional): The deployment name at the group level is optional but required if any model within the group is set to `true`.
 
-5. **version** (String, Optional): The version of the Azure OpenAI service at the group level is optional but required if any model within the group is set to `true`.
+5. **version** (String, Optional): The Azure OpenAI API version at the group level is optional but required if any model within the group is set to `true`.
 
 6. **baseURL** (String, Optional): Custom base URL for the Azure OpenAI API requests. Environment variable references are supported. This is optional and can be used for advanced routing scenarios.
 
@@ -52,20 +152,65 @@ This is a breakdown of the fields configurable as defined for the Custom Config 
 
 11. **forcePrompt** (Boolean, Optional): Dictates whether to send a `prompt` parameter instead of `messages` in the request body. This option is useful when needing to format the request in a manner consistent with OpenAI's API expectations, particularly for scenarios preferring a single text payload.
 
-### Model-Level Configuration
+12. **models** (Object, Required): Specifies the mapping of model identifiers to their configurations within the group. The keys represent the model identifiers, which must match the corresponding OpenAI model names. The values can be either boolean (true) or objects containing model-specific settings. If a model is set to true, it inherits the group-level deploymentName and version. If a model is configured as an object, it can have its own deploymentName and version. This field is required, and at least one model must be defined within each group. [More info here](#model-level-configuration)
 
-Within each group, the `models` field must contain a mapping of records, or model identifiers to either boolean values or object configurations.
-
-- The key or model identifier must match its corresponding OpenAI model name in order for it to properly reflect its known context limits and/or function in the case of vision. For example, if you intend to use gpt-4-vision, it must be configured like so:
+Here's an example of a group-level configuration in the librechat.yaml file
 
 ```yaml
-models:
-  # Object setting: must include at least "deploymentName" and/or "version"
-  gpt-4-vision-preview: # Must match OpenAI Model name
-    deploymentName: "arbitrary-deployment-name"
-    version: "2024-02-15-preview" # version can be any that supports vision
-  # Boolean setting, must be "true"
-  gpt-4-turbo: true
+endpoints:
+  azureOpenAI:
+    # ... (endpoint-level configurations)
+    groups:
+      - group: "my-resource-group"
+        apiKey: "${AZURE_API_KEY}"
+        instanceName: "my-instance"
+        deploymentName: "gpt-35-turbo"
+        version: "2023-03-15-preview"
+        baseURL: "https://my-instance.openai.azure.com/"
+        additionalHeaders:
+          CustomHeader: "HeaderValue"
+        addParams:
+          max_tokens: 2048
+          temperature: 0.7
+        dropParams:
+          - "frequency_penalty"
+          - "presence_penalty"
+        forcePrompt: false
+        models:
+        # ... (model-level configurations)
+```
+
+## Model-Level Configuration
+
+Within each group, the `models` field contains a mapping of model identifiers to their configurations:
+
+1. **Model Identifier** (String, Required): Must match the corresponding OpenAI model name. Can be a partial match.
+
+2. **Model Configuration** (Boolean or Object, Required):
+   - Boolean `true`: Uses the group-level `deploymentName` and `version`.
+   - Object: Specifies model-specific `deploymentName` and `version`. If not provided, inherits from the group.
+      - **deploymentName** (String, Optional): The deployment name for this specific model.
+      - **version** (String, Optional): The Azure OpenAI API version for this specific model.
+
+3. **Serverless Inference Endpoints**: For serverless models, set the model to `true`.
+
+- The **model identifier must match its corresponding OpenAI model name** in order for it to properly reflect its known context limits and/or function in the case of vision. For example, if you intend to use gpt-4-vision, it must be configured like so:
+
+```yaml
+endpoints:
+  azureOpenAI:
+    # ... (endpoint-level configurations)
+    groups:
+    # ... (group-level configurations)
+    - group: "example_group"
+    models:
+     # Model identifiers must match OpenAI Model name (can be a partial match)
+      gpt-4-vision-preview:
+      # Object setting: must include at least "deploymentName" and/or "version"
+        deploymentName: "arbitrary-deployment-name"
+        version: "2024-02-15-preview" # version can be any that supports vision
+      # Boolean setting, must be "true"
+      gpt-4-turbo: true
 ```
 
 - See [Model Deployments](#model-deployments) for more examples.
@@ -121,6 +266,60 @@ endpoints:
 ```
 
 The above configuration would enable `gpt-4-vision-preview`, `gpt-3.5-turbo` and `gpt-4-turbo` for your users in the order they were defined.
+
+### Using Assistants with Azure
+
+To enable use of Assistants with Azure OpenAI, there are 2 main steps.
+
+1) Set the `assistants` field at the [Endpoint-level](#endpoint-level-configuration) to `true`, like so:
+
+```yaml
+endpoints:
+  azureOpenAI:
+  # Enable use of Assistants with Azure
+    assistants: true
+```
+
+2) Add the `assistants` field to all groups compatible with Azure's Assistants API integration.
+
+- At least one of your group configurations must be compatible.
+- You can check the [compatible regions and models in the Azure docs here](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models#assistants-preview).
+- The version must also be "2024-02-15-preview" or later, preferably later for access to the latest features.
+
+```yaml
+endpoints:
+  azureOpenAI:
+    assistants: true
+    groups:
+      - group: "my-sweden-group"
+        apiKey: "${SWEDEN_API_KEY}"
+        instanceName: "actual-instance-name"
+      # Mark this group as assistants compatible
+        assistants: true
+      # version must be "2024-02-15-preview" or later
+        version: "2024-03-01-preview"
+        models:
+          # ... (model-level configuration)
+```
+
+**Notes:**
+
+- If you mark multiple regions as assistants-compatible, assistants you create will be aggregated across regions to the main assistant selection list.
+- Files you upload to Azure OpenAI, whether at the message or assistant level, will only be available in the region the current assistant's model is part of.
+    - For this reason, it's recommended you use only one region or resource group for Azure OpenAI Assistants, or you will experience an error.
+    - Uploading to "OpenAI" is the default behavior for official `code_interpeter` and `retrieval` capabilities.
+- Downloading files that assistants generate will soon be supported.
+- As of March 14th 2024, retrieval and streaming are not supported through Azure OpenAI.
+    - To avoid any errors with retrieval while it's not supported, it's recommended to disable the capability altogether through the `assistants` endpoint config:
+
+    ```yaml
+    endpoints:
+      assistants:
+      # "retrieval" omitted.
+        capabilities: ["code_interpreter", "actions", "tools"]
+    ```
+
+    - By default, all capabilities are enabled.
 
 ### Using Plugins with Azure
 

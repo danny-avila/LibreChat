@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { logger } = require('~/config');
 
 /**
@@ -18,15 +19,25 @@ const { logger } = require('~/config');
  */
 async function retrieveRun({ thread_id, run_id, timeout, openai }) {
   const { apiKey, baseURL, httpAgent, organization } = openai;
-  const url = `${baseURL}/threads/${thread_id}/runs/${run_id}`;
+  let url = `${baseURL}/threads/${thread_id}/runs/${run_id}`;
 
-  const headers = {
+  let headers = {
     Authorization: `Bearer ${apiKey}`,
     'OpenAI-Beta': 'assistants=v1',
   };
 
   if (organization) {
     headers['OpenAI-Organization'] = organization;
+  }
+
+  /** @type {TAzureConfig | undefined} */
+  const azureConfig = openai.req.app.locals[EModelEndpoint.azureOpenAI];
+
+  if (azureConfig && azureConfig.assistants) {
+    delete headers.Authorization;
+    headers = { ...headers, ...openai._options.defaultHeaders };
+    const queryParams = new URLSearchParams(openai._options.defaultQuery).toString();
+    url = `${url}?${queryParams}`;
   }
 
   try {
