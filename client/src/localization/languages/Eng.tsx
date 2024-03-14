@@ -287,6 +287,7 @@ export default {
   com_endpoint_skip_hover:
     'Enable skipping the completion step, which reviews the final answer and generated steps',
   com_endpoint_config_key: 'Set API Key',
+  com_endpoint_assistant_placeholder: 'Please select an Assistant from the right-hand Side Panel',
   com_endpoint_config_placeholder: 'Set your Key in the Header menu to chat.',
   com_endpoint_config_key_for: 'Set API Key for',
   com_endpoint_config_key_name: 'Key',
