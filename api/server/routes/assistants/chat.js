@@ -101,6 +101,8 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
   let completedRun;
 
   const handleError = async (error) => {
+    const defaultErrorMessage =
+      'The Assistant run failed to initialize. Try sending a message in a new conversation.';
     const messageData = {
       thread_id,
       assistant_id,
@@ -119,12 +121,19 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       return;
     } else if (error.message === 'Request closed') {
       logger.debug('[/assistants/chat/] Request aborted on close');
+    } else if (/Files.*are invalid/.test(error.message)) {
+      const errorMessage = `Files are invalid, or may not have uploaded yet.${
+        req.app.locals?.[EModelEndpoint.azureOpenAI].assistants
+          ? ' If using Azure OpenAI, files are only available in the region of the assistant\'s model at the time of upload.'
+          : ''
+      }`;
+      return sendResponse(res, messageData, errorMessage);
     } else {
       logger.error('[/assistants/chat/]', error);
     }
 
     if (!openai || !thread_id || !run_id) {
-      return sendResponse(res, messageData, 'The Assistant run failed to initialize');
+      return sendResponse(res, messageData, defaultErrorMessage);
     }
 
     await sleep(3000);

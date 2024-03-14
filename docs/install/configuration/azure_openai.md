@@ -276,6 +276,7 @@ To enable use of Assistants with Azure OpenAI, there are 2 main steps.
 ```yaml
 endpoints:
   azureOpenAI:
+  # Enable use of Assistants with Azure
     assistants: true
 ```
 
@@ -304,7 +305,9 @@ endpoints:
 **Notes:**
 
 - If you mark multiple regions as assistants-compatible, assistants you create will be aggregated across regions to the main assistant selection list.
-- Files you upload to Azure OpenAI, whether at the message or assistant level, will only be available in the region the current assistant's model is part of. For this reason, it's recommended you use only one region for Assistants. Uploading to "OpenAI" is the default behavior for official `code_interpeter` and `retrieval` capabilities.
+- Files you upload to Azure OpenAI, whether at the message or assistant level, will only be available in the region the current assistant's model is part of.
+    - For this reason, it's recommended you use only one region or resource group for Azure OpenAI Assistants, or you will experience an error.
+    - Uploading to "OpenAI" is the default behavior for official `code_interpeter` and `retrieval` capabilities.
 - Downloading files that assistants generate will soon be supported.
 - As of March 14th 2024, retrieval and streaming are not supported through Azure OpenAI.
     - To avoid any errors with retrieval while it's not supported, it's recommended to disable the capability altogether through the `assistants` endpoint config:
