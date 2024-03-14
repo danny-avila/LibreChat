@@ -133,7 +133,7 @@ const UsernameDisplay = atom<boolean>({
 
 const enterToSend = atom<boolean>({
   key: 'enterToSend',
-  default: localStorage.getItem('enterToSend') === 'true',
+  default: true,
   effects: [
     ({ setSelf, onSet }) => {
       const savedValue = localStorage.getItem('enterToSend');

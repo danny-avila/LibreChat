@@ -154,8 +154,8 @@ export default function useTextarea({
     if (e.key === 'Enter' && isSubmitting) {
       return;
     }
-
-    if (e.key === 'Enter' && enterToSend) {
+  
+    if (e.key === 'Enter' && !enterToSend) {
       if (!e.shiftKey) {
         e.preventDefault();
         if (textAreaRef.current && textAreaRef.current.value !== null) {
@@ -163,14 +163,14 @@ export default function useTextarea({
         }
       }
     } else if (e.key === 'Enter' && !e.shiftKey && !isComposing?.current) {
-      if (enterToSend) {
+      if (!enterToSend) {
         submitButtonRef.current?.click();
       } else {
         e.preventDefault();
         submitButtonRef.current?.click();
       }
     }
-  };
+  };  
 
   const handleKeyUp = (e: KeyEvent) => {
     const target = e.target as HTMLTextAreaElement;
