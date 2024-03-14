@@ -6,12 +6,25 @@ import { FileSources } from './types/files';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
+export const defaultRetrievalModels = [
+  'gpt-4-turbo-preview',
+  'gpt-3.5-turbo-0125',
+  'gpt-4-0125-preview',
+  'gpt-4-1106-preview',
+  'gpt-3.5-turbo-1106',
+  'gpt-3.5-turbo-0125',
+  'gpt-4-turbo',
+  'gpt-4-0125',
+  'gpt-4-1106',
+];
+
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
 export const modelConfigSchema = z
   .object({
     deploymentName: z.string().optional(),
     version: z.string().optional(),
+    assistants: z.boolean().optional(),
   })
   .or(z.boolean());
 
@@ -22,6 +35,7 @@ export const azureBaseSchema = z.object({
   serverless: z.boolean().optional(),
   instanceName: z.string().optional(),
   deploymentName: z.string().optional(),
+  assistants: z.boolean().optional(),
   addParams: z.record(z.any()).optional(),
   dropParams: z.array(z.string()).optional(),
   forcePrompt: z.boolean().optional(),
@@ -61,6 +75,13 @@ export type TValidatedAzureConfig = {
   groupMap: TAzureGroupMap;
 };
 
+export enum Capabilities {
+  code_interpreter = 'code_interpreter',
+  retrieval = 'retrieval',
+  actions = 'actions',
+  tools = 'tools',
+}
+
 export const assistantEndpointSchema = z.object({
   /* assistants specific */
   disableBuilder: z.boolean().optional(),
@@ -68,6 +89,16 @@ export const assistantEndpointSchema = z.object({
   timeoutMs: z.number().optional(),
   supportedIds: z.array(z.string()).min(1).optional(),
   excludedIds: z.array(z.string()).min(1).optional(),
+  retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
+  capabilities: z
+    .array(z.nativeEnum(Capabilities))
+    .optional()
+    .default([
+      Capabilities.code_interpreter,
+      Capabilities.retrieval,
+      Capabilities.actions,
+      Capabilities.tools,
+    ]),
   /* general */
   apiKey: z.string().optional(),
   baseURL: z.string().optional(),
@@ -116,6 +147,7 @@ export const azureEndpointSchema = z
   .object({
     groups: azureGroupConfigsSchema,
     plugins: z.boolean().optional(),
+    assistants: z.boolean().optional(),
   })
   .and(
     endpointSchema
@@ -287,14 +319,6 @@ export const defaultModels = {
     'gpt-4-0314',
   ],
 };
-
-export const supportsRetrieval = new Set([
-  'gpt-3.5-turbo-0125',
-  'gpt-4-0125-preview',
-  'gpt-4-turbo-preview',
-  'gpt-4-1106-preview',
-  'gpt-3.5-turbo-1106',
-]);
 
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.openAI]: `/api/ask/${EModelEndpoint.openAI}`,
@@ -485,7 +509,7 @@ export enum Constants {
   /**
    * Key for the Custom Config's version (librechat.yaml).
    */
-  CONFIG_VERSION = '1.0.4',
+  CONFIG_VERSION = '1.0.5',
   /**
    * Standard value for the first message's `parentMessageId` value, to indicate no parent exists.
    */
