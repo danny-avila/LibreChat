@@ -54,7 +54,7 @@ const PresetSidebar = ({
   };
 
   return (
-    <div className="space-y-2 border-l border-gray-300 p-4 dark:border-gray-600">
+    <div className="sticky top-[4.1rem] h-[calc(100vh_-_4.1rem)] space-y-2 overflow-scroll border-l border-gray-300 p-4 dark:border-gray-600">
       <div className="w-full">
         <Button
           onClick={() => setSelectedPreset(undefined)}
@@ -72,7 +72,7 @@ const PresetSidebar = ({
         <h3 className="text-lg font-semibold text-gray-100">{preset.metadata.jobTitle}</h3>
         <p className="text-sm text-gray-400">{preset.metadata.marketingText}</p>
       </div>
-      <div className="space-y-4 pt-5">
+      <div className="space-y-4 pb-12 pt-5">
         <Button
           disabled={isInProgress}
           onClick={() => handleAddPreset(preset)}
