@@ -32,7 +32,8 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       models:
         default: [
           "llama2-70b-4096",
-          "mixtral-8x7b-32768"
+          "mixtral-8x7b-32768",
+          "gemma-7b-it"
           ]
         fetch: false
       titleConvo: true
