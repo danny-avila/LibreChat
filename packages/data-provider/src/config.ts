@@ -147,6 +147,22 @@ export const rateLimitSchema = z.object({
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean(),
+  interface: z
+    .object({
+      privacyPolicy: z
+        .object({
+          externalUrl: z.string().optional(),
+          openNewTab: z.boolean().optional(),
+        })
+        .optional(),
+      termsOfService: z
+        .object({
+          externalUrl: z.string().optional(),
+          openNewTab: z.boolean().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
   fileStrategy: fileSourceSchema.optional(),
   registration: z
     .object({

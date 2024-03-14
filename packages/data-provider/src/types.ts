@@ -193,9 +193,21 @@ export type TResetPassword = {
   confirm_password?: string;
 };
 
+export type TInterfaceConfig = {
+  privacyPolicy?: {
+    externalUrl?: string;
+    openNewTab?: boolean;
+  };
+  termsOfService?: {
+    externalUrl?: string;
+    openNewTab?: boolean;
+  };
+};
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
+  interface?: TInterfaceConfig;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
   githubLoginEnabled: boolean;
