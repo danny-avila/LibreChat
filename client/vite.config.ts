@@ -4,6 +4,9 @@ import react from '@vitejs/plugin-react';
 import path, { resolve } from 'path';
 import type { Plugin } from 'vite';
 
+// Make sure we disable minification when we manually set the env to dev (propagates to NODE_ENV)
+const isDevelopment = process.env.NODE_ENV === 'development';
+
 // https://vitejs.dev/config/
 export default defineConfig({
   server: {
@@ -27,11 +30,20 @@ export default defineConfig({
   // All other env variables are filtered out
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
-  plugins: [react(), nodePolyfills(), sourcemapExclude({ excludeNodeModules: true })],
+  plugins: [
+    react({
+      babel: {
+        minified: !isDevelopment,
+      },
+    }),
+    nodePolyfills(),
+    sourcemapExclude({ excludeNodeModules: true }),
+  ],
   publicDir: './public',
   build: {
-    sourcemap: process.env.NODE_ENV === 'development',
+    sourcemap: isDevelopment,
     outDir: './dist',
+    minify: !isDevelopment,
     rollupOptions: {
       // external: ['uuid'],
       output: {
