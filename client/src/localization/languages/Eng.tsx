@@ -7,6 +7,7 @@ export default {
   com_sidepanel_assistant_builder: 'Assistant Builder',
   com_sidepanel_attach_files: 'Attach Files',
   com_sidepanel_manage_files: 'Manage Files',
+  com_assistants_capabilities: 'Capabilities',
   com_assistants_knowledge: 'Knowledge',
   com_assistants_knowledge_info:
     'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
@@ -16,7 +17,8 @@ export default {
   com_assistants_code_interpreter_files:
     'The following files are only available for Code Interpreter:',
   com_assistants_retrieval: 'Retrieval',
-  com_assistants_tools_section: 'Actions, Tools',
+  com_assistants_tools: 'Tools',
+  com_assistants_actions: 'Actions',
   com_assistants_add_tools: 'Add Tools',
   com_assistants_add_actions: 'Add Actions',
   com_assistants_name_placeholder: 'Optional: The name of the assistant',

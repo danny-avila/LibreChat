@@ -5,6 +5,7 @@ const {
   defaultSocialLogins,
   validateAzureGroups,
   mapModelToAzureConfig,
+  assistantEndpointSchema,
   deprecatedAzureVariables,
   conflictingAzureVariables,
 } = require('librechat-data-provider');
@@ -124,10 +125,9 @@ const AppService = async (app) => {
   }
 
   if (config?.endpoints?.[EModelEndpoint.assistants]) {
-    const { disableBuilder, pollIntervalMs, timeoutMs, supportedIds, excludedIds } =
-      config.endpoints[EModelEndpoint.assistants];
-
-    if (supportedIds?.length && excludedIds?.length) {
+    const assistantsConfig = config.endpoints[EModelEndpoint.assistants];
+    const parsedConfig = assistantEndpointSchema.parse(assistantsConfig);
+    if (assistantsConfig.supportedIds?.length && assistantsConfig.excludedIds?.length) {
       logger.warn(
         `Both \`supportedIds\` and \`excludedIds\` are defined for the ${EModelEndpoint.assistants} endpoint; \`excludedIds\` field will be ignored.`,
       );
@@ -135,11 +135,13 @@ const AppService = async (app) => {
 
     /** @type {Partial<TAssistantEndpoint>} */
     endpointLocals[EModelEndpoint.assistants] = {
-      disableBuilder,
-      pollIntervalMs,
-      timeoutMs,
-      supportedIds,
-      excludedIds,
+      retrievalModels: parsedConfig.retrievalModels,
+      disableBuilder: parsedConfig.disableBuilder,
+      pollIntervalMs: parsedConfig.pollIntervalMs,
+      supportedIds: parsedConfig.supportedIds,
+      capabilities: parsedConfig.capabilities,
+      excludedIds: parsedConfig.excludedIds,
+      timeoutMs: parsedConfig.timeoutMs,
     };
   }
 
