@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "heroku-postbuild": "npm run frontend",
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "list-balances": "node config/list-balances.js",
