@@ -304,7 +304,7 @@ endpoints:
 **Notes:**
 
 - If you mark multiple regions as assistants-compatible, assistants you create will be aggregated across regions to the main assistant selection list.
-- Files you upload, whether at the message or assistant level, will only be available on a per-region basis.
+- Files you upload to Azure OpenAI, whether at the message or assistant level, will only be available in the region the current assistant's model is part of. For this reason, it's recommended you use only one region for Assistants. Uploading to "OpenAI" is the default behavior for official `code_interpeter` and `retrieval` capabilities.
 - Downloading files that assistants generate will soon be supported.
 - As of March 14th 2024, retrieval and streaming are not supported through Azure OpenAI.
     - To avoid any errors with retrieval while it's not supported, it's recommended to disable the capability altogether through the `assistants` endpoint config:
