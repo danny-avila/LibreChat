@@ -55,8 +55,14 @@ export default function useTextarea({
   disabled?: boolean;
 }) {
   const assistantMap = useAssistantsMapContext();
-  const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
-    useChatContext();
+  const {
+    conversation,
+    isSubmitting,
+    latestMessage,
+    setShowBingToneSetting,
+    filesLoading,
+    setFilesLoading,
+  } = useChatContext();
   const isComposing = useRef(false);
   const { handleFiles } = useFileHandling();
   const getSender = useGetSender();
@@ -103,9 +109,16 @@ export default function useTextarea({
     }
 
     const getPlaceholderText = () => {
+      if (
+        conversation?.endpoint === EModelEndpoint.assistants &&
+        (!conversation?.assistant_id || !assistantMap?.[conversation?.assistant_id ?? ''])
+      ) {
+        return localize('com_endpoint_assistant_placeholder');
+      }
       if (disabled) {
         return localize('com_endpoint_config_placeholder');
       }
+
       if (isNotAppendable) {
         return localize('com_endpoint_message_not_appendable');
       }
@@ -145,6 +158,7 @@ export default function useTextarea({
     getSender,
     assistantName,
     textAreaRef,
+    assistantMap,
   ]);
 
   const handleKeyDown = (e: KeyEvent) => {
@@ -152,11 +166,17 @@ export default function useTextarea({
       return;
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
+    const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
+
+    if (isNonShiftEnter && filesLoading) {
       e.preventDefault();
     }
 
-    if (e.key === 'Enter' && !e.shiftKey && !isComposing?.current) {
+    if (isNonShiftEnter) {
+      e.preventDefault();
+    }
+
+    if (isNonShiftEnter && !isComposing?.current) {
       submitButtonRef.current?.click();
     }
   };

@@ -10,10 +10,12 @@ import { NewTrashIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
 
 export default function ContextButton({
+  activeModel,
   assistant_id,
   setCurrentAssistantId,
   createMutation,
 }: {
+  activeModel: string;
   assistant_id: string;
   setCurrentAssistantId: React.Dispatch<React.SetStateAction<string | undefined>>;
   createMutation: UseMutationResult<Assistant, Error, AssistantCreateParams>;
@@ -136,7 +138,7 @@ export default function ContextButton({
             </>
           }
           selection={{
-            selectHandler: () => deleteAssistant.mutate({ assistant_id }),
+            selectHandler: () => deleteAssistant.mutate({ assistant_id, model: activeModel }),
             selectClasses: 'bg-red-600 hover:bg-red-700 dark:hover:bg-red-800 text-white',
             selectText: localize('com_ui_delete'),
           }}

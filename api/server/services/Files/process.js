@@ -11,7 +11,7 @@ const {
   mergeFileConfig,
 } = require('librechat-data-provider');
 const { convertToWebP, resizeAndConvert } = require('~/server/services/Files/images');
-const { initializeClient } = require('~/server/services/Endpoints/assistant');
+const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { isEnabled, determineFileType } = require('~/server/utils');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
@@ -286,7 +286,7 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
       file_id: id ?? file_id,
       temp_file_id,
       bytes,
-      filepath: isAssistantUpload ? `https://api.openai.com/v1/files/${id}` : filepath,
+      filepath: isAssistantUpload ? `${openai.baseURL}/files/${id}` : filepath,
       filename: filename ?? file.originalname,
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       source,

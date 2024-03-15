@@ -46,6 +46,7 @@ export type LogoutOptions = {
 
 export type AssistantAvatarVariables = {
   assistant_id: string;
+  model: string;
   formData: FormData;
   postCreation?: boolean;
 };
@@ -85,6 +86,8 @@ export type UpdateAssistantMutationOptions = {
     context?: unknown,
   ) => void;
 };
+
+export type DeleteAssistantBody = { assistant_id: string; model: string };
 
 export type DeleteAssistantMutationOptions = {
   onSuccess?: (data: void, variables: { assistant_id: string }, context?: unknown) => void;
