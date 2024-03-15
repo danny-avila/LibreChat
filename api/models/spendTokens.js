@@ -1,4 +1,4 @@
-const Transaction = require('./Transaction');
+const { Transaction } = require('./Transaction');
 const { logger } = require('~/config');
 
 /**
