@@ -82,48 +82,56 @@ For more information on how to use our advanced features, install and configure 
 ## Heroku Deployment Steps
 
 1. **Clone LibreChat Repo to Your Local Workspace:**
-   \`\`\`bash
+
+   ```bash
    git clone https://github.com/danny-avila/LibreChat.git
-   \`\`\`
+   ```
 
 2. **Install Heroku CLI:** Download and install the Heroku CLI from Heroku's official website.
+   https://devcenter.heroku.com/articles/heroku-cli#install-the-heroku-cli
 
 3. **Log in with FN Account:**
-   \`\`\`bash
+
+   ```bash
    heroku login
-   \`\`\`
+   ```
 
 4. **Navigate to Local Workspace and Connect to Remote Heroku Repo:**
-   \`\`\`bash
+
+   ```bash
    cd LibreChat
    heroku git:remote -a fn-libre
-   \`\`\`
+   ```
 
-5. **Create Procfile and Define Web Process:**
-   \`\`\`bash
-   echo "web: npm run backend" > Procfile
-   \`\`\`
+5. **Create Procfile and add the following line:**
+
+   ```bash
+   web: npm run backend
+   ```
 
 6. **Modify .gitignore to Include librechat.yaml:**
-   \`\`\`bash
-   sed -i '/librechat.yaml/s/^/#/g' .gitignore
-   \`\`\`
 
 7. **Add heroku-postbuild Script to package.json:**
-   \`\`\`bash
-   sed -i '/"scripts": {/ a \ \ \ \ "heroku-postbuild": "npm run frontend",' package.json
-   \`\`\`
+
+   ```bash
+   "heroku-postbuild": "npm run frontend"
+   ```
 
 8. **Push Changes to Heroku:**
-   \`\`\`bash
+
+   ```bash
    git add .
-   git commit -m "Add Procfile and heroku-postbuild script"
+   git commit -m "commit message"
    git push heroku main
-   \`\`\`
+   ```
 
-9. **Set Environment Variables:** Via Heroku dashboard, under your app's settings, add all your environment variables. Remember not to set HOST, DOMAIN_CLIENT, and DOMAIN_SERVER if you're not using a stable URL.
+9. **Set Environment Variables:** Via Heroku dashboard, under your app's settings, add all your environment variables.
+   Remember not to set HOST, DOMAIN_CLIENT, and DOMAIN_SERVER if you're not using a stable URL.
 
-10. **Host MongoDB and Set MONGO_URI Secret:** Host your MongoDB database and set the MONGO_URI in your Heroku app's environment variables. Also, set SEARCH to false.
+10. **Host MongoDB and Set MONGO_URI Secret:** Host your MongoDB database and retrieve the connection string.
+    Set the MONGO_URI secret in your Heroku app's environment variables.
+
+11. **Set SEARCH secret to false** Set the default SEARCH=true to false. ( This disables Meili search)
 
 ---
 
