@@ -100,7 +100,7 @@ For more information on how to use our advanced features, install and configure 
 
    ```bash
    cd LibreChat
-   heroku git:remote -a fn-libre
+   heroku git:remote -a app-name
    ```
 
 5. **Create Procfile at the root level and add the following line:**
@@ -109,8 +109,8 @@ For more information on how to use our advanced features, install and configure 
    web: npm run backend
    ```
 
-6. **Modify .gitignore to Include librechat.yaml with the below content:**
-  
+6. **Create librechat.yaml at the root level with the below content, modify .gitignore to include it:**
+
    ```bash
    version: 1.0.4
    cache: true
