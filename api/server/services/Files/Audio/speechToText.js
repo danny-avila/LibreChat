@@ -39,18 +39,61 @@ async function speechToText(req, res) {
       formData.append('file', audioBlob);
     }
 
-    formData.append('model', 'whisper');
+    let text;
 
-    const url = process.env.STT_REVERSE_PROXY || 'https://api.openai.com/v1/audio/transcriptions';
+    if (process.env.AZURE_STT === 'true') {
+      const azureConfig = req.app.locals.azureOpenAI;
 
-    const response = await axios.post(url, formData, {
-      headers: formData.getHeaders(),
-      auth: {
-        username: process.env.STT_API_KEY,
-      },
-    });
+      const { apiKey, instanceName, whisperModel, apiVersion } = Object.entries(
+        azureConfig.groupMap,
+      ).reduce((acc, [, value]) => {
+        if (acc) {
+          return acc;
+        }
 
-    const text = await handleResponse(response);
+        const whisperKey = Object.keys(value.models).find((modelKey) =>
+          modelKey.startsWith('whisper'),
+        );
+
+        if (whisperKey) {
+          return {
+            apiVersion: value.version,
+            apiKey: value.apiKey,
+            instanceName: value.instanceName,
+            whisperModel: value.models[whisperKey]['deploymentName'],
+          };
+        }
+
+        return null;
+      }, null);
+
+      const baseURL = `https://${instanceName}.openai.azure.com`;
+
+      const url = `${baseURL}/openai/deployments/${whisperModel}/audio/transcriptions?api-version=${apiVersion}`;
+
+      const headers = {
+        ...formData.getHeaders(),
+        'api-key': apiKey,
+      };
+
+      const response = await axios.post(url, formData, { headers });
+
+      text = await handleResponse(response);
+    } else {
+      formData.append('model', 'whisper');
+
+      const url = process.env.STT_REVERSE_PROXY || 'https://api.openai.com/v1/audio/transcriptions';
+
+      const response = await axios.post(url, formData, {
+        headers: formData.getHeaders(),
+        auth: {
+          username: process.env.STT_API_KEY,
+        },
+      });
+
+      text = await handleResponse(response);
+    }
+
     res.json({ text });
   } catch (error) {
     logger.error('An error occurred while processing the audio:', error);
