@@ -38,7 +38,7 @@
 </a>
 </p>
 
-# 📃 Features
+# 📃 Featuresasdasdasd
 
 - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
 - 💬 Multimodal Chat:

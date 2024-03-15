@@ -20,7 +20,7 @@ const routes = require('./routes');
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN } = process.env ?? {};
 
 const port = Number(PORT) || 3080;
-const host = HOST || 'localhost';
+const host = HOST || '0.0.0.0';
 
 const startServer = async () => {
   if (typeof Bun !== 'undefined') {
