@@ -1,7 +1,7 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
-const Transaction = require('~/models/Transaction');
+const { Transaction } = require('~/models/Transaction');
 const User = require('~/models/User');
 const connect = require('./connect');
 
