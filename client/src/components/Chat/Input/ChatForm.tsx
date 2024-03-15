@@ -1,7 +1,7 @@
 import { useRecoilState } from 'recoil';
 import { useForm } from 'react-hook-form';
 import TextareaAutosize from 'react-textarea-autosize';
-import { memo, useCallback, useRef, useMemo } from 'react';
+import { memo, useCallback, useRef, useMemo, useEffect } from 'react';
 import {
   supportsFiles,
   mergeFileConfig,
@@ -56,6 +56,10 @@ const ChatForm = ({ index = 0 }) => {
     },
     [ask, methods, setText],
   );
+
+  useEffect(() => {
+    methods.setValue('text', text);
+  }, [methods, text]);
 
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
