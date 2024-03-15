@@ -18,11 +18,11 @@ const { duplicateMessages } = require('../../models/Message');
 const crypto = require('crypto');
 const Conversation = require('../../models/schema/convoSchema');
 const { CacheKeys } = require('librechat-data-provider');
-const { initializeClient } = require('~/server/services/Endpoints/assistant');
+const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
-const { sleep } = require('~/server/services/Runs/handle');
 const getLogStores = require('~/cache/getLogStores');
+const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const router = express.Router();

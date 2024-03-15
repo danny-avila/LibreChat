@@ -139,6 +139,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       conversation?.assistant_id
     ) {
       formData.append('assistant_id', conversation.assistant_id);
+      formData.append('model', conversation?.model ?? '');
       formData.append('message_file', 'true');
     }
 

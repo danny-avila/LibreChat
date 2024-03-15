@@ -13,9 +13,9 @@ const {
   defaultOrderQuery,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
-const { RunManager, waitForRun, sleep } = require('~/server/services/Runs');
+const { RunManager, waitForRun } = require('~/server/services/Runs');
 const { processRequiredActions } = require('~/server/services/ToolService');
-const { createOnProgress, sendMessage } = require('~/server/utils');
+const { createOnProgress, sendMessage, sleep } = require('~/server/utils');
 const { TextStream } = require('~/app/clients');
 const { logger } = require('~/config');
 

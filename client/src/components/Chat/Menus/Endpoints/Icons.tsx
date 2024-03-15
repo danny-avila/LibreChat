@@ -48,7 +48,7 @@ export const icons = {
       return <AssistantIcon className={cn('text-token-secondary', className)} size={size} />;
     }
 
-    return <Sparkles className={className} />;
+    return <Sparkles className={cn(assistantName === '' ? 'icon-2xl' : '', className)} />;
   },
   unknown: UnknownIcon,
 };

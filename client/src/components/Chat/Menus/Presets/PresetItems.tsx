@@ -143,7 +143,7 @@ const PresetItems: FC<{
                     >
                       <div className="flex h-full items-center justify-end gap-1">
                         <button
-                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -153,7 +153,7 @@ const PresetItems: FC<{
                           <PinIcon unpin={defaultPreset?.presetId === preset.presetId} />
                         </button>
                         <button
-                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -163,7 +163,7 @@ const PresetItems: FC<{
                           <EditIcon />
                         </button>
                         <button
-                          className="m-0 h-full rounded-md p-2 px-4 text-gray-400 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
+                          className="m-0 h-full rounded-md p-2 text-gray-400 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-gray-200 sm:invisible sm:group-hover:visible"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();

@@ -40,14 +40,15 @@
 
 # 📃 Features
 
-- 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and 11-2023 updates
+- 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and latest updates
 - 💬 Multimodal Chat:
   - Upload and analyze images with GPT-4 and Gemini Vision 📸
-  - More filetypes and Assistants API integration in Active Development 🚧
+  - General file support now available through the Assistants API integration. 🗃️
+  - Local RAG in Active Development 🚧
 - 🌎 Multilingual UI:
   - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro,
   - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
-- 🤖 AI model selection: OpenAI API, Azure, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins
+- 🤖 AI model selection: OpenAI, Azure OpenAI, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins, Assistants API (including Azure Assistants)
 - 💾 Create, Save, & Share Custom Presets
 - 🔄 Edit, Resubmit, and Continue messages with conversation branching
 - 📤 Export conversations as screenshots, markdown, text, json.

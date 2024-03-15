@@ -1,16 +1,17 @@
 import { useRecoilState } from 'recoil';
-import { memo, useCallback, useRef } from 'react';
-import TextareaAutosize from 'react-textarea-autosize';
 import { useForm } from 'react-hook-form';
+import TextareaAutosize from 'react-textarea-autosize';
+import { memo, useCallback, useRef, useMemo } from 'react';
 import {
   supportsFiles,
   mergeFileConfig,
   fileConfig as defaultFileConfig,
+  EModelEndpoint,
 } from 'librechat-data-provider';
+import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import { useRequiresKey, useTextarea } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
-import { useChatContext } from '~/Providers';
 import AttachFile from './Files/AttachFile';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -38,6 +39,7 @@ const ChatForm = ({ index = 0 }) => {
     setFilesLoading,
   } = useChatContext();
 
+  const assistantMap = useAssistantsMapContext();
   const methods = useForm<{ text: string }>({
     defaultValues: { text: text || '' }, // 使用Recoil获取到的text状态进行初始化
   });
@@ -63,6 +65,16 @@ const ChatForm = ({ index = 0 }) => {
   });
 
   const endpointFileConfig = fileConfig.endpoints[endpoint ?? ''];
+  const invalidAssistant = useMemo(
+    () =>
+      conversation?.endpoint === EModelEndpoint.assistants &&
+      (!conversation?.assistant_id || !assistantMap?.[conversation?.assistant_id ?? '']),
+    [conversation?.assistant_id, conversation?.endpoint, assistantMap],
+  );
+  const disableInputs = useMemo(
+    () => !!(requiresKey || invalidAssistant),
+    [requiresKey, invalidAssistant],
+  );
 
   return (
     <form
@@ -96,7 +108,7 @@ const ChatForm = ({ index = 0 }) => {
                 ref={(e) => {
                   textAreaRef.current = e;
                 }}
-                disabled={!!requiresKey}
+                disabled={disableInputs}
                 onPaste={handlePaste}
                 onKeyUp={handleKeyUp}
                 onKeyDown={handleKeyDown}
@@ -120,7 +132,7 @@ const ChatForm = ({ index = 0 }) => {
             <AttachFile
               endpoint={_endpoint ?? ''}
               endpointType={endpointType}
-              disabled={requiresKey}
+              disabled={disableInputs}
             />
             {isSubmitting && showStopButton ? (
               <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
@@ -129,7 +141,7 @@ const ChatForm = ({ index = 0 }) => {
                 <SendButton
                   ref={submitButtonRef}
                   control={methods.control}
-                  disabled={!!(filesLoading || isSubmitting || requiresKey)}
+                  disabled={!!(filesLoading || isSubmitting || disableInputs)}
                 />
               )
             )}
