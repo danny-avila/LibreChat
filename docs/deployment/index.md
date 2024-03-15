@@ -21,6 +21,7 @@ weight: 3
 - 🏗️ [Hetzner](./hetzner_ubuntu.md)
 - 🌈 [Heroku](./heroku.md)
 - 🦓 [Zeabur](./zeabur.md)
+- 📦 [Helm](./helm.md)
 
 ---
 
