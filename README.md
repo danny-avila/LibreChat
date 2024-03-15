@@ -111,7 +111,7 @@ For more information on how to use our advanced features, install and configure 
 
 6. **Modify .gitignore to Include librechat.yaml with the below content:**
   
-  ```bash
+   ```bash
    version: 1.0.4
    cache: true
    ```
