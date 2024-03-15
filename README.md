@@ -103,7 +103,7 @@ For more information on how to use our advanced features, install and configure 
    heroku git:remote -a fn-libre
    ```
 
-5. **Create Procfile and add the following line:**
+5. **Create Procfile at the root level and add the following line:**
 
    ```bash
    web: npm run backend
