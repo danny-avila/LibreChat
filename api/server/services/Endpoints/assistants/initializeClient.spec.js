@@ -57,7 +57,7 @@ describe('initializeClient', () => {
     );
     getUserKeyExpiry.mockResolvedValue(isoString);
 
-    const req = { user: { id: 'user123' } };
+    const req = { user: { id: 'user123' }, app };
     const res = {};
 
     const { openai, openAIApiKey } = await initializeClient({ req, res });
@@ -80,7 +80,7 @@ describe('initializeClient', () => {
   test('throws error if API key is not provided', async () => {
     delete process.env.ASSISTANTS_API_KEY; // Simulate missing API key
 
-    const req = { user: { id: 'user123' } };
+    const req = { user: { id: 'user123' }, app };
     const res = {};
 
     await expect(initializeClient({ req, res })).rejects.toThrow(/Assistants API key not/);

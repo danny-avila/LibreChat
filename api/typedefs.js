@@ -743,6 +743,8 @@
  * @property {Set<string>} completeToolCallSteps - A set of completed tool call steps.
  * @property {Set<string>} seenCompletedMessages - A set of completed messages that have been seen/processed.
  * @property {Map<string, StepToolCall>} seenToolCalls - A map of tool calls that have been seen/processed.
+ * @property {object | undefined} locals - Local variables for the request.
+ * @property {AzureOptions} locals.azureOptions - Local Azure options for the request.
  * @property {(data: TContentData) => void} addContentData - Updates the response message's relevant
  * @property {InProgressFunction} in_progress - Updates the response message's relevant
  * content array with the part by index & sends intermediate SSE message with content data.

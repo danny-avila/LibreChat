@@ -1062,7 +1062,7 @@ ${convo}
         opts.baseURL = this.langchainProxy
           ? constructAzureURL({
             baseURL: this.langchainProxy,
-            azure: this.azure,
+            azureOptions: this.azure,
           })
           : this.azureEndpoint.split(/\/(chat|completion)/)[0];
         opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
