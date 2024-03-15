@@ -229,7 +229,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         transactions.reduce((acc, curr) => acc + curr.rawAmount, 0),
       );
       // TODO: make promptBuffer a config option; buffer for titles, needs buffer for system instructions
-      const promptBuffer = 200;
+      const promptBuffer = parentMessageId === Constants.NO_PARENT && !_thread_id ? 200 : 0;
       // 5 is added for labels
       let promptTokens = (await countTokens(text + (promptPrefix ?? ''))) + 5;
       promptTokens += totalPreviousTokens + promptBuffer;
@@ -242,7 +242,6 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
           user: req.user.id,
           tokenType: 'prompt',
           amount: promptTokens,
-          endpoint: EModelEndpoint.assistants,
         },
       });
     }
