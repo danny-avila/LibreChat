@@ -342,11 +342,12 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
 ]);
 
 export const supportsBalanceCheck = {
+  [EModelEndpoint.custom]: true,
   [EModelEndpoint.openAI]: true,
   [EModelEndpoint.anthropic]: true,
-  [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.gptPlugins]: true,
-  [EModelEndpoint.custom]: true,
+  [EModelEndpoint.assistants]: true,
+  [EModelEndpoint.azureOpenAI]: true,
 };
 
 export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision', 'claude-3'];
@@ -436,6 +437,10 @@ export enum ViolationTypes {
    * Illegal Model Request (not available).
    */
   ILLEGAL_MODEL_REQUEST = 'illegal_model_request',
+  /**
+   * Token Limit Violation.
+   */
+  TOKEN_BALANCE = 'token_balance',
 }
 
 /**

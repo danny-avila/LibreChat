@@ -22,14 +22,12 @@ const Key = require('./Key');
 const User = require('./User');
 const Session = require('./Session');
 const Balance = require('./Balance');
-const Transaction = require('./Transaction');
 
 module.exports = {
   User,
   Key,
   Session,
   Balance,
-  Transaction,
 
   hashPassword,
   updateUser,
