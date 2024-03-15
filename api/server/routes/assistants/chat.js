@@ -1,6 +1,12 @@
 const { v4 } = require('uuid');
 const express = require('express');
-const { EModelEndpoint, Constants, RunStatus, CacheKeys } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  Constants,
+  RunStatus,
+  CacheKeys,
+  ViolationTypes,
+} = require('librechat-data-provider');
 const {
   initThread,
   recordUsage,
@@ -11,8 +17,10 @@ const {
 } = require('~/server/services/Threads');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const { addTitle, initializeClient } = require('~/server/services/Endpoints/assistants');
-const { sendResponse, sendMessage, sleep } = require('~/server/utils');
+const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
+const { getTransactions } = require('~/models/Transaction');
 const { createRun } = require('~/server/services/Runs');
+const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { logger } = require('~/config');
@@ -128,6 +136,8 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
           : ''
       }`;
       return sendResponse(res, messageData, errorMessage);
+    } else if (error?.message?.includes(ViolationTypes.TOKEN_BALANCE)) {
+      return sendResponse(res, messageData, error.message);
     } else {
       logger.error('[/assistants/chat/]', error);
     }
@@ -205,6 +215,36 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
     if (!assistant_id) {
       completedRun = true;
       throw new Error('Missing assistant_id');
+    }
+
+    if (isEnabled(process.env.CHECK_BALANCE)) {
+      const transactions =
+        (await getTransactions({
+          user: req.user.id,
+          context: 'message',
+          conversationId,
+        })) ?? [];
+
+      const totalPreviousTokens = Math.abs(
+        transactions.reduce((acc, curr) => acc + curr.rawAmount, 0),
+      );
+      // TODO: make promptBuffer a config option; buffer for titles, needs buffer for system instructions
+      const promptBuffer = 200;
+      // 5 is added for labels
+      let promptTokens = (await countTokens(text + (promptPrefix ?? ''))) + 5;
+      promptTokens += totalPreviousTokens + promptBuffer;
+
+      await checkBalance({
+        req,
+        res,
+        txData: {
+          model,
+          user: req.user.id,
+          tokenType: 'prompt',
+          amount: promptTokens,
+          endpoint: EModelEndpoint.assistants,
+        },
+      });
     }
 
     /** @type {{ openai: OpenAIClient }} */
