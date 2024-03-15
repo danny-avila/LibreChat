@@ -8,6 +8,8 @@ import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 import Markdown from 'react-markdown';
 import { useState } from 'react';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 
 const PresetSidebar = ({
   preset,
@@ -20,6 +22,7 @@ const PresetSidebar = ({
   const showToast = useToast().showToast;
   const localize = useLocalize();
   const [isInProgress, setIsInPregress] = useState(false);
+  const queryClient = useQueryClient();
 
   const handleAddPreset = (preset: Preset) => {
     setIsInPregress(true);
@@ -41,6 +44,7 @@ const PresetSidebar = ({
             message: `${preset.metadata.jobTitle} ${localize('com_endpoint_preset_saved')}`,
           });
           setIsInPregress(false);
+          queryClient.invalidateQueries([QueryKeys.presets]);
         },
         onError: () => {
           showToast({
