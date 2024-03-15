@@ -1,6 +1,7 @@
+const { Capabilities, defaultRetrievalModels } = require('librechat-data-provider');
+const { getCitations, citeText } = require('./citations');
 const partialRight = require('lodash/partialRight');
 const { sendMessage } = require('./streamResponse');
-const { getCitations, citeText } = require('./citations');
 const citationRegex = /\[\^\d+?\^]/g;
 
 const addSpaceIfNeeded = (text) => (text.length > 0 && !text.endsWith(' ') ? text + ' ' : text);
@@ -155,7 +156,7 @@ const isUserProvided = (value) => value === 'user_provided';
  * @param {string} baseURL
  * @returns {boolean | { userProvide: boolean, userProvideURL?: boolean }}
  */
-function generateConfig(key, baseURL) {
+function generateConfig(key, baseURL, assistants = false) {
   if (!key) {
     return false;
   }
@@ -165,6 +166,16 @@ function generateConfig(key, baseURL) {
 
   if (baseURL) {
     config.userProvideURL = isUserProvided(baseURL);
+  }
+
+  if (assistants) {
+    config.retrievalModels = defaultRetrievalModels;
+    config.capabilities = [
+      Capabilities.code_interpreter,
+      Capabilities.retrieval,
+      Capabilities.actions,
+      Capabilities.tools,
+    ];
   }
 
   return config;
