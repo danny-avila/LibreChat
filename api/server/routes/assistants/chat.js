@@ -23,6 +23,7 @@ const { createRun } = require('~/server/services/Runs');
 const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
+const { getModelMaxTokens } = require('~/utils');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -228,11 +229,14 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       const totalPreviousTokens = Math.abs(
         transactions.reduce((acc, curr) => acc + curr.rawAmount, 0),
       );
+
       // TODO: make promptBuffer a config option; buffer for titles, needs buffer for system instructions
       const promptBuffer = parentMessageId === Constants.NO_PARENT && !_thread_id ? 200 : 0;
       // 5 is added for labels
       let promptTokens = (await countTokens(text + (promptPrefix ?? ''))) + 5;
       promptTokens += totalPreviousTokens + promptBuffer;
+      // Count tokens up to the current context window
+      promptTokens = Math.min(promptTokens, getModelMaxTokens(model));
 
       await checkBalance({
         req,
