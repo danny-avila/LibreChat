@@ -1,0 +1,91 @@
+version: 1.0.5
+cache: true
+# fileStrategy: "firebase"  # If using Firebase CDN
+fileConfig:
+  endpoints:
+    assistants:
+      fileLimit: 5
+      # Maximum size for an individual file in MB
+      fileSizeLimit: 10
+      # Maximum total size for all files in a single request in MB
+      totalSizeLimit: 50
+      # In case you wish to limit certain filetypes
+      # supportedMimeTypes:
+      #   - "image/.*"
+      #   - "application/pdf"
+    openAI:
+      # Disables file uploading to the OpenAI endpoint
+      disabled: true
+    default:
+      totalSizeLimit: 20
+    # Example for custom endpoints
+    # YourCustomEndpointName:
+    #   fileLimit: 2
+    #   fileSizeLimit: 5
+  # Global server file size limit in MB
+  serverFileSizeLimit: 100
+  # Limit for user avatar image size in MB, default: 2 MB
+  avatarSizeLimit: 4
+rateLimits:
+  fileUploads:
+    ipMax: 100
+    # Rate limit window for file uploads per IP
+    ipWindowInMinutes: 60
+    userMax: 50
+    # Rate limit window for file uploads per user
+    userWindowInMinutes: 60
+registration:
+  socialLogins: ['google', 'facebook', 'github', 'discord', 'openid']
+  allowedDomains:
+    - 'example.com'
+    - 'anotherdomain.com'
+endpoints:
+  assistants:
+    # Disable Assistants Builder Interface by setting to `true`
+    disableBuilder: false
+    # Polling interval for checking assistant updates
+    pollIntervalMs: 750
+    # Timeout for assistant operations
+    timeoutMs: 180000
+    # Should only be one or the other, either `supportedIds` or `excludedIds`
+    supportedIds: ['asst_supportedAssistantId1', 'asst_supportedAssistantId2']
+    # excludedIds: ["asst_excludedAssistantId"]
+    # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
+    # retrievalModels: ["gpt-4-turbo-preview"]
+    # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    # capabilities: ["code_interpreter", "retrieval", "actions", "tools"]
+  custom:
+    - name: 'Mistral'
+      apiKey: '${MISTRAL_API_KEY}'
+      baseURL: 'https://api.mistral.ai/v1'
+      models:
+        default: ['mistral-tiny', 'mistral-small', 'mistral-medium', 'mistral-large-latest']
+        # Attempt to dynamically fetch available models
+        fetch: true
+        userIdQuery: false
+      iconURL: 'https://example.com/mistral-icon.png'
+      titleConvo: true
+      titleModel: 'mistral-tiny'
+      modelDisplayLabel: 'Mistral AI'
+      # addParams:
+      # Mistral API specific value for moderating messages
+      #   safe_prompt: true
+      dropParams:
+        - 'stop'
+        - 'user'
+        - 'presence_penalty'
+        - 'frequency_penalty'
+      # headers:
+      #    x-custom-header: "${CUSTOM_HEADER_VALUE}"
+    - name: 'OpenRouter'
+      apiKey: '${OPENROUTER_API_KEY}'
+      baseURL: 'https://openrouter.ai/api/v1'
+      models:
+        default: ['gpt-3.5-turbo']
+        fetch: false
+      titleConvo: true
+      titleModel: 'gpt-3.5-turbo'
+      modelDisplayLabel: 'OpenRouter'
+      dropParams:
+        - 'stop'
+        - 'frequency_penalty'
