@@ -71,6 +71,9 @@ const PresetSidebar = ({
         </div>
         <h3 className="text-lg font-semibold text-gray-100">{preset.metadata.jobTitle}</h3>
         <p className="text-sm text-gray-400">{preset.metadata.marketingText}</p>
+        <p className="text-sm text-gray-300">
+          <b>Limitations:</b> {preset.metadata.limitations}
+        </p>
       </div>
       <div className="space-y-4 pb-12 pt-5">
         <Button
