@@ -2,8 +2,8 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
-import { GearIcon, DataIcon, UserIcon, ExperimentIcon } from '~/components/svg';
-import { General, Beta, Data, Account } from './SettingsTabs';
+import { GearIcon, DataIcon, UserIcon, ExperimentIcon, SpeechIcon } from '~/components/svg';
+import { General, Beta, Data, Account, Speech } from './SettingsTabs';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -96,11 +96,26 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                 <UserIcon />
                 {localize('com_nav_setting_account')}
               </Tabs.Trigger>
+              <Tabs.Trigger
+                className={cn(
+                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-750',
+                  isSmallScreen
+                    ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
+                    : 'bg-white radix-state-active:bg-gray-200',
+                  isSmallScreen ? '' : 'dark:bg-gray-800',
+                )}
+                value={SettingsTabValues.SPEECH}
+                style={{ userSelect: 'none' }}
+              >
+                <SpeechIcon className="icon-sm" />
+                {localize('com_nav_setting_speech')}
+              </Tabs.Trigger>
             </Tabs.List>
             <General />
             <Beta />
             <Data />
             <Account />
+            <Speech />
           </Tabs.Root>
         </div>
       </DialogContent>

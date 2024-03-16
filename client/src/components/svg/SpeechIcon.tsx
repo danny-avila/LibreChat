@@ -1,6 +1,6 @@
 import { cn } from '~/utils/';
 
-export default function AudioLinesIcon({ className }) {
+export default function SpeechIcon({ className }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

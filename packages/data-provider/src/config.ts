@@ -456,6 +456,10 @@ export enum SettingsTabValues {
    * Tab for Account Settings
    */
   ACCOUNT = 'account',
+  /**
+   * Tab for Speech Settings
+   */
+  SPEECH = 'speech',
 }
 
 /**

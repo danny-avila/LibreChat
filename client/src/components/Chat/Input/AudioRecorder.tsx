@@ -1,5 +1,5 @@
 import React from 'react';
-import { ListeningIcon, Spinner, AudioLinesIcon } from '~/components/svg';
+import { ListeningIcon, Spinner, SpeechIcon } from '~/components/svg';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
 import { useLocalize } from '~/hooks';
 
@@ -23,7 +23,7 @@ export default function AudioRecorder({ isListening, isLoading, startRecording, 
             onClick={isListening ? handleStopRecording : handleStartRecording}
           >
             {isListening ? (
-              <AudioLinesIcon className="stroke-white dark:stroke-black" />
+              <SpeechIcon className="stroke-white dark:stroke-black" />
             ) : isLoading ? (
               <Spinner className="stroke-white dark:stroke-black" />
             ) : (
