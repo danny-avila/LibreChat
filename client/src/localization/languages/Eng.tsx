@@ -319,6 +319,7 @@ export default {
   com_nav_modular_chat: 'Enable switching Endpoints mid-conversation',
   com_nav_latex_parsing: 'Parsing LaTeX in messages (may affect performance)',
   com_nav_text_to_speech: 'TTS for messages',
+  com_nav_speech_to_text: 'STT button',
   com_nav_profile_picture: 'Profile Picture',
   com_nav_change_picture: 'Change picture',
   com_nav_plugin_store: 'Plugin store',

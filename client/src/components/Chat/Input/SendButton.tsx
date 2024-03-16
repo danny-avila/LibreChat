@@ -1,4 +1,3 @@
-// SendButton.js
 import React from 'react';
 import { cn } from '~/utils';
 import { SendIcon } from '~/components/svg';

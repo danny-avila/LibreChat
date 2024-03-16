@@ -3,6 +3,7 @@ import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useState, useRef } from 'react';
 import { useOnClickOutside } from '~/hooks';
 import TextToSpeechSwitch from './TextToSpeechSwitch';
+import SpeechToTextSwitch from './SpeechToTextSwitch';
 
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
@@ -20,6 +21,9 @@ function Speech() {
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <TextToSpeechSwitch />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <SpeechToTextSwitch />
         </div>
       </div>
     </Tabs.Content>

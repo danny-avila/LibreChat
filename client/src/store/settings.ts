@@ -150,6 +150,25 @@ const TextToSpeech = atom<boolean>({
   ] as const,
 });
 
+const SpeechToText = atom<boolean>({
+  key: 'SpeechToText',
+  default: true,
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('SpeechToText');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('SpeechToText', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 export default {
   abortScroll,
   showFiles,
@@ -164,4 +183,5 @@ export default {
   LaTeXParsing,
   UsernameDisplay,
   TextToSpeech,
+  SpeechToText,
 };

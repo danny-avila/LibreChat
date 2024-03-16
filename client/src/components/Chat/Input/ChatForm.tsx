@@ -15,6 +15,7 @@ import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 export default function ChatForm({ index = 0 }) {
   const [text, setText] = useRecoilState(store.textByIndex(index));
+  const [SpeechToText] = useRecoilState<boolean>(store.SpeechToText);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
 
   const {
@@ -116,12 +117,14 @@ export default function ChatForm({ index = 0 }) {
                   />
                 )
               )}
-              <AudioRecorder
-                isListening={isListening}
-                isLoading={isLoading}
-                startRecording={startRecording}
-                stopRecording={stopRecording}
-              />
+              {SpeechToText && (
+                <AudioRecorder
+                  isListening={isListening}
+                  isLoading={isLoading}
+                  startRecording={startRecording}
+                  stopRecording={stopRecording}
+                />
+              )}
             </div>
           </div>
         </div>

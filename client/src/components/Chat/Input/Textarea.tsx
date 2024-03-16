@@ -1,3 +1,4 @@
+import { useRecoilState } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
 import {
   supportsFiles,
@@ -7,6 +8,7 @@ import {
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useTextarea } from '~/hooks';
+import store from '~/store';
 
 export default function Textarea({
   value,
@@ -20,6 +22,8 @@ export default function Textarea({
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
+  const [SpeechToText] = useRecoilState<boolean>(store.SpeechToText);
+
   const {
     textAreaRef,
     handlePaste,
@@ -50,7 +54,8 @@ export default function Textarea({
         supportsFiles[endpointType ?? endpoint ?? ''] && !endpointFileConfig?.disabled
           ? ' pl-10 md:pl-[55px]'
           : 'pl-3 md:pl-4',
-        'm-0 w-full resize-none border-0 bg-transparent py-[10px] pr-10 placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5 md:pr-12 ',
+        'm-0 w-full resize-none border-0 bg-transparent py-[10px] placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5  ',
+        SpeechToText ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
         removeFocusOutlines,
         'max-h-[65vh] md:max-h-[85vh]',
       )}
