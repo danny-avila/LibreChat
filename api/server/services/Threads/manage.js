@@ -1,14 +1,19 @@
+const path = require('path');
 const { v4 } = require('uuid');
 const {
-  EModelEndpoint,
   Constants,
-  defaultOrderQuery,
+  FilePurpose,
   ContentTypes,
+  imageExtRegex,
+  EModelEndpoint,
+  defaultOrderQuery,
 } = require('librechat-data-provider');
+const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { recordMessage, getMessages } = require('~/models/Message');
 const { saveConvo } = require('~/models/Conversation');
 const spendTokens = require('~/models/spendTokens');
 const { countTokens } = require('~/server/utils');
+const { logger } = require('~/config');
 
 /**
  * Initializes a new thread or adds messages to an existing thread.
@@ -484,9 +489,108 @@ const recordUsage = async ({ prompt_tokens, completion_tokens, model, user, conv
   );
 };
 
+/**
+ * Sorts, processes, and flattens messages to a single string.
+ *
+ * @param {object} params - The OpenAI client instance.
+ * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {RunClient} params.client - The LibreChat client that manages the run: either refers to `OpenAI` or `StreamRunManager`.
+ * @param {ThreadMessage[]} params.messages - An array of messages.
+ * @returns {Promise<{messages: ThreadMessage[], text: string}>} The sorted messages and the flattened text.
+ */
+async function processMessages({ openai, client, messages = [] }) {
+  const sorted = messages.sort((a, b) => a.created_at - b.created_at);
+
+  let text = '';
+  for (const message of sorted) {
+    message.files = [];
+    for (const content of message.content) {
+      const processImageFile =
+        content.type === 'image_file' && !client.processedFileIds.has(content.image_file?.file_id);
+      if (processImageFile) {
+        const { file_id } = content.image_file;
+
+        const file = await retrieveAndProcessFile({
+          openai,
+          client,
+          file_id,
+          basename: `${file_id}.png`,
+        });
+        client.processedFileIds.add(file_id);
+        message.files.push(file);
+        continue;
+      }
+
+      text += (content.text?.value ?? '') + ' ';
+      logger.debug('[processMessages] Processing message:', { value: text });
+
+      // Process annotations if they exist
+      if (!content.text?.annotations?.length) {
+        continue;
+      }
+
+      logger.debug('[processMessages] Processing annotations:', content.text.annotations);
+      for (const annotation of content.text.annotations) {
+        logger.debug('Current annotation:', annotation);
+        let file;
+        const processFilePath =
+          annotation.file_path && !client.processedFileIds.has(annotation.file_path?.file_id);
+
+        if (processFilePath) {
+          const basename = imageExtRegex.test(annotation.text)
+            ? path.basename(annotation.text)
+            : null;
+          file = await retrieveAndProcessFile({
+            openai,
+            client,
+            file_id: annotation.file_path.file_id,
+            basename,
+          });
+          client.processedFileIds.add(annotation.file_path.file_id);
+        }
+
+        const processFileCitation =
+          annotation.file_citation &&
+          !client.processedFileIds.has(annotation.file_citation?.file_id);
+
+        if (processFileCitation) {
+          file = await retrieveAndProcessFile({
+            openai,
+            client,
+            file_id: annotation.file_citation.file_id,
+            unknownType: true,
+          });
+          client.processedFileIds.add(annotation.file_citation.file_id);
+        }
+
+        if (!file && (annotation.file_path || annotation.file_citation)) {
+          const { file_id } = annotation.file_citation || annotation.file_path || {};
+          file = await retrieveAndProcessFile({ openai, client, file_id, unknownType: true });
+          client.processedFileIds.add(file_id);
+        }
+
+        if (!file) {
+          continue;
+        }
+
+        if (file.purpose && file.purpose === FilePurpose.Assistants) {
+          text = text.replace(annotation.text, file.filename);
+        } else if (file.filepath) {
+          text = text.replace(annotation.text, file.filepath);
+        }
+
+        message.files.push(file);
+      }
+    }
+  }
+
+  return { messages: sorted, text };
+}
+
 module.exports = {
   initThread,
   recordUsage,
+  processMessages,
   saveUserMessage,
   checkMessageGaps,
   addThreadMetadata,
