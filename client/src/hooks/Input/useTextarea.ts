@@ -154,7 +154,7 @@ export default function useTextarea({
     if (e.key === 'Enter' && isSubmitting) {
       return;
     }
-  
+
     if (e.key === 'Enter' && !enterToSend) {
       if (!e.shiftKey) {
         e.preventDefault();
@@ -170,7 +170,7 @@ export default function useTextarea({
         submitButtonRef.current?.click();
       }
     }
-  };  
+  };
 
   const handleKeyUp = (e: KeyEvent) => {
     const target = e.target as HTMLTextAreaElement;
