@@ -62,7 +62,7 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
             )}
           </div>
         </div>
-        <div className="line-clamp-3 h-[60px] text-sm text-slate-700/70 dark:text-slate-50/70">
+        <div className="line-clamp-3 h-[60px] text-sm text-gray-700/70 dark:text-gray-50/70">
           {plugin.description}
         </div>
       </div>

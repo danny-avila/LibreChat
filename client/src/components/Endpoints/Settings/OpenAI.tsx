@@ -275,7 +275,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className={cn(
                 defaultTextProps,
                 optionText,
-                'flex rounded-md bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 dark:border-slate-700',
+                'flex rounded-md bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:border-gray-700',
                 'pointer-events-none max-h-5 w-12 border-0 group-hover/temp:border-gray-200',
               )}
             />
