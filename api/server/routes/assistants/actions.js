@@ -17,7 +17,7 @@ const router = express.Router();
  */
 router.get('/', async (req, res) => {
   try {
-    res.json(await getActions({ user: req.user.id }));
+    res.json(await getActions());
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -55,9 +55,9 @@ router.post('/:assistant_id', async (req, res) => {
     /** @type {{ openai: OpenAI }} */
     const { openai } = await initializeClient({ req, res });
 
-    initialPromises.push(getAssistant({ assistant_id, user: req.user.id }));
+    initialPromises.push(getAssistant({ assistant_id }));
     initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
-    !!_action_id && initialPromises.push(getActions({ user: req.user.id, action_id }, true));
+    !!_action_id && initialPromises.push(getActions({ action_id }, true));
 
     /** @type {[AssistantDocument, Assistant, [Action|undefined]]} */
     const [assistant_data, assistant, actions_result] = await Promise.all(initialPromises);
@@ -115,14 +115,15 @@ router.post('/:assistant_id', async (req, res) => {
     const promises = [];
     promises.push(
       updateAssistant(
-        { assistant_id, user: req.user.id },
+        { assistant_id },
         {
           actions,
+          user: req.user.id,
         },
       ),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { tools }));
-    promises.push(updateAction({ action_id, user: req.user.id }, { metadata, assistant_id }));
+    promises.push(updateAction({ action_id }, { metadata, assistant_id, user: req.user.id }));
 
     /** @type {[AssistantDocument, Assistant, Action]} */
     const resolved = await Promise.all(promises);
@@ -155,7 +156,7 @@ router.delete('/:assistant_id/:action_id', async (req, res) => {
     const { openai } = await initializeClient({ req, res });
 
     const initialPromises = [];
-    initialPromises.push(getAssistant({ assistant_id, user: req.user.id }));
+    initialPromises.push(getAssistant({ assistant_id }));
     initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
 
     /** @type {[AssistantDocument, Assistant]} */
@@ -180,14 +181,15 @@ router.delete('/:assistant_id/:action_id', async (req, res) => {
     const promises = [];
     promises.push(
       updateAssistant(
-        { assistant_id, user: req.user.id },
+        { assistant_id },
         {
           actions: updatedActions,
+          user: req.user.id,
         },
       ),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { tools: updatedTools }));
-    promises.push(deleteAction({ action_id, user: req.user.id }));
+    promises.push(deleteAction({ action_id }));
 
     await Promise.all(promises);
     res.status(200).json({ message: 'Action deleted successfully' });
