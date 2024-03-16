@@ -47,7 +47,7 @@ const namespaces = {
   concurrent: createViolationInstance('concurrent'),
   non_browser: createViolationInstance('non_browser'),
   message_limit: createViolationInstance('message_limit'),
-  token_balance: createViolationInstance('token_balance'),
+  token_balance: createViolationInstance(ViolationTypes.TOKEN_BALANCE),
   registrations: createViolationInstance('registrations'),
   [ViolationTypes.FILE_UPLOAD_LIMIT]: createViolationInstance(ViolationTypes.FILE_UPLOAD_LIMIT),
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: createViolationInstance(
