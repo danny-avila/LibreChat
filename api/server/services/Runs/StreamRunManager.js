@@ -23,6 +23,7 @@ class StreamRunManager {
     this.thread_id = fields.thread_id;
     this.clientHandlers = fields.handlers ?? {};
     this.finalMessage = fields.responseMessage ?? {};
+    this.messages = [];
     this.text = '';
 
     this.handlers = {
@@ -237,6 +238,7 @@ class StreamRunManager {
       type: ContentTypes.TEXT,
       index,
     });
+    this.messages.push(message);
   }
 }
 
