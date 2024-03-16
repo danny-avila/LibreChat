@@ -61,7 +61,7 @@ export default function ActionsAuth({
                   role="radio"
                   value={AuthTypeEnum.None}
                   id=":rf8:"
-                  className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+                  className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-700 dark:bg-gray-700"
                   tabIndex={-1}
                 >
                   <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -76,7 +76,7 @@ export default function ActionsAuth({
                   role="radio"
                   value={AuthTypeEnum.ServiceHttp}
                   id=":rfa:"
-                  className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+                  className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-700 dark:bg-gray-700"
                   tabIndex={0}
                 >
                   <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -157,7 +157,7 @@ const ApiKey = () => {
               role="radio"
               value={AuthorizationTypeEnum.Basic}
               id=":rfu:"
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-700 dark:bg-gray-700"
               tabIndex={-1}
             >
               <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -172,7 +172,7 @@ const ApiKey = () => {
               role="radio"
               value={AuthorizationTypeEnum.Bearer}
               id=":rg0:"
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-700 dark:bg-gray-700"
               tabIndex={-1}
             >
               <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -187,7 +187,7 @@ const ApiKey = () => {
               role="radio"
               value={AuthorizationTypeEnum.Custom}
               id=":rg2:"
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-700 dark:bg-gray-700"
               tabIndex={0}
             >
               <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -267,7 +267,7 @@ const OAuth = () => {
               role="radio"
               value={TokenExchangeMethodEnum.DefaultPost}
               id=":rj1:"
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-700 dark:bg-gray-700"
               tabIndex={-1}
             >
               <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
@@ -282,7 +282,7 @@ const OAuth = () => {
               role="radio"
               value={TokenExchangeMethodEnum.BasicAuthHeader}
               id=":rj3:"
-              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-600 dark:bg-gray-700"
+              className="mr-1 flex h-5 w-5 items-center justify-center rounded-full border border-gray-500 bg-white dark:border-gray-700 dark:bg-gray-700"
               tabIndex={-1}
             >
               <RadioGroup.Indicator className="h-2 w-2 rounded-full bg-gray-950 dark:bg-white"></RadioGroup.Indicator>
