@@ -74,7 +74,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 
 // Unfinished Message Component
 export const UnfinishedMessage = () => (
-  <ErrorMessage text="The response is incomplete; it's either still processing, was cancelled, or censoreded. Refresh or try a different prompt." />
+  <ErrorMessage text="The response is incomplete; it's either still processing, was cancelled, or censored. Refresh or try a different prompt." />
 );
 
 // Content Component
