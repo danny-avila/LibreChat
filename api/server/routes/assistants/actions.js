@@ -115,14 +115,15 @@ router.post('/:assistant_id', async (req, res) => {
     const promises = [];
     promises.push(
       updateAssistant(
-        { assistant_id, user: req.user.id },
+        { assistant_id },
         {
           actions,
+          user: req.user.id,
         },
       ),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { tools }));
-    promises.push(updateAction({ action_id, user: req.user.id }, { metadata, assistant_id }));
+    promises.push(updateAction({ action_id }, { metadata, assistant_id, user: req.user.id }));
 
     /** @type {[AssistantDocument, Assistant, Action]} */
     const resolved = await Promise.all(promises);
@@ -180,9 +181,10 @@ router.delete('/:assistant_id/:action_id', async (req, res) => {
     const promises = [];
     promises.push(
       updateAssistant(
-        { assistant_id, user: req.user.id },
+        { assistant_id },
         {
           actions: updatedActions,
+          user: req.user.id,
         },
       ),
     );
