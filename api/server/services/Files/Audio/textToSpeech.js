@@ -23,11 +23,8 @@ async function textToSpeech(req, res) {
 
   try {
     const response = await axios.post(url, data, { headers, responseType: 'arraybuffer' });
-    res.set({
-      'Content-Disposition': 'attachment; filename="audio.mp3"',
-      'Content-Type': 'audio/mpeg',
-    });
-    res.send(Buffer.from(response.data, 'binary'));
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.send(response.data);
   } catch (error) {
     console.error(error);
     res.status(500).send('An error occurred');

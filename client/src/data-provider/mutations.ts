@@ -307,6 +307,21 @@ export const useSpeechToTextMutation = (
   });
 };
 
+/* Text to speech */
+export const useTextToSpeechMutation = (
+  options?: TextToSpeechOptions,
+): UseMutationResult<
+  TextToSpeechResponse, // response data
+  unknown, // error
+  FormData, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.textToSpeech], {
+    mutationFn: (variables: FormData) => dataService.textToSpeech(variables),
+    ...(options || {}),
+  });
+};
+
 /**
  * ASSISTANTS
  */
@@ -435,21 +450,6 @@ export const useUploadAssistantAvatarMutation = (
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     mutationFn: ({ postCreation, ...variables }: AssistantAvatarVariables) =>
       dataService.uploadAssistantAvatar(variables),
-    ...(options || {}),
-  });
-};
-
-/* Text to speech */
-export const useTextToSpeechMutation = (
-  options?: TextToSpeechOptions,
-): UseMutationResult<
-  TextToSpeechResponse, // response data
-  unknown, // error
-  FormData, // request
-  unknown // context
-> => {
-  return useMutation([MutationKeys.textToSpeech], {
-    mutationFn: (variables: FormData) => dataService.textToSpeech(variables),
     ...(options || {}),
   });
 };
