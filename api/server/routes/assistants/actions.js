@@ -151,6 +151,12 @@ router.delete('/:assistant_id/:action_id', async (req, res) => {
   try {
     const { assistant_id, action_id } = req.params;
 
+    // Only allow the user who added the action to delete it
+    const action = await getActions({ action_id, user: req.user.id });
+    if (!action) {
+      return res.status(404).json({ message: 'Action not found, or deletion not allowed' });
+    }
+
     /** @type {{ openai: OpenAI }} */
     const { openai } = await initializeClient({ req, res });
 
