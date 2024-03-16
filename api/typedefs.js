@@ -9,6 +9,150 @@
  */
 
 /**
+ * @exports AssistantStreamEvent
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent} AssistantStreamEvent
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadCreated
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadCreated} ThreadCreated
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunCreated
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunCreated} ThreadRunCreated
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunQueued
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunQueued} ThreadRunQueued
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunInProgress
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunInProgress} ThreadRunInProgress
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunRequiresAction
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunRequiresAction} ThreadRunRequiresAction
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunCompleted
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunCompleted} ThreadRunCompleted
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunFailed
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunFailed} ThreadRunFailed
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunCancelling
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunCancelling} ThreadRunCancelling
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunCancelled
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunCancelled} ThreadRunCancelled
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunExpired
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunExpired} ThreadRunExpired
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepCreated
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepCreated} ThreadRunStepCreated
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepInProgress
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepInProgress} ThreadRunStepInProgress
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepDelta
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepDelta} ThreadRunStepDelta
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepCompleted
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepCompleted} ThreadRunStepCompleted
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepFailed
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepFailed} ThreadRunStepFailed
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepCancelled
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepCancelled} ThreadRunStepCancelled
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadRunStepExpired
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadRunStepExpired} ThreadRunStepExpired
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadMessageCreated
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadMessageCreated} ThreadMessageCreated
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadMessageInProgress
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadMessageInProgress} ThreadMessageInProgress
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadMessageDelta
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadMessageDelta} ThreadMessageDelta
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadMessageCompleted
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadMessageCompleted} ThreadMessageCompleted
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ThreadMessageIncomplete
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadMessageIncomplete} ThreadMessageIncomplete
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ErrorEvent
+ * @typedef {import('openai').default.Beta.AssistantStreamEvent.ErrorEvent} ErrorEvent
+ * @memberof typedefs
+ */
+
+/**
  * @exports Assistant
  * @typedef {import('librechat-data-provider').Assistant} Assistant
  * @memberof typedefs
@@ -698,6 +842,8 @@
  * @property {Run} run - The detailed information about the run.
  * @property {RunStep[]} steps - An array of steps taken during the run.
  * @property {StepMessage[]} messages - An array of messages related to the run.
+ * @property {ResponseMessage} finalMessage - The final response message, with all content parts.
+ * @property {string} text - The final response text, accumulated from message parts
  * @memberof typedefs
  */
 
@@ -726,7 +872,7 @@
 // */
 
 /**
- * @typedef {Object} OpenAIClientType
+ * @typedef {Object} RunClient
  *
  * @property {Express.Request} req - The Express request object.
  * @property {Express.Response} res - The Express response object.
@@ -754,7 +900,7 @@
  *
  * @property {ResponseMessage} responseMessage - A message object for responses.
  *
- * @typedef {OpenAI & OpenAIClientType} OpenAIClient
+ * @typedef {OpenAI & RunClient} OpenAIClient
  */
 
 /**
