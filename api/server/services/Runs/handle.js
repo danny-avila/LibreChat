@@ -1,6 +1,7 @@
 const { RunStatus, defaultOrderQuery, CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const { retrieveRun } = require('./methods');
+const { sleep } = require('~/server/utils');
 const RunManager = require('./RunManager');
 const { logger } = require('~/config');
 
@@ -44,16 +45,6 @@ async function withTimeout(promise, timeoutMs, timeoutMessage) {
  */
 async function createRun({ openai, thread_id, body }) {
   return await openai.beta.threads.runs.create(thread_id, body);
-}
-
-/**
- * Delays the execution for a specified number of milliseconds.
- *
- * @param {number} ms - The number of milliseconds to delay.
- * @return {Promise<void>} A promise that resolves after the specified delay.
- */
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**

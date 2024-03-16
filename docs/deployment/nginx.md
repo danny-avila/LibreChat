@@ -1,18 +1,19 @@
 ---
-title: Deployment
-description: 🌐 Step-by-step guides on how to deploy LibreChat on various cloud platforms.
+title: ↪️ Nginx
+description: Step-by-step guide for securing your LibreChat deployment with Nginx
 weight: 10
 ---
 
 # Deploying Application in the Cloud with HTTPS and NGINX
 
-This guide covers the essential steps for deploying your LibreChat application in the cloud, securing it with an SSL/TLS certificate for HTTPS, setting up NGINX as a reverse proxy, and configuring your domain.
+This guide covers the essential steps for securing your LibreChat deployment with an SSL/TLS certificate for HTTPS, setting up Nginx as a reverse proxy, and configuring your domain.
 
-## Why do I need reverse proxy?
+## FAQ
+### Why do I need reverse proxy?
 
 A reverse proxy is a server that sits between clients and the web servers that host actual applications. It forwards client requests to the back-end servers and returns the server's response to the client. Using a reverse proxy in deployment can enhance security, load balancing, and caching. It hides the characteristics and origins of the back-end servers, providing an additional layer of defense against attacks. Additionally, it can distribute traffic among several servers, improving performance and scalability.
 
-## Why Do I need HTTPS?
+### Why do I need HTTPS?
 
 Implementing HTTPS in your Nginx configuration is vital when deploying an application for several reasons:
 
@@ -26,42 +27,44 @@ Regulatory Compliance: For many types of applications, particularly those dealin
 
 By configuring HTTPS in Nginx, you ensure that your application benefits from enhanced security, improved trust and compliance, and better user experience.
 
-## Prerequisites:
+## Prerequisites
 
 1. A cloud server (e.g., AWS, Google Cloud, Azure, Digital Ocean).
 2. A registered domain name.
 3. Terminal access to your cloud server.
 4. Node.js and NPM installed on your server.
 
-## Initial Setup: Pointing Your Domain to Your Website
+## Initial Setup
+### Pointing Your Domain to Your Website
 
 Before proceeding with certificate acquisition, it's crucial to direct your domain to your cloud server. This step is foundational and must precede SSL certificate setup due to the time DNS records may require to propagate globally. Ensure that this DNS configuration is fully operational before moving forward.
 
-1. **Configure DNS**:
+### Configure DNS:
 
    - Log in to your domain registrar's control panel.
    - Navigate to DNS settings.
    - Create an `A record` pointing your domain to the IP address of your cloud server.
 
-2. **Verify Domain Propagation**:
+### Verify Domain Propagation
    - It may take some time for DNS changes to propagate.
    - You can check the status by pinging your domain: `ping your_domain.com`
 
 Comment: remember to replace `your_domain.com` with your actual domain name.
 
-## Step 1: Obtain a SSL/TLS Certificate
+## Obtain a SSL/TLS Certificate
 
 To secure your LibreChat application with HTTPS, you'll need an SSL/TLS certificate. Let's Encrypt offers free certificates:
 
-1. **Install Certbot**:
+### Install Certbot
    - For Ubuntu: `sudo apt-get install certbot python3-certbot-nginx`
    - For CentOS: `sudo yum install certbot python2-certbot-nginx`
-2. **Obtain the Certificate**:
+
+### Obtain the Certificate
    - Run `sudo certbot --nginx` to obtain and install the certificate automatically for NGINX.
    - Follow the on-screen instructions. Certbot will ask for information and complete the validation process.
    - Once successful, Certbot will store your certificate files.
 
-## Step 2: Set Up NGINX as a Reverse Proxy
+## Set Up NGINX as a Reverse Proxy
 
 NGINX acts as a reverse proxy, forwarding client requests to your LibreChat application.
 There are 2 different options for the nginx server, which depends on the method you want to deploy the LibreChat.
@@ -141,7 +144,7 @@ For example configuration with Basic Authentication see [🌀 Miscellaneous](../
 - **Administration**: Less overhead vs. `.htpasswd` management.
 - **Security**: Application security vs. added Nginx layer.
 
-4. **Option A: Configure NGINX without Basic Authentication using Docker Compose with SSL**:
+#### Option A: Configure NGINX without Basic Authentication using Docker Compose with SSL
 
 For the time being - this requires a bit of an effort...
 The exact details might change in the future so I will try to give here the basics, and I invite you to improve this section.
@@ -152,7 +155,7 @@ You need to change 2 files
 
 Here is an example (it is not one to one with the current code base - TODO: Fix the code and this in the future)
 
-```
+```sh
 # Secure default configuration with SSL enabled
 # Based on Mozilla SSL Configuration Generator and provided configuration
 
@@ -268,12 +271,12 @@ after you changed them you should follow the instruction from [Part V: Editing t
 in order to update the git and deploy from a rebased branch.
 [TBA: TO ADD HERE a simple explanation based on that explanation]
 
-3. **Option B: Configure NGINX without Basic Authentication on the host**:
+#### Option B: Configure NGINX without Basic Authentication on the host
 
 - Open the LibreChat NGINX configuration file: `sudo nano /etc/nginx/sites-available/default`
 - Replace the file content with the following, ensuring to replace `your_domain.com` with your domain and `app_port` with your application's port:
 
-```
+```sh
 server {
     listen 80;
     server_name your_domain.com;
@@ -289,12 +292,12 @@ server {
 }
 ```
 
-6. **Check NGINX Configuration & Restart**:
+**Check NGINX Configuration & Restart**:
 
    - Validate the configuration: `sudo nginx -t`
    - Reload NGINX: `sudo systemctl reload nginx`
 
-## Step 3: Run the application
+## Run the application
 
 1. Navigate to your application's directory:
 

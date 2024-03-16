@@ -6,6 +6,8 @@ export default {
   com_sidepanel_select_assistant: 'Select an Assistant',
   com_sidepanel_assistant_builder: 'Assistant Builder',
   com_sidepanel_attach_files: 'Attach Files',
+  com_sidepanel_manage_files: 'Manage Files',
+  com_assistants_capabilities: 'Capabilities',
   com_assistants_knowledge: 'Knowledge',
   com_assistants_knowledge_info:
     'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
@@ -15,7 +17,8 @@ export default {
   com_assistants_code_interpreter_files:
     'The following files are only available for Code Interpreter:',
   com_assistants_retrieval: 'Retrieval',
-  com_assistants_tools_section: 'Actions, Tools',
+  com_assistants_tools: 'Tools',
+  com_assistants_actions: 'Actions',
   com_assistants_add_tools: 'Add Tools',
   com_assistants_add_actions: 'Add Actions',
   com_assistants_name_placeholder: 'Optional: The name of the assistant',
@@ -98,6 +101,8 @@ export default {
   com_ui_preview: 'Preview',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
+  com_ui_privacy_policy: 'Privacy policy',
+  com_ui_terms_of_service: 'Terms of service',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
@@ -282,6 +287,7 @@ export default {
   com_endpoint_skip_hover:
     'Enable skipping the completion step, which reviews the final answer and generated steps',
   com_endpoint_config_key: 'Set API Key',
+  com_endpoint_assistant_placeholder: 'Please select an Assistant from the right-hand Side Panel',
   com_endpoint_config_placeholder: 'Set your Key in the Header menu to chat.',
   com_endpoint_config_key_for: 'Set API Key for',
   com_endpoint_config_key_name: 'Key',
@@ -313,6 +319,7 @@ export default {
   com_endpoint_config_key_google_service_account: 'Create a Service Account',
   com_endpoint_config_key_google_vertex_api_role:
     'Make sure to click \'Create and Continue\' to give at least the \'Vertex AI User\' role. Lastly, create a JSON key to import here.',
+  com_nav_welcome_assistant: 'Please Select an Assistant',
   com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
   com_nav_hide_panel: 'Hide Right-most Side Panel',
@@ -347,6 +354,7 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursive or sequential?',
   com_nav_export_recursive: 'Recursive',
   com_nav_export_conversation: 'Export conversation',
+  com_nav_my_files: 'My Files',
   com_nav_theme: 'Theme',
   com_nav_theme_system: 'System',
   com_nav_theme_dark: 'Dark',
