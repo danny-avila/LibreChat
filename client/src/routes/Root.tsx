@@ -37,10 +37,6 @@ export default function Root() {
   const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated && modelsQueryEnabled });
 
   useEffect(() => {
-    localStorage.setItem('navVisible', JSON.stringify(navVisible));
-  }, [navVisible]);
-
-  useEffect(() => {
     if (modelsQuery.data && location.state?.from?.pathname.includes('/chat')) {
       setModelsConfig(modelsQuery.data);
       // Note: passing modelsQuery.data prevents navigation

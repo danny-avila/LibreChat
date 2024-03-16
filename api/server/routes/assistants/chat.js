@@ -1,6 +1,12 @@
 const { v4 } = require('uuid');
 const express = require('express');
-const { EModelEndpoint, Constants, RunStatus, CacheKeys } = require('librechat-data-provider');
+const {
+  Constants,
+  RunStatus,
+  CacheKeys,
+  EModelEndpoint,
+  ViolationTypes,
+} = require('librechat-data-provider');
 const {
   initThread,
   recordUsage,
@@ -10,11 +16,14 @@ const {
   saveAssistantMessage,
 } = require('~/server/services/Threads');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
-const { addTitle, initializeClient } = require('~/server/services/Endpoints/assistant');
-const { sendResponse, sendMessage } = require('~/server/utils');
-const { createRun, sleep } = require('~/server/services/Runs');
+const { addTitle, initializeClient } = require('~/server/services/Endpoints/assistants');
+const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
+const { getTransactions } = require('~/models/Transaction');
+const { createRun } = require('~/server/services/Runs');
+const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
+const { getModelMaxTokens } = require('~/utils');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -101,6 +110,8 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
   let completedRun;
 
   const handleError = async (error) => {
+    const defaultErrorMessage =
+      'The Assistant run failed to initialize. Try sending a message in a new conversation.';
     const messageData = {
       thread_id,
       assistant_id,
@@ -119,12 +130,21 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       return;
     } else if (error.message === 'Request closed') {
       logger.debug('[/assistants/chat/] Request aborted on close');
+    } else if (/Files.*are invalid/.test(error.message)) {
+      const errorMessage = `Files are invalid, or may not have uploaded yet.${
+        req.app.locals?.[EModelEndpoint.azureOpenAI].assistants
+          ? ' If using Azure OpenAI, files are only available in the region of the assistant\'s model at the time of upload.'
+          : ''
+      }`;
+      return sendResponse(res, messageData, errorMessage);
+    } else if (error?.message?.includes(ViolationTypes.TOKEN_BALANCE)) {
+      return sendResponse(res, messageData, error.message);
     } else {
       logger.error('[/assistants/chat/]', error);
     }
 
     if (!openai || !thread_id || !run_id) {
-      return sendResponse(res, messageData, 'The Assistant run failed to initialize');
+      return sendResponse(res, messageData, defaultErrorMessage);
     }
 
     await sleep(3000);
@@ -196,6 +216,38 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
     if (!assistant_id) {
       completedRun = true;
       throw new Error('Missing assistant_id');
+    }
+
+    if (isEnabled(process.env.CHECK_BALANCE)) {
+      const transactions =
+        (await getTransactions({
+          user: req.user.id,
+          context: 'message',
+          conversationId,
+        })) ?? [];
+
+      const totalPreviousTokens = Math.abs(
+        transactions.reduce((acc, curr) => acc + curr.rawAmount, 0),
+      );
+
+      // TODO: make promptBuffer a config option; buffer for titles, needs buffer for system instructions
+      const promptBuffer = parentMessageId === Constants.NO_PARENT && !_thread_id ? 200 : 0;
+      // 5 is added for labels
+      let promptTokens = (await countTokens(text + (promptPrefix ?? ''))) + 5;
+      promptTokens += totalPreviousTokens + promptBuffer;
+      // Count tokens up to the current context window
+      promptTokens = Math.min(promptTokens, getModelMaxTokens(model));
+
+      await checkBalance({
+        req,
+        res,
+        txData: {
+          model,
+          user: req.user.id,
+          tokenType: 'prompt',
+          amount: promptTokens,
+        },
+      });
     }
 
     /** @type {{ openai: OpenAIClient }} */

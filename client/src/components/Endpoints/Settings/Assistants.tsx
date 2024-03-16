@@ -33,16 +33,16 @@ export default function Settings({ conversation, setOption, models, readonly }: 
 
   const { model, endpoint, assistant_id, endpointType, promptPrefix, instructions } =
     conversation ?? {};
-  const [onPromptPrefixChange, promptPrefixValue] = useDebouncedInput(
+  const [onPromptPrefixChange, promptPrefixValue] = useDebouncedInput({
     setOption,
-    'promptPrefix',
-    promptPrefix,
-  );
-  const [onInstructionsChange, instructionsValue] = useDebouncedInput(
+    optionKey: 'promptPrefix',
+    initialValue: promptPrefix,
+  });
+  const [onInstructionsChange, instructionsValue] = useDebouncedInput({
     setOption,
-    'instructions',
-    instructions,
-  );
+    optionKey: 'instructions',
+    initialValue: instructions,
+  });
 
   const activeAssistant = useMemo(() => {
     if (assistant_id) {

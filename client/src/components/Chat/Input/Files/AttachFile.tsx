@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   EModelEndpoint,
   supportsFiles,
@@ -9,7 +10,7 @@ import { AttachmentIcon } from '~/components/svg';
 import { FileUpload } from '~/components/ui';
 import { useFileHandling } from '~/hooks';
 
-export default function AttachFile({
+const AttachFile = ({
   endpoint,
   endpointType,
   disabled = false,
@@ -17,7 +18,7 @@ export default function AttachFile({
   endpoint: EModelEndpoint | '';
   endpointType?: EModelEndpoint;
   disabled?: boolean | null;
-}) {
+}) => {
   const { handleFileChange } = useFileHandling();
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -45,4 +46,6 @@ export default function AttachFile({
       </FileUpload>
     </div>
   );
-}
+};
+
+export default React.memo(AttachFile);

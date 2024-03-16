@@ -87,7 +87,9 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
               </div>
             ) : (
               <div className="mb-5 text-2xl font-medium dark:text-white">
-                {localize('com_nav_welcome_message')}
+                {endpoint === EModelEndpoint.assistants
+                  ? localize('com_nav_welcome_assistant')
+                  : localize('com_nav_welcome_message')}
               </div>
             )}
           </div>
