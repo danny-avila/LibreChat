@@ -1,7 +1,6 @@
 // Arabic phrases
 
 export default {
-  com_ui_balance: 'الرصيد',
   com_ui_examples: 'أمثلة',
   com_ui_happy_birthday: 'إنه عيد ميلادي الأول!',
   com_ui_new_chat: 'دردشة جديدة',

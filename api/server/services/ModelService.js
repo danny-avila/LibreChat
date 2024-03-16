@@ -20,6 +20,7 @@ const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService')
  * @param {boolean} [params.azure=false] - Whether to fetch models from Azure.
  * @param {boolean} [params.userIdQuery=false] - Whether to send the user ID as a query parameter.
  * @param {boolean} [params.createTokenConfig=true] - Whether to create a token configuration from the API response.
+ * @param {string} [params.tokenKey] - The cache key to save the token configuration. Uses `name` if omitted.
  * @returns {Promise<string[]>} A promise that resolves to an array of model identifiers.
  * @async
  */
@@ -31,10 +32,15 @@ const fetchModels = async ({
   azure = false,
   userIdQuery = false,
   createTokenConfig = true,
+  tokenKey,
 }) => {
   let models = [];
 
   if (!baseURL && !azure) {
+    return models;
+  }
+
+  if (!apiKey) {
     return models;
   }
 
@@ -66,11 +72,34 @@ const fetchModels = async ({
     if (validationResult.success && createTokenConfig) {
       const endpointTokenConfig = processModelData(input);
       const cache = getLogStores(CacheKeys.TOKEN_CONFIG);
-      await cache.set(name, endpointTokenConfig);
+      await cache.set(tokenKey ?? name, endpointTokenConfig);
     }
     models = input.data.map((item) => item.id);
-  } catch (err) {
-    logger.error(`Failed to fetch models from ${azure ? 'Azure ' : ''}${name} API`, err);
+  } catch (error) {
+    const logMessage = `Failed to fetch models from ${azure ? 'Azure ' : ''}${name} API`;
+    if (error.response) {
+      logger.error(
+        `${logMessage} The request was made and the server responded with a status code that falls out of the range of 2xx: ${
+          error.message ? error.message : ''
+        }`,
+        {
+          headers: error.response.headers,
+          status: error.response.status,
+          data: error.response.data,
+        },
+      );
+    } else if (error.request) {
+      logger.error(
+        `${logMessage} The request was made but no response was received: ${
+          error.message ? error.message : ''
+        }`,
+        {
+          request: error.request,
+        },
+      );
+    } else {
+      logger.error(`${logMessage} Something happened in setting up the request`, error);
+    }
   }
 
   return models;
@@ -131,6 +160,9 @@ const fetchOpenAIModels = async (opts, _models = []) => {
   if (baseURL === openaiBaseURL) {
     const regex = /(text-davinci-003|gpt-)/;
     models = models.filter((model) => regex.test(model));
+    const instructModels = models.filter((model) => model.includes('instruct'));
+    const otherModels = models.filter((model) => !model.includes('instruct'));
+    models = otherModels.concat(instructModels);
   }
 
   await modelsCache.set(baseURL, models);
@@ -147,7 +179,11 @@ const fetchOpenAIModels = async (opts, _models = []) => {
  * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
  */
 const getOpenAIModels = async (opts) => {
-  let models = defaultModels.openAI;
+  let models = defaultModels[EModelEndpoint.openAI];
+
+  if (opts.assistants) {
+    models = defaultModels[EModelEndpoint.assistants];
+  }
 
   if (opts.plugins) {
     models = models.filter(
@@ -161,7 +197,9 @@ const getOpenAIModels = async (opts) => {
   }
 
   let key;
-  if (opts.azure) {
+  if (opts.assistants) {
+    key = 'ASSISTANTS_MODELS';
+  } else if (opts.azure) {
     key = 'AZURE_OPENAI_MODELS';
   } else if (opts.plugins) {
     key = 'PLUGIN_MODELS';
@@ -175,6 +213,10 @@ const getOpenAIModels = async (opts) => {
   }
 
   if (userProvidedOpenAI && !process.env.OPENROUTER_API_KEY) {
+    return models;
+  }
+
+  if (opts.assistants) {
     return models;
   }
 

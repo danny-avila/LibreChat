@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { FileSources } from 'librechat-data-provider';
+import { EModelEndpoint, FileSources, defaultOrderQuery } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import {
   useSetRecoilState,
@@ -15,8 +15,13 @@ import type {
   TModelsConfig,
   TEndpointsConfig,
 } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
-import { useDeleteFilesMutation } from '~/data-provider';
+import {
+  buildDefaultConvo,
+  getDefaultEndpoint,
+  getEndpointField,
+  updateLastSelectedModel,
+} from '~/utils';
+import { useDeleteFilesMutation, useListAssistantsQuery } from '~/data-provider';
 import useOriginNavigate from './useOriginNavigate';
 import useSetStorage from './useSetStorage';
 import store from '~/store';
@@ -31,6 +36,11 @@ const useNewConvo = (index = 0) => {
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
+  const { data: assistants = [] } = useListAssistantsQuery(defaultOrderQuery, {
+    select: (res) =>
+      res.data.map(({ id, name, metadata, model }) => ({ id, name, metadata, model })),
+  });
+
   const { mutateAsync } = useDeleteFilesMutation({
     onSuccess: () => {
       console.log('Files deleted');
@@ -44,7 +54,7 @@ const useNewConvo = (index = 0) => {
     ({ snapshot }) =>
       async (
         conversation: TConversation,
-        preset: TPreset | null = null,
+        preset: Partial<TPreset> | null = null,
         modelsData?: TModelsConfig,
         buildDefault?: boolean,
         keepLatestMessage?: boolean,
@@ -73,6 +83,34 @@ const useNewConvo = (index = 0) => {
           const endpointType = getEndpointField(endpointsConfig, defaultEndpoint, 'type');
           if (!conversation.endpointType && endpointType) {
             conversation.endpointType = endpointType;
+          } else if (conversation.endpointType && !endpointType) {
+            conversation.endpointType = undefined;
+          }
+
+          const isAssistantEndpoint = defaultEndpoint === EModelEndpoint.assistants;
+
+          if (!conversation.assistant_id && isAssistantEndpoint) {
+            conversation.assistant_id =
+              localStorage.getItem(`assistant_id__${index}`) ?? assistants[0]?.id;
+          }
+
+          if (
+            conversation.assistant_id &&
+            isAssistantEndpoint &&
+            conversation.conversationId === 'new'
+          ) {
+            const assistant = assistants.find(
+              (assistant) => assistant.id === conversation.assistant_id,
+            );
+            conversation.model = assistant?.model;
+            updateLastSelectedModel({
+              endpoint: EModelEndpoint.assistants,
+              model: conversation.model,
+            });
+          }
+
+          if (conversation.assistant_id && !isAssistantEndpoint) {
+            conversation.assistant_id = undefined;
           }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];
@@ -99,7 +137,7 @@ const useNewConvo = (index = 0) => {
           navigate('new');
         }
       },
-    [endpointsConfig, defaultPreset],
+    [endpointsConfig, defaultPreset, assistants],
   );
 
   const newConversation = useCallback(
@@ -111,7 +149,7 @@ const useNewConvo = (index = 0) => {
       keepLatestMessage = false,
     }: {
       template?: Partial<TConversation>;
-      preset?: TPreset;
+      preset?: Partial<TPreset>;
       modelsData?: TModelsConfig;
       buildDefault?: boolean;
       keepLatestMessage?: boolean;

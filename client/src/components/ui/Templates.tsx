@@ -15,17 +15,17 @@ export default function Templates({ showTemplates }: { showTemplates: () => void
           <div className="flex flex-1 flex-col items-center gap-3.5">
             <span className="text-sm text-gray-700 dark:text-gray-400">
               {localize('com_ui_showing')}{' '}
-              <span className="font-semibold text-gray-900 dark:text-white">1</span>{' '}
+              <span className="font-semibold text-gray-800 dark:text-white">1</span>{' '}
               {localize('com_ui_of')}{' '}
               <a id="prompt-link">
-                <span className="font-semibold text-gray-900 dark:text-white">
+                <span className="font-semibold text-gray-800 dark:text-white">
                   1 {localize('com_ui_entries')}
                 </span>
               </a>
             </span>
             <button
               onClick={showTemplates}
-              className="btn btn-neutral justify-center gap-2 border-0 md:border"
+              className="btn justify-center gap-2 border-0 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800 md:border"
             >
               <ChatIcon />
               {localize('com_ui_hide_prompt_templates')}
@@ -38,7 +38,7 @@ export default function Templates({ showTemplates }: { showTemplates: () => void
                 {localize('com_ui_dan')}
               </h2>
               <button>
-                <p className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-900">
+                <p className="w-full rounded-md bg-gray-50 p-3 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-gray-800">
                   {localize('com_ui_dan_template')}
                 </p>
               </button>
@@ -47,14 +47,14 @@ export default function Templates({ showTemplates }: { showTemplates: () => void
             <div className="xs:mt-0 mt-2 inline-flex">
               <button
                 // onclick="prevPromptTemplatesPage()"
-                className="bg-gray-100 px-4  py-2 font-medium hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-white"
+                className="bg-gray-200 px-4  py-2 font-medium hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-white"
                 style={{ borderRadius: '6px 0 0 6px' }}
               >
                 {localize('com_ui_prev')}
               </button>
               <button
                 // onclick="nextPromptTemplatesPage()"
-                className="border-0 border-l  border-gray-500 bg-gray-100 px-4 py-2 font-medium hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-white"
+                className="border-0 border-l  border-gray-500 bg-gray-200 px-4 py-2 font-medium hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:text-white"
                 style={{ borderRadius: '6px 0 0 6px' }}
               >
                 {localize('com_ui_next')}

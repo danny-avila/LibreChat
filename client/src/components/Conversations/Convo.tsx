@@ -1,5 +1,5 @@
 import { useRecoilValue } from 'recoil';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
@@ -9,7 +9,7 @@ import { useUpdateConversationMutation } from '~/data-provider';
 import { MinimalIcon } from '~/components/Endpoints';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
-import DeleteButton from './NewDeleteButton';
+import DeleteButton from './DeleteButton';
 import { getEndpointField } from '~/utils';
 import RenameButton from './RenameButton';
 import store from '~/store';
@@ -52,7 +52,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       try {
         lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') ?? [];
       } catch (e) {
-        // console.error(e);
+      // console.error(e);
       }
       navigateToConvo({ ...conversation, tools: lastSelectedTools });
     } else {
@@ -103,6 +103,9 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     error: false,
     className: 'mr-0',
     isCreatedByUser: false,
+    chatGptLabel: undefined,
+    modelLabel: undefined,
+    jailbreak: undefined,
   });
 
   const handleKeyDown = (e: KeyEvent) => {
@@ -111,18 +114,19 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     }
   };
 
-  const aProps = {
-    className:
-      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg bg-gray-800 py-2 px-2',
-  };
-
   const activeConvo =
     currentConvoId === conversationId ||
     (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
 
+  const aProps = {
+    className: `group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg bg-gray-300 dark:bg-gray-800 py-2 px-2 ${
+      renaming ? 'pr-14' : ''
+    }`,
+  };
+
   if (!activeConvo) {
     aProps.className =
-      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-3 break-all rounded-lg py-2 px-2 hover:bg-gray-900';
+      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 py-2 px-2';
   }
 
   return (
@@ -149,13 +153,15 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           title
         )}
       </div>
-      {activeConvo ? (
-        <div className="absolute bottom-0 right-1 top-0 w-20 bg-gradient-to-l from-gray-800 from-60% to-transparent"></div>
-      ) : (
-        <div className="from--gray-900 absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%"></div>
+      {activeConvo && (
+        <div
+          className={`absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l ${
+            !renaming ? 'from-gray-300 from-60% to-transparent dark:from-gray-800' : ''
+          }`}
+        ></div>
       )}
-      {activeConvo ? (
-        <div className="visible absolute right-1 z-10 flex text-gray-400">
+      {activeConvo && (
+        <div className="visible absolute right-1 z-10 flex from-gray-900 dark:text-gray-200">
           <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
           <DeleteButton
             conversationId={conversationId}
@@ -164,8 +170,6 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             title={title}
           />
         </div>
-      ) : (
-        <div className="absolute bottom-0 right-0 top-0 w-20 rounded-lg bg-gradient-to-l from-black from-0% to-transparent  group-hover:from-gray-900" />
       )}
     </a>
   );

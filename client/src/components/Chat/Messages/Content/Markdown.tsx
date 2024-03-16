@@ -10,13 +10,13 @@ import rehypeHighlight from 'rehype-highlight';
 import type { TMessage } from 'librechat-data-provider';
 import type { PluggableList } from 'unified';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
-import { langSubset, validateIframe, processLaTeX } from '~/utils';
+import { cn, langSubset, validateIframe, processLaTeX } from '~/utils';
 import { useChatContext } from '~/Providers';
 import store from '~/store';
 
 type TCodeProps = {
   inline: boolean;
-  className: string;
+  className?: string;
   children: React.ReactNode;
 };
 
@@ -26,7 +26,7 @@ type TContentProps = {
   showCursor?: boolean;
 };
 
-const code = memo(({ inline, className, children }: TCodeProps) => {
+export const code = memo(({ inline, className, children }: TCodeProps) => {
   const match = /language-(\w+)/.exec(className || '');
   const lang = match && match[1];
 
@@ -37,11 +37,11 @@ const code = memo(({ inline, className, children }: TCodeProps) => {
   }
 });
 
-const p = memo(({ children }: { children: React.ReactNode }) => {
+export const p = memo(({ children }: { children: React.ReactNode }) => {
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 
-const cursor = ' ⬤';
+const cursor = ' ';
 const Markdown = memo(({ content, message, showCursor }: TContentProps) => {
   const { isSubmitting, latestMessage } = useChatContext();
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
@@ -75,7 +75,7 @@ const Markdown = memo(({ content, message, showCursor }: TContentProps) => {
     return (
       <div className="absolute">
         <p className="relative">
-          <span className="result-thinking" />
+          <span className={cn(isSubmitting ? 'result-thinking' : '')} />
         </p>
       </div>
     );

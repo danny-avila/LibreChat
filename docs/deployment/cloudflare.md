@@ -1,7 +1,7 @@
 ---
 title: ☁️ Cloudflare
 description: How to setup a domain with Cloudflare and use Cloudflare Tunnels to securely expose your local web servers or services to the internet.
-weight: -7
+weight: 10
 ---
 <img src="https://github.com/danny-avila/LibreChat/assets/32828263/cfbc7ca5-b51e-4f1d-aa89-b9b4cb13eead" width="350">
 
@@ -118,4 +118,4 @@ Now that you have installed the tunnel, it's time to configure it. Follow these 
 
 ---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

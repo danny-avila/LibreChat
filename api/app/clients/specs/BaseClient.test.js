@@ -1,3 +1,4 @@
+const { Constants } = require('librechat-data-provider');
 const { initializeFakeClient } = require('./FakeClient');
 
 jest.mock('../../../lib/db/connectDb');
@@ -307,7 +308,7 @@ describe('BaseClient', () => {
     const unorderedMessages = [
       { id: '3', parentMessageId: '2', text: 'Message 3' },
       { id: '2', parentMessageId: '1', text: 'Message 2' },
-      { id: '1', parentMessageId: '00000000-0000-0000-0000-000000000000', text: 'Message 1' },
+      { id: '1', parentMessageId: Constants.NO_PARENT, text: 'Message 1' },
     ];
 
     it('should return ordered messages based on parentMessageId', () => {
@@ -316,7 +317,7 @@ describe('BaseClient', () => {
         parentMessageId: '3',
       });
       expect(result).toEqual([
-        { id: '1', parentMessageId: '00000000-0000-0000-0000-000000000000', text: 'Message 1' },
+        { id: '1', parentMessageId: Constants.NO_PARENT, text: 'Message 1' },
         { id: '2', parentMessageId: '1', text: 'Message 2' },
         { id: '3', parentMessageId: '2', text: 'Message 3' },
       ]);

@@ -5,7 +5,7 @@ weight: -10
 ---
 
 <p align="center">
-  <a href="https://discord.gg/NGaa9RPCft">
+  <a href="https://librechat.ai">
     <img src="assets/LibreChat.svg" style="margin-left: 40px; height: 256px; width: 256px;>
   </a>
   <a href="https://librechat.ai">
@@ -16,7 +16,7 @@ weight: -10
 
 
 <p align="center">
-  <a href="https://discord.gg/NGaa9RPCft"> 
+  <a href="https://discord.librechat.ai"> 
     <img
       src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&logoColor=white&labelColor=000000&color=blueviolet">
   </a>
@@ -24,7 +24,7 @@ weight: -10
     <img
       src="https://img.shields.io/badge/YOUTUBE-red.svg?style=for-the-badge&logo=youtube&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
-  <a href="https://github.com/danny-avila/LibreChat"> 
+  <a href="https://github.librechat.ai"> 
     <img 
       src="https://img.shields.io/badge/GITHUB-blue.svg?style=for-the-badge&logo=github&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
@@ -85,7 +85,7 @@ Please read the documentation before you do!
 
 For new features, components, or extensions, please open an issue and discuss before sending a PR. 
 
-- Join the [Discord community](https://discord.gg/uDyZ5Tzhct)
+- Join the [Discord community](https://discord.librechat.ai)
 
 ## 💖 This project exists in its current state thanks to all the people who contribute
 ---

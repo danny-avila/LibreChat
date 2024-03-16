@@ -9,6 +9,7 @@ import {
 import * as t from '../types';
 import * as s from '../schemas';
 import * as m from '../types/mutations';
+import { defaultOrderQuery } from '../config';
 import * as dataService from '../data-service';
 import request from '../request';
 import { QueryKeys } from '../keys';
@@ -116,8 +117,8 @@ export const useUpdateUserKeysMutation = (): UseMutationResult<
 > => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TUpdateUserKeyRequest) => dataService.updateUserKey(payload), {
-    onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.name]);
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries([QueryKeys.name, variables.name]);
     },
   });
 };
@@ -135,7 +136,15 @@ export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknow
   const queryClient = useQueryClient();
   return useMutation(() => dataService.revokeUserKey(name), {
     onSuccess: () => {
-      queryClient.invalidateQueries([QueryKeys.name]);
+      queryClient.invalidateQueries([QueryKeys.name, name]);
+      if (name === s.EModelEndpoint.assistants) {
+        queryClient.invalidateQueries([QueryKeys.assistants, defaultOrderQuery]);
+        queryClient.invalidateQueries([QueryKeys.assistantDocs]);
+        queryClient.invalidateQueries([QueryKeys.assistants]);
+        queryClient.invalidateQueries([QueryKeys.assistant]);
+        queryClient.invalidateQueries([QueryKeys.actions]);
+        queryClient.invalidateQueries([QueryKeys.tools]);
+      }
     },
   });
 };
@@ -145,6 +154,12 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
   return useMutation(() => dataService.revokeAllUserKeys(), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.name]);
+      queryClient.invalidateQueries([QueryKeys.assistants, defaultOrderQuery]);
+      queryClient.invalidateQueries([QueryKeys.assistantDocs]);
+      queryClient.invalidateQueries([QueryKeys.assistants]);
+      queryClient.invalidateQueries([QueryKeys.assistant]);
+      queryClient.invalidateQueries([QueryKeys.actions]);
+      queryClient.invalidateQueries([QueryKeys.tools]);
     },
   });
 };
@@ -277,7 +292,7 @@ export const useLoginUserMutation = (): UseMutationResult<
       localStorage.removeItem('lastSelectedModel');
       localStorage.removeItem('lastSelectedTools');
       localStorage.removeItem('filesToDelete');
-      localStorage.removeItem('lastAssistant');
+      // localStorage.removeItem('lastAssistant');
     },
   });
 };
