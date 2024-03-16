@@ -40,7 +40,9 @@ function createActionTool({ action, requestBuilder }) {
       logger.error(`API call to ${action.metadata.domain} failed`, error);
       if (error.response) {
         const { status, data } = error.response;
-        return `API call to ${action.metadata.domain} failed with status ${status}: ${data}`;
+        return `API call to ${
+          action.metadata.domain
+        } failed with status ${status}: ${JSON.stringify(data)}`;
       }
 
       return `API call to ${action.metadata.domain} failed.`;
