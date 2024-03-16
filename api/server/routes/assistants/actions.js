@@ -17,7 +17,7 @@ const router = express.Router();
  */
 router.get('/', async (req, res) => {
   try {
-    res.json(await getActions({ user: req.user.id }));
+    res.json(await getActions());
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -55,9 +55,9 @@ router.post('/:assistant_id', async (req, res) => {
     /** @type {{ openai: OpenAI }} */
     const { openai } = await initializeClient({ req, res });
 
-    initialPromises.push(getAssistant({ assistant_id, user: req.user.id }));
+    initialPromises.push(getAssistant({ assistant_id }));
     initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
-    !!_action_id && initialPromises.push(getActions({ user: req.user.id, action_id }, true));
+    !!_action_id && initialPromises.push(getActions({ action_id }, true));
 
     /** @type {[AssistantDocument, Assistant, [Action|undefined]]} */
     const [assistant_data, assistant, actions_result] = await Promise.all(initialPromises);
@@ -155,7 +155,7 @@ router.delete('/:assistant_id/:action_id', async (req, res) => {
     const { openai } = await initializeClient({ req, res });
 
     const initialPromises = [];
-    initialPromises.push(getAssistant({ assistant_id, user: req.user.id }));
+    initialPromises.push(getAssistant({ assistant_id }));
     initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
 
     /** @type {[AssistantDocument, Assistant]} */
