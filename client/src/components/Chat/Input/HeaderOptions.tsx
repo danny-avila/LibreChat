@@ -14,25 +14,15 @@ import { useChatContext } from '~/Providers';
 import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
-import type { Presets } from '~/components/Marketplace/MarketplaceView';
 
 export default function OptionsBar() {
-  const [selectedPreset, setSlectedPreset] = useState<Presets | null>(null);
-  const [isApplied, setIsApplied] = useState(false);
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useRecoilState(
     store.showPluginStoreDialog,
   );
 
-  const {
-    showPopover,
-    conversation,
-    newConversation,
-    latestMessage,
-    setShowPopover,
-    setShowBingToneSetting,
-  } = useChatContext();
-
+  const { showPopover, conversation, latestMessage, setShowPopover, setShowBingToneSetting } =
+    useChatContext();
   const { setOption } = useSetIndexOptions();
 
   const { endpoint, conversationId, jailbreak } = conversation ?? {};
@@ -52,28 +42,6 @@ export default function OptionsBar() {
     }),
     [jailbreak, conversationId],
   );
-
-  useEffect(() => {
-    const selectedPresetStr = (localStorage.getItem('selected-preset') as string) || null;
-    const _selectedPreset = selectedPresetStr ? (JSON.parse(selectedPresetStr) as Presets) : null;
-    setSlectedPreset(_selectedPreset);
-    setShowPopover(!!_selectedPreset);
-  }, []);
-
-  useEffect(() => {
-    newConversation({
-      preset: {
-        ...conversation,
-        temperature: selectedPreset?.temperature || 1,
-        top_p: selectedPreset?.topP || 1,
-        frequency_penalty: selectedPreset?.frequencyPenalty || 0,
-        presence_penalty: selectedPreset?.presencePenalty || 0,
-        promptPrefix: selectedPreset?.prompt || '',
-        chatGptLabel: selectedPreset?.title || '',
-        title: selectedPreset?.title || '',
-      },
-    });
-  }, [selectedPreset]);
 
   useEffect(() => {
     if (endpoint && noSettings[endpoint]) {
@@ -125,10 +93,7 @@ export default function OptionsBar() {
             <OptionsPopover
               visible={showPopover}
               saveAsPreset={saveAsPreset}
-              closePopover={() => {
-                localStorage.removeItem('selected-preset');
-                setShowPopover(false);
-              }}
+              closePopover={() => setShowPopover(false)}
               PopoverButtons={<PopoverButtons />}
             >
               <div className="px-4 py-4">
