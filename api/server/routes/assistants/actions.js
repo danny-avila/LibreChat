@@ -162,7 +162,7 @@ router.delete('/:assistant_id/:action_id', async (req, res) => {
     /** @type {[AssistantDocument, Assistant]} */
     const [assistant_data, assistant] = await Promise.all(initialPromises);
 
-    const { actions } = assistant_data ?? {};
+    const { actions = [] } = assistant_data ?? {};
     const { tools = [] } = assistant ?? {};
 
     let domain = '';
