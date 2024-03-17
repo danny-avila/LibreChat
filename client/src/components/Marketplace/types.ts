@@ -28,4 +28,5 @@ export interface ModalComponent {
 export interface Validation {
   pattern: string;
   required: boolean;
+  errorMessage?: string;
 }

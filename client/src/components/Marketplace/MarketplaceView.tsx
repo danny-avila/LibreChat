@@ -32,7 +32,11 @@ function MarketplaceView() {
             'Describe the specific goals or objectives for developing the AR application or experience.',
           example:
             'Our goal is to create an AR application that enhances the museum experience by providing interactive historical visualizations.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -41,7 +45,11 @@ function MarketplaceView() {
           placeholder: 'Describe the intended audience for the AR application or experience.',
           example:
             'The target audience includes students and educators interested in interactive learning experiences.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -52,7 +60,11 @@ function MarketplaceView() {
             'E.g., Interactive storytelling, 3D object recognition, Real-time information display.',
           example:
             'We aim to incorporate interactive storytelling, 3D object recognition, and real-time information display into the AR experience.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         { type: 'button', buttonText: 'Generate Development Guidelines' },
       ],
@@ -81,7 +93,11 @@ function MarketplaceView() {
             'E.g., Create an intuitive interface accessible to all users, regardless of their abilities.',
           example:
             'Our design goals are to ensure an intuitive and user-friendly interface that provides a seamless and inclusive experience for all users.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -92,7 +108,11 @@ function MarketplaceView() {
             'E.g., Users with visual impairments, motor disabilities, cognitive disabilities.',
           example:
             'Our target audience includes individuals with visual impairments, motor disabilities, and cognitive disabilities. We need to ensure our design is accessible to screen readers, supports keyboard navigation, and provides clear content.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'file_upload',
@@ -129,7 +149,11 @@ function MarketplaceView() {
             'Describe the specific goals or objectives for developing the AR application or experience.',
           example:
             'Our goal is to create an AR application that enhances the museum experience by providing interactive historical visualizations.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -138,7 +162,11 @@ function MarketplaceView() {
           placeholder: 'Describe the intended audience for the AR application or experience.',
           example:
             'The target audience includes students and educators interested in interactive learning experiences.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -149,7 +177,11 @@ function MarketplaceView() {
             'E.g., Interactive storytelling, 3D object recognition, Real-time information display.',
           example:
             'We aim to incorporate interactive storytelling, 3D object recognition, and real-time information display into the AR experience.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         { type: 'button', buttonText: 'Generate Development Guidelines' },
       ],
@@ -178,7 +210,11 @@ function MarketplaceView() {
             'E.g., Create an intuitive interface accessible to all users, regardless of their abilities.',
           example:
             'Our design goals are to ensure an intuitive and user-friendly interface that provides a seamless and inclusive experience for all users.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -189,7 +225,11 @@ function MarketplaceView() {
             'E.g., Users with visual impairments, motor disabilities, cognitive disabilities.',
           example:
             'Our target audience includes individuals with visual impairments, motor disabilities, and cognitive disabilities. We need to ensure our design is accessible to screen readers, supports keyboard navigation, and provides clear content.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'file_upload',
@@ -226,7 +266,11 @@ function MarketplaceView() {
             'Describe the specific goals or objectives for developing the AR application or experience.',
           example:
             'Our goal is to create an AR application that enhances the museum experience by providing interactive historical visualizations.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -235,7 +279,11 @@ function MarketplaceView() {
           placeholder: 'Describe the intended audience for the AR application or experience.',
           example:
             'The target audience includes students and educators interested in interactive learning experiences.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -246,7 +294,11 @@ function MarketplaceView() {
             'E.g., Interactive storytelling, 3D object recognition, Real-time information display.',
           example:
             'We aim to incorporate interactive storytelling, 3D object recognition, and real-time information display into the AR experience.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         { type: 'button', buttonText: 'Generate Development Guidelines' },
       ],
@@ -275,7 +327,11 @@ function MarketplaceView() {
             'E.g., Create an intuitive interface accessible to all users, regardless of their abilities.',
           example:
             'Our design goals are to ensure an intuitive and user-friendly interface that provides a seamless and inclusive experience for all users.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -286,7 +342,11 @@ function MarketplaceView() {
             'E.g., Users with visual impairments, motor disabilities, cognitive disabilities.',
           example:
             'Our target audience includes individuals with visual impairments, motor disabilities, and cognitive disabilities. We need to ensure our design is accessible to screen readers, supports keyboard navigation, and provides clear content.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'file_upload',
@@ -323,7 +383,11 @@ function MarketplaceView() {
             'Describe the specific goals or objectives for developing the AR application or experience.',
           example:
             'Our goal is to create an AR application that enhances the museum experience by providing interactive historical visualizations.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -332,7 +396,11 @@ function MarketplaceView() {
           placeholder: 'Describe the intended audience for the AR application or experience.',
           example:
             'The target audience includes students and educators interested in interactive learning experiences.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -343,7 +411,11 @@ function MarketplaceView() {
             'E.g., Interactive storytelling, 3D object recognition, Real-time information display.',
           example:
             'We aim to incorporate interactive storytelling, 3D object recognition, and real-time information display into the AR experience.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         { type: 'button', buttonText: 'Generate Development Guidelines' },
       ],
@@ -372,7 +444,11 @@ function MarketplaceView() {
             'E.g., Create an intuitive interface accessible to all users, regardless of their abilities.',
           example:
             'Our design goals are to ensure an intuitive and user-friendly interface that provides a seamless and inclusive experience for all users.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'multi_line_text',
@@ -383,7 +459,11 @@ function MarketplaceView() {
             'E.g., Users with visual impairments, motor disabilities, cognitive disabilities.',
           example:
             'Our target audience includes individuals with visual impairments, motor disabilities, and cognitive disabilities. We need to ensure our design is accessible to screen readers, supports keyboard navigation, and provides clear content.',
-          validation: { pattern: '.{20,}', required: true },
+          validation: {
+            pattern: '.{20,}',
+            required: true,
+            errorMessage: 'Must be 20 charecter long.',
+          },
         },
         {
           type: 'file_upload',

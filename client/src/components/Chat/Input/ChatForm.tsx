@@ -1,7 +1,7 @@
 import { useRecoilState } from 'recoil';
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { useChatContext } from '~/Providers';
-import { useRequiresKey } from '~/hooks';
+import { usePresets, useRequiresKey } from '~/hooks';
 import AttachFile from './Files/AttachFile';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -11,14 +11,13 @@ import store from '~/store';
 import Voice from './Voice';
 import { useGetPresetsQuery } from '~/data-provider';
 import { EModelEndpoint, ImageDetail, TPreset, visionModels } from 'librechat-data-provider';
-import PresetItem from './PresetItems';
+import PresetItem from './PresetItem';
 import { PromptModal } from './PromtModal';
 import { number } from 'zod';
 
 export default function ChatForm({ index = 0 }) {
   const [text, setText] = useRecoilState(store.textByIndex(index));
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
-  const { data: presets } = useGetPresetsQuery();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activePresetIndex, setActivePresetIndex] = useState<number>();
   const {
@@ -34,6 +33,10 @@ export default function ChatForm({ index = 0 }) {
     recordedText,
     setRecordedText,
   } = useChatContext();
+
+  const { presetsQuery } = usePresets();
+
+  const presets = presetsQuery.data || [];
 
   const submitMessage = () => {
     if (!recordedText && recordingSate !== 'recording') {

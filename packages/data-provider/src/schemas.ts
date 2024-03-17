@@ -236,6 +236,7 @@ export const tModalComponent = z.object({
     .object({
       pattern: z.string(),
       required: z.boolean(),
+      errorMessage: z.string().optional(),
     })
     .optional(),
   buttonText: z.string().optional(),

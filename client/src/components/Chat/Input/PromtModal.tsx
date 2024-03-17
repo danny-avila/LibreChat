@@ -12,6 +12,8 @@ import {
 } from '~/components/ui/Dialog';
 import { Input } from '~/components/ui/Input';
 import { Label } from '~/components/ui/Label';
+import { usePresets } from '~/hooks';
+import AttachFileModal from './Files/AttachFileModal';
 
 export function PromptModal({
   setText,
@@ -24,13 +26,18 @@ export function PromptModal({
   setOpen: (open: boolean) => void;
   preset: TPreset;
 }) {
-  const { ask, files, setFiles, newConversation, isSubmitting, filesLoading, setFilesLoading } =
-    useChatContext();
+  const { ask, isSubmitting, newConversation, files, filesLoading } = useChatContext();
+
+  const { onSelectPreset, onChangePreset } = usePresets();
 
   const [inputData, setInputData] = useState<{
     [key: string]: {
       value?: string;
       error?: string;
+      validation?: {
+        pattern: string;
+        required: boolean;
+      };
     };
   }>({});
 
@@ -42,18 +49,61 @@ export function PromptModal({
   });
 
   useEffect(() => {
-    if (!open) {setInputData({});}
+    if (!open) {
+      setInputData({});
+    }
+    if (open) {
+      newConversation();
+      onSelectPreset(preset);
+    }
   }, [open]);
 
   function handleSubmit() {
-    newConversation({ preset: preset });
-    setText('');
     let userPrompt = preset.userPrompt?.prompt || '';
+    let isError = false;
+    preset.userPrompt?.modalComponents?.forEach((component) => {
+      if (/multi_line_text|single_line_text/.test(component.type)) {
+        if (
+          component.labelTitle &&
+          component.validation?.required &&
+          (!component.labelTitle || !inputData[component.labelTitle]?.value)
+        ) {
+          setInputData({
+            ...inputData,
+            [component.labelTitle]: {
+              ...inputData[component.labelTitle],
+              error: 'This feild is required.',
+            },
+          });
+          isError = true;
+        }
+
+        if (component.labelTitle && component.validation?.pattern) {
+          const regx = new RegExp(component.validation.pattern);
+          if (
+            inputData[component.labelTitle].value &&
+            !regx.test(inputData[component.labelTitle].value || '')
+          ) {
+            setInputData({
+              ...inputData,
+              [component.labelTitle]: {
+                ...inputData[component.labelTitle],
+                error: component.validation.errorMessage || 'Input validation error.',
+              },
+            });
+            isError = true;
+          }
+        }
+      }
+    });
+
+    if (isError) {return;}
+    setText('');
+    setOpen(false);
     Object.entries(inputData).forEach(([key, value]) => {
       userPrompt = userPrompt?.replace(`{{${key}}}`, value.value || '');
     });
     ask({ text: userPrompt });
-    setOpen(false);
   }
 
   return (
@@ -69,11 +119,23 @@ export function PromptModal({
                 <div key={index} className="space-y-2">
                   <Label
                     htmlFor={component.labelTitle}
-                    className="grid grid-cols-[1fr_auto] items-end space-y-1.5 text-left"
+                    className="grid grid-cols-[1fr_auto] items-end space-y-2 text-left"
                   >
-                    <div>
-                      <p>{component.labelTitle}</p>
-                      <p className="text-xs dark:text-gray-400">{component.labelDescription}</p>
+                    <div className="space-y-0.5">
+                      <p>
+                        {component.labelTitle}{' '}
+                        {component.validation?.required ? (
+                          <span className="text-xs opacity-75">(*Required)</span>
+                        ) : null}
+                      </p>
+                      <p className="text-xs font-light dark:text-gray-400">
+                        {component.labelDescription}
+                      </p>
+                      {inputData[component.labelTitle]?.error ? (
+                        <p className="text-xs text-red-400">
+                          {inputData[component.labelTitle].error}
+                        </p>
+                      ) : null}
                     </div>
 
                     {component.example ? (
@@ -98,7 +160,9 @@ export function PromptModal({
                       onChange={(e) =>
                         setInputData({
                           ...inputData,
-                          [component.labelTitle as string]: { value: e.target.value },
+                          [component.labelTitle as string]: {
+                            value: e.target.value,
+                          },
                         })
                       }
                       value={inputData[component.labelTitle]?.value}
@@ -111,7 +175,9 @@ export function PromptModal({
                       onChange={(e) =>
                         setInputData({
                           ...inputData,
-                          [component.labelTitle as string]: { value: e.target.value },
+                          [component.labelTitle as string]: {
+                            value: e.target.value,
+                          },
                         })
                       }
                       value={inputData[component.labelTitle]?.value}
@@ -123,8 +189,15 @@ export function PromptModal({
               );
             }
 
-            if (component.type === 'button') {
-              return <></>;
+            if (component.type === 'file_upload') {
+              return (
+                <>
+                  {component.validation?.required && files.entries.length === 0 ? (
+                    <p className="mb-[-1rem] text-xs text-red-400">* Required</p>
+                  ) : null}
+                  <AttachFileModal lebel={component.labelTitle} />
+                </>
+              );
             }
           })}
         </div>
