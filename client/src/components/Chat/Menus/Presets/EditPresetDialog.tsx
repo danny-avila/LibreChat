@@ -90,13 +90,13 @@ const EditPresetDialog = ({
                     {'ㅤ'}
                   </Label>
                   <PopoverButtons
-                    buttonClass="ml-0 w-full dark:bg-gray-700 dark:hover:bg-gray-800 p-2 h-[40px] justify-center mt-0"
-                    iconClass="hidden lg:block w-4"
+                    buttonClass="ml-0 w-full border border-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:hover:bg-gray-600 p-2 h-[40px] justify-center mt-0"
+                    iconClass="hidden lg:block w-4 "
                   />
                 </div>
               </div>
             </div>
-            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-700" />
+            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-600" />
             <div className="w-full p-0">
               <EndpointSettings
                 conversation={preset}

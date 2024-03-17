@@ -36,7 +36,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               aria-orientation="vertical"
               className={cn(
                 'min-w-auto -ml-[8px] flex flex-shrink-0 flex-col',
-                isSmallScreen ? 'flex-row rounded-lg bg-gray-200 p-1 dark:bg-gray-800/30' : '',
+                isSmallScreen ? 'flex-row rounded-lg bg-gray-200 p-1 dark:bg-gray-700' : '',
               )}
               style={{ outline: 'none' }}
             >
