@@ -52,7 +52,7 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
   const currentAssistant = assistantMap?.[selectedAssistant ?? ''];
 
   return (
-    <Select defaultValue={selectedAssistant as string | undefined} onValueChange={onSelect}>
+    <Select value={selectedAssistant as string | undefined} onValueChange={onSelect}>
       <SelectTrigger
         className={cn(
           'flex items-center gap-2 [&>span]:line-clamp-1 [&>span]:flex [&>span]:w-full [&>span]:items-center [&>span]:gap-1 [&>span]:truncate [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0',

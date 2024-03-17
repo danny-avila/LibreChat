@@ -6,13 +6,13 @@ const { logger } = require('~/config');
 /**
  * Loads action sets based on the user and assistant ID.
  *
- * @param {Object} params - The parameters for loading action sets.
- * @param {string} params.user - The user identifier.
- * @param {string} params.assistant_id - The assistant identifier.
+ * @param {Object} searchParams - The parameters for loading action sets.
+ * @param {string} searchParams.user - The user identifier.
+ * @param {string} searchParams.assistant_id - The assistant identifier.
  * @returns {Promise<Action[] | null>} A promise that resolves to an array of actions or `null` if no match.
  */
-async function loadActionSets({ user, assistant_id }) {
-  return await getActions({ user, assistant_id }, true);
+async function loadActionSets(searchParams) {
+  return await getActions(searchParams, true);
 }
 
 /**
@@ -40,7 +40,9 @@ function createActionTool({ action, requestBuilder }) {
       logger.error(`API call to ${action.metadata.domain} failed`, error);
       if (error.response) {
         const { status, data } = error.response;
-        return `API call to ${action.metadata.domain} failed with status ${status}: ${data}`;
+        return `API call to ${
+          action.metadata.domain
+        } failed with status ${status}: ${JSON.stringify(data)}`;
       }
 
       return `API call to ${action.metadata.domain} failed.`;

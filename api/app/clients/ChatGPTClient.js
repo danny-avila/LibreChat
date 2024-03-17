@@ -234,7 +234,7 @@ class ChatGPTClient extends BaseClient {
       baseURL = this.langchainProxy
         ? constructAzureURL({
           baseURL: this.langchainProxy,
-          azure: this.azure,
+          azureOptions: this.azure,
         })
         : this.azureEndpoint.split(/\/(chat|completion)/)[0];
 
