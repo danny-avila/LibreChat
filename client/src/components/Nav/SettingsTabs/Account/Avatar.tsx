@@ -98,7 +98,7 @@ function Avatar() {
 
       <Dialog open={isDialogOpen} onOpenChange={() => setDialogOpen(false)}>
         <DialogContent
-          className={cn('shadow-2xl dark:bg-gray-800 dark:text-white md:h-[350px] md:w-[450px] ')}
+          className={cn('shadow-2xl dark:bg-gray-700 dark:text-white md:h-[350px] md:w-[450px] ')}
           style={{ borderRadius: '12px' }}
         >
           <DialogHeader>
@@ -123,7 +123,7 @@ function Avatar() {
             )}
             <button
               className={cn(
-                'mt-4 rounded px-4 py-2 text-white hover:bg-green-600 hover:text-gray-200',
+                'mt-4 rounded px-4 py-2 text-white transition-colors hover:bg-green-600 hover:text-gray-200',
                 isUploading ? 'cursor-not-allowed bg-green-600' : 'bg-green-500',
               )}
               onClick={handleUpload}
