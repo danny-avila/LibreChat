@@ -125,7 +125,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       {/* The backdrop, rendered as a fixed sibling to the panel container */}
       <div className="fixed inset-0 bg-gray-600/65 transition-opacity dark:bg-black/80" />
       {/* Full-screen container to center the panel */}
-      <div className="fixed inset-0 p-4">
+      <div className="fixed inset-0 flex items-center justify-center p-4">
         <Dialog.Panel
           className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-700 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
           style={{ minHeight: '610px' }}
