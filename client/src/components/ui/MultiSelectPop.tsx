@@ -43,9 +43,9 @@ function MultiSelectPop({
             <button
               data-testid="select-dropdown-button"
               className={cn(
-                'relative flex flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 dark:bg-gray-800 sm:text-sm',
+                'relative flex flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-700 dark:bg-gray-800 dark:bg-gray-800 sm:text-sm',
                 'pointer-cursor font-normal',
-                'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20',
+                'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
               )}
             >
               {' '}
@@ -106,7 +106,7 @@ function MultiSelectPop({
             <Content
               side="bottom"
               align="center"
-              className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white"
             >
               {availableValues.map((option) => {
                 if (!option) {

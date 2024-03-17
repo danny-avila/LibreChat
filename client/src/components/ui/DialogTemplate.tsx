@@ -50,7 +50,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
     <DialogContent
       showCloseButton={showCloseButton}
       ref={ref}
-      className={cn('shadow-2xl dark:bg-gray-800', className || '')}
+      className={cn('shadow-2xl dark:bg-gray-700', className || '')}
       onClick={(e) => e.stopPropagation()}
     >
       <DialogHeader className={cn(headerClassName ?? '')}>
