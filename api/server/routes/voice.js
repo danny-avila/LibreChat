@@ -25,7 +25,7 @@ router.post('/stt', upload.single('file'), async (req, res) => {
   }
   try {
     let apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
+    if (!apiKey || apiKey === 'user_provided') {
       const keyRes = await getUserKey({ userId: req.user.id, name: 'openAI' });
       const { apiKey: key } = JSON.parse(keyRes);
       apiKey = key;
@@ -53,7 +53,7 @@ router.get('/tts', async (req, res) => {
   const message = await getOneMessage({ messageId, user: req.user.id });
   try {
     let apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
+    if (!apiKey || apiKey === 'user_provided') {
       const keyRes = await getUserKey({ userId: req.user.id, name: 'openAI' });
       const { apiKey: key } = JSON.parse(keyRes);
       apiKey = key;
