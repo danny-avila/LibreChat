@@ -119,7 +119,8 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
 
   const aProps = {
-    className: 'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg bg-gray-300 dark:bg-gray-800 py-2 px-2}',
+    className:
+      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg bg-gray-300 dark:bg-gray-800 py-2 px-2}',
   };
 
   if (!activeConvo) {
@@ -160,7 +161,6 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       ) : (
         <div className="from--gray-900 absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%"></div>
       )}
-
       {activeConvo ? (
         <div className="visible absolute right-1 z-10 flex from-gray-900 dark:text-gray-200">
           <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
