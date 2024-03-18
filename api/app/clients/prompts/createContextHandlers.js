@@ -1,21 +1,31 @@
 const axios = require('axios');
 
-function createContextHandlers(userMessageContent) {
+function createContextHandlers(req, userMessageContent) {
   if (!process.env.RAG_API_URL) {
     return;
   }
 
+  const jwtToken = req.headers.authorization.split(' ')[1];
   const queryPromises = [];
   const processedFiles = [];
 
   const processFile = async (file) => {
     if (file.embedded) {
       try {
-        const promise = axios.post(`${process.env.RAG_API_URL}/query-embeddings-by-file-id/`, {
-          file_id: file.file_id,
-          query: userMessageContent,
-          k: 4,
-        });
+        const promise = axios.post(
+          `${process.env.RAG_API_URL}/query`,
+          {
+            file_id: file.file_id,
+            query: userMessageContent,
+            k: 4,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${jwtToken}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        );
 
         queryPromises.push(promise);
         processedFiles.push(file);

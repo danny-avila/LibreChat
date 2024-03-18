@@ -268,7 +268,7 @@ class GoogleClient extends BaseClient {
   async buildVisionMessages(messages = [], parentMessageId) {
     const attachments = await this.options.attachments;
     const latestMessage = { ...messages[messages.length - 1] };
-    this.contextHandlers = createContextHandlers(latestMessage.text);
+    this.contextHandlers = createContextHandlers(this.options.req, latestMessage.text);
 
     if (this.contextHandlers) {
       for (const file of attachments) {

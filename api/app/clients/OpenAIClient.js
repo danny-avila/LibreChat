@@ -444,6 +444,7 @@ class OpenAIClient extends BaseClient {
 
     if (this.message_file_map) {
       this.contextHandlers = createContextHandlers(
+        this.options.req,
         orderedMessages[orderedMessages.length - 1].text,
       );
     }

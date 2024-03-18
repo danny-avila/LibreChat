@@ -164,8 +164,10 @@ function extractFirebaseFilePath(urlString) {
  */
 const deleteFirebaseFile = async (req, file) => {
   if (file.embedded && process.env.RAG_API_URL) {
-    axios.delete(`${process.env.RAG_API_URL}/delete-documents/`, {
+    const jwtToken = req.headers.authorization.split(' ')[1];
+    axios.delete(`${process.env.RAG_API_URL}/documents`, {
       headers: {
+        Authorization: `Bearer ${jwtToken}`,
         'Content-Type': 'application/json',
         accept: 'application/json',
       },

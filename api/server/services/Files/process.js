@@ -271,13 +271,23 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
 
   let embeddedPromise;
   if (process.env.RAG_API_URL) {
+    const jwtToken = req.headers.authorization.split(' ')[1];
     const filepath = `./uploads/temp/${file.path.split('uploads/temp/')[1]}`;
-    embeddedPromise = axios.post(`${process.env.RAG_API_URL}/doc`, {
-      filename: file.originalname,
-      file_content_type: file.mimetype,
-      filepath,
-      file_id,
-    });
+    embeddedPromise = axios.post(
+      `${process.env.RAG_API_URL}/embed`,
+      {
+        filename: file.originalname,
+        file_content_type: file.mimetype,
+        filepath,
+        file_id,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
   }
 
   /** @type {OpenAI | undefined} */

@@ -190,8 +190,10 @@ const isValidPath = (req, base, subfolder, filepath) => {
 const deleteLocalFile = async (req, file) => {
   const { publicPath, uploads } = req.app.locals.paths;
   if (file.embedded && process.env.RAG_API_URL) {
-    axios.delete(`${process.env.RAG_API_URL}/delete-documents/`, {
+    const jwtToken = req.headers.authorization.split(' ')[1];
+    axios.delete(`${process.env.RAG_API_URL}/documents`, {
       headers: {
+        Authorization: `Bearer ${jwtToken}`,
         'Content-Type': 'application/json',
         accept: 'application/json',
       },
