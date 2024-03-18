@@ -106,7 +106,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       deleteFileById(file_id as string);
       setError(
         (error as { response: { data: { message?: string } } })?.response?.data?.message ??
-          'An error occurred while uploading the file.',
+          'An error occurred while uploading the file. Please refresh your website.',
       );
     },
   });
