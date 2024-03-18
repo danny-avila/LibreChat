@@ -1,5 +1,6 @@
 const path = require('path');
 const { v4 } = require('uuid');
+const axios = require('axios');
 const mime = require('mime/lite');
 const {
   isUUID,
@@ -189,12 +190,14 @@ const processImageFile = async ({ req, res, file, metadata }) => {
   const source = req.app.locals.fileStrategy;
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
+
   const { filepath, bytes, width, height } = await handleImageUpload({
     req,
     file,
     file_id,
     endpoint,
   });
+
   const result = await createFile(
     {
       user: req.user.id,
@@ -266,13 +269,25 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
 
+  let embeddedPromise;
+  if (process.env.RAG_API_URL) {
+    const filepath = `./uploads/temp/${file.path.split('uploads/temp/')[1]}`;
+    embeddedPromise = axios.post(`${process.env.RAG_API_URL}/doc`, {
+      filename: file.originalname,
+      file_content_type: file.mimetype,
+      filepath,
+      file_id,
+    });
+  }
+
   /** @type {OpenAI | undefined} */
   let openai;
   if (source === FileSources.openai) {
     ({ openai } = await initializeClient({ req }));
   }
 
-  const { id, bytes, filename, filepath } = await handleFileUpload(req, file, openai);
+  const embedded = !!(embeddedPromise ? (await embeddedPromise).data : null);
+  const { id, bytes, filename, filepath } = await handleFileUpload({ req, file, file_id, openai });
 
   if (isAssistantUpload && !metadata.message_file) {
     await openai.beta.assistants.files.create(metadata.assistant_id, {
@@ -291,6 +306,7 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
       source,
       type: file.mimetype,
+      embedded,
     },
     true,
   );
