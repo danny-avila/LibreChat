@@ -14,7 +14,7 @@ services:
     build:
       context: .
       target: node
-    restart: always
+    # restart: always
     user: "${UID}:${GID}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -29,7 +29,7 @@ services:
   mongodb:
     container_name: chat-mongodb
     image: mongo
-    restart: always
+    # restart: always
     user: "${UID}:${GID}"
     volumes:
       - ./data-node:/data/db
@@ -37,7 +37,7 @@ services:
   meilisearch:
     container_name: chat-meilisearch
     image: getmeili/meilisearch:v1.5
-    restart: always
+    # restart: always
     user: "${UID}:${GID}"
     environment:
       - MEILI_HOST=http://meilisearch:7700
