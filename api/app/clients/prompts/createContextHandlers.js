@@ -5,12 +5,13 @@ function createContextHandlers(req, userMessageContent) {
     return;
   }
 
-  const jwtToken = req.headers.authorization.split(' ')[1];
   const queryPromises = [];
   const processedFiles = [];
+  const processedIds = new Set();
+  const jwtToken = req.headers.authorization.split(' ')[1];
 
   const processFile = async (file) => {
-    if (file.embedded) {
+    if (file.embedded && !processedIds.has(file.file_id)) {
       try {
         const promise = axios.post(
           `${process.env.RAG_API_URL}/query`,
@@ -29,6 +30,7 @@ function createContextHandlers(req, userMessageContent) {
 
         queryPromises.push(promise);
         processedFiles.push(file);
+        processedIds.add(file.file_id);
       } catch (error) {
         console.error(`Error processing file ${file.filename}:`, error);
       }
