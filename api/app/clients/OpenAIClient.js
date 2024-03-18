@@ -744,9 +744,10 @@ class OpenAIClient extends BaseClient {
     /** @type {TAzureConfig | undefined} */
     const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
 
-    const resetTitleOptions =
+    const resetTitleOptions = !!(
       (this.azure && azureConfig) ||
-      (azureConfig && this.options.endpoint === EModelEndpoint.azureOpenAI);
+      (azureConfig && this.options.endpoint === EModelEndpoint.azureOpenAI)
+    );
 
     if (resetTitleOptions) {
       const { modelGroupMap, groupMap } = azureConfig;
