@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const fetch = require('node-fetch');
 const { ref, uploadBytes, getDownloadURL, deleteObject } = require('firebase/storage');
 const { getBufferMetadata } = require('~/server/utils');
@@ -167,10 +169,41 @@ const deleteFirebaseFile = async (req, file) => {
   await deleteFile('', fileName);
 };
 
+/**
+ * Uploads a file to Firebase Storage.
+ *
+ * @param {Object} params - The params object.
+ * @param {Express.Request} params.req - The request object from Express. It should have a `user` property with an `id`
+ *                       representing the user.
+ * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
+ *                                     have a `path` property that points to the location of the uploaded file.
+ * @param {string} params.file_id - The file ID.
+ *
+ * @returns {Promise<{ filepath: string, bytes: number }>}
+ *          A promise that resolves to an object containing:
+ *            - filepath: The download URL of the uploaded file.
+ *            - bytes: The size of the uploaded file in bytes.
+ */
+async function uploadFileToFirebase({ req, file, file_id }) {
+  const inputFilePath = file.path;
+  const inputBuffer = await fs.promises.readFile(inputFilePath);
+  const bytes = Buffer.byteLength(inputBuffer);
+  const userId = req.user.id;
+
+  const fileName = `${file_id}__${path.basename(inputFilePath)}`;
+
+  const downloadURL = await saveBufferToFirebase({ userId, buffer: inputBuffer, fileName });
+
+  await fs.promises.unlink(inputFilePath);
+
+  return { filepath: downloadURL, bytes };
+}
+
 module.exports = {
   deleteFile,
   getFirebaseURL,
   saveURLToFirebase,
   deleteFirebaseFile,
+  uploadFileToFirebase,
   saveBufferToFirebase,
 };

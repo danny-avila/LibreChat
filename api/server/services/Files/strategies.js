@@ -5,6 +5,7 @@ const {
   saveURLToFirebase,
   deleteFirebaseFile,
   saveBufferToFirebase,
+  uploadFileToFirebase,
   uploadImageToFirebase,
   processFirebaseAvatar,
 } = require('./Firebase');
@@ -14,6 +15,7 @@ const {
   saveFileFromURL,
   saveLocalBuffer,
   deleteLocalFile,
+  uploadLocalFile,
   uploadLocalImage,
   prepareImagesLocal,
   processLocalAvatar,
@@ -32,6 +34,7 @@ const firebaseStrategy = () => ({
   saveBuffer: saveBufferToFirebase,
   prepareImagePayload: prepareImageURL,
   processAvatar: processFirebaseAvatar,
+  handleFileUpload: uploadFileToFirebase,
   handleImageUpload: uploadImageToFirebase,
 });
 
@@ -46,6 +49,7 @@ const localStrategy = () => ({
   saveBuffer: saveLocalBuffer,
   deleteFile: deleteLocalFile,
   processAvatar: processLocalAvatar,
+  handleFileUpload: uploadLocalFile,
   handleImageUpload: uploadLocalImage,
   prepareImagePayload: prepareImagesLocal,
 });
