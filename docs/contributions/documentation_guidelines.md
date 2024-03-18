@@ -60,7 +60,7 @@ weight: 0
 
 ### Setup MkDocs Locally
 
-- Requirement: Python 3.3 and later (on older version you will need to install virtualenv)
+- Requirement: Python 3.3 and later (on older versions you will need to install virtualenv)
 
 #### Material for MkDocs Installation
 
@@ -69,7 +69,7 @@ weight: 0
 ```sh
 python -m venv .venv
 . .venv/bin/activate
-pip install -r requirements.txt
+pip install -r ./docs/src/requirements.txt
 ```
 
 #### Running MkDocs
