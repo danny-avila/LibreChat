@@ -1064,7 +1064,8 @@ ${convo}
             baseURL: this.langchainProxy,
             azureOptions: this.azure,
           })
-          : this.azureEndpoint.split(/\/(chat|completion)/)[0];
+          : this.azureEndpoint.split(/(?<!\/)\/(chat|completion)\//)[0];
+
         opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
         opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
       }
