@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 const fetch = require('node-fetch');
 const { ref, uploadBytes, getDownloadURL, deleteObject } = require('firebase/storage');
 const { getBufferMetadata } = require('~/server/utils');
@@ -162,6 +163,16 @@ function extractFirebaseFilePath(urlString) {
  *          Throws an error if there is an issue with deletion.
  */
 const deleteFirebaseFile = async (req, file) => {
+  if (file.embedded && process.env.RAG_API_URL) {
+    axios.delete(`${process.env.RAG_API_URL}/delete-documents/`, {
+      headers: {
+        'Content-Type': 'application/json',
+        accept: 'application/json',
+      },
+      data: [file.file_id],
+    });
+  }
+
   const fileName = extractFirebaseFilePath(file.filepath);
   if (!fileName.includes(req.user.id)) {
     throw new Error('Invalid file path');

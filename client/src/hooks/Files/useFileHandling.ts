@@ -95,6 +95,7 @@ const useFileHandling = (params?: UseFileHandling) => {
             width: data.width,
             filename: data.filename,
             source: data.source,
+            embedded: data.embedded,
           },
           params?.additionalMetadata?.assistant_id ? true : false,
         );

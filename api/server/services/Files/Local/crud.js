@@ -188,7 +188,24 @@ const isValidPath = (req, base, subfolder, filepath) => {
  *          file path is invalid or if there is an error in deletion.
  */
 const deleteLocalFile = async (req, file) => {
-  const { publicPath } = req.app.locals.paths;
+  const { publicPath, uploads } = req.app.locals.paths;
+  if (file.embedded && process.env.RAG_API_URL) {
+    axios.delete(`${process.env.RAG_API_URL}/delete-documents/`, {
+      headers: {
+        'Content-Type': 'application/json',
+        accept: 'application/json',
+      },
+      data: [file.file_id],
+    });
+  }
+
+  if (file.filepath.startsWith(`/uploads/${req.user.id}`)) {
+    const basePath = file.filepath.split('/uploads/')[1];
+    const filepath = path.join(uploads, basePath);
+    await fs.promises.unlink(filepath);
+    return;
+  }
+
   const parts = file.filepath.split(path.sep);
   const subfolder = parts[1];
   const filepath = path.join(publicPath, file.filepath);
