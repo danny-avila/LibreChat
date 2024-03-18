@@ -1,10 +1,10 @@
 const buildOptions = (endpoint, parsedBody) => {
-  const { modelLabel, promptPrefix, resendImages, ...rest } = parsedBody;
+  const { modelLabel, promptPrefix, resendFiles, ...rest } = parsedBody;
   const endpointOption = {
     endpoint,
     modelLabel,
     promptPrefix,
-    resendImages,
+    resendFiles,
     modelOptions: {
       ...rest,
     },

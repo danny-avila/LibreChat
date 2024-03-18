@@ -218,6 +218,8 @@ export default {
     'Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model\'s likelihood to talk about new topics.',
   com_endpoint_openai_resend:
     'Resend all previously attached images. Note: this can significantly increase token cost and you may experience errors with many image attachments.',
+  com_endpoint_openai_resend_files:
+    'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
   com_endpoint_openai_detail:
     'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
   com_endpoint_openai_custom_name_placeholder: 'Set a custom name for ChatGPT',
@@ -235,6 +237,7 @@ export default {
   com_endpoint_frequency_penalty: 'Frequency Penalty',
   com_endpoint_presence_penalty: 'Presence Penalty',
   com_endpoint_plug_use_functions: 'Use Functions',
+  com_endpoint_plug_resend_files: 'Resend Files',
   com_endpoint_plug_resend_images: 'Resend Images',
   com_endpoint_plug_image_detail: 'Image Detail',
   com_endpoint_plug_skip_completion: 'Skip Completion',
