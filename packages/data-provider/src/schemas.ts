@@ -523,7 +523,7 @@ export const compactOpenAISchema = tConversationSchema
     if (newObj.frequency_penalty === 0) {
       delete newObj.frequency_penalty;
     }
-    if (newObj.resendFiles !== true) {
+    if (newObj.resendFiles === true) {
       delete newObj.resendFiles;
     }
     if (newObj.imageDetail === ImageDetail.auto) {
@@ -589,7 +589,7 @@ export const compactAnthropicSchema = tConversationSchema
     if (newObj.topK === 5) {
       delete newObj.topK;
     }
-    if (newObj.resendFiles !== true) {
+    if (newObj.resendFiles === true) {
       delete newObj.resendFiles;
     }
 
