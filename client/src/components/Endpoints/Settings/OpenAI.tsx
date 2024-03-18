@@ -311,7 +311,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <HoverCardTrigger>
                 <Switch
                   id="resend-files"
-                  checked={resendFiles ?? false}
+                  checked={resendFiles ?? true}
                   onCheckedChange={(checked: boolean) => setResendFiles(checked)}
                   disabled={readonly}
                   className="flex"

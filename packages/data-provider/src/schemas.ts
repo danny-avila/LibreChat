@@ -287,7 +287,7 @@ export const openAISchema = tConversationSchema
     top_p: obj.top_p ?? 1,
     presence_penalty: obj.presence_penalty ?? 0,
     frequency_penalty: obj.frequency_penalty ?? 0,
-    resendFiles: obj.resendFiles ?? true,
+    resendFiles: typeof obj.resendFiles === 'boolean' ? obj.resendFiles : true,
     imageDetail: obj.imageDetail ?? ImageDetail.auto,
   }))
   .catch(() => ({
@@ -404,7 +404,7 @@ export const anthropicSchema = tConversationSchema
     maxOutputTokens: obj.maxOutputTokens ?? 4000,
     topP: obj.topP ?? 0.7,
     topK: obj.topK ?? 5,
-    resendFiles: obj.resendFiles ?? true,
+    resendFiles: typeof obj.resendFiles === 'boolean' ? obj.resendFiles : true,
   }))
   .catch(() => ({
     model: 'claude-1',
