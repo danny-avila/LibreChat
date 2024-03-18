@@ -744,9 +744,10 @@ class OpenAIClient extends BaseClient {
     /** @type {TAzureConfig | undefined} */
     const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
 
-    const resetTitleOptions =
+    const resetTitleOptions = !!(
       (this.azure && azureConfig) ||
-      (azureConfig && this.options.endpoint === EModelEndpoint.azureOpenAI);
+      (azureConfig && this.options.endpoint === EModelEndpoint.azureOpenAI)
+    );
 
     if (resetTitleOptions) {
       const { modelGroupMap, groupMap } = azureConfig;
@@ -1064,7 +1065,8 @@ ${convo}
             baseURL: this.langchainProxy,
             azureOptions: this.azure,
           })
-          : this.azureEndpoint.split(/\/(chat|completion)/)[0];
+          : this.azureEndpoint.split(/(?<!\/)\/(chat|completion)\//)[0];
+
         opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
         opts.defaultHeaders = { ...opts.defaultHeaders, 'api-key': this.apiKey };
       }
