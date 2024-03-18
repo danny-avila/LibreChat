@@ -10,7 +10,7 @@ export default function Footer() {
 
   const privacyPolicyRender = privacyPolicy?.externalUrl && (
     <a
-      className=" text-gray-500 underline"
+      className=" text-gray-600 underline dark:text-gray-300"
       href={privacyPolicy.externalUrl}
       target={privacyPolicy.openNewTab ? '_blank' : undefined}
       rel="noreferrer"
@@ -21,7 +21,7 @@ export default function Footer() {
 
   const termsOfServiceRender = termsOfService?.externalUrl && (
     <a
-      className=" text-gray-500 underline"
+      className=" text-gray-600 underline dark:text-gray-300"
       href={termsOfService.externalUrl}
       target={termsOfService.openNewTab ? '_blank' : undefined}
       rel="noreferrer"

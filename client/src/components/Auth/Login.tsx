@@ -97,7 +97,7 @@ function Login() {
 
   const privacyPolicyRender = privacyPolicy?.externalUrl && (
     <a
-      className="text-xs font-medium text-gray-500"
+      className="text-xs font-medium text-green-500"
       href={privacyPolicy.externalUrl}
       target={privacyPolicy.openNewTab ? '_blank' : undefined}
       rel="noreferrer"
@@ -108,7 +108,7 @@ function Login() {
 
   const termsOfServiceRender = termsOfService?.externalUrl && (
     <a
-      className="text-xs font-medium text-gray-500"
+      className="text-xs font-medium text-green-500"
       href={termsOfService.externalUrl}
       target={termsOfService.openNewTab ? '_blank' : undefined}
       rel="noreferrer"
