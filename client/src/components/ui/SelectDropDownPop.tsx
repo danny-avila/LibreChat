@@ -4,6 +4,7 @@ import MenuItem from '~/components/Chat/Menus/UI/MenuItem';
 import type { Option } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
+import { useMultiSearch } from './MultiSearch';
 
 type SelectDropDownProps = {
   id?: string;
@@ -41,6 +42,13 @@ function SelectDropDownPop({
   } else if (!title) {
     title = localize('com_ui_model');
   }
+
+  // Detemine if we should to convert this component into a searchable select.  If we have enough elements, a search
+  // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
+  // reset once the component is unmounted (as per a normal search)
+  const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>(availableValues);
+  const hasSearchRender = Boolean(searchRender);
+  const options = hasSearchRender ? filteredValues : availableValues;
 
   return (
     <Root>
@@ -95,9 +103,13 @@ function SelectDropDownPop({
             <Content
               side="bottom"
               align="start"
-              className="mt-2 max-h-[52vh] min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-white lg:max-h-[52vh]"
+              className={cn(
+                'mt-2 max-h-[52vh] min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-white lg:max-h-[52vh]',
+                hasSearchRender && 'relative',
+              )}
             >
-              {availableValues.map((option) => {
+              {searchRender}
+              {options.map((option) => {
                 return (
                   <MenuItem
                     key={option}
