@@ -11,16 +11,13 @@ import {
   HoverCardTrigger,
 } from '~/components/ui';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
+import { useLocalize, useDebouncedInput } from '~/hooks';
 import type { TModelSelectProps } from '~/common';
 import OptionHover from './OptionHover';
-import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
 export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
   const localize = useLocalize();
-  if (!conversation) {
-    return null;
-  }
   const {
     endpoint,
     endpointType,
@@ -33,14 +30,43 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     presence_penalty: presP,
     resendImages,
     imageDetail,
-  } = conversation;
+  } = conversation ?? {};
+  const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput({
+    setOption,
+    optionKey: 'chatGptLabel',
+    initialValue: chatGptLabel,
+  });
+  const [setPromptPrefix, promptPrefixValue] = useDebouncedInput({
+    setOption,
+    optionKey: 'promptPrefix',
+    initialValue: promptPrefix,
+  });
+  const [setTemperature, temperatureValue] = useDebouncedInput({
+    setOption,
+    optionKey: 'temperature',
+    initialValue: temperature,
+  });
+  const [setTopP, topPValue] = useDebouncedInput({
+    setOption,
+    optionKey: 'top_p',
+    initialValue: topP,
+  });
+  const [setFreqP, freqPValue] = useDebouncedInput({
+    setOption,
+    optionKey: 'frequency_penalty',
+    initialValue: freqP,
+  });
+  const [setPresP, presPValue] = useDebouncedInput({
+    setOption,
+    optionKey: 'presence_penalty',
+    initialValue: presP,
+  });
+
+  if (!conversation) {
+    return null;
+  }
+
   const setModel = setOption('model');
-  const setChatGptLabel = setOption('chatGptLabel');
-  const setPromptPrefix = setOption('promptPrefix');
-  const setTemperature = setOption('temperature');
-  const setTopP = setOption('top_p');
-  const setFreqP = setOption('frequency_penalty');
-  const setPresP = setOption('presence_penalty');
   const setResendImages = setOption('resendImages');
   const setImageDetail = setOption('imageDetail');
 
@@ -67,8 +93,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
           <Input
             id="chatGptLabel"
             disabled={readonly}
-            value={chatGptLabel || ''}
-            onChange={(e) => setChatGptLabel(e.target.value ?? null)}
+            value={(chatGptLabelValue as string) || ''}
+            onChange={setChatGptLabel}
             placeholder={localize('com_endpoint_openai_custom_name_placeholder')}
             className={cn(
               defaultTextProps,
@@ -86,8 +112,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
           <TextareaAutosize
             id="promptPrefix"
             disabled={readonly}
-            value={promptPrefix || ''}
-            onChange={(e) => setPromptPrefix(e.target.value ?? null)}
+            value={(promptPrefixValue as string) || ''}
+            onChange={setPromptPrefix}
             placeholder={localize('com_endpoint_openai_prompt_prefix_placeholder')}
             className={cn(
               defaultTextProps,
@@ -110,8 +136,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <InputNumber
                 id="temp-int"
                 disabled={readonly}
-                value={temperature}
-                onChange={(value) => setTemperature(Number(value))}
+                value={temperatureValue as number}
+                onChange={setTemperature}
                 max={2}
                 min={0}
                 step={0.01}
@@ -127,7 +153,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[temperature ?? 1]}
+              value={[(temperatureValue as number) ?? 1]}
               onValueChange={(value) => setTemperature(value[0])}
               doubleClickHandler={() => setTemperature(1)}
               max={2}
@@ -148,7 +174,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <InputNumber
                 id="top-p-int"
                 disabled={readonly}
-                value={topP}
+                value={topPValue as number}
                 onChange={(value) => setTopP(Number(value))}
                 max={1}
                 min={0}
@@ -165,7 +191,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[topP ?? 1]}
+              value={[(topPValue as number) ?? 1]}
               onValueChange={(value) => setTopP(value[0])}
               doubleClickHandler={() => setTopP(1)}
               max={1}
@@ -187,7 +213,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <InputNumber
                 id="freq-penalty-int"
                 disabled={readonly}
-                value={freqP}
+                value={freqPValue as number}
                 onChange={(value) => setFreqP(Number(value))}
                 max={2}
                 min={-2}
@@ -204,7 +230,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[freqP ?? 0]}
+              value={[(freqPValue as number) ?? 0]}
               onValueChange={(value) => setFreqP(value[0])}
               doubleClickHandler={() => setFreqP(0)}
               max={2}
@@ -226,7 +252,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               <InputNumber
                 id="pres-penalty-int"
                 disabled={readonly}
-                value={presP}
+                value={presPValue as number}
                 onChange={(value) => setPresP(Number(value))}
                 max={2}
                 min={-2}
@@ -243,7 +269,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             </div>
             <Slider
               disabled={readonly}
-              value={[presP ?? 0]}
+              value={[(presPValue as number) ?? 0]}
               onValueChange={(value) => setPresP(value[0])}
               doubleClickHandler={() => setPresP(0)}
               max={2}
