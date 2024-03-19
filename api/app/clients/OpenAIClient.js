@@ -484,7 +484,8 @@ class OpenAIClient extends BaseClient {
     });
 
     if (this.contextHandlers) {
-      promptPrefix = (await this.contextHandlers?.createContext()) + promptPrefix;
+      this.augmentedPrompt = await this.contextHandlers.createContext();
+      promptPrefix = this.augmentedPrompt + promptPrefix;
     }
 
     if (promptPrefix) {

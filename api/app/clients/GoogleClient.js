@@ -278,8 +278,8 @@ class GoogleClient extends BaseClient {
         }
       }
 
-      this.options.promptPrefix =
-        (await this.contextHandlers.createContext()) + this.options.promptPrefix;
+      this.augmentedPrompt = await this.contextHandlers.createContext();
+      this.options.promptPrefix = this.augmentedPrompt + this.options.promptPrefix;
     }
 
     const { prompt } = await this.buildMessagesPrompt(messages, parentMessageId);
