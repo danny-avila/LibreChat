@@ -297,6 +297,9 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
       logger.error('Error embedding file', error);
       throw new Error(error);
     }
+  } else if (!isAssistantUpload) {
+    logger.error('RAG_API_URL not set, cannot support process file upload');
+    throw new Error('RAG_API_URL not set, cannot support process file upload');
   }
 
   /** @type {OpenAI | undefined} */

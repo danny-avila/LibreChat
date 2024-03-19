@@ -147,9 +147,9 @@ export const fileConfig = {
     },
     default: {
       fileLimit: 10,
-      fileSizeLimit: mbToBytes(20),
-      totalSizeLimit: mbToBytes(25),
-      supportedMimeTypes: [imageMimeTypes],
+      fileSizeLimit: mbToBytes(512),
+      totalSizeLimit: mbToBytes(512),
+      supportedMimeTypes,
       disabled: false,
     },
   },
