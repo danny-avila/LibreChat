@@ -28,7 +28,7 @@ export default function MultiSearch({
         value={value || ''}
         onChange={onChangeHandler}
         placeholder={placeholder || localize('com_ui_select_search_model')}
-        className="flex-1 rounded-md border-none bg-white px-2.5 py-2 text-sm focus:bg-white focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:bg-white/5 dark:focus:bg-white/5 dark:focus:ring-gray-200/10"
+        className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:focus:ring-gray-200/10"
       />
       <div className="relative flex h-5 w-5 items-center justify-end text-gray-500">
         <X
