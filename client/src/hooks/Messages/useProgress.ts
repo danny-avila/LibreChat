@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 
-export default function useProgress(initialProgress = 0.01) {
+export default function useProgress(initialProgress = 0.01, increment = 0.007) {
+  const [incrementValue] = useState(increment);
   const [progress, setProgress] = useState(initialProgress);
 
   useEffect(() => {
@@ -20,7 +21,7 @@ export default function useProgress(initialProgress = 0.01) {
             clearInterval(timer);
             return 1;
           }
-          return Math.min(prevProgress + 0.007, 0.95);
+          return Math.min(prevProgress + incrementValue, 0.95);
         });
       }, 200);
     }
@@ -29,7 +30,7 @@ export default function useProgress(initialProgress = 0.01) {
       clearInterval(timer);
       clearTimeout(timeout);
     };
-  }, [progress, initialProgress]);
+  }, [progress, initialProgress, incrementValue]);
 
   return progress;
 }
