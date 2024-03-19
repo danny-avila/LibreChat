@@ -51,7 +51,6 @@ const setCurrentUser = async (req, res, next) => {
           userData,
         );
       }
-      console.log(newUser);
       await clerkClient.users.updateUser(req.auth.userId, {
         externalId: newUser._id,
       });

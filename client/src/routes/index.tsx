@@ -40,7 +40,7 @@ const SubscriptionLayout = () => {
   const { token } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   if (!startupConfig || !token) {
-    return null;
+    return <p>in</p>;
   }
   return (
     <SubscriptionProvider stripePublishableKey={startupConfig.stripePublishableKey}>
@@ -50,10 +50,11 @@ const SubscriptionLayout = () => {
 };
 
 const PaywallRoot = () => {
+  const { token } = useAuthContext();
   const { isLoaded: isLoadedStripe, subscription, redirectToCheckout } = useSubscription();
   const { data: startupConfig } = useGetStartupConfig();
 
-  if (!isLoadedStripe || !startupConfig) {
+  if (!isLoadedStripe || !startupConfig || !token) {
     return (
       <div className="grid min-h-screen place-items-center">
         <Loader className="animate-spin stroke-slate-500" />

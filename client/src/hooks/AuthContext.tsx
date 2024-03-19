@@ -116,7 +116,7 @@ const AuthContextProvider = ({
     }
     refreshToken();
     setInterval(refreshToken, 45_000);
-  }, [isLoadedClerk, isSignedIn]);
+  }, [isLoadedClerk, isSignedIn, orgId]);
 
   useEffect(() => {
     if (isSignedIn) {
