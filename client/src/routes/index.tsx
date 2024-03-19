@@ -40,7 +40,7 @@ const SubscriptionLayout = () => {
   const { token } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   if (!startupConfig || !token) {
-    return <p>in</p>;
+    return null;
   }
   return (
     <SubscriptionProvider stripePublishableKey={startupConfig.stripePublishableKey}>
