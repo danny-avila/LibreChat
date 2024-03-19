@@ -1,11 +1,11 @@
+import { useNavigate } from 'react-router-dom';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useLocalize, useNewConvo, useLocalStorage } from '~/hooks';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import { NewChatIcon } from '~/components/svg';
 import { getEndpointField } from '~/utils';
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
-import { useNavigate } from 'react-router-dom';
 
 export default function NewChat({
   toggleNav,

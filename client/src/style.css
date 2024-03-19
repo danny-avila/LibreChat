@@ -1083,24 +1083,6 @@ button {
   padding: 0.25rem 0.5rem;
 }
 
-::-webkit-scrollbar {
-  height: 0.1em;
-  width: 0.5rem;
-}
-
-.scrollbar-trigger:hover ::-webkit-scrollbar-thumb {
-  visibility: hide;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: hsla(0,0%,100%,.1);
-  border-radius: 9999px;
-}
-
-.scrollbar-transparent::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.1);
-}
-
 .bg-token-surface-secondary {
   background-color: #f7f7f8;
   background-color: var(--surface-secondary);
@@ -1112,13 +1094,32 @@ button {
   --tw-gradient-stops: var(--tw-gradient-from),var(--tw-gradient-to);
 }
 
+/* Webkit scrollbar */
+::-webkit-scrollbar {
+  height: 0.1em;
+  width: 0.5rem;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: hsla(0, 0%, 100%, 0.1);
+}
+
 ::-webkit-scrollbar-track {
   background-color: transparent;
   border-radius: 9999px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background-color: hsla(0,0%,100%,.3);
-  
+
+.scrollbar-transparent::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+
+.dark .scrollbar-transparent::-webkit-scrollbar-thumb {
+  background-color: transparent;
 }
 
 body,

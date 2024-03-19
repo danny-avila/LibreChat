@@ -31,6 +31,14 @@ const Nav = ({ navVisible, setNavVisible }) => {
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isToggleHovering, setIsToggleHovering] = useState(false);
 
+  const handleMouseEnter = useCallback(() => {
+    setIsHovering(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHovering(false);
+  }, []);
+
   useEffect(() => {
     if (isSmallScreen) {
       setNavWidth('320px');
@@ -144,8 +152,8 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         '-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
                         isHovering ? '' : 'scrollbar-transparent',
                       )}
-                      onMouseEnter={() => setIsHovering(true)}
-                      onMouseLeave={() => setIsHovering(false)}
+                      onMouseEnter={handleMouseEnter}
+                      onMouseLeave={handleMouseLeave}
                       ref={containerRef}
                     >
                       <NewChat
