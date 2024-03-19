@@ -58,6 +58,7 @@ export default {
   com_ui_close: 'Close',
   com_ui_model: 'Model',
   com_ui_select_model: 'Select a model',
+  com_ui_select_search_model: 'Search model by name',
   com_ui_use_prompt: 'Use prompt',
   com_ui_prev: 'Prev',
   com_ui_next: 'Next',

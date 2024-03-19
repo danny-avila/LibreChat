@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Wrench } from 'lucide-react';
 import { Root, Trigger, Content, Portal } from '@radix-ui/react-popover';
 import type { TPlugin } from 'librechat-data-provider';
 import MenuItem from '~/components/Chat/Menus/UI/MenuItem';
+import { useMultiSearch } from './MultiSearch';
 import { cn } from '~/utils/';
 
 type SelectDropDownProps = {
@@ -34,6 +35,11 @@ function MultiSelectPop({
 
   const title = _title;
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
+
+  // Detemine if we should to convert this component into a searchable select
+  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>(availableValues);
+  const hasSearchRender = Boolean(searchRender);
+  const options = hasSearchRender ? filteredValues : availableValues;
 
   return (
     <Root>
@@ -106,9 +112,13 @@ function MultiSelectPop({
             <Content
               side="bottom"
               align="center"
-              className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              className={cn(
+                'mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-white',
+                hasSearchRender && 'relative',
+              )}
             >
-              {availableValues.map((option) => {
+              {searchRender}
+              {options.map((option) => {
                 if (!option) {
                   return null;
                 }

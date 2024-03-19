@@ -4,6 +4,7 @@ import type { Option } from '~/common';
 import CheckMark from '../svg/CheckMark';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
+import { useMultiSearch } from './MultiSearch';
 
 type SelectDropDownProps = {
   id?: string;
@@ -56,6 +57,13 @@ function SelectDropDown({
   } else if (!title) {
     title = localize('com_ui_model');
   }
+
+  // Detemine if we should to convert this component into a searchable select.  If we have enough elements, a search
+  // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
+  // reset once the component is unmounted (as per a normal search)
+  const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>(availableValues);
+  const hasSearchRender = Boolean(searchRender);
+  const options = hasSearchRender ? filteredValues : availableValues;
 
   return (
     <div className={cn('flex items-center justify-center gap-2 ', containerClassName ?? '')}>
@@ -122,7 +130,7 @@ function SelectDropDown({
               >
                 <Listbox.Options
                   className={cn(
-                    'absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded border bg-white text-base text-xs ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:border-gray-600 md:w-[100%]',
+                    'absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded border bg-white text-base text-xs ring-black/10 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:ring-white/20 md:w-[100%]',
                     optionsListClass ?? '',
                   )}
                 >
@@ -138,7 +146,8 @@ function SelectDropDown({
                       {renderOption()}
                     </Listbox.Option>
                   )}
-                  {availableValues.map((option: string | Option, i: number) => {
+                  {searchRender}
+                  {options.map((option: string | Option, i: number) => {
                     if (!option) {
                       return null;
                     }
