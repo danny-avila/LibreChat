@@ -1,7 +1,7 @@
+import { Search, X } from 'lucide-react';
 import React, { useState, useMemo, useCallback } from 'react';
-import type { TPlugin } from 'librechat-data-provider';
-import { Search } from 'lucide-react';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 // This is a generic that can be added to Menu and Select components
 
@@ -15,18 +15,30 @@ export default function MultiSearch({
   placeholder?: string;
 }) {
   const localize = useLocalize();
-  const onChangeHandler = useCallback((e) => onChange(e.target.value), []);
+  const onChangeHandler: React.ChangeEventHandler<HTMLInputElement> = useCallback(
+    (e) => onChange(e.target.value),
+    [],
+  );
 
   return (
-    <div className="sticky left-0 top-0 z-10 flex h-12 items-center gap-3 bg-white px-5 py-2.5 !pr-3 text-left transition-all dark:bg-gray-800">
-      <Search className="h-6 w-6 text-gray-500" />
+    <div className="group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-gradient-to-b from-white from-65% to-transparent px-2 px-3 py-2 text-black transition-colors duration-300 focus:bg-gradient-to-b focus:from-white focus:to-white/50 dark:from-gray-800 dark:to-transparent dark:text-white dark:focus:from-white/10 dark:focus:to-white/20">
+      <Search className="h-4 w-4 text-gray-500 transition-colors duration-300 dark:group-focus-within:text-gray-300 dark:group-hover:text-gray-300" />
       <input
         type="text"
         value={value || ''}
         onChange={onChangeHandler}
         placeholder={placeholder || localize('com_ui_select_search_model')}
-        className="flex-1 px-2.5 py-1"
+        className="flex-1 rounded-md border-none bg-white px-2.5 py-2 text-sm focus:bg-white focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:bg-white/5 dark:focus:bg-white/5 dark:focus:ring-gray-200/10"
       />
+      <div className="relative flex h-5 w-5 items-center justify-end text-gray-500">
+        <X
+          className={cn(
+            'text-gray-500 dark:text-gray-300',
+            value?.length ? 'cursor-pointer opacity-100' : 'opacity-0',
+          )}
+          onClick={() => onChange('')}
+        />
+      </div>
     </div>
   );
 }
