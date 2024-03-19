@@ -45,7 +45,6 @@ const actionSchema = new Schema({
     auth: AuthSchema,
     domain: {
       type: String,
-      unique: true,
       required: true,
     },
     // json_schema: Schema.Types.Mixed,

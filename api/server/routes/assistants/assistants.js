@@ -241,12 +241,13 @@ router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => 
     const promises = [];
     promises.push(
       updateAssistant(
-        { assistant_id, user: req.user.id },
+        { assistant_id },
         {
           avatar: {
             filepath: image.filepath,
             source: req.app.locals.fileStrategy,
           },
+          user: req.user.id,
         },
       ),
     );
