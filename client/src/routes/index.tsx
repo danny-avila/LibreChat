@@ -4,14 +4,15 @@ import Chat from './Chat';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import { Login, Registration } from '~/components/Auth';
-import { AuthContextProvider } from '~/hooks/AuthContext';
-import { ClerkProvider } from '@clerk/clerk-react';
+import { AuthContextProvider, useAuthContext } from '~/hooks/AuthContext';
+import { ClerkProvider, OrganizationProfile } from '@clerk/clerk-react';
 import { SubscriptionProvider, useSubscription } from '~/hooks/useStripeSubscription';
 import { Loader } from 'lucide-react';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import MarketplaceView from '~/components/Marketplace/MarketplaceView';
+import CreateOrgView from '~/components/CreateOrgView';
 
-const AuthLayout = () => {
+const ClerkLayout = () => {
   const { data: startupConfig } = useGetStartupConfig();
   if (!startupConfig) {
     return (
@@ -22,16 +23,23 @@ const AuthLayout = () => {
   }
   return (
     <ClerkProvider publishableKey={startupConfig.clerkPublishableKey}>
-      <AuthContextProvider>
-        <Outlet />
-      </AuthContextProvider>
+      <Outlet />
     </ClerkProvider>
   );
 };
 
+const AuthLayout = () => {
+  return (
+    <AuthContextProvider>
+      <Outlet />
+    </AuthContextProvider>
+  );
+};
+
 const SubscriptionLayout = () => {
+  const { token } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
-  if (!startupConfig) {
+  if (!startupConfig || !token) {
     return null;
   }
   return (
@@ -72,43 +80,51 @@ const PaywallRoot = () => {
 
 export const router = createBrowserRouter([
   {
-    element: <AuthLayout />,
+    element: <ClerkLayout />,
     children: [
       {
         path: 'register',
         element: <Registration />,
       },
-
       {
-        element: <SubscriptionLayout />,
+        element: <AuthLayout />,
         children: [
           {
             path: 'login',
             element: <Login />,
           },
           {
-            path: '/',
-            element: <PaywallRoot />,
+            path: 'create-org',
+            element: <CreateOrgView />,
+          },
+          {
+            element: <SubscriptionLayout />,
             children: [
               {
-                index: true,
-                element: <Navigate to="/c/new" replace={true} />,
-              },
-              {
-                path: 'c/:conversationId?',
-                element: <ChatRoute />,
-              },
-              {
-                path: 'chat/:conversationId?',
-                element: <Chat />,
-              },
-              {
-                path: 'search/:query?',
-                element: <Search />,
-              },
-              {
-                path: '/marketplace',
-                element: <MarketplaceView />,
+                path: '/',
+                element: <PaywallRoot />,
+                children: [
+                  {
+                    index: true,
+                    element: <Navigate to="/c/new" replace={true} />,
+                  },
+                  {
+                    path: 'c/:conversationId?',
+                    element: <ChatRoute />,
+                  },
+                  {
+                    path: 'chat/:conversationId?',
+                    element: <Chat />,
+                  },
+                  {
+                    path: 'search/:query?',
+                    element: <Search />,
+                  },
+                  {
+                    path: '/marketplace',
+                    element: <MarketplaceView />,
+                  },
+                ],
               },
             ],
           },

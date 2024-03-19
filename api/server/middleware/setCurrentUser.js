@@ -28,7 +28,6 @@ const setCurrentUser = async (req, res, next) => {
       };
       try {
         newUser = await new User(userData).save();
-
         const fileStrategy = process.env.CDN_PROVIDER;
         const isLocal = fileStrategy === FileSources.local;
 
@@ -44,9 +43,15 @@ const setCurrentUser = async (req, res, next) => {
           await newUser.save();
         }
       } catch (error) {
-        newUser = await User.findOne({ clerkUserId: req.auth.userId });
+        newUser = await User.findOneAndUpdate(
+          {
+            email: clerkUser.emailAddresses.find((x) => x.id === clerkUser.primaryEmailAddressId)
+              .emailAddress,
+          },
+          userData,
+        );
       }
-
+      console.log(newUser);
       await clerkClient.users.updateUser(req.auth.userId, {
         externalId: newUser._id,
       });

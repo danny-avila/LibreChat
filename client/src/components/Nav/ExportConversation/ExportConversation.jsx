@@ -35,7 +35,6 @@ const ExportConversation = forwardRef(() => {
         <Download size={16} />
         {localize('com_nav_export_conversation')}
       </button>
-
       <ExportModal open={open} onOpenChange={setOpen} />
     </>
   );

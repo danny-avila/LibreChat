@@ -29,7 +29,9 @@ export const SubscriptionProvider = ({
   const configLoadEmitter = new EventEmitter();
 
   useEffect(() => {
-    if (startupConfig) {configLoadEmitter.emit('recieved');}
+    if (startupConfig) {
+      configLoadEmitter.emit('recieved');
+    }
   }, [startupConfig]);
 
   return (
@@ -38,10 +40,9 @@ export const SubscriptionProvider = ({
         value={{
           errorRetryInterval: 500,
           fetcher: async (args) => {
-            console.time('xx');
-            if (!startupConfig)
-            {await new Promise((resolve) => configLoadEmitter.once('recieved', resolve));}
-            console.timeEnd('xx');
+            if (!startupConfig) {
+              await new Promise((resolve) => configLoadEmitter.once('recieved', resolve));
+            }
             const data = await fetch(args, {
               headers: { Authorization: `Bearer ${token}` },
             });

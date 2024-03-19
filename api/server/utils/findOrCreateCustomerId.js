@@ -1,29 +1,33 @@
 const { clerkClient } = require('@clerk/clerk-sdk-node');
 const { stripeApiClient } = require('use-stripe-subscription');
 
-const findOrCreateCustomerId = async (clerkUserId) => {
-  let user = await clerkClient.users.getUser(clerkUserId);
-  if (user.publicMetadata.stripeCustomerId) {
-    return user.publicMetadata.stripeCustomerId;
+const findOrCreateCustomerId = async ({ clerkUserId, clerkOrgId }) => {
+  const orgPromise = clerkClient.organizations.getOrganization({ organizationId: clerkOrgId });
+  const userPromise = clerkClient.users.getUser(clerkUserId);
+  let [org, user] = await Promise.all([orgPromise, userPromise]);
+
+  if (org.publicMetadata.stripeCustomerId) {
+    return org.publicMetadata.stripeCustomerId;
   }
   const customerCreate = await stripeApiClient.customers.create(
     {
-      name: user.firstName + ' ' + user.lastName,
+      name: org.name,
       email: user.emailAddresses.find((x) => x.id === user.primaryEmailAddressId).emailAddress,
       metadata: {
-        clerkUserId: user.id,
+        clerkOrgId: org.id,
       },
     },
     {
-      idempotencyKey: user.id,
+      idempotencyKey: org.id,
     },
   );
-  user = await clerkClient.users.updateUser(user.id, {
+
+  org = await clerkClient.organizations.updateOrganization(org.id, {
     publicMetadata: {
       stripeCustomerId: customerCreate.id,
     },
   });
-  return user.publicMetadata.stripeCustomerId;
+  return org.publicMetadata.stripeCustomerId;
 };
 
 module.exports = findOrCreateCustomerId;

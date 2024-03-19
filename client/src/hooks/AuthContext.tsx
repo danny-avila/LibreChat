@@ -15,7 +15,7 @@ import { TAuthConfig, TUserContext, TAuthContext } from '~/common';
 import { useLogoutUserMutation } from '~/data-provider';
 import useTimeout from './useTimeout';
 import store from '~/store';
-import { useAuth, useSession } from '@clerk/clerk-react';
+import { useAuth, useSession, useUser, useOrganizationList } from '@clerk/clerk-react';
 
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
@@ -26,8 +26,9 @@ const AuthContextProvider = ({
   authConfig?: TAuthConfig;
   children: ReactNode;
 }) => {
-  const { isLoaded: isLoadedClerk, isSignedIn, getToken } = useAuth();
-  const { session } = useSession();
+  const { isLoaded: isLoadedClerk, isSignedIn, getToken, orgId } = useAuth();
+  const { user: clerkUser } = useUser();
+  const { setActive } = useOrganizationList();
 
   const [user, setUser] = useRecoilState(store.user);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -77,6 +78,25 @@ const AuthContextProvider = ({
   const logout = useCallback(() => logoutUser.mutate(undefined), [logoutUser]);
   const userQuery = useGetUserQuery({ enabled: !!token });
 
+  useEffect(() => {
+    if (isSignedIn) {
+      (async () => {
+        //console.log(await clerkUser?.getOrganizationInvitations());
+        const orgs = await clerkUser?.getOrganizationMemberships();
+        if (!orgs?.length || orgs?.length === 0) {
+          navigate('/create-org', { replace: true });
+        } else {
+          if (window.location.href.includes('/create-org')) {
+            navigate('/c/new', { replace: true });
+            if (setActive) {
+              setActive({ organization: orgs[0].organization.id });
+            }
+          }
+        }
+      })();
+    }
+  }, [isSignedIn, setActive, orgId]);
+
   function refreshToken() {
     getToken({ leewayInSeconds: 59, skipCache: false })
       .then((token) => {
@@ -91,7 +111,7 @@ const AuthContextProvider = ({
   }
 
   useEffect(() => {
-    if (!isLoadedClerk || !isSignedIn) {
+    if (!isLoadedClerk || !isSignedIn || !orgId) {
       return;
     }
     refreshToken();
@@ -102,9 +122,7 @@ const AuthContextProvider = ({
     if (isSignedIn) {
       setUserContext({ token, isAuthenticated: true, user: userQuery.data, redirect: undefined });
     } else if (isLoadedClerk) {
-      if (!window.location.href.includes('/register')) {
-        navigate('/login', { replace: true });
-      }
+      navigate('/login', { replace: true });
     }
   }, [
     token,
@@ -138,7 +156,6 @@ const useAuthContext = () => {
   if (context === undefined) {
     throw new Error('useAuthContext should be used inside AuthProvider');
   }
-
   return context;
 };
 

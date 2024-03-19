@@ -1,6 +1,6 @@
 import { useLocation } from 'react-router-dom';
-import { Fragment, useState, memo } from 'react';
-import { Download, FileText } from 'lucide-react';
+import { Fragment, useState, memo, useRef } from 'react';
+import { Building2, Download, FileText } from 'lucide-react';
 import { Menu, Transition } from '@headlessui/react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
@@ -11,12 +11,15 @@ import useAvatar from '~/hooks/Messages/useAvatar';
 import { ExportModal } from './ExportConversation';
 import { LinkIcon, GearIcon } from '~/components';
 import { UserIcon } from '~/components/svg';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useOnClickOutside } from '~/hooks';
 import Settings from './Settings';
 import NavLink from './NavLink';
 import Logout from './Logout';
 import { cn } from '~/utils/';
 import store from '~/store';
+import { CreateOrganization, OrganizationProfile } from '@clerk/clerk-react';
+import { useDarkMode } from '~/hooks/useDarkMode';
+import { dark } from '@clerk/themes';
 
 function NavLinks() {
   const localize = useLocalize();
@@ -27,11 +30,15 @@ function NavLinks() {
     enabled: !!isAuthenticated && startupConfig?.checkBalance,
   });
   const [showExports, setShowExports] = useState(false);
+
+  const [showOrgSettings, setShowOrgSettings] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
 
   const activeConvo = useRecoilValue(store.conversationByIndex(0));
   const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
+
+  const isDarkMode = useDarkMode();
 
   const avatarSrc = useAvatar(user);
 
@@ -54,11 +61,24 @@ function NavLinks() {
     }
   };
 
+  const orgPopoverRef = useRef(null);
+  useOnClickOutside(orgPopoverRef, () => setShowOrgSettings(false), ['org-settings']);
   return (
     <>
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
+            {showOrgSettings ? (
+              <div className="fixed bottom-0 left-0 right-0 top-0 z-[100] grid h-screen w-screen place-items-center backdrop-blur-md">
+                <div id="org-settings" ref={orgPopoverRef}>
+                  <OrganizationProfile
+                    appearance={{
+                      baseTheme: isDarkMode ? dark : undefined,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
             {startupConfig?.checkBalance && balanceQuery.data && (
               <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-black dark:text-gray-200">
                 {`Balance: ${balanceQuery.data}`}
@@ -139,6 +159,14 @@ function NavLinks() {
                     />
                   </Menu.Item>
                 )}
+                <Menu.Item as="div">
+                  <NavLink
+                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
+                    svg={() => <Building2 size="16" />}
+                    text="Manage Organization"
+                    clickHandler={() => setShowOrgSettings(true)}
+                  />
+                </Menu.Item>
                 <Menu.Item as="div">
                   <NavLink
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
