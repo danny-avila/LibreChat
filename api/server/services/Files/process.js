@@ -269,25 +269,34 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
 
-  let embeddedPromise;
+  let embedded = false;
   if (process.env.RAG_API_URL) {
-    const jwtToken = req.headers.authorization.split(' ')[1];
-    const filepath = `./uploads/temp/${file.path.split('uploads/temp/')[1]}`;
-    embeddedPromise = axios.post(
-      `${process.env.RAG_API_URL}/embed`,
-      {
-        filename: file.originalname,
-        file_content_type: file.mimetype,
-        filepath,
-        file_id,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${jwtToken}`,
-          'Content-Type': 'application/json',
+    try {
+      const jwtToken = req.headers.authorization.split(' ')[1];
+      const filepath = `./uploads/temp/${file.path.split('uploads/temp/')[1]}`;
+      const response = await axios.post(
+        `${process.env.RAG_API_URL}/embed`,
+        {
+          filename: file.originalname,
+          file_content_type: file.mimetype,
+          filepath,
+          file_id,
         },
-      },
-    );
+        {
+          headers: {
+            Authorization: `Bearer ${jwtToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      if (response.status === 200) {
+        embedded = true;
+      }
+    } catch (error) {
+      logger.error('Error embedding file', error);
+      throw new Error(error);
+    }
   }
 
   /** @type {OpenAI | undefined} */
@@ -296,7 +305,6 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
     ({ openai } = await initializeClient({ req }));
   }
 
-  const embedded = !!(embeddedPromise ? (await embeddedPromise).data : null);
   const { id, bytes, filename, filepath } = await handleFileUpload({ req, file, file_id, openai });
 
   if (isAssistantUpload && !metadata.message_file) {
