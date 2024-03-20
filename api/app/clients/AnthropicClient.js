@@ -6,10 +6,9 @@ const {
   validateVisionModel,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { formatMessage, createContextHandlers } = require('./prompts');
 const spendTokens = require('~/models/spendTokens');
 const { getModelMaxTokens } = require('~/utils');
-const { formatMessage } = require('./prompts');
-const { getFiles } = require('~/models/File');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -67,7 +66,7 @@ class AnthropicClient extends BaseClient {
     this.useMessages = this.isClaude3 || !!this.options.attachments;
 
     this.defaultVisionModel = this.options.visionModel ?? 'claude-3-sonnet-20240229';
-    this.checkVisionRequest(this.options.attachments);
+    this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
     this.maxContextTokens =
       getModelMaxTokens(this.modelOptions.model, EModelEndpoint.anthropic) ?? 100000;
@@ -134,14 +133,19 @@ class AnthropicClient extends BaseClient {
    * - Sets `this.modelOptions.model` to `gpt-4-vision-preview` if the request is a vision request.
    * - Sets `this.isVisionModel` to `true` if vision request.
    * - Deletes `this.modelOptions.stop` if vision request.
-   * @param {Array<Promise<MongoFile[]> | MongoFile[]> | Record<string, MongoFile[]>} attachments
+   * @param {MongoFile[]} attachments
    */
   checkVisionRequest(attachments) {
     const availableModels = this.options.modelsConfig?.[EModelEndpoint.anthropic];
     this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
 
     const visionModelAvailable = availableModels?.includes(this.defaultVisionModel);
-    if (attachments && visionModelAvailable && !this.isVisionModel) {
+    if (
+      attachments &&
+      attachments.some((file) => file?.type && file?.type?.includes('image')) &&
+      visionModelAvailable &&
+      !this.isVisionModel
+    ) {
       this.modelOptions.model = this.defaultVisionModel;
       this.isVisionModel = true;
     }
@@ -168,7 +172,7 @@ class AnthropicClient extends BaseClient {
       attachments,
       EModelEndpoint.anthropic,
     );
-    message.image_urls = image_urls;
+    message.image_urls = image_urls.length ? image_urls : undefined;
     return files;
   }
 
@@ -186,54 +190,6 @@ class AnthropicClient extends BaseClient {
     );
   }
 
-  /**
-   *
-   * @param {TMessage[]} _messages
-   * @returns {TMessage[]}
-   */
-  async addPreviousAttachments(_messages) {
-    if (!this.options.resendImages) {
-      return _messages;
-    }
-
-    /**
-     *
-     * @param {TMessage} message
-     */
-    const processMessage = async (message) => {
-      if (!this.message_file_map) {
-        /** @type {Record<string, MongoFile[]> */
-        this.message_file_map = {};
-      }
-
-      const fileIds = message.files.map((file) => file.file_id);
-      const files = await getFiles({
-        file_id: { $in: fileIds },
-      });
-
-      await this.addImageURLs(message, files);
-
-      this.message_file_map[message.messageId] = files;
-      return message;
-    };
-
-    const promises = [];
-
-    for (const message of _messages) {
-      if (!message.files) {
-        promises.push(message);
-        continue;
-      }
-
-      promises.push(processMessage(message));
-    }
-
-    const messages = await Promise.all(promises);
-
-    this.checkVisionRequest(this.message_file_map);
-    return messages;
-  }
-
   async buildMessages(messages, parentMessageId) {
     const orderedMessages = this.constructor.getMessagesForConversation({
       messages,
@@ -242,12 +198,13 @@ class AnthropicClient extends BaseClient {
 
     logger.debug('[AnthropicClient] orderedMessages', { orderedMessages, parentMessageId });
 
-    if (!this.isVisionModel && this.options.attachments) {
-      throw new Error('Attachments are only supported with the Claude 3 family of models');
-    } else if (this.options.attachments) {
-      const attachments = (await this.options.attachments).filter((file) =>
-        file.type.includes('image'),
-      );
+    if (this.options.attachments) {
+      const attachments = await this.options.attachments;
+      const images = attachments.filter((file) => file.type.includes('image'));
+
+      if (images.length && !this.isVisionModel) {
+        throw new Error('Images are only supported with the Claude 3 family of models');
+      }
 
       const latestMessage = orderedMessages[orderedMessages.length - 1];
 
@@ -262,6 +219,13 @@ class AnthropicClient extends BaseClient {
       const files = await this.addImageURLs(latestMessage, attachments);
 
       this.options.attachments = files;
+    }
+
+    if (this.message_file_map) {
+      this.contextHandlers = createContextHandlers(
+        this.options.req,
+        orderedMessages[orderedMessages.length - 1].text,
+      );
     }
 
     const formattedMessages = orderedMessages.map((message, i) => {
@@ -285,6 +249,11 @@ class AnthropicClient extends BaseClient {
       if (this.message_file_map && this.message_file_map[message.messageId]) {
         const attachments = this.message_file_map[message.messageId];
         for (const file of attachments) {
+          if (file.embedded) {
+            this.contextHandlers?.processFile(file);
+            continue;
+          }
+
           orderedMessages[i].tokenCount += this.calculateImageTokenCost({
             width: file.width,
             height: file.height,
@@ -295,6 +264,11 @@ class AnthropicClient extends BaseClient {
       formattedMessage.tokenCount = orderedMessages[i].tokenCount;
       return formattedMessage;
     });
+
+    if (this.contextHandlers) {
+      this.augmentedPrompt = await this.contextHandlers.createContext();
+      this.options.promptPrefix = this.augmentedPrompt + (this.options.promptPrefix ?? '');
+    }
 
     let { context: messagesInWindow, remainingContextTokens } =
       await this.getMessagesWithinTokenLimit(formattedMessages);
@@ -389,7 +363,7 @@ class AnthropicClient extends BaseClient {
     let isEdited = lastAuthor === this.assistantLabel;
     const promptSuffix = isEdited ? '' : `${promptPrefix}${this.assistantLabel}\n`;
     let currentTokenCount =
-      isEdited || this.useMEssages
+      isEdited || this.useMessages
         ? this.getTokenCount(promptPrefix)
         : this.getTokenCount(promptSuffix);
 
@@ -663,6 +637,7 @@ class AnthropicClient extends BaseClient {
     return {
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
+      resendFiles: this.options.resendFiles,
       ...this.modelOptions,
     };
   }

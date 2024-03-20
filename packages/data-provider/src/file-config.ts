@@ -109,7 +109,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-c\+\+|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|javascript|csv))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|pdf|x-tar|typescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp)$/;
 
@@ -147,9 +147,9 @@ export const fileConfig = {
     },
     default: {
       fileLimit: 10,
-      fileSizeLimit: mbToBytes(20),
-      totalSizeLimit: mbToBytes(25),
-      supportedMimeTypes: [imageMimeTypes],
+      fileSizeLimit: mbToBytes(512),
+      totalSizeLimit: mbToBytes(512),
+      supportedMimeTypes,
       disabled: false,
     },
   },

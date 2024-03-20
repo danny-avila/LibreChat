@@ -28,7 +28,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     top_p: topP,
     frequency_penalty: freqP,
     presence_penalty: presP,
-    resendImages,
+    resendFiles,
     imageDetail,
   } = conversation ?? {};
   const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput({
@@ -67,7 +67,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   }
 
   const setModel = setOption('model');
-  const setResendImages = setOption('resendImages');
+  const setResendFiles = setOption('resendFiles');
   const setImageDetail = setOption('imageDetail');
 
   const optionEndpoint = endpointType ?? endpoint;
@@ -283,10 +283,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <div className="w-full">
           <div className="mb-2 flex w-full justify-between gap-2">
             <label
-              htmlFor="resend-images"
+              htmlFor="resend-files"
               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
             >
-              <small>{localize('com_endpoint_plug_resend_images')}</small>
+              <small>{localize('com_endpoint_plug_resend_files')}</small>
             </label>
             <label
               htmlFor="image-detail-value"
@@ -310,9 +310,9 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <HoverCard openDelay={500}>
               <HoverCardTrigger>
                 <Switch
-                  id="resend-images"
-                  checked={resendImages ?? false}
-                  onCheckedChange={(checked: boolean) => setResendImages(checked)}
+                  id="resend-files"
+                  checked={resendFiles ?? true}
+                  onCheckedChange={(checked: boolean) => setResendFiles(checked)}
                   disabled={readonly}
                   className="flex"
                 />
