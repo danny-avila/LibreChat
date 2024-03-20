@@ -411,10 +411,6 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         return;
       }
 
-      const streamRun = openai.beta.threads.runs.createAndStream(thread_id, body, {
-        // signal: res,
-      });
-
       const streamRunManager = new StreamRunManager({
         req,
         res,
@@ -424,10 +420,15 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         handlers: {
           [AssistantStreamEvents.ThreadRunCreated]: async () => sendInitialResponse(),
         },
+        // streamOptions: {
+
+        // },
       });
-      for await (const event of streamRun) {
-        await streamRunManager.handleEvent(event);
-      }
+
+      await streamRunManager.runAssistant({
+        thread_id,
+        body,
+      });
 
       response = streamRunManager;
     };

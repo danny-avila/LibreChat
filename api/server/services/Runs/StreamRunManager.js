@@ -1,13 +1,14 @@
 const path = require('path');
 const {
-  AssistantStreamEvents,
   StepTypes,
   ContentTypes,
-  MessageContentTypes,
   ToolCallTypes,
   // StepStatus,
+  MessageContentTypes,
+  AssistantStreamEvents,
 } = require('librechat-data-provider');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
+const { processRequiredActions } = require('~/server/services/ToolService');
 const { createOnProgress, sendMessage } = require('~/server/utils');
 const { processMessages } = require('~/server/services/Threads');
 const { logger } = require('~/config');
@@ -21,13 +22,17 @@ class StreamRunManager {
     this.orderedRunSteps = new Map();
     this.processedFileIds = new Set();
     this.progressCallbacks = new Map();
+    this.submittedToolOutputs = false;
     this.run = null;
 
     this.req = fields.req;
     this.res = fields.res;
     this.openai = fields.openai;
+    this.apiKey = this.openai.apiKey;
     this.thread_id = fields.thread_id;
+    this.initialRunBody = fields.runBody;
     this.clientHandlers = fields.handlers ?? {};
+    this.streamOptions = fields.streamOptions ?? {};
     this.finalMessage = fields.responseMessage ?? {};
     this.messages = [];
     this.text = '';
@@ -81,6 +86,20 @@ class StreamRunManager {
     sendMessage(this.res, contentData);
   }
 
+  /* <------------------ Main Event Handlers ------------------> */
+
+  async runAssistant({ thread_id, body }) {
+    const streamRun = this.openai.beta.threads.runs.createAndStream(
+      thread_id,
+      body,
+      this.streamOptions,
+    );
+    for await (const event of streamRun) {
+      await this.handleEvent(event);
+    }
+    // if run requires action, call recursively
+  }
+
   async handleEvent(event) {
     logger.debug(event.event);
     const handler = this.handlers[event.event];
@@ -114,6 +133,11 @@ class StreamRunManager {
   async handleRunEvent(event) {
     this.run = event.data;
     logger.debug('Run event:', this.run);
+    if (event.event === AssistantStreamEvents.ThreadRunRequiresAction) {
+      await this.onRunRequiresAction(event);
+    } else if (event.event === AssistantStreamEvents.ThreadRunCompleted) {
+      logger.debug('Run completed:', this.run);
+    }
   }
 
   /**
@@ -128,9 +152,9 @@ class StreamRunManager {
     this.steps.set(step.id, step);
 
     if (event.event === AssistantStreamEvents.ThreadRunStepCreated) {
-      this.runStepCreated(event);
+      this.onRunStepCreated(event);
     } else if (event.event === AssistantStreamEvents.ThreadRunStepCompleted) {
-      this.runStepCompleted(event);
+      this.onRunStepCompleted(event);
     }
   }
 
@@ -261,6 +285,7 @@ class StreamRunManager {
   handleNewToolCall(stepId, toolCall) {
     const stepKey = this.generateToolCallKey(stepId, toolCall);
     const index = this.getStepIndex(stepKey);
+    this.getStepIndex(toolCall.id, index);
     toolCall.progress = 0.01;
     this.orderedRunSteps.set(index, toolCall);
     const progressCallback = this.createToolCallStream(index, toolCall);
@@ -289,10 +314,6 @@ class StreamRunManager {
       type: ContentTypes.TOOL_CALL,
       index,
     });
-  }
-
-  generateToolCallKey(stepId, toolCall) {
-    return `${stepId}_tool_call_${toolCall.index}_${toolCall.type}`;
   }
 
   /**
@@ -361,10 +382,17 @@ class StreamRunManager {
    * Gets the step index for a given step key, creating a new index if it doesn't exist.
    * @param {string} stepKey -
    * The access key for the step. Either a message.id, tool_call key, or file_id.
-   * @returns {number | undefined} index - The index of the step; `undefined` if invalid key.
+   * @param {number | undefined} [overrideIndex] - An override index to use an alternative stepKey.
+   * This is necessary due to the toolCall Id being unavailable in delta stream events.
+   * @returns {number | undefined} index - The index of the step; `undefined` if invalid key or using overrideIndex.
    */
-  getStepIndex(stepKey) {
+  getStepIndex(stepKey, overrideIndex) {
     if (!stepKey) {
+      return;
+    }
+
+    if (!isNaN(overrideIndex)) {
+      this.mappedOrder.set(stepKey, overrideIndex);
       return;
     }
 
@@ -379,6 +407,48 @@ class StreamRunManager {
     return index;
   }
 
+  generateToolCallKey(stepId, toolCall) {
+    return `${stepId}_tool_call_${toolCall.index}_${toolCall.type}`;
+  }
+
+  /* <------------------ Run Event handlers ------------------> */
+
+  /**
+   * Handle Run Events Requiring Action
+   * @param {ThreadRunRequiresAction} event -
+   * The run event object requiring action.
+   */
+  async onRunRequiresAction(event) {
+    const run = event.data;
+    const { submit_tool_outputs } = run.required_action;
+    const actions = submit_tool_outputs.tool_calls.map((item) => {
+      const functionCall = item.function;
+      const args = JSON.parse(functionCall.arguments);
+      return {
+        tool: functionCall.name,
+        toolInput: args,
+        toolCallId: item.id,
+        run_id: run.id,
+        thread_id: this.thread_id,
+      };
+    });
+
+    const { tool_outputs } = await processRequiredActions(this, actions);
+    const toolRun = this.openai.beta.threads.runs.submitToolOutputsStream(
+      run.thread_id,
+      run.id,
+      {
+        tool_outputs,
+        stream: true,
+      },
+      this.streamOptions,
+    );
+
+    for await (const event of toolRun) {
+      await this.handleEvent(event);
+    }
+  }
+
   /* <------------------ RunStep Event handlers ------------------> */
 
   /**
@@ -386,7 +456,7 @@ class StreamRunManager {
    * @param {ThreadRunStepCreated} event -
    * The created run step event object.
    */
-  async runStepCreated(event) {
+  async onRunStepCreated(event) {
     const step = event.data;
     const isMessage = step.type === StepTypes.MESSAGE_CREATION;
 
@@ -435,7 +505,7 @@ class StreamRunManager {
    * @param {ThreadRunStepCompleted} event -
    * The completed run step event object.
    */
-  async runStepCompleted(event) {
+  async onRunStepCompleted(event) {
     const step = event.data;
     const isMessage = step.type === StepTypes.MESSAGE_CREATION;
 
