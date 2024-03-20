@@ -229,6 +229,7 @@ function createInProgressHandler(openai, thread_id, messages) {
             const { file_id } = output.image;
             const file = await retrieveAndProcessFile({
               openai,
+              client: openai,
               file_id,
               basename: `${file_id}.png`,
             });
