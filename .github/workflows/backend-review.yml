@@ -35,6 +35,12 @@ jobs:
 
       - name: Install Data Provider
         run: npm run build:data-provider
+      
+      - name: Create empty auth.json file
+        working-directory: ./api/data
+        run: |
+          mkdir -p ./api/data
+          echo '{}' > auth.json
 
       - name: Check for Circular dependency in rollup
         working-directory: ./packages/data-provider
