@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  db:
+  vectordb:
     image: ankane/pgvector:latest
     environment:
       POSTGRES_DB: mydatabase
@@ -15,7 +15,7 @@ services:
   rag_api:
     image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
     environment:
-      - DB_HOST=db
+      - DB_HOST=vectordb
       - DB_PORT=5432
       - POSTGRES_DB=mydatabase
       - POSTGRES_USER=myuser
@@ -25,7 +25,7 @@ services:
     volumes:
       - ./uploads/temp:/app/uploads/temp
     depends_on:
-      - db
+      - vectordb
     env_file:
       - .env
 
