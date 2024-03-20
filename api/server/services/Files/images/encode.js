@@ -39,6 +39,11 @@ async function encodeAndFormat(req, files, endpoint) {
   for (let file of files) {
     const source = file.source ?? FileSources.local;
 
+    if (!file.height) {
+      promises.push([file, null]);
+      continue;
+    }
+
     if (!encodingMethods[source]) {
       const { prepareImagePayload } = getStrategyFunctions(source);
       if (!prepareImagePayload) {
@@ -70,6 +75,24 @@ async function encodeAndFormat(req, files, endpoint) {
   };
 
   for (const [file, imageContent] of formattedImages) {
+    const fileMetadata = {
+      type: file.type,
+      file_id: file.file_id,
+      filepath: file.filepath,
+      filename: file.filename,
+      embedded: !!file.embedded,
+    };
+
+    if (file.height && file.width) {
+      fileMetadata.height = file.height;
+      fileMetadata.width = file.width;
+    }
+
+    if (!imageContent) {
+      result.files.push(fileMetadata);
+      continue;
+    }
+
     const imagePart = {
       type: 'image_url',
       image_url: {
@@ -93,15 +116,7 @@ async function encodeAndFormat(req, files, endpoint) {
     }
 
     result.image_urls.push(imagePart);
-
-    result.files.push({
-      file_id: file.file_id,
-      // filepath: file.filepath,
-      // filename: file.filename,
-      // type: file.type,
-      // height: file.height,
-      // width: file.width,
-    });
+    result.files.push(fileMetadata);
   }
   return result;
 }

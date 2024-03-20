@@ -165,9 +165,10 @@ const useNewConvo = (index = 0) => {
 
       if (conversation.conversationId === 'new' && !modelsData) {
         const filesToDelete = Array.from(files.values())
-          .filter((file) => file.filepath && file.source)
+          .filter((file) => file.filepath && file.source && !file.embedded && file.temp_file_id)
           .map((file) => ({
             file_id: file.file_id,
+            embedded: !!file.embedded,
             filepath: file.filepath as string,
             source: file.source as FileSources, // Ensure that the source is of type FileSources
           }));

@@ -69,7 +69,7 @@ const updateFileUsage = async (data) => {
   const { file_id, inc = 1 } = data;
   const updateOperation = {
     $inc: { usage: inc },
-    $unset: { expiresAt: '' },
+    $unset: { expiresAt: '', temp_file_id: '' },
   };
   return await File.findOneAndUpdate({ file_id }, updateOperation, { new: true }).lean();
 };
