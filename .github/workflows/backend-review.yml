@@ -33,6 +33,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Data Provider
+        run: npm run build:data-provider
+
       - name: Check for Circular dependency in rollup
         working-directory: ./packages/data-provider
         run: |
@@ -42,9 +45,6 @@ jobs:
             echo "Error: Circular dependency detected!"
             exit 1
           fi
-
-      - name: Install Data Provider
-        run: npm run build:data-provider
 
       - name: Run unit tests
         run: cd api && npm run test:ci
