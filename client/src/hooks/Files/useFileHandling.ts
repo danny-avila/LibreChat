@@ -166,7 +166,27 @@ const useFileHandling = (params?: UseFileHandling) => {
     }
 
     for (let i = 0; i < fileList.length; i++) {
-      const originalFile = fileList[i];
+      let originalFile = fileList[i];
+      let fileType = originalFile.type;
+
+      // Infer MIME type for Markdown files when the type is empty
+      if (!fileType && originalFile.name.endsWith('.md')) {
+        fileType = 'text/markdown';
+      }
+
+      // Check if the file type is still empty after the extension check
+      if (!fileType) {
+        setError('Unable to determine file type for: ' + originalFile.name);
+        return false;
+      }
+
+      // Replace empty type with inferred type
+      if (originalFile.type !== fileType) {
+        const newFile = new File([originalFile], originalFile.name, { type: fileType });
+        originalFile = newFile;
+        fileList[i] = newFile;
+      }
+
       if (!checkType(originalFile.type, supportedMimeTypes)) {
         console.log(originalFile);
         setError('Currently, unsupported file type: ' + originalFile.type);
