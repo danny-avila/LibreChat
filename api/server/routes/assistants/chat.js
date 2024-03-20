@@ -416,7 +416,9 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       });
 
       const streamRunManager = new StreamRunManager({
+        req,
         res,
+        openai,
         thread_id,
         responseMessage: openai.responseMessage,
         handlers: {
