@@ -153,6 +153,18 @@
  */
 
 /**
+ * @exports ToolCallDeltaObject
+ * @typedef {import('openai').default.Beta.Threads.Runs.Steps.ToolCallDeltaObject} ToolCallDeltaObject
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ToolCallDelta
+ * @typedef {import('openai').default.Beta.Threads.Runs.Steps.ToolCallDelta} ToolCallDelta
+ * @memberof typedefs
+ */
+
+/**
  * @exports Assistant
  * @typedef {import('librechat-data-provider').Assistant} Assistant
  * @memberof typedefs
