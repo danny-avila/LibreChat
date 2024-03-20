@@ -6,7 +6,7 @@ const { isEnabled } = require('~/server/utils');
  * @returns {string} The sanitized model name.
  */
 const sanitizeModelName = (modelName) => {
-  // Replace periods with empty strings and other disallowed characters as needed
+  // Replace periods with empty strings and other disallowed characters as needed.
   return modelName.replace(/\./g, '');
 };
 
