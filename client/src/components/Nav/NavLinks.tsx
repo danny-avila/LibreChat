@@ -62,7 +62,15 @@ function NavLinks() {
   };
 
   const orgPopoverRef = useRef(null);
-  useOnClickOutside(orgPopoverRef, () => setShowOrgSettings(false), ['org-settings']);
+  useOnClickOutside(
+    orgPopoverRef,
+    () => setShowOrgSettings(false),
+    ['org-settings'],
+    (_target) => {
+      const target = _target as Element;
+      return target?.className.includes('cl-');
+    },
+  );
   return (
     <>
       <Menu as="div" className="group relative">
