@@ -1,9 +1,13 @@
+const path = require('path');
 const {
   AssistantStreamEvents,
   StepTypes,
   ContentTypes,
   MessageContentTypes,
+  ToolCallTypes,
+  // StepStatus,
 } = require('librechat-data-provider');
+const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { createOnProgress, sendMessage } = require('~/server/utils');
 const { processMessages } = require('~/server/services/Threads');
 const { logger } = require('~/config');
@@ -12,7 +16,9 @@ class StreamRunManager {
   constructor(fields) {
     this.index = 0;
     this.steps = new Map();
+
     this.mappedOrder = new Map();
+    this.orderedRunSteps = new Map();
     this.processedFileIds = new Set();
     this.progressCallbacks = new Map();
     this.run = null;
@@ -123,7 +129,170 @@ class StreamRunManager {
 
     if (event.event === AssistantStreamEvents.ThreadRunStepCreated) {
       this.runStepCreated(event);
+    } else if (event.event === AssistantStreamEvents.ThreadRunStepCompleted) {
+      this.runStepCompleted(event);
     }
+  }
+
+  /* <------------------ Delta Events ------------------> */
+
+  /** @param {CodeImageOutput} */
+  async handleCodeImageOutput(output) {
+    if (this.processedFileIds.has(output.image?.file_id)) {
+      return;
+    }
+
+    const { file_id } = output.image;
+    const file = await retrieveAndProcessFile({
+      openai: this.openai,
+      client: this,
+      file_id,
+      basename: `${file_id}.png`,
+    });
+    // toolCall.asset_pointer = file.filepath;
+    const prelimImage = {
+      file_id,
+      filename: path.basename(file.filepath),
+      filepath: file.filepath,
+      height: file.height,
+      width: file.width,
+    };
+    // check if every key has a value before adding to content
+    const prelimImageKeys = Object.keys(prelimImage);
+    const validImageFile = prelimImageKeys.every((key) => prelimImage[key]);
+
+    if (!validImageFile) {
+      return;
+    }
+
+    const index = this.getStepIndex(file_id);
+    const image_file = {
+      [ContentTypes.IMAGE_FILE]: prelimImage,
+      type: ContentTypes.IMAGE_FILE,
+      index,
+    };
+    this.addContentData(image_file);
+    this.processedFileIds.add(file_id);
+  }
+
+  /**
+   * Create Tool Call Stream
+   * @param {number} index - The index of the tool call.
+   * @param {StepToolCall} toolCall -
+   * The current tool call object.
+   */
+  createToolCallStream(index, toolCall) {
+    /** @type {StepToolCall} */
+    const state = toolCall;
+    const type = state.type;
+    const data = state[type];
+
+    /** @param {ToolCallDelta} */
+    const deltaHandler = async (delta) => {
+      console.log('Tool call delta:', delta);
+
+      for (const key in delta) {
+        if (!Object.prototype.hasOwnProperty.call(data, key)) {
+          logger.warn(`Unhandled tool call key "${key}", delta: `, delta);
+          continue;
+        }
+
+        if (Array.isArray(delta[key])) {
+          if (!Array.isArray(data[key])) {
+            data[key] = [];
+          }
+
+          for (const d of delta[key]) {
+            if (typeof d === 'object' && !Object.prototype.hasOwnProperty.call(d, 'index')) {
+              logger.warn('Expected an object with an \'index\' for array updates but got:', d);
+              continue;
+            }
+
+            const imageOutput = type === ToolCallTypes.CODE_INTERPRETER && d?.type === 'image';
+
+            if (imageOutput) {
+              await this.handleCodeImageOutput(d);
+              continue;
+            }
+
+            const { index, ...updateData } = d;
+            // Ensure the data at index is an object or undefined before assigning
+            if (typeof data[key][index] !== 'object' || data[key][index] === null) {
+              data[key][index] = {};
+            }
+            // Merge the updateData into data[key][index]
+            for (const updateKey in updateData) {
+              data[key][index][updateKey] = updateData[updateKey];
+            }
+          }
+        } else if (typeof delta[key] === 'string' && typeof data[key] === 'string') {
+          // Concatenate strings
+          data[key] += delta[key];
+        } else if (
+          typeof delta[key] === 'object' &&
+          delta[key] !== null &&
+          !Array.isArray(delta[key])
+        ) {
+          // Merge objects
+          data[key] = { ...data[key], ...delta[key] };
+        } else {
+          // Directly set the value for other types
+          data[key] = delta[key];
+        }
+
+        state[type] = data;
+
+        this.addContentData({
+          [ContentTypes.TOOL_CALL]: toolCall,
+          type: ContentTypes.TOOL_CALL,
+          index,
+        });
+      }
+    };
+
+    return deltaHandler;
+  }
+
+  /**
+   * @param {string} stepId -
+   * @param {StepToolCall} toolCall -
+   *
+   */
+  handleNewToolCall(stepId, toolCall) {
+    const stepKey = this.generateToolCallKey(stepId, toolCall);
+    const index = this.getStepIndex(stepKey);
+    toolCall.progress = 0.01;
+    this.orderedRunSteps.set(index, toolCall);
+    const progressCallback = this.createToolCallStream(index, toolCall);
+    this.progressCallbacks.set(stepKey, progressCallback);
+
+    this.addContentData({
+      [ContentTypes.TOOL_CALL]: toolCall,
+      type: ContentTypes.TOOL_CALL,
+      index,
+    });
+  }
+
+  /**
+   * Handle Completed Tool Call
+   * @param {string} stepId - The id of the step the tool_call is part of.
+   * @param {StepToolCall} toolCall - The tool call object.
+   *
+   */
+  handleCompletedToolCall(stepId, toolCall) {
+    const stepKey = this.generateToolCallKey(stepId, toolCall);
+    const index = this.getStepIndex(stepKey);
+    toolCall.progress = 1;
+    this.orderedRunSteps.set(index, toolCall);
+    this.addContentData({
+      [ContentTypes.TOOL_CALL]: toolCall,
+      type: ContentTypes.TOOL_CALL,
+      index,
+    });
+  }
+
+  generateToolCallKey(stepId, toolCall) {
+    return `${stepId}_tool_call_${toolCall.index}_${toolCall.type}`;
   }
 
   /**
@@ -133,17 +302,32 @@ class StreamRunManager {
    */
   async handleRunStepDeltaEvent(event) {
     logger.debug('Run step delta event:', event.data);
-  }
+    const { delta, id: stepId } = event.data;
 
-  /**
-   * Handle Message Event
-   * @param {ThreadMessageCreated | ThreadMessageInProgress | ThreadMessageCompleted | ThreadMessageIncomplete} event -
-   * The Message event object.
-   */
-  async handleMessageEvent(event) {
-    logger.debug('Message event:', event.data);
-    if (event.event === AssistantStreamEvents.ThreadMessageCompleted) {
-      this.messageCompleted(event);
+    if (!delta.step_details) {
+      logger.warn('Undefined or unhandled run step delta:', delta);
+      return;
+    }
+
+    /** @type {{ tool_calls: Array<ToolCallDeltaObject> }} */
+    const { tool_calls } = delta.step_details;
+
+    if (!tool_calls) {
+      logger.warn('Unhandled run step details', delta.step_details);
+      return;
+    }
+
+    for (const toolCall of tool_calls) {
+      const stepKey = this.generateToolCallKey(stepId, toolCall);
+
+      if (!this.mappedOrder.has(stepKey)) {
+        this.handleNewToolCall(stepId, toolCall);
+        continue;
+      }
+
+      const toolCallDelta = toolCall[toolCall.type];
+      const progressCallback = this.progressCallbacks.get(stepKey);
+      await progressCallback(toolCallDelta);
     }
   }
 
@@ -154,7 +338,6 @@ class StreamRunManager {
    */
   async handleMessageDeltaEvent(event) {
     const message = event.data;
-    logger.debug('Message delta event:', message);
     const onProgress = this.progressCallbacks.get(message.id);
     const content = message.delta.content?.[0];
 
@@ -172,6 +355,30 @@ class StreamRunManager {
     logger.error('Error event:', event.data);
   }
 
+  /* <------------------ Misc. Helpers ------------------> */
+
+  /**
+   * Gets the step index for a given step key, creating a new index if it doesn't exist.
+   * @param {string} stepKey -
+   * The access key for the step. Either a message.id, tool_call key, or file_id.
+   * @returns {number | undefined} index - The index of the step; `undefined` if invalid key.
+   */
+  getStepIndex(stepKey) {
+    if (!stepKey) {
+      return;
+    }
+
+    let index = this.mappedOrder.get(stepKey);
+
+    if (index === undefined) {
+      index = this.index;
+      this.mappedOrder.set(stepKey, this.index);
+      this.index++;
+    }
+
+    return index;
+  }
+
   /* <------------------ RunStep Event handlers ------------------> */
 
   /**
@@ -182,25 +389,19 @@ class StreamRunManager {
   async runStepCreated(event) {
     const step = event.data;
     const isMessage = step.type === StepTypes.MESSAGE_CREATION;
-    const stepKey = isMessage
-      ? // `message_id` is used since message delta events don't reference the step.id
-      step.step_details.message_creation.message_id
-      : step.id;
-
-    let index = this.mappedOrder.get(stepKey);
-    if (index === undefined) {
-      index = this.index;
-      this.mappedOrder.set(stepKey, this.index);
-      this.index++;
-    }
-
-    // Create the Factory Function to stream the message
-    const { onProgress: progressCallback } = createOnProgress({
-      // todo: add option to save partialText to db
-      // onProgress: () => {},
-    });
 
     if (isMessage) {
+      /** @type {MessageCreationStepDetails} */
+      const { message_creation } = step.step_details;
+      const stepKey = message_creation.message_id;
+      const index = this.getStepIndex(stepKey);
+      this.orderedRunSteps.set(index, message_creation);
+      // Create the Factory Function to stream the message
+      const { onProgress: progressCallback } = createOnProgress({
+        // todo: add option to save partialText to db
+        // onProgress: () => {},
+      });
+
       // This creates a function that attaches all of the parameters
       // specified here to each SSE message generated by the TextStream
       const onProgress = progressCallback({
@@ -213,12 +414,58 @@ class StreamRunManager {
       });
 
       this.progressCallbacks.set(stepKey, onProgress);
-    } else {
-      // WIP: handle tool_calls step types
+      this.orderedRunSteps.set(index, step);
+      return;
+    }
+
+    if (step.type !== StepTypes.TOOL_CALLS) {
+      logger.warn('Unhandled step creation type:', step.type);
+      return;
+    }
+
+    /** @type {{ tool_calls: StepToolCall[] }} */
+    const { tool_calls } = step.step_details;
+    for (const toolCall of tool_calls) {
+      this.handleNewToolCall(step.id, toolCall);
+    }
+  }
+
+  /**
+   * Handle Run Step Completed Events
+   * @param {ThreadRunStepCompleted} event -
+   * The completed run step event object.
+   */
+  async runStepCompleted(event) {
+    const step = event.data;
+    const isMessage = step.type === StepTypes.MESSAGE_CREATION;
+
+    if (isMessage) {
+      logger.warn('RunStep Message completion: to be handled by Message Event.', step);
+      return;
+    }
+
+    /** @type {{ tool_calls: StepToolCall[] }} */
+    const { tool_calls } = step.step_details;
+    for (let i = 0; i < tool_calls.length; i++) {
+      const toolCall = tool_calls[i];
+      toolCall.index = i;
+      this.handleCompletedToolCall(step.id, toolCall);
     }
   }
 
   /* <------------------ Message Event handlers ------------------> */
+
+  /**
+   * Handle Message Event
+   * @param {ThreadMessageCreated | ThreadMessageInProgress | ThreadMessageCompleted | ThreadMessageIncomplete} event -
+   * The Message event object.
+   */
+  async handleMessageEvent(event) {
+    // logger.debug('Message event:', event.data);
+    if (event.event === AssistantStreamEvents.ThreadMessageCompleted) {
+      this.messageCompleted(event);
+    }
+  }
 
   /**
    * Handle Message Completed Events
