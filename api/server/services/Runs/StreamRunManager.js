@@ -97,11 +97,9 @@ class StreamRunManager {
     for await (const event of streamRun) {
       await this.handleEvent(event);
     }
-    // if run requires action, call recursively
   }
 
   async handleEvent(event) {
-    logger.debug(event.event);
     const handler = this.handlers[event.event];
     const clientHandler = this.clientHandlers[event.event];
 
@@ -213,8 +211,6 @@ class StreamRunManager {
 
     /** @param {ToolCallDelta} */
     const deltaHandler = async (delta) => {
-      console.log('Tool call delta:', delta);
-
       for (const key in delta) {
         if (!Object.prototype.hasOwnProperty.call(data, key)) {
           logger.warn(`Unhandled tool call key "${key}", delta: `, delta);
@@ -305,6 +301,10 @@ class StreamRunManager {
    *
    */
   handleCompletedToolCall(stepId, toolCall) {
+    if (toolCall.type === ToolCallTypes.FUNCTION) {
+      return;
+    }
+
     const stepKey = this.generateToolCallKey(stepId, toolCall);
     const index = this.getStepIndex(stepKey);
     toolCall.progress = 1;
@@ -322,7 +322,6 @@ class StreamRunManager {
    * The run step delta event object.
    */
   async handleRunStepDeltaEvent(event) {
-    logger.debug('Run step delta event:', event.data);
     const { delta, id: stepId } = event.data;
 
     if (!delta.step_details) {
@@ -531,7 +530,6 @@ class StreamRunManager {
    * The Message event object.
    */
   async handleMessageEvent(event) {
-    // logger.debug('Message event:', event.data);
     if (event.event === AssistantStreamEvents.ThreadMessageCompleted) {
       this.messageCompleted(event);
     }
