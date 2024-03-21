@@ -82,7 +82,6 @@ class StreamRunManager {
       conversationId: this.finalMessage.conversationId,
     };
 
-    logger.debug('Content data:', contentData);
     sendMessage(this.res, contentData);
   }
 
