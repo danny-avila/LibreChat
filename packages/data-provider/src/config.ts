@@ -221,6 +221,7 @@ export type TCustomConfig = z.infer<typeof configSchema>;
 
 export enum KnownEndpoints {
   mistral = 'mistral',
+  shuttleai = 'shuttleai',
   openrouter = 'openrouter',
   groq = 'groq',
   anyscale = 'anyscale',
