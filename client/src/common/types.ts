@@ -312,6 +312,7 @@ export interface ExtendedFile {
   progress: number;
   source?: FileSources;
   attached?: boolean;
+  embedded?: boolean;
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
