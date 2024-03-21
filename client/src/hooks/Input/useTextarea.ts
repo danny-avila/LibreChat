@@ -230,7 +230,7 @@ export default function useTextarea({
 
   /** Necessary handler to update form state when paste doesn't fire textArea input event */
   const setPastedValue = useCallback(
-    (pastedData: string, textArea: HTMLTextAreaElement) => {
+    (textArea: HTMLTextAreaElement, pastedData: string) => {
       const currentTextValue = getValues('text') || '';
       const { selectionStart, selectionEnd } = textArea;
       const newValue =
@@ -252,7 +252,7 @@ export default function useTextarea({
       }
 
       const pastedData = e.clipboardData.getData('text/plain');
-      setPastedValue(pastedData, textArea);
+      setPastedValue(textArea, pastedData);
       insertTextAtCursor(textArea, pastedData);
       forceResize(textAreaRef);
 
