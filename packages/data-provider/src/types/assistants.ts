@@ -253,6 +253,7 @@ export type TContentData = TMessageContentParts & {
 };
 
 export const actionDelimiter = '_action_';
+export const actionDomainSeparator = '---';
 
 export enum AuthTypeEnum {
   ServiceHttp = 'service_http',
