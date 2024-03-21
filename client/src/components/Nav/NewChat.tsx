@@ -1,18 +1,15 @@
 import React from 'react';
-// import { useNavigate, useParams } from 'react-router-dom';
-// import { useRecoilValue, useRecoilState } from 'recoil';
-import { useParams } from 'react-router-dom';
 import { useRecoilState } from 'recoil';
 import { useAuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
+import { useParams, useNavigate } from 'react-router-dom';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useLocalize, useNewConvo, useLocalStorage } from '~/hooks';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import { NewChatIcon } from '~/components/svg';
 import { getEndpointField } from '~/utils';
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
-import { useNavigate } from 'react-router-dom';
 
 export default function NewChat({
   toggleNav,

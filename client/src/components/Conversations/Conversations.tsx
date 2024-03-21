@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import { parseISO, isToday } from 'date-fns';
 import { useLocation } from 'react-router-dom';
 import { TConversation } from 'librechat-data-provider';
@@ -6,7 +6,7 @@ import { groupConversationsByDate } from '~/utils';
 import Conversation from './Conversation';
 import Convo from './Convo';
 
-export default function Conversations({
+const Conversations = ({
   conversations,
   moveToTop,
   toggleNav,
@@ -14,7 +14,7 @@ export default function Conversations({
   conversations: TConversation[];
   moveToTop: () => void;
   toggleNav: () => void;
-}) {
+}) => {
   const location = useLocation();
   const { pathname } = location;
   const ConvoItem = pathname.includes('chat') ? Conversation : Convo;
@@ -64,4 +64,6 @@ export default function Conversations({
       </div>
     </div>
   );
-}
+};
+
+export default memo(Conversations);

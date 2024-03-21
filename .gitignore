@@ -74,6 +74,7 @@ src/style - official.css
 config.local.ts
 **/storageState.json
 junit.xml
+**/.venv/
 
 # docker override file
 docker-compose.override.yaml

@@ -199,6 +199,7 @@ export default function Message(props: TMessageProps) {
                     latestMessage={latestMessage}
                     stopPlaybackMessage={stopPlaybackMessage}
                     playbackMessage={playbackMessage}
+                    isLast={isLast}
                   />
                 </SubRow>
               )}
