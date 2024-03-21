@@ -11,7 +11,7 @@ import {
   MultiSelectPop,
   Button,
 } from '~/components/ui';
-import { useSetIndexOptions, useAuthContext, useMediaQuery } from '~/hooks';
+import { useSetIndexOptions, useAuthContext, useMediaQuery, useLocalize } from '~/hooks';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
 
@@ -32,6 +32,7 @@ export default function PluginsByIndex({
   showAbove,
   popover = false,
 }: TModelSelectProps) {
+  const localize = useLocalize();
   const { data: allPlugins } = useAvailablePluginsQuery();
   const [visible, setVisibility] = useState<boolean>(true);
   const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
@@ -92,7 +93,7 @@ export default function PluginsByIndex({
         type="button"
         className={cn(
           cardStyle,
-          'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-3 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
+          'z-40 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
         )}
         onClick={() => setVisibility((prev) => !prev)}
       >
@@ -120,6 +121,7 @@ export default function PluginsByIndex({
             optionValueKey="pluginKey"
             showAbove={false}
             showLabel={false}
+            searchPlaceholder={localize('com_ui_select_search_plugin')}
           />
         </>
       )}
