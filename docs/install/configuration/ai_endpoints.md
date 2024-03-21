@@ -130,6 +130,33 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/9f2d8ad9-3f49-4fe3-a3ed-c85994c1c85f)
 
+## ShuttleAI
+> ShuttleAI API key: [shuttleai.app/keys](https://shuttleai.app/keys)
+
+**Notes:**
+
+- **Known:** icon provided, fetching list of models is recommended.
+
+```yaml
+    - name: "ShuttleAI"
+      apiKey: "${SHUTTLEAI_API_KEY}"
+      baseURL: "https://api.shuttleai.app/v1"
+      models:
+        default: [
+          "shuttle-1", "shuttle-turbo"
+          ]
+        fetch: true
+      titleConvo: true
+      titleModel: "gemini-pro"
+      summarize: false
+      summaryModel: "llama-summarize"
+      forcePrompt: false
+      modelDisplayLabel: "ShuttleAI"
+      dropParams: ["user"]
+```
+
+![image](https://github.com/danny-avila/LibreChat/client/public/assets/ShuttleAI_Fibonacci.png)
+
 ## Fireworks
 > Fireworks API key: [fireworks.ai/api-keys](https://fireworks.ai/api-keys)
 
