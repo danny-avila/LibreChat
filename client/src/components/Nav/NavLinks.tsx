@@ -17,7 +17,7 @@ import NavLink from './NavLink';
 import Logout from './Logout';
 import { cn } from '~/utils/';
 import store from '~/store';
-import { CreateOrganization, OrganizationProfile } from '@clerk/clerk-react';
+import { OrganizationProfile } from '@clerk/clerk-react';
 import { useDarkMode } from '~/hooks/useDarkMode';
 import { dark } from '@clerk/themes';
 
@@ -68,7 +68,7 @@ function NavLinks() {
     ['org-settings'],
     (_target) => {
       const target = _target as Element;
-      return target?.className.includes('cl-');
+      return target?.className?.includes('cl-');
     },
   );
   return (
