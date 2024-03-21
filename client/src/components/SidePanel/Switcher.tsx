@@ -59,7 +59,7 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
           isCollapsed
             ? 'flex h-9 w-9 shrink-0 items-center justify-center p-0 [&>span]:w-auto [&>svg]:hidden'
             : '',
-          'bg-white text-black hover:bg-gray-50 dark:bg-gray-900 dark:text-white',
+          'bg-white text-black hover:bg-gray-50 dark:bg-gray-850 dark:text-white',
         )}
         aria-label={localize('com_sidepanel_select_assistant')}
       >

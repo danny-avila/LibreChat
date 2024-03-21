@@ -1,5 +1,5 @@
 import type { MouseEvent, ReactElement } from 'react';
-import { RenameIcon, CheckMark } from '~/components/svg';
+import { EditIcon, CheckMark } from '~/components/svg';
 
 interface RenameButtonProps {
   renaming: boolean;
@@ -23,7 +23,7 @@ export default function RenameButton({
   }
   return (
     <button {...classProp} onClick={handler}>
-      {renaming ? <CheckMark /> : <RenameIcon />}
+      {renaming ? <CheckMark /> : <EditIcon />}
     </button>
   );
 }

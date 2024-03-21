@@ -120,7 +120,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
   const aProps = {
     className:
-      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg bg-gray-200 dark:bg-gray-800 py-2 px-2',
+      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg bg-gray-200 dark:bg-gray-700 py-2 px-2',
   };
 
   if (!activeConvo) {
@@ -155,7 +155,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       {activeConvo ? (
         <div
           className={`absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l ${
-            !renaming ? 'from-gray-200 from-60% to-transparent dark:from-gray-800' : ''
+            !renaming ? 'from-gray-200 from-60% to-transparent dark:from-gray-700' : ''
           }`}
         ></div>
       ) : (
@@ -172,7 +172,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           />
         </div>
       ) : (
-        <div className="absolute bottom-0 right-0 top-0 w-14 rounded-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 dark:from-gray-900 dark:group-hover:from-gray-800" />
+        <div className="absolute bottom-0 right-0 top-0 w-14 rounded-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 dark:from-gray-750 dark:group-hover:from-gray-800" />
       )}
     </a>
   );
