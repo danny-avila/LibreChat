@@ -1049,9 +1049,9 @@ button {
 }
 .dark .btn-secondary:hover {
   --tw-bg-opacity: 1;
-  border-color: rgba(68, 68, 68, var(--tw-border-opacity));
+  border-color: rgba(8, 82, 78, var(--tw-border-opacity));
   color: rgba(255, 255, 240, var(--tw-text-opacity));
-  background-color: rgba(47, 47, 47, var(--tw-bg-opacity));
+  background-color: rgba(8, 82, 78, var(--tw-bg-opacity));
 }
 .btn-neutral {
   --tw-bg-opacity: 1;
@@ -1072,12 +1072,12 @@ button {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
   background-color: transparent;
-  border-color: rgba(68, 68, 68, var(--tw-border-opacity));
+  border-color: rgba(66, 66, 66, var(--tw-border-opacity));
   color: rgba(255, 255, 240, var(--tw-text-opacity));
 }
 .dark .btn-neutral:hover {
   --tw-bg-opacity: 1;
-  background-color: rgba(47, 47, 47, var(--tw-bg-opacity));
+  background-color: rgba(66, 66, 66, var(--tw-bg-opacity));
 }
 .btn-small {
   padding: 0.25rem 0.5rem;
@@ -1658,7 +1658,7 @@ button.scroll-convo {
   --gray-300:#cdcdcd;
   --gray-400:#999696;
   --gray-500:#686262;
-  --gray-600:#3d3d3f;
+  --gray-600:#424242;
   --gray-700:#262626;
   --gray-750:#333333;
   --gray-800:#171717;

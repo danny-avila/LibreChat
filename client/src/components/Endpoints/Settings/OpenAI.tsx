@@ -98,7 +98,6 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             placeholder={localize('com_endpoint_openai_custom_name_placeholder')}
             className={cn(
               defaultTextProps,
-              'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
               'flex h-10 max-h-10 w-full resize-none px-3 py-2',
               removeFocusOutlines,
             )}
@@ -117,7 +116,6 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             placeholder={localize('com_endpoint_openai_prompt_prefix_placeholder')}
             className={cn(
               defaultTextProps,
-              'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
               'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2 ',
             )}
           />
@@ -301,7 +299,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
               className={cn(
                 defaultTextProps,
                 optionText,
-                'flex rounded-md bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 dark:border-slate-700',
+                'flex rounded-md bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:border-gray-700',
                 'pointer-events-none max-h-5 w-12 border-0 group-hover/temp:border-gray-200',
               )}
             />
