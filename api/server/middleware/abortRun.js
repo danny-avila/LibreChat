@@ -7,6 +7,8 @@ const { sendMessage } = require('~/server/utils');
 // const spendTokens = require('~/models/spendTokens');
 const { logger } = require('~/config');
 
+const three_minutes = 1000 * 60 * 3;
+
 async function abortRun(req, res) {
   res.setHeader('Content-Type', 'application/json');
   const { abortKey } = req.body;
@@ -40,7 +42,7 @@ async function abortRun(req, res) {
   const { openai } = await initializeClient({ req, res });
 
   try {
-    await cache.set(cacheKey, 'cancelled');
+    await cache.set(cacheKey, 'cancelled', three_minutes);
     const cancelledRun = await openai.beta.threads.runs.cancel(thread_id, run_id);
     logger.debug('[abortRun] Cancelled run:', cancelledRun);
   } catch (error) {

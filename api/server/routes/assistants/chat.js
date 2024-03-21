@@ -39,6 +39,8 @@ const {
 
 router.post('/abort', handleAbort());
 
+const ten_minutes = 1000 * 60 * 10;
+
 /**
  * @route POST /
  * @desc Chat with an assistant
@@ -403,7 +405,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         });
 
         run_id = run.id;
-        await cache.set(cacheKey, `${thread_id}:${run_id}`);
+        await cache.set(cacheKey, `${thread_id}:${run_id}`, ten_minutes);
         sendInitialResponse();
 
         // todo: retry logic
