@@ -2,6 +2,8 @@
 FROM node:18-alpine AS node
 
 RUN apk add g++ make py3-pip
+RUN npm install -g node-gyp
+RUN apk --no-cache add curl
 
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
@@ -14,10 +16,7 @@ COPY --chown=node:node . .
 # values.
 RUN touch .env
 RUN npm config set fetch-retry-maxtimeout 300000
-RUN npm install -g node-gyp
-
-RUN apk --no-cache add curl && \
-    npm install --no-audit
+RUN npm install --no-audit
 
 # React client build
 ENV NODE_OPTIONS="--max-old-space-size=2048"
