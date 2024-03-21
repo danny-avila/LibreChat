@@ -413,15 +413,21 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         return;
       }
 
+      /** @type {{[AssistantStreamEvents.ThreadRunCreated]: (event: ThreadRunCreated) => Promise<void>}} */
+      const handlers = {
+        [AssistantStreamEvents.ThreadRunCreated]: async (event) => {
+          await cache.set(cacheKey, `${thread_id}:${event.data.id}`, ten_minutes);
+          sendInitialResponse();
+        },
+      };
+
       const streamRunManager = new StreamRunManager({
         req,
         res,
         openai,
         thread_id,
         responseMessage: openai.responseMessage,
-        handlers: {
-          [AssistantStreamEvents.ThreadRunCreated]: async () => sendInitialResponse(),
-        },
+        handlers,
         // streamOptions: {
 
         // },
@@ -440,6 +446,11 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       run: response.run,
       steps: response.steps,
     });
+
+    if (response.run.status === RunStatus.CANCELLED) {
+      logger.debug('[/assistants/chat/] Run cancelled, handled by `abortRun`');
+      return res.end();
+    }
 
     if (response.run.status === RunStatus.IN_PROGRESS) {
       processRun(true);

@@ -4,7 +4,6 @@ const { checkMessageGaps, recordUsage } = require('~/server/services/Threads');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
 const { sendMessage } = require('~/server/utils');
-// const spendTokens = require('~/models/spendTokens');
 const { logger } = require('~/config');
 
 const three_minutes = 1000 * 60 * 3;
