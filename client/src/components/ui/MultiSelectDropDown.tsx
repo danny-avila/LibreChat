@@ -18,6 +18,7 @@ export type TMultiSelectDropDownProps = {
   containerClassName?: string;
   isSelected: (value: string) => boolean;
   className?: string;
+  searchPlaceholder?: string;
   optionValueKey?: string;
 };
 
@@ -32,6 +33,7 @@ function MultiSelectDropDown({
   containerClassName,
   isSelected,
   className,
+  searchPlaceholder,
   optionValueKey = 'value',
 }: TMultiSelectDropDownProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -44,10 +46,13 @@ function MultiSelectDropDown({
     setIsOpen(true);
   };
 
-  // Detemine if we should to convert this component into a searchable select.  If we have enough elements, a search
   // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
   // reset once the component is unmounted (as per a normal search)
-  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>(availableValues);
+  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>(
+    availableValues,
+    searchPlaceholder,
+    (option) => (option.name || '').toUpperCase(),
+  );
   const hasSearchRender = Boolean(searchRender);
   const options = hasSearchRender ? filteredValues : availableValues;
 

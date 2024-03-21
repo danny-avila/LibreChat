@@ -18,6 +18,7 @@ type SelectDropDownProps = {
   isSelected: (value: string) => boolean;
   className?: string;
   optionValueKey?: string;
+  searchPlaceholder?: string;
 };
 
 function MultiSelectPop({
@@ -30,6 +31,7 @@ function MultiSelectPop({
   containerClassName,
   isSelected,
   optionValueKey = 'value',
+  searchPlaceholder,
 }: SelectDropDownProps) {
   // const localize = useLocalize();
 
@@ -37,7 +39,11 @@ function MultiSelectPop({
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
 
   // Detemine if we should to convert this component into a searchable select
-  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>(availableValues);
+  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>(
+    availableValues,
+    searchPlaceholder,
+    (option) => (option.name || '').toUpperCase(),
+  );
   const hasSearchRender = Boolean(searchRender);
   const options = hasSearchRender ? filteredValues : availableValues;
 
