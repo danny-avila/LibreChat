@@ -38,7 +38,7 @@ function PluginAuthForm({ plugin, onSubmit, isAssistantTool }: TPluginAuthFormPr
               <div key={`${authField}-${i}`} className="flex w-full flex-col gap-1">
                 <label
                   htmlFor={authField}
-                  className="mb-1 text-left text-sm font-medium text-slate-700/70 dark:text-slate-50/70"
+                  className="mb-1 text-left text-sm font-medium text-gray-700/70 dark:text-gray-50/70"
                 >
                   {config.label}
                 </label>
@@ -59,7 +59,7 @@ function PluginAuthForm({ plugin, onSubmit, isAssistantTool }: TPluginAuthFormPr
                           message: `${config.label} must be at least 10 characters long`,
                         },
                       })}
-                      className="flex h-10 max-h-10 w-full resize-none rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-700 shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:border-slate-400 focus:bg-gray-50 focus:outline-none focus:ring-0 focus:ring-gray-400 focus:ring-opacity-0 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 focus:dark:bg-gray-600 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0"
+                      className="flex h-10 max-h-10 w-full resize-none rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-700 shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:border-gray-400 focus:bg-gray-50 focus:outline-none focus:ring-0 focus:ring-gray-400 focus:ring-opacity-0 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 focus:dark:bg-gray-600 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0"
                     />
                   </HoverCardTrigger>
                   <PluginTooltip content={config.description} position="right" />
