@@ -94,7 +94,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           placeholder="Filter files..."
           value={(table.getColumn('filename')?.getFilterValue() as string) ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-          className="max-w-sm dark:border-gray-700"
+          className="max-w-sm dark:border-gray-500"
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -103,7 +103,10 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             </Button>
           </DropdownMenuTrigger>
           {/* Filter Menu */}
-          <DropdownMenuContent align="end" className="z-[1001] dark:border-gray-700 dark:bg-black">
+          <DropdownMenuContent
+            align="end"
+            className="z-[1001] dark:border-gray-700 dark:bg-gray-750"
+          >
             {table
               .getAllColumns()
               .filter((column) => column.getCanHide())

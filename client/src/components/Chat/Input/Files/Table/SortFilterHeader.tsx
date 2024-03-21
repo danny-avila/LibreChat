@@ -53,7 +53,10 @@ export function SortFilterHeader<TData, TValue>({
             )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[1001] dark:border-gray-700 dark:bg-black">
+        <DropdownMenuContent
+          align="start"
+          className="z-[1001] dark:border-gray-700 dark:bg-gray-750"
+        >
           <DropdownMenuItem
             onClick={() => column.toggleSorting(false)}
             className="cursor-pointer dark:text-white dark:hover:bg-gray-800"
@@ -68,7 +71,7 @@ export function SortFilterHeader<TData, TValue>({
             <ArrowDownIcon className="text-muted-foreground/70 mr-2 h-3.5 w-3.5" />
             Desc
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
+          <DropdownMenuSeparator className="dark:bg-gray-500" />
           {filters &&
             Object.entries(filters).map(([key, values]) =>
               values.map((value: string | number) => (
