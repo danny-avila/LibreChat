@@ -1,6 +1,5 @@
 const path = require('path');
 const { v4 } = require('uuid');
-const axios = require('axios');
 const mime = require('mime/lite');
 const {
   isUUID,
@@ -265,42 +264,9 @@ const uploadImageBuffer = async ({ req, context }) => {
  */
 const processFileUpload = async ({ req, res, file, metadata }) => {
   const isAssistantUpload = metadata.endpoint === EModelEndpoint.assistants;
-  const source = isAssistantUpload ? FileSources.openai : req.app.locals.fileStrategy;
+  const source = isAssistantUpload ? FileSources.openai : FileSources.vectordb;
   const { handleFileUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id } = metadata;
-
-  let embedded = false;
-  if (process.env.RAG_API_URL) {
-    try {
-      const jwtToken = req.headers.authorization.split(' ')[1];
-      const filepath = `./uploads/temp/${file.path.split('uploads/temp/')[1]}`;
-      const response = await axios.post(
-        `${process.env.RAG_API_URL}/embed`,
-        {
-          filename: file.originalname,
-          file_content_type: file.mimetype,
-          filepath,
-          file_id,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${jwtToken}`,
-            'Content-Type': 'application/json',
-          },
-        },
-      );
-
-      if (response.status === 200) {
-        embedded = true;
-      }
-    } catch (error) {
-      logger.error('Error embedding file', error);
-      throw new Error(error);
-    }
-  } else if (!isAssistantUpload) {
-    logger.error('RAG_API_URL not set, cannot support process file upload');
-    throw new Error('RAG_API_URL not set, cannot support process file upload');
-  }
 
   /** @type {OpenAI | undefined} */
   let openai;
@@ -308,7 +274,12 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
     ({ openai } = await initializeClient({ req }));
   }
 
-  const { id, bytes, filename, filepath } = await handleFileUpload({ req, file, file_id, openai });
+  const { id, bytes, filename, filepath, embedded } = await handleFileUpload({
+    req,
+    file,
+    file_id,
+    openai,
+  });
 
   if (isAssistantUpload && !metadata.message_file) {
     await openai.beta.assistants.files.create(metadata.assistant_id, {
