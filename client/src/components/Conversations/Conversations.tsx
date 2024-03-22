@@ -1,9 +1,7 @@
 import { useMemo, memo } from 'react';
 import { parseISO, isToday } from 'date-fns';
-import { useLocation } from 'react-router-dom';
 import { TConversation } from 'librechat-data-provider';
 import { groupConversationsByDate } from '~/utils';
-import Conversation from './Conversation';
 import Convo from './Convo';
 
 const Conversations = ({
@@ -15,16 +13,14 @@ const Conversations = ({
   moveToTop: () => void;
   toggleNav: () => void;
 }) => {
-  const location = useLocation();
-  const { pathname } = location;
-  const ConvoItem = pathname.includes('chat') ? Conversation : Convo;
   const groupedConversations = useMemo(
     () => groupConversationsByDate(conversations),
     [conversations],
   );
-  const firstTodayConvoId = conversations.find((convo) =>
-    isToday(parseISO(convo.updatedAt)),
-  )?.conversationId;
+  const firstTodayConvoId = useMemo(
+    () => conversations.find((convo) => isToday(parseISO(convo.updatedAt)))?.conversationId,
+    [conversations],
+  );
 
   return (
     <div className="text-token-text-primary flex flex-col gap-2 pb-2 text-sm">
@@ -44,7 +40,7 @@ const Conversations = ({
                 {groupName}
               </div>
               {convos.map((convo, i) => (
-                <ConvoItem
+                <Convo
                   key={`${groupName}-${convo.conversationId}-${i}`}
                   isLatestConvo={convo.conversationId === firstTodayConvoId}
                   conversation={convo}

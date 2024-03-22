@@ -210,7 +210,7 @@ export type TAdditionalProps = {
 
 export type TMessageContentProps = TInitialProps & TAdditionalProps;
 
-export type TText = Pick<TInitialProps, 'text'>;
+export type TText = Pick<TInitialProps, 'text'> & { className?: string };
 export type TEditProps = Pick<TInitialProps, 'text' | 'isSubmitting'> &
   Omit<TAdditionalProps, 'isCreatedByUser'>;
 export type TDisplayProps = TText &

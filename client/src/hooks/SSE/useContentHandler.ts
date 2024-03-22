@@ -22,7 +22,7 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
   const messageMap = useMemo(() => new Map<string, TMessage>(), []);
   return useCallback(
     ({ data, submission }: TContentHandler) => {
-      const { type, messageId, thread_id, conversationId, index, stream } = data;
+      const { type, messageId, thread_id, conversationId, index } = data;
 
       const _messages = getMessages();
       const messages =
@@ -46,8 +46,9 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       }
 
       // TODO: handle streaming for non-text
-      const part: ContentPart =
-        stream && data[ContentTypes.TEXT] ? { value: data[ContentTypes.TEXT] } : data[type];
+      const part: ContentPart = data[ContentTypes.TEXT]
+        ? { value: data[ContentTypes.TEXT] }
+        : data[type];
 
       /* spreading the content array to avoid mutation */
       response.content = [...(response.content ?? [])];

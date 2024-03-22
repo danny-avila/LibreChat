@@ -186,6 +186,7 @@ export enum ContentTypes {
   TEXT = 'text',
   TOOL_CALL = 'tool_call',
   IMAGE_FILE = 'image_file',
+  ERROR = 'error',
 }
 
 export enum StepTypes {
@@ -236,6 +237,7 @@ export type ContentPart = (CodeToolCall | RetrievalToolCall | FunctionToolCall |
   PartMetadata;
 
 export type TMessageContentParts =
+  | { type: ContentTypes.ERROR; text: Text & PartMetadata }
   | { type: ContentTypes.TEXT; text: Text & PartMetadata }
   | {
       type: ContentTypes.TOOL_CALL;
@@ -243,16 +245,20 @@ export type TMessageContentParts =
     }
   | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata };
 
-export type TContentData = TMessageContentParts & {
+export type StreamContentData = TMessageContentParts & {
+  index: number;
+};
+
+export type TContentData = StreamContentData & {
   messageId: string;
   conversationId: string;
   userMessageId: string;
   thread_id: string;
-  index: number;
   stream?: boolean;
 };
 
 export const actionDelimiter = '_action_';
+export const actionDomainSeparator = '---';
 
 export enum AuthTypeEnum {
   ServiceHttp = 'service_http',

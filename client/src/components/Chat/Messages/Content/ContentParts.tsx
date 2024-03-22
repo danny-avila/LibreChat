@@ -21,20 +21,20 @@ any) => {
 
     return (
       <>
-        {content.map((part: TMessageContentParts | undefined, idx: number) => {
-          if (!part) {
-            return null;
-          }
-          return (
-            <Part
-              key={`display-${messageId}-${idx}`}
-              showCursor={idx === content.length - 1 && isLast}
-              isSubmitting={isSubmitting}
-              part={part}
-              {...props}
-            />
-          );
-        })}
+        {content
+          .filter((part: TMessageContentParts | undefined) => part)
+          .map((part: TMessageContentParts | undefined, idx: number) => {
+            const showCursor = idx === content.length - 1 && isLast;
+            return (
+              <Part
+                key={`display-${messageId}-${idx}`}
+                showCursor={showCursor && isSubmitting}
+                isSubmitting={isSubmitting}
+                part={part}
+                {...props}
+              />
+            );
+          })}
         {!isSubmitting && unfinished && (
           <Suspense>
             <DelayedRender delay={250}>

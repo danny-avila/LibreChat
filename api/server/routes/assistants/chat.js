@@ -4,8 +4,10 @@ const {
   Constants,
   RunStatus,
   CacheKeys,
+  ContentTypes,
   EModelEndpoint,
   ViolationTypes,
+  AssistantStreamEvents,
 } = require('librechat-data-provider');
 const {
   initThread,
@@ -18,8 +20,8 @@ const {
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const { addTitle, initializeClient } = require('~/server/services/Endpoints/assistants');
 const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
+const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { getTransactions } = require('~/models/Transaction');
-const { createRun } = require('~/server/services/Runs');
 const checkBalance = require('~/models/checkBalance');
 const { getConvo } = require('~/models/Conversation');
 const getLogStores = require('~/cache/getLogStores');
@@ -37,6 +39,8 @@ const {
 } = require('~/server/middleware');
 
 router.post('/abort', handleAbort());
+
+const ten_minutes = 1000 * 60 * 10;
 
 /**
  * @route POST /
@@ -147,7 +151,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       return sendResponse(res, messageData, defaultErrorMessage);
     }
 
-    await sleep(3000);
+    await sleep(2000);
 
     try {
       const status = await cache.get(cacheKey);
@@ -186,6 +190,42 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         conversationId,
         latestMessageId: responseMessageId,
       });
+
+      const errorContentPart = {
+        text: {
+          value:
+            error?.message ?? 'There was an error processing your request. Please try again later.',
+        },
+        type: ContentTypes.ERROR,
+      };
+
+      if (!Array.isArray(runMessages[runMessages.length - 1]?.content)) {
+        runMessages[runMessages.length - 1].content = [errorContentPart];
+      } else {
+        const contentParts = runMessages[runMessages.length - 1].content;
+        for (let i = 0; i < contentParts.length; i++) {
+          const currentPart = contentParts[i];
+          /** @type {CodeToolCall | RetrievalToolCall | FunctionToolCall | undefined} */
+          const toolCall = currentPart?.[ContentTypes.TOOL_CALL];
+          if (
+            toolCall &&
+            toolCall?.function &&
+            !(toolCall?.function?.output || toolCall?.function?.output?.length)
+          ) {
+            contentParts[i] = {
+              ...currentPart,
+              [ContentTypes.TOOL_CALL]: {
+                ...toolCall,
+                function: {
+                  ...toolCall.function,
+                  output: 'error processing tool',
+                },
+              },
+            };
+          }
+        }
+        runMessages[runMessages.length - 1].content.push(errorContentPart);
+      }
 
       finalEvent = {
         title: 'New Chat',
@@ -358,53 +398,107 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       body.instructions = instructions;
     }
 
-    /* NOTE:
-     * By default, a Run will use the model and tools configuration specified in Assistant object,
-     * but you can override most of these when creating the Run for added flexibility:
-     */
-    const run = await createRun({
-      openai,
-      thread_id,
-      body,
-    });
-
-    run_id = run.id;
-    await cache.set(cacheKey, `${thread_id}:${run_id}`);
-
-    sendMessage(res, {
-      sync: true,
-      conversationId,
-      // messages: previousMessages,
-      requestMessage,
-      responseMessage: {
-        user: req.user.id,
-        messageId: openai.responseMessage.messageId,
-        parentMessageId: userMessageId,
+    const sendInitialResponse = () => {
+      sendMessage(res, {
+        sync: true,
         conversationId,
-        assistant_id,
-        thread_id,
-        model: assistant_id,
-      },
-    });
+        // messages: previousMessages,
+        requestMessage,
+        responseMessage: {
+          user: req.user.id,
+          messageId: openai.responseMessage.messageId,
+          parentMessageId: userMessageId,
+          conversationId,
+          assistant_id,
+          thread_id,
+          model: assistant_id,
+        },
+      });
+    };
 
-    // todo: retry logic
-    let response = await runAssistant({ openai, thread_id, run_id });
-    logger.debug('[/assistants/chat/] response', response);
+    /** @type {RunResponse | typeof StreamRunManager | undefined} */
+    let response;
 
-    if (response.run.status === RunStatus.IN_PROGRESS) {
-      response = await runAssistant({
+    const processRun = async (retry = false) => {
+      if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+        if (retry) {
+          response = await runAssistant({
+            openai,
+            thread_id,
+            run_id,
+            in_progress: openai.in_progress,
+          });
+          return;
+        }
+
+        /* NOTE:
+         * By default, a Run will use the model and tools configuration specified in Assistant object,
+         * but you can override most of these when creating the Run for added flexibility:
+         */
+        const run = await createRun({
+          openai,
+          thread_id,
+          body,
+        });
+
+        run_id = run.id;
+        await cache.set(cacheKey, `${thread_id}:${run_id}`, ten_minutes);
+        sendInitialResponse();
+
+        // todo: retry logic
+        response = await runAssistant({ openai, thread_id, run_id });
+        return;
+      }
+
+      /** @type {{[AssistantStreamEvents.ThreadRunCreated]: (event: ThreadRunCreated) => Promise<void>}} */
+      const handlers = {
+        [AssistantStreamEvents.ThreadRunCreated]: async (event) => {
+          await cache.set(cacheKey, `${thread_id}:${event.data.id}`, ten_minutes);
+          run_id = event.data.id;
+          sendInitialResponse();
+        },
+      };
+
+      const streamRunManager = new StreamRunManager({
+        req,
+        res,
         openai,
         thread_id,
-        run_id,
-        in_progress: openai.in_progress,
+        responseMessage: openai.responseMessage,
+        handlers,
+        // streamOptions: {
+
+        // },
       });
+
+      await streamRunManager.runAssistant({
+        thread_id,
+        body,
+      });
+
+      response = streamRunManager;
+    };
+
+    await processRun();
+    logger.debug('[/assistants/chat/] response', {
+      run: response.run,
+      steps: response.steps,
+    });
+
+    if (response.run.status === RunStatus.CANCELLED) {
+      logger.debug('[/assistants/chat/] Run cancelled, handled by `abortRun`');
+      return res.end();
+    }
+
+    if (response.run.status === RunStatus.IN_PROGRESS) {
+      processRun(true);
     }
 
     completedRun = response.run;
 
     /** @type {ResponseMessage} */
     const responseMessage = {
-      ...openai.responseMessage,
+      ...response.finalMessage,
       parentMessageId: userMessageId,
       conversationId,
       user: req.user.id,
@@ -412,9 +506,6 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       thread_id,
       model: assistant_id,
     };
-
-    // TODO: token count from usage returned in run
-    // TODO: parse responses, save to db, send to user
 
     sendMessage(res, {
       title: 'New Chat',
@@ -432,7 +523,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
     if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {
         text,
-        responseText: openai.responseText,
+        responseText: response.text,
         conversationId,
         client,
       });
@@ -447,7 +538,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
     if (!response.run.usage) {
       await sleep(3000);
-      completedRun = await openai.beta.threads.runs.retrieve(thread_id, run.id);
+      completedRun = await openai.beta.threads.runs.retrieve(thread_id, response.run.id);
       if (completedRun.usage) {
         await recordUsage({
           ...completedRun.usage,

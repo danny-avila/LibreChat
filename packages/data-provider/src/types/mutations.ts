@@ -56,6 +56,7 @@ export type UpdateActionVariables = {
   functions: FunctionTool[];
   metadata: ActionMetadata;
   action_id?: string;
+  model: string;
 };
 
 export type UploadAssistantAvatarOptions = {
@@ -109,6 +110,7 @@ export type UpdateActionOptions = {
 export type DeleteActionVariables = {
   assistant_id: string;
   action_id: string;
+  model: string;
 };
 
 export type DeleteActionOptions = {
