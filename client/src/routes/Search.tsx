@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import TextChat from '~/components/Input/TextChat';
+// import TextChat from '~/components/Input/TextChat';
 
 import { useConversation } from '~/hooks';
 import store from '~/store';
@@ -52,7 +52,7 @@ export default function Search() {
   return (
     <>
       {/* <Messages isSearchView={true} /> */}
-      <TextChat isSearchView={true} />
+      {/* <TextChat isSearchView={true} /> */}
     </>
   );
 }
