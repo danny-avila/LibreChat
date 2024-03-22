@@ -1,4 +1,5 @@
 import { useRecoilValue } from 'recoil';
+import { SettingsViews } from 'librechat-data-provider';
 import type { TSettingsProps } from '~/common';
 import { getSettings } from './Settings';
 import { cn } from '~/utils';
@@ -12,7 +13,8 @@ export default function Settings({
   isMultiChat = false,
 }: TSettingsProps & { isMultiChat?: boolean }) {
   const modelsConfig = useRecoilValue(store.modelsConfig);
-  if (!conversation?.endpoint) {
+  const currentSettingsView = useRecoilValue(store.currentSettingsView);
+  if (!conversation?.endpoint || currentSettingsView !== SettingsViews.default) {
     return null;
   }
 

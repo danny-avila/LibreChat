@@ -1,3 +1,4 @@
+export { default as Advanced } from './Advanced';
 export { default as AssistantsSettings } from './Assistants';
 export { default as OpenAISettings } from './OpenAI';
 export { default as BingAISettings } from './BingAI';
