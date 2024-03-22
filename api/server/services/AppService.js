@@ -1,6 +1,7 @@
 const {
   Constants,
   FileSources,
+  Capabilities,
   EModelEndpoint,
   defaultSocialLogins,
   validateAzureGroups,
@@ -122,6 +123,13 @@ const AppService = async (app) => {
         );
       }
     });
+
+    if (azureConfiguration.assistants) {
+      endpointLocals[EModelEndpoint.assistants] = {
+        // Note: may need to add retrieval models here in the future
+        capabilities: [Capabilities.tools, Capabilities.actions, Capabilities.code_interpreter],
+      };
+    }
   }
 
   if (config?.endpoints?.[EModelEndpoint.assistants]) {
@@ -133,8 +141,11 @@ const AppService = async (app) => {
       );
     }
 
+    const prevConfig = endpointLocals[EModelEndpoint.assistants] ?? {};
+
     /** @type {Partial<TAssistantEndpoint>} */
     endpointLocals[EModelEndpoint.assistants] = {
+      ...prevConfig,
       retrievalModels: parsedConfig.retrievalModels,
       disableBuilder: parsedConfig.disableBuilder,
       pollIntervalMs: parsedConfig.pollIntervalMs,

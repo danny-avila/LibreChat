@@ -5,23 +5,21 @@ import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
 import { DelayedRender } from '~/components/ui';
-import { useAuthContext } from '~/hooks';
 import EditMessage from './EditMessage';
 import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
 import Image from './Image';
 
-export const ErrorMessage = ({ text }: TText) => {
-  const { logout } = useAuthContext();
-
-  if (text.includes('ban')) {
-    logout();
-    return null;
-  }
+export const ErrorMessage = ({ text, className = '' }: TText) => {
   return (
     <Container>
-      <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200">
+      <div
+        className={cn(
+          'rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+          className,
+        )}
+      >
         <Error text={text} />
       </div>
     </Container>

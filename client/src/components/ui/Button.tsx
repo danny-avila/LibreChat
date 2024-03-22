@@ -4,11 +4,11 @@ import { VariantProps, cva } from 'class-variance-authority';
 import { cn } from '../../utils';
 
 const buttonVariants = cva(
-  'rounded-md inline-flex items-center justify-center text-sm font-medium transition-colors focus:outline-none dark:hover:bg-gray-800 dark:hover:text-gray-100 disabled:opacity-50 disabled:pointer-events-none data-[state=open]:bg-gray-100 dark:data-[state=open]:bg-gray-800',
+  'rounded-md inline-flex items-center justify-center text-sm font-medium transition-colors focus:outline-none dark:hover:bg-gray-700 dark:hover:text-gray-100 disabled:opacity-50 disabled:pointer-events-none data-[state=open]:bg-gray-100 dark:data-[state=open]:bg-gray-700',
   {
     variants: {
       variant: {
-        default: 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-50 dark:text-gray-900',
+        default: 'bg-gray-750 text-white hover:bg-gray-800 dark:bg-gray-50 dark:text-gray-900',
         destructive: 'bg-red-500 text-white hover:bg-red-600 dark:hover:bg-red-600',
         outline:
           'bg-transparent border border-gray-200 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100',

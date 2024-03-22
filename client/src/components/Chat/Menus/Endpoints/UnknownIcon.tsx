@@ -38,6 +38,14 @@ export default function UnknownIcon({
         alt="Groq Cloud Icon"
       />
     );
+  } else if (currentEndpoint === KnownEndpoints.shuttleai) {
+    return (
+      <img
+        className={context === 'landing' ? '' : className}
+        src="/assets/shuttleai.png"
+        alt="ShuttleAI Icon"
+      />
+    );
   } else if (currentEndpoint === KnownEndpoints.anyscale) {
     return (
       <img

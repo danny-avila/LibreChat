@@ -3,6 +3,7 @@ const { supportsBalanceCheck, Constants } = require('librechat-data-provider');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
+const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
 
@@ -44,10 +45,6 @@ class BaseClient {
 
   async getTokenCountForResponse(response) {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', response);
-  }
-
-  async addPreviousAttachments(messages) {
-    return messages;
   }
 
   async recordTokenUsage({ promptTokens, completionTokens }) {
@@ -682,6 +679,54 @@ class BaseClient {
     }
 
     return await this.sendCompletion(payload, opts);
+  }
+
+  /**
+   *
+   * @param {TMessage[]} _messages
+   * @returns {Promise<TMessage[]>}
+   */
+  async addPreviousAttachments(_messages) {
+    if (!this.options.resendFiles) {
+      return _messages;
+    }
+
+    /**
+     *
+     * @param {TMessage} message
+     */
+    const processMessage = async (message) => {
+      if (!this.message_file_map) {
+        /** @type {Record<string, MongoFile[]> */
+        this.message_file_map = {};
+      }
+
+      const fileIds = message.files.map((file) => file.file_id);
+      const files = await getFiles({
+        file_id: { $in: fileIds },
+      });
+
+      await this.addImageURLs(message, files);
+
+      this.message_file_map[message.messageId] = files;
+      return message;
+    };
+
+    const promises = [];
+
+    for (const message of _messages) {
+      if (!message.files) {
+        promises.push(message);
+        continue;
+      }
+
+      promises.push(processMessage(message));
+    }
+
+    const messages = await Promise.all(promises);
+
+    this.checkVisionRequest(Object.values(this.message_file_map ?? {}).flat());
+    return messages;
   }
 }
 
