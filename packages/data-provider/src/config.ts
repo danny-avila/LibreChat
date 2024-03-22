@@ -18,6 +18,11 @@ export const defaultRetrievalModels = [
   'gpt-4-1106',
 ];
 
+export enum SettingsViews {
+  default = 'default',
+  advanced = 'advanced',
+}
+
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
 export const modelConfigSchema = z

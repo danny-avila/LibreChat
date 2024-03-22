@@ -1,4 +1,5 @@
 import { atom } from 'recoil';
+import { SettingsViews } from 'librechat-data-provider';
 import type { TOptionSettings } from '~/common';
 
 const abortScroll = atom<boolean>({
@@ -24,6 +25,11 @@ const showPluginStoreDialog = atom<boolean>({
 const showAgentSettings = atom<boolean>({
   key: 'showAgentSettings',
   default: false,
+});
+
+const currentSettingsView = atom<SettingsViews>({
+  key: 'currentSettingsView',
+  default: SettingsViews.default,
 });
 
 const showBingToneSetting = atom<boolean>({
@@ -137,6 +143,7 @@ export default {
   optionSettings,
   showPluginStoreDialog,
   showAgentSettings,
+  currentSettingsView,
   showBingToneSetting,
   showPopover,
   autoScroll,

@@ -30,7 +30,7 @@ const EditPresetDialog = ({
     select: mapEndpoints,
   });
 
-  const { endpoint } = preset || {};
+  const { endpoint, endpointType, model } = preset || {};
   if (!endpoint) {
     return null;
   }
@@ -81,7 +81,7 @@ const EditPresetDialog = ({
                   />
                 </div>
               </div>
-              <div className="col-span-2 flex items-start justify-start gap-4 sm:col-span-1">
+              <div className="col-span-2 flex items-start justify-between gap-4 sm:col-span-4">
                 <div className="flex w-full flex-col">
                   <Label
                     htmlFor="endpoint"
@@ -92,6 +92,9 @@ const EditPresetDialog = ({
                   <PopoverButtons
                     buttonClass="ml-0 w-full border border-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:hover:bg-gray-600 p-2 h-[40px] justify-center mt-0"
                     iconClass="hidden lg:block w-4 "
+                    endpoint={endpoint}
+                    endpointType={endpointType}
+                    model={model}
                   />
                 </div>
               </div>
