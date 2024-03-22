@@ -7,6 +7,7 @@ const {
   EModelEndpoint,
   ViolationTypes,
   AssistantStreamEvents,
+  ContentTypes,
 } = require('librechat-data-provider');
 const {
   initThread,
@@ -150,7 +151,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       return sendResponse(res, messageData, defaultErrorMessage);
     }
 
-    await sleep(3000);
+    await sleep(2000);
 
     try {
       const status = await cache.get(cacheKey);
@@ -189,6 +190,20 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         conversationId,
         latestMessageId: responseMessageId,
       });
+
+      const errorContentPart = {
+        text: {
+          value:
+            error?.message ?? 'There was an error processing your request. Please try again later.',
+        },
+        type: ContentTypes.ERROR,
+      };
+
+      if (!Array.isArray(runMessages[runMessages.length - 1]?.content)) {
+        runMessages[runMessages.length - 1].content = [errorContentPart];
+      } else {
+        runMessages[runMessages.length - 1].content.push(errorContentPart);
+      }
 
       finalEvent = {
         title: 'New Chat',
@@ -417,6 +432,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       const handlers = {
         [AssistantStreamEvents.ThreadRunCreated]: async (event) => {
           await cache.set(cacheKey, `${thread_id}:${event.data.id}`, ten_minutes);
+          run_id = event.data.id;
           sendInitialResponse();
         },
       };

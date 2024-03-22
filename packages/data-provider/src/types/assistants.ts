@@ -186,6 +186,7 @@ export enum ContentTypes {
   TEXT = 'text',
   TOOL_CALL = 'tool_call',
   IMAGE_FILE = 'image_file',
+  ERROR = 'error',
 }
 
 export enum StepTypes {
@@ -236,6 +237,7 @@ export type ContentPart = (CodeToolCall | RetrievalToolCall | FunctionToolCall |
   PartMetadata;
 
 export type TMessageContentParts =
+  | { type: ContentTypes.ERROR; text: Text & PartMetadata }
   | { type: ContentTypes.TEXT; text: Text & PartMetadata }
   | {
       type: ContentTypes.TOOL_CALL;
