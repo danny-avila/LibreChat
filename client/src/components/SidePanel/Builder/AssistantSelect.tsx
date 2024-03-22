@@ -107,6 +107,7 @@ export default function AssistantSelect({
         functions,
         ...actions,
         assistant: update,
+        model: update.model,
       };
 
       Object.entries(assistant).forEach(([name, value]) => {

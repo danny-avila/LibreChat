@@ -1,6 +1,6 @@
 import { useRecoilValue } from 'recoil';
-import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import { useState, useRef, useMemo } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
@@ -17,7 +17,8 @@ import store from '~/store';
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
 export default function Conversation({ conversation, retainView, toggleNav, isLatestConvo }) {
-  const { conversationId: currentConvoId } = useParams();
+  const params = useParams();
+  const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const { data: endpointsConfig } = useGetEndpointsQuery();
