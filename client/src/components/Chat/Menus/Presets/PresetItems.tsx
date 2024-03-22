@@ -5,7 +5,7 @@ import { Flipper, Flipped } from 'react-flip-toolkit';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import type { TPreset } from 'librechat-data-provider';
-import FileUpload from '~/components/Input/EndpointMenu/FileUpload';
+import FileUpload from '~/components/Chat/Input/Files/FileUpload';
 import { PinIcon, EditIcon, TrashIcon } from '~/components/svg';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { getPresetTitle, getEndpointField } from '~/utils';

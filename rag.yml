@@ -22,8 +22,6 @@ services:
       - POSTGRES_PASSWORD=mypassword
     ports:
       - "8000:8000"
-    volumes:
-      - ./uploads/temp:/app/uploads/temp
     depends_on:
       - vectordb
     env_file:
