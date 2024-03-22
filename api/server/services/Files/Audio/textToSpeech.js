@@ -1,6 +1,4 @@
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
 
 async function textToSpeech(req, res) {
   const { text } = req.body;
@@ -26,10 +24,6 @@ async function textToSpeech(req, res) {
   try {
     const response = await axios.post(url, data, { headers, responseType: 'arraybuffer' });
     const audioData = response.data;
-
-    // Save the audio data to a file for verification
-    const outputPath = path.join(__dirname, 'output-audio.mp3');
-    fs.writeFileSync(outputPath, audioData);
 
     res.setHeader('Content-Type', 'audio/mpeg');
     res.send(audioData);
