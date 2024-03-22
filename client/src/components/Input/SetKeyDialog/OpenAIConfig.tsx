@@ -42,6 +42,7 @@ const OpenAIConfig = ({
               />
             )}
           />
+          <div className="mt-3"></div>
           <Controller
             name="azureOpenAIApiInstanceName"
             control={control}
@@ -54,6 +55,7 @@ const OpenAIConfig = ({
               />
             )}
           />
+          <div className="mt-3"></div>
           <Controller
             name="azureOpenAIApiDeploymentName"
             control={control}
@@ -66,6 +68,7 @@ const OpenAIConfig = ({
               />
             )}
           />
+          <div className="mt-3"></div>
           <Controller
             name="azureOpenAIApiVersion"
             control={control}
@@ -81,19 +84,21 @@ const OpenAIConfig = ({
         </>
       )}
       {userProvideURL && (
-        <Controller
-          name="baseURL"
-          control={control}
-          render={({ field }) => (
-            <InputWithLabel
-              id="baseURL"
-              {...field}
-              label={'API Base URL'}
-              subLabel={'(Optional)'}
-              labelClassName="mb-1"
-            />
-          )}
-        />
+        <div className="mt-3">
+          <Controller
+            name="baseURL"
+            control={control}
+            render={({ field }) => (
+              <InputWithLabel
+                id="baseURL"
+                {...field}
+                label={'API Base URL'}
+                subLabel={'(Optional)'}
+                labelClassName="mb-1"
+              />
+            )}
+          />
+        </div>
       )}
     </form>
   );

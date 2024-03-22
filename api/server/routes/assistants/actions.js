@@ -2,9 +2,9 @@ const { v4 } = require('uuid');
 const express = require('express');
 const { actionDelimiter } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
+const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistant, getAssistant } = require('~/models/Assistant');
-const { encryptMetadata } = require('~/server/services/ActionService');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -44,7 +44,10 @@ router.post('/:assistant_id', async (req, res) => {
 
     let metadata = encryptMetadata(_metadata);
 
-    const { domain } = metadata;
+    let { domain } = metadata;
+    /* Azure doesn't support periods in function names */
+    domain = domainParser(req, domain, true);
+
     if (!domain) {
       return res.status(400).json({ message: 'No domain provided' });
     }
@@ -141,9 +144,10 @@ router.post('/:assistant_id', async (req, res) => {
  * @param {string} req.params.action_id - The ID of the action to delete.
  * @returns {Object} 200 - success response - application/json
  */
-router.delete('/:assistant_id/:action_id', async (req, res) => {
+router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
   try {
-    const { assistant_id, action_id } = req.params;
+    const { assistant_id, action_id, model } = req.params;
+    req.body.model = model;
 
     /** @type {{ openai: OpenAI }} */
     const { openai } = await initializeClient({ req, res });
@@ -166,6 +170,8 @@ router.delete('/:assistant_id/:action_id', async (req, res) => {
       }
       return true;
     });
+
+    domain = domainParser(req, domain, true);
 
     const updatedTools = tools.filter(
       (tool) => !(tool.function && tool.function.name.includes(domain)),

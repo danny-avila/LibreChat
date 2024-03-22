@@ -82,7 +82,7 @@ export default function OptionsBar() {
                   className={cn(
                     cardStyle,
                     'z-50 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 focus:ring-0 focus:ring-offset-0',
-                    'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20',
+                    'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
                   )}
                   onClick={triggerAdvancedMode}
                 >

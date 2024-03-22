@@ -338,19 +338,26 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
  * Retrieves and processes an OpenAI file based on its type.
  *
  * @param {Object} params - The params passed to the function.
- * @param {OpenAIClient} params.openai - The params passed to the function.
+ * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {RunClient} params.client - The LibreChat client instance: either refers to `openai` or `streamRunManager`.
  * @param {string} params.file_id - The ID of the file to retrieve.
  * @param {string} params.basename - The basename of the file (if image); e.g., 'image.jpg'.
  * @param {boolean} [params.unknownType] - Whether the file type is unknown.
  * @returns {Promise<{file_id: string, filepath: string, source: string, bytes?: number, width?: number, height?: number} | null>}
  * - Returns null if `file_id` is not defined; else, the file metadata if successfully retrieved and processed.
  */
-async function retrieveAndProcessFile({ openai, file_id, basename: _basename, unknownType }) {
+async function retrieveAndProcessFile({
+  openai,
+  client,
+  file_id,
+  basename: _basename,
+  unknownType,
+}) {
   if (!file_id) {
     return null;
   }
 
-  if (openai.attachedFileIds?.has(file_id)) {
+  if (client.attachedFileIds?.has(file_id)) {
     return {
       file_id,
       // filepath: TODO: local source filepath?,
@@ -416,7 +423,7 @@ async function retrieveAndProcessFile({ openai, file_id, basename: _basename, un
    */
   const processAsImage = async (dataBuffer, fileExt) => {
     // Logic to process image files, convert to webp, etc.
-    const _file = await convertToWebP(openai.req, dataBuffer, 'high', `${file_id}${fileExt}`);
+    const _file = await convertToWebP(client.req, dataBuffer, 'high', `${file_id}${fileExt}`);
     const file = {
       ..._file,
       type: 'image/webp',
