@@ -5,17 +5,18 @@ import { useToastContext } from '~/Providers';
 function useTextToSpeechExternal() {
   const { showToast } = useToastContext();
   const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
-    onSuccess: (data: Blob | ArrayBuffer) => {
-      // If the data is already a Blob, there's no need to convert it (I hope)
-      const blob = data instanceof Blob ? data : new Blob([data], { type: 'audio/mpeg' });
-      const blobUrl = URL.createObjectURL(blob);
+    onSuccess: (data: Blob) => {
+      console.log('Audio data:', data);
+      const blobUrl = URL.createObjectURL(data);
       console.log('Blob URL:', blobUrl);
 
       const audioElement = new Audio(blobUrl);
-      audioElement.play().catch((error: Error) => {
-        console.error('Failed to play audio:', error);
-        showToast({ message: `Error playing audio: ${error.message}`, status: 'error' });
-        URL.revokeObjectURL(blobUrl); // Clean up the blob URL
+      audioElement.addEventListener('canplaythrough', () => {
+        audioElement.play().catch((error) => {
+          console.error('Failed to play audio:', error);
+          showToast({ message: `Error playing audio: ${error.message}`, status: 'error' });
+          URL.revokeObjectURL(blobUrl); // Clean up the blob URL
+        });
       });
     },
     onError: (error: Error) => {
