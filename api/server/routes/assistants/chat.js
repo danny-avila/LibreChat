@@ -4,10 +4,10 @@ const {
   Constants,
   RunStatus,
   CacheKeys,
+  ContentTypes,
   EModelEndpoint,
   ViolationTypes,
   AssistantStreamEvents,
-  ContentTypes,
 } = require('librechat-data-provider');
 const {
   initThread,
@@ -202,6 +202,28 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       if (!Array.isArray(runMessages[runMessages.length - 1]?.content)) {
         runMessages[runMessages.length - 1].content = [errorContentPart];
       } else {
+        const contentParts = runMessages[runMessages.length - 1].content;
+        for (let i = 0; i < contentParts.length; i++) {
+          const currentPart = contentParts[i];
+          /** @type {CodeToolCall | RetrievalToolCall | FunctionToolCall | undefined} */
+          const toolCall = currentPart?.[ContentTypes.TOOL_CALL];
+          if (
+            toolCall &&
+            toolCall?.function &&
+            !(toolCall?.function?.output || toolCall?.function?.output?.length)
+          ) {
+            contentParts[i] = {
+              ...currentPart,
+              [ContentTypes.TOOL_CALL]: {
+                ...toolCall,
+                function: {
+                  ...toolCall.function,
+                  output: 'error processing tool',
+                },
+              },
+            };
+          }
+        }
         runMessages[runMessages.length - 1].content.push(errorContentPart);
       }
 
