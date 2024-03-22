@@ -70,8 +70,12 @@ const conversationPreset = {
     type: String,
   },
   file_ids: { type: [{ type: String }], default: undefined },
-  // vision
+  // deprecated
   resendImages: {
+    type: Boolean,
+  },
+  // files
+  resendFiles: {
     type: Boolean,
   },
   imageDetail: {

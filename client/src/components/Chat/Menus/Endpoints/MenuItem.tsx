@@ -101,7 +101,7 @@ const MenuItem: FC<MenuItemProps> = ({
     <>
       <div
         role="menuitem"
-        className="group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
+        className="group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600"
         tabIndex={-1}
         {...rest}
         onClick={() => onSelectEndpoint(endpoint)}
@@ -132,7 +132,7 @@ const MenuItem: FC<MenuItemProps> = ({
                     'invisible flex gap-x-1 group-hover:visible',
                     selected ? 'visible' : '',
                     expiryTime
-                      ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-800'
+                      ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-600'
                       : '',
                   )}
                   onClick={(e) => {

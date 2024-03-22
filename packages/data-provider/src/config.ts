@@ -221,6 +221,7 @@ export type TCustomConfig = z.infer<typeof configSchema>;
 
 export enum KnownEndpoints {
   mistral = 'mistral',
+  shuttleai = 'shuttleai',
   openrouter = 'openrouter',
   groq = 'groq',
   anyscale = 'anyscale',
@@ -342,11 +343,12 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
 ]);
 
 export const supportsBalanceCheck = {
+  [EModelEndpoint.custom]: true,
   [EModelEndpoint.openAI]: true,
   [EModelEndpoint.anthropic]: true,
-  [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.gptPlugins]: true,
-  [EModelEndpoint.custom]: true,
+  [EModelEndpoint.assistants]: true,
+  [EModelEndpoint.azureOpenAI]: true,
 };
 
 export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision', 'claude-3'];
@@ -436,6 +438,10 @@ export enum ViolationTypes {
    * Illegal Model Request (not available).
    */
   ILLEGAL_MODEL_REQUEST = 'illegal_model_request',
+  /**
+   * Token Limit Violation.
+   */
+  TOKEN_BALANCE = 'token_balance',
 }
 
 /**
@@ -525,3 +531,29 @@ export const defaultOrderQuery: {
 } = {
   order: 'asc',
 };
+
+export enum AssistantStreamEvents {
+  ThreadCreated = 'thread.created',
+  ThreadRunCreated = 'thread.run.created',
+  ThreadRunQueued = 'thread.run.queued',
+  ThreadRunInProgress = 'thread.run.in_progress',
+  ThreadRunRequiresAction = 'thread.run.requires_action',
+  ThreadRunCompleted = 'thread.run.completed',
+  ThreadRunFailed = 'thread.run.failed',
+  ThreadRunCancelling = 'thread.run.cancelling',
+  ThreadRunCancelled = 'thread.run.cancelled',
+  ThreadRunExpired = 'thread.run.expired',
+  ThreadRunStepCreated = 'thread.run.step.created',
+  ThreadRunStepInProgress = 'thread.run.step.in_progress',
+  ThreadRunStepCompleted = 'thread.run.step.completed',
+  ThreadRunStepFailed = 'thread.run.step.failed',
+  ThreadRunStepCancelled = 'thread.run.step.cancelled',
+  ThreadRunStepExpired = 'thread.run.step.expired',
+  ThreadRunStepDelta = 'thread.run.step.delta',
+  ThreadMessageCreated = 'thread.message.created',
+  ThreadMessageInProgress = 'thread.message.in_progress',
+  ThreadMessageCompleted = 'thread.message.completed',
+  ThreadMessageIncomplete = 'thread.message.incomplete',
+  ThreadMessageDelta = 'thread.message.delta',
+  ErrorEvent = 'error',
+}

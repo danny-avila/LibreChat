@@ -15,7 +15,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          'shadow-2xl dark:bg-gray-800 dark:text-white md:min-h-[373px] md:w-[680px]',
+          'shadow-2xl md:min-h-[373px] md:w-[680px]',
           isSmallScreen ? 'top-20 -translate-y-0' : '',
         )}
       >
@@ -36,17 +36,17 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               aria-orientation="vertical"
               className={cn(
                 'min-w-auto -ml-[8px] flex flex-shrink-0 flex-col',
-                isSmallScreen ? 'flex-row rounded-lg bg-gray-200 p-1 dark:bg-gray-800/30' : '',
+                isSmallScreen ? 'flex-row rounded-lg bg-gray-200 p-1 dark:bg-gray-700' : '',
               )}
               style={{ outline: 'none' }}
             >
               <Tabs.Trigger
                 className={cn(
-                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-750',
+                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                   isSmallScreen
                     ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : 'bg-white radix-state-active:bg-gray-200',
-                  isSmallScreen ? '' : 'dark:bg-gray-800',
+                  isSmallScreen ? '' : 'dark:bg-gray-700',
                 )}
                 value={SettingsTabValues.GENERAL}
                 style={{ userSelect: 'none' }}
@@ -56,11 +56,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 className={cn(
-                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-750',
+                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                   isSmallScreen
                     ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : 'bg-white radix-state-active:bg-gray-200',
-                  isSmallScreen ? '' : 'dark:bg-gray-800',
+                  isSmallScreen ? '' : 'dark:bg-gray-700',
                 )}
                 value={SettingsTabValues.BETA}
                 style={{ userSelect: 'none' }}
@@ -70,11 +70,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 className={cn(
-                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-750',
+                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                   isSmallScreen
                     ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : 'bg-white radix-state-active:bg-gray-200',
-                  isSmallScreen ? '' : 'dark:bg-gray-800',
+                  isSmallScreen ? '' : 'dark:bg-gray-700',
                 )}
                 value={SettingsTabValues.DATA}
                 style={{ userSelect: 'none' }}
@@ -84,11 +84,11 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               </Tabs.Trigger>
               <Tabs.Trigger
                 className={cn(
-                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-750',
+                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
                   isSmallScreen
                     ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
                     : 'bg-white radix-state-active:bg-gray-200',
-                  isSmallScreen ? '' : 'dark:bg-gray-800',
+                  isSmallScreen ? '' : 'dark:bg-gray-700',
                 )}
                 value={SettingsTabValues.ACCOUNT}
                 style={{ userSelect: 'none' }}

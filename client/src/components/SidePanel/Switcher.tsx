@@ -52,14 +52,14 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
   const currentAssistant = assistantMap?.[selectedAssistant ?? ''];
 
   return (
-    <Select defaultValue={selectedAssistant as string | undefined} onValueChange={onSelect}>
+    <Select value={selectedAssistant as string | undefined} onValueChange={onSelect}>
       <SelectTrigger
         className={cn(
           'flex items-center gap-2 [&>span]:line-clamp-1 [&>span]:flex [&>span]:w-full [&>span]:items-center [&>span]:gap-1 [&>span]:truncate [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0',
           isCollapsed
             ? 'flex h-9 w-9 shrink-0 items-center justify-center p-0 [&>span]:w-auto [&>svg]:hidden'
             : '',
-          'bg-white text-black hover:bg-gray-50 dark:bg-gray-900 dark:text-white',
+          'bg-white text-black hover:bg-gray-50 dark:bg-gray-850 dark:text-white',
         )}
         aria-label={localize('com_sidepanel_select_assistant')}
       >

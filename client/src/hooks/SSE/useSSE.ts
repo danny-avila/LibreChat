@@ -502,10 +502,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   );
 
   useEffect(() => {
-    if (submission === null) {
-      return;
-    }
-    if (Object.keys(submission).length === 0) {
+    if (submission === null || Object.keys(submission).length === 0) {
       return;
     }
 

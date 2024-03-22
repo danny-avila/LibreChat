@@ -95,6 +95,14 @@ export class ActionRequest {
   async setParams(params: object) {
     this.operationHash = sha1(JSON.stringify(params));
     this.params = params;
+
+    for (const [key, value] of Object.entries(params)) {
+      const paramPattern = `{${key}}`;
+      if (this.path.includes(paramPattern)) {
+        this.path = this.path.replace(paramPattern, encodeURIComponent(value as string));
+        delete (this.params as Record<string, unknown>)[key];
+      }
+    }
   }
 
   async setAuth(metadata: ActionMetadata) {

@@ -31,6 +31,14 @@ const Nav = ({ navVisible, setNavVisible }) => {
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isToggleHovering, setIsToggleHovering] = useState(false);
 
+  const handleMouseEnter = useCallback(() => {
+    setIsHovering(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHovering(false);
+  }, []);
+
   useEffect(() => {
     if (isSmallScreen) {
       setNavWidth('320px');
@@ -117,7 +125,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
       <Tooltip>
         <div
           className={
-            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-50 dark:bg-gray-900 md:max-w-[260px]'
+            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-50 dark:bg-gray-750 md:max-w-[260px]'
           }
           style={{
             width: navVisible ? navWidth : '0px',
@@ -144,8 +152,8 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         '-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
                         isHovering ? '' : 'scrollbar-transparent',
                       )}
-                      onMouseEnter={() => setIsHovering(true)}
-                      onMouseLeave={() => setIsHovering(false)}
+                      onMouseEnter={handleMouseEnter}
+                      onMouseLeave={handleMouseLeave}
                       ref={containerRef}
                     >
                       <NewChat
@@ -157,12 +165,11 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         moveToTop={moveToTop}
                         toggleNav={itemToggleNav}
                       />
-                      <Spinner
-                        className={cn(
-                          'm-1 mx-auto mb-4 h-4 w-4',
-                          isFetchingNextPage || showLoading ? 'opacity-1' : 'opacity-0',
-                        )}
-                      />
+                      {(isFetchingNextPage || showLoading) && (
+                        <Spinner
+                          className={cn('m-1 mx-auto mb-4 h-4 w-4 text-black dark:text-white')}
+                        />
+                      )}
                     </div>
                     <NavLinks />
                   </nav>

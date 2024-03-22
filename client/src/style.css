@@ -894,7 +894,7 @@ blockquote, dd, dl, fieldset, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {
 
 code,
 pre {
-  font-family: Söhne Mono, Monaco, Andale Mono, Ubuntu Mono, monospace !important;
+  font-family: Consolas, Söhne Mono, Monaco, Andale Mono, Ubuntu Mono, monospace !important;
 }
 code[class='language-plaintext'] {
   white-space: pre-line;
@@ -1049,9 +1049,9 @@ button {
 }
 .dark .btn-secondary:hover {
   --tw-bg-opacity: 1;
-  border-color: rgba(68, 68, 68, var(--tw-border-opacity));
+  border-color: rgba(8, 82, 78, var(--tw-border-opacity));
   color: rgba(255, 255, 240, var(--tw-text-opacity));
-  background-color: rgba(47, 47, 47, var(--tw-bg-opacity));
+  background-color: rgba(8, 82, 78, var(--tw-bg-opacity));
 }
 .btn-neutral {
   --tw-bg-opacity: 1;
@@ -1072,33 +1072,15 @@ button {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
   background-color: transparent;
-  border-color: rgba(68, 68, 68, var(--tw-border-opacity));
+  border-color: rgba(66, 66, 66, var(--tw-border-opacity));
   color: rgba(255, 255, 240, var(--tw-text-opacity));
 }
 .dark .btn-neutral:hover {
   --tw-bg-opacity: 1;
-  background-color: rgba(47, 47, 47, var(--tw-bg-opacity));
+  background-color: rgba(66, 66, 66, var(--tw-bg-opacity));
 }
 .btn-small {
   padding: 0.25rem 0.5rem;
-}
-
-::-webkit-scrollbar {
-  height: 0.1em;
-  width: 0.5rem;
-}
-
-.scrollbar-trigger:hover ::-webkit-scrollbar-thumb {
-  visibility: hide;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: hsla(0,0%,100%,.1);
-  border-radius: 9999px;
-}
-
-.scrollbar-transparent::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.1);
 }
 
 .bg-token-surface-secondary {
@@ -1112,13 +1094,32 @@ button {
   --tw-gradient-stops: var(--tw-gradient-from),var(--tw-gradient-to);
 }
 
+/* Webkit scrollbar */
+::-webkit-scrollbar {
+  height: 0.1em;
+  width: 0.5rem;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: hsla(0, 0%, 100%, 0.1);
+}
+
 ::-webkit-scrollbar-track {
   background-color: transparent;
   border-radius: 9999px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background-color: hsla(0,0%,100%,.3);
-  
+
+.scrollbar-transparent::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+
+.dark .scrollbar-transparent::-webkit-scrollbar-thumb {
+  background-color: transparent;
 }
 
 body,
@@ -1657,7 +1658,7 @@ button.scroll-convo {
   --gray-300:#cdcdcd;
   --gray-400:#999696;
   --gray-500:#686262;
-  --gray-600:#3d3d3f;
+  --gray-600:#424242;
   --gray-700:#262626;
   --gray-750:#333333;
   --gray-800:#171717;

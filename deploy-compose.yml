@@ -24,6 +24,8 @@ services:
     volumes:
       - ./images:/app/client/public/images
       - ./librechat.yaml:/app/librechat.yaml
+      - ./logs:/app/api/logs
+      - ./uploads:/app/uploads
   client:
     build:
       context: .

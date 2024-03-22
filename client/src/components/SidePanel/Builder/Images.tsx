@@ -98,7 +98,7 @@ export function AvatarMenu({
   return (
     <Popover.Portal>
       <Popover.Content
-        className="flex min-w-[100px] max-w-xs flex-col rounded-xl border border-gray-400 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+        className="flex min-w-[100px] max-w-xs flex-col rounded-xl border border-gray-400 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-850 dark:text-white"
         sideOffset={5}
       >
         <div
