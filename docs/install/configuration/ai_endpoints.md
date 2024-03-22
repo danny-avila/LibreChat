@@ -155,7 +155,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       dropParams: ["user"]
 ```
 
-![image](https://github.com/danny-avila/LibreChat/client/public/assets/ShuttleAI_Fibonacci.png)
+![image](https://raw.githubusercontent.com/danny-avila/LibreChat/main/client/public/assets/ShuttleAI_Fibonacci.png)
 
 ## Fireworks
 > Fireworks API key: [fireworks.ai/api-keys](https://fireworks.ai/api-keys)
