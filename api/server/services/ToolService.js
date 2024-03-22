@@ -10,7 +10,7 @@ const {
   validateAndParseOpenAPISpec,
   actionDelimiter,
 } = require('librechat-data-provider');
-const { loadActionSets, createActionTool } = require('./ActionService');
+const { loadActionSets, createActionTool, domainParser } = require('./ActionService');
 const { processFileURL } = require('~/server/services/Files/process');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
@@ -236,7 +236,7 @@ async function processRequiredActions(client, requiredActions) {
       }
 
       const actionSet = actionSets.find((action) =>
-        currentAction.tool.includes(action.metadata.domain),
+        currentAction.tool.includes(domainParser(client.req, action.metadata.domain, true)),
       );
 
       if (!actionSet) {
@@ -260,7 +260,7 @@ async function processRequiredActions(client, requiredActions) {
       }
 
       const functionName = currentAction.tool.replace(
-        `${actionDelimiter}${actionSet.metadata.domain}`,
+        `${actionDelimiter}${domainParser(client.req, actionSet.metadata.domain, true)}`,
         '',
       );
       const requestBuilder = builders[functionName];
