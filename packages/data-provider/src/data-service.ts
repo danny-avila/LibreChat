@@ -275,5 +275,9 @@ export const listConversationsByQuery = (
   }
 };
 
-export const deleteAction = async (assistant_id: string, action_id: string): Promise<void> =>
-  request.delete(endpoints.assistants(`actions/${assistant_id}/${action_id}`));
+export const deleteAction = async (
+  assistant_id: string,
+  action_id: string,
+  model: string,
+): Promise<void> =>
+  request.delete(endpoints.assistants(`actions/${assistant_id}/${action_id}/${model}`));

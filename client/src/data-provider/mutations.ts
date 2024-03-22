@@ -489,7 +489,7 @@ export const useDeleteAction = (
   const queryClient = useQueryClient();
   return useMutation([MutationKeys.deleteAction], {
     mutationFn: (variables: DeleteActionVariables) =>
-      dataService.deleteAction(variables.assistant_id, variables.action_id),
+      dataService.deleteAction(variables.assistant_id, variables.action_id, variables.model),
 
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),

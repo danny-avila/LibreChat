@@ -24,8 +24,18 @@ const ChatForm = ({ index = 0 }) => {
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const { requiresKey } = useRequiresKey();
 
+  const methods = useForm<{ text: string }>({
+    defaultValues: { text: '' },
+  });
+
   const { handlePaste, handleKeyUp, handleKeyDown, handleCompositionStart, handleCompositionEnd } =
-    useTextarea({ textAreaRef, submitButtonRef, disabled: !!requiresKey });
+    useTextarea({
+      textAreaRef,
+      submitButtonRef,
+      disabled: !!requiresKey,
+      setValue: methods.setValue,
+      getValues: methods.getValues,
+    });
 
   const {
     ask,
@@ -39,9 +49,6 @@ const ChatForm = ({ index = 0 }) => {
   } = useChatContext();
 
   const assistantMap = useAssistantsMapContext();
-  const methods = useForm<{ text: string }>({
-    defaultValues: { text: '' },
-  });
 
   const submitMessage = useCallback(
     (data?: { text: string }) => {
