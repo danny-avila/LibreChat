@@ -13,30 +13,56 @@ const { createOnProgress, sendMessage } = require('~/server/utils');
 const { processMessages } = require('~/server/services/Threads');
 const { logger } = require('~/config');
 
+/**
+ * Implements the StreamRunManager functionality for managing the streaming
+ * and processing of run steps, messages, and tool calls within a thread.
+ * @implements {StreamRunManager}
+ */
 class StreamRunManager {
   constructor(fields) {
     this.index = 0;
+    /** @type {Map<string, RunStep>} */
     this.steps = new Map();
 
+    /** @type {Map<string, number} */
     this.mappedOrder = new Map();
+    /** @type {Map<string, StepToolCall} */
     this.orderedRunSteps = new Map();
+    /** @type {Set<string>} */
     this.processedFileIds = new Set();
+    /** @type {Map<string, (delta: ToolCallDelta | string) => Promise<void>} */
     this.progressCallbacks = new Map();
-    this.submittedToolOutputs = false;
+    /** @type {Run | null} */
     this.run = null;
 
+    /** @type {Express.Request} */
     this.req = fields.req;
+    /** @type {Express.Response} */
     this.res = fields.res;
+    /** @type {OpenAI} */
     this.openai = fields.openai;
+    /** @type {string} */
     this.apiKey = this.openai.apiKey;
+    /** @type {string} */
     this.thread_id = fields.thread_id;
+    /** @type {RunCreateAndStreamParams} */
     this.initialRunBody = fields.runBody;
+    /**
+     * @type {Object.<AssistantStreamEvents, (event: AssistantStreamEvent) => Promise<void>>}
+     */
     this.clientHandlers = fields.handlers ?? {};
+    /** @type {OpenAIRequestOptions} */
     this.streamOptions = fields.streamOptions ?? {};
+    /** @type {Partial<TMessage>} */
     this.finalMessage = fields.responseMessage ?? {};
+    /** @type {ThreadMessage[]} */
     this.messages = [];
+    /** @type {string} */
     this.text = '';
 
+    /**
+     * @type {Object.<AssistantStreamEvents, (event: AssistantStreamEvent) => Promise<void>>}
+     */
     this.handlers = {
       [AssistantStreamEvents.ThreadCreated]: this.handleThreadCreated,
       [AssistantStreamEvents.ThreadRunCreated]: this.handleRunEvent,
@@ -64,6 +90,13 @@ class StreamRunManager {
     };
   }
 
+  /**
+   *
+   * Sends the content data to the client via SSE.
+   *
+   * @param {StreamContentData} data
+   * @returns {Promise<void>}
+   */
   async addContentData(data) {
     const { type, index } = data;
     this.finalMessage.content[index] = { type, [type]: data[type] };
@@ -87,6 +120,14 @@ class StreamRunManager {
 
   /* <------------------ Main Event Handlers ------------------> */
 
+  /**
+   * Run the assistant and handle the events.
+   * @param {Object} params -
+   * The parameters for running the assistant.
+   * @param {string} params.thread_id - The thread id.
+   * @param {RunCreateAndStreamParams} params.body - The body of the run.
+   * @returns {Promise<void>}
+   */
   async runAssistant({ thread_id, body }) {
     const streamRun = this.openai.beta.threads.runs.createAndStream(
       thread_id,
@@ -98,6 +139,11 @@ class StreamRunManager {
     }
   }
 
+  /**
+   * Handle the event.
+   * @param {AssistantStreamEvent} event - The stream event object.
+   * @returns {Promise<void>}
+   */
   async handleEvent(event) {
     const handler = this.handlers[event.event];
     const clientHandler = this.clientHandlers[event.event];
@@ -405,6 +451,12 @@ class StreamRunManager {
     return index;
   }
 
+  /**
+   * Generate Tool Call Key
+   * @param {string} stepId - The id of the step the tool_call is part of.
+   * @param {StepToolCall} toolCall - The tool call object.
+   * @returns {string} key - The generated key for the tool call.
+   */
   generateToolCallKey(stepId, toolCall) {
     return `${stepId}_tool_call_${toolCall.index}_${toolCall.type}`;
   }
@@ -432,15 +484,22 @@ class StreamRunManager {
     });
 
     const { tool_outputs } = await processRequiredActions(this, actions);
-    const toolRun = this.openai.beta.threads.runs.submitToolOutputsStream(
-      run.thread_id,
-      run.id,
-      {
-        tool_outputs,
-        stream: true,
-      },
-      this.streamOptions,
-    );
+    /** @type {AssistantStream | undefined} */
+    let toolRun;
+    try {
+      toolRun = this.openai.beta.threads.runs.submitToolOutputsStream(
+        run.thread_id,
+        run.id,
+        {
+          tool_outputs,
+          stream: true,
+        },
+        this.streamOptions,
+      );
+    } catch (error) {
+      logger.error('Error submitting tool outputs:', error);
+      throw error;
+    }
 
     for await (const event of toolRun) {
       await this.handleEvent(event);

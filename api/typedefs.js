@@ -15,6 +15,24 @@
  */
 
 /**
+ * @exports AssistantStream
+ * @typedef {AsyncIterable<AssistantStreamEvent>} AssistantStream
+ * @memberof typedefs
+ */
+
+/**
+ * @exports RunCreateAndStreamParams
+ * @typedef {import('openai').OpenAI.Beta.Threads.RunCreateAndStreamParams} RunCreateAndStreamParams
+ * @memberof typedefs
+ */
+
+/**
+ * @exports OpenAIRequestOptions
+ * @typedef {import('openai').OpenAI.RequestOptions} OpenAIRequestOptions
+ * @memberof typedefs
+ */
+
+/**
  * @exports ThreadCreated
  * @typedef {import('openai').default.Beta.AssistantStreamEvent.ThreadCreated} ThreadCreated
  * @memberof typedefs
@@ -262,6 +280,18 @@
 /**
  * @exports ImageFile
  * @typedef {import('librechat-data-provider').ImageFile} ImageFile
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TMessageContentParts
+ * @typedef {import('librechat-data-provider').TMessageContentParts} TMessageContentParts
+ * @memberof typedefs
+ */
+
+/**
+ * @exports StreamContentData
+ * @typedef {import('librechat-data-provider').StreamContentData} StreamContentData
  * @memberof typedefs
  */
 
@@ -930,4 +960,51 @@
  * **Note:** The API seems to prefer files added to messages, not runs.
  * @property {Object} [metadata] - Optional. Metadata for the run.
  * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} StreamRunManager
+ * Manages streaming and processing of run steps, messages, and tool calls within a thread.
+ *
+ * @property {number} index - Tracks the current index for step or message processing.
+ * @property {Map<string, any>} steps - Stores run steps by their IDs.
+ * @property {Map<string, number>} mappedOrder - Maps step or message IDs to their processing order index.
+ * @property {Map<number, any>} orderedRunSteps - Stores run steps in order of processing.
+ * @property {Set<string>} processedFileIds - Keeps track of file IDs that have been processed.
+ * @property {Map<string, Function>} progressCallbacks - Stores callbacks for reporting progress on step or message processing.
+ * @property {boolean} submittedToolOutputs - Indicates whether tool outputs have been submitted.
+ * @property {Object|null} run - Holds the current run object.
+ * @property {Object} req - The HTTP request object associated with the run.
+ * @property {Object} res - The HTTP response object for sending back data.
+ * @property {Object} openai - The OpenAI client instance.
+ * @property {string} apiKey - The API key used for OpenAI requests.
+ * @property {string} thread_id - The ID of the thread associated with the run.
+ * @property {Object} initialRunBody - The initial body of the run request.
+ * @property {Object.<string, Function>} clientHandlers - Custom handlers provided by the client.
+ * @property {Object} streamOptions - Options for streaming the run.
+ * @property {Object} finalMessage - The final message object to be constructed and sent.
+ * @property {Array} messages - An array of messages processed during the run.
+ * @property {string} text - Accumulated text from text content data.
+ * @property {Object.<string, Function>} handlers - Internal event handlers for different types of streaming events.
+ *
+ * @method addContentData Adds content data to the final message or sends it immediately depending on type.
+ * @method runAssistant Initializes and manages the streaming of a thread run.
+ * @method handleEvent Dispatches streaming events to the appropriate handlers.
+ * @method handleThreadCreated Handles the event when a thread is created.
+ * @method handleRunEvent Handles various run state events.
+ * @method handleRunStepEvent Handles events related to individual run steps.
+ * @method handleCodeImageOutput Processes and handles code-generated image outputs.
+ * @method createToolCallStream Initializes streaming for tool call outputs.
+ * @method handleNewToolCall Handles the creation of a new tool call within a run step.
+ * @method handleCompletedToolCall Handles the completion of tool call processing.
+ * @method handleRunStepDeltaEvent Handles updates (deltas) for run steps.
+ * @method handleMessageDeltaEvent Handles updates (deltas) for messages.
+ * @method handleErrorEvent Handles error events during streaming.
+ * @method getStepIndex Retrieves or assigns an index for a given step or message key.
+ * @method generateToolCallKey Generates a unique key for a tool call within a step.
+ * @method onRunRequiresAction Handles actions required by a run to proceed.
+ * @method onRunStepCreated Handles the creation of a new run step.
+ * @method onRunStepCompleted Handles the completion of a run step.
+ * @method handleMessageEvent Handles events related to messages within the run.
+ * @method messageCompleted Handles the completion of a message processing.
  */

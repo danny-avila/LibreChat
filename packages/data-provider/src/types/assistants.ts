@@ -245,12 +245,15 @@ export type TMessageContentParts =
     }
   | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata };
 
-export type TContentData = TMessageContentParts & {
+export type StreamContentData = TMessageContentParts & {
+  index: number;
+};
+
+export type TContentData = StreamContentData & {
   messageId: string;
   conversationId: string;
   userMessageId: string;
   thread_id: string;
-  index: number;
   stream?: boolean;
 };
 
