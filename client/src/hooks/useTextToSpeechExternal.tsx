@@ -5,26 +5,38 @@ import { useToastContext } from '~/Providers';
 function useTextToSpeechExternal() {
   const { showToast } = useToastContext();
   const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
-    onSuccess: (data: Blob) => {
-      console.log('Audio data:', data);
-      const blobUrl = URL.createObjectURL(data);
-      console.log('Blob URL:', blobUrl);
+    onSuccess: (data: ArrayBuffer) => {
+      try {
+        // Convert the ArrayBuffer to a Blob
+        const audioBlob = new Blob([data], { type: 'audio/mpeg' });
+        const blobUrl = URL.createObjectURL(audioBlob);
 
-      const audioElement = new Audio(blobUrl);
-      audioElement.addEventListener('canplaythrough', () => {
-        audioElement.play().catch((error) => {
-          console.error('Failed to play audio:', error);
+        const audio = new Audio(blobUrl);
+        audio.play().catch((error) => {
+          // Handle any errors that occur during playback
+          console.error('Error playing audio:', error);
           showToast({ message: `Error playing audio: ${error.message}`, status: 'error' });
-          URL.revokeObjectURL(blobUrl); // Clean up the blob URL
         });
-      });
+
+        // Create an anchor element and trigger a download
+        const downloadLink = document.createElement('a');
+        downloadLink.href = blobUrl;
+        downloadLink.download = 'speech.mp3'; // Suggest a filename for the download
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(blobUrl); // Clean up the blob URL
+      } catch (error) {
+        console.error('Error processing audio:', error);
+        showToast({ message: `Error processing audio: ${error.message}`, status: 'error' });
+      }
     },
     onError: (error: Error) => {
       showToast({ message: `Error: ${error.message}`, status: 'error' });
     },
   });
 
-  const synthesizeSpeech = (text) => {
+  const synthesizeSpeech = (text: string) => {
     const formData = new FormData();
     formData.append('text', text);
     processAudio(formData);
