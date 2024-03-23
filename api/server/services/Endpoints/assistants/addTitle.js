@@ -17,7 +17,7 @@ const addTitle = async (req, { text, responseText, conversationId, client }) => 
   const key = `${req.user.id}-${conversationId}`;
 
   const title = await client.titleConvo({ text, conversationId, responseText });
-  await titleCache.set(key, title);
+  await titleCache.set(key, title, 120000);
 
   await saveConvo(req.user.id, {
     conversationId,
