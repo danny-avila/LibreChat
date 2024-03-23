@@ -60,8 +60,8 @@ export const azureGroupSchema = z
   .and(azureBaseSchema);
 
 export const azureGroupConfigsSchema = z.array(azureGroupSchema).min(1);
+export type TAzureGroup = z.infer<typeof azureGroupSchema>;
 export type TAzureGroups = z.infer<typeof azureGroupConfigsSchema>;
-
 export type TAzureModelMapSchema = {
   // deploymentName?: string;
   // version?: string;

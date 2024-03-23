@@ -35,23 +35,46 @@ const listAssistants = async ({ req, res, query }) => {
  * @returns {Promise<AssistantListResponse>} A promise that resolves to an array of assistant data merged with their respective model information.
  */
 const listAssistantsForAzure = async ({ req, res, azureConfig = {}, query }) => {
+  /** @type {Array<[string, TAzureModelConfig]>} */
+  const groupModelTuples = [];
   const promises = [];
-  const models = [];
+  /** @type {Array<TAzureGroup>} */
+  const groups = [];
 
   const { groupMap, assistantGroups } = azureConfig;
 
   for (const groupName of assistantGroups) {
     const group = groupMap[groupName];
-    req.body.model = Object.keys(group?.models)[0];
-    models.push(req.body.model);
+    groups.push(group);
+
+    const currentModelTuples = Object.entries(group?.models);
+    groupModelTuples.push(currentModelTuples);
+
+    /* The specified model is only necessary to
+    fetch assistants for the shared instance */
+    req.body.model = currentModelTuples[0][0];
     promises.push(listAssistants({ req, res, query }));
   }
 
   const resolvedQueries = await Promise.all(promises);
   const data = resolvedQueries.flatMap((res, i) =>
     res.data.map((assistant) => {
-      const model = models[i];
-      return { ...assistant, model } ?? {};
+      const deploymentName = assistant.model;
+      const currentGroup = groups[i];
+      const currentModelTuples = groupModelTuples[i];
+      const firstModel = currentModelTuples[0][0];
+
+      if (currentGroup.deploymentName === deploymentName) {
+        return { ...assistant, model: firstModel };
+      }
+
+      for (const [model, modelConfig] of currentModelTuples) {
+        if (modelConfig.deploymentName === deploymentName) {
+          return { ...assistant, model };
+        }
+      }
+
+      return { ...assistant, model: firstModel };
     }),
   );
 

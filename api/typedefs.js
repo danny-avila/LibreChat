@@ -207,6 +207,18 @@
  */
 
 /**
+ * @exports TAzureModelConfig
+ * @typedef {import('librechat-data-provider').TAzureModelConfig} TAzureModelConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAzureGroup
+ * @typedef {import('librechat-data-provider').TAzureGroup} TAzureGroup
+ * @memberof typedefs
+ */
+
+/**
  * @exports TAzureGroups
  * @typedef {import('librechat-data-provider').TAzureGroups} TAzureGroups
  * @memberof typedefs
