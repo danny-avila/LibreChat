@@ -9,6 +9,12 @@
  */
 
 /**
+ * @exports Anthropic
+ * @typedef {import('@anthropic-ai/sdk').default} Anthropic
+ * @memberof typedefs
+ */
+
+/**
  * @exports AssistantStreamEvent
  * @typedef {import('openai').default.Beta.AssistantStreamEvent} AssistantStreamEvent
  * @memberof typedefs
