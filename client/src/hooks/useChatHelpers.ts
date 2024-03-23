@@ -140,7 +140,10 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
 
-    const thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+    let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+    if (!thread_id) {
+      thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
+    }
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');

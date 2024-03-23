@@ -36,11 +36,37 @@ transactionSchema.statics.create = async function (transactionData) {
   }
 
   // Adjust the user's balance
-  return await Balance.findOneAndUpdate(
+  const updatedBalance = await Balance.findOneAndUpdate(
     { user: transaction.user },
     { $inc: { tokenCredits: transaction.tokenValue } },
     { upsert: true, new: true },
   ).lean();
+
+  return {
+    rate: transaction.rate,
+    user: transaction.user.toString(),
+    balance: updatedBalance.tokenCredits,
+    [transaction.tokenType]: transaction.tokenValue,
+  };
 };
 
-module.exports = mongoose.model('Transaction', transactionSchema);
+const Transaction = mongoose.model('Transaction', transactionSchema);
+
+/**
+ * Queries and retrieves transactions based on a given filter.
+ * @async
+ * @function getTransactions
+ * @param {Object} filter - MongoDB filter object to apply when querying transactions.
+ * @returns {Promise<Array>} A promise that resolves to an array of matched transactions.
+ * @throws {Error} Throws an error if querying the database fails.
+ */
+async function getTransactions(filter) {
+  try {
+    return await Transaction.find(filter).lean();
+  } catch (error) {
+    console.error('Error querying transactions:', error);
+    throw error;
+  }
+}
+
+module.exports = { Transaction, getTransactions };

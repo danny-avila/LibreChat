@@ -77,13 +77,15 @@ Note: The above command extracts the files to "/usr/local/LibreChat". If you wan
 - Copy it to `/usr/local/LibreChat/`
 - Rename the file to `meilisearch`
 - Open a terminal and navigate to `/usr/local/LibreChat/`
+- Generate a Master Key or use the one already provided in th `.env` file (less secure)
+- Update the Master Key in the .env file (it must be the same everywhere) `MEILI_MASTER_KEY=` 
 - Run the following command:
 
 ```bash
 ./meilisearch --master-key=YOUR_MASTER_KEY
 ```
 
-Note: Replace `YOUR_MASTER_KEY` with the generated master key, which you saved earlier.
+Note: Replace `YOUR_MASTER_KEY` with the generated master key, which you saved earlier in the `.env` file.
 
 ## Install Node.js:
 

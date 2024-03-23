@@ -88,7 +88,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         </HoverCard>
         <div className="grid w-full grid-cols-2 items-center gap-10">
           <HoverCard openDelay={500}>
-            <HoverCardTrigger className="w-[100px]">
+            <HoverCardTrigger className="flex w-[100px] flex-col items-center space-y-4 text-center">
               <label
                 htmlFor="functions-agent"
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
@@ -106,7 +106,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             <OptionHover endpoint={conversation.endpoint ?? ''} type="func" side={ESide.Bottom} />
           </HoverCard>
           <HoverCard openDelay={500}>
-            <HoverCardTrigger className="ml-[-60px] w-[100px]">
+            <HoverCardTrigger className="ml-[-60px] flex w-[100px] flex-col items-center space-y-4 text-center">
               <label
                 htmlFor="skip-completion"
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"

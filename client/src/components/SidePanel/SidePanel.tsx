@@ -172,7 +172,7 @@ export default function SidePanel({
               localStorage.setItem('react-resizable-panels:collapsed', 'true');
             }}
             className={cn(
-              'sidenav border-l border-gray-200 bg-white dark:border-gray-800/50 dark:bg-black',
+              'sidenav hide-scrollbar border-l border-gray-200 bg-white dark:border-gray-800/50 dark:bg-gray-850',
               isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
               minSize === 0 ? 'min-w-0' : '',
             )}
@@ -180,12 +180,12 @@ export default function SidePanel({
             {keyProvided && (
               <div
                 className={cn(
-                  'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-black',
+                  'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-gray-850',
                   isCollapsed ? 'h-[52px]' : 'px-2',
                 )}
               >
                 <Switcher isCollapsed={isCollapsed} />
-                <Separator className="bg-gray-100/50" />
+                <Separator className="bg-gray-100/50 dark:bg-gray-600" />
               </div>
             )}
 

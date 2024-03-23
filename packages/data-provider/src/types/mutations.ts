@@ -46,6 +46,7 @@ export type LogoutOptions = {
 
 export type AssistantAvatarVariables = {
   assistant_id: string;
+  model: string;
   formData: FormData;
   postCreation?: boolean;
 };
@@ -55,6 +56,7 @@ export type UpdateActionVariables = {
   functions: FunctionTool[];
   metadata: ActionMetadata;
   action_id?: string;
+  model: string;
 };
 
 export type UploadAssistantAvatarOptions = {
@@ -86,6 +88,8 @@ export type UpdateAssistantMutationOptions = {
   ) => void;
 };
 
+export type DeleteAssistantBody = { assistant_id: string; model: string };
+
 export type DeleteAssistantMutationOptions = {
   onSuccess?: (data: void, variables: { assistant_id: string }, context?: unknown) => void;
   onMutate?: (variables: { assistant_id: string }) => void | Promise<unknown>;
@@ -106,6 +110,7 @@ export type UpdateActionOptions = {
 export type DeleteActionVariables = {
   assistant_id: string;
   action_id: string;
+  model: string;
 };
 
 export type DeleteActionOptions = {

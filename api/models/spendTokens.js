@@ -1,4 +1,4 @@
-const Transaction = require('./Transaction');
+const { Transaction } = require('./Transaction');
 const { logger } = require('~/config');
 
 /**
@@ -49,8 +49,12 @@ const spendTokens = async (txData, tokenUsage) => {
     prompt &&
       completion &&
       logger.debug('[spendTokens] Transaction data record against balance:', {
-        prompt,
-        completion,
+        user: prompt.user,
+        prompt: prompt.prompt,
+        promptRate: prompt.rate,
+        completion: completion.completion,
+        completionRate: completion.rate,
+        balance: completion.balance,
       });
   } catch (err) {
     logger.error('[spendTokens]', err);

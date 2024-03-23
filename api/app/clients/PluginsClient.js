@@ -31,10 +31,6 @@ class PluginsClient extends OpenAIClient {
 
     super.setOptions(options);
 
-    if (this.functionsAgent && this.agentOptions.model && !this.useOpenRouter && !this.azure) {
-      this.agentOptions.model = this.getFunctionModelName(this.agentOptions.model);
-    }
-
     this.isGpt3 = this.modelOptions?.model?.includes('gpt-3');
 
     if (this.options.reverseProxyUrl) {

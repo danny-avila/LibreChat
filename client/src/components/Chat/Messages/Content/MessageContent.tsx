@@ -5,23 +5,21 @@ import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
 import { DelayedRender } from '~/components/ui';
-import { useAuthContext } from '~/hooks';
 import EditMessage from './EditMessage';
 import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
 import Image from './Image';
 
-export const ErrorMessage = ({ text }: TText) => {
-  const { logout } = useAuthContext();
-
-  if (text.includes('ban')) {
-    logout();
-    return null;
-  }
+export const ErrorMessage = ({ text, className = '' }: TText) => {
   return (
     <Container>
-      <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
+      <div
+        className={cn(
+          'rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+          className,
+        )}
+      >
         <Error text={text} />
       </div>
     </Container>
@@ -59,7 +57,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
         className={cn(
           showCursor && !!text?.length ? 'result-streaming' : '',
           'markdown prose dark:prose-invert light w-full break-words',
-          isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
+          isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-100',
         )}
       >
         {!isCreatedByUser ? (
@@ -74,7 +72,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 
 // Unfinished Message Component
 export const UnfinishedMessage = () => (
-  <ErrorMessage text="The response is incomplete; it's either still processing, was cancelled, or censoreded. Refresh or try a different prompt." />
+  <ErrorMessage text="The response is incomplete; it's either still processing, was cancelled, or censored. Refresh or try a different prompt." />
 );
 
 // Content Component

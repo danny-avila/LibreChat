@@ -84,7 +84,7 @@ export default function Messages({ isSearchView = false }) {
               <Spinner />
             </div>
           ) : _messagesTree?.length == 0 && isSearchView ? (
-            <div className="flex w-full items-center justify-center gap-1 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-900/50 dark:bg-gray-800 dark:text-gray-300">
+            <div className="flex w-full items-center justify-center gap-1 bg-gray-50 p-3 text-sm text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
               Nothing found
             </div>
           ) : (
@@ -114,7 +114,7 @@ export default function Messages({ isSearchView = false }) {
             </>
           )}
           <div
-            className="dark:gpt-dark-gray group h-0 w-full flex-shrink-0 dark:border-gray-900/50"
+            className="dark:gpt-dark-gray group h-0 w-full flex-shrink-0 dark:border-gray-800/50"
             ref={messagesEndRef}
           />
         </div>

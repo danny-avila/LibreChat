@@ -4,7 +4,6 @@ const { GoogleVertexAI } = require('langchain/llms/googlevertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
 const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
-const { encodeAndFormat } = require('~/server/services/Files/images');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
   validateVisionModel,
@@ -13,8 +12,9 @@ const {
   EModelEndpoint,
   AuthKeys,
 } = require('librechat-data-provider');
+const { encodeAndFormat } = require('~/server/services/Files/images');
+const { formatMessage, createContextHandlers } = require('./prompts');
 const { getModelMaxTokens } = require('~/utils');
-const { formatMessage } = require('./prompts');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
 
@@ -124,18 +124,11 @@ class GoogleClient extends BaseClient {
       // stop: modelOptions.stop // no stop method for now
     };
 
-    if (this.options.attachments) {
-      this.modelOptions.model = 'gemini-pro-vision';
-    }
+    this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
     // TODO: as of 12/14/23, only gemini models are "Generative AI" models provided by Google
     this.isGenerativeModel = this.modelOptions.model.includes('gemini');
-    this.isVisionModel = validateVisionModel(this.modelOptions.model);
     const { isGenerativeModel } = this;
-    if (this.isVisionModel && !this.options.attachments) {
-      this.modelOptions.model = 'gemini-pro';
-      this.isVisionModel = false;
-    }
     this.isChatModel = !isGenerativeModel && this.modelOptions.model.includes('chat');
     const { isChatModel } = this;
     this.isTextModel =
@@ -220,6 +213,33 @@ class GoogleClient extends BaseClient {
     return this;
   }
 
+  /**
+   *
+   * Checks if the model is a vision model based on request attachments and sets the appropriate options:
+   * @param {MongoFile[]} attachments
+   */
+  checkVisionRequest(attachments) {
+    /* Validation vision request */
+    this.defaultVisionModel = this.options.visionModel ?? 'gemini-pro-vision';
+    const availableModels = this.options.modelsConfig?.[EModelEndpoint.google];
+    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
+
+    if (
+      attachments &&
+      attachments.some((file) => file?.type && file?.type?.includes('image')) &&
+      availableModels?.includes(this.defaultVisionModel) &&
+      !this.isVisionModel
+    ) {
+      this.modelOptions.model = this.defaultVisionModel;
+      this.isVisionModel = true;
+    }
+
+    if (this.isVisionModel && !attachments) {
+      this.modelOptions.model = 'gemini-pro';
+      this.isVisionModel = false;
+    }
+  }
+
   formatMessages() {
     return ((message) => ({
       author: message?.author ?? (message.isCreatedByUser ? this.userLabel : this.modelLabel),
@@ -227,18 +247,45 @@ class GoogleClient extends BaseClient {
     })).bind(this);
   }
 
-  async buildVisionMessages(messages = [], parentMessageId) {
-    const { prompt } = await this.buildMessagesPrompt(messages, parentMessageId);
-    const attachments = await this.options.attachments;
+  /**
+   *
+   * Adds image URLs to the message object and returns the files
+   *
+   * @param {TMessage[]} messages
+   * @param {MongoFile[]} files
+   * @returns {Promise<MongoFile[]>}
+   */
+  async addImageURLs(message, attachments) {
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
-      attachments.filter((file) => file.type.includes('image')),
+      attachments,
       EModelEndpoint.google,
     );
+    message.image_urls = image_urls.length ? image_urls : undefined;
+    return files;
+  }
 
+  async buildVisionMessages(messages = [], parentMessageId) {
+    const attachments = await this.options.attachments;
     const latestMessage = { ...messages[messages.length - 1] };
+    this.contextHandlers = createContextHandlers(this.options.req, latestMessage.text);
 
-    latestMessage.image_urls = image_urls;
+    if (this.contextHandlers) {
+      for (const file of attachments) {
+        if (file.embedded) {
+          this.contextHandlers?.processFile(file);
+          continue;
+        }
+      }
+
+      this.augmentedPrompt = await this.contextHandlers.createContext();
+      this.options.promptPrefix = this.augmentedPrompt + this.options.promptPrefix;
+    }
+
+    const { prompt } = await this.buildMessagesPrompt(messages, parentMessageId);
+
+    const files = await this.addImageURLs(latestMessage, attachments);
+
     this.options.attachments = files;
 
     latestMessage.text = prompt;
@@ -265,7 +312,7 @@ class GoogleClient extends BaseClient {
       );
     }
 
-    if (this.options.attachments) {
+    if (this.options.attachments && this.isGenerativeModel) {
       return this.buildVisionMessages(messages, parentMessageId);
     }
 

@@ -1,5 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   fileConfig as defaultFileConfig,
@@ -16,7 +16,7 @@ import type {
 } from 'librechat-data-provider';
 import { useUploadAssistantAvatarMutation, useGetFileConfig } from '~/data-provider';
 import { AssistantAvatar, NoImage, AvatarMenu } from './Images';
-import { useToastContext } from '~/Providers';
+import { useToastContext, useAssistantsMapContext } from '~/Providers';
 // import { Spinner } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 // import { cn } from '~/utils/';
@@ -32,6 +32,7 @@ function Avatar({
 }) {
   // console.log('Avatar', assistant_id, metadata, createMutation);
   const queryClient = useQueryClient();
+  const assistantsMap = useAssistantsMapContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const [progress, setProgress] = useState<number>(1);
   const [input, setInput] = useState<File | null>(null);
@@ -43,6 +44,10 @@ function Avatar({
 
   const localize = useLocalize();
   const { showToast } = useToastContext();
+
+  const activeModel = useMemo(() => {
+    return assistantsMap[assistant_id ?? '']?.model ?? '';
+  }, [assistant_id, assistantsMap]);
 
   const { mutate: uploadAvatar } = useUploadAssistantAvatarMutation({
     onMutate: () => {
@@ -141,11 +146,12 @@ function Avatar({
 
       uploadAvatar({
         assistant_id: createMutation.data.id,
+        model: activeModel,
         postCreation: true,
         formData,
       });
     }
-  }, [createMutation.data, createMutation.isSuccess, input, previewUrl, uploadAvatar]);
+  }, [createMutation.data, createMutation.isSuccess, input, previewUrl, uploadAvatar, activeModel]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
@@ -175,6 +181,7 @@ function Avatar({
 
       uploadAvatar({
         assistant_id,
+        model: activeModel,
         formData,
       });
     } else {

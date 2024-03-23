@@ -20,7 +20,7 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled }: ToolItemProps)
   };
 
   return (
-    <div className="flex flex-col gap-4 rounded border border-black/10 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
+    <div className="flex flex-col gap-4 rounded border border-black/10 bg-white p-6 dark:border-white/20 dark:bg-gray-800">
       <div className="flex gap-4">
         <div className="h-[70px] w-[70px] shrink-0">
           <div className="relative h-full w-full">
@@ -61,7 +61,7 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled }: ToolItemProps)
           )}
         </div>
       </div>
-      <div className="line-clamp-3 h-[60px] text-sm text-slate-700/70 dark:text-slate-50/70">
+      <div className="line-clamp-3 h-[60px] text-sm text-gray-700/70 dark:text-gray-50/70">
         {tool.description}
       </div>
     </div>

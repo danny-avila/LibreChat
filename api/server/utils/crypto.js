@@ -30,6 +30,10 @@ function encryptV2(value) {
 
 function decryptV2(encryptedValue) {
   const parts = encryptedValue.split(':');
+  // Already decrypted from an earlier invocation
+  if (parts.length === 1) {
+    return parts[0];
+  }
   const gen_iv = Buffer.from(parts.shift(), 'hex');
   const encrypted = parts.join(':');
   const decipher = crypto.createDecipheriv(algorithm, key, gen_iv);

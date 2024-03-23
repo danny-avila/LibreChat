@@ -15,8 +15,9 @@ Please delete any irrelevant options.
 - [ ] New feature (non-breaking change which adds functionality)
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] This change requires a documentation update
-- [ ] Documentation update
 - [ ] Translation update
+- [ ] Documentation update
+
 
 ## Testing
 
@@ -26,6 +27,8 @@ Please describe your test process and include instructions so that we can reprod
 
 ## Checklist
 
+Please delete any irrelevant options.
+
 - [ ] My code adheres to this project's style guidelines
 - [ ] I have performed a self-review of my own code
 - [ ] I have commented in any complex areas of my code
@@ -34,3 +37,4 @@ Please describe your test process and include instructions so that we can reprod
 - [ ] I have written tests demonstrating that my changes are effective or that my feature works
 - [ ] Local unit tests pass with my changes
 - [ ] Any changes dependent on mine have been merged and published in downstream modules.
+- [ ] New documents have been locally validated with mkdocs

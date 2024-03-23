@@ -52,14 +52,14 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
   const currentAssistant = assistantMap?.[selectedAssistant ?? ''];
 
   return (
-    <Select defaultValue={selectedAssistant as string | undefined} onValueChange={onSelect}>
+    <Select value={selectedAssistant as string | undefined} onValueChange={onSelect}>
       <SelectTrigger
         className={cn(
           'flex items-center gap-2 [&>span]:line-clamp-1 [&>span]:flex [&>span]:w-full [&>span]:items-center [&>span]:gap-1 [&>span]:truncate [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0',
           isCollapsed
             ? 'flex h-9 w-9 shrink-0 items-center justify-center p-0 [&>span]:w-auto [&>svg]:hidden'
             : '',
-          'bg-white',
+          'bg-white text-black hover:bg-gray-50 dark:bg-gray-850 dark:text-white',
         )}
         aria-label={localize('com_sidepanel_select_assistant')}
       >
@@ -72,16 +72,20 @@ export default function Switcher({ isCollapsed }: SwitcherProps) {
               iconURL={(currentAssistant?.metadata?.avatar as string) ?? ''}
             />
           </div>
-          <span className={cn('ml-2', isCollapsed ? 'hidden' : '')}>
+          <span className={cn('ml-2', isCollapsed ? 'hidden' : '')} style={{ userSelect: 'none' }}>
             {assistants.find((assistant) => assistant.id === selectedAssistant)?.name ??
               localize('com_sidepanel_select_assistant')}
           </span>
         </SelectValue>
       </SelectTrigger>
-      <SelectContent className="bg-white">
+      <SelectContent className="bg-white dark:bg-gray-800">
         {assistants.map((assistant) => (
-          <SelectItem key={assistant.id} value={assistant.id}>
-            <div className="[&_svg]:text-foreground flex items-center justify-center gap-3 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ">
+          <SelectItem
+            key={assistant.id}
+            value={assistant.id}
+            className="hover:bg-gray-50 dark:text-white"
+          >
+            <div className="[&_svg]:text-foreground flex items-center justify-center gap-3 dark:text-white [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0">
               <div className="assistant-item overflow-hidden rounded-full ">
                 <Icon
                   isCreatedByUser={false}

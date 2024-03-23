@@ -1,11 +1,13 @@
 const path = require('path');
 const { CacheKeys, configSchema } = require('librechat-data-provider');
+const getLogStores = require('~/cache/getLogStores');
 const loadYaml = require('~/utils/loadYaml');
-const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
+const axios = require('axios');
+const yaml = require('js-yaml');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
-const configPath = path.resolve(projectRoot, 'librechat.yaml');
+const defaultConfigPath = path.resolve(projectRoot, 'librechat.yaml');
 
 let i = 0;
 
@@ -16,19 +18,46 @@ let i = 0;
  * @returns {Promise<TCustomConfig | null>} A promise that resolves to null or the custom config object.
  * */
 async function loadCustomConfig() {
-  const customConfig = loadYaml(configPath);
-  if (!customConfig) {
-    i === 0 &&
-      logger.info(
-        'Custom config file missing or YAML format invalid.\n\nCheck out the latest config file guide for configurable options and features.\nhttps://docs.librechat.ai/install/configuration/custom_config.html\n\n',
-      );
-    i === 0 && i++;
-    return null;
+  // Use CONFIG_PATH if set, otherwise fallback to defaultConfigPath
+  const configPath = process.env.CONFIG_PATH || defaultConfigPath;
+
+  let customConfig;
+
+  if (/^https?:\/\//.test(configPath)) {
+    try {
+      const response = await axios.get(configPath);
+      customConfig = response.data;
+    } catch (error) {
+      i === 0 && logger.error(`Failed to fetch the remote config file from ${configPath}`, error);
+      i === 0 && i++;
+      return null;
+    }
+  } else {
+    customConfig = loadYaml(configPath);
+    if (!customConfig) {
+      i === 0 &&
+        logger.info(
+          'Custom config file missing or YAML format invalid.\n\nCheck out the latest config file guide for configurable options and features.\nhttps://docs.librechat.ai/install/configuration/custom_config.html\n\n',
+        );
+      i === 0 && i++;
+      return null;
+    }
+  }
+
+  if (typeof customConfig === 'string') {
+    try {
+      customConfig = yaml.load(customConfig);
+    } catch (parseError) {
+      i === 0 && logger.info(`Failed to parse the YAML config from ${configPath}`, parseError);
+      i === 0 && i++;
+      return null;
+    }
   }
 
   const result = configSchema.strict().safeParse(customConfig);
   if (!result.success) {
-    logger.error(`Invalid custom config file at ${configPath}`, result.error);
+    i === 0 && logger.error(`Invalid custom config file at ${configPath}`, result.error);
+    i === 0 && i++;
     return null;
   } else {
     logger.info('Custom config file loaded:');
@@ -40,8 +69,6 @@ async function loadCustomConfig() {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
   }
-
-  // TODO: handle remote config
 
   return customConfig;
 }

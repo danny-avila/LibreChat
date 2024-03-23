@@ -1,4 +1,5 @@
 const { EModelEndpoint } = require('librechat-data-provider');
+const { isUserProvided, generateConfig } = require('~/server/utils');
 
 const {
   OPENAI_API_KEY: openAIApiKey,
@@ -9,17 +10,16 @@ const {
   BINGAI_TOKEN: bingToken,
   PLUGINS_USE_AZURE,
   GOOGLE_KEY: googleKey,
+  OPENAI_REVERSE_PROXY,
+  AZURE_OPENAI_BASEURL,
+  ASSISTANTS_BASE_URL,
 } = process.env ?? {};
 
 const useAzurePlugins = !!PLUGINS_USE_AZURE;
 
 const userProvidedOpenAI = useAzurePlugins
-  ? azureOpenAIApiKey === 'user_provided'
-  : openAIApiKey === 'user_provided';
-
-function isUserProvided(key) {
-  return key ? { userProvide: key === 'user_provided' } : false;
-}
+  ? isUserProvided(azureOpenAIApiKey)
+  : isUserProvided(openAIApiKey);
 
 module.exports = {
   config: {
@@ -28,11 +28,11 @@ module.exports = {
     useAzurePlugins,
     userProvidedOpenAI,
     googleKey,
-    [EModelEndpoint.openAI]: isUserProvided(openAIApiKey),
-    [EModelEndpoint.assistants]: isUserProvided(assistantsApiKey),
-    [EModelEndpoint.azureOpenAI]: isUserProvided(azureOpenAIApiKey),
-    [EModelEndpoint.chatGPTBrowser]: isUserProvided(chatGPTToken),
-    [EModelEndpoint.anthropic]: isUserProvided(anthropicApiKey),
-    [EModelEndpoint.bingAI]: isUserProvided(bingToken),
+    [EModelEndpoint.openAI]: generateConfig(openAIApiKey, OPENAI_REVERSE_PROXY),
+    [EModelEndpoint.assistants]: generateConfig(assistantsApiKey, ASSISTANTS_BASE_URL, true),
+    [EModelEndpoint.azureOpenAI]: generateConfig(azureOpenAIApiKey, AZURE_OPENAI_BASEURL),
+    [EModelEndpoint.chatGPTBrowser]: generateConfig(chatGPTToken),
+    [EModelEndpoint.anthropic]: generateConfig(anthropicApiKey),
+    [EModelEndpoint.bingAI]: generateConfig(bingToken),
   },
 };

@@ -1,18 +1,45 @@
-const { AuthTypeEnum } = require('librechat-data-provider');
+const { AuthTypeEnum, EModelEndpoint, actionDomainSeparator } = require('librechat-data-provider');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions } = require('~/models/Action');
 const { logger } = require('~/config');
 
 /**
+ * Parses the domain for an action.
+ *
+ * Azure OpenAI Assistants API doesn't support periods in function
+ * names due to `[a-zA-Z0-9_-]*` Regex Validation.
+ *
+ * @param {Express.Request} req - Express Request object
+ * @param {string} domain - The domain for the actoin
+ * @param {boolean} inverse - If true, replaces periods with `actionDomainSeparator`
+ * @returns {string} The parsed domain
+ */
+function domainParser(req, domain, inverse = false) {
+  if (!domain) {
+    return;
+  }
+
+  if (!req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+    return domain;
+  }
+
+  if (inverse) {
+    return domain.replace(/\./g, actionDomainSeparator);
+  }
+
+  return domain.replace(actionDomainSeparator, '.');
+}
+
+/**
  * Loads action sets based on the user and assistant ID.
  *
- * @param {Object} params - The parameters for loading action sets.
- * @param {string} params.user - The user identifier.
- * @param {string} params.assistant_id - The assistant identifier.
+ * @param {Object} searchParams - The parameters for loading action sets.
+ * @param {string} searchParams.user - The user identifier.
+ * @param {string} searchParams.assistant_id - The assistant identifier.
  * @returns {Promise<Action[] | null>} A promise that resolves to an array of actions or `null` if no match.
  */
-async function loadActionSets({ user, assistant_id }) {
-  return await getActions({ user, assistant_id }, true);
+async function loadActionSets(searchParams) {
+  return await getActions(searchParams, true);
 }
 
 /**
@@ -40,7 +67,9 @@ function createActionTool({ action, requestBuilder }) {
       logger.error(`API call to ${action.metadata.domain} failed`, error);
       if (error.response) {
         const { status, data } = error.response;
-        return `API call to ${action.metadata.domain} failed with status ${status}: ${data}`;
+        return `API call to ${
+          action.metadata.domain
+        } failed with status ${status}: ${JSON.stringify(data)}`;
       }
 
       return `API call to ${action.metadata.domain} failed.`;
@@ -115,4 +144,5 @@ module.exports = {
   createActionTool,
   encryptMetadata,
   decryptMetadata,
+  domainParser,
 };

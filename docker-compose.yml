@@ -22,6 +22,7 @@ services:
     volumes:
       - ./.env:/app/.env
       - ./images:/app/client/public/images
+      - ./uploads:/app/uploads
       - ./logs:/app/api/logs
   mongodb:
     container_name: chat-mongodb
@@ -33,11 +34,11 @@ services:
     command: mongod --noauth
   meilisearch:
     container_name: chat-meilisearch
-    image: getmeili/meilisearch:v1.5
+    image: getmeili/meilisearch:v1.6
     restart: always
     user: "${UID}:${GID}"
     environment:
       - MEILI_HOST=http://meilisearch:7700
       - MEILI_NO_ANALYTICS=true
     volumes:
-      - ./meili_data_v1.5:/meili_data
+      - ./meili_data_v1.6:/meili_data

@@ -1,6 +1,7 @@
 import { ToolCallTypes, ContentTypes, imageGenTools } from 'librechat-data-provider';
 import type { TMessageContentParts, TMessage } from 'librechat-data-provider';
 import type { TDisplayProps } from '~/common';
+import { ErrorMessage } from './MessageContent';
 import RetrievalCall from './RetrievalCall';
 import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
@@ -17,6 +18,7 @@ const DisplayMessage = ({ text, isCreatedByUser = false, message, showCursor }: 
   return (
     <div
       className={cn(
+        showCursor && !!text?.length ? 'result-streaming' : '',
         'markdown prose dark:prose-invert light w-full break-words',
         isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
       )}
@@ -44,11 +46,14 @@ export default function Part({
   if (!part) {
     return null;
   }
-  if (part.type === ContentTypes.TEXT) {
+
+  if (part.type === ContentTypes.ERROR) {
+    return <ErrorMessage text={part[ContentTypes.TEXT].value} className="my-2" />;
+  } else if (part.type === ContentTypes.TEXT) {
     // Access the value property
     return (
       <Container>
-        <div className="markdown prose dark:prose-invert light my-1 w-full break-words dark:text-gray-70">
+        <div className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words">
           <DisplayMessage
             text={part[ContentTypes.TEXT].value}
             isCreatedByUser={message.isCreatedByUser}

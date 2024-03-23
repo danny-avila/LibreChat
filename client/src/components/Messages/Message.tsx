@@ -88,10 +88,10 @@ export default function Message(props: TMessageProps) {
   };
 
   const commonClasses =
-    'w-full border-b text-gray-800 group border-black/10 dark:border-gray-900/50 dark:text-gray-100';
+    'w-full border-b text-gray-800 group border-black/10 dark:border-gray-800/50 dark:text-gray-200';
   const uniqueClasses = isCreatedByUser
     ? 'bg-white dark:bg-gray-800 dark:text-gray-20'
-    : 'bg-gray-50 dark:bg-gray-1000 dark:text-gray-70';
+    : 'bg-gray-50 dark:bg-gray-700 dark:text-gray-100';
 
   const messageProps = {
     className: cn(commonClasses, uniqueClasses),
@@ -146,7 +146,7 @@ export default function Message(props: TMessageProps) {
   return (
     <>
       <div {...messageProps} onWheel={handleScroll} onTouchMove={handleScroll}>
-        <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-6 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
+        <div className="relative m-auto flex gap-4 p-4 text-base md:max-w-2xl md:gap-4 md:py-6 lg:max-w-2xl lg:px-0 xl:max-w-3xl">
           <div className="relative flex h-[40px] w-[40px] flex-col items-end text-right text-xs md:text-sm">
             {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
               <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>

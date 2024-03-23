@@ -6,7 +6,81 @@ import { FileSources } from './types/files';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
+export const defaultRetrievalModels = [
+  'gpt-4-turbo-preview',
+  'gpt-3.5-turbo-0125',
+  'gpt-4-0125-preview',
+  'gpt-4-1106-preview',
+  'gpt-3.5-turbo-1106',
+  'gpt-3.5-turbo-0125',
+  'gpt-4-turbo',
+  'gpt-4-0125',
+  'gpt-4-1106',
+];
+
 export const fileSourceSchema = z.nativeEnum(FileSources);
+
+export const modelConfigSchema = z
+  .object({
+    deploymentName: z.string().optional(),
+    version: z.string().optional(),
+    assistants: z.boolean().optional(),
+  })
+  .or(z.boolean());
+
+export type TAzureModelConfig = z.infer<typeof modelConfigSchema>;
+
+export const azureBaseSchema = z.object({
+  apiKey: z.string(),
+  serverless: z.boolean().optional(),
+  instanceName: z.string().optional(),
+  deploymentName: z.string().optional(),
+  assistants: z.boolean().optional(),
+  addParams: z.record(z.any()).optional(),
+  dropParams: z.array(z.string()).optional(),
+  forcePrompt: z.boolean().optional(),
+  version: z.string().optional(),
+  baseURL: z.string().optional(),
+  additionalHeaders: z.record(z.any()).optional(),
+});
+
+export type TAzureBaseSchema = z.infer<typeof azureBaseSchema>;
+
+export const azureGroupSchema = z
+  .object({
+    group: z.string(),
+    models: z.record(z.string(), modelConfigSchema),
+  })
+  .required()
+  .and(azureBaseSchema);
+
+export const azureGroupConfigsSchema = z.array(azureGroupSchema).min(1);
+export type TAzureGroups = z.infer<typeof azureGroupConfigsSchema>;
+
+export type TAzureModelMapSchema = {
+  // deploymentName?: string;
+  // version?: string;
+  group: string;
+};
+
+export type TAzureModelGroupMap = Record<string, TAzureModelMapSchema>;
+export type TAzureGroupMap = Record<
+  string,
+  TAzureBaseSchema & { models: Record<string, TAzureModelConfig> }
+>;
+
+export type TValidatedAzureConfig = {
+  modelNames: string[];
+  modelGroupMap: TAzureModelGroupMap;
+  groupMap: TAzureGroupMap;
+};
+
+export enum Capabilities {
+  code_interpreter = 'code_interpreter',
+  retrieval = 'retrieval',
+  actions = 'actions',
+  tools = 'tools',
+}
 
 export const assistantEndpointSchema = z.object({
   /* assistants specific */
@@ -15,6 +89,16 @@ export const assistantEndpointSchema = z.object({
   timeoutMs: z.number().optional(),
   supportedIds: z.array(z.string()).min(1).optional(),
   excludedIds: z.array(z.string()).min(1).optional(),
+  retrievalModels: z.array(z.string()).min(1).optional().default(defaultRetrievalModels),
+  capabilities: z
+    .array(z.nativeEnum(Capabilities))
+    .optional()
+    .default([
+      Capabilities.code_interpreter,
+      Capabilities.retrieval,
+      Capabilities.actions,
+      Capabilities.tools,
+    ]),
   /* general */
   apiKey: z.string().optional(),
   baseURL: z.string().optional(),
@@ -56,7 +140,30 @@ export const endpointSchema = z.object({
   headers: z.record(z.any()).optional(),
   addParams: z.record(z.any()).optional(),
   dropParams: z.array(z.string()).optional(),
+  customOrder: z.number().optional(),
 });
+
+export const azureEndpointSchema = z
+  .object({
+    groups: azureGroupConfigsSchema,
+    plugins: z.boolean().optional(),
+    assistants: z.boolean().optional(),
+  })
+  .and(
+    endpointSchema
+      .pick({
+        titleConvo: true,
+        titleMethod: true,
+        titleModel: true,
+        summarize: true,
+        summaryModel: true,
+        customOrder: true,
+      })
+      .partial(),
+  );
+
+export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
+  TValidatedAzureConfig;
 
 export const rateLimitSchema = z.object({
   fileUploads: z
@@ -72,6 +179,22 @@ export const rateLimitSchema = z.object({
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean(),
+  interface: z
+    .object({
+      privacyPolicy: z
+        .object({
+          externalUrl: z.string().optional(),
+          openNewTab: z.boolean().optional(),
+        })
+        .optional(),
+      termsOfService: z
+        .object({
+          externalUrl: z.string().optional(),
+          openNewTab: z.boolean().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
   fileStrategy: fileSourceSchema.optional(),
   registration: z
     .object({
@@ -83,6 +206,7 @@ export const configSchema = z.object({
   fileConfig: fileConfigSchema.optional(),
   endpoints: z
     .object({
+      [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.assistants]: assistantEndpointSchema.optional(),
       custom: z.array(endpointSchema.partial()).optional(),
     })
@@ -97,7 +221,18 @@ export type TCustomConfig = z.infer<typeof configSchema>;
 
 export enum KnownEndpoints {
   mistral = 'mistral',
+  shuttleai = 'shuttleai',
   openrouter = 'openrouter',
+  groq = 'groq',
+  anyscale = 'anyscale',
+  fireworks = 'fireworks',
+  ollama = 'ollama',
+  perplexity = 'perplexity',
+  'together.ai' = 'together.ai',
+}
+
+export enum FetchTokenConfig {
+  openrouter = KnownEndpoints.openrouter,
 }
 
 export const defaultEndpoints: EModelEndpoint[] = [
@@ -155,6 +290,8 @@ export const defaultModels = {
     'code-bison-32k',
   ],
   [EModelEndpoint.anthropic]: [
+    'claude-3-opus-20240229',
+    'claude-3-sonnet-20240229',
     'claude-2.1',
     'claude-2',
     'claude-1.2',
@@ -184,14 +321,6 @@ export const defaultModels = {
   ],
 };
 
-export const supportsRetrieval = new Set([
-  'gpt-3.5-turbo-0125',
-  'gpt-4-0125-preview',
-  'gpt-4-turbo-preview',
-  'gpt-4-1106-preview',
-  'gpt-3.5-turbo-1106',
-]);
-
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.openAI]: `/api/ask/${EModelEndpoint.openAI}`,
   [EModelEndpoint.bingAI]: `/api/ask/${EModelEndpoint.bingAI}`,
@@ -214,19 +343,30 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
 ]);
 
 export const supportsBalanceCheck = {
-  [EModelEndpoint.openAI]: true,
-  [EModelEndpoint.azureOpenAI]: true,
-  [EModelEndpoint.gptPlugins]: true,
   [EModelEndpoint.custom]: true,
+  [EModelEndpoint.openAI]: true,
+  [EModelEndpoint.anthropic]: true,
+  [EModelEndpoint.gptPlugins]: true,
+  [EModelEndpoint.assistants]: true,
+  [EModelEndpoint.azureOpenAI]: true,
 };
 
-export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision'];
+export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision', 'claude-3'];
 
-export function validateVisionModel(
-  model: string | undefined,
-  additionalModels: string[] | undefined = [],
-) {
+export function validateVisionModel({
+  model,
+  additionalModels = [],
+  availableModels,
+}: {
+  model: string;
+  additionalModels?: string[];
+  availableModels?: string[];
+}) {
   if (!model) {
+    return false;
+  }
+
+  if (availableModels && !availableModels.includes(model)) {
     return false;
   }
 
@@ -298,6 +438,10 @@ export enum ViolationTypes {
    * Illegal Model Request (not available).
    */
   ILLEGAL_MODEL_REQUEST = 'illegal_model_request',
+  /**
+   * Token Limit Violation.
+   */
+  TOKEN_BALANCE = 'token_balance',
 }
 
 /**
@@ -371,7 +515,7 @@ export enum Constants {
   /**
    * Key for the Custom Config's version (librechat.yaml).
    */
-  CONFIG_VERSION = '1.0.3',
+  CONFIG_VERSION = '1.0.5',
   /**
    * Standard value for the first message's `parentMessageId` value, to indicate no parent exists.
    */
@@ -383,3 +527,29 @@ export const defaultOrderQuery: {
 } = {
   order: 'asc',
 };
+
+export enum AssistantStreamEvents {
+  ThreadCreated = 'thread.created',
+  ThreadRunCreated = 'thread.run.created',
+  ThreadRunQueued = 'thread.run.queued',
+  ThreadRunInProgress = 'thread.run.in_progress',
+  ThreadRunRequiresAction = 'thread.run.requires_action',
+  ThreadRunCompleted = 'thread.run.completed',
+  ThreadRunFailed = 'thread.run.failed',
+  ThreadRunCancelling = 'thread.run.cancelling',
+  ThreadRunCancelled = 'thread.run.cancelled',
+  ThreadRunExpired = 'thread.run.expired',
+  ThreadRunStepCreated = 'thread.run.step.created',
+  ThreadRunStepInProgress = 'thread.run.step.in_progress',
+  ThreadRunStepCompleted = 'thread.run.step.completed',
+  ThreadRunStepFailed = 'thread.run.step.failed',
+  ThreadRunStepCancelled = 'thread.run.step.cancelled',
+  ThreadRunStepExpired = 'thread.run.step.expired',
+  ThreadRunStepDelta = 'thread.run.step.delta',
+  ThreadMessageCreated = 'thread.message.created',
+  ThreadMessageInProgress = 'thread.message.in_progress',
+  ThreadMessageCompleted = 'thread.message.completed',
+  ThreadMessageIncomplete = 'thread.message.incomplete',
+  ThreadMessageDelta = 'thread.message.delta',
+  ErrorEvent = 'error',
+}

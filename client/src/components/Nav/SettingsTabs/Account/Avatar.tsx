@@ -81,7 +81,7 @@ function Avatar() {
         <span>{localize('com_nav_profile_picture')}</span>
         <label
           htmlFor={'file-upload-avatar'}
-          className="flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:bg-slate-200 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-800 dark:hover:text-green-500"
+          className="flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
         >
           <FileImage className="mr-1 flex w-[22px] items-center stroke-1" />
           <span>{localize('com_nav_change_picture')}</span>
@@ -98,11 +98,11 @@ function Avatar() {
 
       <Dialog open={isDialogOpen} onOpenChange={() => setDialogOpen(false)}>
         <DialogContent
-          className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:h-[350px] md:w-[450px] ')}
+          className={cn('shadow-2xl dark:bg-gray-700 dark:text-white md:h-[350px] md:w-[450px] ')}
           style={{ borderRadius: '12px' }}
         >
           <DialogHeader>
-            <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
+            <DialogTitle className="text-lg font-medium leading-6 text-gray-800 dark:text-gray-200">
               {localize('com_ui_preview')}
             </DialogTitle>
           </DialogHeader>
@@ -123,7 +123,7 @@ function Avatar() {
             )}
             <button
               className={cn(
-                'mt-4 rounded px-4 py-2 text-white hover:bg-green-600 hover:text-gray-200',
+                'mt-4 rounded px-4 py-2 text-white transition-colors hover:bg-green-600 hover:text-gray-200',
                 isUploading ? 'cursor-not-allowed bg-green-600' : 'bg-green-500',
               )}
               onClick={handleUpload}

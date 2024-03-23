@@ -1,10 +1,12 @@
 ---
-title: 🖥️ Custom Endpoints & Config
+title: 🖥️ Custom Config
 description: Comprehensive guide for configuring the `librechat.yaml` file AKA the LibreChat Config file. This document is your one-stop resource for understanding and customizing endpoints & other integrations.
-weight: -10
+weight: -11
 ---
 
 # LibreChat Configuration Guide
+
+## Intro
 
 Welcome to the guide for configuring the **librechat.yaml** file in LibreChat.
 
@@ -22,6 +24,10 @@ Stay tuned for ongoing enhancements to customize your LibreChat instance!
 
 **Note:** To verify your YAML config, you can use online tools like [yamlchecker.com](https://yamlchecker.com/)
 
+## Compatible Endpoints
+
+Any API designed to be compatible with OpenAI's should be supported, but here is a list of **[known compatible endpoints](./ai_endpoints.md) including example setups.**
+
 ## Setup
 
 **The `librechat.yaml` file should be placed in the root of the project where the .env file is located.**
@@ -29,6 +35,12 @@ Stay tuned for ongoing enhancements to customize your LibreChat instance!
 You can copy the [example config file](#example-config) as a good starting point while reading the rest of the guide.
 
 The example config file has some options ready to go for Mistral AI and Openrouter.
+
+**Note:** You can set an alternate filepath for the `librechat.yaml` file through an environment variable:
+
+```bash
+CONFIG_PATH="/alternative/path/to/librechat.yaml"
+```
 
 ## Docker Setup
 
@@ -46,8 +58,10 @@ version: '3.4'
 services:
   api:
     volumes:
-      - ./librechat.yaml:/app/librechat.yaml
+      - ./librechat.yaml:/app/librechat.yaml # local/filepath:container/filepath
 ```
+
+- **Note:** If you are using `CONFIG_PATH` for an alternative filepath for this file, make sure to specify it accordingly.
 
 - Start docker again, and you should see your config file settings apply
 ```bash
@@ -57,33 +71,42 @@ docker compose up # no need to rebuild
 ## Example Config
 
 ```yaml
-version: 1.0.3
+version: 1.0.5
 cache: true
 # fileStrategy: "firebase"  # If using Firebase CDN
 fileConfig:
   endpoints:
     assistants:
       fileLimit: 5
-      fileSizeLimit: 10  # Maximum size for an individual file in MB
-      totalSizeLimit: 50  # Maximum total size for all files in a single request in MB
-      supportedMimeTypes:
-        - "image/.*"
-        - "application/pdf"
+      # Maximum size for an individual file in MB
+      fileSizeLimit: 10
+      # Maximum total size for all files in a single request in MB
+      totalSizeLimit: 50 
+      # In case you wish to limit certain filetypes
+      # supportedMimeTypes: 
+      #   - "image/.*"
+      #   - "application/pdf"
     openAI:
-      disabled: true  # Disables file uploading to the OpenAI endpoint
+    # Disables file uploading to the OpenAI endpoint
+      disabled: true
     default:
       totalSizeLimit: 20
-    YourCustomEndpointName:
-      fileLimit: 2
-      fileSizeLimit: 5
-  serverFileSizeLimit: 100  # Global server file size limit in MB
-  avatarSizeLimit: 2  # Limit for user avatar image size in MB
+    # Example for custom endpoints
+    # YourCustomEndpointName:
+    #   fileLimit: 2
+    #   fileSizeLimit: 5
+  # Global server file size limit in MB
+  serverFileSizeLimit: 100  
+  # Limit for user avatar image size in MB, default: 2 MB
+  avatarSizeLimit: 4 
 rateLimits:
   fileUploads:
     ipMax: 100
-    ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
+    # Rate limit window for file uploads per IP
+    ipWindowInMinutes: 60 
     userMax: 50
-    userWindowInMinutes: 60  # Rate limit window for file uploads per user
+    # Rate limit window for file uploads per user
+    userWindowInMinutes: 60  
 registration:
   socialLogins: ["google", "facebook", "github", "discord", "openid"]
   allowedDomains:
@@ -91,30 +114,35 @@ registration:
     - "anotherdomain.com"
 endpoints:
   assistants:
-    disableBuilder: false # Disable Assistants Builder Interface by setting to `true`
-    pollIntervalMs: 750  # Polling interval for checking assistant updates
-    timeoutMs: 180000  # Timeout for assistant operations
+    # Disable Assistants Builder Interface by setting to `true`
+    disableBuilder: false 
+    # Polling interval for checking assistant updates
+    pollIntervalMs: 750  
+    # Timeout for assistant operations
+    timeoutMs: 180000  
     # Should only be one or the other, either `supportedIds` or `excludedIds`
     supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
     # excludedIds: ["asst_excludedAssistantId"]
+    # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
+    # retrievalModels: ["gpt-4-turbo-preview"]
+    # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    # capabilities: ["code_interpreter", "retrieval", "actions", "tools"]
   custom:
     - name: "Mistral"
       apiKey: "${MISTRAL_API_KEY}"
       baseURL: "https://api.mistral.ai/v1"
       models:
-        default: ["mistral-tiny", "mistral-small", "mistral-medium"]
-        fetch: true  # Attempt to dynamically fetch available models
+        default: ["mistral-tiny", "mistral-small", "mistral-medium", "mistral-large-latest"]
+        # Attempt to dynamically fetch available models
+        fetch: true  
         userIdQuery: false
       iconURL: "https://example.com/mistral-icon.png"
       titleConvo: true
-      titleMethod: "completion"
       titleModel: "mistral-tiny"
-      summarize: true
-      summaryModel: "mistral-summary"
-      forcePrompt: false
       modelDisplayLabel: "Mistral AI"
-      addParams:
-        safe_prompt: true
+      # addParams:
+      # Mistral API specific value for moderating messages
+      #   safe_prompt: true 
       dropParams:
         - "stop"
         - "user"
@@ -130,10 +158,9 @@ endpoints:
         fetch: false
       titleConvo: true
       titleModel: "gpt-3.5-turbo"
-      summarize: false
-      forcePrompt: false
       modelDisplayLabel: "OpenRouter"
       dropParams:
+        - "stop"
         - "frequency_penalty"
 ```
 
@@ -161,7 +188,7 @@ This example configuration file sets up LibreChat with detailed options across s
 - **Key**: `version`
 - **Type**: String
 - **Description**: Specifies the version of the configuration file.
-- **Example**: `version: 1.0.1`
+- **Example**: `version: 1.0.5`
 - **Required**
 
 ### Cache Settings
@@ -239,30 +266,18 @@ rateLimits:
 - **Key**: `endpoints`
 - **Type**: Object
 - **Description**: Defines custom API endpoints for the application.
-  - **Sub-Key**: `assistants`
-  - **Type**: Object
-  - **Description**: Assistants endpoint-specific configuration.
-    - **Sub-Key**: `disableBuilder`
-    - **Description**: Controls the visibility and use of the builder interface for assistants.
-    - [More info](#disablebuilder)
-    - **Sub-Key**: `pollIntervalMs`
-    - **Description**: Specifies the polling interval in milliseconds for checking run updates or changes in assistant run states.
-    - [More info](#pollintervalms)
-    - **Sub-Key**: `timeoutMs`
-    - **Description**: Sets a timeout in milliseconds for assistant runs. Helps manage system load by limiting total run operation time.
-    - [More info](#timeoutMs)
-    - **Sub-Key**: `supportedIds`
-    - **Description**: List of supported assistant Ids. Use this or `excludedIds` but not both.
-    - [More info](#supportedIds)
-    - **Sub-Key**: `excludedIds`
-    - **Description**: List of excluded assistant Ids. Use this or `supportedIds` but not both (the `excludedIds` field will be ignored if so).
-    - [More info](#excludedIds)
-  - [Full Assistants Endpoint Object Structure](#assistants-endpoint-object-structure)
   - **Sub-Key**: `custom`
   - **Type**: Array of Objects
   - **Description**: Each object in the array represents a unique endpoint configuration.
   - [Full Custom Endpoint Object Structure](#custom-endpoint-object-structure)
-- **Required**
+  - **Sub-Key**: `azureOpenAI`
+  - **Type**: Object
+  - **Description**: Azure OpenAI endpoint-specific configuration
+  - [Full Azure OpenAI Endpoint Object Structure](#azure-openai-object-structure)
+  - **Sub-Key**: `assistants`
+  - **Type**: Object
+  - **Description**: Assistants endpoint-specific configuration.
+  - [Full Assistants Endpoint Object Structure](#assistants-endpoint-object-structure)
 
 ## Endpoint File Config Object Structure
 
@@ -457,6 +472,10 @@ endpoints:
     # Use either `supportedIds` or `excludedIds` but not both
     supportedIds: ["asst_supportedAssistantId1", "asst_supportedAssistantId2"]
     # excludedIds: ["asst_excludedAssistantId"]
+    # (optional) Models that support retrieval, will default to latest known OpenAI models that support the feature
+    # retrievalModels: ["gpt-4-turbo-preview"]
+    # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
+    # capabilities: ["code_interpreter", "retrieval", "actions", "tools"]
 ```
 > This configuration enables the builder interface for assistants, sets a polling interval of 500ms to check for run updates, and establishes a timeout of 10 seconds for assistant run operations.
 
@@ -505,6 +524,28 @@ In addition to custom endpoints, you can configure settings specific to the assi
   - **Description**: List of excluded assistant Ids. Use this or `supportedIds` but not both (the `excludedIds` field will be ignored if so).
   - **Example**: `excludedIds: ["asst_excludedAssistantId1", "asst_excludedAssistantId2"]`
 
+### **retrievalModels**:
+
+> Specifies the models that support retrieval for the assistants endpoint.
+
+- **Type**: Array/List of Strings
+- **Example**: `retrievalModels: ["gpt-4-turbo-preview"]`
+- **Description**: Defines the models that support retrieval capabilities for the assistants endpoint. By default, it uses the latest known OpenAI models that support the official Retrieval feature.
+- **Note**: This field is optional. If omitted, the default behavior is to use the latest known OpenAI models that support retrieval.
+
+### **capabilities**:
+
+> Specifies the assistant capabilities available to all users for the assistants endpoint.
+
+- **Type**: Array/List of Strings
+- **Example**: `capabilities: ["code_interpreter", "retrieval", "actions", "tools"]`
+- **Description**: Defines the assistant capabilities that are available to all users for the assistants endpoint. You can omit the capabilities you wish to exclude from the list. The available capabilities are:
+  - `code_interpreter`: Enables code interpretation capabilities for the assistant.
+  - `retrieval`: Enables retrieval capabilities for the assistant.
+  - `actions`: Enables action capabilities for the assistant.
+  - `tools`: Enables tool capabilities for the assistant.
+- **Note**: This field is optional. If omitted, the default behavior is to include all the capabilities listed in the example.
+
 ## Custom Endpoint Object Structure
 Each endpoint in the `custom` array should have the following structure:
 
@@ -519,15 +560,12 @@ endpoints:
       apiKey: "${YOUR_ENV_VAR_KEY}"
       baseURL: "https://api.mistral.ai/v1"
       models: 
-        default: ["mistral-tiny", "mistral-small", "mistral-medium"]
+        default: ["mistral-tiny", "mistral-small", "mistral-medium", "mistral-large-latest"]
       titleConvo: true
       titleModel: "mistral-tiny" 
-      summarize: false
-      summaryModel: "mistral-tiny" 
-      forcePrompt: false 
       modelDisplayLabel: "Mistral"
-      addParams:
-        safe_prompt: true
+      # addParams:
+      #   safe_prompt: true # Mistral specific value for moderating messages
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]
 ```
@@ -568,6 +606,12 @@ endpoints:
   - **Note**: The following are "known endpoints" (case-insensitive), which have icons provided for them. If your endpoint `name` matches the following names, you should omit this field:
     - "Mistral"
     - "OpenRouter"
+    - "Groq"
+    - "Anyscale"
+    - "Fireworks"
+    - "Perplexity"
+    - "together.ai"
+    - "Ollama"
 
 ### **models**:
 
@@ -723,3 +767,229 @@ Custom endpoints share logic with the OpenAI endpoint, and thus have default par
 
 **Note:** The `max_tokens` field is not sent to use the maximum amount of tokens available, which is default OpenAI API behavior. Some alternate APIs require this field, or it may default to a very low value and your responses may appear cut off; in this case, you should add it to `addParams` field as shown in the [Endpoint Object Structure](#endpoint-object-structure).
 
+## Azure OpenAI Object Structure
+
+Integrating Azure OpenAI Service with your application allows you to seamlessly utilize multiple deployments and region models hosted by Azure OpenAI. This section details how to configure the Azure OpenAI endpoint for your needs. 
+
+**[For a detailed guide on setting up Azure OpenAI configurations, click here](./azure_openai.md)**
+
+### Example Configuration
+
+```yaml
+# Example Azure OpenAI Object Structure
+endpoints:
+  azureOpenAI:
+    titleModel: "gpt-4-turbo"
+    plugins: true
+    groups:
+      - group: "my-westus" # arbitrary name
+        apiKey: "${WESTUS_API_KEY}"
+        instanceName: "actual-instance-name" # name of the resource group or instance
+        version: "2023-12-01-preview"
+        # baseURL: https://prod.example.com
+        # additionalHeaders:
+        #   X-Custom-Header: value
+        models:
+          gpt-4-vision-preview:
+            deploymentName: gpt-4-vision-preview
+            version: "2024-02-15-preview"
+          gpt-3.5-turbo:
+            deploymentName: gpt-35-turbo
+          gpt-3.5-turbo-1106:
+            deploymentName: gpt-35-turbo-1106
+          gpt-4:
+            deploymentName: gpt-4
+          gpt-4-1106-preview:
+            deploymentName: gpt-4-1106-preview
+      - group: "my-eastus"
+        apiKey: "${EASTUS_API_KEY}"
+        instanceName: "actual-eastus-instance-name"
+        deploymentName: gpt-4-turbo
+        version: "2024-02-15-preview"
+        baseURL: "https://gateway.ai.cloudflare.com/v1/cloudflareId/azure/azure-openai/${INSTANCE_NAME}/${DEPLOYMENT_NAME}" # uses env variables
+        additionalHeaders:
+          X-Custom-Header: value
+        models:
+          gpt-4-turbo: true
+```
+
+### **groups**:
+
+> Configuration for groups of models by geographic location or purpose.
+
+- Type: Array
+- **Description**: Each item in the `groups` array configures a set of models under a certain grouping, often by geographic region or distinct configuration.
+- **Example**: See above.
+
+### **plugins**:
+
+> Enables or disables plugins for the Azure OpenAI endpoint.
+
+- Type: Boolean
+- **Example**: `plugins: true`
+- **Description**: When set to `true`, activates plugins associated with this endpoint.
+
+### Group Configuration Parameters
+
+#### **group**:
+
+  > Identifier for a group of models.
+
+  - Type: String
+  - **Required**
+  - **Example**: `"my-westus"`
+
+#### **apiKey**:
+
+  > The API key for accessing the Azure OpenAI Service.
+
+  - Type: String
+  - **Required**
+  - **Example**: `"${WESTUS_API_KEY}"`
+  - **Note**: It's highly recommended to use a custom env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
+
+
+#### **instanceName**:
+
+  > Name of the Azure instance.
+
+  - Type: String
+  - **Required**
+  - **Example**: `"my-westus"`
+  - **Note**: It's recommended to use a custom env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
+
+
+#### **version**:
+
+  > API version.
+
+  - Type: String
+  - **Optional**
+  - **Example**: `"2023-12-01-preview"`
+  - **Note**: It's recommended to use a custom env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
+
+#### **baseURL**:
+
+  > The base URL for the Azure OpenAI Service.
+
+  - Type: String
+  - **Optional**
+  - **Example**: `"https://prod.example.com"`
+  - **Note**: It's recommended to use a custom env. variable reference for this field, i.e. `${YOUR_VARIABLE}`
+
+#### **additionalHeaders**:
+
+  > Additional headers for API requests.
+
+  - Type: Dictionary
+  - **Optional**
+  - **Example**:
+    ```yaml
+    additionalHeaders:
+      X-Custom-Header: ${YOUR_SECRET_CUSTOM_VARIABLE}
+    ```
+  - **Note**: It's recommended to use a custom env. variable reference for the values of field, as shown in the example.
+  - **Note**: `api-key` header value is sent on every request
+
+#### **serverless**:
+
+  > Indicates the use of a serverless inference endpoint for Azure OpenAI chat completions.
+
+  - Type: Boolean
+  - **Optional**
+  - **Description**: When set to `true`, specifies that the group is configured to use serverless inference endpoints as an Azure "Models as a Service" model.
+  - **Example**: `serverless: true`
+  - **Note**: [More info here](./azure_openai.md#serverless-inference-endpoints)
+
+#### **addParams**:
+
+  > Adds additional parameters to requests.
+
+  - Type: Object/Dictionary
+  - **Description**: Adds/Overrides parameters. Useful for specifying API-specific options.
+  - **Example**: 
+```yaml
+    addParams:
+      safe_prompt: true
+```
+
+#### **dropParams**:
+
+  > Removes [default parameters](#default-parameters) from requests.
+
+  - Type: Array/List of Strings
+  - **Description**: Excludes specified [default parameters](#default-parameters). Useful for APIs that do not accept or recognize certain parameters.
+  - **Example**: `dropParams: ["stop", "user", "frequency_penalty", "presence_penalty"]`
+  - **Note**: For a list of default parameters sent with every request, see the ["Default Parameters"](#default-parameters) Section below.
+
+#### **forcePrompt**:
+
+  > If `true`, sends a `prompt` parameter instead of `messages`.
+
+  - Type: Boolean
+  - Example: `forcePrompt: false`
+  - **Note**: This combines all messages into a single text payload, [following OpenAI format](https://github.com/pvicente/openai-python/blob/main/chatml.md), and
+
+ uses the `/completions` endpoint of your baseURL rather than `/chat/completions`.
+
+#### **models**:
+
+> Configuration for individual models within a group.
+
+- **Description**: Configures settings for each model, including deployment name and version. Model configurations can adopt the group's deployment name and/or version when configured as a boolean (set to `true`) or an object for detailed settings of either of those fields.
+- **Example**: See above example configuration.
+
+Within each group, models are records, either set to true, or set with a specific `deploymentName` and/or `version` where the key MUST be the matching OpenAI model name; for example, if you intend to use gpt-4-vision, it must be configured like so:
+
+```yaml
+models:
+  gpt-4-vision-preview: # matching OpenAI Model name
+    deploymentName: "arbitrary-deployment-name"
+    version: "2024-02-15-preview" # version can be any that supports vision
+```
+
+### Model Configuration Parameters
+
+#### **deploymentName**:
+
+> The name of the deployment for the model.
+
+- Type: String
+- **Required**
+- **Example**: `"gpt-4-vision-preview"`
+- **Description**: Identifies the deployment of the model within Azure.
+- **Note**: This does not have to be the matching OpenAI model name as is convention, but must match the actual name of your deployment on Azure.
+
+#### **version**:
+
+> Specifies the version of the model.
+
+- Type: String
+- **Required**
+- **Example**: `"2024-02-15-preview"`
+- **Description**: Defines the version of the model to be used.
+
+**When specifying a model as a boolean (`true`):**
+
+When a model is enabled (`true`) without using an object, it uses the group's configuration values for deployment name and version.
+
+**Example**:
+```yaml
+models:
+  gpt-4-turbo: true
+```
+
+**When specifying a model as an object:**
+
+An object allows for detailed configuration of the model, including its `deploymentName` and/or `version`. This mode is used for more granular control over the models, especially when working with multiple versions or deployments under one instance or resource group.
+
+**Example**:
+```yaml
+models:
+  gpt-4-vision-preview:
+    deploymentName: "gpt-4-vision-preview"
+    version: "2024-02-15-preview"
+```
+
+### Notes:
+- **Deployment Names** and **Versions** are critical for ensuring that the correct model is used. Double-check these values for accuracy to prevent unexpected behavior.

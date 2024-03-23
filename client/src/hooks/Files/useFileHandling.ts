@@ -9,6 +9,7 @@ import {
 } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useUploadFileMutation, useGetFileConfig } from '~/data-provider';
+import { useDelayedUploadToast } from './useDelayedUploadToast';
 import { useToastContext } from '~/Providers/ToastContext';
 import { useChatContext } from '~/Providers/ChatContext';
 import useUpdateFiles from './useUpdateFiles';
@@ -24,6 +25,7 @@ type UseFileHandling = {
 const useFileHandling = (params?: UseFileHandling) => {
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
+  const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, setFilesLoading, conversation } = useChatContext();
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
@@ -72,6 +74,7 @@ const useFileHandling = (params?: UseFileHandling) => {
 
   const uploadFile = useUploadFileMutation({
     onSuccess: (data) => {
+      clearUploadTimer(data.temp_file_id);
       console.log('upload success', data);
       updateFileById(
         data.temp_file_id,
@@ -95,6 +98,7 @@ const useFileHandling = (params?: UseFileHandling) => {
             width: data.width,
             filename: data.filename,
             source: data.source,
+            embedded: data.embedded,
           },
           params?.additionalMetadata?.assistant_id ? true : false,
         );
@@ -103,6 +107,7 @@ const useFileHandling = (params?: UseFileHandling) => {
     onError: (error, body) => {
       console.log('upload error', error);
       const file_id = body.get('file_id');
+      clearUploadTimer(file_id as string);
       deleteFileById(file_id as string);
       setError(
         (error as { response: { data: { message?: string } } })?.response?.data?.message ??
@@ -116,6 +121,8 @@ const useFileHandling = (params?: UseFileHandling) => {
       setError('An error occurred while uploading the file: Endpoint is undefined');
       return;
     }
+
+    startUploadTimer(extendedFile.file_id, extendedFile.file?.name || 'File');
 
     const formData = new FormData();
     formData.append('file', extendedFile.file as File);
@@ -139,6 +146,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       conversation?.assistant_id
     ) {
       formData.append('assistant_id', conversation.assistant_id);
+      formData.append('model', conversation?.model ?? '');
       formData.append('message_file', 'true');
     }
 
@@ -158,7 +166,27 @@ const useFileHandling = (params?: UseFileHandling) => {
     }
 
     for (let i = 0; i < fileList.length; i++) {
-      const originalFile = fileList[i];
+      let originalFile = fileList[i];
+      let fileType = originalFile.type;
+
+      // Infer MIME type for Markdown files when the type is empty
+      if (!fileType && originalFile.name.endsWith('.md')) {
+        fileType = 'text/markdown';
+      }
+
+      // Check if the file type is still empty after the extension check
+      if (!fileType) {
+        setError('Unable to determine file type for: ' + originalFile.name);
+        return false;
+      }
+
+      // Replace empty type with inferred type
+      if (originalFile.type !== fileType) {
+        const newFile = new File([originalFile], originalFile.name, { type: fileType });
+        originalFile = newFile;
+        fileList[i] = newFile;
+      }
+
       if (!checkType(originalFile.type, supportedMimeTypes)) {
         console.log(originalFile);
         setError('Currently, unsupported file type: ' + originalFile.type);

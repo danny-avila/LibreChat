@@ -56,3 +56,18 @@ export function mapEndpoints(endpointsConfig: TEndpointsConfig) {
     (a, b) => (endpointsConfig?.[a]?.order ?? 0) - (endpointsConfig?.[b]?.order ?? 0),
   );
 }
+
+export function updateLastSelectedModel({
+  endpoint,
+  model,
+}: {
+  endpoint: string;
+  model: string | undefined;
+}) {
+  if (!model) {
+    return;
+  }
+  const lastSelectedModels = JSON.parse(localStorage.getItem('lastSelectedModel') || '{}');
+  lastSelectedModels[endpoint] = model;
+  localStorage.setItem('lastSelectedModel', JSON.stringify(lastSelectedModels));
+}

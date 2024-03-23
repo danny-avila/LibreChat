@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { useCallback, useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo, memo } from 'react';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
@@ -21,7 +21,7 @@ import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
 
-export default function Nav({ navVisible, setNavVisible }) {
+const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
 
@@ -30,6 +30,14 @@ export default function Nav({ navVisible, setNavVisible }) {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isToggleHovering, setIsToggleHovering] = useState(false);
+
+  const handleMouseEnter = useCallback(() => {
+    setIsHovering(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHovering(false);
+  }, []);
 
   useEffect(() => {
     if (isSmallScreen) {
@@ -97,7 +105,10 @@ export default function Nav({ navVisible, setNavVisible }) {
   };
 
   const toggleNavVisible = () => {
-    setNavVisible((prev: boolean) => !prev);
+    setNavVisible((prev: boolean) => {
+      localStorage.setItem('navVisible', JSON.stringify(!prev));
+      return !prev;
+    });
     if (newUser) {
       setNewUser(false);
     }
@@ -110,11 +121,11 @@ export default function Nav({ navVisible, setNavVisible }) {
   };
 
   return (
-    <TooltipProvider delayDuration={150}>
+    <TooltipProvider delayDuration={250}>
       <Tooltip>
         <div
           className={
-            'nav active dark max-w-[320px] flex-shrink-0 overflow-x-hidden bg-black md:max-w-[260px]'
+            'nav active max-w-[320px] flex-shrink-0 overflow-x-hidden bg-gray-50 dark:bg-gray-750 md:max-w-[260px]'
           }
           style={{
             width: navVisible ? navWidth : '0px',
@@ -141,8 +152,8 @@ export default function Nav({ navVisible, setNavVisible }) {
                         '-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
                         isHovering ? '' : 'scrollbar-transparent',
                       )}
-                      onMouseEnter={() => setIsHovering(true)}
-                      onMouseLeave={() => setIsHovering(false)}
+                      onMouseEnter={handleMouseEnter}
+                      onMouseLeave={handleMouseLeave}
                       ref={containerRef}
                     >
                       <NewChat
@@ -154,12 +165,11 @@ export default function Nav({ navVisible, setNavVisible }) {
                         moveToTop={moveToTop}
                         toggleNav={itemToggleNav}
                       />
-                      <Spinner
-                        className={cn(
-                          'm-1 mx-auto mb-4 h-4 w-4',
-                          isFetchingNextPage || showLoading ? 'opacity-1' : 'opacity-0',
-                        )}
-                      />
+                      {(isFetchingNextPage || showLoading) && (
+                        <Spinner
+                          className={cn('m-1 mx-auto mb-4 h-4 w-4 text-black dark:text-white')}
+                        />
+                      )}
                     </div>
                     <NavLinks />
                   </nav>
@@ -179,4 +189,6 @@ export default function Nav({ navVisible, setNavVisible }) {
       </Tooltip>
     </TooltipProvider>
   );
-}
+};
+
+export default memo(Nav);

@@ -1,4 +1,4 @@
-const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
+const { CacheKeys, EModelEndpoint, orderEndpointsConfig } = require('librechat-data-provider');
 const { loadDefaultEndpointsConfig, loadConfigEndpoints } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
@@ -10,14 +10,23 @@ async function endpointController(req, res) {
     return;
   }
 
-  const defaultEndpointsConfig = await loadDefaultEndpointsConfig();
-  const customConfigEndpoints = await loadConfigEndpoints();
+  const defaultEndpointsConfig = await loadDefaultEndpointsConfig(req);
+  const customConfigEndpoints = await loadConfigEndpoints(req);
 
-  const endpointsConfig = { ...defaultEndpointsConfig, ...customConfigEndpoints };
-  if (endpointsConfig[EModelEndpoint.assistants] && req.app.locals?.[EModelEndpoint.assistants]) {
-    endpointsConfig[EModelEndpoint.assistants].disableBuilder =
-      req.app.locals[EModelEndpoint.assistants].disableBuilder;
+  /** @type {TEndpointsConfig} */
+  const mergedConfig = { ...defaultEndpointsConfig, ...customConfigEndpoints };
+  if (mergedConfig[EModelEndpoint.assistants] && req.app.locals?.[EModelEndpoint.assistants]) {
+    const { disableBuilder, retrievalModels, capabilities, ..._rest } =
+      req.app.locals[EModelEndpoint.assistants];
+    mergedConfig[EModelEndpoint.assistants] = {
+      ...mergedConfig[EModelEndpoint.assistants],
+      retrievalModels,
+      disableBuilder,
+      capabilities,
+    };
   }
+
+  const endpointsConfig = orderEndpointsConfig(mergedConfig);
 
   await cache.set(CacheKeys.ENDPOINT_CONFIG, endpointsConfig);
   res.send(JSON.stringify(endpointsConfig));
