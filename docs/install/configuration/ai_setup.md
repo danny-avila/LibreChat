@@ -126,8 +126,8 @@ ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
 - There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, that are available via the [`librechat.yaml` custom config file](./custom_config.md#assistants-endpoint-object-structure):
     - Control the visibility and use of the builder interface for assistants. [More info](./custom_config.md#disablebuilder)
     - Specify the polling interval in milliseconds for checking run updates or changes in assistant run states. [More info](./custom_config.md#pollintervalms)
-    - Set the timeout period in milliseconds for assistant runs. Helps manage system load by limiting total run operation time. [More info](./custom_config.md#timeoutMs)
-    - Specify which assistant Ids are supported or excluded [More info](./custom_config.md#supportedIds)
+    - Set the timeout period in milliseconds for assistant runs. Helps manage system load by limiting total run operation time. [More info](./custom_config.md#timeoutms)
+    - Specify which assistant Ids are supported or excluded [More info](./custom_config.md#supportedids)
 
 **Notes:**
 
