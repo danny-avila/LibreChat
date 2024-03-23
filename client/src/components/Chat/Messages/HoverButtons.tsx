@@ -10,6 +10,7 @@ import {
   ContinueIcon,
   VolumeIcon,
   VolumeMuteIcon,
+  Spinner,
 } from '~/components/svg';
 import {
   useGenerationsByLatest,
@@ -57,8 +58,11 @@ export default function HoverButtons({
   const { generateSpeechLocal: generateSpeechLocal, cancelSpeechLocal: cancelSpeechLocal } =
     useTextToSpeech();
 
-  const { synthesizeSpeech: synthesizeSpeechExternal, cancelSpeech: cancelSpeechExternal } =
-    useTextToSpeechExternal();
+  const {
+    synthesizeSpeech: synthesizeSpeechExternal,
+    cancelSpeech: cancelSpeechExternal,
+    isLoading: isLoading,
+  } = useTextToSpeechExternal();
 
   const generateSpeech = useExternalTextToSpeech ? synthesizeSpeechExternal : generateSpeechLocal;
   const cancelSpeech = useExternalTextToSpeech ? cancelSpeechExternal : cancelSpeechLocal;
@@ -104,7 +108,7 @@ export default function HoverButtons({
           type="button"
           title={isSpeaking ? localize('com_ui_stop_speaking') : localize('com_ui_speak')}
         >
-          {isSpeaking ? <VolumeMuteIcon /> : <VolumeIcon />}
+          {isLoading ? <Spinner /> : isSpeaking ? <VolumeMuteIcon /> : <VolumeIcon />}
         </button>
       )}
       {endpoint !== EModelEndpoint.assistants && (

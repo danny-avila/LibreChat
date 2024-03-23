@@ -60,7 +60,7 @@ function useTextToSpeechExternal() {
     return cancelSpeech;
   }, []);
 
-  return { synthesizeSpeech, cancelSpeech, isProcessing };
+  return { synthesizeSpeech, cancelSpeech, isLoading: isProcessing };
 }
 
 export default useTextToSpeechExternal;
