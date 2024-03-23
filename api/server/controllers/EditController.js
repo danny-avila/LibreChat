@@ -1,3 +1,4 @@
+const throttle = require('lodash/throttle');
 const { getResponseSender } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
@@ -28,8 +29,6 @@ const EditController = async (req, res, next, initializeClient) => {
   let metadata;
   let userMessage;
   let promptTokens;
-  let lastSavedTimestamp = 0;
-  let saveDelay = 100;
   const sender = getResponseSender({
     ...endpointOption,
     model: endpointOption.modelOptions.model,
@@ -53,11 +52,8 @@ const EditController = async (req, res, next, initializeClient) => {
 
   const { onProgress: progressCallback, getPartialText } = createOnProgress({
     generation,
-    onProgress: ({ text: partialText }) => {
-      const currentTimestamp = Date.now();
-
-      if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-        lastSavedTimestamp = currentTimestamp;
+    onProgress: throttle(
+      ({ text: partialText }) => {
         saveMessage({
           messageId: responseMessageId,
           sender,
@@ -70,12 +66,10 @@ const EditController = async (req, res, next, initializeClient) => {
           error: false,
           user,
         });
-      }
-
-      if (saveDelay < 500) {
-        saveDelay = 500;
-      }
-    },
+      },
+      3000,
+      { trailing: false },
+    ),
   });
 
   const getAbortData = () => ({

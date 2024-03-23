@@ -1,10 +1,6 @@
 const express = require('express');
-const router = express.Router();
-const { validateTools } = require('~/app');
+const throttle = require('lodash/throttle');
 const { getResponseSender } = require('librechat-data-provider');
-const { saveMessage, getConvoTitle, getConvo } = require('~/models');
-const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
-const { sendMessage, createOnProgress, formatSteps, formatAction } = require('~/server/utils');
 const {
   handleAbort,
   createAbortController,
@@ -15,7 +11,13 @@ const {
   buildEndpointOption,
   moderateText,
 } = require('~/server/middleware');
+const { sendMessage, createOnProgress, formatSteps, formatAction } = require('~/server/utils');
+const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
+const { saveMessage, getConvoTitle, getConvo } = require('~/models');
+const { validateTools } = require('~/app');
 const { logger } = require('~/config');
+
+const router = express.Router();
 
 router.use(moderateText);
 router.post('/abort', handleAbort());
@@ -48,8 +50,6 @@ router.post(
     let metadata;
     let userMessage;
     let promptTokens;
-    let lastSavedTimestamp = 0;
-    let saveDelay = 100;
     const sender = getResponseSender({
       ...endpointOption,
       model: endpointOption.modelOptions.model,
@@ -77,6 +77,7 @@ router.post(
       }
     };
 
+    const throttledSaveMessage = throttle(saveMessage, 3000, { trailing: false });
     const {
       onProgress: progressCallback,
       sendIntermediateMessage,
@@ -84,31 +85,22 @@ router.post(
     } = createOnProgress({
       generation,
       onProgress: ({ text: partialText }) => {
-        const currentTimestamp = Date.now();
-
         if (plugin.loading === true) {
           plugin.loading = false;
         }
 
-        if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-          lastSavedTimestamp = currentTimestamp;
-          saveMessage({
-            messageId: responseMessageId,
-            sender,
-            conversationId,
-            parentMessageId: overrideParentMessageId || userMessageId,
-            text: partialText,
-            model: endpointOption.modelOptions.model,
-            unfinished: true,
-            isEdited: true,
-            error: false,
-            user,
-          });
-        }
-
-        if (saveDelay < 500) {
-          saveDelay = 500;
-        }
+        throttledSaveMessage({
+          messageId: responseMessageId,
+          sender,
+          conversationId,
+          parentMessageId: overrideParentMessageId || userMessageId,
+          text: partialText,
+          model: endpointOption.modelOptions.model,
+          unfinished: true,
+          isEdited: true,
+          error: false,
+          user,
+        });
       },
     });
 
