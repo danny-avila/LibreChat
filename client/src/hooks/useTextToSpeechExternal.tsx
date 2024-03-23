@@ -43,7 +43,7 @@ function useTextToSpeechExternal() {
 
   const synthesizeSpeech = (text) => {
     const formData = new FormData();
-    formData.append('text', text);
+    formData.append('input', text);
     processAudio(formData);
   };
 
