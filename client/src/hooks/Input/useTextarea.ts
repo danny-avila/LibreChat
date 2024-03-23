@@ -1,9 +1,13 @@
 import debounce from 'lodash/debounce';
 import React, { useEffect, useRef, useCallback } from 'react';
+import { useRecoilState } from 'recoil';
+import store from '~/store';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { UseFormSetValue } from 'react-hook-form';
 import type { KeyboardEvent } from 'react';
+import type { TEndpointOption } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
@@ -78,14 +82,9 @@ export default function useTextarea({
   disabled?: boolean;
 }) {
   const assistantMap = useAssistantsMapContext();
-  const {
-    conversation,
-    isSubmitting,
-    latestMessage,
-    setShowBingToneSetting,
-    filesLoading,
-    setFilesLoading,
-  } = useChatContext();
+  const [enterToSend] = useRecoilState(store.enterToSend);
+  const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
+    useChatContext();
   const isComposing = useRef(false);
   const { handleFiles } = useFileHandling();
   const getSender = useGetSender();
@@ -132,16 +131,9 @@ export default function useTextarea({
     }
 
     const getPlaceholderText = () => {
-      if (
-        conversation?.endpoint === EModelEndpoint.assistants &&
-        (!conversation?.assistant_id || !assistantMap?.[conversation?.assistant_id ?? ''])
-      ) {
-        return localize('com_endpoint_assistant_placeholder');
-      }
       if (disabled) {
         return localize('com_endpoint_config_placeholder');
       }
-
       if (isNotAppendable) {
         return localize('com_endpoint_message_not_appendable');
       }
@@ -181,7 +173,6 @@ export default function useTextarea({
     getSender,
     assistantName,
     textAreaRef,
-    assistantMap,
   ]);
 
   const handleKeyDown = (e: KeyEvent) => {
@@ -189,18 +180,20 @@ export default function useTextarea({
       return;
     }
 
-    const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
-
-    if (isNonShiftEnter && filesLoading) {
-      e.preventDefault();
-    }
-
-    if (isNonShiftEnter) {
-      e.preventDefault();
-    }
-
-    if (isNonShiftEnter && !isComposing?.current) {
-      submitButtonRef.current?.click();
+    if (e.key === 'Enter' && !enterToSend) {
+      if (!e.shiftKey) {
+        e.preventDefault();
+        if (textAreaRef.current && textAreaRef.current.value !== null) {
+          insertTextAtCursor(textAreaRef.current, '\n');
+        }
+      }
+    } else if (e.key === 'Enter' && !e.shiftKey && !isComposing?.current) {
+      if (!enterToSend) {
+        submitButtonRef.current?.click();
+      } else {
+        e.preventDefault();
+        submitButtonRef.current?.click();
+      }
     }
   };
 
