@@ -17,7 +17,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
   logger.debug('[AskController]', { text, conversationId, ...endpointOption });
 
-  let metadata;
   let userMessage;
   let promptTokens;
   let userMessageId;
@@ -29,8 +28,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   });
   const newConvo = !conversationId;
   const user = req.user.id;
-
-  const addMetadata = (data) => (metadata = data);
 
   const getReqData = (data = {}) => {
     for (let key in data) {
@@ -107,7 +104,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       overrideParentMessageId,
       getReqData,
       onStart,
-      addMetadata,
       abortController,
       onProgress: progressCallback.call(null, {
         res,
@@ -120,10 +116,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     if (overrideParentMessageId) {
       response.parentMessageId = overrideParentMessageId;
-    }
-
-    if (metadata) {
-      response = { ...response, ...metadata };
     }
 
     response.endpoint = endpointOption.endpoint;

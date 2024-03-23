@@ -37,8 +37,9 @@ router.post(
       parentMessageId = null,
       overrideParentMessageId = null,
     } = req.body;
+
     logger.debug('[/ask/gptPlugins]', { text, conversationId, ...endpointOption });
-    let metadata;
+
     let userMessage;
     let promptTokens;
     let userMessageId;
@@ -52,7 +53,6 @@ router.post(
 
     const plugins = [];
 
-    const addMetadata = (data) => (metadata = data);
     const getReqData = (data = {}) => {
       for (let key in data) {
         if (key === 'userMessage') {
@@ -172,7 +172,6 @@ router.post(
         onToolStart,
         onToolEnd,
         onStart,
-        addMetadata,
         getPartialText,
         ...endpointOption,
         onProgress: progressCallback.call(null, {
@@ -186,10 +185,6 @@ router.post(
 
       if (overrideParentMessageId) {
         response.parentMessageId = overrideParentMessageId;
-      }
-
-      if (metadata) {
-        response = { ...response, ...metadata };
       }
 
       logger.debug('[/ask/gptPlugins]', response);

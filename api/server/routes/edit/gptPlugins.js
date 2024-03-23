@@ -47,7 +47,7 @@ router.post(
       conversationId,
       ...endpointOption,
     });
-    let metadata;
+
     let userMessage;
     let promptTokens;
     const sender = getResponseSender({
@@ -64,7 +64,6 @@ router.post(
       outputs: null,
     };
 
-    const addMetadata = (data) => (metadata = data);
     const getReqData = (data = {}) => {
       for (let key in data) {
         if (key === 'userMessage') {
@@ -153,7 +152,6 @@ router.post(
         onAgentAction,
         onChainEnd,
         onStart,
-        addMetadata,
         ...endpointOption,
         onProgress: progressCallback.call(null, {
           res,
@@ -166,10 +164,6 @@ router.post(
 
       if (overrideParentMessageId) {
         response.parentMessageId = overrideParentMessageId;
-      }
-
-      if (metadata) {
-        response = { ...response, ...metadata };
       }
 
       logger.debug('[/edit/gptPlugins] CLIENT RESPONSE', response);

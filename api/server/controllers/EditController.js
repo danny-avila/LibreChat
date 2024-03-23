@@ -26,7 +26,6 @@ const EditController = async (req, res, next, initializeClient) => {
     ...endpointOption,
   });
 
-  let metadata;
   let userMessage;
   let promptTokens;
   const sender = getResponseSender({
@@ -37,7 +36,6 @@ const EditController = async (req, res, next, initializeClient) => {
   const userMessageId = parentMessageId;
   const user = req.user.id;
 
-  const addMetadata = (data) => (metadata = data);
   const getReqData = (data = {}) => {
     for (let key in data) {
       if (key === 'userMessage') {
@@ -112,7 +110,6 @@ const EditController = async (req, res, next, initializeClient) => {
       overrideParentMessageId,
       getReqData,
       onStart,
-      addMetadata,
       abortController,
       onProgress: progressCallback.call(null, {
         res,
@@ -120,10 +117,6 @@ const EditController = async (req, res, next, initializeClient) => {
         parentMessageId: overrideParentMessageId || userMessageId,
       }),
     });
-
-    if (metadata) {
-      response = { ...response, ...metadata };
-    }
 
     const conversation = await getConvo(user, conversationId);
     conversation.title =
