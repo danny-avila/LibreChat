@@ -1,10 +1,12 @@
 const {
   Constants,
   FileSources,
+  Capabilities,
   EModelEndpoint,
   defaultSocialLogins,
   validateAzureGroups,
   mapModelToAzureConfig,
+  assistantEndpointSchema,
   deprecatedAzureVariables,
   conflictingAzureVariables,
 } = require('librechat-data-provider');
@@ -68,8 +70,7 @@ const AppService = async (app) => {
   const endpointLocals = {};
 
   if (config?.endpoints?.[EModelEndpoint.azureOpenAI]) {
-    const { groups, titleModel, titleConvo, titleMethod, plugins } =
-      config.endpoints[EModelEndpoint.azureOpenAI];
+    const { groups, ...azureConfiguration } = config.endpoints[EModelEndpoint.azureOpenAI];
     const { isValid, modelNames, modelGroupMap, groupMap, errors } = validateAzureGroups(groups);
 
     if (!isValid) {
@@ -79,18 +80,32 @@ const AppService = async (app) => {
       throw new Error(errorMessage);
     }
 
+    const assistantModels = [];
+    const assistantGroups = new Set();
     for (const modelName of modelNames) {
       mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
+      const groupName = modelGroupMap?.[modelName]?.group;
+      const modelGroup = groupMap?.[groupName];
+      let supportsAssistants = modelGroup?.assistants || modelGroup?.[modelName]?.assistants;
+      if (supportsAssistants) {
+        assistantModels.push(modelName);
+        !assistantGroups.has(groupName) && assistantGroups.add(groupName);
+      }
+    }
+
+    if (azureConfiguration.assistants && assistantModels.length === 0) {
+      throw new Error(
+        'No Azure models are configured to support assistants. Please remove the `assistants` field or configure at least one model to support assistants.',
+      );
     }
 
     endpointLocals[EModelEndpoint.azureOpenAI] = {
       modelNames,
       modelGroupMap,
       groupMap,
-      titleConvo,
-      titleMethod,
-      titleModel,
-      plugins,
+      assistantModels,
+      assistantGroups: Array.from(assistantGroups),
+      ...azureConfiguration,
     };
 
     deprecatedAzureVariables.forEach(({ key, description }) => {
@@ -108,25 +123,36 @@ const AppService = async (app) => {
         );
       }
     });
+
+    if (azureConfiguration.assistants) {
+      endpointLocals[EModelEndpoint.assistants] = {
+        // Note: may need to add retrieval models here in the future
+        capabilities: [Capabilities.tools, Capabilities.actions, Capabilities.code_interpreter],
+      };
+    }
   }
 
   if (config?.endpoints?.[EModelEndpoint.assistants]) {
-    const { disableBuilder, pollIntervalMs, timeoutMs, supportedIds, excludedIds } =
-      config.endpoints[EModelEndpoint.assistants];
-
-    if (supportedIds?.length && excludedIds?.length) {
+    const assistantsConfig = config.endpoints[EModelEndpoint.assistants];
+    const parsedConfig = assistantEndpointSchema.parse(assistantsConfig);
+    if (assistantsConfig.supportedIds?.length && assistantsConfig.excludedIds?.length) {
       logger.warn(
         `Both \`supportedIds\` and \`excludedIds\` are defined for the ${EModelEndpoint.assistants} endpoint; \`excludedIds\` field will be ignored.`,
       );
     }
 
+    const prevConfig = endpointLocals[EModelEndpoint.assistants] ?? {};
+
     /** @type {Partial<TAssistantEndpoint>} */
     endpointLocals[EModelEndpoint.assistants] = {
-      disableBuilder,
-      pollIntervalMs,
-      timeoutMs,
-      supportedIds,
-      excludedIds,
+      ...prevConfig,
+      retrievalModels: parsedConfig.retrievalModels,
+      disableBuilder: parsedConfig.disableBuilder,
+      pollIntervalMs: parsedConfig.pollIntervalMs,
+      supportedIds: parsedConfig.supportedIds,
+      capabilities: parsedConfig.capabilities,
+      excludedIds: parsedConfig.excludedIds,
+      timeoutMs: parsedConfig.timeoutMs,
     };
   }
 
@@ -135,6 +161,7 @@ const AppService = async (app) => {
     availableTools,
     fileStrategy,
     fileConfig: config?.fileConfig,
+    interface: config?.interface,
     paths,
     ...endpointLocals,
   };

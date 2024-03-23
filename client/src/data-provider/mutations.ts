@@ -26,6 +26,7 @@ import type {
   CreateAssistantMutationOptions,
   UpdateAssistantMutationOptions,
   DeleteAssistantMutationOptions,
+  DeleteAssistantBody,
   DeleteConversationOptions,
   UpdateActionOptions,
   UpdateActionVariables,
@@ -369,10 +370,11 @@ export const useUpdateAssistantMutation = (
  */
 export const useDeleteAssistantMutation = (
   options?: DeleteAssistantMutationOptions,
-): UseMutationResult<void, Error, { assistant_id: string }> => {
+): UseMutationResult<void, Error, DeleteAssistantBody> => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ assistant_id }: { assistant_id: string }) => dataService.deleteAssistant(assistant_id),
+    ({ assistant_id, model }: DeleteAssistantBody) =>
+      dataService.deleteAssistant(assistant_id, model),
     {
       onMutate: (variables) => options?.onMutate?.(variables),
       onError: (error, variables, context) => options?.onError?.(error, variables, context),
@@ -487,7 +489,7 @@ export const useDeleteAction = (
   const queryClient = useQueryClient();
   return useMutation([MutationKeys.deleteAction], {
     mutationFn: (variables: DeleteActionVariables) =>
-      dataService.deleteAction(variables.assistant_id, variables.action_id),
+      dataService.deleteAction(variables.assistant_id, variables.action_id, variables.model),
 
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),

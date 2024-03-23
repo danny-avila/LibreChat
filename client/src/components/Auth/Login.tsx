@@ -91,6 +91,31 @@ function Login() {
     ),
   };
 
+  const privacyPolicy = startupConfig.interface?.privacyPolicy;
+  const termsOfService = startupConfig.interface?.termsOfService;
+
+  const privacyPolicyRender = privacyPolicy?.externalUrl && (
+    <a
+      className="text-xs font-medium text-green-500"
+      href={privacyPolicy.externalUrl}
+      target={privacyPolicy.openNewTab ? '_blank' : undefined}
+      rel="noreferrer"
+    >
+      {localize('com_ui_privacy_policy')}
+    </a>
+  );
+
+  const termsOfServiceRender = termsOfService?.externalUrl && (
+    <a
+      className="text-xs font-medium text-green-500"
+      href={termsOfService.externalUrl}
+      target={termsOfService.openNewTab ? '_blank' : undefined}
+      rel="noreferrer"
+    >
+      {localize('com_ui_terms_of_service')}
+    </a>
+  );
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
       <div className="absolute bottom-0 left-0 m-4">
@@ -105,7 +130,7 @@ function Login() {
         </h1>
         {error && (
           <div
-            className="relative mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
+            className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
             role="alert"
           >
             {localize(getLoginError(error))}
@@ -138,6 +163,13 @@ function Login() {
             </div>
           </>
         )}
+      </div>
+      <div className="flex justify-center gap-4 align-middle">
+        {privacyPolicyRender}
+        {privacyPolicyRender && termsOfServiceRender && (
+          <div className="border-r-[1px] border-gray-300" />
+        )}
+        {termsOfServiceRender}
       </div>
     </div>
   );

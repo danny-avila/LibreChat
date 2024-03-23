@@ -56,14 +56,14 @@ export default function OptionsPopover({
           <div
             className={cn(
               cardStyle,
-              'dark:bg-gray-800',
+              'dark:bg-gray-700',
               'border-d-0 flex w-full flex-col overflow-hidden rounded-none border-s-0 border-t bg-white px-0 pb-[10px] dark:border-white/10 md:rounded-md md:border lg:w-[736px]',
             )}
           >
-            <div className="flex w-full items-center bg-gray-50 px-2 py-2 dark:bg-gray-800/60">
+            <div className="flex w-full items-center bg-gray-50 px-2 py-2 dark:bg-gray-700">
               <Button
                 type="button"
-                className="h-auto justify-start rounded-md bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700"
+                className="h-auto justify-start rounded-md bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-600"
                 onClick={saveAsPreset}
               >
                 <Save className="mr-1 w-[14px]" />

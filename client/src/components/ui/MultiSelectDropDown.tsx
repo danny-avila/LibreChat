@@ -3,6 +3,7 @@ import { Listbox, Transition } from '@headlessui/react';
 import { Wrench, ArrowRight } from 'lucide-react';
 import { CheckMark } from '~/components/svg';
 import useOnClickOutside from '~/hooks/useOnClickOutside';
+import { useMultiSearch } from './MultiSearch';
 import { cn } from '~/utils/';
 import type { TPlugin } from 'librechat-data-provider';
 
@@ -17,6 +18,7 @@ export type TMultiSelectDropDownProps = {
   containerClassName?: string;
   isSelected: (value: string) => boolean;
   className?: string;
+  searchPlaceholder?: string;
   optionValueKey?: string;
 };
 
@@ -31,6 +33,7 @@ function MultiSelectDropDown({
   containerClassName,
   isSelected,
   className,
+  searchPlaceholder,
   optionValueKey = 'value',
 }: TMultiSelectDropDownProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -42,6 +45,16 @@ function MultiSelectDropDown({
     setSelected(option);
     setIsOpen(true);
   };
+
+  // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
+  // reset once the component is unmounted (as per a normal search)
+  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>(
+    availableValues,
+    searchPlaceholder,
+    (option) => (option.name || '').toUpperCase(),
+  );
+  const hasSearchRender = Boolean(searchRender);
+  const options = hasSearchRender ? filteredValues : availableValues;
 
   const transitionProps = { className: 'top-full mt-3' };
   if (showAbove) {
@@ -136,9 +149,12 @@ function MultiSelectDropDown({
               >
                 <Listbox.Options
                   ref={menuRef}
-                  className="absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]"
+                  className={cn(
+                    'absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]',
+                  )}
                 >
-                  {availableValues.map((option, i: number) => {
+                  {searchRender}
+                  {options.map((option, i: number) => {
                     if (!option) {
                       return null;
                     }

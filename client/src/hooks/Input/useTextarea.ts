@@ -2,7 +2,7 @@ import debounce from 'lodash/debounce';
 import React, { useEffect, useRef, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
-import type { SetterOrUpdater } from 'recoil';
+import type { UseFormSetValue } from 'react-hook-form';
 import type { KeyboardEvent } from 'react';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
@@ -11,6 +11,44 @@ import { useChatContext } from '~/Providers/ChatContext';
 import useLocalize from '~/hooks/useLocalize';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
+
+function insertTextAtCursor(element: HTMLTextAreaElement, textToInsert: string) {
+  element.focus();
+
+  // Use the browser's built-in undoable actions if possible
+  if (window.getSelection() && document.queryCommandSupported('insertText')) {
+    document.execCommand('insertText', false, textToInsert);
+  } else {
+    console.warn('insertTextAtCursor: document.execCommand is not supported');
+    const startPos = element.selectionStart;
+    const endPos = element.selectionEnd;
+    const beforeText = element.value.substring(0, startPos);
+    const afterText = element.value.substring(endPos);
+    element.value = beforeText + textToInsert + afterText;
+    element.selectionStart = element.selectionEnd = startPos + textToInsert.length;
+    const event = new Event('input', { bubbles: true });
+    element.dispatchEvent(event);
+  }
+}
+
+/**
+ * Necessary resize helper for edge cases where paste doesn't update the container height.
+ *
+ 1) Resetting the height to 'auto' forces the component to recalculate height based on its current content
+
+ 2) Forcing a reflow. Accessing offsetHeight will cause a reflow of the page,
+    ensuring that the reset height takes effect before resetting back to the scrollHeight.
+    This step is necessary because changes to the DOM do not instantly cause reflows.
+
+ 3) Reseting back to scrollHeight reads and applies the ideal height for the current content dynamically
+ */
+const forceResize = (textAreaRef: React.RefObject<HTMLTextAreaElement>) => {
+  if (textAreaRef.current) {
+    textAreaRef.current.style.height = 'auto';
+    textAreaRef.current.offsetHeight;
+    textAreaRef.current.style.height = `${textAreaRef.current.scrollHeight}px`;
+  }
+};
 
 const getAssistantName = ({
   name,
@@ -27,19 +65,28 @@ const getAssistantName = ({
 };
 
 export default function useTextarea({
-  setText,
-  submitMessage,
+  textAreaRef,
+  submitButtonRef,
+  setValue,
+  getValues,
   disabled = false,
 }: {
-  setText: SetterOrUpdater<string>;
-  submitMessage: () => void;
+  textAreaRef: React.RefObject<HTMLTextAreaElement>;
+  submitButtonRef: React.RefObject<HTMLButtonElement>;
+  setValue: UseFormSetValue<{ text: string }>;
+  getValues: (field: string) => string;
   disabled?: boolean;
 }) {
   const assistantMap = useAssistantsMapContext();
-  const { conversation, isSubmitting, latestMessage, setShowBingToneSetting, setFilesLoading } =
-    useChatContext();
+  const {
+    conversation,
+    isSubmitting,
+    latestMessage,
+    setShowBingToneSetting,
+    filesLoading,
+    setFilesLoading,
+  } = useChatContext();
   const isComposing = useRef(false);
-  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const { handleFiles } = useFileHandling();
   const getSender = useGetSender();
   const localize = useLocalize();
@@ -77,7 +124,7 @@ export default function useTextarea({
     }, 100);
 
     return () => clearTimeout(timeoutId);
-  }, [isSubmitting]);
+  }, [isSubmitting, textAreaRef]);
 
   useEffect(() => {
     if (textAreaRef.current?.value) {
@@ -85,9 +132,16 @@ export default function useTextarea({
     }
 
     const getPlaceholderText = () => {
+      if (
+        conversation?.endpoint === EModelEndpoint.assistants &&
+        (!conversation?.assistant_id || !assistantMap?.[conversation?.assistant_id ?? ''])
+      ) {
+        return localize('com_endpoint_assistant_placeholder');
+      }
       if (disabled) {
         return localize('com_endpoint_config_placeholder');
       }
+
       if (isNotAppendable) {
         return localize('com_endpoint_message_not_appendable');
       }
@@ -118,19 +172,35 @@ export default function useTextarea({
     debouncedSetPlaceholder();
 
     return () => debouncedSetPlaceholder.cancel();
-  }, [conversation, disabled, latestMessage, isNotAppendable, localize, getSender, assistantName]);
+  }, [
+    conversation,
+    disabled,
+    latestMessage,
+    isNotAppendable,
+    localize,
+    getSender,
+    assistantName,
+    textAreaRef,
+    assistantMap,
+  ]);
 
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Enter' && isSubmitting) {
       return;
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
+    const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
+
+    if (isNonShiftEnter && filesLoading) {
       e.preventDefault();
     }
 
-    if (e.key === 'Enter' && !e.shiftKey && !isComposing?.current) {
-      submitMessage();
+    if (isNonShiftEnter) {
+      e.preventDefault();
+    }
+
+    if (isNonShiftEnter && !isComposing?.current) {
+      submitButtonRef.current?.click();
     }
   };
 
@@ -138,7 +208,7 @@ export default function useTextarea({
     const target = e.target as HTMLTextAreaElement;
 
     if (e.keyCode === 8 && target.value.trim() === '') {
-      setText(target.value);
+      textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
     }
 
     if (e.key === 'Enter' && e.shiftKey) {
@@ -158,23 +228,33 @@ export default function useTextarea({
     isComposing.current = false;
   };
 
+  /** Necessary handler to update form state when paste doesn't fire textArea input event */
+  const setPastedValue = useCallback(
+    (textArea: HTMLTextAreaElement, pastedData: string) => {
+      const currentTextValue = getValues('text') || '';
+      const { selectionStart, selectionEnd } = textArea;
+      const newValue =
+        currentTextValue.substring(0, selectionStart) +
+        pastedData +
+        currentTextValue.substring(selectionEnd);
+
+      setValue('text', newValue, { shouldValidate: true });
+    },
+    [getValues, setValue],
+  );
+
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       e.preventDefault();
-
-      const pastedData = e.clipboardData.getData('text/plain');
       const textArea = textAreaRef.current;
-
       if (!textArea) {
         return;
       }
 
-      const start = textArea.selectionStart;
-      const end = textArea.selectionEnd;
-
-      const newValue =
-        textArea.value.substring(0, start) + pastedData + textArea.value.substring(end);
-      setText(newValue);
+      const pastedData = e.clipboardData.getData('text/plain');
+      setPastedValue(textArea, pastedData);
+      insertTextAtCursor(textArea, pastedData);
+      forceResize(textAreaRef);
 
       if (e.clipboardData && e.clipboardData.files.length > 0) {
         e.preventDefault();
@@ -189,7 +269,7 @@ export default function useTextarea({
         handleFiles(timestampedFiles);
       }
     },
-    [handleFiles, setFilesLoading, setText],
+    [handleFiles, setFilesLoading, setPastedValue, textAreaRef],
   );
 
   return {

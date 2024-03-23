@@ -34,11 +34,12 @@ export default function Presentation({
     const filesToDelete = localStorage.getItem('filesToDelete');
     const map = JSON.parse(filesToDelete ?? '{}') as Record<string, ExtendedFile>;
     const files = Object.values(map)
-      .filter((file) => file.filepath)
+      .filter((file) => file.filepath && file.source && !file.embedded && file.temp_file_id)
       .map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath as string,
         source: file.source as FileSources,
+        embedded: !!file.embedded,
       }));
 
     if (files.length === 0) {
