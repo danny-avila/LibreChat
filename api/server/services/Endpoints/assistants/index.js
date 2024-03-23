@@ -36,22 +36,22 @@ const listAssistants = async ({ req, res, query }) => {
  */
 const listAssistantsForAzure = async ({ req, res, azureConfig = {}, query }) => {
   const promises = [];
-  const models = [];
+  // const models = [];
 
   const { groupMap, assistantGroups } = azureConfig;
 
   for (const groupName of assistantGroups) {
     const group = groupMap[groupName];
     req.body.model = Object.keys(group?.models)[0];
-    models.push(req.body.model);
+    // models.push(req.body.model);
     promises.push(listAssistants({ req, res, query }));
   }
 
   const resolvedQueries = await Promise.all(promises);
   const data = resolvedQueries.flatMap((res, i) =>
     res.data.map((assistant) => {
-      const model = models[i];
-      return { ...assistant, model } ?? {};
+      // const model = models[i];
+      return { ...assistant, /** model */ } ?? {};
     }),
   );
 
