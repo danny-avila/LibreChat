@@ -9,7 +9,7 @@ import {
 } from '~/components/ui';
 import { useDeleteUserMutation } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, defaultTextProps, removeFocusOutlines } from '~/utils';
 import { Spinner, LockIcon } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 
@@ -61,11 +61,11 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
       </div>
       <Dialog open={isDialogOpen} onOpenChange={() => setDialogOpen(false)}>
         <DialogContent
-          className={cn('shadow-2xl dark:bg-gray-900 dark:text-white md:h-[500px] md:w-[450px]')}
+          className={cn('shadow-2xl md:h-[500px] md:w-[450px]')}
           style={{ borderRadius: '12px', padding: '20px' }}
         >
           <DialogHeader>
-            <DialogTitle className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-200">
+            <DialogTitle className="text-lg font-medium leading-6">
               {localize('com_nav_delete_account_confirm')}
             </DialogTitle>
           </DialogHeader>
@@ -119,7 +119,11 @@ const renderInput = (
       id={id}
       onChange={onChange}
       placeholder={value}
-      className="h-10 max-h-10 w-full max-w-full rounded-md border border-black bg-white px-3 py-2 focus:border-black dark:border-gray-200 dark:bg-gray-700 dark:focus:border-white"
+      className={cn(
+        defaultTextProps,
+        'h-10 max-h-10 w-full max-w-full rounded-md bg-white px-3 py-2',
+        removeFocusOutlines,
+      )}
     />
   </div>
 );
@@ -132,9 +136,9 @@ const renderDeleteButton = (
 ) => (
   <button
     className={cn(
-      'mt-4 flex w-full items-center justify-center rounded-lg px-4 py-2',
+      'mt-4 flex w-full items-center justify-center rounded-lg px-4 py-2 transition-colors duration-200',
       isLocked
-        ? 'cursor-not-allowed bg-gray-50 text-gray-400 dark:bg-gray-400 dark:text-gray-600'
+        ? 'cursor-not-allowed bg-gray-200 text-gray-300 dark:bg-gray-500 dark:text-gray-600'
         : isDeleting
           ? 'cursor-not-allowed bg-gray-100 text-gray-700 dark:bg-gray-400 dark:text-gray-700'
           : 'bg-red-700 text-white hover:bg-red-800 ',
