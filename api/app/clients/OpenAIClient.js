@@ -921,7 +921,6 @@ ${convo}
   }
 
   async recordTokenUsage({ promptTokens, completionTokens }) {
-    logger.debug('[OpenAIClient] recordTokenUsage:', { promptTokens, completionTokens });
     await spendTokens(
       {
         user: this.user,

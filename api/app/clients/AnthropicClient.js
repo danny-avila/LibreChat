@@ -188,7 +188,6 @@ class AnthropicClient extends BaseClient {
   }
 
   async recordTokenUsage({ promptTokens, completionTokens, model, context = 'message' }) {
-    logger.debug('[AnthropicClient] recordTokenUsage:', { promptTokens, completionTokens });
     await spendTokens(
       {
         context,
