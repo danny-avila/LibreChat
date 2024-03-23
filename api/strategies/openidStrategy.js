@@ -3,6 +3,25 @@ const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const { logger } = require('~/config');
 const User = require('~/models/User');
 const { handleExistingUser } = require('./process');
+const axios = require('axios');
+
+const downloadImage = async (url, user, accessToken) => {
+  try {
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      responseType: 'arraybuffer',
+    });
+
+    await handleExistingUser(user, response.data);
+  } catch (error) {
+    logger.error(
+      `[openidStrategy] downloadImage: Error downloading image at URL "${url}": ${error}`,
+    );
+    return '';
+  }
+};
 
 const getFullName = (userinfo) => {
   const { given_name, family_name, username, email } = userinfo;
@@ -59,7 +78,11 @@ const setupOpenId = async () => {
               username: userinfo.username || userinfo.given_name || '',
               name: fullName,
             });
-            await handleExistingUser(user, userinfo.picture);
+            if (process.env.OPENID_IMAGE_DOWNLOAD === 'true') {
+              await downloadImage(userinfo.picture, user, tokenset.access_token);
+            } else {
+              await handleExistingUser(user, userinfo.picture);
+            }
           }
 
           await user.save();
