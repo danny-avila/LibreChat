@@ -78,7 +78,7 @@ const setupOpenId = async () => {
               username: userinfo.username || userinfo.given_name || '',
               name: fullName,
             });
-            if (process.env.OPENID_IMAGE_DOWNLOAD === 'true') {
+            if (process.env.OPENID_AVATAR_DOWNLOAD === 'true') {
               await downloadImage(userinfo.picture, user, tokenset.access_token);
             } else {
               await handleExistingUser(user, userinfo.picture);
