@@ -73,19 +73,19 @@ weight: -10
 
     see [⚙️ Environment Variables](../install/configuration/dotenv.md) for more info
 
-!!! abstract "Assistants added to ENDPOINTS"
+!!! abstract "Endpoints"
 
     ```sh
     # ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
     ```
 
-!!! abstract "Updated OpenAI models"
+!!! abstract "OpenAI models"
 
     ```sh
     # OPENAI_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k
     ```
 
-!!! abstract "Assistants configuration"
+!!! abstract "Assistants API"
 
     ```sh
     #====================#
@@ -97,7 +97,7 @@ weight: -10
     # ASSISTANTS_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
     ```
 
-!!! abstract "Updated Plugin models"
+!!! abstract "Plugin models"
 
     ```sh
     # PLUGIN_MODELS=gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
@@ -109,7 +109,7 @@ weight: -10
     # SHOW_BIRTHDAY_ICON=true
     ```
 
-!!! abstract "DALL·E Environment Variables"
+!!! abstract "DALL·E"
 
     ```sh
     # DALL·E
