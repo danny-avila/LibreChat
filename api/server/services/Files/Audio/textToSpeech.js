@@ -26,7 +26,16 @@ async function textToSpeech(req, res) {
     input,
     model: customConfig.tts?.model,
     voice: customConfig.tts?.voice,
+    backend: customConfig.tts?.backend,
   };
+
+  if (customConfig.tts.voice === undefined) {
+    delete data['voice'];
+  }
+
+  if (customConfig.tts.backend === undefined) {
+    delete data['backend'];
+  }
 
   if (url.includes('api.elevenlabs.io')) {
     delete headers['Authorization'];

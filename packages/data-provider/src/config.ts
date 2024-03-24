@@ -207,6 +207,7 @@ export const configSchema = z.object({
       url: z.string().optional(),
       apiKey: z.string(),
       model: z.string(),
+      backend: z.string().optional(),
       voice: z.string().optional(),
       voice_settings: z
         .object({

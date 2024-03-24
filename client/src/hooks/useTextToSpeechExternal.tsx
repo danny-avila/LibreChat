@@ -67,6 +67,7 @@ function useTextToSpeechExternal() {
       if (blobUrl) {
         URL.revokeObjectURL(blobUrl);
       }
+      setIsSpeaking(false);
     }
   };
 
