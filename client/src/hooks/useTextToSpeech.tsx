@@ -3,10 +3,13 @@ import { useState } from 'react';
 function useTextToSpeech() {
   const [isSpeaking, setIsSpeaking] = useState(false);
 
-  const generateSpeechLocal = (text) => {
+  const generateSpeechLocal = (text: string) => {
     const synth = window.speechSynthesis;
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
+    utterance.onend = () => {
+      setIsSpeaking(false);
+    };
     setIsSpeaking(true);
     synth.speak(utterance);
   };
