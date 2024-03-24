@@ -54,7 +54,7 @@ export default function HoverButtons({
   const isMouseDownRef = useRef(false);
   const timerRef = useRef<number | undefined>(undefined);
   const { data: startupConfig } = useGetStartupConfig();
-  const useExternalTextToSpeech = startupConfig?.speechToTextExternal;
+  const useExternalTextToSpeech = startupConfig?.textToSpeechExternal;
 
   const {
     generateSpeechLocal: generateSpeechLocal,
@@ -130,7 +130,13 @@ export default function HoverButtons({
           type="button"
           title={isSpeaking ? localize('com_ui_stop_speaking') : localize('com_ui_speak')}
         >
-          {isLoading ? <Spinner /> : isSpeaking ? <VolumeMuteIcon /> : <VolumeIcon />}
+          {isLoading ? (
+            <Spinner size="19" />
+          ) : isSpeaking ? (
+            <VolumeMuteIcon size="19" />
+          ) : (
+            <VolumeIcon size="19" />
+          )}
         </button>
       )}
       {endpoint !== EModelEndpoint.assistants && (
@@ -139,7 +145,7 @@ export default function HoverButtons({
             'hover-button rounded-md p-1 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
             isCreatedByUser ? '' : 'active',
             hideEditButton ? 'opacity-0' : '',
-            isEditing ? 'active bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200' : '',
+            isEditing ? 'active text-gray-700 dark:text-gray-200' : '',
             !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
           )}
           onClick={onEdit}
@@ -147,7 +153,7 @@ export default function HoverButtons({
           title={localize('com_ui_edit')}
           disabled={hideEditButton}
         >
-          <EditIcon />
+          <EditIcon size="19" />
         </button>
       )}
       <button
@@ -162,7 +168,7 @@ export default function HoverButtons({
           isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
         }
       >
-        {isCopied ? <CheckMark /> : <Clipboard />}
+        {isCopied ? <CheckMark /> : <Clipboard size="19" />}
       </button>
       {regenerateEnabled ? (
         <button
@@ -174,20 +180,23 @@ export default function HoverButtons({
           type="button"
           title={localize('com_ui_regenerate')}
         >
-          <RegenerateIcon className="hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+          <RegenerateIcon
+            className="hover:text-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400"
+            size="19"
+          />
         </button>
       ) : null}
       {continueSupported ? (
         <button
           className={cn(
-            'hover-button active rounded-md p-1 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',
+            'hover-button active rounded-md p-1 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',
             !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
           )}
           onClick={handleContinue}
           type="button"
           title={localize('com_ui_continue')}
         >
-          <ContinueIcon className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+          <ContinueIcon className="h-4 w-4 hover:text-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
     </div>
