@@ -47,6 +47,7 @@ class OpenAIClient extends BaseClient {
     /** @type {AzureOptions} */
     this.azure = options.azure || false;
     this.setOptions(options);
+    this.metadata = {};
   }
 
   // TODO: PluginsClient calls this 3x, unneeded
@@ -574,7 +575,6 @@ class OpenAIClient extends BaseClient {
     } else if (typeof opts.onProgress === 'function' || this.options.useChatCompletion) {
       reply = await this.chatCompletion({
         payload,
-        clientOptions: opts,
         onProgress: opts.onProgress,
         abortController: opts.abortController,
       });
@@ -594,9 +594,9 @@ class OpenAIClient extends BaseClient {
       }
     }
 
-    if (streamResult && typeof opts.addMetadata === 'function') {
+    if (streamResult) {
       const { finish_reason } = streamResult.choices[0];
-      opts.addMetadata({ finish_reason });
+      this.metadata = { finish_reason };
     }
     return (reply ?? '').trim();
   }
@@ -921,7 +921,6 @@ ${convo}
   }
 
   async recordTokenUsage({ promptTokens, completionTokens }) {
-    logger.debug('[OpenAIClient] recordTokenUsage:', { promptTokens, completionTokens });
     await spendTokens(
       {
         user: this.user,
@@ -941,7 +940,7 @@ ${convo}
     });
   }
 
-  async chatCompletion({ payload, onProgress, clientOptions, abortController = null }) {
+  async chatCompletion({ payload, onProgress, abortController = null }) {
     let error = null;
     const errorCallback = (err) => (error = err);
     let intermediateReply = '';
@@ -962,15 +961,6 @@ ${convo}
       }
 
       const baseURL = extractBaseURL(this.completionsUrl);
-      // let { messages: _msgsToLog, ...modelOptionsToLog } = modelOptions;
-      // if (modelOptionsToLog.messages) {
-      //   _msgsToLog = modelOptionsToLog.messages.map((msg) => {
-      //     let { content, ...rest } = msg;
-
-      //     if (content)
-      //     return { ...rest, content: truncateText(content) };
-      //   });
-      // }
       logger.debug('[OpenAIClient] chatCompletion', { baseURL, modelOptions });
       const opts = {
         baseURL,
@@ -1163,8 +1153,8 @@ ${convo}
       }
 
       const { message, finish_reason } = chatCompletion.choices[0];
-      if (chatCompletion && typeof clientOptions.addMetadata === 'function') {
-        clientOptions.addMetadata({ finish_reason });
+      if (chatCompletion) {
+        this.metadata = { finish_reason };
       }
 
       logger.debug('[OpenAIClient] chatCompletion response', chatCompletion);

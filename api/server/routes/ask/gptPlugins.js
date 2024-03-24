@@ -1,11 +1,10 @@
 const express = require('express');
-const router = express.Router();
+const throttle = require('lodash/throttle');
 const { getResponseSender, Constants } = require('librechat-data-provider');
-const { validateTools } = require('~/app');
-const { addTitle } = require('~/server/services/Endpoints/openAI');
 const { initializeClient } = require('~/server/services/Endpoints/gptPlugins');
 const { saveMessage, getConvoTitle, getConvo } = require('~/models');
 const { sendMessage, createOnProgress } = require('~/server/utils');
+const { addTitle } = require('~/server/services/Endpoints/openAI');
 const {
   handleAbort,
   createAbortController,
@@ -16,7 +15,10 @@ const {
   buildEndpointOption,
   moderateText,
 } = require('~/server/middleware');
+const { validateTools } = require('~/app');
 const { logger } = require('~/config');
+
+const router = express.Router();
 
 router.use(moderateText);
 router.post('/abort', handleAbort());
@@ -35,14 +37,13 @@ router.post(
       parentMessageId = null,
       overrideParentMessageId = null,
     } = req.body;
+
     logger.debug('[/ask/gptPlugins]', { text, conversationId, ...endpointOption });
-    let metadata;
+
     let userMessage;
     let promptTokens;
     let userMessageId;
     let responseMessageId;
-    let lastSavedTimestamp = 0;
-    let saveDelay = 100;
     const sender = getResponseSender({
       ...endpointOption,
       model: endpointOption.modelOptions.model,
@@ -52,7 +53,6 @@ router.post(
 
     const plugins = [];
 
-    const addMetadata = (data) => (metadata = data);
     const getReqData = (data = {}) => {
       for (let key in data) {
         if (key === 'userMessage') {
@@ -68,6 +68,7 @@ router.post(
       }
     };
 
+    const throttledSaveMessage = throttle(saveMessage, 3000, { trailing: false });
     let streaming = null;
     let timer = null;
 
@@ -77,31 +78,22 @@ router.post(
       getPartialText,
     } = createOnProgress({
       onProgress: ({ text: partialText }) => {
-        const currentTimestamp = Date.now();
-
         if (timer) {
           clearTimeout(timer);
         }
 
-        if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-          lastSavedTimestamp = currentTimestamp;
-          saveMessage({
-            messageId: responseMessageId,
-            sender,
-            conversationId,
-            parentMessageId: overrideParentMessageId || userMessageId,
-            text: partialText,
-            model: endpointOption.modelOptions.model,
-            unfinished: true,
-            error: false,
-            plugins,
-            user,
-          });
-        }
-
-        if (saveDelay < 500) {
-          saveDelay = 500;
-        }
+        throttledSaveMessage({
+          messageId: responseMessageId,
+          sender,
+          conversationId,
+          parentMessageId: overrideParentMessageId || userMessageId,
+          text: partialText,
+          model: endpointOption.modelOptions.model,
+          unfinished: true,
+          error: false,
+          plugins,
+          user,
+        });
 
         streaming = new Promise((resolve) => {
           timer = setTimeout(() => {
@@ -180,7 +172,6 @@ router.post(
         onToolStart,
         onToolEnd,
         onStart,
-        addMetadata,
         getPartialText,
         ...endpointOption,
         onProgress: progressCallback.call(null, {
@@ -194,10 +185,6 @@ router.post(
 
       if (overrideParentMessageId) {
         response.parentMessageId = overrideParentMessageId;
-      }
-
-      if (metadata) {
-        response = { ...response, ...metadata };
       }
 
       logger.debug('[/ask/gptPlugins]', response);

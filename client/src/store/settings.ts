@@ -61,6 +61,25 @@ const autoScroll = atom<boolean>({
   ] as const,
 });
 
+const showCode = atom<boolean>({
+  key: 'showCode',
+  default: localStorage.getItem('showCode') === 'true',
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('showCode');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('showCode', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 const hideSidePanel = atom<boolean>({
   key: 'hideSidePanel',
   default: localStorage.getItem('hideSidePanel') === 'true',
@@ -147,6 +166,7 @@ export default {
   showBingToneSetting,
   showPopover,
   autoScroll,
+  showCode,
   hideSidePanel,
   modularChat,
   LaTeXParsing,
