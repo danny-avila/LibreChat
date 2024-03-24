@@ -100,6 +100,16 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
   let parentMessageId = _parentId;
   /** @type {TMessage[]} */
   let previousMessages = [];
+  /** @type {import('librechat-data-provider').TConversation | null} */
+  let conversation = null;
+  /** @type {string[]} */
+  let file_ids = [];
+  /** @type {Set<string>} */
+  let attachedFileIds = new Set();
+  /** @type {TMessage | null} */
+  let requestMessage = null;
+  /** @type {CreateRunBody | undefined} */
+  let body;
 
   const userMessageId = v4();
   const responseMessageId = v4();
@@ -258,7 +268,10 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       throw new Error('Missing assistant_id');
     }
 
-    if (isEnabled(process.env.CHECK_BALANCE)) {
+    const checkBalanceBeforeRun = async () => {
+      if (!isEnabled(process.env.CHECK_BALANCE)) {
+        return;
+      }
       const transactions =
         (await getTransactions({
           user: req.user.id,
@@ -288,7 +301,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
           amount: promptTokens,
         },
       });
-    }
+    };
 
     /** @type {{ openai: OpenAIClient }} */
     const { openai: _openai, client } = await initializeClient({
@@ -299,10 +312,6 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
     });
 
     openai = _openai;
-
-    // if (thread_id) {
-    //   previousMessages = await checkMessageGaps({ openai, thread_id, conversationId });
-    // }
 
     if (previousMessages.length) {
       parentMessageId = previousMessages[previousMessages.length - 1].messageId;
@@ -316,87 +325,96 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       },
     };
 
-    let thread_file_ids = [];
-    if (convoId) {
-      const convo = await getConvo(req.user.id, convoId);
-      if (convo && convo.file_ids) {
-        thread_file_ids = convo.file_ids;
+    const getRequestFileIds = async () => {
+      let thread_file_ids = [];
+      if (convoId) {
+        const convo = await getConvo(req.user.id, convoId);
+        if (convo && convo.file_ids) {
+          thread_file_ids = convo.file_ids;
+        }
       }
-    }
 
-    const file_ids = files.map(({ file_id }) => file_id);
-    if (file_ids.length || thread_file_ids.length) {
-      userMessage.file_ids = file_ids;
-      openai.attachedFileIds = new Set([...file_ids, ...thread_file_ids]);
-    }
+      file_ids = files.map(({ file_id }) => file_id);
+      if (file_ids.length || thread_file_ids.length) {
+        userMessage.file_ids = file_ids;
+        attachedFileIds = new Set([...file_ids, ...thread_file_ids]);
+      }
+    };
 
-    // TODO: may allow multiple messages to be created beforehand in a future update
-    const initThreadBody = {
-      messages: [userMessage],
-      metadata: {
-        user: req.user.id,
+    const fileIdsPromise = getRequestFileIds();
+
+    const initializeThread = async () => {
+      await fileIdsPromise;
+      // TODO: may allow multiple messages to be created beforehand in a future update
+      const initThreadBody = {
+        messages: [userMessage],
+        metadata: {
+          user: req.user.id,
+          conversationId,
+        },
+      };
+
+      const result = await initThread({ openai, body: initThreadBody, thread_id });
+      thread_id = result.thread_id;
+
+      createOnTextProgress({
+        openai,
         conversationId,
-      },
+        userMessageId,
+        messageId: responseMessageId,
+        thread_id,
+      });
+
+      requestMessage = {
+        user: req.user.id,
+        text,
+        messageId: userMessageId,
+        parentMessageId,
+        // TODO: make sure client sends correct format for `files`, use zod
+        files,
+        file_ids,
+        conversationId,
+        isCreatedByUser: true,
+        assistant_id,
+        thread_id,
+        model: assistant_id,
+      };
+
+      previousMessages.push(requestMessage);
+
+      /* asynchronous */
+      saveUserMessage({ ...requestMessage, model });
+
+      conversation = {
+        conversationId,
+        title: 'New Chat',
+        endpoint: EModelEndpoint.assistants,
+        promptPrefix: promptPrefix,
+        instructions: instructions,
+        assistant_id,
+        // model,
+      };
+
+      if (file_ids.length) {
+        conversation.file_ids = file_ids;
+      }
+
+      body = {
+        assistant_id,
+        model,
+      };
+
+      if (promptPrefix) {
+        body.additional_instructions = promptPrefix;
+      }
+
+      if (instructions) {
+        body.instructions = instructions;
+      }
     };
 
-    const result = await initThread({ openai, body: initThreadBody, thread_id });
-    thread_id = result.thread_id;
-
-    createOnTextProgress({
-      openai,
-      conversationId,
-      userMessageId,
-      messageId: responseMessageId,
-      thread_id,
-    });
-
-    const requestMessage = {
-      user: req.user.id,
-      text,
-      messageId: userMessageId,
-      parentMessageId,
-      // TODO: make sure client sends correct format for `files`, use zod
-      files,
-      file_ids,
-      conversationId,
-      isCreatedByUser: true,
-      assistant_id,
-      thread_id,
-      model: assistant_id,
-    };
-
-    previousMessages.push(requestMessage);
-
-    await saveUserMessage({ ...requestMessage, model });
-
-    const conversation = {
-      conversationId,
-      // TODO: title feature
-      title: 'New Chat',
-      endpoint: EModelEndpoint.assistants,
-      promptPrefix: promptPrefix,
-      instructions: instructions,
-      assistant_id,
-      // model,
-    };
-
-    if (file_ids.length) {
-      conversation.file_ids = file_ids;
-    }
-
-    /** @type {CreateRunBody} */
-    const body = {
-      assistant_id,
-      model,
-    };
-
-    if (promptPrefix) {
-      body.additional_instructions = promptPrefix;
-    }
-
-    if (instructions) {
-      body.instructions = instructions;
-    }
+    const promises = [initializeThread(), checkBalanceBeforeRun()];
+    await Promise.all(promises);
 
     const sendInitialResponse = () => {
       sendMessage(res, {
@@ -421,6 +439,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
     const processRun = async (retry = false) => {
       if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+        openai.attachedFileIds = attachedFileIds;
         if (retry) {
           response = await runAssistant({
             openai,
@@ -463,9 +482,10 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         req,
         res,
         openai,
-        thread_id,
-        responseMessage: openai.responseMessage,
         handlers,
+        thread_id,
+        attachedFileIds,
+        responseMessage: openai.responseMessage,
         // streamOptions: {
 
         // },
