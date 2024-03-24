@@ -65,6 +65,7 @@ markdown_extensions:
       custom_checkbox: true
   - pymdownx.details
   - pymdownx.superfences
+  - pymdownx.critic
   - pymdownx.caret
   - pymdownx.mark
   - pymdownx.tilde

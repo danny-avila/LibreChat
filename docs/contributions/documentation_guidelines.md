@@ -50,7 +50,7 @@ weight: 0
     - 🙅 Do not add unrelated information to an existing document. Create a new one if needed.
     - 📌 Upload all assets (images, files) directly from GitHub when editing the document (see tip below).
 
-??? tip "Upload assets on GitHub"
+??? tip "Upload Assets on GitHub"
 
     !!! example "Example"
         - Go to the LibreChat repository, find a conversation, and paste an image from your clipboard into the text input box. It will automatically be converted into a URL you can use in your document. (Then exit the page without actually posting the comment.😉)
