@@ -29,7 +29,7 @@ const useSpeechToText = () => {
   };
 
   useEffect(() => {
-    if (startupConfig?.textToSpeechExternal) {
+    if (startupConfig?.speechToTextExternal) {
       setIsSpeechSupported(false);
       return;
     }
@@ -51,11 +51,13 @@ const useSpeechToText = () => {
     return () => {
       recognition.stop();
     };
-  }, [isListening, startupConfig?.textToSpeechExternal, showToast]);
+  }, [isListening, startupConfig?.speechToTextExternal, showToast]);
 
   const toggleListening = () => {
     if (isSpeechSupported) {
       setIsListening((prevState) => !prevState);
+    } else {
+      showToast({ message: 'Browser does not support SpeechRecognition', status: 'error' });
     }
   };
 
