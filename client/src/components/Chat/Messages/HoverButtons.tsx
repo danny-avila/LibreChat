@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import {
   Clipboard,
   CheckMark,
@@ -20,7 +21,6 @@ import {
 } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 type THoverButtons = {
   isEditing: boolean;
@@ -51,21 +51,27 @@ export default function HoverButtons({
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const isMouseDownRef = useRef(false);
+  const timerRef = useRef<number | undefined>(undefined);
   const { data: startupConfig } = useGetStartupConfig();
   const useExternalTextToSpeech = startupConfig?.speechToTextExternal;
 
-  const { generateSpeechLocal: generateSpeechLocal, cancelSpeechLocal: cancelSpeechLocal } =
-    useTextToSpeech();
+  const {
+    generateSpeechLocal: generateSpeechLocal,
+    cancelSpeechLocal: cancelSpeechLocal,
+    isSpeaking: isSpeakingLocal,
+  } = useTextToSpeech();
 
   const {
-    synthesizeSpeech: synthesizeSpeechExternal,
+    generateSpeechExternal: generateSpeechExternal,
     cancelSpeech: cancelSpeechExternal,
     isLoading: isLoading,
+    isSpeaking: isSpeakingExternal,
   } = useTextToSpeechExternal();
 
-  const generateSpeech = useExternalTextToSpeech ? synthesizeSpeechExternal : generateSpeechLocal;
+  const generateSpeech = useExternalTextToSpeech ? generateSpeechExternal : generateSpeechLocal;
   const cancelSpeech = useExternalTextToSpeech ? cancelSpeechExternal : cancelSpeechLocal;
+  const isSpeaking = useExternalTextToSpeech ? isSpeakingExternal : isSpeakingLocal;
 
   const [TextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
 
@@ -89,14 +95,28 @@ export default function HoverButtons({
     enterEdit();
   };
 
+  const handleMouseDown = () => {
+    isMouseDownRef.current = true;
+    timerRef.current = window.setTimeout(() => {
+      if (isMouseDownRef.current) {
+        generateSpeech(message?.text ?? '', true);
+      }
+    }, 1000);
+  };
+
+  const handleMouseUp = () => {
+    isMouseDownRef.current = false;
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+    }
+  };
+
   const toggleSpeech = () => {
     if (isSpeaking) {
       cancelSpeech();
-      setIsSpeaking(false);
     } else {
-      generateSpeech(message?.text ?? '', () => setIsSpeaking(false));
+      generateSpeech(message?.text ?? '', false);
     }
-    setIsSpeaking(!isSpeaking);
   };
 
   return (
@@ -104,6 +124,8 @@ export default function HoverButtons({
       {TextToSpeech && (
         <button
           className="hover-button rounded-md p-1 pl-0 text-gray-400 hover:text-gray-950 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible"
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
           onClick={toggleSpeech}
           type="button"
           title={isSpeaking ? localize('com_ui_stop_speaking') : localize('com_ui_speak')}

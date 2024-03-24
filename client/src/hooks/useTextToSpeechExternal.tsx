@@ -4,6 +4,11 @@ import { useToastContext } from '~/Providers';
 
 function useTextToSpeechExternal() {
   const { showToast } = useToastContext();
+  const [downloadFile, setDownloadFile] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
   const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
     onSuccess: (data) => {
       try {
@@ -11,11 +16,21 @@ function useTextToSpeechExternal() {
         const audioBlob = new Blob([data], { type: 'audio/mpeg' });
         const blobUrl = URL.createObjectURL(audioBlob);
 
+        if (downloadFile === true) {
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = 'audio.mp3';
+          a.click();
+          setDownloadFile(false);
+          return;
+        }
+
         const audio = new Audio(blobUrl);
+
         audio
           .play()
           .then(() => {
-            // Audio playback started successfully
+            setIsSpeaking(true);
           })
           .catch((error) => {
             console.error('Error playing audio:', error);
@@ -24,6 +39,7 @@ function useTextToSpeechExternal() {
 
         audio.onended = () => {
           URL.revokeObjectURL(blobUrl);
+          setIsSpeaking(false);
         };
 
         setAudio(audio);
@@ -38,12 +54,10 @@ function useTextToSpeechExternal() {
     },
   });
 
-  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-
-  const synthesizeSpeech = (text) => {
+  const generateSpeechExternal = (text, download) => {
     const formData = new FormData();
     formData.append('input', text);
+    setDownloadFile(download);
     processAudio(formData);
   };
 
@@ -60,7 +74,7 @@ function useTextToSpeechExternal() {
     return cancelSpeech;
   }, []);
 
-  return { synthesizeSpeech, cancelSpeech, isLoading: isProcessing };
+  return { generateSpeechExternal, cancelSpeech, isLoading: isProcessing, isSpeaking };
 }
 
 export default useTextToSpeechExternal;
