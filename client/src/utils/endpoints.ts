@@ -67,7 +67,12 @@ export function updateLastSelectedModel({
   if (!model) {
     return;
   }
+  const lastConversationSetup = JSON.parse(localStorage.getItem('lastConversationSetup') || '{}');
   const lastSelectedModels = JSON.parse(localStorage.getItem('lastSelectedModel') || '{}');
+  if (lastConversationSetup.endpoint === endpoint) {
+    lastConversationSetup.model = model;
+    localStorage.setItem('lastConversationSetup', JSON.stringify(lastConversationSetup));
+  }
   lastSelectedModels[endpoint] = model;
   localStorage.setItem('lastSelectedModel', JSON.stringify(lastSelectedModels));
 }
