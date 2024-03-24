@@ -129,6 +129,15 @@ ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,
 PROXY=
 ```
 
+- Titling is enabled by default for all Endpoints when initiating a conversation (proceeding the first AI response).
+    - Set to `false` to disable this feature.
+    - Not all endpoints support titling.
+    - You can configure this feature on an Endpoint-level using [the `librechat.yaml` config file](./custom_config.md)
+
+```bash
+TITLE_CONVO=true
+```
+
 ### Known Endpoints - librechat.yaml
 - see: [AI Endpoints](./ai_endpoints.md)
 - see also: [Custom Configuration](./custom_config.md)
@@ -156,6 +165,15 @@ see: [Anthropic Endpoint](./ai_setup.md#anthropic)
 ANTHROPIC_API_KEY=user_provided
 ANTHROPIC_MODELS=claude-3-opus-20240229,claude-3-sonnet-20240229,claude-2.1,claude-2,claude-1.2,claude-1,claude-1-100k,claude-instant-1,claude-instant-1-100k
 ANTHROPIC_REVERSE_PROXY=
+```
+
+- Titling is enabled by default but is configured with the environment variable 
+`TITLE_CONVO` for all Endpoints. The default model used for Anthropic titling is "claude-3-haiku-20240307". You can change it by uncommenting the following and setting the desired model. **(Optional)** 
+
+> **Note:** Must be compatible with the Anthropic Endpoint. Also, Claude 2 and Claude 3 models perform best at this task, with `claude-3-haiku` models being the cheapest.
+
+```bash
+ANTHROPIC_TITLE_MODEL=claude-3-haiku-20240307
 ```
 
 ### Azure
@@ -325,14 +343,8 @@ DEBUG_OPENAI=false
 OPENAI_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k
 ```
 
-- Titling is enabled by default when initiating a conversation.
-    - Set to false to disable this feature.
-
-```bash
-TITLE_CONVO=true
-```
-
-- The default model used for titling by is gpt-3.5-turbo. You can change it by uncommenting the following and setting the desired model. **(Optional)** 
+- Titling is enabled by default but is configured with the environment variable 
+`TITLE_CONVO` for all Endpoints. The default model used for OpenAI titling is gpt-3.5-turbo. You can change it by uncommenting the following and setting the desired model. **(Optional)** 
 
 > **Note:** Must be compatible with the OpenAI Endpoint.
 
