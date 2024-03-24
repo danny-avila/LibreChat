@@ -20,6 +20,7 @@ export default function Settings({
   setOption,
   readonly,
 }: Omit<TModelSelectProps, 'models'>) {
+  /* This is an unfinished component for future update */
   const localize = useLocalize();
   const {
     endpoint,
