@@ -1,11 +1,14 @@
 import React from 'react';
 import { ListeningIcon, Spinner, SpeechIcon } from '~/components/svg';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
-import { useLocalize } from '~/hooks';
 
-export default function AudioRecorder({ isListening, isLoading, startRecording, stopRecording }) {
-  const localize = useLocalize();
-
+export default function AudioRecorder({
+  isListening,
+  isLoading,
+  startRecording,
+  stopRecording,
+  disabled,
+}) {
   const handleStartRecording = async () => {
     await startRecording();
   };
@@ -19,8 +22,9 @@ export default function AudioRecorder({ isListening, isLoading, startRecording, 
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            className="absolute bottom-1.5 right-12 flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-black bg-black p-0.5 transition-colors dark:border-white dark:bg-white md:bottom-3 md:right-12"
             onClick={isListening ? handleStopRecording : handleStartRecording}
+            disabled={disabled}
+            className="absolute bottom-1.5 right-12 flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-black p-0.5 transition-colors disabled:disabled:opacity-10 dark:bg-white dark:disabled:opacity-10 md:bottom-3 md:right-12"
           >
             {isListening ? (
               <SpeechIcon className="stroke-white dark:stroke-black" />
@@ -32,7 +36,7 @@ export default function AudioRecorder({ isListening, isLoading, startRecording, 
           </button>
         </TooltipTrigger>
         <TooltipContent side="top" sideOffset={10}>
-          TTS
+          Use microphone
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

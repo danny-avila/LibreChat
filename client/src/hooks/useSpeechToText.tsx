@@ -72,6 +72,7 @@ const useSpeechToText = () => {
 
   return {
     isListening,
+    isLoading: false,
     text,
     startRecording: toggleListening,
     stopRecording: () => setIsListening(false),

@@ -93,8 +93,7 @@ const ChatForm = ({ index = 0 }) => {
   const startRecording = useExternalSpeech ? startExternalRecording : startSpeechRecording;
   const stopRecording = useExternalSpeech ? stopExternalRecording : stopSpeechRecording;
   const speechTextForm = useExternalSpeech ? externalSpeechText : speechText;
-  const finalText =
-    speechText || externalSpeechText ? speechTextForm : textAreaRef.current?.value || '';
+  const finalText = isListening || isLoading ? speechTextForm : textAreaRef.current?.value || '';
 
   useEffect(() => {
     if (textAreaRef.current) {
@@ -192,6 +191,7 @@ const ChatForm = ({ index = 0 }) => {
                 isLoading={isLoading}
                 startRecording={startRecording}
                 stopRecording={stopRecording}
+                disabled={!!(isSubmitting || disableInputs)}
               />
             )}
           </div>
