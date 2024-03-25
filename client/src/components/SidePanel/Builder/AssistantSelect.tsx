@@ -169,6 +169,8 @@ export default function AssistantSelect({
       showLabel={false}
       emptyTitle={true}
       containerClassName="flex-grow"
+      searchClassName="dark:from-gray-850"
+      searchPlaceholder={localize('com_assistants_search_name')}
       optionsClass="hover:bg-gray-20/50 dark:border-gray-700"
       optionsListClass="rounded-lg shadow-lg dark:bg-gray-850 dark:border-gray-700 dark:last:border"
       currentValueClass={cn(
