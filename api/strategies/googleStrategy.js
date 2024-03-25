@@ -2,6 +2,7 @@ const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
 const { createNewUser, handleExistingUser } = require('./process');
 const { logger } = require('~/config');
 const User = require('~/models/User');
+const isDomainAllowed = require('~/server/services/isDomainAllowed');
 
 const googleLogin = async (accessToken, refreshToken, profile, cb) => {
   try {
@@ -15,6 +16,12 @@ const googleLogin = async (accessToken, refreshToken, profile, cb) => {
     if (oldUser) {
       await handleExistingUser(oldUser, avatarUrl);
       return cb(null, oldUser);
+    }
+
+    if (!(await isDomainAllowed(email))) {
+      const errorMessage = 'Registration from this domain is not allowed.';
+      logger.error(`[registerUser] [Registration not allowed] [Email: ${email}]`);
+      return { status: 403, message: errorMessage };
     }
 
     if (ALLOW_SOCIAL_REGISTRATION) {
