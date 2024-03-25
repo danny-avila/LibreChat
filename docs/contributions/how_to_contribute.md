@@ -106,14 +106,14 @@ It is recommended to install the following extensions in VS Code:
 To efficiently work on LibreChat, use the following commands:
 
 - **Starting the Backend:**
-  - Use `npm run backend` to start LibreChat normally.
-  - For active development, `npm run backend:dev` will monitor backend changes.
-  - Access the running application at `http://localhost:3080/`.
+    - Use `npm run backend` to start LibreChat normally.
+    - For active development, `npm run backend:dev` will monitor backend changes.
+    - Access the running application at `http://localhost:3080/`.
 
 - **Running the Frontend in Development Mode:**
-  - Execute `npm run frontend:dev` to actively monitor frontend changes.
-  - **Ensure the backend is also running.**
-  - View the frontend in development mode at `http://localhost:3090/`.
+    - Execute `npm run frontend:dev` to actively monitor frontend changes.
+- **Ensure the backend is also running.**
+    - View the frontend in development mode at `http://localhost:3090/`.
 
 !!! tip "Pro Tip:"
     To avoid the hassle of restarting both frontend and backend during frontend development, simply run `npm run frontend:dev` for real-time updates on port 3090.
