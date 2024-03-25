@@ -363,16 +363,24 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         return;
       }
 
+      /** @type {MongoFile[]} */
+      const attachments = await req.body.endpointOption.attachments;
+      if (
+        attachments &&
+        attachments.every((attachment) => attachment.source === FileSources.openai)
+      ) {
+        return;
+      }
+
       const assistant = await openai.beta.assistants.retrieve(assistant_id);
       const visionToolIndex = assistant.tools.findIndex(
-        (tool) => tool.function.name === ImageVisionTool.function.name,
+        (tool) => tool?.function && tool?.function?.name === ImageVisionTool.function.name,
       );
 
       if (visionToolIndex === -1) {
         return;
       }
 
-      const attachments = await req.body.endpointOption.attachments;
       let visionMessage = {
         role: 'user',
         content: '',
