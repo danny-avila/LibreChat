@@ -8,6 +8,7 @@ import {
   Capabilities,
   EModelEndpoint,
   actionDelimiter,
+  ImageVisionTool,
   defaultAssistantFormValues,
 } from 'librechat-data-provider';
 import type { AssistantForm, AssistantPanelProps } from '~/common';
@@ -80,6 +81,10 @@ export default function AssistantPanel({
   );
   const codeEnabled = useMemo(
     () => assistants?.capabilities?.includes(Capabilities.code_interpreter),
+    [assistants],
+  );
+  const imageVisionEnabled = useMemo(
+    () => assistants?.capabilities?.includes(Capabilities.image_vision),
     [assistants],
   );
 
@@ -156,6 +161,9 @@ export default function AssistantPanel({
     }
     if (data.retrieval) {
       tools.push({ type: Tools.retrieval });
+    }
+    if (data.image_vision) {
+      tools.push(ImageVisionTool);
     }
 
     const {
@@ -374,6 +382,37 @@ export default function AssistantPanel({
                   </label>
                 </div>
               )}
+              {imageVisionEnabled && (
+                <div className="flex items-center">
+                  <Controller
+                    name={Capabilities.image_vision}
+                    control={control}
+                    render={({ field }) => (
+                      <Checkbox
+                        {...field}
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        className="relative float-left  mr-2 inline-flex h-4 w-4 cursor-pointer"
+                        value={field?.value?.toString()}
+                      />
+                    )}
+                  />
+                  <label
+                    className="form-check-label text-token-text-primary w-full cursor-pointer"
+                    htmlFor={Capabilities.image_vision}
+                    onClick={() =>
+                      setValue(Capabilities.image_vision, !getValues(Capabilities.image_vision), {
+                        shouldDirty: true,
+                      })
+                    }
+                  >
+                    <div className="flex items-center">
+                      {localize('com_assistants_image_vision')}
+                      <QuestionMark />
+                    </div>
+                  </label>
+                </div>
+              )}
               {retrievalEnabled && (
                 <div className="flex items-center">
                   <Controller
@@ -417,9 +456,9 @@ export default function AssistantPanel({
               ${actionsEnabled ? localize('com_assistants_actions') : ''}`}
             </label>
             <div className="space-y-1">
-              {functions.map((func) => (
+              {functions.map((func, i) => (
                 <AssistantTool
-                  key={func}
+                  key={`${func}-${i}-${assistant_id}`}
                   tool={func}
                   allTools={allTools}
                   assistant_id={assistant_id}

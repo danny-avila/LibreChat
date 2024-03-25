@@ -33,6 +33,18 @@
  */
 
 /**
+ * @exports ChatCompletionContentPartImage
+ * @typedef {import('openai').OpenAI.ChatCompletionContentPartImage} ChatCompletionContentPartImage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ChatCompletion
+ * @typedef {import('openai').OpenAI.ChatCompletion} ChatCompletion
+ * @memberof typedefs
+ */
+
+/**
  * @exports OpenAIRequestOptions
  * @typedef {import('openai').OpenAI.RequestOptions} OpenAIRequestOptions
  * @memberof typedefs

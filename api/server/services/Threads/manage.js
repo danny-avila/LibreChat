@@ -468,21 +468,28 @@ async function checkMessageGaps({ openai, latestMessageId, thread_id, run_id, co
 
 /**
  * Records token usage for a given completion request.
- *
  * @param {Object} params - The parameters for initializing a thread.
  * @param {number} params.prompt_tokens - The number of prompt tokens used.
  * @param {number} params.completion_tokens - The number of completion tokens used.
  * @param {string} params.model - The model used by the assistant run.
  * @param {string} params.user - The user's ID.
  * @param {string} params.conversationId - LibreChat conversation ID.
+ * @param {string} [params.context='message'] - The context of the usage. Defaults to 'message'.
  * @return {Promise<TMessage[]>} A promise that resolves to the updated messages
  */
-const recordUsage = async ({ prompt_tokens, completion_tokens, model, user, conversationId }) => {
+const recordUsage = async ({
+  prompt_tokens,
+  completion_tokens,
+  model,
+  user,
+  conversationId,
+  context = 'message',
+}) => {
   await spendTokens(
     {
       user,
       model,
-      context: 'message',
+      context,
       conversationId,
     },
     { promptTokens: prompt_tokens, completionTokens: completion_tokens },

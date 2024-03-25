@@ -1,4 +1,9 @@
-import { ToolCallTypes, ContentTypes, imageGenTools } from 'librechat-data-provider';
+import {
+  ToolCallTypes,
+  ContentTypes,
+  imageGenTools,
+  isImageVisionTool,
+} from 'librechat-data-provider';
 import type { TMessageContentParts, TMessage } from 'librechat-data-provider';
 import type { TDisplayProps } from '~/common';
 import { ErrorMessage } from './MessageContent';
@@ -96,6 +101,25 @@ export default function Part({
     part[ContentTypes.TOOL_CALL].type === ToolCallTypes.FUNCTION
   ) {
     const toolCall = part[ContentTypes.TOOL_CALL];
+    if (isImageVisionTool(toolCall)) {
+      if (isSubmitting && showCursor) {
+        return (
+          <Container>
+            <div className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words">
+              <DisplayMessage
+                text={''}
+                isCreatedByUser={message.isCreatedByUser}
+                message={message}
+                showCursor={showCursor}
+              />
+            </div>
+          </Container>
+        );
+      }
+
+      return null;
+    }
+
     return (
       <ToolCall
         initialProgress={toolCall.progress ?? 0.1}

@@ -59,6 +59,10 @@ class StreamRunManager {
     this.messages = [];
     /** @type {string} */
     this.text = '';
+    /** @type {Set<string>} */
+    this.attachedFileIds = fields.attachedFileIds;
+    /** @type {undefined | Promise<ChatCompletion>} */
+    this.visionPromise = fields.visionPromise;
 
     /**
      * @type {Object.<AssistantStreamEvents, (event: AssistantStreamEvent) => Promise<void>>}
