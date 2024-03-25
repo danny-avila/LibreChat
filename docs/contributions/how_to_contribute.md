@@ -1,12 +1,23 @@
 ---
-title: 🙌 Beginner's Guide to Contributions
+title: 🙌 Getting Started for Contributors
 description: Learn how to use GitHub Desktop, VS Code extensions, and Git rebase to contribute in a quick and easy way.
 weight: -10
 ---
-# How to Contribute in a Quick and Easy Way
-!!! danger "Note:"
-      If you are not familiar with the concept of repo, PR (pull request), fork and branch, start by looking at the official GitHub documentation on the subject:
-      [https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/getting-started/about-collaborative-development-models](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/getting-started/about-collaborative-development-models)
+
+# Getting Started for Contributors
+!!! danger "Important:"
+      - 📚 If you're new to concepts like **repositories**, **pull requests (PRs)**, **forks**, and **branches**, begin with the official GitHub documentation:
+        - [Getting Started - About Collaborative Development Models](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/getting-started/about-collaborative-development-models)
+      - 🌐 For contributing translations, refer to: 
+        - [Contribute a Translation](./translation_contribution.md)
+      - 💻 To understand our coding standards, see: 
+        - [Coding Conventions](./coding_conventions.md)
+      - 👥 Our contributor guidelines can be found at: 
+        - [Contributor Guidelines](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md)
+      - 📝 For updates and additions to documentation, please review: 
+        - [Documentation Guidelines](./documentation_guidelines.md)
+      - 🧪 Consult the following guide to perform local tests before submitting a PR: 
+        - [Local Test Guide](./testing.md) 
 
 ## Requirements
 
@@ -107,20 +118,8 @@ To efficiently work on LibreChat, use the following commands:
 !!! tip "Pro Tip:"
     To avoid the hassle of restarting both frontend and backend during frontend development, simply run `npm run frontend:dev` for real-time updates on port 3090.
 
-## Perform Unit Tests Locally 
-Before submitting your updates, it’s crucial to verify they pass all unit tests. Follow these steps to run tests locally:
-
-- copy your `.env.example` file in the `/api` folder and rename it to `.env`
-```bash
-cp .env.example ./api/.env
-```
-- add `NODE_ENV=CI` to your `/api/.env` file
-- `npm run test:client`
-- `npm run test:api`
-
-!!! failure "Warning"
-    This API test will currently fail when run locally:
-    ![image](https://github.com/danny-avila/LibreChat/assets/32828263/d222034c-9c3a-4764-b972-39e954c92170)
+## Perform Tests Locally
+Before submitting your updates, it’s crucial to verify they pass all tests. Follow these steps to run tests locally, see: [Perform Tests Locally](./testing.md)
 
 By running these tests, you can ensure your contributions are robust and ready for integration.
 
