@@ -531,9 +531,11 @@ export enum Constants {
 }
 
 export const defaultOrderQuery: {
-  order: 'asc';
+  order: 'desc';
+  limit: 100;
 } = {
-  order: 'asc',
+  order: 'desc',
+  limit: 100,
 };
 
 export enum AssistantStreamEvents {
