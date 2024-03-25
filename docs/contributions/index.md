@@ -5,7 +5,7 @@ weight: 5
 ---
 # Contributing to LibreChat
 
-  * 🙌 [Beginner's Guide to Contributions](./how_to_contribute.md)
+  * 🙌 [Getting Started for Contributors](./how_to_contribute.md)
   * 🚸 [Contributor Guidelines](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md) 
   * 📝 [Documentation Guidelines](documentation_guidelines.md) 
   * 🌍 [Contribute a Translation](translation_contribution.md) 
