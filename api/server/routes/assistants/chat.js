@@ -154,6 +154,12 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
           : ''
       }`;
       return sendResponse(res, messageData, errorMessage);
+    } else if (error?.message?.includes('string too long')) {
+      return sendResponse(
+        res,
+        messageData,
+        'Message too long. The Assistants API has a limit of 32,768 characters per message. Please shorten it and try again.',
+      );
     } else if (error?.message?.includes(ViolationTypes.TOKEN_BALANCE)) {
       return sendResponse(res, messageData, error.message);
     } else {
