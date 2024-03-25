@@ -19,7 +19,7 @@ cp .env.example ./api/.env
 - `npm run test:api`
 
 !!! failure "Warning"
-    This API test will currently fail when run locally:
+    When executed locally, this API unit test is expected to fail. This should be the only error encountered.
     ![image](https://github.com/danny-avila/LibreChat/assets/32828263/d222034c-9c3a-4764-b972-39e954c92170)
 
 

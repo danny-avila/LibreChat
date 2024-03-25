@@ -125,7 +125,7 @@ By running these tests, you can ensure your contributions are robust and ready f
 
 ## Commit, Push, Pull Request (PR)
 
-### When to Make a Commit
+### Make a Commit
 
 **Commits** should be made when you reach a logical checkpoint in your development process. This could be after a new feature is added, a bug is fixed, or a set of related changes is completed. Each commit should contain a clear message that explains what changes have been made and why.
 
@@ -135,7 +135,7 @@ git add .
 git commit -m "Add login functionality"
 ```
 
-### When to Push Changes
+### Push Changes
 
 You should **push** your changes to the remote repository after a series of commits that complete a feature or fix a known issue. Pushing often helps to ensure that your changes are safely stored remotely and makes collaboration with others easier.
 
@@ -144,7 +144,7 @@ You should **push** your changes to the remote repository after a series of comm
 git push origin feature-branch-name
 ```
 
-### When to Make a Pull Request (PR)
+### Make a Pull Request (PR)
 
 A **Pull Request** should be made when you want to merge your changes from a feature branch into the main branch. Before creating a PR, make sure to:
 
@@ -162,6 +162,9 @@ git merge main
 git push origin feature-branch-name
 # Now go to GitHub and open a pull request
 ```
+When you are ready, open your repository in a browser and click on "Contribute"
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/4da0a287-e6d3-4e75-af6b-4cffc28f593c)
+
 !!! info "Note:"
     Remember to provide a detailed description in your PR that explains the changes and the value they add to the project. It's also good practice to reference any related issues.
 
