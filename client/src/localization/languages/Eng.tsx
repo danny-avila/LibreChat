@@ -21,6 +21,7 @@ export default {
   com_assistants_code_interpreter_files:
     'The following files are only available for Code Interpreter:',
   com_assistants_retrieval: 'Retrieval',
+  com_assistants_search_name: 'Search assistants by name',
   com_assistants_tools: 'Tools',
   com_assistants_actions: 'Actions',
   com_assistants_add_tools: 'Add Tools',
