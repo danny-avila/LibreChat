@@ -4,9 +4,11 @@ const {
   Constants,
   RunStatus,
   CacheKeys,
+  FileSources,
   ContentTypes,
   EModelEndpoint,
   ViolationTypes,
+  ImageVisionTool,
   AssistantStreamEvents,
 } = require('librechat-data-provider');
 const {
@@ -17,9 +19,10 @@ const {
   addThreadMetadata,
   saveAssistantMessage,
 } = require('~/server/services/Threads');
+const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
 const { runAssistant, createOnTextProgress } = require('~/server/services/AssistantService');
 const { addTitle, initializeClient } = require('~/server/services/Endpoints/assistants');
-const { sendResponse, sendMessage, sleep, isEnabled, countTokens } = require('~/server/utils');
+const { formatMessage, createVisionPrompt } = require('~/app/clients/prompts');
 const { createRun, StreamRunManager } = require('~/server/services/Runs');
 const { getTransactions } = require('~/models/Transaction');
 const checkBalance = require('~/models/checkBalance');
@@ -108,8 +111,8 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
   let attachedFileIds = new Set();
   /** @type {TMessage | null} */
   let requestMessage = null;
-  /** @type {CreateRunBody | undefined} */
-  let body;
+  /** @type {undefined | Promise<ChatCompletion>} */
+  let visionPromise;
 
   const userMessageId = v4();
   const responseMessageId = v4();
@@ -317,13 +320,27 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       parentMessageId = previousMessages[previousMessages.length - 1].messageId;
     }
 
-    const userMessage = {
+    let userMessage = {
       role: 'user',
       content: text,
       metadata: {
         messageId: userMessageId,
       },
     };
+
+    /** @type {CreateRunBody | undefined} */
+    const body = {
+      assistant_id,
+      model,
+    };
+
+    if (promptPrefix) {
+      body.additional_instructions = promptPrefix;
+    }
+
+    if (instructions) {
+      body.instructions = instructions;
+    }
 
     const getRequestFileIds = async () => {
       let thread_file_ids = [];
@@ -341,10 +358,55 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       }
     };
 
-    const fileIdsPromise = getRequestFileIds();
+    const addVisionPrompt = async () => {
+      if (!req.body.endpointOption.attachments) {
+        return;
+      }
+
+      const assistant = await openai.beta.assistants.retrieve(assistant_id);
+      const visionToolIndex = assistant.tools.findIndex(
+        (tool) => tool.function.name === ImageVisionTool.function.name,
+      );
+
+      if (visionToolIndex === -1) {
+        return;
+      }
+
+      const attachments = await req.body.endpointOption.attachments;
+      let visionMessage = {
+        role: 'user',
+        content: '',
+      };
+      const files = await client.addImageURLs(visionMessage, attachments);
+      if (!visionMessage.image_urls?.length) {
+        return;
+      }
+
+      const imageCount = visionMessage.image_urls.length;
+      const plural = imageCount > 1;
+      visionMessage.content = createVisionPrompt(plural);
+      visionMessage = formatMessage({ message: visionMessage, endpoint: EModelEndpoint.openAI });
+
+      visionPromise = openai.chat.completions.create({
+        model: 'gpt-4-vision-preview',
+        messages: [visionMessage],
+        max_tokens: 4000,
+      });
+
+      const pluralized = plural ? 's' : '';
+      body.additional_instructions = `${
+        body.additional_instructions ? `${body.additional_instructions}\n` : ''
+      }The user has uploaded ${imageCount} image${pluralized}.
+      Use the \`${ImageVisionTool.function.name}\` tool to retrieve ${
+  plural ? '' : 'a '
+}detailed text description${pluralized} for ${plural ? 'each' : 'the'} image${pluralized}.`;
+
+      return files;
+    };
 
     const initializeThread = async () => {
-      await fileIdsPromise;
+      /** @type {[ undefined | MongoFile[]]}*/
+      const [processedFiles] = await Promise.all([addVisionPrompt(), getRequestFileIds()]);
       // TODO: may allow multiple messages to be created beforehand in a future update
       const initThreadBody = {
         messages: [userMessage],
@@ -353,6 +415,20 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
           conversationId,
         },
       };
+
+      if (processedFiles) {
+        for (const file of processedFiles) {
+          if (file.source !== FileSources.openai) {
+            attachedFileIds.delete(file.file_id);
+            const index = file_ids.indexOf(file.file_id);
+            if (index > -1) {
+              file_ids.splice(index, 1);
+            }
+          }
+        }
+
+        userMessage.file_ids = file_ids;
+      }
 
       const result = await initThread({ openai, body: initThreadBody, thread_id });
       thread_id = result.thread_id;
@@ -398,19 +474,6 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
       if (file_ids.length) {
         conversation.file_ids = file_ids;
       }
-
-      body = {
-        assistant_id,
-        model,
-      };
-
-      if (promptPrefix) {
-        body.additional_instructions = promptPrefix;
-      }
-
-      if (instructions) {
-        body.instructions = instructions;
-      }
     };
 
     const promises = [initializeThread(), checkBalanceBeforeRun()];
@@ -440,6 +503,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
     const processRun = async (retry = false) => {
       if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
         openai.attachedFileIds = attachedFileIds;
+        openai.visionPromise = visionPromise;
         if (retry) {
           response = await runAssistant({
             openai,
@@ -484,6 +548,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
         openai,
         handlers,
         thread_id,
+        visionPromise,
         attachedFileIds,
         responseMessage: openai.responseMessage,
         // streamOptions: {
