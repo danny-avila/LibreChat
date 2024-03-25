@@ -456,6 +456,7 @@ class BaseClient {
       sender: this.sender,
       text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
+      ...(this.metadata ?? {}),
     };
 
     if (

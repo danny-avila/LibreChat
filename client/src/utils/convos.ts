@@ -42,6 +42,10 @@ export const groupConversationsByDate = (conversations: TConversation[]): Groupe
 
   const seenConversationIds = new Set();
   const groups = conversations.reduce((acc, conversation) => {
+    if (!conversation) {
+      return acc;
+    }
+
     if (seenConversationIds.has(conversation.conversationId)) {
       return acc;
     }

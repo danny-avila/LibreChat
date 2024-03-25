@@ -16,10 +16,12 @@ export default {
     'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
   com_assistants_knowledge_disabled:
     'Assistant must be created, and Code Interpreter or Retrieval must be enabled and saved before uploading files as Knowledge.',
+  com_assistants_image_vision: 'Image Vision',
   com_assistants_code_interpreter: 'Code Interpreter',
   com_assistants_code_interpreter_files:
     'The following files are only available for Code Interpreter:',
   com_assistants_retrieval: 'Retrieval',
+  com_assistants_search_name: 'Search assistants by name',
   com_assistants_tools: 'Tools',
   com_assistants_actions: 'Actions',
   com_assistants_add_tools: 'Add Tools',
@@ -398,6 +400,7 @@ export default {
   com_nav_theme_dark: 'Dark',
   com_nav_theme_light: 'Light',
   com_nav_user_name_display: 'Display username in messages',
+  com_nav_show_code: 'Always show code when using code interpreter',
   com_nav_clear_all_chats: 'Clear all chats',
   com_nav_confirm_clear: 'Confirm Clear',
   com_nav_close_sidebar: 'Close sidebar',

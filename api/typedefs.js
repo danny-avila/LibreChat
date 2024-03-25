@@ -9,6 +9,12 @@
  */
 
 /**
+ * @exports Anthropic
+ * @typedef {import('@anthropic-ai/sdk').default} Anthropic
+ * @memberof typedefs
+ */
+
+/**
  * @exports AssistantStreamEvent
  * @typedef {import('openai').default.Beta.AssistantStreamEvent} AssistantStreamEvent
  * @memberof typedefs
@@ -23,6 +29,18 @@
 /**
  * @exports RunCreateAndStreamParams
  * @typedef {import('openai').OpenAI.Beta.Threads.RunCreateAndStreamParams} RunCreateAndStreamParams
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ChatCompletionContentPartImage
+ * @typedef {import('openai').OpenAI.ChatCompletionContentPartImage} ChatCompletionContentPartImage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ChatCompletion
+ * @typedef {import('openai').OpenAI.ChatCompletion} ChatCompletion
  * @memberof typedefs
  */
 
@@ -203,6 +221,18 @@
 /**
  * @exports TConfig
  * @typedef {import('librechat-data-provider').TConfig} TConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAzureModelConfig
+ * @typedef {import('librechat-data-provider').TAzureModelConfig} TAzureModelConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAzureGroup
+ * @typedef {import('librechat-data-provider').TAzureGroup} TAzureGroup
  * @memberof typedefs
  */
 

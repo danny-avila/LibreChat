@@ -4,7 +4,7 @@ import { Root, Anchor } from '@radix-ui/react-popover';
 import { useState, useEffect, useMemo } from 'react';
 import { tPresetUpdateSchema, EModelEndpoint } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
-import { EndpointSettings, SaveAsPresetDialog } from '~/components/Endpoints';
+import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
 import { ModelSelect } from '~/components/Input/ModelSelect';
 import { PluginStoreDialog } from '~/components';
 import OptionsPopover from './OptionsPopover';
@@ -15,7 +15,7 @@ import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
 
-export default function OptionsBar() {
+export default function HeaderOptions() {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useRecoilState(
     store.showPluginStoreDialog,
@@ -102,6 +102,7 @@ export default function OptionsBar() {
                   setOption={setOption}
                   isMultiChat={true}
                 />
+                <AlternativeSettings conversation={conversation} setOption={setOption} />
               </div>
             </OptionsPopover>
             <SaveAsPresetDialog

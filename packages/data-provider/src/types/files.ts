@@ -3,6 +3,7 @@ export enum FileSources {
   firebase = 'firebase',
   openai = 'openai',
   s3 = 's3',
+  vectordb = 'vectordb',
 }
 
 export enum FileContext {

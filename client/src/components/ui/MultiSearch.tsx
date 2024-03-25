@@ -9,10 +9,12 @@ export default function MultiSearch({
   value,
   onChange,
   placeholder,
+  className = '',
 }: {
   value: string | null;
   onChange: (filter: string) => void;
   placeholder?: string;
+  className?: string;
 }) {
   const localize = useLocalize();
   const onChangeHandler: React.ChangeEventHandler<HTMLInputElement> = useCallback(
@@ -21,7 +23,12 @@ export default function MultiSearch({
   );
 
   return (
-    <div className="group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-gradient-to-b from-white from-65% to-transparent px-2 px-3 py-2 text-black transition-colors duration-300 focus:bg-gradient-to-b focus:from-white focus:to-white/50 dark:from-gray-700 dark:to-transparent dark:text-white dark:focus:from-white/10 dark:focus:to-white/20">
+    <div
+      className={cn(
+        'group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-gradient-to-b from-white from-65% to-transparent px-2 px-3 py-2 text-black transition-colors duration-300 focus:bg-gradient-to-b focus:from-white focus:to-white/50 dark:from-gray-700 dark:to-transparent dark:text-white dark:focus:from-white/10 dark:focus:to-white/20',
+        className,
+      )}
+    >
       <Search className="h-4 w-4 text-gray-500 transition-colors duration-300 dark:group-focus-within:text-gray-300 dark:group-hover:text-gray-300" />
       <input
         type="text"
@@ -69,17 +76,27 @@ function defaultGetStringKey(node: unknown): string {
  * @param availableOptions
  * @param placeholder
  * @param getTextKeyOverride
+ * @param className - Additional classnames to add to the search container
+ * @param disabled - If the search should be disabled
  * @returns
  */
-export function useMultiSearch<OptionsType extends unknown[]>(
-  availableOptions: OptionsType,
-  placeholder?: string,
-  getTextKeyOverride?: (node: OptionsType[0]) => string,
-): [OptionsType, React.ReactNode] {
+export function useMultiSearch<OptionsType extends unknown[]>({
+  availableOptions,
+  placeholder,
+  getTextKeyOverride,
+  className,
+  disabled = false,
+}: {
+  availableOptions: OptionsType;
+  placeholder?: string;
+  getTextKeyOverride?: (node: OptionsType[0]) => string;
+  className?: string;
+  disabled?: boolean;
+}): [OptionsType, React.ReactNode] {
   const [filterValue, setFilterValue] = useState<string | null>(null);
 
   // We conditionally show the search when there's more than 10 elements in the menu
-  const shouldShowSearch = availableOptions.length > 10;
+  const shouldShowSearch = availableOptions.length > 10 && !disabled;
 
   // Define the helper function used to enable search
   // If this is invalidly described, we will assume developer error - tf. avoid rendering
@@ -103,7 +120,12 @@ export function useMultiSearch<OptionsType extends unknown[]>(
   const onSearchChange = useCallback((nextFilterValue) => setFilterValue(nextFilterValue), []);
 
   const searchRender = shouldShowSearch ? (
-    <MultiSearch value={filterValue} onChange={onSearchChange} placeholder={placeholder} />
+    <MultiSearch
+      value={filterValue}
+      className={className}
+      onChange={onSearchChange}
+      placeholder={placeholder}
+    />
   ) : null;
 
   return [filteredOptions, searchRender];

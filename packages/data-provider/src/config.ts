@@ -18,6 +18,11 @@ export const defaultRetrievalModels = [
   'gpt-4-1106',
 ];
 
+export enum SettingsViews {
+  default = 'default',
+  advanced = 'advanced',
+}
+
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
 export const modelConfigSchema = z
@@ -55,8 +60,8 @@ export const azureGroupSchema = z
   .and(azureBaseSchema);
 
 export const azureGroupConfigsSchema = z.array(azureGroupSchema).min(1);
+export type TAzureGroup = z.infer<typeof azureGroupSchema>;
 export type TAzureGroups = z.infer<typeof azureGroupConfigsSchema>;
-
 export type TAzureModelMapSchema = {
   // deploymentName?: string;
   // version?: string;
@@ -77,6 +82,7 @@ export type TValidatedAzureConfig = {
 
 export enum Capabilities {
   code_interpreter = 'code_interpreter',
+  image_vision = 'image_vision',
   retrieval = 'retrieval',
   actions = 'actions',
   tools = 'tools',
@@ -95,6 +101,7 @@ export const assistantEndpointSchema = z.object({
     .optional()
     .default([
       Capabilities.code_interpreter,
+      Capabilities.image_vision,
       Capabilities.retrieval,
       Capabilities.actions,
       Capabilities.tools,
@@ -317,6 +324,7 @@ export const defaultModels = {
   [EModelEndpoint.anthropic]: [
     'claude-3-opus-20240229',
     'claude-3-sonnet-20240229',
+    'claude-3-haiku-20240307',
     'claude-2.1',
     'claude-2',
     'claude-1.2',
@@ -552,9 +560,11 @@ export enum Constants {
 }
 
 export const defaultOrderQuery: {
-  order: 'asc';
+  order: 'desc';
+  limit: 100;
 } = {
-  order: 'asc',
+  order: 'desc',
+  limit: 100,
 };
 
 export enum AssistantStreamEvents {
