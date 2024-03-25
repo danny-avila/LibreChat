@@ -1,7 +1,7 @@
 ---
 title: ✨ Third-Party Tools and Contributions
 description: Collection of third-party tools provided by the community
-weight: -2
+weight: -1
 ---
 
 # Third-Party Tools
