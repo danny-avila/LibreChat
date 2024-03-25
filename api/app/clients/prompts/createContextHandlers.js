@@ -1,4 +1,15 @@
 const axios = require('axios');
+const { isEnabled } = require('~/server/utils');
+
+const footer = `Use the context as your learned knowledge to better answer the user.
+
+In your response, remember to follow these guidelines:
+- If you don't know the answer, simply say that you don't know.
+- If you are unsure how to answer, ask for clarification.
+- Avoid mentioning that you obtained the information from the context.
+
+Answer appropriately in the user's language.
+`;
 
 function createContextHandlers(req, userMessageContent) {
   if (!process.env.RAG_API_URL) {
@@ -9,25 +20,37 @@ function createContextHandlers(req, userMessageContent) {
   const processedFiles = [];
   const processedIds = new Set();
   const jwtToken = req.headers.authorization.split(' ')[1];
+  const useFullContext = isEnabled(process.env.RAG_USE_FULL_CONTEXT);
+
+  const query = async (file) => {
+    if (useFullContext) {
+      return axios.get(`${process.env.RAG_API_URL}/documents/${file.file_id}/context`, {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+        },
+      });
+    }
+
+    return axios.post(
+      `${process.env.RAG_API_URL}/query`,
+      {
+        file_id: file.file_id,
+        query: userMessageContent,
+        k: 4,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${jwtToken}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  };
 
   const processFile = async (file) => {
     if (file.embedded && !processedIds.has(file.file_id)) {
       try {
-        const promise = axios.post(
-          `${process.env.RAG_API_URL}/query`,
-          {
-            file_id: file.file_id,
-            query: userMessageContent,
-            k: 4,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${jwtToken}`,
-              'Content-Type': 'application/json',
-            },
-          },
-        );
-
+        const promise = query(file);
         queryPromises.push(promise);
         processedFiles.push(file);
         processedIds.add(file.file_id);
@@ -43,67 +66,83 @@ function createContextHandlers(req, userMessageContent) {
         return '';
       }
 
+      const oneFile = processedFiles.length === 1;
+      const header = `The user has attached ${oneFile ? 'a' : processedFiles.length} file${
+        !oneFile ? 's' : ''
+      } to the conversation:`;
+
+      const files = `${
+        oneFile
+          ? ''
+          : `
+      <files>`
+      }${processedFiles
+        .map(
+          (file) => `
+              <file>
+                <filename>${file.filename}</filename>
+                <type>${file.type}</type>
+              </file>`,
+        )
+        .join('')}${
+        oneFile
+          ? ''
+          : `
+        </files>`
+      }`;
+
       const resolvedQueries = await Promise.all(queryPromises);
 
       const context = resolvedQueries
         .map((queryResult, index) => {
           const file = processedFiles[index];
-          const contextItems = queryResult.data
+          let contextItems = queryResult.data;
+
+          const generateContext = (currentContext) =>
+            `
+          <file>
+            <filename>${file.filename}</filename>
+            <context>${currentContext}
+            </context>
+          </file>`;
+
+          if (useFullContext) {
+            return generateContext(`\n${contextItems}`);
+          }
+
+          contextItems = queryResult.data
             .map((item) => {
               const pageContent = item[0].page_content;
               return `
             <contextItem>
-              <![CDATA[${pageContent}]]>
-            </contextItem>
-          `;
+              <![CDATA[${pageContent?.trim()}]]>
+            </contextItem>`;
             })
             .join('');
 
-          return `
-          <file>
-            <filename>${file.filename}</filename>
-            <context>
-              ${contextItems}
-            </context>
-          </file>
-        `;
+          return generateContext(contextItems);
         })
         .join('');
 
-      const template = `The user has attached ${
-        processedFiles.length === 1 ? 'a' : processedFiles.length
-      } file${processedFiles.length !== 1 ? 's' : ''} to the conversation:
+      if (useFullContext) {
+        const prompt = `${header}
+          ${context}
+          ${footer}`;
 
-        <files>
-          ${processedFiles
-    .map(
-      (file) => `
-            <file>
-              <filename>${file.filename}</filename>
-              <type>${file.type}</type>
-            </file>
-          `,
-    )
-    .join('')}
-        </files>
+        return prompt;
+      }
+
+      const prompt = `${header}
+        ${files}
 
         A semantic search was executed with the user's message as the query, retrieving the following context inside <context></context> XML tags.
 
-        <context>
-          ${context}
+        <context>${context}
         </context>
 
-        Use the context as your learned knowledge to better answer the user.
+        ${footer}`;
 
-        In your response, remember to follow these guidelines:
-        - If you don't know the answer, simply say that you don't know.
-        - If you are unsure how to answer, ask for clarification.
-        - Avoid mentioning that you obtained the information from the context.
-
-        Answer appropriately in the user's language.
-      `;
-
-      return template;
+      return prompt;
     } catch (error) {
       console.error('Error creating context:', error);
       throw error; // Re-throw the error to propagate it to the caller

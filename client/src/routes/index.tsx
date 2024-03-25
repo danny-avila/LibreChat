@@ -1,8 +1,7 @@
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
 import Root from './Root';
-import Chat from './Chat';
 import ChatRoute from './ChatRoute';
-import Search from './Search';
+// import Search from './Search';
 import {
   Login,
   Registration,
@@ -66,14 +65,14 @@ export const router = createBrowserRouter([
             path: 'c/:conversationId?',
             element: <ChatRoute />,
           },
-          {
-            path: 'chat/:conversationId?',
-            element: <Chat />,
-          },
-          {
-            path: 'search/:query?',
-            element: <Search />,
-          },
+          // {
+          //   path: 'chat/:conversationId?',
+          //   element: <Chat />,
+          // },
+          // {
+          //   path: 'search/:query?',
+          //   element: <Search />,
+          // },
           {
             path: 'leaderboard',
             element: <Leaderboard />,
@@ -86,6 +85,10 @@ export const router = createBrowserRouter([
             path: 'profile/:userId?',
             element: <Profile />,
           },
+          // {
+          //   path: 'search/:query?',
+          //   element: <Search />,
+          // },
         ],
       },
     ],

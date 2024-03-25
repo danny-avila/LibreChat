@@ -457,6 +457,7 @@ class BaseClient {
       text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
       senderId: user,
+      ...(this.metadata ?? {}),
     };
 
     if (

@@ -37,7 +37,7 @@ const modelQueries = isEnabled(process.env.USE_REDIS)
 
 const abortKeys = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: CacheKeys.ABORT_KEYS });
+  : new Keyv({ namespace: CacheKeys.ABORT_KEYS, ttl: 600000 });
 
 const namespaces = {
   [CacheKeys.CONFIG_STORE]: config,

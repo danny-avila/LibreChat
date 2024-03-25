@@ -9,6 +9,12 @@
  */
 
 /**
+ * @exports Anthropic
+ * @typedef {import('@anthropic-ai/sdk').default} Anthropic
+ * @memberof typedefs
+ */
+
+/**
  * @exports AssistantStreamEvent
  * @typedef {import('openai').default.Beta.AssistantStreamEvent} AssistantStreamEvent
  * @memberof typedefs
@@ -203,6 +209,18 @@
 /**
  * @exports TConfig
  * @typedef {import('librechat-data-provider').TConfig} TConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAzureModelConfig
+ * @typedef {import('librechat-data-provider').TAzureModelConfig} TAzureModelConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TAzureGroup
+ * @typedef {import('librechat-data-provider').TAzureGroup} TAzureGroup
  * @memberof typedefs
  */
 
