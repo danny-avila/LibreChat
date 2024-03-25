@@ -16,6 +16,7 @@ export default {
     'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
   com_assistants_knowledge_disabled:
     'Assistant must be created, and Code Interpreter or Retrieval must be enabled and saved before uploading files as Knowledge.',
+  com_assistants_image_vision: 'Image Vision',
   com_assistants_code_interpreter: 'Code Interpreter',
   com_assistants_code_interpreter_files:
     'The following files are only available for Code Interpreter:',
