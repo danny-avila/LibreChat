@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef } from 'react';
 import {
   defaultAssistantFormValues,
   defaultOrderQuery,
+  isImageVisionTool,
+  Capabilities,
   FileSources,
 } from 'librechat-data-provider';
 import type { UseFormReset } from 'react-hook-form';
@@ -13,7 +15,7 @@ import SelectDropDown from '~/components/ui/SelectDropDown';
 import { useListAssistantsQuery } from '~/data-provider';
 import { useFileMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils/';
+import { cn } from '~/utils';
 
 const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);
 
@@ -87,20 +89,21 @@ export default function AssistantSelect({
       };
 
       const actions: Actions = {
-        code_interpreter: false,
-        retrieval: false,
+        [Capabilities.code_interpreter]: false,
+        [Capabilities.image_vision]: false,
+        [Capabilities.retrieval]: false,
       };
 
       assistant?.tools
-        ?.filter((tool) => tool.type !== 'function')
-        ?.map((tool) => tool.type)
+        ?.filter((tool) => tool.type !== 'function' || isImageVisionTool(tool))
+        ?.map((tool) => tool?.function?.name || tool.type)
         .forEach((tool) => {
           actions[tool] = true;
         });
 
       const functions =
         assistant?.tools
-          ?.filter((tool) => tool.type === 'function')
+          ?.filter((tool) => tool.type === 'function' && !isImageVisionTool(tool))
           ?.map((tool) => tool.function?.name ?? '') ?? [];
 
       const formValues: Partial<AssistantForm & Actions> = {
