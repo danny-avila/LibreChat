@@ -3,11 +3,12 @@ title: 🧑‍💻 Code Standards and Conventions
 description: This guide covers the best practices for JavaScript coding, such as following the Airbnb Style Guide, using CommonJS modules, structuring the API using Express, Mongoose, and services, and testing and documenting the code using Jest, Supertest, Playwright, JSDoc, and TypeScript.
 weight: -7
 ---
+
 # Coding Conventions
 
 ## Node.js API Server
 
-### 1. General Guidelines
+### General Guidelines
 
 - Follow the [Airbnb JavaScript Style Guide](https://github.com/airbnb/javascript) for general JavaScript coding conventions.
 - Use "clean code" principles, such as keeping functions and modules small, adhering to the single responsibility principle, and writing expressive and readable code.
@@ -17,7 +18,7 @@ weight: -7
 - Use CommonJS modules (require/exports) for Node.js modules.
 - Organize and modularize the codebase using separate files for different concerns.   
 
-### 2. API Design
+### API Design
 
 - Follow RESTful principles when designing APIs.
 - Use meaningful and descriptive names for routes, controllers, services, and models.
@@ -28,7 +29,7 @@ weight: -7
 - Use the logging system included in the `utils` directory to log important events and errors. 
 - Do JWT-based, stateless authentication using the `requireJWTAuth` middleware.
 
-### 3. File Structure
+### File Structure
 
 *Note: The API is undergoing a refactor to separate out the code for improved separation of concerns, testability, and maintainability. Any new APIs must follow the structure using the auth system as an example, which separates out the routes, controllers, services, and models into separate files.*
 
@@ -66,7 +67,7 @@ Defines Mongoose models to represent data entities and their relationships.
 - Include only the necessary fields, indexes, and validations in the models.
 - Keep models independent of the API layer by avoiding direct references to request/response objects.
 
-### 4. Database Access (MongoDB and Mongoose)
+### Database Access (MongoDB and Mongoose)
 
 - Use Mongoose ([https://mongoosejs.com](https://mongoosejs.com)) as the MongoDB ODM.
 - Create separate model files for each entity and ensure clear separation of concerns.
@@ -74,7 +75,7 @@ Defines Mongoose models to represent data entities and their relationships.
 - Handle database connections efficiently and avoid connection leaks.
 - Use Mongoose query builders to create concise and readable database queries.
 
-### 5. Testing and Documentation
+### Testing and Documentation
 
 *Note: the repo currently lacks sufficient automated unit and integration tests for both the client and the API. This is a great first issue for new contributors wanting to familiarize with the codebase.*
 
