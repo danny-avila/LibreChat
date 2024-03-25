@@ -571,7 +571,7 @@ class StreamRunManager {
     const isMessage = step.type === StepTypes.MESSAGE_CREATION;
 
     if (isMessage) {
-      logger.warn('RunStep Message completion: to be handled by Message Event.', step);
+      logger.debug('RunStep Message completion: to be handled by Message Event.', step);
       return;
     }
 
