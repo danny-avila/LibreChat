@@ -6,7 +6,7 @@ weight: -10
 
 <p align="center">
   <a href="https://librechat.ai">
-    <img src="assets/LibreChat.svg" style="margin-left: 40px; height: 256px; width: 256px;>
+    <img src="assets/LibreChat.svg" style="margin-left: 40px; height: 256px; width: 256px;">
   </a>
   <a href="https://librechat.ai">
     <h1 align="center" style="padding: 0;">LibreChat</h1>
