@@ -173,9 +173,8 @@ use admin
 Replace the credentials as desired and keep in your secure records for the rest of the guide.
 
 Run command to create the admin user:
-```bash
-db.createUser({ user: "adminUser", pwd: "securePassword", roles: ["userAdminAnyDatabase", "readWriteAnyDatabase"] })
-```
+
+`db.createUser({ user: "adminUser", pwd: "securePassword", roles: ["userAdminAnyDatabase", "readWriteAnyDatabase"] })`
 
 You should see an "ok" output.
 
