@@ -338,7 +338,6 @@ describe('gptPlugins/initializeClient', () => {
   });
 
   test('should initialize client with default options when certain env vars are not set', async () => {
-    delete process.env.DEBUG_OPENAI;
     delete process.env.OPENAI_SUMMARIZE;
     process.env.OPENAI_API_KEY = 'some-api-key';
 
@@ -351,8 +350,6 @@ describe('gptPlugins/initializeClient', () => {
     const endpointOption = {};
 
     const client = await initializeClient({ req, res, endpointOption });
-
-    expect(client.client.options.debug).toBe(false);
     expect(client.client.options.contextStrategy).toBe(null);
   });
 

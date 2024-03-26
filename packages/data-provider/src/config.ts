@@ -185,7 +185,7 @@ export const rateLimitSchema = z.object({
 
 export const configSchema = z.object({
   version: z.string(),
-  cache: z.boolean(),
+  cache: z.boolean().optional().default(true),
   interface: z
     .object({
       privacyPolicy: z

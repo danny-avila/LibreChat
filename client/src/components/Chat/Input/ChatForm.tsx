@@ -1,6 +1,5 @@
 import { useRecoilState } from 'recoil';
 import { useForm } from 'react-hook-form';
-import TextareaAutosize from 'react-textarea-autosize';
 import { memo, useCallback, useRef, useMemo, useEffect } from 'react';
 import type { ChangeEvent } from 'react';
 import {
@@ -10,7 +9,8 @@ import {
   EModelEndpoint,
 } from 'librechat-data-provider';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import { useRequiresKey, useTextarea } from '~/hooks';
+import { useRequiresKey, useTextarea, useSpeechToText, useSpeechToTextExternal } from '~/hooks';
+import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
 import AttachFile from './Files/AttachFile';
@@ -19,7 +19,6 @@ import SendButton from './SendButton';
 import FileRow from './Files/FileRow';
 import AudioRecorder from './AudioRecorder';
 import store from '~/store';
-import { useSpeechToText, useSpeechToTextExternal } from '~/hooks';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 const ChatForm = ({ index = 0 }) => {
