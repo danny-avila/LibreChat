@@ -2,9 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const fetch = require('node-fetch');
-const { ref, uploadBytes, getDownloadURL, deleteObject } = require('firebase/storage');
+const { ref, uploadBytes, getDownloadURL, getStream, deleteObject } = require('firebase/storage');
 const { getBufferMetadata } = require('~/server/utils');
 const { getFirebaseStorage } = require('./initialize');
+const { logger } = require('~/config');
 
 /**
  * Deletes a file from Firebase Storage.
@@ -212,6 +213,26 @@ async function uploadFileToFirebase({ req, file, file_id }) {
   return { filepath: downloadURL, bytes };
 }
 
+/**
+ * Retrieves a readable stream for a file from Firebase storage.
+ *
+ * @param {MongoFile} file - The file object.
+ * @returns {ReadableStream} A readable stream of the file.
+ */
+function getFirebaseFileStream(file) {
+  try {
+    const storage = getFirebaseStorage();
+    if (!storage) {
+      throw new Error('Firebase is not initialized');
+    }
+    const fileRef = ref(storage, file.filepath);
+    return getStream(fileRef);
+  } catch (error) {
+    logger.error('Error getting Firebase file stream:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   deleteFile,
   getFirebaseURL,
@@ -219,4 +240,5 @@ module.exports = {
   deleteFirebaseFile,
   uploadFileToFirebase,
   saveBufferToFirebase,
+  getFirebaseFileStream,
 };

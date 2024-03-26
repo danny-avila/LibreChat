@@ -1,12 +1,12 @@
-const axios = require('axios');
 const fs = require('fs').promises;
 const express = require('express');
-const { isUUID } = require('librechat-data-provider');
+const { isUUID, FileSources } = require('librechat-data-provider');
 const {
   filterFile,
   processFileUpload,
   processDeleteRequest,
 } = require('~/server/services/Files/process');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -65,26 +65,38 @@ router.delete('/', async (req, res) => {
   }
 });
 
-router.get('/download/:fileId', async (req, res) => {
+router.get('/download/:userId/:filename', async (req, res) => {
   try {
-    const { fileId } = req.params;
+    const { userId, filename } = req.params;
 
-    const options = {
-      headers: {
-        // TODO: Client initialization for OpenAI API Authentication
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      responseType: 'stream',
-    };
+    if (userId !== req.user.id) {
+      return res.status(403).send('Forbidden');
+    }
 
-    const fileResponse = await axios.get(`https://api.openai.com/v1/files/${fileId}`, {
-      headers: options.headers,
-    });
-    const { filename } = fileResponse.data;
+    const [file] = await getFiles({ file_id: filename.split('.')[0] });
 
-    const response = await axios.get(`https://api.openai.com/v1/files/${fileId}/content`, options);
+    if (!file) {
+      return res.status(404).send('File not found');
+    }
+
+    if (!file.filepath.includes(userId)) {
+      return res.status(403).send('Forbidden');
+    }
+
+    if (file.source === FileSources.openai) {
+      return res.status(403).send('Forbidden');
+    }
+
+    const { getDownloadStream } = getStrategyFunctions(file.source);
+    if (!getDownloadStream) {
+      return res.status(501).send('Not Implemented');
+    }
+    const fileStream = getDownloadStream(file);
+
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    response.data.pipe(res);
+    res.setHeader('Content-Type', 'application/octet-stream');
+
+    fileStream.pipe(res);
   } catch (error) {
     console.error('Error downloading file:', error);
     res.status(500).send('Error downloading file');
