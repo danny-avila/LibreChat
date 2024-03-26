@@ -177,10 +177,10 @@ Run command to create the admin user:
 db.createUser({ user: "adminUser", pwd: "securePassword", roles: ["userAdminAnyDatabase", "readWriteAnyDatabase"] })
 ```
 
-You should see an "ok" output:
-> { ok: 1 }
+You should see an "ok" output.
 
 You can also confirm the admin was created by running `show users`:
+
 ```bash
 # example input/output
 admin> show users
