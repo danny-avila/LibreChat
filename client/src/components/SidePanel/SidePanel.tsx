@@ -169,7 +169,7 @@ const SidePanel = ({
               </div>
             </Tooltip>
           </TooltipProvider>
-          {(!isCollapsed || minSize > 0) && (
+          {(!isCollapsed || (minSize > 0 && minSize !== defaultMinSize - 1)) && (
             <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
           )}
           <ResizablePanel
