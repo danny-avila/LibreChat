@@ -1,4 +1,5 @@
 import throttle from 'lodash/throttle';
+import { ArrowRightToLine } from 'lucide-react';
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import { useGetEndpointsQuery, useUserKeyQuery } from 'librechat-data-provider/react-query';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
@@ -74,6 +75,20 @@ const SidePanel = ({
       Component: FilesPanel,
     });
 
+    links.push({
+      title: 'com_sidepanel_hide_panel',
+      label: '',
+      icon: ArrowRightToLine,
+      onClick: () => {
+        console.log('hide-panel');
+        setIsCollapsed(true);
+        setCollapsedSize(0);
+        setMinSize(defaultMinSize - 1);
+        panelRef.current?.collapse();
+      },
+      id: 'hide-panel',
+    });
+
     return links;
   }, [assistants, keyProvided]);
 
@@ -86,7 +101,6 @@ const SidePanel = ({
   );
 
   useEffect(() => {
-    console.log('isSmallScreen', isSmallScreen);
     if (isSmallScreen) {
       setIsCollapsed(true);
       setCollapsedSize(0);
@@ -97,6 +111,7 @@ const SidePanel = ({
       setIsCollapsed(defaultCollapsed);
       setCollapsedSize(navCollapsedSize);
       setMinSize(defaultMinSize);
+      panelRef.current?.collapse();
     }
   }, [isSmallScreen, defaultCollapsed, navCollapsedSize]);
 
@@ -105,6 +120,10 @@ const SidePanel = ({
       setNewUser(false);
     }
     setIsCollapsed((prev: boolean) => {
+      if (prev) {
+        setMinSize(defaultMinSize);
+        setCollapsedSize(navCollapsedSize);
+      }
       return !prev;
     });
     if (!isCollapsed) {
@@ -112,7 +131,7 @@ const SidePanel = ({
     } else {
       panelRef.current?.expand();
     }
-  }, [isCollapsed, newUser, setNewUser]);
+  }, [isCollapsed, newUser, setNewUser, navCollapsedSize]);
 
   return (
     <>
@@ -139,7 +158,10 @@ const SidePanel = ({
                   setIsHovering={setIsHovering}
                   className={cn(
                     'fixed top-1/2',
-                    isCollapsed && (minSize === 0 || collapsedSize === 0) ? 'mr-9' : 'mr-16',
+                    (isCollapsed && (minSize === 0 || collapsedSize === 0)) ||
+                      minSize === defaultMinSize - 1
+                      ? 'mr-9'
+                      : 'mr-16',
                   )}
                   translateX={false}
                   side="right"
@@ -172,7 +194,8 @@ const SidePanel = ({
             className={cn(
               'sidenav hide-scrollbar border-l border-gray-200 bg-white transition-opacity dark:border-gray-800/50 dark:bg-gray-850',
               isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
-              isSmallScreen && isCollapsed && (minSize === 0 || collapsedSize === 0)
+              (isSmallScreen && isCollapsed && (minSize === 0 || collapsedSize === 0)) ||
+                minSize === defaultMinSize - 1
                 ? 'hidden min-w-0'
                 : 'opacity-100',
             )}
