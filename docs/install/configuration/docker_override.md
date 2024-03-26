@@ -272,12 +272,10 @@ use LibreChat
 ```
 
 Now we'll create the actual credentials to be used by our Mongo connection string, which will be limited to read/write access of the "LibreChat" database. As before, replace the example with your desired credentials:
-```bash
-db.createUser({ user: 'user', pwd: 'userpasswd', roles: [ { role: "readWrite", db: "LibreChat" } ] });
-```
 
-You should see an "ok" output again:
-> { ok: 1 }
+`db.createUser({ user: 'user', pwd: 'userpasswd', roles: [ { role: "readWrite", db: "LibreChat" } ] });`
+
+You should see an "ok" output again.
 
 You can verify the user creation with the `show users` command.
 
