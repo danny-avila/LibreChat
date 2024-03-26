@@ -21,6 +21,7 @@ interface SidePanelProps {
   defaultLayout?: number[] | undefined;
   defaultCollapsed?: boolean;
   navCollapsedSize?: number;
+  fullPanelCollapse?: boolean;
   children: React.ReactNode;
 }
 
@@ -29,13 +30,15 @@ const defaultMinSize = 20;
 const SidePanel = ({
   defaultLayout = [97, 3],
   defaultCollapsed = false,
+  fullPanelCollapse = false,
   navCollapsedSize = 3,
   children,
 }: SidePanelProps) => {
-  const [minSize, setMinSize] = useState(defaultMinSize);
   const [isHovering, setIsHovering] = useState(false);
+  const [minSize, setMinSize] = useState(defaultMinSize);
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  const [fullCollapse, setFullCollapse] = useState(fullPanelCollapse);
   const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(EModelEndpoint.assistants);
@@ -80,10 +83,11 @@ const SidePanel = ({
       label: '',
       icon: ArrowRightToLine,
       onClick: () => {
-        console.log('hide-panel');
         setIsCollapsed(true);
         setCollapsedSize(0);
-        setMinSize(defaultMinSize - 1);
+        setMinSize(defaultMinSize);
+        setFullCollapse(true);
+        localStorage.setItem('fullPanelCollapse', 'true');
         panelRef.current?.collapse();
       },
       id: 'hide-panel',
@@ -105,15 +109,16 @@ const SidePanel = ({
       setIsCollapsed(true);
       setCollapsedSize(0);
       setMinSize(defaultMinSize);
+      setFullCollapse(true);
+      localStorage.setItem('fullPanelCollapse', 'true');
       panelRef.current?.collapse();
       return;
     } else {
       setIsCollapsed(defaultCollapsed);
       setCollapsedSize(navCollapsedSize);
       setMinSize(defaultMinSize);
-      panelRef.current?.collapse();
     }
-  }, [isSmallScreen, defaultCollapsed, navCollapsedSize]);
+  }, [isSmallScreen, defaultCollapsed, navCollapsedSize, fullPanelCollapse]);
 
   const toggleNavVisible = useCallback(() => {
     if (newUser) {
@@ -123,6 +128,8 @@ const SidePanel = ({
       if (prev) {
         setMinSize(defaultMinSize);
         setCollapsedSize(navCollapsedSize);
+        setFullCollapse(false);
+        localStorage.setItem('fullPanelCollapse', 'false');
       }
       return !prev;
     });
@@ -158,8 +165,7 @@ const SidePanel = ({
                   setIsHovering={setIsHovering}
                   className={cn(
                     'fixed top-1/2',
-                    (isCollapsed && (minSize === 0 || collapsedSize === 0)) ||
-                      minSize === defaultMinSize - 1
+                    (isCollapsed && (minSize === 0 || collapsedSize === 0)) || fullCollapse
                       ? 'mr-9'
                       : 'mr-16',
                   )}
@@ -169,7 +175,7 @@ const SidePanel = ({
               </div>
             </Tooltip>
           </TooltipProvider>
-          {(!isCollapsed || (minSize > 0 && minSize !== defaultMinSize - 1)) && (
+          {(!isCollapsed || minSize > 0) && !isSmallScreen && !fullCollapse && (
             <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
           )}
           <ResizablePanel
@@ -195,7 +201,7 @@ const SidePanel = ({
               'sidenav hide-scrollbar border-l border-gray-200 bg-white transition-opacity dark:border-gray-800/50 dark:bg-gray-850',
               isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
               (isSmallScreen && isCollapsed && (minSize === 0 || collapsedSize === 0)) ||
-                minSize === defaultMinSize - 1
+                fullCollapse
                 ? 'hidden min-w-0'
                 : 'opacity-100',
             )}
@@ -225,6 +231,8 @@ const SidePanel = ({
         className={`nav-mask${!isCollapsed ? ' active' : ''}`}
         onClick={() => {
           setIsCollapsed(() => {
+            localStorage.setItem('fullPanelCollapse', 'true');
+            setFullCollapse(true);
             setCollapsedSize(0);
             setMinSize(0);
             return false;
