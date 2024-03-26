@@ -1,5 +1,6 @@
 import throttle from 'lodash/throttle';
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { ArrowRightToLine } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import { useGetEndpointsQuery, useUserKeyQuery } from 'librechat-data-provider/react-query';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { EModelEndpoint, type TEndpointsConfig } from 'librechat-data-provider';
@@ -25,12 +26,12 @@ interface SidePanelProps {
 
 const defaultMinSize = 20;
 
-export default function SidePanel({
+const SidePanel = ({
   defaultLayout = [97, 3],
   defaultCollapsed = false,
   navCollapsedSize = 3,
   children,
-}: SidePanelProps) {
+}: SidePanelProps) => {
   const [minSize, setMinSize] = useState(defaultMinSize);
   const [isHovering, setIsHovering] = useState(false);
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
@@ -42,14 +43,20 @@ export default function SidePanel({
 
   const panelRef = useRef<ImperativePanelHandle>(null);
 
-  const activePanel = localStorage.getItem('side:active-panel');
-  const defaultActive = activePanel ? activePanel : undefined;
+  const defaultActive = useMemo(() => {
+    const activePanel = localStorage.getItem('side:active-panel');
+    return activePanel ? activePanel : undefined;
+  }, []);
+
+  const assistants = useMemo(() => endpointsConfig?.[EModelEndpoint.assistants], [endpointsConfig]);
+  const userProvidesKey = useMemo(() => !!assistants?.userProvide, [assistants]);
+  const keyProvided = useMemo(
+    () => (userProvidesKey ? !!keyExpiry?.expiresAt : true),
+    [keyExpiry?.expiresAt, userProvidesKey],
+  );
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];
-    const assistants = endpointsConfig?.[EModelEndpoint.assistants];
-    const userProvidesKey = !!assistants?.userProvide;
-    const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
     if (assistants && assistants.disableBuilder !== true && keyProvided) {
       links.push({
         title: 'com_sidepanel_assistant_builder',
@@ -68,8 +75,22 @@ export default function SidePanel({
       Component: FilesPanel,
     });
 
+    links.push({
+      title: 'com_sidepanel_hide_panel',
+      label: '',
+      icon: ArrowRightToLine,
+      onClick: () => {
+        console.log('hide-panel');
+        setIsCollapsed(true);
+        setCollapsedSize(0);
+        setMinSize(defaultMinSize - 1);
+        panelRef.current?.collapse();
+      },
+      id: 'hide-panel',
+    });
+
     return links;
-  }, [endpointsConfig, keyExpiry?.expiresAt]);
+  }, [assistants, keyProvided]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
@@ -82,24 +103,26 @@ export default function SidePanel({
   useEffect(() => {
     if (isSmallScreen) {
       setIsCollapsed(true);
-      setMinSize(0);
       setCollapsedSize(0);
+      setMinSize(defaultMinSize);
       panelRef.current?.collapse();
       return;
+    } else {
+      setIsCollapsed(defaultCollapsed);
+      setCollapsedSize(navCollapsedSize);
+      setMinSize(defaultMinSize);
+      panelRef.current?.collapse();
     }
-  }, [isSmallScreen]);
+  }, [isSmallScreen, defaultCollapsed, navCollapsedSize]);
 
-  const toggleNavVisible = () => {
+  const toggleNavVisible = useCallback(() => {
     if (newUser) {
       setNewUser(false);
     }
     setIsCollapsed((prev: boolean) => {
-      if (!prev) {
-        setMinSize(0);
-        setCollapsedSize(0);
-      } else {
+      if (prev) {
         setMinSize(defaultMinSize);
-        setCollapsedSize(3);
+        setCollapsedSize(navCollapsedSize);
       }
       return !prev;
     });
@@ -108,11 +131,7 @@ export default function SidePanel({
     } else {
       panelRef.current?.expand();
     }
-  };
-
-  const assistants = endpointsConfig?.[EModelEndpoint.assistants];
-  const userProvidesKey = !!assistants?.userProvide;
-  const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
+  }, [isCollapsed, newUser, setNewUser, navCollapsedSize]);
 
   return (
     <>
@@ -139,7 +158,10 @@ export default function SidePanel({
                   setIsHovering={setIsHovering}
                   className={cn(
                     'fixed top-1/2',
-                    isCollapsed && (minSize === 0 || collapsedSize === 0) ? 'mr-9' : 'mr-16',
+                    (isCollapsed && (minSize === 0 || collapsedSize === 0)) ||
+                      minSize === defaultMinSize - 1
+                      ? 'mr-9'
+                      : 'mr-16',
                   )}
                   translateX={false}
                   side="right"
@@ -147,7 +169,7 @@ export default function SidePanel({
               </div>
             </Tooltip>
           </TooltipProvider>
-          {(!isCollapsed || minSize > 0) && (
+          {(!isCollapsed || (minSize > 0 && minSize !== defaultMinSize - 1)) && (
             <ResizableHandleAlt withHandle className="bg-transparent dark:text-white" />
           )}
           <ResizablePanel
@@ -159,9 +181,7 @@ export default function SidePanel({
             ref={panelRef}
             style={{
               overflowY: 'auto',
-              visibility:
-                isCollapsed && (minSize === 0 || collapsedSize === 0) ? 'hidden' : 'visible',
-              transition: 'width 0.2s ease',
+              transition: 'width 0.2s ease, visibility 0s linear 0.2s',
             }}
             onExpand={() => {
               setIsCollapsed(false);
@@ -172,9 +192,12 @@ export default function SidePanel({
               localStorage.setItem('react-resizable-panels:collapsed', 'true');
             }}
             className={cn(
-              'sidenav hide-scrollbar border-l border-gray-200 bg-white dark:border-gray-800/50 dark:bg-gray-850',
+              'sidenav hide-scrollbar border-l border-gray-200 bg-white transition-opacity dark:border-gray-800/50 dark:bg-gray-850',
               isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
-              minSize === 0 ? 'min-w-0' : '',
+              (isSmallScreen && isCollapsed && (minSize === 0 || collapsedSize === 0)) ||
+                minSize === defaultMinSize - 1
+                ? 'hidden min-w-0'
+                : 'opacity-100',
             )}
           >
             {keyProvided && (
@@ -211,4 +234,6 @@ export default function SidePanel({
       />
     </>
   );
-}
+};
+
+export default memo(SidePanel);

@@ -42,6 +42,11 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                               : '',
                           )}
                           onClick={() => {
+                            if (link.onClick) {
+                              link.onClick();
+                              setActive('');
+                              return;
+                            }
                             setActive(link.id);
                             resize && resize(25);
                           }}
@@ -50,7 +55,11 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                           <span className="sr-only">{link.title}</span>
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="right" className="flex items-center gap-4">
+                      <TooltipContent
+                        side="left"
+                        sideOffset={10}
+                        className="flex items-center gap-4"
+                      >
                         {localize(link.title)}
                         {link.label && (
                           <span className="text-muted-foreground ml-auto">{link.label}</span>
@@ -78,6 +87,12 @@ export default function Nav({ links, isCollapsed, resize, defaultActive }: NavPr
                                 'hover:bg-gray-50 data-[state=open]:bg-gray-50 data-[state=open]:text-black dark:hover:bg-gray-700 dark:data-[state=open]:bg-gray-700 dark:data-[state=open]:text-white',
                                 'w-full justify-start rounded-md border dark:border-gray-700',
                               )}
+                              onClick={() => {
+                                if (link.onClick) {
+                                  link.onClick();
+                                  setActive('');
+                                }
+                              }}
                             >
                               <link.icon className="mr-2 h-4 w-4" />
                               {localize(link.title)}
