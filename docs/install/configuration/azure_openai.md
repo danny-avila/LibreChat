@@ -108,7 +108,8 @@ These settings apply globally to all Azure models and groups within the endpoint
 
 8. **groups** (Array/List, Required): Specifies the list of Azure OpenAI model groups. Each group represents a set of models with shared configurations. The groups field is an array of objects, where each object defines the settings for a specific group. This is a required field at the endpoint level, and at least one group must be defined. The group-level configurations are detailed in the Group-Level Configuration section.
 
-<!-- 9. **customOrder** (Number, Optional): Allows you to specify a custom order for the Azure endpoint in the user interface. Higher numbers will appear lower in the list. If not provided, the default order is determined by the order in which the endpoints are defined in the `librechat.yaml` file. -->
+[ 9. **customOrder** (Number, Optional): Allows you to specify a custom order for the Azure endpoint in the user interface. Higher numbers will appear lower in the list. If not provided, the default order is determined by the order in which the endpoints are defined in the `librechat.yaml` file.
+]: # 
 
 Here's an example of how you can configure these endpoint-level settings in your `librechat.yaml` file:
 
