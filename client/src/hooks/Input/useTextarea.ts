@@ -165,6 +165,7 @@ export default function useTextarea({
 
       if (textAreaRef.current?.getAttribute('placeholder') !== placeholder) {
         textAreaRef.current?.setAttribute('placeholder', placeholder);
+        forceResize(textAreaRef);
       }
     };
 
