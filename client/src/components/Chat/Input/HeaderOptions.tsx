@@ -51,7 +51,13 @@ export default function HeaderOptions() {
   }, [endpoint, noSettings]);
 
   const saveAsPreset = () => {
-    setSaveAsDialogShow(true);
+    if (conversation && conversation.user) {
+      setSaveAsDialogShow(true);
+    } else {
+      console.error('conversation.user is null or undefined');
+      // 这里你可以添加任何错误处理逻辑
+    }
+    // setSaveAsDialogShow(true);
   };
 
   if (!endpoint) {
@@ -105,15 +111,17 @@ export default function HeaderOptions() {
                 <AlternativeSettings conversation={conversation} setOption={setOption} />
               </div>
             </OptionsPopover>
-            <SaveAsPresetDialog
-              open={saveAsDialogShow}
-              onOpenChange={setSaveAsDialogShow}
-              preset={
-                tPresetUpdateSchema.parse({
-                  ...conversation,
-                }) as TPreset
-              }
-            />
+            {conversation && conversation.user && (
+              <SaveAsPresetDialog
+                open={saveAsDialogShow}
+                onOpenChange={setSaveAsDialogShow}
+                preset={
+                  tPresetUpdateSchema.parse({
+                    ...conversation,
+                  }) as TPreset
+                }
+              />
+            )}
             <PluginStoreDialog
               isOpen={showPluginStoreDialog}
               setIsOpen={setShowPluginStoreDialog}
