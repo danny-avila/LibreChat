@@ -9,7 +9,6 @@ weight: -10
     <img src="assets/LibreChat.svg" style="margin-left: 40px; height: 256px; width: 256px;>
   </a>
   <a href="https://librechat.ai">
-    <!-- Use the margin-top property to add some space between the image and the text -->
     <h1 align="center" style="padding: 0;">LibreChat</h1>
   </a>
 </p>
