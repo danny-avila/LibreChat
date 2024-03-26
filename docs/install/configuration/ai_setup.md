@@ -268,7 +268,7 @@ I recommend using Microsoft Edge for this:
 - Copy the whole cookie value. (Yes it's very long 😉)
 - Use this **"full cookie string"** for your "BingAI Token"
   - <p align="left">
-    <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d4dfd370-eddc-4694-ab16-076f913ff430" width="50%">
+    <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d4dfd370-eddc-4694-ab16-076f913ff430" width="50%"/>
 </p>
 
 ### copilot-gpt4-service
