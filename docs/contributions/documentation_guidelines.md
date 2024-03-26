@@ -26,6 +26,8 @@ This document explains how to contribute to the LibreChat documentation by writi
 - Use relative paths for links to other documents.
 - You can use HTML to add additional features to a document.
 - Highlight keystrokes with `+` (example: `++ctrl+alt+del++` 🟰 ++ctrl+alt+del++)
+- Make sure any HTML has closing tags; i.e.: `<img src="" />` or `<a href="link"></a>`
+- [HTML comments](https://www.w3schools.com/html/html_comments.asp) are not allowed. Use [Markdown comments](https://gist.github.com/jonikarppinen/47dc8c1d7ab7e911f4c9?permalink_comment_id=4272770#gistcomment-4272770) instead, and only if the text is actually hidden.
 - 🌐 see the MKDocs Material documentation for more information: [MKDocs Material Reference](https://squidfunk.github.io/mkdocs-material/reference/)
 
 ## Document Metadata
@@ -108,7 +110,7 @@ mkdocs serve
 ```html title="HTML Code"
 <p align="center">
   <a href="https://discord.librechat.ai">
-    <img src="https://github.com/danny-avila/LibreChat/assets/32828263/45890a7c-5b8d-4650-a6e0-aa5d7e4951c3" height="128" width="128">
+    <img src="https://github.com/danny-avila/LibreChat/assets/32828263/45890a7c-5b8d-4650-a6e0-aa5d7e4951c3" height="128" width="128"/>
   </a>
   <a href="https://librechat.ai">
     <h3 align="center">LibreChat</h3>
@@ -119,7 +121,7 @@ mkdocs serve
 !!! quote "Result:"
     <p align="center">
       <a href="https://discord.librechat.ai">
-        <img src="https://github.com/danny-avila/LibreChat/assets/32828263/45890a7c-5b8d-4650-a6e0-aa5d7e4951c3" height="128" width="128">
+        <img src="https://github.com/danny-avila/LibreChat/assets/32828263/45890a7c-5b8d-4650-a6e0-aa5d7e4951c3" height="128" width="128"/>
       </a>
       <a href="https://librechat.ai">
         <h3 align="center">LibreChat</h3>

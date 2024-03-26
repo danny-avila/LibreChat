@@ -4,7 +4,7 @@ description: How to install and configure Mongo Express to securely access and m
 weight: -5
 ---
 
-<img src="https://github.com/danny-avila/LibreChat/assets/32828263/4572dd35-8489-4cb1-a968-4fb5a871d6e5" height="50">
+<img src="https://github.com/danny-avila/LibreChat/assets/32828263/4572dd35-8489-4cb1-a968-4fb5a871d6e5" height="50"/>
 
 
 # Manage Your MongoDB Database with Mongo Express
