@@ -309,6 +309,7 @@ endpoints:
     - For this reason, it's recommended you use only one region or resource group for Azure OpenAI Assistants, or you will experience an error.
     - Uploading to "OpenAI" is the default behavior for official `code_interpeter` and `retrieval` capabilities.
 - Downloading files that assistants generate will soon be supported.
+- If the `ASSISTANTS_API_KEY` is still set to `user_provided` in your environment file `.env`, comment it out.
 - As of March 14th 2024, retrieval and streaming are not supported through Azure OpenAI.
     - To avoid any errors with retrieval while it's not supported, it's recommended to disable the capability altogether through the `assistants` endpoint config:
 

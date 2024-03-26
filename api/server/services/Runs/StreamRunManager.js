@@ -59,6 +59,10 @@ class StreamRunManager {
     this.messages = [];
     /** @type {string} */
     this.text = '';
+    /** @type {Set<string>} */
+    this.attachedFileIds = fields.attachedFileIds;
+    /** @type {undefined | Promise<ChatCompletion>} */
+    this.visionPromise = fields.visionPromise;
 
     /**
      * @type {Object.<AssistantStreamEvents, (event: AssistantStreamEvent) => Promise<void>>}
@@ -567,7 +571,7 @@ class StreamRunManager {
     const isMessage = step.type === StepTypes.MESSAGE_CREATION;
 
     if (isMessage) {
-      logger.warn('RunStep Message completion: to be handled by Message Event.', step);
+      logger.debug('RunStep Message completion: to be handled by Message Event.', step);
       return;
     }
 
