@@ -21,7 +21,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 - **Known:** icon provided.
 
-- **Temperature:** If you set a temperature value of 0, it will be converted to 1e-8. If you run into any issues, please try setting the value to a float32 > 0 and <= 2.
+- **Temperature:** If you set a temperature value of 0, it will be converted to 1e-8. If you run into any issues, please try setting the value to a float32 greater than 0 and less than or equal to 2.
 
 - Groq is currently free but rate limited: 10 queries/minute, 100/hour.
 
