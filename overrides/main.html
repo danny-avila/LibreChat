@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+<!-- Custom front matter -->
+{% block extrahead %}
+  <!-- Extra style sheets (can't be set in mkdocs.yml due to content hash) -->
+  <link
+    rel="stylesheet"
+    href="{{ 'assets/stylesheets/custom.css' | url }}"
+  />
+{% endblock %}
+
+<!-- Announcement bar -->
+{% block announce %}
+  For updates, check out our 
+  <a rel="me" href="https://librechat.ai/blog">
+    <strong>Blog</strong>
+  </a>
+  and
+  <a href="https://twitter.com/LibreChatAI">
+    <span class="twemoji twitter">
+      {% include ".icons/fontawesome/brands/twitter.svg" %}
+    </span>
+    <strong>Twitter</strong>
+  </a>
+{% endblock %}
+
+<!-- Theme-related JavaScript -->
+{% block scripts %}
+  {{ super() }}
+
+  <!-- Extra JavaScript (can't be set in mkdocs.yml due to content hash) -->
+  <script src="{{ 'assets/javascripts/custom.js' | url }}"></script>
+
+  <!-- Crisp Chat Script -->
+  <script type="text/javascript">
+    window.$crisp=[];window.CRISP_WEBSITE_ID="5421b199-fca2-4c83-9394-be6eca8b12dd";
+    (function(){d=document;s=d.createElement("script");s.src="https://client.crisp.chat/l.js";s.async=1;d.getElementsByTagName("head")[0].appendChild(s);})();
+  </script>
+{% endblock %}

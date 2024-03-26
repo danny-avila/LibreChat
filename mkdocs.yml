@@ -12,6 +12,7 @@ use_directory_urls: false
 
 theme:
   name: material
+  custom_dir: overrides
   logo: assets/LibreChat.svg
   favicon: assets/favicon_package/favicon-32x32.png
 
