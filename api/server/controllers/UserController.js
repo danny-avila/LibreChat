@@ -1,6 +1,16 @@
-const { updateUserPluginsService } = require('~/server/services/UserService');
+const { updateUserPluginsService, deleteUserKey } = require('~/server/services/UserService');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { logger } = require('~/config');
+const {
+  deleteConvos,
+  deleteMessages,
+  deletePresets,
+  User,
+  Session,
+  Balance,
+  Transaction,
+  deleteFiles,
+} = require('~/models');
 
 const getUserController = async (req, res) => {
   res.status(200).send(req.user);
@@ -53,7 +63,30 @@ const updateUserPluginsController = async (req, res) => {
   }
 };
 
+const deleteUserController = async (req, res) => {
+  const { user } = req;
+
+  try {
+    await deleteMessages({ user: user.id }); // delete user messages
+    await Session.deleteMany({ user: user.id }); // delete user sessions
+    await Transaction.deleteMany({ user: user.id }); // delete user transactions
+    await deleteUserKey({ userId: user.id, all: true }); // delete user keys
+    await Balance.deleteMany({ user: user._id }); // delete user balances
+    await deletePresets(user.id); // delete user presets
+    await deleteConvos(user.id); // delete user convos
+    await deleteUserPluginAuth(user.id, null, true); // delete user plugin auth
+    await User.deleteOne({ _id: user.id }); // delete user
+    await deleteFiles(null, user.id); // delete user files
+
+    res.status(200).send({ message: 'User deleted' });
+  } catch (err) {
+    logger.error('[deleteUserController]', err);
+    res.status(500).send({ message: err.message });
+  }
+};
+
 module.exports = {
   getUserController,
   updateUserPluginsController,
+  deleteUserController,
 };
