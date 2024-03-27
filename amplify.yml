@@ -1,0 +1,18 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+        - npm run frontend:ci  # use frontend:ci for development mode
+    # IMPORTANT - Please verify your build commands
+    build:
+      commands: []
+  artifacts:
+    baseDirectory: client/dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+      - client/node_modules/**/*
