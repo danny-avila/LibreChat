@@ -325,7 +325,7 @@ export default {
   com_nav_welcome_message: 'Como posso ajudar você hoje?',
   com_nav_auto_scroll: 'Auto-rolagem para o Mais Novo ao Abrir',
   com_nav_hide_panel: 'Ocultar Painel Mais à Direita',
-  com_nav_enter_to_send: 'Enviar Mensagem com a Tecla Enter?',
+  com_nav_enter_to_send: 'Enviar Mensagem com a Tecla Enter',
   com_nav_modular_chat: 'Habilitar a troca de Endpoints durante a conversa',
   com_nav_latex_parsing: 'Análise de LaTeX em mensagens (pode afetar o desempenho)',
   com_nav_profile_picture: 'Foto do Perfil',

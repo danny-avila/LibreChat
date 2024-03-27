@@ -360,7 +360,7 @@ export default {
   com_nav_welcome_assistant: 'Please Select an Assistant',
   com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
-  com_nav_enter_to_send: 'Do Send Message with Enter Key?',
+  com_nav_enter_to_send: 'Send Message with Enter Key',
   com_nav_hide_panel: 'Hide Right-most Side Panel',
   com_nav_modular_chat: 'Enable switching Endpoints mid-conversation',
   com_nav_latex_parsing: 'Parsing LaTeX in messages (may affect performance)',
