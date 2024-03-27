@@ -73,3 +73,38 @@ With the docker deployment you can skip step 2 and step 3, use the setup instruc
 
 ## 5. Select the plugin and enjoy!
 ![stable_diffusion-2](https://github.com/danny-avila/LibreChat/assets/32828263/8fa898b9-0826-42eb-bba4-6f85ec5f6ec2)
+
+## 6. Changing the default custom parameters
+It is possible to change the stable diffusion model and parameters with the SD_WEBUI_DEFAULT_PARAMETERS variable.  By default, the Stable Diffusion model will use the below defaults:
+```
+sampler_name: 'DPM++ 2M Karras'
+cfg_scale: 4.5
+steps: 22
+width: 1024
+height: 1024
+```
+### SDXL Turbo
+However, to use [SDXL Turbo](https://stable-diffusion-art.com/sdxl-turbo/) many of the paramters need to be changed for images to be generated in a much shorter period of time. For example, SDXL does not need a negative prompt or more than 1 step. To set these settings set the below variable.
+```bash
+SD_WEBUI_DEFAULT_PARAMETERS={"sd_model_name":"sd_xl_turbo_1.0_fp16.safetensors", "negative_prompt":"", "sampler_name": "Euler a", "cfg_scale": 1, "steps": 1, "width": 512, "height": 512}
+```
+As Stable Diffusion releases more models, this variable may be changed at any time to take advantage of new functionality.
+
+## 7. Docker option for installing Automatic1111 with SDXL Turbo
+Using the Stable Diffusion WebUI Docker GitHub project: https://github.com/AbdBarho/stable-diffusion-webui-docker
+```bash
+git clone https://github.com/AbdBarho/stable-diffusion-webui-docker.git
+cd stable-diffusion-webui-docker/
+docker compose --profile download up --build
+# For CPU use docker compose --profile auto-cpu up --build
+# For Nvidia GPU use docker compose --profile auto up --build
+
+# Notice: For me I had to comment out the line below in the docker-compose.yaml
+# tty: true
+
+cd data/models/Stable-diffusion
+wget https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors
+
+cd ../../../
+docker compose --profile auto up -d
+```

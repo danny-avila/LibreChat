@@ -522,6 +522,7 @@ See detailed instructions here: **[Stable Diffusion](../../features/plugins/stab
 
 ```bash
 SD_WEBUI_URL=http://host.docker.internal:7860
+SD_WEBUI_DEFAULT_PARAMETERS=
 ```
 
 ### Tavily
