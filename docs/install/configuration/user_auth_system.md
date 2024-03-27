@@ -544,6 +544,8 @@ You can now make last minute changes, click on `Create user pool` when you're do
 
 > The `OPENID_SCOPE` and `OPENID_CALLBACK_URL` are pre-configured with the correct values
 
+6. By default, the `OPENID_IMAGE_DOWNLOAD` is configured as `false`. If you wish to limit users from uploading their avatars, simply switch it to `true`. This setting will enable the system to automatically download the avatar from the OpenID provider every time a user logs in
+
 6. Open the `.env` file at the root of your LibreChat folder and add the following variables with the values you copied:
 
 ```bash
@@ -556,6 +558,7 @@ OPENID_ISSUER=https://cognito-idp.[AWS REGION].amazonaws.com/[USER POOL ID]/.wel
 OPENID_SESSION_SECRET=Any random string
 OPENID_SCOPE=openid profile email
 OPENID_CALLBACK_URL=/oauth/openid/callback
+OPENID_AVATAR_DOWNLOAD=false
 ```
 7. Save the .env file
 

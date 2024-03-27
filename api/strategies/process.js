@@ -16,7 +16,7 @@ const User = require('~/models/User');
  *
  * @throws {Error} Throws an error if there's an issue saving the updated user object.
  */
-const handleExistingUser = async (oldUser, avatarUrl) => {
+const handleExistingUser = async (oldUser, avatarUrl, avatarImage) => {
   const fileStrategy = process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 
@@ -25,10 +25,12 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
     await oldUser.save();
   } else if (!isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
     const userId = oldUser._id;
-    const webPBuffer = await resizeAvatar({
-      userId,
-      input: avatarUrl,
-    });
+    const webPBuffer =
+      avatarImage ||
+      (await resizeAvatar({
+        userId,
+        input: avatarUrl,
+      }));
     const { processAvatar } = getStrategyFunctions(fileStrategy);
     oldUser.avatar = await processAvatar({ buffer: webPBuffer, userId });
     await oldUser.save();
@@ -58,6 +60,7 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
 const createNewUser = async ({
   email,
   avatarUrl,
+  avatarImage,
   provider,
   providerKey,
   providerId,
@@ -75,7 +78,6 @@ const createNewUser = async ({
     emailVerified,
   };
 
-  // TODO: remove direct access of User model
   const newUser = await new User(update).save();
 
   const fileStrategy = process.env.CDN_PROVIDER;
@@ -83,10 +85,12 @@ const createNewUser = async ({
 
   if (!isLocal) {
     const userId = newUser._id;
-    const webPBuffer = await resizeAvatar({
-      userId,
-      input: avatarUrl,
-    });
+    const webPBuffer =
+      avatarImage ||
+      (await resizeAvatar({
+        userId,
+        input: avatarUrl,
+      }));
     const { processAvatar } = getStrategyFunctions(fileStrategy);
     newUser.avatar = await processAvatar({ buffer: webPBuffer, userId });
     await newUser.save();
