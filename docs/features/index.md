@@ -17,10 +17,11 @@ weight: 2
     * 🖌️ [Stable Diffusion](./plugins/stable_diffusion.md)
     * 🧠 [Wolfram|Alpha](./plugins/wolfram.md)
     * ⚡ [Azure AI Search](./plugins/azure_ai_search.md)
-* 🔖 [Presets](./presets.md)
 
 ---
 
+* 🗣️ [STT & TTS](./stt_tts.md)
+* 🔖 [Presets](./presets.md)
 * 🔨 [Automated Moderation](./mod_system.md)
 * 🪙 [Token Usage](./token_usage.md)
 * 🔥 [Firebase CDN](./firebase.md)

@@ -17,6 +17,10 @@ import type {
   TPreset,
   UploadAvatarOptions,
   AvatarUploadResponse,
+  SpeechToTextOptions,
+  SpeechToTextResponse,
+  TextToSpeechOptions,
+  TextToSpeechResponse,
   TConversation,
   Assistant,
   AssistantCreateParams,
@@ -284,6 +288,36 @@ export const useUploadAvatarMutation = (
 > => {
   return useMutation([MutationKeys.avatarUpload], {
     mutationFn: (variables: FormData) => dataService.uploadAvatar(variables),
+    ...(options || {}),
+  });
+};
+
+/* Speech to text */
+export const useSpeechToTextMutation = (
+  options?: SpeechToTextOptions,
+): UseMutationResult<
+  SpeechToTextResponse, // response data
+  unknown, // error
+  FormData, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.speechToText], {
+    mutationFn: (variables: FormData) => dataService.speechToText(variables),
+    ...(options || {}),
+  });
+};
+
+/* Text to speech */
+export const useTextToSpeechMutation = (
+  options?: TextToSpeechOptions,
+): UseMutationResult<
+  TextToSpeechResponse, // response data
+  unknown, // error
+  FormData, // request
+  unknown // context
+> => {
+  return useMutation([MutationKeys.textToSpeech], {
+    mutationFn: (variables: FormData) => dataService.textToSpeech(variables),
     ...(options || {}),
   });
 };

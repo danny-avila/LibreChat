@@ -1,6 +1,6 @@
 import { cn } from '~/utils';
 
-export default function RegenerateIcon({ className = '' }: { className?: string }) {
+export default function RegenerateIcon({ className = '', size = '1em' }) {
   return (
     <svg
       fill="none"
@@ -8,9 +8,9 @@ export default function RegenerateIcon({ className = '' }: { className?: string 
       viewBox="0 0 24 24"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={cn('h-4 w-4', className)}
-      height="1em"
-      width="1em"
+      className={cn(className)}
+      height={size}
+      width={size}
       xmlns="http://www.w3.org/2000/svg"
     >
       <path

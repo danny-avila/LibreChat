@@ -86,3 +86,7 @@ export const files = () => '/api/files';
 export const images = () => `${files()}/images`;
 
 export const avatar = () => `${images()}/avatar`;
+
+export const speechToText = () => `${files()}/stt`;
+
+export const textToSpeech = () => `${files()}/tts`;

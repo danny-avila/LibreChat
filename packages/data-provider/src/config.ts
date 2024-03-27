@@ -209,6 +209,31 @@ export const configSchema = z.object({
       allowedDomains: z.array(z.string()).optional(),
     })
     .optional(),
+  tts: z
+    .object({
+      url: z.string().optional(),
+      apiKey: z.string(),
+      model: z.string(),
+      backend: z.string().optional(),
+      voice: z.string().optional(),
+      voice_settings: z
+        .object({
+          similarity_boost: z.number().optional(),
+          stability: z.number().optional(),
+          style: z.number().optional(),
+          use_speaker_boost: z.boolean().optional(),
+        })
+        .optional(),
+      pronunciation_dictionary_locators: z.array(z.string()).optional(),
+    })
+    .optional(),
+  stt: z
+    .object({
+      url: z.string().optional(),
+      apiKey: z.string(),
+      model: z.string(),
+    })
+    .optional(),
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   endpoints: z
@@ -510,6 +535,10 @@ export enum SettingsTabValues {
    * Tab for Account Settings
    */
   ACCOUNT = 'account',
+  /**
+   * Tab for Speech Settings
+   */
+  SPEECH = 'speech',
 }
 
 /**

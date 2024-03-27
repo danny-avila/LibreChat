@@ -34,6 +34,7 @@ export default function HoverButtons({
     message,
     endpoint: endpoint ?? '',
   });
+
   if (!conversation) {
     return null;
   }

@@ -23,6 +23,15 @@ async function _postMultiPart(url: string, formData: FormData, options?: AxiosRe
   return response.data;
 }
 
+async function _postTTS(url: string, formData: FormData, options?: AxiosRequestConfig) {
+  const response = await axios.post(url, formData, {
+    ...options,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    responseType: 'arraybuffer',
+  });
+  return response.data;
+}
+
 async function _put(url: string, data?: any) {
   const response = await axios.put(url, JSON.stringify(data), {
     headers: { 'Content-Type': 'application/json' },
@@ -116,6 +125,7 @@ export default {
   get: _get,
   post: _post,
   postMultiPart: _postMultiPart,
+  postTTS: _postTTS,
   put: _put,
   delete: _delete,
   deleteWithOptions: _deleteWithOptions,

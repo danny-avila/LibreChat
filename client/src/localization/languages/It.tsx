@@ -317,4 +317,5 @@ export default {
   com_nav_setting_beta: 'Funzioni Beta',
   com_nav_setting_data: 'Controlli dati',
   com_nav_setting_account: 'Profilo',
+  com_nav_setting_speech: 'Voce',
 };

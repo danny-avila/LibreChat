@@ -1,6 +1,7 @@
 import { useRecoilState } from 'recoil';
 import { useForm } from 'react-hook-form';
-import { memo, useCallback, useRef, useMemo } from 'react';
+import { memo, useCallback, useRef, useMemo, useEffect } from 'react';
+import type { ChangeEvent } from 'react';
 import {
   supportsFiles,
   mergeFileConfig,
@@ -8,7 +9,7 @@ import {
   EModelEndpoint,
 } from 'librechat-data-provider';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import { useRequiresKey, useTextarea } from '~/hooks';
+import { useRequiresKey, useTextarea, useSpeechToText, useSpeechToTextExternal } from '~/hooks';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
@@ -16,11 +17,14 @@ import AttachFile from './Files/AttachFile';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import FileRow from './Files/FileRow';
+import AudioRecorder from './AudioRecorder';
 import store from '~/store';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [SpeechToText] = useRecoilState<boolean>(store.SpeechToText);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
   const { requiresKey } = useRequiresKey();
 
@@ -64,6 +68,40 @@ const ChatForm = ({ index = 0 }) => {
 
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
+  const { data: startupConfig } = useGetStartupConfig();
+  const useExternalSpeech = startupConfig?.speechToTextExternal;
+
+  const {
+    isListening: speechIsListening,
+    isLoading: speechIsLoading,
+    text: speechText,
+    startRecording: startSpeechRecording,
+    stopRecording: stopSpeechRecording,
+  } = useSpeechToText();
+
+  const {
+    isListening: externalIsListening,
+    isLoading: externalIsLoading,
+    text: externalSpeechText,
+    externalStartRecording: startExternalRecording,
+    externalStopRecording: stopExternalRecording,
+  } = useSpeechToTextExternal();
+
+  const isListening = useExternalSpeech ? externalIsListening : speechIsListening;
+  const isLoading = useExternalSpeech ? externalIsLoading : speechIsLoading;
+  const startRecording = useExternalSpeech ? startExternalRecording : startSpeechRecording;
+  const stopRecording = useExternalSpeech ? stopExternalRecording : stopSpeechRecording;
+  const speechTextForm = useExternalSpeech ? externalSpeechText : speechText;
+  const finalText =
+    isListening || (externalSpeechText && externalSpeechText.length > 0)
+      ? externalSpeechText
+      : speechTextForm || textAreaRef.current?.value || '';
+
+  useEffect(() => {
+    if (textAreaRef.current) {
+      textAreaRef.current.value = finalText;
+    }
+  }, [finalText]);
 
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -103,7 +141,7 @@ const ChatForm = ({ index = 0 }) => {
               <TextareaAutosize
                 {...methods.register('text', {
                   required: true,
-                  onChange: (e) => {
+                  onChange: (e: ChangeEvent<HTMLTextAreaElement>) => {
                     methods.setValue('text', e.target.value);
                   },
                 })}
@@ -126,7 +164,8 @@ const ChatForm = ({ index = 0 }) => {
                   supportsFiles[endpointType ?? endpoint ?? ''] && !endpointFileConfig?.disabled
                     ? ' pl-10 md:pl-[55px]'
                     : 'pl-3 md:pl-4',
-                  'm-0 w-full resize-none border-0 bg-transparent py-[10px] pr-10 placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5 md:pr-12 ',
+                  'm-0 w-full resize-none border-0 bg-transparent py-[10px] placeholder-black/50 focus:ring-0 focus-visible:ring-0 dark:bg-transparent dark:placeholder-white/50 md:py-3.5  ',
+                  SpeechToText ? 'pr-20 md:pr-[85px]' : 'pr-10 md:pr-12',
                   removeFocusOutlines,
                   'max-h-[65vh] md:max-h-[75vh]',
                 )}
@@ -147,6 +186,15 @@ const ChatForm = ({ index = 0 }) => {
                   disabled={!!(filesLoading || isSubmitting || disableInputs)}
                 />
               )
+            )}
+            {SpeechToText && (
+              <AudioRecorder
+                isListening={isListening}
+                isLoading={isLoading}
+                startRecording={startRecording}
+                stopRecording={stopRecording}
+                disabled={!!disableInputs}
+              />
             )}
           </div>
         </div>
