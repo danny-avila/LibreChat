@@ -1,0 +1,34 @@
+name: Production Release to https://zhao.toatu.com via CloudFront/S3
+on:
+  workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the repository
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+
+      # Run docker-compose build
+      - name: Build Client Package
+        run: |
+          npm ci
+          npm run frontend
+
+      # Tag it properly before push to github
+      - name: Sync to S3
+        run: |
+          aws s3 sync client/dist s3://librechat-aitok-web/zhao.toatu.com --region ap-southeast-1 --delete
+
+      - name: Invalidate CloudFront Cache
+        run: |
+          aws cloudfront create-invalidation --distribution-id EEOZSCDOFHL2G --paths "/*"
+          
