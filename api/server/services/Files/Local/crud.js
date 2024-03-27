@@ -258,12 +258,12 @@ async function uploadLocalFile({ req, file, file_id }) {
 /**
  * Retrieves a readable stream for a file from local storage.
  *
- * @param {MongoFile} file - The file object.
+ * @param {string} filepath - The filepath.
  * @returns {ReadableStream} A readable stream of the file.
  */
-function getLocalFileStream(file) {
+function getLocalFileStream(filepath) {
   try {
-    return fs.createReadStream(file.filepath);
+    return fs.createReadStream(filepath);
   } catch (error) {
     logger.error('Error getting local file stream:', error);
     throw error;

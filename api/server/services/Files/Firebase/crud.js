@@ -216,16 +216,16 @@ async function uploadFileToFirebase({ req, file, file_id }) {
 /**
  * Retrieves a readable stream for a file from Firebase storage.
  *
- * @param {MongoFile} file - The file object.
+ * @param {string} filepath - The filepath.
  * @returns {ReadableStream} A readable stream of the file.
  */
-function getFirebaseFileStream(file) {
+function getFirebaseFileStream(filepath) {
   try {
     const storage = getFirebaseStorage();
     if (!storage) {
       throw new Error('Firebase is not initialized');
     }
-    const fileRef = ref(storage, file.filepath);
+    const fileRef = ref(storage, filepath);
     return getStream(fileRef);
   } catch (error) {
     logger.error('Error getting Firebase file stream:', error);

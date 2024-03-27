@@ -19,7 +19,7 @@ const {
   processLocalAvatar,
   getLocalFileStream,
 } = require('./Local');
-const { uploadOpenAIFile, deleteOpenAIFile } = require('./OpenAI');
+const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
 
 /**
@@ -98,10 +98,9 @@ const openAIStrategy = () => ({
   handleImageUpload: null,
   /** @type {typeof prepareImagesLocal | null} */
   prepareImagePayload: null,
-  /** @type {typeof getLocalFileStream | null} */
-  getDownloadStream: null,
   deleteFile: deleteOpenAIFile,
   handleFileUpload: uploadOpenAIFile,
+  getDownloadStream: getOpenAIFileStream,
 });
 
 // Strategy Selector
