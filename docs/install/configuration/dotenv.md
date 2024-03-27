@@ -76,6 +76,14 @@ NO_INDEX=true
 
 > ❗**Note:** This method is not guaranteed to work for all search engines, and some search engines may still index your website or web page for other purposes, such as caching or archiving. Therefore, you should not rely solely on this method to protect sensitive or confidential information on your website or web page.
 
+### JSON Logging
+
+When handling console logs in cloud deployments (such as GCP or AWS), enabling this will duump the logs with a UTC timestamp and format them as JSON. See: [feat: Add CONSOLE_JSON](https://github.com/danny-avila/LibreChat/pull/2146)
+
+```
+CONSOLE_JSON=false
+```
+
 ### Logging
 
 LibreChat has built-in central logging, see [Logging System](../../features/logging_system.md) for more info.
