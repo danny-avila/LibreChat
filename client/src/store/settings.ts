@@ -194,6 +194,25 @@ const SpeechToText = atom<boolean>({
   ] as const,
 });
 
+const chatAudio = atom<boolean>({
+  key: 'chatAudio',
+  default: true,
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('chatAudio');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('chatAudio', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 export default {
   abortScroll,
   showFiles,
@@ -211,4 +230,5 @@ export default {
   UsernameDisplay,
   TextToSpeech,
   SpeechToText,
+  chatAudio,
 };

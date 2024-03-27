@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
+import { useRecoilState } from 'recoil';
 import { useSpeechToTextMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import store from '~/store';
+import Hark from 'hark';
 
 const useSpeechToTextExternal = () => {
   const { showToast } = useToastContext();
@@ -15,6 +18,8 @@ const useSpeechToTextExternal = () => {
   const [recordingStatus, setRecordingStatus] = useState('inactive');
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [isRequestBeingMade, setIsRequestBeingMade] = useState(false);
+  const harkRef = useRef(null);
+  const [chatAudio] = useRecoilState<boolean>(store.chatAudio);
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
@@ -95,8 +100,21 @@ const useSpeechToTextExternal = () => {
         mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
         mediaRecorderRef.current.addEventListener('stop', handleStop);
         mediaRecorderRef.current.start(100);
+        mediaRecorderRef.current.onstop = () => {
+          setRecordingStatus('inactive');
+        };
         setIsListening(true);
         setRecordingStatus('recording');
+        if (!harkRef.current && chatAudio) {
+          harkRef.current = Hark(audioStream.current, {});
+          harkRef.current.on('speaking', () => {
+            console.log('speaking');
+          });
+          harkRef.current.on('stopped_speaking', () => {
+            console.log('stopped speaking');
+            stopRecording();
+          });
+        }
       } catch (error) {
         showToast({ message: `Error starting recording: ${error}`, status: 'error' });
       }
@@ -106,10 +124,18 @@ const useSpeechToTextExternal = () => {
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && recordingStatus === 'recording') {
+    if (!mediaRecorderRef.current) {
+      return;
+    }
+
+    if (mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
-      setRecordingStatus('inactive');
       setIsListening(false);
+
+      if (harkRef.current && chatAudio) {
+        harkRef.current.stop();
+        harkRef.current = null;
+      }
 
       audioStream.current?.getTracks().forEach((track) => track.stop());
       audioStream.current = null;
@@ -140,7 +166,7 @@ const useSpeechToTextExternal = () => {
   };
 
   const handleKeyDown = async (e: KeyboardEvent) => {
-    if (e.shiftKey && e.altKey && e.code === 'KeyL') {
+    if (e.shiftKey && e.altKey && e.code === 'KeyL' && isExternalSpeechEnabled) {
       if (!window.MediaRecorder) {
         showToast({ message: 'MediaRecorder is not supported in this browser', status: 'error' });
         return;

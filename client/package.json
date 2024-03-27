@@ -60,7 +60,7 @@
     "downloadjs": "^1.4.7",
     "export-from-json": "^1.7.2",
     "filenamify": "^6.0.0",
-    "hotkeys-js": "^3.12.0",
+    "hark": "^1.2.3",
     "html-to-image": "^1.11.11",
     "image-blob-reduce": "^4.1.0",
     "librechat-data-provider": "*",

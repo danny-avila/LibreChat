@@ -63,14 +63,14 @@ const useSpeechToText = () => {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.shiftKey && e.altKey && e.code === 'KeyL') {
+      if (e.shiftKey && e.altKey && e.code === 'KeyL' && !startupConfig?.speechToTextExternal) {
         toggleListening();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSpeechSupported]);
+  }, []);
 
   return {
     isListening,

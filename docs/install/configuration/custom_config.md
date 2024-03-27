@@ -71,7 +71,7 @@ docker compose up # no need to rebuild
 ## Example Config
 
 ```yaml
-version: 1.0.5
+version: 1.0.6
 cache: true
 # fileStrategy: "firebase"  # If using Firebase CDN
 fileConfig:
@@ -188,7 +188,7 @@ This example configuration file sets up LibreChat with detailed options across s
 - **Key**: `version`
 - **Type**: String
 - **Description**: Specifies the version of the configuration file.
-- **Example**: `version: 1.0.5`
+- **Example**: `version: 1.0.6`
 - **Required**
 
 ### Cache Settings
