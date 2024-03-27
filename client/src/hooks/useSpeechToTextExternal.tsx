@@ -6,26 +6,29 @@ import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import store from '~/store';
 import Hark from 'hark';
 
-const useSpeechToTextExternal = () => {
+const useSpeechToTextExternal = (submitMessage) => {
   const { showToast } = useToastContext();
-  const [text, setText] = useState<string>('');
-  const [isListening, setIsListening] = useState(false);
   const { data: startupConfig } = useGetStartupConfig();
   const isExternalSpeechEnabled = startupConfig?.speechToTextExternal ?? false;
+  const [chatAudio] = useRecoilState<boolean>(store.chatAudio);
+  const [text, setText] = useState<string>('');
+  const [isListening, setIsListening] = useState(false);
   const [permission, setPermission] = useState(false);
-  const audioStream = useRef<MediaStream | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const [recordingStatus, setRecordingStatus] = useState('inactive');
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [isRequestBeingMade, setIsRequestBeingMade] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioStream = useRef<MediaStream | null>(null);
   const harkRef = useRef(null);
-  const [chatAudio] = useRecoilState<boolean>(store.chatAudio);
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
       const extractedText = data.text;
       setText(extractedText);
       setIsRequestBeingMade(false);
+      if (chatAudio) {
+        submitMessage(extractedText);
+        console.log('submitMessage', extractedText);
+      }
     },
     onError: () => {
       showToast({
@@ -41,7 +44,6 @@ const useSpeechToTextExternal = () => {
       mediaRecorderRef.current.removeEventListener('dataavailable', handleDataAvailable);
       mediaRecorderRef.current.removeEventListener('stop', handleStop);
       mediaRecorderRef.current = null;
-      setRecordingStatus('inactive');
     }
   };
 
@@ -70,7 +72,6 @@ const useSpeechToTextExternal = () => {
     if (audioChunks.length > 0) {
       const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
 
-      setRecordingStatus('inactive');
       setAudioChunks([]);
 
       const formData = new FormData();
@@ -100,11 +101,6 @@ const useSpeechToTextExternal = () => {
         mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
         mediaRecorderRef.current.addEventListener('stop', handleStop);
         mediaRecorderRef.current.start(100);
-        mediaRecorderRef.current.onstop = () => {
-          setRecordingStatus('inactive');
-        };
-        setIsListening(true);
-        setRecordingStatus('recording');
         if (!harkRef.current && chatAudio) {
           harkRef.current = Hark(audioStream.current, {});
           harkRef.current.on('speaking', () => {
@@ -115,6 +111,7 @@ const useSpeechToTextExternal = () => {
             stopRecording();
           });
         }
+        setIsListening(true);
       } catch (error) {
         showToast({ message: `Error starting recording: ${error}`, status: 'error' });
       }

@@ -59,6 +59,7 @@ const ChatForm = ({ index = 0 }) => {
       if (!data) {
         return console.warn('No data provided to submitMessage');
       }
+      console.log('submitMessage', data);
       ask({ text: data.text });
       methods.reset();
       textAreaRef.current?.setRangeText('', 0, data.text.length, 'end');
@@ -85,7 +86,7 @@ const ChatForm = ({ index = 0 }) => {
     text: externalSpeechText,
     externalStartRecording: startExternalRecording,
     externalStopRecording: stopExternalRecording,
-  } = useSpeechToTextExternal();
+  } = useSpeechToTextExternal(submitMessage);
 
   const isListening = useExternalSpeech ? externalIsListening : speechIsListening;
   const isLoading = useExternalSpeech ? externalIsLoading : speechIsLoading;
@@ -100,8 +101,9 @@ const ChatForm = ({ index = 0 }) => {
   useEffect(() => {
     if (textAreaRef.current) {
       textAreaRef.current.value = finalText;
+      methods.setValue('text', finalText, { shouldValidate: true });
     }
-  }, [finalText]);
+  }, [finalText, methods]);
 
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -142,7 +144,7 @@ const ChatForm = ({ index = 0 }) => {
                 {...methods.register('text', {
                   required: true,
                   onChange: (e: ChangeEvent<HTMLTextAreaElement>) => {
-                    methods.setValue('text', e.target.value);
+                    methods.setValue('text', e.target.value, { shouldValidate: true });
                   },
                 })}
                 autoFocus
