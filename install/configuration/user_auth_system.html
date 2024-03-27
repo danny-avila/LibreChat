@@ -1,0 +1,3112 @@
+<!DOCTYPE html>
+<html class="no-js" lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <meta content="This guide explains how to use the user authentication system of LibreChat, which offers secure and easy email and social logins. You will learn how to set up sign up, log in, password reset, and more." name="description"/>
+  <link href="ollama.html" rel="prev"/>
+  <link href="mongodb.html" rel="next"/>
+  <link href="../../assets/favicon_package/favicon-32x32.png" rel="icon"/>
+  <meta content="mkdocs-1.5.3, mkdocs-material-9.5.15" name="generator"/>
+  <title>
+   🛂 Authentication System - LibreChat
+  </title>
+  <link href="../../assets/stylesheets/main.7e359304.min.css" rel="stylesheet"/>
+  <link href="../../assets/stylesheets/palette.06af60db.min.css" rel="stylesheet"/>
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+  <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback" rel="stylesheet"/>
+  <style>
+   :root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}
+  </style>
+  <script>
+   __md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}
+  </script>
+  <meta content="article" property="og:type"/>
+  <meta content="🛂 Authentication System" property="og:title"/>
+  <meta content="This guide explains how to use the user authentication system of LibreChat, which offers secure and easy email and social logins. You will learn how to set up sign up, log in, password reset, and more." property="og:description"/>
+  <meta content="LibreChat" property="og:site_name"/>
+  <meta content="en_us" property="og:locale"/>
+  <meta content="Noneinstall/configuration/user_auth_system.html" property="og:url"/>
+  <meta content="summary" property="twitter:card"/>
+  <meta content="🛂 Authentication System" property="twitter:title"/>
+  <meta content="This guide explains how to use the user authentication system of LibreChat, which offers secure and easy email and social logins. You will learn how to set up sign up, log in, password reset, and more." property="twitter:description"/>
+ </head>
+ <body data-md-color-accent="purple" data-md-color-primary="cyan" data-md-color-scheme="slate" dir="ltr">
+  <input autocomplete="off" class="md-toggle" data-md-toggle="drawer" id="__drawer" type="checkbox"/>
+  <input autocomplete="off" class="md-toggle" data-md-toggle="search" id="__search" type="checkbox"/>
+  <label class="md-overlay" for="__drawer">
+  </label>
+  <div data-md-component="skip">
+   <a class="md-skip" href="#user-authentication-system">
+    Skip to content
+   </a>
+  </div>
+  <div data-md-component="announce">
+  </div>
+  <header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+   <nav aria-label="Header" class="md-header__inner md-grid">
+    <a aria-label="LibreChat" class="md-header__button md-logo" data-md-component="logo" href="../../index.html" title="LibreChat">
+     <img alt="logo" src="../../assets/LibreChat.svg"/>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+     <div class="md-header__ellipsis">
+      <div class="md-header__topic">
+       <span class="md-ellipsis">
+        LibreChat
+       </span>
+      </div>
+      <div class="md-header__topic" data-md-component="header-topic">
+       <span class="md-ellipsis">
+        🛂 Authentication System
+       </span>
+      </div>
+     </div>
+    </div>
+    <form class="md-header__option" data-md-component="palette">
+     <input aria-label="Switch to light mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="slate" id="__palette_0" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_1" hidden="" title="Switch to light mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+     <input aria-label="Switch to dark mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="default" id="__palette_1" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_0" hidden="" title="Switch to dark mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+    </form>
+    <script>
+     var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}
+    </script>
+    <label class="md-header__button md-icon" for="__search">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-search" data-md-component="search" role="dialog">
+     <label class="md-search__overlay" for="__search">
+     </label>
+     <div class="md-search__inner" role="search">
+      <form class="md-search__form" name="search">
+       <input aria-label="Search" autocapitalize="off" autocomplete="off" autocorrect="off" class="md-search__input" data-md-component="search-query" name="query" placeholder="Search" required="" spellcheck="false" type="text"/>
+       <label class="md-search__icon md-icon" for="__search">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+         </path>
+        </svg>
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z">
+         </path>
+        </svg>
+       </label>
+       <nav aria-label="Search" class="md-search__options">
+        <button aria-label="Clear" class="md-search__icon md-icon" tabindex="-1" title="Clear" type="reset">
+         <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z">
+          </path>
+         </svg>
+        </button>
+       </nav>
+      </form>
+      <div class="md-search__output">
+       <div class="md-search__scrollwrap" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+         <div class="md-search-result__meta">
+          Initializing search
+         </div>
+         <ol class="md-search-result__list" role="presentation">
+         </ol>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div class="md-header__source">
+     <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+      <div class="md-source__icon md-icon">
+       <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+        <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+        <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+        </path>
+       </svg>
+      </div>
+      <div class="md-source__repository">
+       danny-avila/LibreChat
+      </div>
+     </a>
+    </div>
+   </nav>
+   <nav aria-label="Tabs" class="md-tabs" data-md-component="tabs">
+    <div class="md-grid">
+     <ul class="md-tabs__list">
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../index.html">
+        Home
+       </a>
+      </li>
+      <li class="md-tabs__item md-tabs__item--active">
+       <a class="md-tabs__link" href="../index.html">
+        Installation and Configuration
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../features/index.html">
+        Features
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../deployment/index.html">
+        Deployment
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../general_info/index.html">
+        General Information
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../contributions/index.html">
+        Contributing to LibreChat
+       </a>
+      </li>
+     </ul>
+    </div>
+   </nav>
+  </header>
+  <div class="md-container" data-md-component="container">
+   <main class="md-main" data-md-component="main">
+    <div class="md-main__inner md-grid">
+     <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Navigation" class="md-nav md-nav--primary md-nav--lifted" data-md-level="0">
+         <label class="md-nav__title" for="__drawer">
+          <a aria-label="LibreChat" class="md-nav__button md-logo" data-md-component="logo" href="../../index.html" title="LibreChat">
+           <img alt="logo" src="../../assets/LibreChat.svg"/>
+          </a>
+          LibreChat
+         </label>
+         <div class="md-nav__source">
+          <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+           <div class="md-source__icon md-icon">
+            <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+             <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+             <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+             </path>
+            </svg>
+           </div>
+           <div class="md-source__repository">
+            danny-avila/LibreChat
+           </div>
+          </a>
+         </div>
+         <ul class="md-nav__list" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="../../index.html">
+            <span class="md-ellipsis">
+             Home
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+           <input checked="" class="md-nav__toggle md-toggle" id="__nav_2" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../index.html">
+             <span class="md-ellipsis">
+              Installation and Configuration
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="true" aria-labelledby="__nav_2_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_2">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Installation and Configuration
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../installation/index.html">
+                <span class="md-ellipsis">
+                 Installation
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_2_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Installation
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/docker_compose_install.html">
+                  <span class="md-ellipsis">
+                   🐳 Docker Compose ✨(Recommended)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/container_install.html">
+                  <span class="md-ellipsis">
+                   🦦 Container (Podman)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/linux_install.html">
+                  <span class="md-ellipsis">
+                   🐧 Linux
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/mac_install.html">
+                  <span class="md-ellipsis">
+                   🍎 Mac
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/windows_install.html">
+                  <span class="md-ellipsis">
+                   🪟 Windows
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+              <input checked="" class="md-nav__toggle md-toggle" id="__nav_2_3" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="index.html">
+                <span class="md-ellipsis">
+                 Configuration
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="true" aria-labelledby="__nav_2_3_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_3">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Configuration
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="dotenv.html">
+                  <span class="md-ellipsis">
+                   ⚙️ Environment Variables
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="custom_config.html">
+                  <span class="md-ellipsis">
+                   🖥️ Custom Config
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="azure_openai.html">
+                  <span class="md-ellipsis">
+                   🅰️ Azure OpenAI
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="ai_endpoints.html">
+                  <span class="md-ellipsis">
+                   ✅ Compatible AI Endpoints
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="docker_override.html">
+                  <span class="md-ellipsis">
+                   🐋 Docker Compose Override
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="ai_setup.html">
+                  <span class="md-ellipsis">
+                   🤖 AI Setup
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="litellm.html">
+                  <span class="md-ellipsis">
+                   🚅 LiteLLM
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="free_ai_apis.html">
+                  <span class="md-ellipsis">
+                   💸 Free AI APIs
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="ollama.html">
+                  <span class="md-ellipsis">
+                   🦙 Ollama
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item md-nav__item--active">
+                 <input class="md-nav__toggle md-toggle" id="__toc" type="checkbox"/>
+                 <label class="md-nav__link md-nav__link--active" for="__toc">
+                  <span class="md-ellipsis">
+                   🛂 Authentication System
+                  </span>
+                  <span class="md-nav__icon md-icon">
+                  </span>
+                 </label>
+                 <a class="md-nav__link md-nav__link--active" href="user_auth_system.html">
+                  <span class="md-ellipsis">
+                   🛂 Authentication System
+                  </span>
+                 </a>
+                 <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+                  <label class="md-nav__title" for="__toc">
+                   <span class="md-nav__icon md-icon">
+                   </span>
+                   Table of contents
+                  </label>
+                  <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#basic-configuration">
+                     <span class="md-ellipsis">
+                      Basic Configuration:
+                     </span>
+                    </a>
+                    <nav aria-label="Basic Configuration:" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#general">
+                        <span class="md-ellipsis">
+                         General
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#session-expiry-and-refresh-token">
+                        <span class="md-ellipsis">
+                         Session Expiry and Refresh Token
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#jwt-secret-and-refresh-secret">
+                        <span class="md-ellipsis">
+                         JWT Secret and Refresh Secret
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#automated-moderation-system-optional">
+                     <span class="md-ellipsis">
+                      Automated Moderation System (optional)
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#email-and-password-reset">
+                     <span class="md-ellipsis">
+                      Email and Password Reset
+                     </span>
+                    </a>
+                    <nav aria-label="Email and Password Reset" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#general-setup">
+                        <span class="md-ellipsis">
+                         General setup
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#setup-with-gmail">
+                        <span class="md-ellipsis">
+                         Setup with Gmail
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#setup-with-custom-mail-server">
+                        <span class="md-ellipsis">
+                         Setup with custom mail server
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#social-authentication-setup-and-configuration">
+                     <span class="md-ellipsis">
+                      Social Authentication - Setup and Configuration
+                     </span>
+                    </a>
+                    <nav aria-label="Social Authentication - Setup and Configuration" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#discord">
+                        <span class="md-ellipsis">
+                         Discord
+                        </span>
+                       </a>
+                       <nav aria-label="Discord" class="md-nav">
+                        <ul class="md-nav__list">
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#create-a-new-discord-application">
+                           <span class="md-ellipsis">
+                            Create a new Discord Application
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#discord-application-configuration">
+                           <span class="md-ellipsis">
+                            Discord Application Configuration
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#env-configuration">
+                           <span class="md-ellipsis">
+                            .env Configuration
+                           </span>
+                          </a>
+                         </li>
+                        </ul>
+                       </nav>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#facebook-wip">
+                        <span class="md-ellipsis">
+                         Facebook - WIP
+                        </span>
+                       </a>
+                       <nav aria-label="Facebook - WIP" class="md-nav">
+                        <ul class="md-nav__list">
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#create-a-facebook-application">
+                           <span class="md-ellipsis">
+                            Create a Facebook Application
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#facebook-application-configuration">
+                           <span class="md-ellipsis">
+                            Facebook Application Configuration
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#env-configuration_1">
+                           <span class="md-ellipsis">
+                            .env Configuration
+                           </span>
+                          </a>
+                         </li>
+                        </ul>
+                       </nav>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#github">
+                        <span class="md-ellipsis">
+                         GitHub
+                        </span>
+                       </a>
+                       <nav aria-label="GitHub" class="md-nav">
+                        <ul class="md-nav__list">
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#create-a-github-application">
+                           <span class="md-ellipsis">
+                            Create a GitHub Application
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#github-application-configuration">
+                           <span class="md-ellipsis">
+                            GitHub Application Configuration
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#env-configuration_2">
+                           <span class="md-ellipsis">
+                            .env Configuration
+                           </span>
+                          </a>
+                         </li>
+                        </ul>
+                       </nav>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#google">
+                        <span class="md-ellipsis">
+                         Google
+                        </span>
+                       </a>
+                       <nav aria-label="Google" class="md-nav">
+                        <ul class="md-nav__list">
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#create-a-google-application">
+                           <span class="md-ellipsis">
+                            Create a Google Application
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#google-application-configuration">
+                           <span class="md-ellipsis">
+                            Google Application Configuration
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#env-configuration_3">
+                           <span class="md-ellipsis">
+                            .env Configuration
+                           </span>
+                          </a>
+                         </li>
+                        </ul>
+                       </nav>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#openid-with-aws-cognito">
+                        <span class="md-ellipsis">
+                         OpenID with AWS Cognito
+                        </span>
+                       </a>
+                       <nav aria-label="OpenID with AWS Cognito" class="md-nav">
+                        <ul class="md-nav__list">
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#create-a-new-user-pool-in-cognito">
+                           <span class="md-ellipsis">
+                            Create a new User Pool in Cognito
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#configure-sign-in-experience">
+                           <span class="md-ellipsis">
+                            Configure sign-in experience
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#configure-security-requirements">
+                           <span class="md-ellipsis">
+                            Configure Security Requirements
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#configure-sign-up-experience">
+                           <span class="md-ellipsis">
+                            Configure sign-up experience
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#configure-message-delivery">
+                           <span class="md-ellipsis">
+                            Configure message delivery
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#integrate-your-app">
+                           <span class="md-ellipsis">
+                            Integrate your app
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#review-and-create">
+                           <span class="md-ellipsis">
+                            Review and create
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#get-your-environment-variables">
+                           <span class="md-ellipsis">
+                            Get your environment variables
+                           </span>
+                          </a>
+                         </li>
+                        </ul>
+                       </nav>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#openid-with-azure-ad">
+                        <span class="md-ellipsis">
+                         OpenID with Azure AD
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="mongodb.html">
+                  <span class="md-ellipsis">
+                   🍃 Online MongoDB
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="default_language.html">
+                  <span class="md-ellipsis">
+                   🌍 Default Language
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="misc.html">
+                  <span class="md-ellipsis">
+                   🌀 Miscellaneous
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../features/index.html">
+             <span class="md-ellipsis">
+              Features
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_3_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_3">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Features
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../../features/plugins/index.html">
+                <span class="md-ellipsis">
+                 Plugins
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_3_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_3_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Plugins
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/introduction.html">
+                  <span class="md-ellipsis">
+                   🔌 Introduction
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/make_your_own.html">
+                  <span class="md-ellipsis">
+                   🛠️ Make Your Own
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/chatgpt_plugins_openapi.html">
+                  <span class="md-ellipsis">
+                   🧑‍💼 Official ChatGPT Plugins
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/google_search.html">
+                  <span class="md-ellipsis">
+                   🔎 Google Search
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/stable_diffusion.html">
+                  <span class="md-ellipsis">
+                   🖌️ Stable Diffusion
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/wolfram.html">
+                  <span class="md-ellipsis">
+                   🧠 Wolfram|Alpha
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/azure_ai_search.html">
+                  <span class="md-ellipsis">
+                   ⚡ Azure AI Search
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/presets.html">
+               <span class="md-ellipsis">
+                🔖 Presets
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/mod_system.html">
+               <span class="md-ellipsis">
+                🔨 Automated Moderation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/token_usage.html">
+               <span class="md-ellipsis">
+                🪙 Token Usage
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/firebase.html">
+               <span class="md-ellipsis">
+                🔥 Firebase CDN Setup
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/manage_your_database.html">
+               <span class="md-ellipsis">
+                🍃 Manage Your Database
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/logging_system.html">
+               <span class="md-ellipsis">
+                🪵 Logging System
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/bing_jailbreak.html">
+               <span class="md-ellipsis">
+                😈 Bing Jailbreak
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/third_party.html">
+               <span class="md-ellipsis">
+                ✨ Third-Party Tools and Contributions
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_4" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../deployment/index.html">
+             <span class="md-ellipsis">
+              Deployment
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_4_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_4">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Deployment
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/introduction.html">
+               <span class="md-ellipsis">
+                🌐 Deployment Introduction
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/digitalocean.html">
+               <span class="md-ellipsis">
+                🌊 DigitalOcean ✨(Recommended)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/docker_ubuntu_deploy.html">
+               <span class="md-ellipsis">
+                🐳 Ubuntu Docker Deployment
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/huggingface.html">
+               <span class="md-ellipsis">
+                🤗 HuggingFace
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/railway.html">
+               <span class="md-ellipsis">
+                🛤️ Railway (one-click)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/linode.html">
+               <span class="md-ellipsis">
+                🐧 Linode
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/azure-terraform.html">
+               <span class="md-ellipsis">
+                ⚡ Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/render.html">
+               <span class="md-ellipsis">
+                ⏹️ Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/meilisearch_in_render.html">
+               <span class="md-ellipsis">
+                🔎 Meilisearch in Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/hetzner_ubuntu.html">
+               <span class="md-ellipsis">
+                🏗️ Hetzner
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/heroku.html">
+               <span class="md-ellipsis">
+                🌈 Heroku
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/zeabur.html">
+               <span class="md-ellipsis">
+                🦓 Zeabur
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/cloudflare.html">
+               <span class="md-ellipsis">
+                ☁️ Cloudflare
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/nginx.html">
+               <span class="md-ellipsis">
+                ↪️ Nginx
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/ngrok.html">
+               <span class="md-ellipsis">
+                🪨 Ngrok
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/traefik.html">
+               <span class="md-ellipsis">
+                🚦 Traefik
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_5" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../general_info/index.html">
+             <span class="md-ellipsis">
+              General Information
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_5_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_5">
+             <span class="md-nav__icon md-icon">
+             </span>
+             General Information
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/breaking_changes.html">
+               <span class="md-ellipsis">
+                ⚠️ Breaking Changes
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/multilingual_information.html">
+               <span class="md-ellipsis">
+                🌍 Multilingual Information
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/project_origin.html">
+               <span class="md-ellipsis">
+                🧭 Origin
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/tech_stack.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Tech Stack
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_6" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../contributions/index.html">
+             <span class="md-ellipsis">
+              Contributing to LibreChat
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_6_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_6">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Contributing to LibreChat
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/how_to_contribute.html">
+               <span class="md-ellipsis">
+                🙌 Getting Started for Contributors
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/documentation_guidelines.html">
+               <span class="md-ellipsis">
+                📝 Documentation Guidelines
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/translation_contribution.html">
+               <span class="md-ellipsis">
+                🌍 Contribute a Translation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/coding_conventions.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Code Standards and Conventions
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/testing.html">
+               <span class="md-ellipsis">
+                🧪 Testing During Development
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+         <label class="md-nav__title" for="__toc">
+          <span class="md-nav__icon md-icon">
+          </span>
+          Table of contents
+         </label>
+         <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#basic-configuration">
+            <span class="md-ellipsis">
+             Basic Configuration:
+            </span>
+           </a>
+           <nav aria-label="Basic Configuration:" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#general">
+               <span class="md-ellipsis">
+                General
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#session-expiry-and-refresh-token">
+               <span class="md-ellipsis">
+                Session Expiry and Refresh Token
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#jwt-secret-and-refresh-secret">
+               <span class="md-ellipsis">
+                JWT Secret and Refresh Secret
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#automated-moderation-system-optional">
+            <span class="md-ellipsis">
+             Automated Moderation System (optional)
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#email-and-password-reset">
+            <span class="md-ellipsis">
+             Email and Password Reset
+            </span>
+           </a>
+           <nav aria-label="Email and Password Reset" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#general-setup">
+               <span class="md-ellipsis">
+                General setup
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#setup-with-gmail">
+               <span class="md-ellipsis">
+                Setup with Gmail
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#setup-with-custom-mail-server">
+               <span class="md-ellipsis">
+                Setup with custom mail server
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#social-authentication-setup-and-configuration">
+            <span class="md-ellipsis">
+             Social Authentication - Setup and Configuration
+            </span>
+           </a>
+           <nav aria-label="Social Authentication - Setup and Configuration" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#discord">
+               <span class="md-ellipsis">
+                Discord
+               </span>
+              </a>
+              <nav aria-label="Discord" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#create-a-new-discord-application">
+                  <span class="md-ellipsis">
+                   Create a new Discord Application
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#discord-application-configuration">
+                  <span class="md-ellipsis">
+                   Discord Application Configuration
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#env-configuration">
+                  <span class="md-ellipsis">
+                   .env Configuration
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#facebook-wip">
+               <span class="md-ellipsis">
+                Facebook - WIP
+               </span>
+              </a>
+              <nav aria-label="Facebook - WIP" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#create-a-facebook-application">
+                  <span class="md-ellipsis">
+                   Create a Facebook Application
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#facebook-application-configuration">
+                  <span class="md-ellipsis">
+                   Facebook Application Configuration
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#env-configuration_1">
+                  <span class="md-ellipsis">
+                   .env Configuration
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#github">
+               <span class="md-ellipsis">
+                GitHub
+               </span>
+              </a>
+              <nav aria-label="GitHub" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#create-a-github-application">
+                  <span class="md-ellipsis">
+                   Create a GitHub Application
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#github-application-configuration">
+                  <span class="md-ellipsis">
+                   GitHub Application Configuration
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#env-configuration_2">
+                  <span class="md-ellipsis">
+                   .env Configuration
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#google">
+               <span class="md-ellipsis">
+                Google
+               </span>
+              </a>
+              <nav aria-label="Google" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#create-a-google-application">
+                  <span class="md-ellipsis">
+                   Create a Google Application
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#google-application-configuration">
+                  <span class="md-ellipsis">
+                   Google Application Configuration
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#env-configuration_3">
+                  <span class="md-ellipsis">
+                   .env Configuration
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#openid-with-aws-cognito">
+               <span class="md-ellipsis">
+                OpenID with AWS Cognito
+               </span>
+              </a>
+              <nav aria-label="OpenID with AWS Cognito" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#create-a-new-user-pool-in-cognito">
+                  <span class="md-ellipsis">
+                   Create a new User Pool in Cognito
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#configure-sign-in-experience">
+                  <span class="md-ellipsis">
+                   Configure sign-in experience
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#configure-security-requirements">
+                  <span class="md-ellipsis">
+                   Configure Security Requirements
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#configure-sign-up-experience">
+                  <span class="md-ellipsis">
+                   Configure sign-up experience
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#configure-message-delivery">
+                  <span class="md-ellipsis">
+                   Configure message delivery
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#integrate-your-app">
+                  <span class="md-ellipsis">
+                   Integrate your app
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#review-and-create">
+                  <span class="md-ellipsis">
+                   Review and create
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#get-your-environment-variables">
+                  <span class="md-ellipsis">
+                   Get your environment variables
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#openid-with-azure-ad">
+               <span class="md-ellipsis">
+                OpenID with Azure AD
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-content" data-md-component="content">
+      <article class="md-content__inner md-typeset">
+       <a class="md-content__button md-icon" href="https://github.com/danny-avila/LibreChat/blob/main/docs/install/configuration/user_auth_system.md" title="Edit this page">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z">
+         </path>
+        </svg>
+       </a>
+       <h1 id="user-authentication-system">
+        User Authentication System
+       </h1>
+       <p>
+        LibreChat has a user authentication system that allows users to sign up and log in securely and easily. The system is scalable and can handle a large number of concurrent users without compromising performance or security.
+       </p>
+       <p>
+        By default, we have email signup and login enabled, which means users can create an account using their email address and a password. They can also reset their password if they forget it.
+       </p>
+       <p>
+        Additionally, our system can integrate social logins from various platforms such as Google, GitHub, Discord, OpenID, and more. This means users can log in using their existing accounts on these platforms, without having to create a new account or remember another password.
+       </p>
+       <blockquote>
+        <p>
+         ❗
+         <strong>
+          Important:
+         </strong>
+         When you run the app for the first time, you need to create a new account by clicking on "Sign up" on the login page. The first account you make will be the admin account. The admin account doesn't have any special features right now, but it might be useful if you want to make an admin dashboard to manage other users later.
+        </p>
+        <blockquote>
+         <p>
+          <strong>
+           Note:
+          </strong>
+          The first account created should ideally be a local account (email and password).
+         </p>
+        </blockquote>
+       </blockquote>
+       <h2 id="basic-configuration">
+        Basic Configuration:
+       </h2>
+       <h3 id="general">
+        General
+       </h3>
+       <p>
+        Here's an overview of the general configuration, located in the
+        <code>
+         .env
+        </code>
+        file at the root of the LibreChat folder.
+       </p>
+       <ul>
+        <li>
+         <code>
+          ALLOW_EMAIL_LOGIN
+         </code>
+         : Email login. Set to
+         <code>
+          true
+         </code>
+         or
+         <code>
+          false
+         </code>
+         to enable or disable ONLY email login.
+        </li>
+        <li>
+         <code>
+          ALLOW_REGISTRATION
+         </code>
+         : Email registration of new users. Set to
+         <code>
+          true
+         </code>
+         or
+         <code>
+          false
+         </code>
+         to enable or disable Email registration.
+        </li>
+        <li>
+         <code>
+          ALLOW_SOCIAL_LOGIN
+         </code>
+         : Allow users to connect to LibreChat with various social networks, see below. Set to
+         <code>
+          true
+         </code>
+         or
+         <code>
+          false
+         </code>
+         to enable or disable.
+        </li>
+        <li>
+         <code>
+          ALLOW_SOCIAL_REGISTRATION
+         </code>
+         : Enable or disable registration of new user using various social network. Set to
+         <code>
+          true
+         </code>
+         or
+         <code>
+          false
+         </code>
+         to enable or disable.
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         <strong>
+          Note:
+         </strong>
+         OpenID does not support the ability to disable only registration.
+        </p>
+        <blockquote>
+         <p>
+          <strong>
+           Quick Tip:
+          </strong>
+          Even with registration disabled, add users directly to the database using
+          <code>
+           npm run create-user
+          </code>
+          . If you can't get npm to work, try
+          <code>
+           sudo docker exec -ti LibreChat sh
+          </code>
+          first to "ssh" into the container.
+          <strong>
+           Quick Tip:
+          </strong>
+          To delete a user, you can run
+          <code>
+           docker-compose exec api npm run delete-user email@domain.com
+          </code>
+         </p>
+        </blockquote>
+       </blockquote>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/81851188/52a37d1d-7392-4a9a-a79f-90ed2da7f841"/>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-0-1" id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="nv">ALLOW_EMAIL_LOGIN</span><span class="o">=</span><span class="nb">true</span>
+<a href="#__codelineno-0-2" id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="nv">ALLOW_REGISTRATION</span><span class="o">=</span><span class="nb">true</span><span class="w">       </span>
+<a href="#__codelineno-0-3" id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="nv">ALLOW_SOCIAL_LOGIN</span><span class="o">=</span><span class="nb">false</span>
+<a href="#__codelineno-0-4" id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="nv">ALLOW_SOCIAL_REGISTRATION</span><span class="o">=</span><span class="nb">false</span>
+</code></pre>
+       </div>
+       <h3 id="session-expiry-and-refresh-token">
+        Session Expiry and Refresh Token
+       </h3>
+       <ul>
+        <li>
+         Default values: session expiry: 15 minutes, refresh token expiry: 7 days
+        </li>
+        <li>
+         For more information:
+         <strong>
+          <a href="https://github.com/danny-avila/LibreChat/pull/927">
+           GitHub PR #927 - Refresh Token
+          </a>
+         </strong>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-1-1" id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="nv">SESSION_EXPIRY</span><span class="o">=</span><span class="m">1000</span><span class="w"> </span>*<span class="w"> </span><span class="m">60</span><span class="w"> </span>*<span class="w"> </span><span class="m">15</span>
+<a href="#__codelineno-1-2" id="__codelineno-1-2" name="__codelineno-1-2"></a><span class="nv">REFRESH_TOKEN_EXPIRY</span><span class="o">=(</span><span class="m">1000</span><span class="w"> </span>*<span class="w"> </span><span class="m">60</span><span class="w"> </span>*<span class="w"> </span><span class="m">60</span><span class="w"> </span>*<span class="w"> </span><span class="m">24</span><span class="o">)</span><span class="w"> </span>*<span class="w"> </span><span class="m">7</span>
+</code></pre>
+       </div>
+       <pre class="mermaid"><code>sequenceDiagram
+    Client-&gt;&gt;Server: Login request with credentials
+    Server-&gt;&gt;Passport: Use authentication strategy (e.g., 'local', 'google', etc.)
+    Passport--&gt;&gt;Server: User object or false/error
+    Note over Server: If valid user...
+    Server-&gt;&gt;Server: Generate access and refresh tokens
+    Server-&gt;&gt;Database: Store hashed refresh token
+    Server--&gt;&gt;Client: Access token and refresh token
+    Client-&gt;&gt;Client: Store access token in HTTP Header and refresh token in HttpOnly cookie
+    Client-&gt;&gt;Server: Request with access token from HTTP Header
+    Server--&gt;&gt;Client: Requested data
+    Note over Client,Server: Access token expires
+    Client-&gt;&gt;Server: Request with expired access token
+    Server--&gt;&gt;Client: Unauthorized
+    Client-&gt;&gt;Server: Request with refresh token from HttpOnly cookie
+    Server-&gt;&gt;Database: Retrieve hashed refresh token
+    Server-&gt;&gt;Server: Compare hash of provided refresh token with stored hash
+    Note over Server: If hashes match...
+    Server--&gt;&gt;Client: New access token and refresh token
+    Client-&gt;&gt;Server: Retry request with new access token
+    Server--&gt;&gt;Client: Requested data</code></pre>
+       <h3 id="jwt-secret-and-refresh-secret">
+        JWT Secret and Refresh Secret
+       </h3>
+       <ul>
+        <li>
+         You should use new secure values. The examples given are 32-byte keys (64 characters in hex).
+        </li>
+        <li>
+         Use this replit to generate some quickly:
+         <strong>
+          <a href="https://replit.com/@daavila/crypto#index.js">
+           JWT Keys
+          </a>
+         </strong>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-2-1" id="__codelineno-2-1" name="__codelineno-2-1"></a><span class="nv">JWT_SECRET</span><span class="o">=</span>16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
+<a href="#__codelineno-2-2" id="__codelineno-2-2" name="__codelineno-2-2"></a><span class="nv">JWT_REFRESH_SECRET</span><span class="o">=</span>eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418
+</code></pre>
+       </div>
+       <hr/>
+       <h2 id="automated-moderation-system-optional">
+        Automated Moderation System (optional)
+       </h2>
+       <p>
+        The Automated Moderation System is enabled by default. It uses a scoring mechanism to track user violations. As users commit actions like excessive logins, registrations, or messaging, they accumulate violation scores. Upon reaching a set threshold, the user and their IP are temporarily banned. This system ensures platform security by monitoring and penalizing rapid or suspicious activities.
+       </p>
+       <p>
+        To set up the mod system, review
+        <a href="../../features/mod_system.html">
+         the setup guide
+        </a>
+        .
+       </p>
+       <blockquote>
+        <p>
+         <em>
+          Please Note: If you want this to work in development mode, you will need to create a file called
+          <code>
+           .env.development
+          </code>
+          in the root directory and set
+          <code>
+           DOMAIN_CLIENT
+          </code>
+          to
+          <code>
+           http://localhost:3090
+          </code>
+          or whatever port  is provided by vite when runnning
+          <code>
+           npm run frontend-dev
+          </code>
+         </em>
+        </p>
+       </blockquote>
+       <hr/>
+       <h2 id="email-and-password-reset">
+        <strong>
+         Email and Password Reset
+        </strong>
+       </h2>
+       <h3 id="general-setup">
+        General setup
+       </h3>
+       <p>
+        in the .env file modify these variables:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-3-1" id="__codelineno-3-1" name="__codelineno-3-1"></a>EMAIL_SERVICE=                  # eg. gmail - see https://community.nodemailer.com/2-0-0-beta/setup-smtp/well-known-services/
+<a href="#__codelineno-3-2" id="__codelineno-3-2" name="__codelineno-3-2"></a>EMAIL_HOST=                     # eg. example.com - if EMAIL_SERVICE is not set, connect to this server.
+<a href="#__codelineno-3-3" id="__codelineno-3-3" name="__codelineno-3-3"></a>EMAIL_PORT=25                   # eg. 25 - mail server port to connect to with EMAIL_HOST (usually 25, 465, 587)
+<a href="#__codelineno-3-4" id="__codelineno-3-4" name="__codelineno-3-4"></a>EMAIL_ENCRYPTION=               # eg. starttls - valid values: starttls (force STARTTLS), tls (obligatory TLS), anything else (use STARTTLS if available)
+<a href="#__codelineno-3-5" id="__codelineno-3-5" name="__codelineno-3-5"></a>EMAIL_ENCRYPTION_HOSTNAME=      # eg. example.com - check the name in the certificate against this instead of EMAIL_HOST
+<a href="#__codelineno-3-6" id="__codelineno-3-6" name="__codelineno-3-6"></a>EMAIL_ALLOW_SELFSIGNED=         # eg. true - valid values: true (allow self-signed), anything else (disallow self-signed)
+<a href="#__codelineno-3-7" id="__codelineno-3-7" name="__codelineno-3-7"></a>EMAIL_USERNAME=                 # eg. me@gmail.com - the username used for authentication. For consumer services, this MUST usually match EMAIL_FROM.
+<a href="#__codelineno-3-8" id="__codelineno-3-8" name="__codelineno-3-8"></a>EMAIL_PASSWORD=                 # eg. password - the password used for authentication
+<a href="#__codelineno-3-9" id="__codelineno-3-9" name="__codelineno-3-9"></a>EMAIL_FROM_NAME=                # eg. LibreChat - the human-readable address in the From is constructed as "EMAIL_FROM_NAME &lt;EMAIL_FROM&gt;". Defaults to APP_TITLE.
+</code></pre>
+       </div>
+       <p>
+        If you want to use one of the predefined services, configure only these variables:
+       </p>
+       <p>
+        EMAIL_SERVICE is the name of the email service you are using (Gmail, Outlook, Yahoo Mail, ProtonMail, iCloud Mail, etc.) as defined in the NodeMailer well-known services linked above.
+EMAIL_USERNAME is the username of the email service (usually, it will be the email address, but in some cases, it can be an actual username used to access the account).
+EMAIL_PASSWORD is the password used to access the email service. This is not the password to access the email account directly, but a password specifically generated for this service.
+EMAIL_FROM is the email address that will appear in the "from" field when a user receives an email.
+EMAIL_FROM_NAME is the name that will appear in the "from" field when a user receives an email. If left unset, it defaults to the app title.
+       </p>
+       <p>
+        If you want to use a generic SMTP service or need advanced configuration for one of the predefined providers, configure these variables:
+       </p>
+       <p>
+        EMAIL_HOST is the hostname to connect to, or an IP address.
+EMAIL_PORT is the port to connect to. Be aware that different ports usually come with different requirements - 25 is for mailserver-to-mailserver, 465 requires encryption at the start of the connection, and 587 allows submission of mail as a user.
+EMAIL_ENCRYPTION defines if encryption is required at the start (
+        <code>
+         tls
+        </code>
+        ) or started after the connection is set up (
+        <code>
+         starttls
+        </code>
+        ). If either of these values are set, they are enforced. If they are not set, an encrypted connection is started if available.
+EMAIL_ENCRYPTION_HOSTNAME allows specification of a hostname against which the certificate is validated. Use this if the mail server does have a valid certificate, but you are connecting with an IP or a different name for some reason.
+EMAIL_ALLOW_SELFSIGNED defines whether self-signed certificates can be accepted from the server. As the mails being sent contain sensitive information, ONLY use this for testing.
+       </p>
+       <p>
+        NOTE: ⚠️
+        <strong>
+         Failing to perform either of the below setups will result in LibreChat using the unsecured password reset! This allows anyone to reset any password on your server immediately, without mail being sent at all!
+        </strong>
+        The variable EMAIL_FROM does not support all email providers
+        <strong>
+         but is still required
+        </strong>
+        . To stay updated, check the bug fixes:
+        <strong>
+         <a href="https://github.com/danny-avila/LibreChat/tags">
+          here
+         </a>
+        </strong>
+       </p>
+       <h3 id="setup-with-gmail">
+        Setup with Gmail
+       </h3>
+       <ol>
+        <li>
+         Create a Google Account and enable 2-step verification.
+        </li>
+        <li>
+         In the
+         <strong>
+          <a href="https://myaccount.google.com/">
+           Google Account settings
+          </a>
+         </strong>
+         , click on the "Security" tab and open "2-step verification."
+        </li>
+        <li>
+         Scroll down and open "App passwords." Choose "Mail" for the app and select "Other" for the device, then give it a random name.
+        </li>
+        <li>
+         Click on "Generate" to create a password, and copy the generated password.
+        </li>
+        <li>
+         In the .env file, modify the variables as follows:
+        </li>
+       </ol>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-4-1" id="__codelineno-4-1" name="__codelineno-4-1"></a>EMAIL_SERVICE=gmail
+<a href="#__codelineno-4-2" id="__codelineno-4-2" name="__codelineno-4-2"></a>EMAIL_USERNAME=your-email
+<a href="#__codelineno-4-3" id="__codelineno-4-3" name="__codelineno-4-3"></a>EMAIL_PASSWORD=your-app-password
+<a href="#__codelineno-4-4" id="__codelineno-4-4" name="__codelineno-4-4"></a>EMAIL_FROM=email address for the from field, e.g., noreply@librechat.ai
+<a href="#__codelineno-4-5" id="__codelineno-4-5" name="__codelineno-4-5"></a>EMAIL_FROM_NAME="My LibreChat Server"
+</code></pre>
+       </div>
+       <h3 id="setup-with-custom-mail-server">
+        Setup with custom mail server
+       </h3>
+       <ol>
+        <li>
+         Gather your SMTP login data from your provider. The steps are different for each, but they will usually list values for all variables.
+        </li>
+        <li>
+         In the .env file, modify the variables as follows, assuming some sensible example values:
+        </li>
+       </ol>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-5-1" id="__codelineno-5-1" name="__codelineno-5-1"></a>EMAIL_HOST=mail.example.com
+<a href="#__codelineno-5-2" id="__codelineno-5-2" name="__codelineno-5-2"></a>EMAIL_PORT=587
+<a href="#__codelineno-5-3" id="__codelineno-5-3" name="__codelineno-5-3"></a>EMAIL_ENCRYPTION=starttls
+<a href="#__codelineno-5-4" id="__codelineno-5-4" name="__codelineno-5-4"></a>EMAIL_USERNAME=your-email
+<a href="#__codelineno-5-5" id="__codelineno-5-5" name="__codelineno-5-5"></a>EMAIL_PASSWORD=your-app-password
+<a href="#__codelineno-5-6" id="__codelineno-5-6" name="__codelineno-5-6"></a>EMAIL_FROM=email address for the from field, e.g., noreply@librechat.ai
+<a href="#__codelineno-5-7" id="__codelineno-5-7" name="__codelineno-5-7"></a>EMAIL_FROM_NAME="My LibreChat Server"
+</code></pre>
+       </div>
+       <hr/>
+       <h2 id="social-authentication-setup-and-configuration">
+        Social Authentication - Setup and Configuration
+       </h2>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/cacc2ee0-acf9-4d05-883a-ca9952de1165"/>
+       </p>
+       <h3 id="discord">
+        Discord
+       </h3>
+       <h4 id="create-a-new-discord-application">
+        Create a new Discord Application
+       </h4>
+       <ul>
+        <li>
+         <p>
+          Go to
+          <strong>
+           <a href="https://discord.com/developers">
+            Discord Developer Portal
+           </a>
+          </strong>
+         </p>
+        </li>
+        <li>
+         <p>
+          Create a new Application and give it a name
+         </p>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/7e7cdfa0-d1d6-4b6b-a8a9-905aaa40d135"/>
+       </p>
+       <h4 id="discord-application-configuration">
+        Discord Application Configuration
+       </h4>
+       <ul>
+        <li>
+         In the OAuth2 general settings add a valid redirect URL:
+         <ul>
+          <li>
+           Example for localhost:
+           <code>
+            http://localhost:3080/oauth/discord/callback
+           </code>
+          </li>
+          <li>
+           Example for a domain:
+           <code>
+            https://example.com/oauth/discord/callback
+           </code>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/6c56fb92-f4ab-43b9-981b-f98babeeb19d"/>
+       </p>
+       <ul>
+        <li>
+         In
+         <code>
+          Default Authorization Link
+         </code>
+         , select
+         <code>
+          In-app Authorization
+         </code>
+         and set the scopes to
+         <code>
+          applications.commands
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/2ce94670-9422-48d2-97e9-ec40bd331573"/>
+       </p>
+       <ul>
+        <li>
+         Save changes and reset the Client Secret
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/3af164fc-66ed-4e5e-9f5a-9bcab3df37b4"/>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/2ece3935-68e6-4f2e-8656-9721cba5388a"/>
+       </p>
+       <h4 id="env-configuration">
+        .env Configuration
+       </h4>
+       <ul>
+        <li>
+         Paste your
+         <code>
+          Client ID
+         </code>
+         and
+         <code>
+          Client Secret
+         </code>
+         in the
+         <code>
+          .env
+         </code>
+         file:
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-6-1" id="__codelineno-6-1" name="__codelineno-6-1"></a><span class="nv">DOMAIN_CLIENT</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-6-2" id="__codelineno-6-2" name="__codelineno-6-2"></a><span class="nv">DOMAIN_SERVER</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-6-3" id="__codelineno-6-3" name="__codelineno-6-3"></a>
+<a href="#__codelineno-6-4" id="__codelineno-6-4" name="__codelineno-6-4"></a><span class="nv">DISCORD_CLIENT_ID</span><span class="o">=</span>your_client_id
+<a href="#__codelineno-6-5" id="__codelineno-6-5" name="__codelineno-6-5"></a><span class="nv">DISCORD_CLIENT_SECRET</span><span class="o">=</span>your_client_secret
+<a href="#__codelineno-6-6" id="__codelineno-6-6" name="__codelineno-6-6"></a><span class="nv">DISCORD_CALLBACK_URL</span><span class="o">=</span>/oauth/discord/callback
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Save the
+         <code>
+          .env
+         </code>
+         file
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Note: If using docker, run
+         <code>
+          docker compose up -d
+         </code>
+         to apply the .env configuration changes
+        </p>
+       </blockquote>
+       <hr/>
+       <h3 id="facebook-wip">
+        Facebook - WIP
+       </h3>
+       <blockquote>
+        <p>
+         ⚠️
+         <strong>
+          Warning: Work in progress, not currently functional
+         </strong>
+        </p>
+        <p>
+         ❗ Note: Facebook Authentication will not work from
+         <code>
+          localhost
+         </code>
+        </p>
+       </blockquote>
+       <h4 id="create-a-facebook-application">
+        Create a Facebook Application
+       </h4>
+       <ul>
+        <li>
+         <p>
+          Go to the
+          <strong>
+           <a href="https://developers.facebook.com/">
+            Facebook Developer Portal
+           </a>
+          </strong>
+         </p>
+        </li>
+        <li>
+         <p>
+          Click on "My Apps" in the header menu
+         </p>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/b75ccb8b-d56b-41b7-8b0d-a32c2e762962"/>
+       </p>
+       <ul>
+        <li>
+         Create a new application
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/706f050d-5423-44cc-80f0-120913695d8f"/>
+       </p>
+       <ul>
+        <li>
+         Select "Authenticate and request data from users with Facebook Login"
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/2ebbb571-afe8-429e-ab39-be6e83d12c01"/>
+       </p>
+       <ul>
+        <li>
+         Choose "No, I'm not creating a game"
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/88b5160a-9c72-414a-bbcc-7717b81106f3"/>
+       </p>
+       <ul>
+        <li>
+         Provide an
+         <code>
+          app name
+         </code>
+         and
+         <code>
+          App contact email
+         </code>
+         and click
+         <code>
+          Create app
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/e1282c9e-4e7d-4cbe-82c9-cc76967f83e1"/>
+       </p>
+       <h4 id="facebook-application-configuration">
+        Facebook Application Configuration
+       </h4>
+       <ul>
+        <li>
+         In the side menu, select "Use cases" and click "Customize" under "Authentication and account creation."
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/39f4bb70-d9dc-4d1c-8443-2666fe56499b"/>
+       </p>
+       <ul>
+        <li>
+         Add the
+         <code>
+          email permission
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/dfa20879-2cb8-4daf-883d-3790854afca0"/>
+       </p>
+       <ul>
+        <li>
+         Now click
+         <code>
+          Go to settings
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/512213a2-bd8b-4fd3-96c7-0de6d3222ddd"/>
+       </p>
+       <ul>
+        <li>
+         Ensure that
+         <code>
+          Client OAuth login
+         </code>
+         ,
+         <code>
+          Web OAuth login
+         </code>
+         and
+         <code>
+          Enforce HTTPS
+         </code>
+         are
+         <strong>
+          enabled
+         </strong>
+         .
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/3a7d935b-97bf-493b-b909-39ecf9b3432b"/>
+       </p>
+       <ul>
+        <li>
+         Add a
+         <code>
+          Valid OAuth Redirect URIs
+         </code>
+         and "Save changes"
+         <ul>
+          <li>
+           Example for a domain:
+           <code>
+            https://example.com/oauth/facebook/callback
+           </code>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/ef8e54ee-a766-4871-9719-d4eff7a770b6"/>
+       </p>
+       <ul>
+        <li>
+         Click
+         <code>
+          Go back
+         </code>
+         and select
+         <code>
+          Basic
+         </code>
+         in the
+         <code>
+          App settings
+         </code>
+         tab
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/0d14f702-5183-422e-a12c-5d1b6031581b"/>
+       </p>
+       <ul>
+        <li>
+         Click "Show" next to the App secret.
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/9a009e37-2bb6-4da6-b5c7-9139c3db6185"/>
+       </p>
+       <h4 id="env-configuration_1">
+        .env Configuration
+       </h4>
+       <ul>
+        <li>
+         Copy the
+         <code>
+          App ID
+         </code>
+         and
+         <code>
+          App Secret
+         </code>
+         and paste them into the
+         <code>
+          .env
+         </code>
+         file as follows:
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-7-1" id="__codelineno-7-1" name="__codelineno-7-1"></a><span class="nv">DOMAIN_CLIENT</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-7-2" id="__codelineno-7-2" name="__codelineno-7-2"></a><span class="nv">DOMAIN_SERVER</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-7-3" id="__codelineno-7-3" name="__codelineno-7-3"></a>
+<a href="#__codelineno-7-4" id="__codelineno-7-4" name="__codelineno-7-4"></a><span class="nv">FACEBOOK_CLIENT_ID</span><span class="o">=</span>your_app_id
+<a href="#__codelineno-7-5" id="__codelineno-7-5" name="__codelineno-7-5"></a><span class="nv">FACEBOOK_CLIENT_SECRET</span><span class="o">=</span>your_app_secret
+<a href="#__codelineno-7-6" id="__codelineno-7-6" name="__codelineno-7-6"></a><span class="nv">FACEBOOK_CALLBACK_URL</span><span class="o">=</span>/oauth/facebook/callback
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Save the
+         <code>
+          .env
+         </code>
+         file.
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Note: If using docker, run
+         <code>
+          docker compose up -d
+         </code>
+         to apply the .env configuration changes
+        </p>
+       </blockquote>
+       <hr/>
+       <h3 id="github">
+        GitHub
+       </h3>
+       <h4 id="create-a-github-application">
+        Create a GitHub Application
+       </h4>
+       <ul>
+        <li>
+         Go to your
+         <strong>
+          <a href="https://github.com/settings/apps">
+           Github Developer settings
+          </a>
+         </strong>
+        </li>
+        <li>
+         Create a new Github app
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/3a8b88e7-78f8-426e-bfc2-c5e3f8b21ccb"/>
+       </p>
+       <h4 id="github-application-configuration">
+        GitHub Application Configuration
+       </h4>
+       <ul>
+        <li>
+         Give it a
+         <code>
+          GitHub App name
+         </code>
+         and set your
+         <code>
+          Homepage URL
+         </code>
+         <ul>
+          <li>
+           Example for localhost:
+           <code>
+            http://localhost:3080
+           </code>
+          </li>
+          <li>
+           Example for a domain:
+           <code>
+            https://example.com
+           </code>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/f10d497d-460b-410f-9504-08735662648b"/>
+       </p>
+       <ul>
+        <li>
+         Add a valid
+         <code>
+          Callback URL
+         </code>
+         :
+         <ul>
+          <li>
+           Example for localhost:
+           <code>
+            http://localhost:3080/oauth/github/callback
+           </code>
+          </li>
+          <li>
+           Example for a domain:
+           <code>
+            https://example.com/oauth/github/callback
+           </code>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/4e7e6dba-0afb-4ed8-94bf-4c61b0f29240"/>
+       </p>
+       <ul>
+        <li>
+         Uncheck the box labeled
+         <code>
+          Active
+         </code>
+         in the
+         <code>
+          Webhook
+         </code>
+         section
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/aaeb3ecb-2e76-4ea5-8264-edfbdd53de1a"/>
+       </p>
+       <ul>
+        <li>
+         Scroll down to
+         <code>
+          Account permissions
+         </code>
+         and set
+         <code>
+          Email addresses
+         </code>
+         to
+         <code>
+          Access: Read-only
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/3e561aa4-1f9e-4cb7-ace8-dbba8f0c0d55"/>
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/7b5f99af-7bde-43ee-9b43-6d3ce79ee00a"/>
+       </p>
+       <ul>
+        <li>
+         Click on
+         <code>
+          Create GitHub App
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/4cc48550-eac3-4970-939b-81a23fa9c7cf"/>
+       </p>
+       <h4 id="env-configuration_2">
+        .env Configuration
+       </h4>
+       <ul>
+        <li>
+         Click
+         <code>
+          Generate a new client secret
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/484c7851-71dd-4167-a59e-9a56c4e08c36"/>
+       </p>
+       <ul>
+        <li>
+         Copy the
+         <code>
+          Client ID
+         </code>
+         and
+         <code>
+          Client Secret
+         </code>
+         in the
+         <code>
+          .env
+         </code>
+         file
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/aaf78840-48a9-44e1-9625-4109ed91d965"/>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-8-1" id="__codelineno-8-1" name="__codelineno-8-1"></a><span class="nv">DOMAIN_CLIENT</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-8-2" id="__codelineno-8-2" name="__codelineno-8-2"></a><span class="nv">DOMAIN_SERVER</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-8-3" id="__codelineno-8-3" name="__codelineno-8-3"></a>
+<a href="#__codelineno-8-4" id="__codelineno-8-4" name="__codelineno-8-4"></a><span class="nv">GITHUB_CLIENT_ID</span><span class="o">=</span>your_client_id
+<a href="#__codelineno-8-5" id="__codelineno-8-5" name="__codelineno-8-5"></a><span class="nv">GITHUB_CLIENT_SECRET</span><span class="o">=</span>your_client_secret
+<a href="#__codelineno-8-6" id="__codelineno-8-6" name="__codelineno-8-6"></a><span class="nv">GITHUB_CALLBACK_URL</span><span class="o">=</span>/oauth/github/callback
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Save the
+         <code>
+          .env
+         </code>
+         file
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Note: If using docker, run
+         <code>
+          docker compose up -d
+         </code>
+         to apply the .env configuration changes
+        </p>
+       </blockquote>
+       <hr/>
+       <h3 id="google">
+        Google
+       </h3>
+       <h4 id="create-a-google-application">
+        Create a Google Application
+       </h4>
+       <ul>
+        <li>
+         Visit:
+         <strong>
+          <a href="https://cloud.google.com">
+           Google Cloud Console
+          </a>
+         </strong>
+         and open the
+         <code>
+          Console
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/a7d290ea-6031-43b3-b367-36ce00e46f20"/>
+       </p>
+       <ul>
+        <li>
+         Create a New Project and give it a name
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/ce71c9ca-7ddd-4021-9133-a872c64c20c4"/>
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/8abbd41e-8332-4851-898d-9cddb373c527"/>
+       </p>
+       <h4 id="google-application-configuration">
+        Google Application Configuration
+       </h4>
+       <ul>
+        <li>
+         Select the project you just created and go to
+         <code>
+          APIs and Services
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/c6265582-2cf6-430f-ae51-1edbdd9f2c48"/>
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/006e16ba-56b8-452d-b324-5f2d202637ab"/>
+       </p>
+       <ul>
+        <li>
+         Select
+         <code>
+          Credentials
+         </code>
+         and click
+         <code>
+          CONFIGURE CONSENT SCREEN
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/e4285cbb-833f-4366-820d-addf04a2ad77"/>
+       </p>
+       <ul>
+        <li>
+         Select
+         <code>
+          External
+         </code>
+         then click
+         <code>
+          CREATE
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/232d46c0-dd00-4637-b538-3ba3bdbdc0b2"/>
+       </p>
+       <ul>
+        <li>
+         Fill in your App information
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Note: You can get a logo from your LibreChat folder here:
+         <code>
+          docs\assets\favicon_package\android-chrome-192x192.png
+         </code>
+        </p>
+       </blockquote>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/e6c4c8ec-2f02-4af5-9458-c72394d0b7c5"/>
+       </p>
+       <ul>
+        <li>
+         Configure your
+         <code>
+          App domain
+         </code>
+         and add your
+         <code>
+          Developer contact information
+         </code>
+         then click
+         <code>
+          SAVE AND CONTINUE
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/6c2aa557-9b9b-412d-bc2b-76a0dc11f394"/>
+       </p>
+       <ul>
+        <li>
+         Configure the
+         <code>
+          Sopes
+         </code>
+        </li>
+        <li>
+         Add
+         <code>
+          email
+         </code>
+         ,
+         <code>
+          profile
+         </code>
+         and
+         <code>
+          openid
+         </code>
+        </li>
+        <li>
+         Click
+         <code>
+          UPDATE
+         </code>
+         and
+         <code>
+          SAVE AND CONTINUE
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/46af2fb9-8cfd-41c5-a763-814b308e45c3"/>
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/4e832970-d392-4c67-bb38-908a5c51660a"/>
+       </p>
+       <ul>
+        <li>
+         Click
+         <code>
+          SAVE AND CONTINUE
+         </code>
+        </li>
+        <li>
+         <p>
+          Review your app and go back to dashboard
+         </p>
+        </li>
+        <li>
+         <p>
+          Go back to the
+          <code>
+           Credentials
+          </code>
+          tab, click on
+          <code>
+           + CREATE CREDENTIALS
+          </code>
+          and select
+          <code>
+           OAuth client ID
+          </code>
+         </p>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/beef1982-55a3-4837-8e8c-20bad8d846ba"/>
+       </p>
+       <ul>
+        <li>
+         Select
+         <code>
+          Web application
+         </code>
+         and give it a name
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/badde864-f6b5-468f-a72f-bac93326ffa5"/>
+       </p>
+       <ul>
+        <li>
+         Configure the
+         <code>
+          Authorized JavaScript origins
+         </code>
+         , you can add both your domain and localhost if you desire
+         <ul>
+          <li>
+           Example for localhost:
+           <code>
+            http://localhost:3080
+           </code>
+          </li>
+          <li>
+           Example for a domain:
+           <code>
+            https://example.com
+           </code>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/f7e3763a-5f74-4850-8638-44f81693b9ac"/>
+       </p>
+       <ul>
+        <li>
+         Add a valid
+         <code>
+          Authorized redirect URIs
+         </code>
+         <ul>
+          <li>
+           Example for localhost:
+           <code>
+            http://localhost:3080/oauth/google/callback
+           </code>
+          </li>
+          <li>
+           Example for a domain:
+           <code>
+            https://example.com/oauth/google/callback
+           </code>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/0db34b19-d780-4651-9c2f-d33e24a74d55"/>
+       </p>
+       <h4 id="env-configuration_3">
+        .env Configuration
+       </h4>
+       <ul>
+        <li>
+         Click
+         <code>
+          CREATE
+         </code>
+         and copy your
+         <code>
+          Client ID
+         </code>
+         and
+         <code>
+          Client secret
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/138638445/fa8572bf-f482-457a-a285-aec7d41af76b"/>
+       </p>
+       <ul>
+        <li>
+         Add them to your
+         <code>
+          .env
+         </code>
+         file:
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-9-1" id="__codelineno-9-1" name="__codelineno-9-1"></a><span class="nv">DOMAIN_CLIENT</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-9-2" id="__codelineno-9-2" name="__codelineno-9-2"></a><span class="nv">DOMAIN_SERVER</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-9-3" id="__codelineno-9-3" name="__codelineno-9-3"></a>
+<a href="#__codelineno-9-4" id="__codelineno-9-4" name="__codelineno-9-4"></a><span class="nv">GOOGLE_CLIENT_ID</span><span class="o">=</span>your_client_id
+<a href="#__codelineno-9-5" id="__codelineno-9-5" name="__codelineno-9-5"></a><span class="nv">GOOGLE_CLIENT_SECRET</span><span class="o">=</span>your_client_secret
+<a href="#__codelineno-9-6" id="__codelineno-9-6" name="__codelineno-9-6"></a><span class="nv">GOOGLE_CALLBACK_URL</span><span class="o">=</span>/oauth/github/callback
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Save the
+         <code>
+          .env
+         </code>
+         file
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Note: If using docker, run
+         <code>
+          docker compose up -d
+         </code>
+         to apply the .env configuration changes
+        </p>
+       </blockquote>
+       <hr/>
+       <h3 id="openid-with-aws-cognito">
+        OpenID with AWS Cognito
+       </h3>
+       <h4 id="create-a-new-user-pool-in-cognito">
+        Create a new User Pool in Cognito
+       </h4>
+       <ul>
+        <li>
+         Visit:
+         <strong>
+          <a href="https://console.aws.amazon.com/cognito/">
+           https://console.aws.amazon.com/cognito/
+          </a>
+         </strong>
+        </li>
+        <li>
+         Sign in as Root User
+        </li>
+        <li>
+         Click on
+         <code>
+          Create user pool
+         </code>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/e9b412c3-2cf1-4f54-998c-d1d6c12581a5"/>
+       </p>
+       <h4 id="configure-sign-in-experience">
+        Configure sign-in experience
+       </h4>
+       <p>
+        Your Cognito user pool sign-in options should include
+        <code>
+         User Name
+        </code>
+        and
+        <code>
+         Email
+        </code>
+        .
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/d2cf362d-469e-4993-8466-10282da114c2"/>
+       </p>
+       <h4 id="configure-security-requirements">
+        Configure Security Requirements
+       </h4>
+       <p>
+        You can configure the password requirements now if you desire
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/e125e8f1-961b-4a38-a6b7-ed1faf29c4a3"/>
+       </p>
+       <h4 id="configure-sign-up-experience">
+        Configure sign-up experience
+       </h4>
+       <p>
+        Choose the attributes required at signup. The minimum required is
+        <code>
+         name
+        </code>
+        . If you want to require users to use their full name at sign up use:
+        <code>
+         given_name
+        </code>
+        and
+        <code>
+         family_name
+        </code>
+        as required attributes.
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/558b8e2c-afbd-4dd1-87f3-c409463b5f7c"/>
+       </p>
+       <h4 id="configure-message-delivery">
+        Configure message delivery
+       </h4>
+       <p>
+        Send email with Cognito can be used for free for up to 50 emails a day
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/fcb2323b-708e-488c-9420-7eb482974648"/>
+       </p>
+       <h4 id="integrate-your-app">
+        Integrate your app
+       </h4>
+       <p>
+        Select
+        <code>
+         Use Cognitio Hosted UI
+        </code>
+        and chose a domain name
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/111b3dd4-3b20-4e3e-80e1-7167d2ad0f62"/>
+       </p>
+       <p>
+        Set the app type to
+        <code>
+         Confidential client
+        </code>
+        Make sure
+        <code>
+         Generate a client secret
+        </code>
+        is set.
+Set the
+        <code>
+         Allowed callback URLs
+        </code>
+        to
+        <code>
+         https://YOUR_DOMAIN/oauth/openid/callback
+        </code>
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/1f92a532-7c4d-4632-a55d-9d00bf77fc4d"/>
+       </p>
+       <p>
+        Under
+        <code>
+         Advanced app client settings
+        </code>
+        make sure
+        <code>
+         Profile
+        </code>
+        is included in the
+        <code>
+         OpenID Connect scopes
+        </code>
+        (in the bottom)
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/5b035eae-4a8e-482c-abd5-29cee6502eeb"/>
+       </p>
+       <h4 id="review-and-create">
+        Review and create
+       </h4>
+       <p>
+        You can now make last minute changes, click on
+        <code>
+         Create user pool
+        </code>
+        when you're done reviewing the configuration
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/dc8b2374-9adb-4065-85dc-a087d625372d"/>
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/67efb1e9-dfe3-4ebd-9ebb-92186c514b5c"/>
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/9f819175-ace1-44b1-ba68-af21ac9f6735"/>
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/3e7b8b17-4e12-49af-99cf-78981d6331df"/>
+       </p>
+       <h4 id="get-your-environment-variables">
+        Get your environment variables
+       </h4>
+       <ol>
+        <li>
+         Open your User Pool
+        </li>
+       </ol>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/b658ff2a-d252-4f3d-90a7-9fbde42c01db"/>
+       </p>
+       <ol>
+        <li>
+         The
+         <code>
+          User Pool ID
+         </code>
+         and your AWS region will be used to construct the
+         <code>
+          OPENID_ISSUER
+         </code>
+         (see below)
+        </li>
+       </ol>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/dc8ae403-cbff-4aae-9eee-42d7cf3485e7"/>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/d606f5c8-c60b-4d20-bdb2-d0d69e49ea1e"/>
+       </p>
+       <ol>
+        <li>
+         Go to the
+         <code>
+          App Integrations
+         </code>
+         tab
+        </li>
+       </ol>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/58713bdc-24bc-47de-bdca-020dc321e997"/>
+       </p>
+       <ol>
+        <li>
+         Open the app client
+        </li>
+       </ol>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/271bf7d2-3df2-43a7-87fc-e50294e49b2e"/>
+       </p>
+       <ol>
+        <li>
+         Toggle
+         <code>
+          Show Client Secret
+         </code>
+        </li>
+       </ol>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/a844fe65-313d-4754-81b4-380336e0e336"/>
+       </p>
+       <ul>
+        <li>
+         <p>
+          Use the
+          <code>
+           Client ID
+          </code>
+          for
+          <code>
+           OPENID_CLIENT_ID
+          </code>
+         </p>
+        </li>
+        <li>
+         <p>
+          Use the
+          <code>
+           Client secret
+          </code>
+          for
+          <code>
+           OPENID_CLIENT_SECRET
+          </code>
+         </p>
+        </li>
+        <li>
+         <p>
+          Generate a random string for the
+          <code>
+           OPENID_SESSION_SECRET
+          </code>
+         </p>
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         The
+         <code>
+          OPENID_SCOPE
+         </code>
+         and
+         <code>
+          OPENID_CALLBACK_URL
+         </code>
+         are pre-configured with the correct values
+        </p>
+       </blockquote>
+       <ol>
+        <li>
+         Open the
+         <code>
+          .env
+         </code>
+         file at the root of your LibreChat folder and add the following variables with the values you copied:
+        </li>
+       </ol>
+       <p>
+        <div class="highlight">
+         <pre><span></span><code><a href="#__codelineno-10-1" id="__codelineno-10-1" name="__codelineno-10-1"></a><span class="nv">DOMAIN_CLIENT</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-10-2" id="__codelineno-10-2" name="__codelineno-10-2"></a><span class="nv">DOMAIN_SERVER</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-10-3" id="__codelineno-10-3" name="__codelineno-10-3"></a>
+<a href="#__codelineno-10-4" id="__codelineno-10-4" name="__codelineno-10-4"></a><span class="nv">OPENID_CLIENT_ID</span><span class="o">=</span>Your<span class="w"> </span>client<span class="w"> </span>ID
+<a href="#__codelineno-10-5" id="__codelineno-10-5" name="__codelineno-10-5"></a><span class="nv">OPENID_CLIENT_SECRET</span><span class="o">=</span>Your<span class="w"> </span>client<span class="w"> </span>secret
+<a href="#__codelineno-10-6" id="__codelineno-10-6" name="__codelineno-10-6"></a><span class="nv">OPENID_ISSUER</span><span class="o">=</span>https://cognito-idp.<span class="o">[</span>AWS<span class="w"> </span>REGION<span class="o">]</span>.amazonaws.com/<span class="o">[</span>USER<span class="w"> </span>POOL<span class="w"> </span>ID<span class="o">]</span>/.well-known/openid-configuration
+<a href="#__codelineno-10-7" id="__codelineno-10-7" name="__codelineno-10-7"></a><span class="nv">OPENID_SESSION_SECRET</span><span class="o">=</span>Any<span class="w"> </span>random<span class="w"> </span>string
+<a href="#__codelineno-10-8" id="__codelineno-10-8" name="__codelineno-10-8"></a><span class="nv">OPENID_SCOPE</span><span class="o">=</span>openid<span class="w"> </span>profile<span class="w"> </span>email
+<a href="#__codelineno-10-9" id="__codelineno-10-9" name="__codelineno-10-9"></a><span class="nv">OPENID_CALLBACK_URL</span><span class="o">=</span>/oauth/openid/callback
+</code></pre>
+        </div>
+        7. Save the .env file
+       </p>
+       <blockquote>
+        <p>
+         Note: If using docker, run
+         <code>
+          docker compose up -d
+         </code>
+         to apply the .env configuration changes
+        </p>
+       </blockquote>
+       <hr/>
+       <h3 id="openid-with-azure-ad">
+        OpenID with Azure AD
+       </h3>
+       <ol>
+        <li>
+         Go to the
+         <a href="https://portal.azure.com/">
+          Azure Portal
+         </a>
+         and sign in with your account.
+        </li>
+        <li>
+         In the search box, type "Azure Active Directory" and click on it.
+        </li>
+        <li>
+         On the left menu, click on App registrations and then on New registration.
+        </li>
+        <li>
+         Give your app a name and select Web as the platform type.
+        </li>
+        <li>
+         In the Redirect URI field, enter
+         <code>
+          http://localhost:3080/oauth/openid/callback
+         </code>
+         and click on Register.
+        </li>
+        <li>
+         You will see an Overview page with some information about your app. Copy the Application (client) ID and the Directory (tenant) ID and save them somewhere.
+        </li>
+        <li>
+         On the left menu, click on Authentication and check the boxes for Access tokens and ID tokens under Implicit grant and hybrid flows.
+        </li>
+        <li>
+         On the left menu, click on Certificates &amp; Secrets and then on New client secret. Give your secret a name and an expiration date and click on Add.
+        </li>
+        <li>
+         You will see a Value column with your secret. Copy it and save it somewhere. Don't share it with anyone!
+        </li>
+        <li>
+         Open the .env file in your project folder and add the following variables with the values you copied:
+        </li>
+       </ol>
+       <p>
+        <div class="highlight">
+         <pre><span></span><code><a href="#__codelineno-11-1" id="__codelineno-11-1" name="__codelineno-11-1"></a><span class="nv">DOMAIN_CLIENT</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-11-2" id="__codelineno-11-2" name="__codelineno-11-2"></a><span class="nv">DOMAIN_SERVER</span><span class="o">=</span>https://your-domain.com<span class="w"> </span><span class="c1">#use http://localhost:3080 if not using a custom domain</span>
+<a href="#__codelineno-11-3" id="__codelineno-11-3" name="__codelineno-11-3"></a>
+<a href="#__codelineno-11-4" id="__codelineno-11-4" name="__codelineno-11-4"></a><span class="nv">OPENID_CLIENT_ID</span><span class="o">=</span>Your<span class="w"> </span>Application<span class="w"> </span><span class="o">(</span>client<span class="o">)</span><span class="w"> </span>ID
+<a href="#__codelineno-11-5" id="__codelineno-11-5" name="__codelineno-11-5"></a><span class="nv">OPENID_CLIENT_SECRET</span><span class="o">=</span>Your<span class="w"> </span>client<span class="w"> </span>secret
+<a href="#__codelineno-11-6" id="__codelineno-11-6" name="__codelineno-11-6"></a><span class="nv">OPENID_ISSUER</span><span class="o">=</span>https://login.microsoftonline.com/Your<span class="w"> </span>Directory<span class="w"> </span><span class="o">(</span>tenant<span class="w"> </span>ID<span class="o">)</span>/v2.0/
+<a href="#__codelineno-11-7" id="__codelineno-11-7" name="__codelineno-11-7"></a><span class="nv">OPENID_SESSION_SECRET</span><span class="o">=</span>Any<span class="w"> </span>random<span class="w"> </span>string
+<a href="#__codelineno-11-8" id="__codelineno-11-8" name="__codelineno-11-8"></a><span class="nv">OPENID_SCOPE</span><span class="o">=</span>openid<span class="w"> </span>profile<span class="w"> </span>email<span class="w"> </span><span class="c1">#DO NOT CHANGE THIS</span>
+<a href="#__codelineno-11-9" id="__codelineno-11-9" name="__codelineno-11-9"></a><span class="nv">OPENID_CALLBACK_URL</span><span class="o">=</span>/oauth/openid/callback<span class="w"> </span><span class="c1"># this should be the same for everyone</span>
+</code></pre>
+        </div>
+        11. Save the .env file
+       </p>
+       <blockquote>
+        <p>
+         Note: If using docker, run
+         <code>
+          docker compose up -d
+         </code>
+         to apply the .env configuration changes
+        </p>
+       </blockquote>
+       <hr/>
+      </article>
+     </div>
+     <script>
+      var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))
+     </script>
+    </div>
+    <button class="md-top md-icon" data-md-component="top" hidden="" type="button">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z">
+      </path>
+     </svg>
+     Back to top
+    </button>
+   </main>
+   <footer class="md-footer">
+    <div class="md-footer-meta md-typeset">
+     <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+       <div class="md-copyright__highlight">
+        © 2024
+        <a href="https://librechat.ai/" rel="noopener" target="_blank">
+         LibreChat
+        </a>
+       </div>
+       Made with
+       <a href="https://squidfunk.github.io/mkdocs-material/" rel="noopener" target="_blank">
+        Material for MkDocs
+       </a>
+      </div>
+      <div class="md-social">
+       <a class="md-social__link" href="https://discord.librechat.ai" rel="noopener" target="_blank" title="Discord">
+        <svg viewbox="0 0 640 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M524.531 69.836a1.5 1.5 0 0 0-.764-.7A485.065 485.065 0 0 0 404.081 32.03a1.816 1.816 0 0 0-1.923.91 337.461 337.461 0 0 0-14.9 30.6 447.848 447.848 0 0 0-134.426 0 309.541 309.541 0 0 0-15.135-30.6 1.89 1.89 0 0 0-1.924-.91 483.689 483.689 0 0 0-119.688 37.107 1.712 1.712 0 0 0-.788.676C39.068 183.651 18.186 294.69 28.43 404.354a2.016 2.016 0 0 0 .765 1.375 487.666 487.666 0 0 0 146.825 74.189 1.9 1.9 0 0 0 2.063-.676A348.2 348.2 0 0 0 208.12 430.4a1.86 1.86 0 0 0-1.019-2.588 321.173 321.173 0 0 1-45.868-21.853 1.885 1.885 0 0 1-.185-3.126 251.047 251.047 0 0 0 9.109-7.137 1.819 1.819 0 0 1 1.9-.256c96.229 43.917 200.41 43.917 295.5 0a1.812 1.812 0 0 1 1.924.233 234.533 234.533 0 0 0 9.132 7.16 1.884 1.884 0 0 1-.162 3.126 301.407 301.407 0 0 1-45.89 21.83 1.875 1.875 0 0 0-1 2.611 391.055 391.055 0 0 0 30.014 48.815 1.864 1.864 0 0 0 2.063.7A486.048 486.048 0 0 0 610.7 405.729a1.882 1.882 0 0 0 .765-1.352c12.264-126.783-20.532-236.912-86.934-334.541ZM222.491 337.58c-28.972 0-52.844-26.587-52.844-59.239s23.409-59.241 52.844-59.241c29.665 0 53.306 26.82 52.843 59.239 0 32.654-23.41 59.241-52.843 59.241Zm195.38 0c-28.971 0-52.843-26.587-52.843-59.239s23.409-59.241 52.843-59.241c29.667 0 53.307 26.82 52.844 59.239 0 32.654-23.177 59.241-52.844 59.241Z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://librechat.ai" rel="noopener" target="_blank" title="GitHub">
+        <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://yt.librechat.ai" rel="noopener" target="_blank" title="YouTube">
+        <svg viewbox="0 0 576 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305zm-317.51 213.508V175.185l142.739 81.205-142.739 81.201z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://linkedin.librechat.ai" rel="noopener" target="_blank" title="LinkedIn">
+        <svg viewbox="0 0 448 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3zM135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5zm282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9V416z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://demo.librechat.cfd" rel="noopener" target="_blank" title="Demo">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M278.5 215.6 23 471c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l57-57h68c49.7 0 97.9-14.4 139-41 11.1-7.2 5.5-23-7.8-23-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l81-24.3c2.5-.8 4.8-2.1 6.7-4l22.4-22.4c10.1-10.1 2.9-27.3-11.3-27.3H377c-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l112-33.6c4-1.2 7.4-3.9 9.3-7.7 10.8-21 16.4-44.5 16.4-68.6 0-41-16.3-80.3-45.3-109.3l-5.5-5.5C432.3 16.3 393 0 352 0s-80.3 16.3-109.3 45.3L139 149c-48 48-75 113.1-75 181v55.3l189.6-189.5c6.2-6.2 16.4-6.2 22.6 0 5.4 5.4 6.1 13.6 2.2 19.8z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://hf.librechat.ai" rel="noopener" target="_blank" title="Hugging Face">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M256 512a256 256 0 1 0 0-512 256 256 0 1 0 0 512zm132.1-199.2c12.3-3.8 24.3 6.9 19.3 18.7-25 59.1-83.2 100.5-151.1 100.5s-126.2-41.4-151.1-100.5c-5-11.8 7-22.5 19.3-18.7 39.7 12.2 84.5 19 131.8 19s92.1-6.8 131.8-19zm-170.5-84-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8zm160 0-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8z">
+         </path>
+        </svg>
+       </a>
+      </div>
+     </div>
+    </div>
+   </footer>
+  </div>
+  <div class="md-dialog" data-md-component="dialog">
+   <div class="md-dialog__inner md-typeset">
+   </div>
+  </div>
+  <div class="md-progress" data-md-component="progress" role="progressbar">
+  </div>
+  <script id="__config" type="application/json">
+   {"base": "../..", "features": ["header.autohide", "navigation.tabs", "navigation.tabs.sticky", "content.action.edit", "content.code.copy", "navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.expand", "navigation.indexes", "navigation.top"], "search": "../../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}
+  </script>
+  <script src="../../assets/javascripts/bundle.bd41221c.min.js">
+  </script>
+ </body>
+</html>

@@ -1,0 +1,2401 @@
+<!DOCTYPE html>
+<html class="no-js" lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <meta content="This doc explains how to setup your AI providers, their APIs and credentials." name="description"/>
+  <link href="docker_override.html" rel="prev"/>
+  <link href="litellm.html" rel="next"/>
+  <link href="../../assets/favicon_package/favicon-32x32.png" rel="icon"/>
+  <meta content="mkdocs-1.5.3, mkdocs-material-9.5.15" name="generator"/>
+  <title>
+   🤖 AI Setup - LibreChat
+  </title>
+  <link href="../../assets/stylesheets/main.7e359304.min.css" rel="stylesheet"/>
+  <link href="../../assets/stylesheets/palette.06af60db.min.css" rel="stylesheet"/>
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+  <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback" rel="stylesheet"/>
+  <style>
+   :root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}
+  </style>
+  <script>
+   __md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}
+  </script>
+  <meta content="article" property="og:type"/>
+  <meta content="🤖 AI Setup" property="og:title"/>
+  <meta content="This doc explains how to setup your AI providers, their APIs and credentials." property="og:description"/>
+  <meta content="LibreChat" property="og:site_name"/>
+  <meta content="en_us" property="og:locale"/>
+  <meta content="Noneinstall/configuration/ai_setup.html" property="og:url"/>
+  <meta content="summary" property="twitter:card"/>
+  <meta content="🤖 AI Setup" property="twitter:title"/>
+  <meta content="This doc explains how to setup your AI providers, their APIs and credentials." property="twitter:description"/>
+ </head>
+ <body data-md-color-accent="purple" data-md-color-primary="cyan" data-md-color-scheme="slate" dir="ltr">
+  <input autocomplete="off" class="md-toggle" data-md-toggle="drawer" id="__drawer" type="checkbox"/>
+  <input autocomplete="off" class="md-toggle" data-md-toggle="search" id="__search" type="checkbox"/>
+  <label class="md-overlay" for="__drawer">
+  </label>
+  <div data-md-component="skip">
+   <a class="md-skip" href="#ai-setup">
+    Skip to content
+   </a>
+  </div>
+  <div data-md-component="announce">
+  </div>
+  <header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+   <nav aria-label="Header" class="md-header__inner md-grid">
+    <a aria-label="LibreChat" class="md-header__button md-logo" data-md-component="logo" href="../../index.html" title="LibreChat">
+     <img alt="logo" src="../../assets/LibreChat.svg"/>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+     <div class="md-header__ellipsis">
+      <div class="md-header__topic">
+       <span class="md-ellipsis">
+        LibreChat
+       </span>
+      </div>
+      <div class="md-header__topic" data-md-component="header-topic">
+       <span class="md-ellipsis">
+        🤖 AI Setup
+       </span>
+      </div>
+     </div>
+    </div>
+    <form class="md-header__option" data-md-component="palette">
+     <input aria-label="Switch to light mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="slate" id="__palette_0" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_1" hidden="" title="Switch to light mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+     <input aria-label="Switch to dark mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="default" id="__palette_1" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_0" hidden="" title="Switch to dark mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+    </form>
+    <script>
+     var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}
+    </script>
+    <label class="md-header__button md-icon" for="__search">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-search" data-md-component="search" role="dialog">
+     <label class="md-search__overlay" for="__search">
+     </label>
+     <div class="md-search__inner" role="search">
+      <form class="md-search__form" name="search">
+       <input aria-label="Search" autocapitalize="off" autocomplete="off" autocorrect="off" class="md-search__input" data-md-component="search-query" name="query" placeholder="Search" required="" spellcheck="false" type="text"/>
+       <label class="md-search__icon md-icon" for="__search">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+         </path>
+        </svg>
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z">
+         </path>
+        </svg>
+       </label>
+       <nav aria-label="Search" class="md-search__options">
+        <button aria-label="Clear" class="md-search__icon md-icon" tabindex="-1" title="Clear" type="reset">
+         <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z">
+          </path>
+         </svg>
+        </button>
+       </nav>
+      </form>
+      <div class="md-search__output">
+       <div class="md-search__scrollwrap" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+         <div class="md-search-result__meta">
+          Initializing search
+         </div>
+         <ol class="md-search-result__list" role="presentation">
+         </ol>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div class="md-header__source">
+     <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+      <div class="md-source__icon md-icon">
+       <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+        <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+        <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+        </path>
+       </svg>
+      </div>
+      <div class="md-source__repository">
+       danny-avila/LibreChat
+      </div>
+     </a>
+    </div>
+   </nav>
+   <nav aria-label="Tabs" class="md-tabs" data-md-component="tabs">
+    <div class="md-grid">
+     <ul class="md-tabs__list">
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../index.html">
+        Home
+       </a>
+      </li>
+      <li class="md-tabs__item md-tabs__item--active">
+       <a class="md-tabs__link" href="../index.html">
+        Installation and Configuration
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../features/index.html">
+        Features
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../deployment/index.html">
+        Deployment
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../general_info/index.html">
+        General Information
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../contributions/index.html">
+        Contributing to LibreChat
+       </a>
+      </li>
+     </ul>
+    </div>
+   </nav>
+  </header>
+  <div class="md-container" data-md-component="container">
+   <main class="md-main" data-md-component="main">
+    <div class="md-main__inner md-grid">
+     <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Navigation" class="md-nav md-nav--primary md-nav--lifted" data-md-level="0">
+         <label class="md-nav__title" for="__drawer">
+          <a aria-label="LibreChat" class="md-nav__button md-logo" data-md-component="logo" href="../../index.html" title="LibreChat">
+           <img alt="logo" src="../../assets/LibreChat.svg"/>
+          </a>
+          LibreChat
+         </label>
+         <div class="md-nav__source">
+          <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+           <div class="md-source__icon md-icon">
+            <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+             <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+             <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+             </path>
+            </svg>
+           </div>
+           <div class="md-source__repository">
+            danny-avila/LibreChat
+           </div>
+          </a>
+         </div>
+         <ul class="md-nav__list" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="../../index.html">
+            <span class="md-ellipsis">
+             Home
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+           <input checked="" class="md-nav__toggle md-toggle" id="__nav_2" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../index.html">
+             <span class="md-ellipsis">
+              Installation and Configuration
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="true" aria-labelledby="__nav_2_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_2">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Installation and Configuration
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../installation/index.html">
+                <span class="md-ellipsis">
+                 Installation
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_2_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Installation
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/docker_compose_install.html">
+                  <span class="md-ellipsis">
+                   🐳 Docker Compose ✨(Recommended)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/container_install.html">
+                  <span class="md-ellipsis">
+                   🦦 Container (Podman)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/linux_install.html">
+                  <span class="md-ellipsis">
+                   🐧 Linux
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/mac_install.html">
+                  <span class="md-ellipsis">
+                   🍎 Mac
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/windows_install.html">
+                  <span class="md-ellipsis">
+                   🪟 Windows
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+              <input checked="" class="md-nav__toggle md-toggle" id="__nav_2_3" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="index.html">
+                <span class="md-ellipsis">
+                 Configuration
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="true" aria-labelledby="__nav_2_3_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_3">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Configuration
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="dotenv.html">
+                  <span class="md-ellipsis">
+                   ⚙️ Environment Variables
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="custom_config.html">
+                  <span class="md-ellipsis">
+                   🖥️ Custom Config
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="azure_openai.html">
+                  <span class="md-ellipsis">
+                   🅰️ Azure OpenAI
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="ai_endpoints.html">
+                  <span class="md-ellipsis">
+                   ✅ Compatible AI Endpoints
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="docker_override.html">
+                  <span class="md-ellipsis">
+                   🐋 Docker Compose Override
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item md-nav__item--active">
+                 <input class="md-nav__toggle md-toggle" id="__toc" type="checkbox"/>
+                 <label class="md-nav__link md-nav__link--active" for="__toc">
+                  <span class="md-ellipsis">
+                   🤖 AI Setup
+                  </span>
+                  <span class="md-nav__icon md-icon">
+                  </span>
+                 </label>
+                 <a class="md-nav__link md-nav__link--active" href="ai_setup.html">
+                  <span class="md-ellipsis">
+                   🤖 AI Setup
+                  </span>
+                 </a>
+                 <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+                  <label class="md-nav__title" for="__toc">
+                   <span class="md-nav__icon md-icon">
+                   </span>
+                   Table of contents
+                  </label>
+                  <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#general">
+                     <span class="md-ellipsis">
+                      General
+                     </span>
+                    </a>
+                    <nav aria-label="General" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#free-ai-apis">
+                        <span class="md-ellipsis">
+                         Free AI APIs
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#setting-a-default-endpoint">
+                        <span class="md-ellipsis">
+                         Setting a Default Endpoint
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#setting-a-default-preset">
+                        <span class="md-ellipsis">
+                         Setting a Default Preset
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#openai">
+                     <span class="md-ellipsis">
+                      OpenAI
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#assistants">
+                     <span class="md-ellipsis">
+                      Assistants
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#anthropic">
+                     <span class="md-ellipsis">
+                      Anthropic
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#google">
+                     <span class="md-ellipsis">
+                      Google
+                     </span>
+                    </a>
+                    <nav aria-label="Google" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#generative-language-api-gemini">
+                        <span class="md-ellipsis">
+                         Generative Language API (Gemini)
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#vertex-ai-palm-2-codey">
+                        <span class="md-ellipsis">
+                         Vertex AI (PaLM 2 &amp; Codey)
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#1-once-signed-up-enable-the-vertex-ai-api-on-google-cloud">
+                        <span class="md-ellipsis">
+                         1. Once signed up, Enable the Vertex AI API on Google Cloud:
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#2-create-a-service-account-with-vertex-ai-role">
+                        <span class="md-ellipsis">
+                         2. Create a Service Account with Vertex AI role:
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#enter-a-service-account-id-required-name-and-description-are-optional">
+                        <span class="md-ellipsis">
+                         Enter a service account ID (required), name and description are optional
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#click-on-create-and-continue-to-give-at-least-the-vertex-ai-user-role">
+                        <span class="md-ellipsis">
+                         Click on "Create and Continue" to give at least the "Vertex AI User" role
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#3-create-a-json-key-to-save-in-your-project-directory">
+                        <span class="md-ellipsis">
+                         3. Create a JSON key to Save in your Project Directory:
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#click-on-keys">
+                        <span class="md-ellipsis">
+                         Click on "Keys"
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#click-on-add-key-and-then-create-new-key">
+                        <span class="md-ellipsis">
+                         Click on "Add Key" and then "Create new key"
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#azure-openai">
+                     <span class="md-ellipsis">
+                      Azure OpenAI
+                     </span>
+                    </a>
+                    <nav aria-label="Azure OpenAI" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#please-see-the-dedicated-azure-openai-setup-guide">
+                        <span class="md-ellipsis">
+                         Please see the dedicated Azure OpenAI Setup Guide.
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#openrouter">
+                     <span class="md-ellipsis">
+                      OpenRouter
+                     </span>
+                    </a>
+                    <nav aria-label="OpenRouter" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#review-the-custom-config-guide-click-here-to-add-an-openrouter-endpoint">
+                        <span class="md-ellipsis">
+                         Review the Custom Config Guide (click here) to add an OpenRouter Endpoint
+                        </span>
+                       </a>
+                       <nav aria-label="Review the Custom Config Guide (click here) to add an OpenRouter Endpoint" class="md-nav">
+                        <ul class="md-nav__list">
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#setup-legacy">
+                           <span class="md-ellipsis">
+                            Setup (legacy):
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#notes-legacy">
+                           <span class="md-ellipsis">
+                            Notes (legacy):
+                           </span>
+                          </a>
+                         </li>
+                        </ul>
+                       </nav>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#unofficial-apis">
+                     <span class="md-ellipsis">
+                      Unofficial APIs
+                     </span>
+                    </a>
+                    <nav aria-label="Unofficial APIs" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#bingai">
+                        <span class="md-ellipsis">
+                         BingAI
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#copilot-gpt4-service">
+                        <span class="md-ellipsis">
+                         copilot-gpt4-service
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#conclusion">
+                     <span class="md-ellipsis">
+                      Conclusion
+                     </span>
+                    </a>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="litellm.html">
+                  <span class="md-ellipsis">
+                   🚅 LiteLLM
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="free_ai_apis.html">
+                  <span class="md-ellipsis">
+                   💸 Free AI APIs
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="ollama.html">
+                  <span class="md-ellipsis">
+                   🦙 Ollama
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="user_auth_system.html">
+                  <span class="md-ellipsis">
+                   🛂 Authentication System
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="mongodb.html">
+                  <span class="md-ellipsis">
+                   🍃 Online MongoDB
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="default_language.html">
+                  <span class="md-ellipsis">
+                   🌍 Default Language
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="misc.html">
+                  <span class="md-ellipsis">
+                   🌀 Miscellaneous
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../features/index.html">
+             <span class="md-ellipsis">
+              Features
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_3_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_3">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Features
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../../features/plugins/index.html">
+                <span class="md-ellipsis">
+                 Plugins
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_3_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_3_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Plugins
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/introduction.html">
+                  <span class="md-ellipsis">
+                   🔌 Introduction
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/make_your_own.html">
+                  <span class="md-ellipsis">
+                   🛠️ Make Your Own
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/chatgpt_plugins_openapi.html">
+                  <span class="md-ellipsis">
+                   🧑‍💼 Official ChatGPT Plugins
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/google_search.html">
+                  <span class="md-ellipsis">
+                   🔎 Google Search
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/stable_diffusion.html">
+                  <span class="md-ellipsis">
+                   🖌️ Stable Diffusion
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/wolfram.html">
+                  <span class="md-ellipsis">
+                   🧠 Wolfram|Alpha
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/azure_ai_search.html">
+                  <span class="md-ellipsis">
+                   ⚡ Azure AI Search
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/presets.html">
+               <span class="md-ellipsis">
+                🔖 Presets
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/mod_system.html">
+               <span class="md-ellipsis">
+                🔨 Automated Moderation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/token_usage.html">
+               <span class="md-ellipsis">
+                🪙 Token Usage
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/firebase.html">
+               <span class="md-ellipsis">
+                🔥 Firebase CDN Setup
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/manage_your_database.html">
+               <span class="md-ellipsis">
+                🍃 Manage Your Database
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/logging_system.html">
+               <span class="md-ellipsis">
+                🪵 Logging System
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/bing_jailbreak.html">
+               <span class="md-ellipsis">
+                😈 Bing Jailbreak
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/third_party.html">
+               <span class="md-ellipsis">
+                ✨ Third-Party Tools and Contributions
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_4" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../deployment/index.html">
+             <span class="md-ellipsis">
+              Deployment
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_4_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_4">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Deployment
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/introduction.html">
+               <span class="md-ellipsis">
+                🌐 Deployment Introduction
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/digitalocean.html">
+               <span class="md-ellipsis">
+                🌊 DigitalOcean ✨(Recommended)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/docker_ubuntu_deploy.html">
+               <span class="md-ellipsis">
+                🐳 Ubuntu Docker Deployment
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/huggingface.html">
+               <span class="md-ellipsis">
+                🤗 HuggingFace
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/railway.html">
+               <span class="md-ellipsis">
+                🛤️ Railway (one-click)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/linode.html">
+               <span class="md-ellipsis">
+                🐧 Linode
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/azure-terraform.html">
+               <span class="md-ellipsis">
+                ⚡ Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/render.html">
+               <span class="md-ellipsis">
+                ⏹️ Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/meilisearch_in_render.html">
+               <span class="md-ellipsis">
+                🔎 Meilisearch in Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/hetzner_ubuntu.html">
+               <span class="md-ellipsis">
+                🏗️ Hetzner
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/heroku.html">
+               <span class="md-ellipsis">
+                🌈 Heroku
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/zeabur.html">
+               <span class="md-ellipsis">
+                🦓 Zeabur
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/cloudflare.html">
+               <span class="md-ellipsis">
+                ☁️ Cloudflare
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/nginx.html">
+               <span class="md-ellipsis">
+                ↪️ Nginx
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/ngrok.html">
+               <span class="md-ellipsis">
+                🪨 Ngrok
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/traefik.html">
+               <span class="md-ellipsis">
+                🚦 Traefik
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_5" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../general_info/index.html">
+             <span class="md-ellipsis">
+              General Information
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_5_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_5">
+             <span class="md-nav__icon md-icon">
+             </span>
+             General Information
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/breaking_changes.html">
+               <span class="md-ellipsis">
+                ⚠️ Breaking Changes
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/multilingual_information.html">
+               <span class="md-ellipsis">
+                🌍 Multilingual Information
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/project_origin.html">
+               <span class="md-ellipsis">
+                🧭 Origin
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/tech_stack.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Tech Stack
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_6" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../contributions/index.html">
+             <span class="md-ellipsis">
+              Contributing to LibreChat
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_6_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_6">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Contributing to LibreChat
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/how_to_contribute.html">
+               <span class="md-ellipsis">
+                🙌 Getting Started for Contributors
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/documentation_guidelines.html">
+               <span class="md-ellipsis">
+                📝 Documentation Guidelines
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/translation_contribution.html">
+               <span class="md-ellipsis">
+                🌍 Contribute a Translation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/coding_conventions.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Code Standards and Conventions
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/testing.html">
+               <span class="md-ellipsis">
+                🧪 Testing During Development
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+         <label class="md-nav__title" for="__toc">
+          <span class="md-nav__icon md-icon">
+          </span>
+          Table of contents
+         </label>
+         <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#general">
+            <span class="md-ellipsis">
+             General
+            </span>
+           </a>
+           <nav aria-label="General" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#free-ai-apis">
+               <span class="md-ellipsis">
+                Free AI APIs
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#setting-a-default-endpoint">
+               <span class="md-ellipsis">
+                Setting a Default Endpoint
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#setting-a-default-preset">
+               <span class="md-ellipsis">
+                Setting a Default Preset
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#openai">
+            <span class="md-ellipsis">
+             OpenAI
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#assistants">
+            <span class="md-ellipsis">
+             Assistants
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#anthropic">
+            <span class="md-ellipsis">
+             Anthropic
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#google">
+            <span class="md-ellipsis">
+             Google
+            </span>
+           </a>
+           <nav aria-label="Google" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#generative-language-api-gemini">
+               <span class="md-ellipsis">
+                Generative Language API (Gemini)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#vertex-ai-palm-2-codey">
+               <span class="md-ellipsis">
+                Vertex AI (PaLM 2 &amp; Codey)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#1-once-signed-up-enable-the-vertex-ai-api-on-google-cloud">
+               <span class="md-ellipsis">
+                1. Once signed up, Enable the Vertex AI API on Google Cloud:
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#2-create-a-service-account-with-vertex-ai-role">
+               <span class="md-ellipsis">
+                2. Create a Service Account with Vertex AI role:
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#enter-a-service-account-id-required-name-and-description-are-optional">
+               <span class="md-ellipsis">
+                Enter a service account ID (required), name and description are optional
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#click-on-create-and-continue-to-give-at-least-the-vertex-ai-user-role">
+               <span class="md-ellipsis">
+                Click on "Create and Continue" to give at least the "Vertex AI User" role
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#3-create-a-json-key-to-save-in-your-project-directory">
+               <span class="md-ellipsis">
+                3. Create a JSON key to Save in your Project Directory:
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#click-on-keys">
+               <span class="md-ellipsis">
+                Click on "Keys"
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#click-on-add-key-and-then-create-new-key">
+               <span class="md-ellipsis">
+                Click on "Add Key" and then "Create new key"
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#azure-openai">
+            <span class="md-ellipsis">
+             Azure OpenAI
+            </span>
+           </a>
+           <nav aria-label="Azure OpenAI" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#please-see-the-dedicated-azure-openai-setup-guide">
+               <span class="md-ellipsis">
+                Please see the dedicated Azure OpenAI Setup Guide.
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#openrouter">
+            <span class="md-ellipsis">
+             OpenRouter
+            </span>
+           </a>
+           <nav aria-label="OpenRouter" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#review-the-custom-config-guide-click-here-to-add-an-openrouter-endpoint">
+               <span class="md-ellipsis">
+                Review the Custom Config Guide (click here) to add an OpenRouter Endpoint
+               </span>
+              </a>
+              <nav aria-label="Review the Custom Config Guide (click here) to add an OpenRouter Endpoint" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#setup-legacy">
+                  <span class="md-ellipsis">
+                   Setup (legacy):
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#notes-legacy">
+                  <span class="md-ellipsis">
+                   Notes (legacy):
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#unofficial-apis">
+            <span class="md-ellipsis">
+             Unofficial APIs
+            </span>
+           </a>
+           <nav aria-label="Unofficial APIs" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#bingai">
+               <span class="md-ellipsis">
+                BingAI
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#copilot-gpt4-service">
+               <span class="md-ellipsis">
+                copilot-gpt4-service
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#conclusion">
+            <span class="md-ellipsis">
+             Conclusion
+            </span>
+           </a>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-content" data-md-component="content">
+      <article class="md-content__inner md-typeset">
+       <a class="md-content__button md-icon" href="https://github.com/danny-avila/LibreChat/blob/main/docs/install/configuration/ai_setup.md" title="Edit this page">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z">
+         </path>
+        </svg>
+       </a>
+       <h1 id="ai-setup">
+        AI Setup
+       </h1>
+       <p>
+        This doc explains how to setup your AI providers, their APIs and credentials.
+       </p>
+       <p>
+        <strong>
+         "Endpoints"
+        </strong>
+        refer to the AI provider, configuration or API to use, which determines what models and settings are available for the current chat request.
+       </p>
+       <p>
+        For example, OpenAI, Google, Plugins, Azure OpenAI, Anthropic, are all different "endpoints". Since OpenAI was the first supported endpoint, it's listed first by default.
+       </p>
+       <p>
+        Using the default environment values from
+        <a href="https://github.com/danny-avila/LibreChat/blob/main/.env.example">
+         /.env.example
+        </a>
+        will enable several endpoints, with credentials to be provided on a per-user basis from the web app. Alternatively, you can provide credentials for all users of your instance.
+       </p>
+       <p>
+        This guide will walk you through setting up each Endpoint as needed.
+       </p>
+       <p>
+        For
+        <strong>
+         custom endpoint
+        </strong>
+        configuration, such as adding
+        <a href="https://docs.mistral.ai/platform/client/">
+         Mistral AI
+        </a>
+        or
+        <a href="https://openrouter.ai/">
+         Openrouter
+        </a>
+        refer to the
+        <strong>
+         <a href="custom_config.html">
+          librechat.yaml configuration guide
+         </a>
+        </strong>
+        .
+       </p>
+       <p>
+        <strong>
+         Reminder: If you use docker, you should
+         <a href="dotenv.html">
+          rebuild the docker image (here's how)
+         </a>
+         each time you update your credentials
+        </strong>
+       </p>
+       <p>
+        <em>
+         Note: Configuring pre-made Endpoint/model/conversation settings as singular options for your users is a planned feature. See the related discussion here:
+         <a href="https://github.com/danny-avila/LibreChat/discussions/1291">
+          System-wide custom model settings (lightweight GPTs) #1291
+         </a>
+        </em>
+       </p>
+       <h2 id="general">
+        General
+       </h2>
+       <h3 id="free-ai-apis">
+        <a href="free_ai_apis.html">
+         Free AI APIs
+        </a>
+       </h3>
+       <h3 id="setting-a-default-endpoint">
+        Setting a Default Endpoint
+       </h3>
+       <p>
+        In the case where you have multiple endpoints setup, but want a specific one to be first in the order, you need to set the following environment variable.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-0-1" id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1"># .env file</span>
+<a href="#__codelineno-0-2" id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="c1"># No spaces between values</span>
+<a href="#__codelineno-0-3" id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="nv">ENDPOINTS</span><span class="o">=</span>azureOpenAI,openAI,assistants,google<span class="w"> </span>
+</code></pre>
+       </div>
+       <p>
+        Note that LibreChat will use your last selected endpoint when creating a new conversation. So if Azure OpenAI is first in the order, but you used or view an OpenAI conversation last, when you hit "New Chat," OpenAI will be selected with its default conversation settings.
+       </p>
+       <p>
+        To override this behavior, you need a preset and you need to set that specific preset as the default one to use on every new chat.
+       </p>
+       <h3 id="setting-a-default-preset">
+        Setting a Default Preset
+       </h3>
+       <p>
+        See the
+        <strong>
+         <a href="../../features/presets.html">
+          Presets Guide
+         </a>
+        </strong>
+        for more details
+       </p>
+       <p>
+        A preset refers to a specific Endpoint/Model/Conversation Settings that you can save.
+       </p>
+       <p>
+        The default preset will always be used when creating a new conversation.
+       </p>
+       <p>
+        Here's a video to demonstrate:
+        <strong>
+         <a href="https://github.com/danny-avila/LibreChat/assets/110412045/bbde830f-18d9-4884-88e5-1bd8f7ac585d">
+          Setting a Default Preset
+         </a>
+        </strong>
+       </p>
+       <hr/>
+       <h2 id="openai">
+        OpenAI
+       </h2>
+       <p>
+        To get your OpenAI API key, you need to:
+       </p>
+       <ul>
+        <li>
+         Go to
+         <strong>
+          <a href="https://platform.openai.com/account/api-keys">
+           https://platform.openai.com/account/api-keys
+          </a>
+         </strong>
+        </li>
+        <li>
+         Create an account or log in with your existing one
+        </li>
+        <li>
+         Add a payment method to your account (this is not free, sorry 😬)
+        </li>
+        <li>
+         Copy your secret key (sk-...) and save it in ./.env as OPENAI_API_KEY
+        </li>
+       </ul>
+       <p>
+        <strong>
+         Notes:
+        </strong>
+       </p>
+       <ul>
+        <li>
+         Selecting a vision model for messages with attachments is not necessary as it will be switched behind the scenes for you. If you didn't outright select a vision model, it will only be used for the vision request and you should still see the non-vision model you had selected after the request is successful
+        </li>
+        <li>
+         OpenAI Vision models allow for messages without attachments
+        </li>
+       </ul>
+       <hr/>
+       <h2 id="assistants">
+        Assistants
+       </h2>
+       <ul>
+        <li>
+         The
+         <a href="https://platform.openai.com/docs/assistants/overview">
+          Assistants API by OpenAI
+         </a>
+         has a dedicated endpoint.
+        </li>
+        <li>
+         The Assistants API enables the creation of AI assistants, offering functionalities like code interpreter, knowledge retrieval of files, and function execution.
+         <ul>
+          <li>
+           <a href="https://platform.openai.com/docs/assistants/overview">
+            Read here for an in-depth documentation
+           </a>
+           of the feature, how it works, what it's capable of.
+          </li>
+         </ul>
+        </li>
+        <li>
+         As with the regular
+         <a href="#openai">
+          OpenAI API
+         </a>
+         , go to
+         <strong>
+          <a href="https://platform.openai.com/account/api-keys">
+           https://platform.openai.com/account/api-keys
+          </a>
+         </strong>
+         to get a key.
+        </li>
+        <li>
+         You will need to set the following environment variable to your key or you can set it to
+         <code>
+          user_provided
+         </code>
+         for users to provide their own.
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-1-1" id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="nv">ASSISTANTS_API_KEY</span><span class="o">=</span>your-key
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         You can determine which models you would like to have available with
+         <code>
+          ASSISTANTS_MODELS
+         </code>
+         ; otherwise, the models list fetched from OpenAI will be used (only Assistants API compatible models will be shown).
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-2-1" id="__codelineno-2-1" name="__codelineno-2-1"></a><span class="c1"># without spaces</span>
+<a href="#__codelineno-2-2" id="__codelineno-2-2" name="__codelineno-2-2"></a><span class="nv">ASSISTANTS_MODELS</span><span class="o">=</span>gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         If necessary, you can also set an alternate base URL instead of the official one with
+         <code>
+          ASSISTANTS_BASE_URL
+         </code>
+         , which is similar to the OpenAI counterpart
+         <code>
+          OPENAI_REVERSE_PROXY
+         </code>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-3-1" id="__codelineno-3-1" name="__codelineno-3-1"></a><span class="nv">ASSISTANTS_BASE_URL</span><span class="o">=</span>http://your-alt-baseURL:3080/
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, that are available via the
+         <a href="custom_config.html#assistants-endpoint-object-structure">
+          <code>
+           librechat.yaml
+          </code>
+          custom config file
+         </a>
+         :
+         <ul>
+          <li>
+           Control the visibility and use of the builder interface for assistants.
+           <a href="custom_config.html#disablebuilder">
+            More info
+           </a>
+          </li>
+          <li>
+           Specify the polling interval in milliseconds for checking run updates or changes in assistant run states.
+           <a href="custom_config.html#pollintervalms">
+            More info
+           </a>
+          </li>
+          <li>
+           Set the timeout period in milliseconds for assistant runs. Helps manage system load by limiting total run operation time.
+           <a href="custom_config.html#timeoutms">
+            More info
+           </a>
+          </li>
+          <li>
+           Specify which assistant Ids are supported or excluded
+           <a href="custom_config.html#supportedids">
+            More info
+           </a>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <p>
+        <strong>
+         Notes:
+        </strong>
+       </p>
+       <ul>
+        <li>
+         At the time of writing, only the following models support the
+         <a href="https://platform.openai.com/docs/assistants/tools/knowledge-retrieval">
+          Retrieval
+         </a>
+         capability:
+         <ul>
+          <li>
+           gpt-3.5-turbo-0125
+          </li>
+          <li>
+           gpt-4-0125-preview
+          </li>
+          <li>
+           gpt-4-turbo-preview
+          </li>
+          <li>
+           gpt-4-1106-preview
+          </li>
+          <li>
+           gpt-3.5-turbo-1106
+          </li>
+         </ul>
+        </li>
+        <li>
+         Vision capability is not yet supported.
+        </li>
+        <li>
+         If you have previously set the
+         <a href="dotenv.html#endpoints">
+          <code>
+           ENDPOINTS
+          </code>
+          value in your .env file
+         </a>
+         , you will need to add the value
+         <code>
+          assistants
+         </code>
+        </li>
+       </ul>
+       <hr/>
+       <h2 id="anthropic">
+        Anthropic
+       </h2>
+       <ul>
+        <li>
+         Create an account at
+         <strong>
+          <a href="https://console.anthropic.com/">
+           https://console.anthropic.com/
+          </a>
+         </strong>
+        </li>
+        <li>
+         Go to
+         <strong>
+          <a href="https://console.anthropic.com/account/keys">
+           https://console.anthropic.com/account/keys
+          </a>
+         </strong>
+         and get your api key
+        </li>
+        <li>
+         add it to
+         <code>
+          ANTHROPIC_API_KEY=
+         </code>
+         in the
+         <code>
+          .env
+         </code>
+         file
+        </li>
+       </ul>
+       <hr/>
+       <h2 id="google">
+        Google
+       </h2>
+       <p>
+        For the Google Endpoint, you can either use the
+        <strong>
+         Generative Language API
+        </strong>
+        (for Gemini models), or the
+        <strong>
+         Vertex AI API
+        </strong>
+        (for PaLM2 &amp; Codey models, Gemini support coming soon).
+       </p>
+       <p>
+        The Generative Language API uses an API key, which you can get from
+        <strong>
+         Google AI Studio
+        </strong>
+        .
+       </p>
+       <p>
+        For Vertex AI, you need a Service Account JSON key file, with appropriate access configured.
+       </p>
+       <p>
+        Instructions for both are given below.
+       </p>
+       <h3 id="generative-language-api-gemini">
+        Generative Language API (Gemini)
+       </h3>
+       <p>
+        <strong>
+         60 Gemini requests/minute are currently free until early next year when it enters general availability.
+        </strong>
+       </p>
+       <p>
+        ⚠️ Google will be using that free input/output to help improve the model, with data de-identified from your Google Account and API key.
+⚠️ During this period, your messages “may be accessible to trained reviewers.”
+       </p>
+       <p>
+        To use Gemini models, you'll need an API key. If you don't already have one, create a key in Google AI Studio.
+       </p>
+       <p>
+        Get an API key here:
+        <strong>
+         <a href="https://makersuite.google.com/app/apikey">
+          makersuite.google.com
+         </a>
+        </strong>
+       </p>
+       <p>
+        Once you have your key, provide the key in your .env file, which allows all users of your instance to use it.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-4-1" id="__codelineno-4-1" name="__codelineno-4-1"></a><span class="nv">GOOGLE_KEY</span><span class="o">=</span>mY_SeCreT_w9347w8_kEY
+</code></pre>
+       </div>
+       <p>
+        Or, you can make users provide it from the frontend by setting the following:
+        <div class="highlight">
+         <pre><span></span><code><a href="#__codelineno-5-1" id="__codelineno-5-1" name="__codelineno-5-1"></a><span class="nv">GOOGLE_KEY</span><span class="o">=</span>user_provided
+</code></pre>
+        </div>
+       </p>
+       <p>
+        Notes:
+- PaLM2 and Codey models cannot be accessed through the Generative Language API, only through Vertex AI.
+- Selecting
+        <code>
+         gemini-pro-vision
+        </code>
+        for messages with attachments is not necessary as it will be switched behind the scenes for you
+- Since
+        <code>
+         gemini-pro-vision
+        </code>
+        does not accept non-attachment messages, messages without attachments are automatically switched to use
+        <code>
+         gemini-pro
+        </code>
+        (otherwise, Google responds with an error)
+       </p>
+       <p>
+        Setting
+        <code>
+         GOOGLE_KEY=user_provided
+        </code>
+        in your .env file will configure both the Vertex AI Service Account JSON key file and the Generative Language API key to be provided from the frontend like so:
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/728cbc04-4180-45a8-848c-ae5de2b02996"/>
+       </p>
+       <h3 id="vertex-ai-palm-2-codey">
+        Vertex AI (PaLM 2 &amp; Codey)
+       </h3>
+       <p>
+        To setup Google LLMs (via Google Cloud Vertex AI), first, signup for Google Cloud:
+        <strong>
+         <a href="https://cloud.google.com/">
+          cloud.google.com
+         </a>
+        </strong>
+       </p>
+       <p>
+        You can usually get
+        <strong>
+         $300 starting credit
+        </strong>
+        , which makes this option free for 90 days.
+       </p>
+       <h3 id="1-once-signed-up-enable-the-vertex-ai-api-on-google-cloud">
+        1. Once signed up, Enable the Vertex AI API on Google Cloud:
+       </h3>
+       <ul>
+        <li>
+         Go to
+         <strong>
+          <a href="https://console.cloud.google.com/vertex-ai">
+           Vertex AI page on Google Cloud console
+          </a>
+         </strong>
+        </li>
+        <li>
+         Click on
+         <code>
+          Enable API
+         </code>
+         if prompted
+        </li>
+       </ul>
+       <h3 id="2-create-a-service-account-with-vertex-ai-role">
+        2. Create a Service Account with Vertex AI role:
+       </h3>
+       <ul>
+        <li>
+         <strong>
+          <a href="https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts/create?walkthrough_id=iam--create-service-account#step_index=1">
+           Click here to create a Service Account
+          </a>
+         </strong>
+        </li>
+        <li>
+         <strong>
+          Select or create a project
+         </strong>
+        </li>
+        <li>
+         <h3 id="enter-a-service-account-id-required-name-and-description-are-optional">
+          Enter a service account ID (required), name and description are optional
+         </h3>
+         <ul>
+          <li>
+           <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/0c5cd177-029b-44fa-a398-a794aeb09de6"/>
+          </li>
+         </ul>
+        </li>
+        <li>
+         <h3 id="click-on-create-and-continue-to-give-at-least-the-vertex-ai-user-role">
+          Click on "Create and Continue" to give at least the "Vertex AI User" role
+         </h3>
+         <ul>
+          <li>
+           <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/22d3a080-e71e-446e-8485-bcc5bf558dbb"/>
+          </li>
+         </ul>
+        </li>
+        <li>
+         <strong>
+          Click on "Continue/Done"
+         </strong>
+        </li>
+       </ul>
+       <h3 id="3-create-a-json-key-to-save-in-your-project-directory">
+        3. Create a JSON key to Save in your Project Directory:
+       </h3>
+       <ul>
+        <li>
+         <strong>
+          Go back to
+          <a href="https://console.cloud.google.com/projectselector/iam-admin/serviceaccounts">
+           the Service Accounts page
+          </a>
+         </strong>
+        </li>
+        <li>
+         <strong>
+          Select your service account
+         </strong>
+        </li>
+        <li>
+         <h3 id="click-on-keys">
+          Click on "Keys"
+         </h3>
+         <ul>
+          <li>
+           <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/735a7bbe-25a6-4b4c-9bb5-e0d8aa91be3d"/>
+          </li>
+         </ul>
+        </li>
+        <li>
+         <h3 id="click-on-add-key-and-then-create-new-key">
+          Click on "Add Key" and then "Create new key"
+         </h3>
+         <ul>
+          <li>
+           <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/cfbb20d3-94a8-4cd1-ac39-f9cd8c2fceaa"/>
+          </li>
+         </ul>
+        </li>
+        <li>
+         <strong>
+          Choose JSON as the key type and click on "Create"
+         </strong>
+        </li>
+        <li>
+         <strong>
+          Download the key file and rename it as 'auth.json'
+         </strong>
+        </li>
+        <li>
+         <strong>
+          Save it within the project directory, in
+          <code>
+           /api/data/
+          </code>
+         </strong>
+         <ul>
+          <li>
+           <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/f5b8bcb5-1b20-4751-81a1-d3757a4b3f2f"/>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <p>
+        <strong>
+         Saving your JSON key file in the project directory which allows all users of your LibreChat instance to use it.
+        </strong>
+       </p>
+       <p>
+        Alternatively, you can make users provide it from the frontend by setting the following:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-6-1" id="__codelineno-6-1" name="__codelineno-6-1"></a><span class="c1"># Note: this configures both the Vertex AI Service Account JSON key file</span>
+<a href="#__codelineno-6-2" id="__codelineno-6-2" name="__codelineno-6-2"></a><span class="c1"># and the Generative Language API key to be provided from the frontend.</span>
+<a href="#__codelineno-6-3" id="__codelineno-6-3" name="__codelineno-6-3"></a><span class="nv">GOOGLE_KEY</span><span class="o">=</span>user_provided
+</code></pre>
+       </div>
+       <p>
+        Note: Using Gemini models through Vertex AI is possible but not yet supported.
+       </p>
+       <hr/>
+       <h2 id="azure-openai">
+        Azure OpenAI
+       </h2>
+       <h3 id="please-see-the-dedicated-azure-openai-setup-guide">
+        Please see the dedicated
+        <a href="azure_openai.html">
+         Azure OpenAI Setup Guide.
+        </a>
+       </h3>
+       <p>
+        This was done to improve upon legacy configuration settings, to allow multiple deployments/model configurations setup with ease:
+        <strong>
+         <a href="https://github.com/danny-avila/LibreChat/issues/1390">
+          #1390
+         </a>
+        </strong>
+       </p>
+       <hr/>
+       <h2 id="openrouter">
+        <a href="https://openrouter.ai/">
+         OpenRouter
+        </a>
+       </h2>
+       <p>
+        <strong>
+         <a href="https://openrouter.ai/">
+          OpenRouter
+         </a>
+        </strong>
+        is a legitimate proxy service to a multitude of LLMs, both closed and open source, including:
+       </p>
+       <ul>
+        <li>
+         OpenAI models (great if you are barred from their API for whatever reason)
+        </li>
+        <li>
+         Anthropic Claude models (same as above)
+        </li>
+        <li>
+         Meta's Llama models
+        </li>
+        <li>
+         pygmalionai/mythalion-13b
+        </li>
+        <li>
+         and many more open source models. Newer integrations are usually discounted, too!
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         See their available models and pricing here:
+         <strong>
+          <a href="https://openrouter.ai/docs#models">
+           Supported Models
+          </a>
+         </strong>
+        </p>
+       </blockquote>
+       <p>
+        OpenRouter is integrated to the LibreChat by overriding the OpenAI endpoint.
+       </p>
+       <p>
+        <strong>
+         Important
+        </strong>
+        : As of v0.6.6, you can use OpenRouter as its own standalone endpoint:
+       </p>
+       <h3 id="review-the-custom-config-guide-click-here-to-add-an-openrouter-endpoint">
+        <a href="custom_config.html">
+         Review the Custom Config Guide (click here)
+        </a>
+        to add an
+        <code>
+         OpenRouter
+        </code>
+        Endpoint
+       </h3>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/4955bfa3-7b6b-4602-933f-daef89c9eab3"/>
+       </p>
+       <h4 id="setup-legacy">
+        Setup (legacy):
+       </h4>
+       <p>
+        <strong>
+         Note:
+        </strong>
+        It is NOT recommended to setup OpenRouter this way with versions 0.6.6 or higher of LibreChat as it may be removed in future versions.
+       </p>
+       <p>
+        As noted earlier,
+        <a href="custom_config.html">
+         review the Custom Config Guide (click here)
+        </a>
+        to add an
+        <code>
+         OpenRouter
+        </code>
+        Endpoint instead.
+       </p>
+       <ul>
+        <li>
+         Signup to
+         <strong>
+          <a href="https://openrouter.ai/">
+           OpenRouter
+          </a>
+         </strong>
+         and create a key. You should name it and set a limit as well.
+        </li>
+        <li>
+         Set the environment variable
+         <code>
+          OPENROUTER_API_KEY
+         </code>
+         in your .env file to the key you just created.
+        </li>
+        <li>
+         Set something in the
+         <code>
+          OPENAI_API_KEY
+         </code>
+         , it can be anyting, but
+         <strong>
+          do not
+         </strong>
+         leave it blank or set to
+         <code>
+          user_provided
+         </code>
+        </li>
+        <li>
+         Restart your LibreChat server and use the OpenAI or Plugins endpoints.
+        </li>
+       </ul>
+       <h4 id="notes-legacy">
+        Notes (legacy):
+       </h4>
+       <ul>
+        <li>
+         This will override the official OpenAI API or your reverse proxy settings for both Plugins and OpenAI.
+        </li>
+        <li>
+         On initial setup, you may need to refresh your page twice to see all their supported models populate automatically.
+        </li>
+        <li>
+         Plugins: Functions Agent works with OpenRouter when using OpenAI models.
+        </li>
+        <li>
+         Plugins: Turn functions off to try plugins with non-OpenAI models (ChatGPT plugins will not work and others may not work as expected).
+        </li>
+        <li>
+         Plugins: Make sure
+         <code>
+          PLUGINS_USE_AZURE
+         </code>
+         is not set in your .env file when wanting to use OpenRouter and you have Azure configured.
+        </li>
+       </ul>
+       <hr/>
+       <h2 id="unofficial-apis">
+        Unofficial APIs
+       </h2>
+       <p>
+        <strong>
+         Important:
+        </strong>
+        Stability for Unofficial APIs are not guaranteed. Access methods to these APIs are hacky, prone to errors, and patching, and are marked lowest in priority in LibreChat's development.
+       </p>
+       <h3 id="bingai">
+        BingAI
+       </h3>
+       <p>
+        I recommend using Microsoft Edge for this:
+       </p>
+       <ul>
+        <li>
+         Navigate to
+         <strong>
+          <a href="https://www.bing.com/chat">
+           Bing Chat
+          </a>
+         </strong>
+        </li>
+        <li>
+         <strong>
+          Login
+         </strong>
+         if you haven't already
+        </li>
+        <li>
+         Initiate a conversation with Bing
+        </li>
+        <li>
+         Open
+         <code>
+          Dev Tools
+         </code>
+         , usually with
+         <code>
+          F12
+         </code>
+         or
+         <code>
+          Ctrl + Shift + C
+         </code>
+        </li>
+        <li>
+         Navigate to the
+         <code>
+          Network
+         </code>
+         tab
+        </li>
+        <li>
+         Look for
+         <code>
+          lsp.asx
+         </code>
+         (if it's not there look into the other entries for one with a
+         <strong>
+          very long
+         </strong>
+         cookie)
+        </li>
+        <li>
+         Copy the whole cookie value. (Yes it's very long 😉)
+        </li>
+        <li>
+         Use this
+         <strong>
+          "full cookie string"
+         </strong>
+         for your "BingAI Token"
+        </li>
+       </ul>
+       <p align="left">
+        <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d4dfd370-eddc-4694-ab16-076f913ff430" width="50%"/>
+       </p>
+       <h3 id="copilot-gpt4-service">
+        copilot-gpt4-service
+       </h3>
+       <p>
+        For this setup, an additional docker container will need to be setup.
+       </p>
+       <p>
+        <strong>
+         <em>
+          It is necessary to obtain your token first.
+         </em>
+        </strong>
+       </p>
+       <p>
+        Follow these instructions provided at
+        <strong>
+         <a href="https://github.com/aaamoon/copilot-gpt4-service#obtaining-copilot-token">
+          copilot-gpt4-service#obtaining-token
+         </a>
+        </strong>
+        and keep your token for use within the service. Additionally, more detailed instructions for setting copilot-gpt4-service are available at the
+        <a href="https://github.com/aaamoon/copilot-gpt4-service">
+         GitHub repo
+        </a>
+        .
+       </p>
+       <p>
+        It is
+        <em>
+         not
+        </em>
+        recommended to use the copilot token obtained directly, instead use the
+        <code>
+         SUPER_TOKEN
+        </code>
+        variable. (You can generate your own
+        <code>
+         SUPER_TOKEN
+        </code>
+        with the OpenSSL command
+        <code>
+         openssl rand -hex 16
+        </code>
+        and set the
+        <code>
+         ENABLE_SUPER_TOKEN
+        </code>
+        variable to
+        <code>
+         true
+        </code>
+        )
+       </p>
+       <ol>
+        <li>
+         <p>
+          Once your Docker environment is ready and your tokens are generated, proceed with this Docker run command to start the service:
+          <div class="highlight">
+           <pre><span></span><code><a href="#__codelineno-7-1" id="__codelineno-7-1" name="__codelineno-7-1"></a>docker run -d \
+<a href="#__codelineno-7-2" id="__codelineno-7-2" name="__codelineno-7-2"></a>  --name copilot-gpt4-service \
+<a href="#__codelineno-7-3" id="__codelineno-7-3" name="__codelineno-7-3"></a>  -e HOST=0.0.0.0 \
+<a href="#__codelineno-7-4" id="__codelineno-7-4" name="__codelineno-7-4"></a>  -e COPILOT_TOKEN=ghp_xxxxxxx \
+<a href="#__codelineno-7-5" id="__codelineno-7-5" name="__codelineno-7-5"></a>  -e SUPER_TOKEN=your_super_token \
+<a href="#__codelineno-7-6" id="__codelineno-7-6" name="__codelineno-7-6"></a>  -e ENABLE_SUPER_TOKEN=true \
+<a href="#__codelineno-7-7" id="__codelineno-7-7" name="__codelineno-7-7"></a>  --restart always \
+<a href="#__codelineno-7-8" id="__codelineno-7-8" name="__codelineno-7-8"></a>  -p 8080:8080 \
+<a href="#__codelineno-7-9" id="__codelineno-7-9" name="__codelineno-7-9"></a>  aaamoon/copilot-gpt4-service:latest
+</code></pre>
+          </div>
+         </p>
+        </li>
+        <li>
+         <p>
+          For Docker Compose users, use the equivalent yaml configuration provided below:
+          <div class="highlight">
+           <pre><span></span><code><a href="#__codelineno-8-1" id="__codelineno-8-1" name="__codelineno-8-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">'3.8'</span>
+<a href="#__codelineno-8-2" id="__codelineno-8-2" name="__codelineno-8-2"></a><span class="nt">services</span><span class="p">:</span>
+<a href="#__codelineno-8-3" id="__codelineno-8-3" name="__codelineno-8-3"></a><span class="w">  </span><span class="nt">copilot-gpt4-service</span><span class="p">:</span>
+<a href="#__codelineno-8-4" id="__codelineno-8-4" name="__codelineno-8-4"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aaamoon/copilot-gpt4-service:latest</span>
+<a href="#__codelineno-8-5" id="__codelineno-8-5" name="__codelineno-8-5"></a><span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<a href="#__codelineno-8-6" id="__codelineno-8-6" name="__codelineno-8-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HOST=0.0.0.0</span>
+<a href="#__codelineno-8-7" id="__codelineno-8-7" name="__codelineno-8-7"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">COPILOT_TOKEN=ghp_xxxxxxx</span><span class="w"> </span><span class="c1"># Default GitHub Copilot Token, if this item is set, the Token carried with the request will be ignored. Default is empty.</span>
+<a href="#__codelineno-8-8" id="__codelineno-8-8" name="__codelineno-8-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SUPER_TOKEN=your_super_token</span><span class="w"> </span><span class="c1"># Super Token is a user-defined standalone token that can access COPILOT_TOKEN above. This allows you to share the service without exposing your COPILOT_TOKEN. Multiple tokens are separated by commas. Default is empty.</span>
+<a href="#__codelineno-8-9" id="__codelineno-8-9" name="__codelineno-8-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ENABLE_SUPER_TOKEN=true</span><span class="w"> </span><span class="c1"># Whether to enable SUPER_TOKEN, default is false. If false, but COPILOT_TOKEN is not empty, COPILOT_TOKEN will be used without any authentication for all requests.</span>
+<a href="#__codelineno-8-10" id="__codelineno-8-10" name="__codelineno-8-10"></a><span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<a href="#__codelineno-8-11" id="__codelineno-8-11" name="__codelineno-8-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8080:8080</span>
+<a href="#__codelineno-8-12" id="__codelineno-8-12" name="__codelineno-8-12"></a><span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unless-stopped</span>
+<a href="#__codelineno-8-13" id="__codelineno-8-13" name="__codelineno-8-13"></a><span class="w">    </span><span class="nt">container_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">copilot-gpt4-service</span>
+</code></pre>
+          </div>
+         </p>
+        </li>
+        <li>
+         <p>
+          After setting up the Docker container for
+          <code>
+           copilot-gpt4-service
+          </code>
+          , you can add it to your
+          <code>
+           librechat.yaml
+          </code>
+          configuration. Here is an example configuration:
+          <div class="highlight">
+           <pre><span></span><code><a href="#__codelineno-9-1" id="__codelineno-9-1" name="__codelineno-9-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0.1</span>
+<a href="#__codelineno-9-2" id="__codelineno-9-2" name="__codelineno-9-2"></a><span class="nt">cache</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-9-3" id="__codelineno-9-3" name="__codelineno-9-3"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-9-4" id="__codelineno-9-4" name="__codelineno-9-4"></a><span class="w">  </span><span class="nt">custom</span><span class="p">:</span>
+<a href="#__codelineno-9-5" id="__codelineno-9-5" name="__codelineno-9-5"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"OpenAI</span><span class="nv"> </span><span class="s">via</span><span class="nv"> </span><span class="s">Copilot"</span>
+<a href="#__codelineno-9-6" id="__codelineno-9-6" name="__codelineno-9-6"></a><span class="w">      </span><span class="nt">apiKey</span><span class="p">:</span><span class="w"> </span><span class="s">"your_super_token"</span>
+<a href="#__codelineno-9-7" id="__codelineno-9-7" name="__codelineno-9-7"></a><span class="w">      </span><span class="nt">baseURL</span><span class="p">:</span><span class="w"> </span><span class="s">"http://[copilotgpt4service_host_ip]:8080/v1"</span>
+<a href="#__codelineno-9-8" id="__codelineno-9-8" name="__codelineno-9-8"></a><span class="w">      </span><span class="nt">models</span><span class="p">:</span>
+<a href="#__codelineno-9-9" id="__codelineno-9-9" name="__codelineno-9-9"></a><span class="w">        </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"gpt-4"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"gpt-3.5-turbo"</span><span class="p p-Indicator">]</span><span class="w"> </span><span class="c1"># *See Notes</span>
+<a href="#__codelineno-9-10" id="__codelineno-9-10" name="__codelineno-9-10"></a><span class="w">      </span><span class="nt">titleConvo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-9-11" id="__codelineno-9-11" name="__codelineno-9-11"></a><span class="w">      </span><span class="nt">titleModel</span><span class="p">:</span><span class="w"> </span><span class="s">"gpt-3.5-turbo"</span>
+<a href="#__codelineno-9-12" id="__codelineno-9-12" name="__codelineno-9-12"></a><span class="w">      </span><span class="nt">summarize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-9-13" id="__codelineno-9-13" name="__codelineno-9-13"></a><span class="w">      </span><span class="nt">summaryModel</span><span class="p">:</span><span class="w"> </span><span class="s">"gpt-3.5-turbo"</span>
+<a href="#__codelineno-9-14" id="__codelineno-9-14" name="__codelineno-9-14"></a><span class="w">      </span><span class="nt">forcePrompt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<a href="#__codelineno-9-15" id="__codelineno-9-15" name="__codelineno-9-15"></a><span class="w">      </span><span class="nt">modelDisplayLabel</span><span class="p">:</span><span class="w"> </span><span class="s">"OpenAI"</span>
+<a href="#__codelineno-9-16" id="__codelineno-9-16" name="__codelineno-9-16"></a><span class="w">      </span><span class="nt">dropParams</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"user"</span><span class="p p-Indicator">]</span>
+</code></pre>
+          </div>
+          Replace
+          <code>
+           your_super_token
+          </code>
+          with the token you obtained following the instructions highlighted above and
+          <code>
+           [copilotgpt4service_host_ip]
+          </code>
+          with the IP of your Docker host.
+          <strong>
+           <em>
+            *
+           </em>
+           See Notes
+          </strong>
+          *
+         </p>
+         <p>
+          Restart Librechat after adding the needed configuration, and select
+          <code>
+           OpenAI via Copilot
+          </code>
+          to start using!
+         </p>
+         <blockquote>
+          <p>
+           Notes: 
+-
+           <em>
+            Only allowed models are
+            <code>
+             gpt-4
+            </code>
+            and
+            <code>
+             gpt-3.5-turbo
+            </code>
+            . 
+-
+           </em>
+           *Advanced users can add this to their existing docker-compose file/existing docker network and avoid having to expose port 8080 (or any port) to the copilot-gpt4-service container.
+          </p>
+         </blockquote>
+        </li>
+       </ol>
+       <hr/>
+       <h2 id="conclusion">
+        Conclusion
+       </h2>
+       <h3>
+        That's it! You're all set. 🎉
+       </h3>
+       <hr/>
+       <blockquote>
+        <p>
+         ⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our
+         <a href="https://discord.librechat.ai">
+          #issues thread on our discord
+         </a>
+         or our
+         <a href="https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting">
+          troubleshooting discussion
+         </a>
+         on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+        </p>
+       </blockquote>
+      </article>
+     </div>
+     <script>
+      var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))
+     </script>
+    </div>
+    <button class="md-top md-icon" data-md-component="top" hidden="" type="button">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z">
+      </path>
+     </svg>
+     Back to top
+    </button>
+   </main>
+   <footer class="md-footer">
+    <div class="md-footer-meta md-typeset">
+     <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+       <div class="md-copyright__highlight">
+        © 2024
+        <a href="https://librechat.ai/" rel="noopener" target="_blank">
+         LibreChat
+        </a>
+       </div>
+       Made with
+       <a href="https://squidfunk.github.io/mkdocs-material/" rel="noopener" target="_blank">
+        Material for MkDocs
+       </a>
+      </div>
+      <div class="md-social">
+       <a class="md-social__link" href="https://discord.librechat.ai" rel="noopener" target="_blank" title="Discord">
+        <svg viewbox="0 0 640 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M524.531 69.836a1.5 1.5 0 0 0-.764-.7A485.065 485.065 0 0 0 404.081 32.03a1.816 1.816 0 0 0-1.923.91 337.461 337.461 0 0 0-14.9 30.6 447.848 447.848 0 0 0-134.426 0 309.541 309.541 0 0 0-15.135-30.6 1.89 1.89 0 0 0-1.924-.91 483.689 483.689 0 0 0-119.688 37.107 1.712 1.712 0 0 0-.788.676C39.068 183.651 18.186 294.69 28.43 404.354a2.016 2.016 0 0 0 .765 1.375 487.666 487.666 0 0 0 146.825 74.189 1.9 1.9 0 0 0 2.063-.676A348.2 348.2 0 0 0 208.12 430.4a1.86 1.86 0 0 0-1.019-2.588 321.173 321.173 0 0 1-45.868-21.853 1.885 1.885 0 0 1-.185-3.126 251.047 251.047 0 0 0 9.109-7.137 1.819 1.819 0 0 1 1.9-.256c96.229 43.917 200.41 43.917 295.5 0a1.812 1.812 0 0 1 1.924.233 234.533 234.533 0 0 0 9.132 7.16 1.884 1.884 0 0 1-.162 3.126 301.407 301.407 0 0 1-45.89 21.83 1.875 1.875 0 0 0-1 2.611 391.055 391.055 0 0 0 30.014 48.815 1.864 1.864 0 0 0 2.063.7A486.048 486.048 0 0 0 610.7 405.729a1.882 1.882 0 0 0 .765-1.352c12.264-126.783-20.532-236.912-86.934-334.541ZM222.491 337.58c-28.972 0-52.844-26.587-52.844-59.239s23.409-59.241 52.844-59.241c29.665 0 53.306 26.82 52.843 59.239 0 32.654-23.41 59.241-52.843 59.241Zm195.38 0c-28.971 0-52.843-26.587-52.843-59.239s23.409-59.241 52.843-59.241c29.667 0 53.307 26.82 52.844 59.239 0 32.654-23.177 59.241-52.844 59.241Z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://librechat.ai" rel="noopener" target="_blank" title="GitHub">
+        <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://yt.librechat.ai" rel="noopener" target="_blank" title="YouTube">
+        <svg viewbox="0 0 576 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305zm-317.51 213.508V175.185l142.739 81.205-142.739 81.201z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://linkedin.librechat.ai" rel="noopener" target="_blank" title="LinkedIn">
+        <svg viewbox="0 0 448 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3zM135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5zm282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9V416z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://demo.librechat.cfd" rel="noopener" target="_blank" title="Demo">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M278.5 215.6 23 471c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l57-57h68c49.7 0 97.9-14.4 139-41 11.1-7.2 5.5-23-7.8-23-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l81-24.3c2.5-.8 4.8-2.1 6.7-4l22.4-22.4c10.1-10.1 2.9-27.3-11.3-27.3H377c-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l112-33.6c4-1.2 7.4-3.9 9.3-7.7 10.8-21 16.4-44.5 16.4-68.6 0-41-16.3-80.3-45.3-109.3l-5.5-5.5C432.3 16.3 393 0 352 0s-80.3 16.3-109.3 45.3L139 149c-48 48-75 113.1-75 181v55.3l189.6-189.5c6.2-6.2 16.4-6.2 22.6 0 5.4 5.4 6.1 13.6 2.2 19.8z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://hf.librechat.ai" rel="noopener" target="_blank" title="Hugging Face">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M256 512a256 256 0 1 0 0-512 256 256 0 1 0 0 512zm132.1-199.2c12.3-3.8 24.3 6.9 19.3 18.7-25 59.1-83.2 100.5-151.1 100.5s-126.2-41.4-151.1-100.5c-5-11.8 7-22.5 19.3-18.7 39.7 12.2 84.5 19 131.8 19s92.1-6.8 131.8-19zm-170.5-84-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8zm160 0-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8z">
+         </path>
+        </svg>
+       </a>
+      </div>
+     </div>
+    </div>
+   </footer>
+  </div>
+  <div class="md-dialog" data-md-component="dialog">
+   <div class="md-dialog__inner md-typeset">
+   </div>
+  </div>
+  <div class="md-progress" data-md-component="progress" role="progressbar">
+  </div>
+  <script id="__config" type="application/json">
+   {"base": "../..", "features": ["header.autohide", "navigation.tabs", "navigation.tabs.sticky", "content.action.edit", "content.code.copy", "navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.expand", "navigation.indexes", "navigation.top"], "search": "../../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}
+  </script>
+  <script src="../../assets/javascripts/bundle.bd41221c.min.js">
+  </script>
+ </body>
+</html>

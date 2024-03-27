@@ -1,0 +1,1834 @@
+<!DOCTYPE html>
+<html class="no-js" lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <meta content="Learn how to use GitHub Desktop, VS Code extensions, and Git rebase to contribute in a quick and easy way." name="description"/>
+  <link href="index.html" rel="prev"/>
+  <link href="documentation_guidelines.html" rel="next"/>
+  <link href="../assets/favicon_package/favicon-32x32.png" rel="icon"/>
+  <meta content="mkdocs-1.5.3, mkdocs-material-9.5.15" name="generator"/>
+  <title>
+   🙌 Getting Started for Contributors - LibreChat
+  </title>
+  <link href="../assets/stylesheets/main.7e359304.min.css" rel="stylesheet"/>
+  <link href="../assets/stylesheets/palette.06af60db.min.css" rel="stylesheet"/>
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+  <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback" rel="stylesheet"/>
+  <style>
+   :root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}
+  </style>
+  <script>
+   __md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}
+  </script>
+  <meta content="article" property="og:type"/>
+  <meta content="🙌 Getting Started for Contributors" property="og:title"/>
+  <meta content="Learn how to use GitHub Desktop, VS Code extensions, and Git rebase to contribute in a quick and easy way." property="og:description"/>
+  <meta content="LibreChat" property="og:site_name"/>
+  <meta content="en_us" property="og:locale"/>
+  <meta content="Nonecontributions/how_to_contribute.html" property="og:url"/>
+  <meta content="summary" property="twitter:card"/>
+  <meta content="🙌 Getting Started for Contributors" property="twitter:title"/>
+  <meta content="Learn how to use GitHub Desktop, VS Code extensions, and Git rebase to contribute in a quick and easy way." property="twitter:description"/>
+ </head>
+ <body data-md-color-accent="purple" data-md-color-primary="cyan" data-md-color-scheme="slate" dir="ltr">
+  <input autocomplete="off" class="md-toggle" data-md-toggle="drawer" id="__drawer" type="checkbox"/>
+  <input autocomplete="off" class="md-toggle" data-md-toggle="search" id="__search" type="checkbox"/>
+  <label class="md-overlay" for="__drawer">
+  </label>
+  <div data-md-component="skip">
+   <a class="md-skip" href="#getting-started-for-contributors">
+    Skip to content
+   </a>
+  </div>
+  <div data-md-component="announce">
+  </div>
+  <header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+   <nav aria-label="Header" class="md-header__inner md-grid">
+    <a aria-label="LibreChat" class="md-header__button md-logo" data-md-component="logo" href="../index.html" title="LibreChat">
+     <img alt="logo" src="../assets/LibreChat.svg"/>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+     <div class="md-header__ellipsis">
+      <div class="md-header__topic">
+       <span class="md-ellipsis">
+        LibreChat
+       </span>
+      </div>
+      <div class="md-header__topic" data-md-component="header-topic">
+       <span class="md-ellipsis">
+        🙌 Getting Started for Contributors
+       </span>
+      </div>
+     </div>
+    </div>
+    <form class="md-header__option" data-md-component="palette">
+     <input aria-label="Switch to light mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="slate" id="__palette_0" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_1" hidden="" title="Switch to light mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+     <input aria-label="Switch to dark mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="default" id="__palette_1" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_0" hidden="" title="Switch to dark mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+    </form>
+    <script>
+     var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}
+    </script>
+    <label class="md-header__button md-icon" for="__search">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-search" data-md-component="search" role="dialog">
+     <label class="md-search__overlay" for="__search">
+     </label>
+     <div class="md-search__inner" role="search">
+      <form class="md-search__form" name="search">
+       <input aria-label="Search" autocapitalize="off" autocomplete="off" autocorrect="off" class="md-search__input" data-md-component="search-query" name="query" placeholder="Search" required="" spellcheck="false" type="text"/>
+       <label class="md-search__icon md-icon" for="__search">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+         </path>
+        </svg>
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z">
+         </path>
+        </svg>
+       </label>
+       <nav aria-label="Search" class="md-search__options">
+        <button aria-label="Clear" class="md-search__icon md-icon" tabindex="-1" title="Clear" type="reset">
+         <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z">
+          </path>
+         </svg>
+        </button>
+       </nav>
+      </form>
+      <div class="md-search__output">
+       <div class="md-search__scrollwrap" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+         <div class="md-search-result__meta">
+          Initializing search
+         </div>
+         <ol class="md-search-result__list" role="presentation">
+         </ol>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div class="md-header__source">
+     <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+      <div class="md-source__icon md-icon">
+       <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+        <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+        <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+        </path>
+       </svg>
+      </div>
+      <div class="md-source__repository">
+       danny-avila/LibreChat
+      </div>
+     </a>
+    </div>
+   </nav>
+   <nav aria-label="Tabs" class="md-tabs" data-md-component="tabs">
+    <div class="md-grid">
+     <ul class="md-tabs__list">
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../index.html">
+        Home
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../install/index.html">
+        Installation and Configuration
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../features/index.html">
+        Features
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../deployment/index.html">
+        Deployment
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../general_info/index.html">
+        General Information
+       </a>
+      </li>
+      <li class="md-tabs__item md-tabs__item--active">
+       <a class="md-tabs__link" href="index.html">
+        Contributing to LibreChat
+       </a>
+      </li>
+     </ul>
+    </div>
+   </nav>
+  </header>
+  <div class="md-container" data-md-component="container">
+   <main class="md-main" data-md-component="main">
+    <div class="md-main__inner md-grid">
+     <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Navigation" class="md-nav md-nav--primary md-nav--lifted" data-md-level="0">
+         <label class="md-nav__title" for="__drawer">
+          <a aria-label="LibreChat" class="md-nav__button md-logo" data-md-component="logo" href="../index.html" title="LibreChat">
+           <img alt="logo" src="../assets/LibreChat.svg"/>
+          </a>
+          LibreChat
+         </label>
+         <div class="md-nav__source">
+          <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+           <div class="md-source__icon md-icon">
+            <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+             <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+             <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+             </path>
+            </svg>
+           </div>
+           <div class="md-source__repository">
+            danny-avila/LibreChat
+           </div>
+          </a>
+         </div>
+         <ul class="md-nav__list" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="../index.html">
+            <span class="md-ellipsis">
+             Home
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../install/index.html">
+             <span class="md-ellipsis">
+              Installation and Configuration
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_2_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_2">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Installation and Configuration
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../install/installation/index.html">
+                <span class="md-ellipsis">
+                 Installation
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_2_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Installation
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/docker_compose_install.html">
+                  <span class="md-ellipsis">
+                   🐳 Docker Compose ✨(Recommended)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/container_install.html">
+                  <span class="md-ellipsis">
+                   🦦 Container (Podman)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/linux_install.html">
+                  <span class="md-ellipsis">
+                   🐧 Linux
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/mac_install.html">
+                  <span class="md-ellipsis">
+                   🍎 Mac
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/windows_install.html">
+                  <span class="md-ellipsis">
+                   🪟 Windows
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2_3" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../install/configuration/index.html">
+                <span class="md-ellipsis">
+                 Configuration
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_2_3_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_3">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Configuration
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/dotenv.html">
+                  <span class="md-ellipsis">
+                   ⚙️ Environment Variables
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/custom_config.html">
+                  <span class="md-ellipsis">
+                   🖥️ Custom Config
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/azure_openai.html">
+                  <span class="md-ellipsis">
+                   🅰️ Azure OpenAI
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/ai_endpoints.html">
+                  <span class="md-ellipsis">
+                   ✅ Compatible AI Endpoints
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/docker_override.html">
+                  <span class="md-ellipsis">
+                   🐋 Docker Compose Override
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/ai_setup.html">
+                  <span class="md-ellipsis">
+                   🤖 AI Setup
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/litellm.html">
+                  <span class="md-ellipsis">
+                   🚅 LiteLLM
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/free_ai_apis.html">
+                  <span class="md-ellipsis">
+                   💸 Free AI APIs
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/ollama.html">
+                  <span class="md-ellipsis">
+                   🦙 Ollama
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/user_auth_system.html">
+                  <span class="md-ellipsis">
+                   🛂 Authentication System
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/mongodb.html">
+                  <span class="md-ellipsis">
+                   🍃 Online MongoDB
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/default_language.html">
+                  <span class="md-ellipsis">
+                   🌍 Default Language
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/misc.html">
+                  <span class="md-ellipsis">
+                   🌀 Miscellaneous
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../features/index.html">
+             <span class="md-ellipsis">
+              Features
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_3_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_3">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Features
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../features/plugins/index.html">
+                <span class="md-ellipsis">
+                 Plugins
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_3_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_3_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Plugins
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/introduction.html">
+                  <span class="md-ellipsis">
+                   🔌 Introduction
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/make_your_own.html">
+                  <span class="md-ellipsis">
+                   🛠️ Make Your Own
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/chatgpt_plugins_openapi.html">
+                  <span class="md-ellipsis">
+                   🧑‍💼 Official ChatGPT Plugins
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/google_search.html">
+                  <span class="md-ellipsis">
+                   🔎 Google Search
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/stable_diffusion.html">
+                  <span class="md-ellipsis">
+                   🖌️ Stable Diffusion
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/wolfram.html">
+                  <span class="md-ellipsis">
+                   🧠 Wolfram|Alpha
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/azure_ai_search.html">
+                  <span class="md-ellipsis">
+                   ⚡ Azure AI Search
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/presets.html">
+               <span class="md-ellipsis">
+                🔖 Presets
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/mod_system.html">
+               <span class="md-ellipsis">
+                🔨 Automated Moderation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/token_usage.html">
+               <span class="md-ellipsis">
+                🪙 Token Usage
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/firebase.html">
+               <span class="md-ellipsis">
+                🔥 Firebase CDN Setup
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/manage_your_database.html">
+               <span class="md-ellipsis">
+                🍃 Manage Your Database
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/logging_system.html">
+               <span class="md-ellipsis">
+                🪵 Logging System
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/bing_jailbreak.html">
+               <span class="md-ellipsis">
+                😈 Bing Jailbreak
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/third_party.html">
+               <span class="md-ellipsis">
+                ✨ Third-Party Tools and Contributions
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_4" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../deployment/index.html">
+             <span class="md-ellipsis">
+              Deployment
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_4_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_4">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Deployment
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/introduction.html">
+               <span class="md-ellipsis">
+                🌐 Deployment Introduction
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/digitalocean.html">
+               <span class="md-ellipsis">
+                🌊 DigitalOcean ✨(Recommended)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/docker_ubuntu_deploy.html">
+               <span class="md-ellipsis">
+                🐳 Ubuntu Docker Deployment
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/huggingface.html">
+               <span class="md-ellipsis">
+                🤗 HuggingFace
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/railway.html">
+               <span class="md-ellipsis">
+                🛤️ Railway (one-click)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/linode.html">
+               <span class="md-ellipsis">
+                🐧 Linode
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/azure-terraform.html">
+               <span class="md-ellipsis">
+                ⚡ Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/render.html">
+               <span class="md-ellipsis">
+                ⏹️ Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/meilisearch_in_render.html">
+               <span class="md-ellipsis">
+                🔎 Meilisearch in Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/hetzner_ubuntu.html">
+               <span class="md-ellipsis">
+                🏗️ Hetzner
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/heroku.html">
+               <span class="md-ellipsis">
+                🌈 Heroku
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/zeabur.html">
+               <span class="md-ellipsis">
+                🦓 Zeabur
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/cloudflare.html">
+               <span class="md-ellipsis">
+                ☁️ Cloudflare
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/nginx.html">
+               <span class="md-ellipsis">
+                ↪️ Nginx
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/ngrok.html">
+               <span class="md-ellipsis">
+                🪨 Ngrok
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../deployment/traefik.html">
+               <span class="md-ellipsis">
+                🚦 Traefik
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_5" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../general_info/index.html">
+             <span class="md-ellipsis">
+              General Information
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_5_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_5">
+             <span class="md-nav__icon md-icon">
+             </span>
+             General Information
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/breaking_changes.html">
+               <span class="md-ellipsis">
+                ⚠️ Breaking Changes
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/multilingual_information.html">
+               <span class="md-ellipsis">
+                🌍 Multilingual Information
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/project_origin.html">
+               <span class="md-ellipsis">
+                🧭 Origin
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/tech_stack.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Tech Stack
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+           <input checked="" class="md-nav__toggle md-toggle" id="__nav_6" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="index.html">
+             <span class="md-ellipsis">
+              Contributing to LibreChat
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="true" aria-labelledby="__nav_6_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_6">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Contributing to LibreChat
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--active">
+              <input class="md-nav__toggle md-toggle" id="__toc" type="checkbox"/>
+              <label class="md-nav__link md-nav__link--active" for="__toc">
+               <span class="md-ellipsis">
+                🙌 Getting Started for Contributors
+               </span>
+               <span class="md-nav__icon md-icon">
+               </span>
+              </label>
+              <a class="md-nav__link md-nav__link--active" href="how_to_contribute.html">
+               <span class="md-ellipsis">
+                🙌 Getting Started for Contributors
+               </span>
+              </a>
+              <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+               <label class="md-nav__title" for="__toc">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Table of contents
+               </label>
+               <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#requirements">
+                  <span class="md-ellipsis">
+                   Requirements
+                  </span>
+                 </a>
+                 <nav aria-label="Requirements" class="md-nav">
+                  <ul class="md-nav__list">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#recommended-vscode-extensions">
+                     <span class="md-ellipsis">
+                      Recommended VSCode extensions
+                     </span>
+                    </a>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#prepare-the-environment">
+                  <span class="md-ellipsis">
+                   Prepare the Environment
+                  </span>
+                 </a>
+                 <nav aria-label="Prepare the Environment" class="md-nav">
+                  <ul class="md-nav__list">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#github">
+                     <span class="md-ellipsis">
+                      GitHub
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#open-it-in-vs-code">
+                     <span class="md-ellipsis">
+                      Open it in VS Code
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#prepare-librechat">
+                     <span class="md-ellipsis">
+                      Prepare LibreChat
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#development-workflow">
+                     <span class="md-ellipsis">
+                      Development Workflow
+                     </span>
+                    </a>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#perform-tests-locally">
+                  <span class="md-ellipsis">
+                   Perform Tests Locally
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#commit-push-pull-request-pr">
+                  <span class="md-ellipsis">
+                   Commit, Push, Pull Request (PR)
+                  </span>
+                 </a>
+                 <nav aria-label="Commit, Push, Pull Request (PR)" class="md-nav">
+                  <ul class="md-nav__list">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#make-a-commit">
+                     <span class="md-ellipsis">
+                      Make a Commit
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#push-changes">
+                     <span class="md-ellipsis">
+                      Push Changes
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#make-a-pull-request-pr">
+                     <span class="md-ellipsis">
+                      Make a Pull Request (PR)
+                     </span>
+                    </a>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#reverting-commits-safely">
+                  <span class="md-ellipsis">
+                   Reverting Commits Safely
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="documentation_guidelines.html">
+               <span class="md-ellipsis">
+                📝 Documentation Guidelines
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="translation_contribution.html">
+               <span class="md-ellipsis">
+                🌍 Contribute a Translation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="coding_conventions.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Code Standards and Conventions
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="testing.html">
+               <span class="md-ellipsis">
+                🧪 Testing During Development
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+         <label class="md-nav__title" for="__toc">
+          <span class="md-nav__icon md-icon">
+          </span>
+          Table of contents
+         </label>
+         <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#requirements">
+            <span class="md-ellipsis">
+             Requirements
+            </span>
+           </a>
+           <nav aria-label="Requirements" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#recommended-vscode-extensions">
+               <span class="md-ellipsis">
+                Recommended VSCode extensions
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#prepare-the-environment">
+            <span class="md-ellipsis">
+             Prepare the Environment
+            </span>
+           </a>
+           <nav aria-label="Prepare the Environment" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#github">
+               <span class="md-ellipsis">
+                GitHub
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#open-it-in-vs-code">
+               <span class="md-ellipsis">
+                Open it in VS Code
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#prepare-librechat">
+               <span class="md-ellipsis">
+                Prepare LibreChat
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#development-workflow">
+               <span class="md-ellipsis">
+                Development Workflow
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#perform-tests-locally">
+            <span class="md-ellipsis">
+             Perform Tests Locally
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#commit-push-pull-request-pr">
+            <span class="md-ellipsis">
+             Commit, Push, Pull Request (PR)
+            </span>
+           </a>
+           <nav aria-label="Commit, Push, Pull Request (PR)" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#make-a-commit">
+               <span class="md-ellipsis">
+                Make a Commit
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#push-changes">
+               <span class="md-ellipsis">
+                Push Changes
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#make-a-pull-request-pr">
+               <span class="md-ellipsis">
+                Make a Pull Request (PR)
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#reverting-commits-safely">
+            <span class="md-ellipsis">
+             Reverting Commits Safely
+            </span>
+           </a>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-content" data-md-component="content">
+      <article class="md-content__inner md-typeset">
+       <a class="md-content__button md-icon" href="https://github.com/danny-avila/LibreChat/blob/main/docs/contributions/how_to_contribute.md" title="Edit this page">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z">
+         </path>
+        </svg>
+       </a>
+       <h1 id="getting-started-for-contributors">
+        Getting Started for Contributors
+       </h1>
+       <div class="admonition danger">
+        <p class="admonition-title">
+         Important:
+        </p>
+        <ul>
+         <li>
+          📚 If you're new to concepts like
+          <strong>
+           repositories
+          </strong>
+          ,
+          <strong>
+           pull requests (PRs)
+          </strong>
+          ,
+          <strong>
+           forks
+          </strong>
+          , and
+          <strong>
+           branches
+          </strong>
+          , begin with the official GitHub documentation:
+          <ul>
+           <li>
+            <a href="https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/getting-started/about-collaborative-development-models">
+             Getting Started - About Collaborative Development Models
+            </a>
+           </li>
+          </ul>
+         </li>
+         <li>
+          🌐 For contributing translations, refer to:
+          <ul>
+           <li>
+            <a href="translation_contribution.html">
+             Contribute a Translation
+            </a>
+           </li>
+          </ul>
+         </li>
+         <li>
+          💻 To understand our coding standards, see:
+          <ul>
+           <li>
+            <a href="coding_conventions.html">
+             Coding Conventions
+            </a>
+           </li>
+          </ul>
+         </li>
+         <li>
+          👥 Our contributor guidelines can be found at:
+          <ul>
+           <li>
+            <a href="https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md">
+             Contributor Guidelines
+            </a>
+           </li>
+          </ul>
+         </li>
+         <li>
+          📝 For updates and additions to documentation, please review:
+          <ul>
+           <li>
+            <a href="documentation_guidelines.html">
+             Documentation Guidelines
+            </a>
+           </li>
+          </ul>
+         </li>
+         <li>
+          🧪 Consult the following guide to perform local tests before submitting a PR:
+          <ul>
+           <li>
+            <a href="testing.html">
+             Local Test Guide
+            </a>
+           </li>
+          </ul>
+         </li>
+        </ul>
+       </div>
+       <h2 id="requirements">
+        Requirements
+       </h2>
+       <ol>
+        <li>
+         ✅
+         <a href="https://git-scm.com/downloads">
+          Git
+         </a>
+         -
+         <ins>
+          Essential
+         </ins>
+        </li>
+        <li>
+         ✅
+         <a href="https://nodejs.org/en/download">
+          Node.js
+         </a>
+         -
+         <ins>
+          Essential
+         </ins>
+         , use the LTS version
+        </li>
+        <li>
+         ✅
+         <a href="https://git-lfs.com/">
+          Git LFS
+         </a>
+         -
+         <ins>
+          Useful
+         </ins>
+         for uploading files with larger sizes.
+        </li>
+        <li>
+         ✅
+         <a href="https://desktop.github.com/">
+          Github Desktop
+         </a>
+         -
+         <ins>
+          Optional
+         </ins>
+        </li>
+        <li>
+         ✨
+         <a href="https://code.visualstudio.com/Download">
+          VSCode
+         </a>
+         -
+         <ins>
+          Recommended
+         </ins>
+         Source-code Editor
+        </li>
+        <li>
+         🐳
+         <a href="https://www.docker.com/products/docker-desktop/">
+          Docker Desktop
+         </a>
+         -
+         <ins>
+          Recommended
+         </ins>
+         (more on that later)
+        </li>
+       </ol>
+       <h3 id="recommended-vscode-extensions">
+        Recommended VSCode extensions
+       </h3>
+       <p>
+        It is recommended to install the following extensions in VS Code:
+       </p>
+       <ul>
+        <li>
+         <a href="https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode">
+          Prettier
+         </a>
+        </li>
+        <li>
+         <a href="https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint">
+          ESLint
+         </a>
+        </li>
+        <li>
+         <a href="https://marketplace.visualstudio.com/items?itemName=eamodio.gitlens">
+          GitLens
+         </a>
+        </li>
+       </ul>
+       <h2 id="prepare-the-environment">
+        Prepare the Environment
+       </h2>
+       <details class="question">
+        <summary>
+         npm vs Docker
+        </summary>
+        <p>
+         While Docker is our preferred method for installing LibreChat due to its ease of setting up and consistency across different environments, we strongly recommend using npm for development purposes. This recommendation is based on several advantages that npm offers for developers:
+        </p>
+        <ul>
+         <li>
+          Faster Iteration: npm allows for quicker iteration cycles during development. Changes made to the codebase can be immediately reflected without the need to rebuild the entire Docker image, leading to a more efficient development process.
+         </li>
+         <li>
+          Direct Dependency Management: Using npm gives developers direct control over the dependencies. It’s easier to install, update, or remove packages, and manage project dependencies in real-time, which is crucial for development.
+         </li>
+         <li>
+          Simplified Debugging: Debugging is more straightforward with npm, as developers can directly interact with the code and tools without the abstraction layer that Docker introduces. This direct interaction facilitates easier identification and resolution of issues.
+         </li>
+         <li>
+          Native Environment: Developing with npm allows the application to run in its native environment on your machine. This can help in catching environment-specific issues early in the development cycle.
+         </li>
+        </ul>
+        <p>
+         For these reasons, while Docker remains the recommended installation method for production and distribution due to its containerization benefits, npm is the preferred choice for development within the LibreChat ecosystem.
+        </p>
+       </details>
+       <h3 id="github">
+        GitHub
+       </h3>
+       <ul>
+        <li>
+         <p>
+          Fork the LibreChat repository:
+          <a href="https://github.com/danny-avila/LibreChat/fork">
+           https://github.com/danny-avila/LibreChat/fork
+          </a>
+         </p>
+        </li>
+        <li>
+         <p>
+          Create a branch on your fork, give it a proper name and point it to the original repository
+         </p>
+        </li>
+       </ul>
+       <details class="info">
+        <summary>
+         Screenshots:
+        </summary>
+        <p>
+         <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/c4cff4d5-70ea-4263-9156-e7f220e049eb">
+          <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/8ec85f02-f0f7-4cef-bb1c-6ff1bd1d7023">
+           <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/09e4ea5c-0753-470d-a0c5-8281a523a81b"/>
+          </img>
+         </img>
+        </p>
+       </details>
+       <ul>
+        <li>
+         Download your new branch on your local pc
+        </li>
+       </ul>
+       <div class="admonition quote">
+        <div class="highlight">
+         <span class="filename">
+          Download your LibreChat branch
+         </span>
+         <pre><span></span><code><a href="#__codelineno-0-1" id="__codelineno-0-1" name="__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>branch-name<span class="w"> </span>https://github.com/username/LibreChat.git
+</code></pre>
+        </div>
+        <div class="admonition warning">
+         <p class="admonition-title">
+          note:
+         </p>
+         <p>
+          replace
+          <code>
+           branch-name
+          </code>
+          and
+          <code>
+           username
+          </code>
+          with your own
+         </p>
+        </div>
+       </div>
+       <h3 id="open-it-in-vs-code">
+        Open it in VS Code
+       </h3>
+       <ul>
+        <li>
+         Once you successfully cloned your branch
+        </li>
+        <li>
+         Navigate to the LibreChat folder:
+         <div class="highlight">
+          <pre><span></span><code><a href="#__codelineno-1-1" id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="nb">cd</span><span class="w"> </span>LibreChat
+</code></pre>
+         </div>
+        </li>
+        <li>
+         Open it in VS Code:
+         <div class="highlight">
+          <pre><span></span><code><a href="#__codelineno-2-1" id="__codelineno-2-1" name="__codelineno-2-1"></a>code<span class="w"> </span>.
+</code></pre>
+         </div>
+        </li>
+       </ul>
+       <h3 id="prepare-librechat">
+        Prepare LibreChat
+       </h3>
+       <ul>
+        <li>
+         <p>
+          Open the terminal in vscode with
+          <span class="keys">
+           <kbd class="key-control">
+            Ctrl
+           </kbd>
+           <span>
+            +
+           </span>
+           <kbd class="key-shift">
+            Shift
+           </kbd>
+           <span>
+            +
+           </span>
+           <kbd class="key-grave">
+            `
+           </kbd>
+          </span>
+         </p>
+         <ul>
+          <li>
+           Alternatively you can use
+           <span class="keys">
+            <kbd class="key-control">
+             Ctrl
+            </kbd>
+            <span>
+             +
+            </span>
+            <kbd class="key-j">
+             J
+            </kbd>
+           </span>
+           to open the bottom pane and select the terminal from there
+          </li>
+         </ul>
+        </li>
+        <li>
+         <p>
+          Install the LibreChat depencencies
+         </p>
+         <ul>
+          <li>
+           <code>
+            npm ci
+           </code>
+          </li>
+          <li>
+           <code>
+            npm run frontend
+           </code>
+          </li>
+         </ul>
+        </li>
+        <li>
+         .env Configuration
+         <ul>
+          <li>
+           Create the
+           <mark>
+            .env
+           </mark>
+           file. If you dont have one handy, you can duplicate the
+           <mark>
+            .env.example
+           </mark>
+           file and configure it.
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <div class="admonition warning">
+        <p class="admonition-title">
+         .env
+        </p>
+        <p>
+         The default values in the example file should be fine, except for
+         <code>
+          MONGO_URI
+         </code>
+         . You will need to provide your own. You can use
+         <a href="https://www.mongodb.com/try/download/community">
+          MongoDB Community Server
+         </a>
+         ,
+         <a href="https://www.mongodb.com/cloud/atlas/register">
+          MongoDB Atlas Cloud
+         </a>
+         , see this doc to setup Mongodb Atlas Cloud:
+         <a href="../install/configuration/mongodb.html">
+          Online MongoDB
+         </a>
+         .
+        </p>
+        <p>
+         You can also enable verbose server output in the console with
+         <code>
+          DEBUG_CONSOLE
+         </code>
+         set to true.
+        </p>
+       </div>
+       <h3 id="development-workflow">
+        Development Workflow
+       </h3>
+       <p>
+        To efficiently work on LibreChat, use the following commands:
+       </p>
+       <ul>
+        <li>
+         <p>
+          <strong>
+           Starting the Backend:
+          </strong>
+         </p>
+         <ul>
+          <li>
+           Use
+           <code>
+            npm run backend
+           </code>
+           to start LibreChat normally.
+          </li>
+          <li>
+           For active development,
+           <code>
+            npm run backend:dev
+           </code>
+           will monitor backend changes.
+          </li>
+          <li>
+           Access the running application at
+           <code>
+            http://localhost:3080/
+           </code>
+           .
+          </li>
+         </ul>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Running the Frontend in Development Mode:
+          </strong>
+         </p>
+         <ul>
+          <li>
+           ❗
+           <strong>
+            Ensure the backend is also running.
+           </strong>
+          </li>
+          <li>
+           Execute
+           <code>
+            npm run frontend:dev
+           </code>
+           to actively monitor frontend changes.
+          </li>
+          <li>
+           View the frontend in development mode at
+           <code>
+            http://localhost:3090/
+           </code>
+           .
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <div class="admonition tip">
+        <p class="admonition-title">
+         Pro Tip:
+        </p>
+        <p>
+         To avoid the hassle of restarting both frontend and backend during frontend development, simply run
+         <code>
+          npm run frontend:dev
+         </code>
+         for real-time updates on port 3090.
+        </p>
+       </div>
+       <h2 id="perform-tests-locally">
+        Perform Tests Locally
+       </h2>
+       <p>
+        Before submitting your updates, it’s crucial to verify they pass all tests. Follow these steps to run tests locally, see:
+        <a href="testing.html">
+         Perform Tests Locally
+        </a>
+       </p>
+       <p>
+        By running these tests, you can ensure your contributions are robust and ready for integration.
+       </p>
+       <h2 id="commit-push-pull-request-pr">
+        Commit, Push, Pull Request (PR)
+       </h2>
+       <h3 id="make-a-commit">
+        Make a Commit
+       </h3>
+       <p>
+        <strong>
+         Commits
+        </strong>
+        should be made when you reach a logical checkpoint in your development process. This could be after a new feature is added, a bug is fixed, or a set of related changes is completed. Each commit should contain a clear message that explains what changes have been made and why.
+       </p>
+       <p>
+        <strong>
+         Example:
+        </strong>
+        <div class="highlight">
+         <pre><span></span><code><a href="#__codelineno-3-1" id="__codelineno-3-1" name="__codelineno-3-1"></a>git<span class="w"> </span>add<span class="w"> </span>.
+<a href="#__codelineno-3-2" id="__codelineno-3-2" name="__codelineno-3-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"Add login functionality"</span>
+</code></pre>
+        </div>
+       </p>
+       <h3 id="push-changes">
+        Push Changes
+       </h3>
+       <p>
+        You should
+        <strong>
+         push
+        </strong>
+        your changes to the remote repository after a series of commits that complete a feature or fix a known issue. Pushing often helps to ensure that your changes are safely stored remotely and makes collaboration with others easier.
+       </p>
+       <p>
+        <strong>
+         Example:
+        </strong>
+        <div class="highlight">
+         <pre><span></span><code><a href="#__codelineno-4-1" id="__codelineno-4-1" name="__codelineno-4-1"></a>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>feature-branch-name
+</code></pre>
+        </div>
+       </p>
+       <h3 id="make-a-pull-request-pr">
+        Make a Pull Request (PR)
+       </h3>
+       <p>
+        A
+        <strong>
+         Pull Request
+        </strong>
+        should be made when you want to merge your changes from a feature branch into the main branch. Before creating a PR, make sure to:
+       </p>
+       <ol>
+        <li>
+         Pull the latest changes from the main branch and resolve any conflicts.
+        </li>
+        <li>
+         Push your updated feature branch.
+        </li>
+        <li>
+         Ensure your code adheres to the project's style and contribution guidelines.
+        </li>
+       </ol>
+       <p>
+        <strong>
+         Example:
+        </strong>
+        <div class="highlight">
+         <pre><span></span><code><a href="#__codelineno-5-1" id="__codelineno-5-1" name="__codelineno-5-1"></a>git<span class="w"> </span>checkout<span class="w"> </span>main
+<a href="#__codelineno-5-2" id="__codelineno-5-2" name="__codelineno-5-2"></a>git<span class="w"> </span>pull<span class="w"> </span>origin<span class="w"> </span>main
+<a href="#__codelineno-5-3" id="__codelineno-5-3" name="__codelineno-5-3"></a>git<span class="w"> </span>checkout<span class="w"> </span>feature-branch-name
+<a href="#__codelineno-5-4" id="__codelineno-5-4" name="__codelineno-5-4"></a>git<span class="w"> </span>merge<span class="w"> </span>main
+<a href="#__codelineno-5-5" id="__codelineno-5-5" name="__codelineno-5-5"></a><span class="c1"># Resolve conflicts if any</span>
+<a href="#__codelineno-5-6" id="__codelineno-5-6" name="__codelineno-5-6"></a>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>feature-branch-name
+<a href="#__codelineno-5-7" id="__codelineno-5-7" name="__codelineno-5-7"></a><span class="c1"># Now go to GitHub and open a pull request</span>
+</code></pre>
+        </div>
+        When you are ready, open your repository in a browser and click on "Contribute"
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/32828263/4da0a287-e6d3-4e75-af6b-4cffc28f593c"/>
+       </p>
+       <div class="admonition info">
+        <p class="admonition-title">
+         Note:
+        </p>
+        <p>
+         Remember to provide a detailed description in your PR that explains the changes and the value they add to the project. It's also good practice to reference any related issues.
+        </p>
+       </div>
+       <div class="admonition tip">
+        <p class="admonition-title">
+         Tip
+        </p>
+        <p>
+         You can use GitHub Desktop to monitor what you've changed.
+         <img alt="image" src="https://github.com/Berry-13/LibreChat/assets/81851188/a04a7e81-7c75-4c77-8463-d35f603bedf7"/>
+        </p>
+       </div>
+       <div class="admonition warning">
+        <p class="admonition-title">
+         Warning
+        </p>
+        <p>
+         If
+         <code>
+          git commit
+         </code>
+         fails due to ESLint errors, read the error message and understand what's wrong. It could be an unused variable or other issues.
+        </p>
+       </div>
+       <h2 id="reverting-commits-safely">
+        Reverting Commits Safely
+       </h2>
+       <p>
+        If you need to undo changes in your feature branch, proceed with caution. This guide is for situations where you have commits that need to be removed and there are no open Pull Requests (PRs) or ongoing work on the branch.
+       </p>
+       <div class="admonition danger">
+        <p class="admonition-title">
+         Warning
+        </p>
+        <p>
+         Force pushing can rewrite history and potentially disrupt the workflow for others. Use this method only as a last resort.
+        </p>
+       </div>
+       <ol>
+        <li>
+         Update your local repository with the latest changes from the feature branch:
+         <div class="highlight">
+          <pre><span></span><code><a href="#__codelineno-6-1" id="__codelineno-6-1" name="__codelineno-6-1"></a>git<span class="w"> </span>pull<span class="w"> </span>origin<span class="w"> </span>feature-branch-name
+</code></pre>
+         </div>
+        </li>
+        <li>
+         Review the commit history to determine how many commits to revert:
+         <div class="highlight">
+          <pre><span></span><code><a href="#__codelineno-7-1" id="__codelineno-7-1" name="__codelineno-7-1"></a>git<span class="w"> </span>log
+</code></pre>
+         </div>
+        </li>
+        <li>
+         <p>
+          Start an interactive rebase session for the last
+          <code>
+           N
+          </code>
+          commits you wish to revert:
+          <div class="highlight">
+           <pre><span></span><code><a href="#__codelineno-8-1" id="__codelineno-8-1" name="__codelineno-8-1"></a>git<span class="w"> </span>rebase<span class="w"> </span>-i<span class="w"> </span>HEAD~N
+</code></pre>
+          </div>
+          Replace
+          <code>
+           N
+          </code>
+          with the number of commits you want to go back, such as
+          <code>
+           2
+          </code>
+          for two commits or
+          <code>
+           100
+          </code>
+          for a hundred.
+         </p>
+        </li>
+        <li>
+         <p>
+          In the interactive editor, replace
+          <code>
+           pick
+          </code>
+          with
+          <code>
+           drop
+          </code>
+          for the commits you want to remove. Then save and exit the editor (usually with
+          <span class="keys">
+           <kbd class="key-escape">
+            Esc
+           </kbd>
+          </span>
+          followed by typing
+          <code>
+           :wq
+          </code>
+          ).
+         </p>
+        </li>
+        <li>
+         <p>
+          Force push the changes to the remote repository:
+          <div class="highlight">
+           <pre><span></span><code><a href="#__codelineno-9-1" id="__codelineno-9-1" name="__codelineno-9-1"></a>git<span class="w"> </span>push<span class="w"> </span>--force<span class="w"> </span>origin<span class="w"> </span>feature-branch-name
+</code></pre>
+          </div>
+         </p>
+        </li>
+       </ol>
+      </article>
+     </div>
+     <script>
+      var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))
+     </script>
+    </div>
+    <button class="md-top md-icon" data-md-component="top" hidden="" type="button">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z">
+      </path>
+     </svg>
+     Back to top
+    </button>
+   </main>
+   <footer class="md-footer">
+    <div class="md-footer-meta md-typeset">
+     <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+       <div class="md-copyright__highlight">
+        © 2024
+        <a href="https://librechat.ai/" rel="noopener" target="_blank">
+         LibreChat
+        </a>
+       </div>
+       Made with
+       <a href="https://squidfunk.github.io/mkdocs-material/" rel="noopener" target="_blank">
+        Material for MkDocs
+       </a>
+      </div>
+      <div class="md-social">
+       <a class="md-social__link" href="https://discord.librechat.ai" rel="noopener" target="_blank" title="Discord">
+        <svg viewbox="0 0 640 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M524.531 69.836a1.5 1.5 0 0 0-.764-.7A485.065 485.065 0 0 0 404.081 32.03a1.816 1.816 0 0 0-1.923.91 337.461 337.461 0 0 0-14.9 30.6 447.848 447.848 0 0 0-134.426 0 309.541 309.541 0 0 0-15.135-30.6 1.89 1.89 0 0 0-1.924-.91 483.689 483.689 0 0 0-119.688 37.107 1.712 1.712 0 0 0-.788.676C39.068 183.651 18.186 294.69 28.43 404.354a2.016 2.016 0 0 0 .765 1.375 487.666 487.666 0 0 0 146.825 74.189 1.9 1.9 0 0 0 2.063-.676A348.2 348.2 0 0 0 208.12 430.4a1.86 1.86 0 0 0-1.019-2.588 321.173 321.173 0 0 1-45.868-21.853 1.885 1.885 0 0 1-.185-3.126 251.047 251.047 0 0 0 9.109-7.137 1.819 1.819 0 0 1 1.9-.256c96.229 43.917 200.41 43.917 295.5 0a1.812 1.812 0 0 1 1.924.233 234.533 234.533 0 0 0 9.132 7.16 1.884 1.884 0 0 1-.162 3.126 301.407 301.407 0 0 1-45.89 21.83 1.875 1.875 0 0 0-1 2.611 391.055 391.055 0 0 0 30.014 48.815 1.864 1.864 0 0 0 2.063.7A486.048 486.048 0 0 0 610.7 405.729a1.882 1.882 0 0 0 .765-1.352c12.264-126.783-20.532-236.912-86.934-334.541ZM222.491 337.58c-28.972 0-52.844-26.587-52.844-59.239s23.409-59.241 52.844-59.241c29.665 0 53.306 26.82 52.843 59.239 0 32.654-23.41 59.241-52.843 59.241Zm195.38 0c-28.971 0-52.843-26.587-52.843-59.239s23.409-59.241 52.843-59.241c29.667 0 53.307 26.82 52.844 59.239 0 32.654-23.177 59.241-52.844 59.241Z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://librechat.ai" rel="noopener" target="_blank" title="GitHub">
+        <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://yt.librechat.ai" rel="noopener" target="_blank" title="YouTube">
+        <svg viewbox="0 0 576 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305zm-317.51 213.508V175.185l142.739 81.205-142.739 81.201z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://linkedin.librechat.ai" rel="noopener" target="_blank" title="LinkedIn">
+        <svg viewbox="0 0 448 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3zM135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5zm282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9V416z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://demo.librechat.cfd" rel="noopener" target="_blank" title="Demo">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M278.5 215.6 23 471c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l57-57h68c49.7 0 97.9-14.4 139-41 11.1-7.2 5.5-23-7.8-23-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l81-24.3c2.5-.8 4.8-2.1 6.7-4l22.4-22.4c10.1-10.1 2.9-27.3-11.3-27.3H377c-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l112-33.6c4-1.2 7.4-3.9 9.3-7.7 10.8-21 16.4-44.5 16.4-68.6 0-41-16.3-80.3-45.3-109.3l-5.5-5.5C432.3 16.3 393 0 352 0s-80.3 16.3-109.3 45.3L139 149c-48 48-75 113.1-75 181v55.3l189.6-189.5c6.2-6.2 16.4-6.2 22.6 0 5.4 5.4 6.1 13.6 2.2 19.8z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://hf.librechat.ai" rel="noopener" target="_blank" title="Hugging Face">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M256 512a256 256 0 1 0 0-512 256 256 0 1 0 0 512zm132.1-199.2c12.3-3.8 24.3 6.9 19.3 18.7-25 59.1-83.2 100.5-151.1 100.5s-126.2-41.4-151.1-100.5c-5-11.8 7-22.5 19.3-18.7 39.7 12.2 84.5 19 131.8 19s92.1-6.8 131.8-19zm-170.5-84-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8zm160 0-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8z">
+         </path>
+        </svg>
+       </a>
+      </div>
+     </div>
+    </div>
+   </footer>
+  </div>
+  <div class="md-dialog" data-md-component="dialog">
+   <div class="md-dialog__inner md-typeset">
+   </div>
+  </div>
+  <div class="md-progress" data-md-component="progress" role="progressbar">
+  </div>
+  <script id="__config" type="application/json">
+   {"base": "..", "features": ["header.autohide", "navigation.tabs", "navigation.tabs.sticky", "content.action.edit", "content.code.copy", "navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.expand", "navigation.indexes", "navigation.top"], "search": "../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}
+  </script>
+  <script src="../assets/javascripts/bundle.bd41221c.min.js">
+  </script>
+ </body>
+</html>

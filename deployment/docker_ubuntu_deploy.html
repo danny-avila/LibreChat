@@ -1,0 +1,1856 @@
+<!DOCTYPE html>
+<html class="no-js" lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <meta content="These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server" name="description"/>
+  <link href="digitalocean.html" rel="prev"/>
+  <link href="huggingface.html" rel="next"/>
+  <link href="../assets/favicon_package/favicon-32x32.png" rel="icon"/>
+  <meta content="mkdocs-1.5.3, mkdocs-material-9.5.15" name="generator"/>
+  <title>
+   🐳 Ubuntu Docker Deployment - LibreChat
+  </title>
+  <link href="../assets/stylesheets/main.7e359304.min.css" rel="stylesheet"/>
+  <link href="../assets/stylesheets/palette.06af60db.min.css" rel="stylesheet"/>
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+  <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback" rel="stylesheet"/>
+  <style>
+   :root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}
+  </style>
+  <script>
+   __md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}
+  </script>
+  <meta content="article" property="og:type"/>
+  <meta content="🐳 Ubuntu Docker Deployment" property="og:title"/>
+  <meta content="These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server" property="og:description"/>
+  <meta content="LibreChat" property="og:site_name"/>
+  <meta content="en_us" property="og:locale"/>
+  <meta content="Nonedeployment/docker_ubuntu_deploy.html" property="og:url"/>
+  <meta content="summary" property="twitter:card"/>
+  <meta content="🐳 Ubuntu Docker Deployment" property="twitter:title"/>
+  <meta content="These instructions are designed for someone starting from scratch for a Docker Installation on a remote Ubuntu server" property="twitter:description"/>
+ </head>
+ <body data-md-color-accent="purple" data-md-color-primary="cyan" data-md-color-scheme="slate" dir="ltr">
+  <input autocomplete="off" class="md-toggle" data-md-toggle="drawer" id="__drawer" type="checkbox"/>
+  <input autocomplete="off" class="md-toggle" data-md-toggle="search" id="__search" type="checkbox"/>
+  <label class="md-overlay" for="__drawer">
+  </label>
+  <div data-md-component="skip">
+   <a class="md-skip" href="#ubuntu-docker-deployment-guide">
+    Skip to content
+   </a>
+  </div>
+  <div data-md-component="announce">
+  </div>
+  <header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+   <nav aria-label="Header" class="md-header__inner md-grid">
+    <a aria-label="LibreChat" class="md-header__button md-logo" data-md-component="logo" href="../index.html" title="LibreChat">
+     <img alt="logo" src="../assets/LibreChat.svg"/>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+     <div class="md-header__ellipsis">
+      <div class="md-header__topic">
+       <span class="md-ellipsis">
+        LibreChat
+       </span>
+      </div>
+      <div class="md-header__topic" data-md-component="header-topic">
+       <span class="md-ellipsis">
+        🐳 Ubuntu Docker Deployment
+       </span>
+      </div>
+     </div>
+    </div>
+    <form class="md-header__option" data-md-component="palette">
+     <input aria-label="Switch to light mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="slate" id="__palette_0" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_1" hidden="" title="Switch to light mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+     <input aria-label="Switch to dark mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="default" id="__palette_1" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_0" hidden="" title="Switch to dark mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+    </form>
+    <script>
+     var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}
+    </script>
+    <label class="md-header__button md-icon" for="__search">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-search" data-md-component="search" role="dialog">
+     <label class="md-search__overlay" for="__search">
+     </label>
+     <div class="md-search__inner" role="search">
+      <form class="md-search__form" name="search">
+       <input aria-label="Search" autocapitalize="off" autocomplete="off" autocorrect="off" class="md-search__input" data-md-component="search-query" name="query" placeholder="Search" required="" spellcheck="false" type="text"/>
+       <label class="md-search__icon md-icon" for="__search">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+         </path>
+        </svg>
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z">
+         </path>
+        </svg>
+       </label>
+       <nav aria-label="Search" class="md-search__options">
+        <button aria-label="Clear" class="md-search__icon md-icon" tabindex="-1" title="Clear" type="reset">
+         <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z">
+          </path>
+         </svg>
+        </button>
+       </nav>
+      </form>
+      <div class="md-search__output">
+       <div class="md-search__scrollwrap" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+         <div class="md-search-result__meta">
+          Initializing search
+         </div>
+         <ol class="md-search-result__list" role="presentation">
+         </ol>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div class="md-header__source">
+     <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+      <div class="md-source__icon md-icon">
+       <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+        <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+        <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+        </path>
+       </svg>
+      </div>
+      <div class="md-source__repository">
+       danny-avila/LibreChat
+      </div>
+     </a>
+    </div>
+   </nav>
+   <nav aria-label="Tabs" class="md-tabs" data-md-component="tabs">
+    <div class="md-grid">
+     <ul class="md-tabs__list">
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../index.html">
+        Home
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../install/index.html">
+        Installation and Configuration
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../features/index.html">
+        Features
+       </a>
+      </li>
+      <li class="md-tabs__item md-tabs__item--active">
+       <a class="md-tabs__link" href="index.html">
+        Deployment
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../general_info/index.html">
+        General Information
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../contributions/index.html">
+        Contributing to LibreChat
+       </a>
+      </li>
+     </ul>
+    </div>
+   </nav>
+  </header>
+  <div class="md-container" data-md-component="container">
+   <main class="md-main" data-md-component="main">
+    <div class="md-main__inner md-grid">
+     <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Navigation" class="md-nav md-nav--primary md-nav--lifted" data-md-level="0">
+         <label class="md-nav__title" for="__drawer">
+          <a aria-label="LibreChat" class="md-nav__button md-logo" data-md-component="logo" href="../index.html" title="LibreChat">
+           <img alt="logo" src="../assets/LibreChat.svg"/>
+          </a>
+          LibreChat
+         </label>
+         <div class="md-nav__source">
+          <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+           <div class="md-source__icon md-icon">
+            <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+             <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+             <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+             </path>
+            </svg>
+           </div>
+           <div class="md-source__repository">
+            danny-avila/LibreChat
+           </div>
+          </a>
+         </div>
+         <ul class="md-nav__list" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="../index.html">
+            <span class="md-ellipsis">
+             Home
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../install/index.html">
+             <span class="md-ellipsis">
+              Installation and Configuration
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_2_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_2">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Installation and Configuration
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../install/installation/index.html">
+                <span class="md-ellipsis">
+                 Installation
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_2_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Installation
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/docker_compose_install.html">
+                  <span class="md-ellipsis">
+                   🐳 Docker Compose ✨(Recommended)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/container_install.html">
+                  <span class="md-ellipsis">
+                   🦦 Container (Podman)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/linux_install.html">
+                  <span class="md-ellipsis">
+                   🐧 Linux
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/mac_install.html">
+                  <span class="md-ellipsis">
+                   🍎 Mac
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/windows_install.html">
+                  <span class="md-ellipsis">
+                   🪟 Windows
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2_3" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../install/configuration/index.html">
+                <span class="md-ellipsis">
+                 Configuration
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_2_3_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_3">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Configuration
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/dotenv.html">
+                  <span class="md-ellipsis">
+                   ⚙️ Environment Variables
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/custom_config.html">
+                  <span class="md-ellipsis">
+                   🖥️ Custom Config
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/azure_openai.html">
+                  <span class="md-ellipsis">
+                   🅰️ Azure OpenAI
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/ai_endpoints.html">
+                  <span class="md-ellipsis">
+                   ✅ Compatible AI Endpoints
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/docker_override.html">
+                  <span class="md-ellipsis">
+                   🐋 Docker Compose Override
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/ai_setup.html">
+                  <span class="md-ellipsis">
+                   🤖 AI Setup
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/litellm.html">
+                  <span class="md-ellipsis">
+                   🚅 LiteLLM
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/free_ai_apis.html">
+                  <span class="md-ellipsis">
+                   💸 Free AI APIs
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/ollama.html">
+                  <span class="md-ellipsis">
+                   🦙 Ollama
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/user_auth_system.html">
+                  <span class="md-ellipsis">
+                   🛂 Authentication System
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/mongodb.html">
+                  <span class="md-ellipsis">
+                   🍃 Online MongoDB
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/default_language.html">
+                  <span class="md-ellipsis">
+                   🌍 Default Language
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/misc.html">
+                  <span class="md-ellipsis">
+                   🌀 Miscellaneous
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../features/index.html">
+             <span class="md-ellipsis">
+              Features
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_3_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_3">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Features
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../features/plugins/index.html">
+                <span class="md-ellipsis">
+                 Plugins
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_3_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_3_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Plugins
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/introduction.html">
+                  <span class="md-ellipsis">
+                   🔌 Introduction
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/make_your_own.html">
+                  <span class="md-ellipsis">
+                   🛠️ Make Your Own
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/chatgpt_plugins_openapi.html">
+                  <span class="md-ellipsis">
+                   🧑‍💼 Official ChatGPT Plugins
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/google_search.html">
+                  <span class="md-ellipsis">
+                   🔎 Google Search
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/stable_diffusion.html">
+                  <span class="md-ellipsis">
+                   🖌️ Stable Diffusion
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/wolfram.html">
+                  <span class="md-ellipsis">
+                   🧠 Wolfram|Alpha
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/azure_ai_search.html">
+                  <span class="md-ellipsis">
+                   ⚡ Azure AI Search
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/presets.html">
+               <span class="md-ellipsis">
+                🔖 Presets
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/mod_system.html">
+               <span class="md-ellipsis">
+                🔨 Automated Moderation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/token_usage.html">
+               <span class="md-ellipsis">
+                🪙 Token Usage
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/firebase.html">
+               <span class="md-ellipsis">
+                🔥 Firebase CDN Setup
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/manage_your_database.html">
+               <span class="md-ellipsis">
+                🍃 Manage Your Database
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/logging_system.html">
+               <span class="md-ellipsis">
+                🪵 Logging System
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/bing_jailbreak.html">
+               <span class="md-ellipsis">
+                😈 Bing Jailbreak
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/third_party.html">
+               <span class="md-ellipsis">
+                ✨ Third-Party Tools and Contributions
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+           <input checked="" class="md-nav__toggle md-toggle" id="__nav_4" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="index.html">
+             <span class="md-ellipsis">
+              Deployment
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="true" aria-labelledby="__nav_4_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_4">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Deployment
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="introduction.html">
+               <span class="md-ellipsis">
+                🌐 Deployment Introduction
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="digitalocean.html">
+               <span class="md-ellipsis">
+                🌊 DigitalOcean ✨(Recommended)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item md-nav__item--active">
+              <input class="md-nav__toggle md-toggle" id="__toc" type="checkbox"/>
+              <label class="md-nav__link md-nav__link--active" for="__toc">
+               <span class="md-ellipsis">
+                🐳 Ubuntu Docker Deployment
+               </span>
+               <span class="md-nav__icon md-icon">
+               </span>
+              </label>
+              <a class="md-nav__link md-nav__link--active" href="docker_ubuntu_deploy.html">
+               <span class="md-ellipsis">
+                🐳 Ubuntu Docker Deployment
+               </span>
+              </a>
+              <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+               <label class="md-nav__title" for="__toc">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Table of contents
+               </label>
+               <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#part-i-installing-docker-and-other-dependencies">
+                  <span class="md-ellipsis">
+                   Part I: Installing Docker and Other Dependencies:
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#1-update-and-install-docker-dependencies">
+                  <span class="md-ellipsis">
+                   1. Update and Install Docker Dependencies
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#notes">
+                  <span class="md-ellipsis">
+                   Notes:
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#2-add-docker-repository-to-apt-sources">
+                  <span class="md-ellipsis">
+                   2. Add Docker Repository to APT Sources
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#3-install-docker">
+                  <span class="md-ellipsis">
+                   3. Install Docker
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#4-verify-that-docker-is-running-on-ubuntu">
+                  <span class="md-ellipsis">
+                   4. Verify that Docker is Running on Ubuntu
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#5-install-the-latest-version-of-docker-compose">
+                  <span class="md-ellipsis">
+                   5. Install the Latest Version of Docker Compose
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#6-as-part-of-this-guide-i-will-recommend-you-have-git-and-npm-installed">
+                  <span class="md-ellipsis">
+                   6. As part of this guide, I will recommend you have git and npm installed:
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#part-ii-setup-librechat">
+                  <span class="md-ellipsis">
+                   Part II: Setup LibreChat
+                  </span>
+                 </a>
+                 <nav aria-label="Part II: Setup LibreChat" class="md-nav">
+                  <ul class="md-nav__list">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#1-clone-down-the-repo">
+                     <span class="md-ellipsis">
+                      1. Clone down the repo
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#2-create-a-global-environment-file">
+                     <span class="md-ellipsis">
+                      2. Create a global environment file.
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#3-start-docker-and-then-run-the-installationupdate-script">
+                     <span class="md-ellipsis">
+                      3. Start docker, and then run the installation/update script
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#4-once-the-app-is-running-you-can-access-it-at-httpyourserverip">
+                     <span class="md-ellipsis">
+                      4. Once the app is running, you can access it at http://yourserverip
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#go-back-to-the-droplet-page-to-get-your-server-ip-copy-it-and-paste-it-into-your-browser">
+                     <span class="md-ellipsis">
+                      Go back to the droplet page to get your server ip, copy it, and paste it into your browser!
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#sign-up-log-in-and-enjoy-your-own-privately-hosted-remote-librechat">
+                     <span class="md-ellipsis">
+                      Sign up, log in, and enjoy your own privately hosted, remote LibreChat :)
+                     </span>
+                    </a>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#part-iii-updating-librechat">
+                  <span class="md-ellipsis">
+                   Part III: Updating LibreChat
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#part-iv-editing-the-nginx-file-for-custom-domains-and-advanced-configs">
+                  <span class="md-ellipsis">
+                   Part IV: Editing the NGINX file (for custom domains and advanced configs)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#part-v-use-the-latest-stable-release-instead-of-latest-main-branch">
+                  <span class="md-ellipsis">
+                   Part V: Use the Latest Stable Release instead of Latest Main Branch
+                  </span>
+                 </a>
+                 <nav aria-label="Part V: Use the Latest Stable Release instead of Latest Main Branch" class="md-nav">
+                  <ul class="md-nav__list">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#note-if-youre-still-having-trouble-before-creating-a-new-issue-please-search-for-similar-ones-on-our-issues-thread-on-our-discord-or-our-troubleshooting-discussion-on-our-discussions-page-if-you-dont-find-a-relevant-issue-feel-free-to-create-a-new-one-and-provide-as-much-detail-as-possible">
+                     <span class="md-ellipsis">
+                      Note: If you're still having trouble, before creating a new issue, please search for similar ones on our #issues thread on our discord or our troubleshooting discussion on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+                     </span>
+                    </a>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="huggingface.html">
+               <span class="md-ellipsis">
+                🤗 HuggingFace
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="railway.html">
+               <span class="md-ellipsis">
+                🛤️ Railway (one-click)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="linode.html">
+               <span class="md-ellipsis">
+                🐧 Linode
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="azure-terraform.html">
+               <span class="md-ellipsis">
+                ⚡ Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="render.html">
+               <span class="md-ellipsis">
+                ⏹️ Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="meilisearch_in_render.html">
+               <span class="md-ellipsis">
+                🔎 Meilisearch in Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="hetzner_ubuntu.html">
+               <span class="md-ellipsis">
+                🏗️ Hetzner
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="heroku.html">
+               <span class="md-ellipsis">
+                🌈 Heroku
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="zeabur.html">
+               <span class="md-ellipsis">
+                🦓 Zeabur
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="cloudflare.html">
+               <span class="md-ellipsis">
+                ☁️ Cloudflare
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="nginx.html">
+               <span class="md-ellipsis">
+                ↪️ Nginx
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="ngrok.html">
+               <span class="md-ellipsis">
+                🪨 Ngrok
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="traefik.html">
+               <span class="md-ellipsis">
+                🚦 Traefik
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_5" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../general_info/index.html">
+             <span class="md-ellipsis">
+              General Information
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_5_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_5">
+             <span class="md-nav__icon md-icon">
+             </span>
+             General Information
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/breaking_changes.html">
+               <span class="md-ellipsis">
+                ⚠️ Breaking Changes
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/multilingual_information.html">
+               <span class="md-ellipsis">
+                🌍 Multilingual Information
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/project_origin.html">
+               <span class="md-ellipsis">
+                🧭 Origin
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/tech_stack.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Tech Stack
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_6" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../contributions/index.html">
+             <span class="md-ellipsis">
+              Contributing to LibreChat
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_6_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_6">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Contributing to LibreChat
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../contributions/how_to_contribute.html">
+               <span class="md-ellipsis">
+                🙌 Getting Started for Contributors
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../contributions/documentation_guidelines.html">
+               <span class="md-ellipsis">
+                📝 Documentation Guidelines
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../contributions/translation_contribution.html">
+               <span class="md-ellipsis">
+                🌍 Contribute a Translation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../contributions/coding_conventions.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Code Standards and Conventions
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../contributions/testing.html">
+               <span class="md-ellipsis">
+                🧪 Testing During Development
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+         <label class="md-nav__title" for="__toc">
+          <span class="md-nav__icon md-icon">
+          </span>
+          Table of contents
+         </label>
+         <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#part-i-installing-docker-and-other-dependencies">
+            <span class="md-ellipsis">
+             Part I: Installing Docker and Other Dependencies:
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#1-update-and-install-docker-dependencies">
+            <span class="md-ellipsis">
+             1. Update and Install Docker Dependencies
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#notes">
+            <span class="md-ellipsis">
+             Notes:
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#2-add-docker-repository-to-apt-sources">
+            <span class="md-ellipsis">
+             2. Add Docker Repository to APT Sources
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#3-install-docker">
+            <span class="md-ellipsis">
+             3. Install Docker
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#4-verify-that-docker-is-running-on-ubuntu">
+            <span class="md-ellipsis">
+             4. Verify that Docker is Running on Ubuntu
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#5-install-the-latest-version-of-docker-compose">
+            <span class="md-ellipsis">
+             5. Install the Latest Version of Docker Compose
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#6-as-part-of-this-guide-i-will-recommend-you-have-git-and-npm-installed">
+            <span class="md-ellipsis">
+             6. As part of this guide, I will recommend you have git and npm installed:
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#part-ii-setup-librechat">
+            <span class="md-ellipsis">
+             Part II: Setup LibreChat
+            </span>
+           </a>
+           <nav aria-label="Part II: Setup LibreChat" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#1-clone-down-the-repo">
+               <span class="md-ellipsis">
+                1. Clone down the repo
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#2-create-a-global-environment-file">
+               <span class="md-ellipsis">
+                2. Create a global environment file.
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#3-start-docker-and-then-run-the-installationupdate-script">
+               <span class="md-ellipsis">
+                3. Start docker, and then run the installation/update script
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#4-once-the-app-is-running-you-can-access-it-at-httpyourserverip">
+               <span class="md-ellipsis">
+                4. Once the app is running, you can access it at http://yourserverip
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#go-back-to-the-droplet-page-to-get-your-server-ip-copy-it-and-paste-it-into-your-browser">
+               <span class="md-ellipsis">
+                Go back to the droplet page to get your server ip, copy it, and paste it into your browser!
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#sign-up-log-in-and-enjoy-your-own-privately-hosted-remote-librechat">
+               <span class="md-ellipsis">
+                Sign up, log in, and enjoy your own privately hosted, remote LibreChat :)
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#part-iii-updating-librechat">
+            <span class="md-ellipsis">
+             Part III: Updating LibreChat
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#part-iv-editing-the-nginx-file-for-custom-domains-and-advanced-configs">
+            <span class="md-ellipsis">
+             Part IV: Editing the NGINX file (for custom domains and advanced configs)
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#part-v-use-the-latest-stable-release-instead-of-latest-main-branch">
+            <span class="md-ellipsis">
+             Part V: Use the Latest Stable Release instead of Latest Main Branch
+            </span>
+           </a>
+           <nav aria-label="Part V: Use the Latest Stable Release instead of Latest Main Branch" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#note-if-youre-still-having-trouble-before-creating-a-new-issue-please-search-for-similar-ones-on-our-issues-thread-on-our-discord-or-our-troubleshooting-discussion-on-our-discussions-page-if-you-dont-find-a-relevant-issue-feel-free-to-create-a-new-one-and-provide-as-much-detail-as-possible">
+               <span class="md-ellipsis">
+                Note: If you're still having trouble, before creating a new issue, please search for similar ones on our #issues thread on our discord or our troubleshooting discussion on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-content" data-md-component="content">
+      <article class="md-content__inner md-typeset">
+       <a class="md-content__button md-icon" href="https://github.com/danny-avila/LibreChat/blob/main/docs/deployment/docker_ubuntu_deploy.md" title="Edit this page">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z">
+         </path>
+        </svg>
+       </a>
+       <h1 id="ubuntu-docker-deployment-guide">
+        Ubuntu Docker Deployment Guide
+       </h1>
+       <p>
+        In order to use this guide you need a remote computer or VM deployed. While you can use this guide with a local installation, keep in mind that it was originally written for cloud deployment.
+       </p>
+       <blockquote>
+        <p>
+         ⚠️ This guide was originally designed for
+         <a href="digitalocean.html">
+          Digital Ocean
+         </a>
+         , so you may have to modify the instruction for other platforms, but the main idea remains unchanged.
+        </p>
+       </blockquote>
+       <h3 id="part-i-installing-docker-and-other-dependencies">
+        Part I: Installing Docker and Other Dependencies:
+       </h3>
+       <p>
+        There are many ways to setup Docker on Debian systems. I'll walk you through the best and the recommended way
+        <a href="https://www.smarthomebeginner.com/install-docker-on-ubuntu-22-04/">
+         based on this guide
+        </a>
+        .
+       </p>
+       <blockquote>
+        <p>
+         Note that the "Best" way for Ubuntu docker installation does not mean the "fastest" or the "easiest". It means, the best way to install it for long-term benefit (i.e. faster updates, security patches, etc.).
+        </p>
+       </blockquote>
+       <h3 id="1-update-and-install-docker-dependencies">
+        <strong>
+         1. Update and Install Docker Dependencies
+        </strong>
+       </h3>
+       <p>
+        First, let's update our packages list and install the required docker dependencies.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-0-1" id="__codelineno-0-1" name="__codelineno-0-1"></a>sudo<span class="w"> </span>apt<span class="w"> </span>update
+</code></pre>
+       </div>
+       <p>
+        Then, use the following command to install the dependencies or pre-requisite packages.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-1-1" id="__codelineno-1-1" name="__codelineno-1-1"></a>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>apt-transport-https<span class="w"> </span>ca-certificates<span class="w"> </span>curl<span class="w"> </span>software-properties-common<span class="w"> </span>gnupg<span class="w"> </span>lsb-release
+</code></pre>
+       </div>
+       <h3 id="notes">
+        <strong>
+         Notes:
+        </strong>
+       </h3>
+       <ul>
+        <li>
+         Input "Y" for all [Y/n] (yes/no) terminal prompts throughout this entire guide.
+        </li>
+        <li>
+         After the first [Y/n] prompt, you will get the first of a few
+         <strong>
+          purple screens
+         </strong>
+         asking to restart services.
+        </li>
+        <li>
+         Each time this happens, you can safely press ENTER for the default, already selected options:
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/05cf165b-d3d8-475a-93b3-254f3c63f59b"/>
+       </p>
+       <ul>
+        <li>
+         If at any point your droplet console disconnects, do the following and then pick up where you left off:
+        </li>
+        <li>
+         Access the console again as indicated above
+        </li>
+        <li>
+         Switch to the user you created with
+         <code>
+          su - &lt;yourusername&gt;
+         </code>
+        </li>
+       </ul>
+       <h3 id="2-add-docker-repository-to-apt-sources">
+        <strong>
+         2. Add Docker Repository to APT Sources
+        </strong>
+       </h3>
+       <p>
+        While installing Docker Engine from Ubuntu repositories is easier, adding official docker repository gives you faster updates. Hence why this is the recommended method.
+       </p>
+       <p>
+        First, let us get the GPG key which is needed to connect to the Docker repository. To that, use the following command.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-2-1" id="__codelineno-2-1" name="__codelineno-2-1"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://download.docker.com/linux/ubuntu/gpg<span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>gpg<span class="w"> </span>--dearmor<span class="w"> </span>-o<span class="w"> </span>/usr/share/keyrings/docker-archive-keyring.gpg
+</code></pre>
+       </div>
+       <p>
+        Next, add the repository to the sources list. While you can also add it manually, the command below will do it automatically for you.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-3-1" id="__codelineno-3-1" name="__codelineno-3-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">"deb [arch=</span><span class="k">$(</span>dpkg<span class="w"> </span>--print-architecture<span class="k">)</span><span class="s2"> signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu </span><span class="k">$(</span>lsb_release<span class="w"> </span>-cs<span class="k">)</span><span class="s2"> stable"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>/etc/apt/sources.list.d/docker.list<span class="w"> </span>&gt;<span class="w"> </span>/dev/null
+</code></pre>
+       </div>
+       <p>
+        The above command will automatically fill in your release code name (jammy for 22.04, focal for 20.04, and bionic for 18.04).
+       </p>
+       <p>
+        Finally, refresh your packages again.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-4-1" id="__codelineno-4-1" name="__codelineno-4-1"></a>sudo<span class="w"> </span>apt<span class="w"> </span>update
+</code></pre>
+       </div>
+       <p>
+        If you forget to add the GPG key, then the above step would fail with an error message. Otherwise, let's get on with installing Docker on Ubuntu.
+       </p>
+       <h3 id="3-install-docker">
+        <strong>
+         3. Install Docker
+        </strong>
+       </h3>
+       <blockquote>
+        <p>
+         What is the difference between docker.io and docker-ce?
+        </p>
+        <p>
+         docker.io is the docker package that is offered by some popular Linux distributions (e.g. Ubuntu/Debian). docker-ce on the other hand, is the docker package from official Docker repository. Typically docker-ce more up-to-date and preferred.
+        </p>
+       </blockquote>
+       <p>
+        We will now install the docker-ce (and not docker.io package)
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-5-1" id="__codelineno-5-1" name="__codelineno-5-1"></a>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>docker-ce
+</code></pre>
+       </div>
+       <p>
+        Purple screen means press ENTER. :)
+       </p>
+       <p>
+        Recommended: you should make sure the created user is added to the docker group for seamless use of commands:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-6-1" id="__codelineno-6-1" name="__codelineno-6-1"></a>sudo<span class="w"> </span>usermod<span class="w"> </span>-aG<span class="w"> </span>docker<span class="w"> </span><span class="nv">$USER</span>
+</code></pre>
+       </div>
+       <p>
+        Now let's reboot the system to make sure all is well.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-7-1" id="__codelineno-7-1" name="__codelineno-7-1"></a>sudo<span class="w"> </span>reboot
+</code></pre>
+       </div>
+       <p>
+        After rebooting, if using the browser droplet console, you can click reload and wait to get back into the console.
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/2ad7b739-a3db-4744-813f-39af7dabfce7"/>
+       </p>
+       <p>
+        <strong>
+         Reminder:
+        </strong>
+        Any time you reboot with
+        <code>
+         sudo reboot
+        </code>
+        , you should switch to the user you setup as before with
+        <code>
+         su - &lt;yourusername&gt;
+        </code>
+        .
+       </p>
+       <h3 id="4-verify-that-docker-is-running-on-ubuntu">
+        <strong>
+         4. Verify that Docker is Running on Ubuntu
+        </strong>
+       </h3>
+       <p>
+        There are many ways to check if Docker is running on Ubuntu. One way is to use the following command:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-8-1" id="__codelineno-8-1" name="__codelineno-8-1"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>docker
+</code></pre>
+       </div>
+       <p>
+        You should see an output that says
+        <strong>
+         active (running)
+        </strong>
+        for status.
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/6baea405-8dfb-4d9d-9327-6e9ecf800471"/>
+       </p>
+       <p>
+        Exit this log by pressing CTRL (or CMD) + C.
+       </p>
+       <h3 id="5-install-the-latest-version-of-docker-compose">
+        <strong>
+         5. Install the Latest Version of Docker Compose
+        </strong>
+       </h3>
+       <p>
+        The version of docker-compose packaged with the Linux distribution is probably old and will not work for us.
+       </p>
+       <p>
+        Checking the releases on the
+        <a href="https://github.com/docker/compose/releases">
+         Docker Compose GitHub
+        </a>
+        , the last release is v2.20.2 (as of 8/9/23).
+       </p>
+       <p>
+        You will have to manually download and install it. But fear not, it is quite easy.
+       </p>
+       <p>
+        First, download the latest version of Docker Compose using the following command:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-9-1" id="__codelineno-9-1" name="__codelineno-9-1"></a>sudo<span class="w"> </span>curl<span class="w"> </span>-L<span class="w"> </span>https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-<span class="sb">`</span>uname<span class="w"> </span>-s<span class="sb">`</span>-<span class="sb">`</span>uname<span class="w"> </span>-m<span class="sb">`</span><span class="w"> </span>-o<span class="w"> </span>/usr/local/bin/docker-compose
+</code></pre>
+       </div>
+       <p>
+        Next, make it executable using the following command:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-10-1" id="__codelineno-10-1" name="__codelineno-10-1"></a>sudo<span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>/usr/local/bin/docker-compose
+</code></pre>
+       </div>
+       <p>
+        Docker Compose should now be installed on your Ubuntu system. Let's check to be sure.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-11-1" id="__codelineno-11-1" name="__codelineno-11-1"></a>docker-compose<span class="w"> </span>-v
+<a href="#__codelineno-11-2" id="__codelineno-11-2" name="__codelineno-11-2"></a><span class="c1"># output should be: Docker Compose version v2.20.2</span>
+</code></pre>
+       </div>
+       <p>
+        If you get a permission denied error, like I did, reboot/switch to your created user again, and run
+        <code>
+         sudo chmod +x /usr/local/bin/docker-compose
+        </code>
+        again
+       </p>
+       <h3 id="6-as-part-of-this-guide-i-will-recommend-you-have-git-and-npm-installed">
+        <strong>
+         6. As part of this guide, I will recommend you have git and npm installed:
+        </strong>
+       </h3>
+       <p>
+        Though not technically required, having git and npm will make installing/updating very simple:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-12-1" id="__codelineno-12-1" name="__codelineno-12-1"></a>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>git<span class="w"> </span>nodejs<span class="w"> </span>npm
+</code></pre>
+       </div>
+       <p>
+        Cue the matrix lines.
+       </p>
+       <p>
+        You can confirm these packages installed successfully with the following:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-13-1" id="__codelineno-13-1" name="__codelineno-13-1"></a>git<span class="w"> </span>--version
+<a href="#__codelineno-13-2" id="__codelineno-13-2" name="__codelineno-13-2"></a>node<span class="w"> </span>-v
+<a href="#__codelineno-13-3" id="__codelineno-13-3" name="__codelineno-13-3"></a>npm<span class="w"> </span>-v
+</code></pre>
+       </div>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/fbba1a38-95cd-4e8e-b813-04001bb82b25"/>
+       </p>
+       <blockquote>
+        <p>
+         Note: this will install some pretty old versions, for npm in particular. For the purposes of this guide, however, this is fine, but this is just a heads up in case you try other things with node in the droplet. Do look up a guide for getting the latest versions of the above as necessary.
+        </p>
+       </blockquote>
+       <p>
+        <strong>
+         Ok, now that you have set up the Droplet, you will now setup the app itself
+        </strong>
+       </p>
+       <hr/>
+       <h2 id="part-ii-setup-librechat">
+        Part II: Setup LibreChat
+       </h2>
+       <h3 id="1-clone-down-the-repo">
+        <strong>
+         1. Clone down the repo
+        </strong>
+       </h3>
+       <p>
+        From the
+        <em>
+         droplet
+        </em>
+        commandline (as your user, not root):
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-14-1" id="__codelineno-14-1" name="__codelineno-14-1"></a><span class="c1"># clone down the repository</span>
+<a href="#__codelineno-14-2" id="__codelineno-14-2" name="__codelineno-14-2"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/danny-avila/LibreChat.git
+<a href="#__codelineno-14-3" id="__codelineno-14-3" name="__codelineno-14-3"></a>
+<a href="#__codelineno-14-4" id="__codelineno-14-4" name="__codelineno-14-4"></a><span class="c1"># enter the project directory</span>
+<a href="#__codelineno-14-5" id="__codelineno-14-5" name="__codelineno-14-5"></a><span class="nb">cd</span><span class="w"> </span>LibreChat/
+</code></pre>
+       </div>
+       <h3 id="2-create-a-global-environment-file">
+        <strong>
+         2. Create a global environment file.
+        </strong>
+       </h3>
+       <p>
+        The default values are enough to get you started and running the app, allowing you to provide your credentials from the web app.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-15-1" id="__codelineno-15-1" name="__codelineno-15-1"></a><span class="c1"># Copies the example file as your global env file</span>
+<a href="#__codelineno-15-2" id="__codelineno-15-2" name="__codelineno-15-2"></a>cp<span class="w"> </span>.env.example<span class="w"> </span>.env
+</code></pre>
+       </div>
+       <p>
+        However, if you'd like to provide any credentials for all users of your instance to consume, you can add them to the .env file as follows:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-16-1" id="__codelineno-16-1" name="__codelineno-16-1"></a>nano<span class="w"> </span>.env
+<a href="#__codelineno-16-2" id="__codelineno-16-2" name="__codelineno-16-2"></a>
+<a href="#__codelineno-16-3" id="__codelineno-16-3" name="__codelineno-16-3"></a><span class="c1"># then, add your credentials</span>
+<a href="#__codelineno-16-4" id="__codelineno-16-4" name="__codelineno-16-4"></a><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>sk-yourKey
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         That's it!
+        </strong>
+       </p>
+       <p>
+        For thorough configuration, however, you should edit your .env file as needed, and do read the comments in the file and the resources below.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-17-1" id="__codelineno-17-1" name="__codelineno-17-1"></a><span class="c1"># if editing the .env file</span>
+<a href="#__codelineno-17-2" id="__codelineno-17-2" name="__codelineno-17-2"></a>nano<span class="w"> </span>.env
+</code></pre>
+       </div>
+       <p>
+        This is one such env variable to be mindful of. This disables external signups, in case you would like to set it after you've created your account.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-18-1" id="__codelineno-18-1" name="__codelineno-18-1"></a><span class="nv">ALLOW_REGISTRATION</span><span class="o">=</span><span class="nb">false</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         Resources:
+        </strong>
+       </p>
+       <ul>
+        <li>
+         <a href="../install/configuration/ai_setup.html">
+          Tokens/Apis/etc
+         </a>
+        </li>
+        <li>
+         <a href="../install/configuration/user_auth_system.html">
+          User/Auth System
+         </a>
+        </li>
+       </ul>
+       <h3 id="3-start-docker-and-then-run-the-installationupdate-script">
+        <strong>
+         3. Start docker, and then run the installation/update script
+        </strong>
+       </h3>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-19-1" id="__codelineno-19-1" name="__codelineno-19-1"></a><span class="c1"># should already be running, but just to be safe</span>
+<a href="#__codelineno-19-2" id="__codelineno-19-2" name="__codelineno-19-2"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>docker
+<a href="#__codelineno-19-3" id="__codelineno-19-3" name="__codelineno-19-3"></a>
+<a href="#__codelineno-19-4" id="__codelineno-19-4" name="__codelineno-19-4"></a><span class="c1"># confirm docker is running</span>
+<a href="#__codelineno-19-5" id="__codelineno-19-5" name="__codelineno-19-5"></a>docker<span class="w"> </span>info
+</code></pre>
+       </div>
+       <p>
+        Now we can start the app container. For the first time, we'll use the full command and later we can use a shorthand command
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-20-1" id="__codelineno-20-1" name="__codelineno-20-1"></a>sudo<span class="w"> </span>docker-compose<span class="w"> </span>-f<span class="w"> </span>./deploy-compose.yml<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre>
+       </div>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/5e2f6627-8ca4-4fa3-be73-481539532ee7"/>
+       </p>
+       <p>
+        It's safe to close the terminal if you wish -- the docker app will continue to run.
+       </p>
+       <blockquote>
+        <p>
+         Note: this is using a special compose file optimized for this deployed environment. If you would like more configuration here, you should inspect the deploy-compose.yml and Dockerfile.multi files to see how they are setup. We are not building the image in this environment since it's not enough RAM to properly do so. Instead, we pull the latest dev-api image of librechat, which is automatically built after each push to main.
+        </p>
+        <p>
+         If you are setting up a domain to be used with LibreChat, this compose file is using the nginx file located in client/nginx.conf. Instructions on this below in part V.
+        </p>
+       </blockquote>
+       <h3 id="4-once-the-app-is-running-you-can-access-it-at-httpyourserverip">
+        <strong>
+         4. Once the app is running, you can access it at
+         <code>
+          http://yourserverip
+         </code>
+        </strong>
+       </h3>
+       <h3 id="go-back-to-the-droplet-page-to-get-your-server-ip-copy-it-and-paste-it-into-your-browser">
+        Go back to the droplet page to get your server ip, copy it, and paste it into your browser!
+       </h3>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/d8bbad29-6015-46ec-88ce-a72a43d8a313"/>
+       </p>
+       <h3 id="sign-up-log-in-and-enjoy-your-own-privately-hosted-remote-librechat">
+        Sign up, log in, and enjoy your own privately hosted, remote LibreChat :)
+       </h3>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/85070a54-eb57-479f-8011-f63c14116ee3"/>
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/b3fc2152-4b6f-46f9-81e7-4200b76bc468"/>
+       </p>
+       <h2 id="part-iii-updating-librechat">
+        Part III: Updating LibreChat
+       </h2>
+       <p>
+        I've made this step pretty painless, provided everything above was installed successfully and you haven't edited the git history.
+       </p>
+       <blockquote>
+        <p>
+         Note: If you are working on an edited branch, with your own commits, for example, such as with edits to client/nginx.conf, you should inspect config/deployed-update.js to run some of the commands manually as you see fit. See part V for more on this.
+        </p>
+       </blockquote>
+       <p>
+        Run the following for an automated update
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-21-1" id="__codelineno-21-1" name="__codelineno-21-1"></a>npm<span class="w"> </span>run<span class="w"> </span>update:deployed
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         Stopping the docker container
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-22-1" id="__codelineno-22-1" name="__codelineno-22-1"></a>npm<span class="w"> </span>run<span class="w"> </span>stop:deployed
+</code></pre>
+       </div>
+       <blockquote>
+        <p>
+         This simply runs
+         <code>
+          docker-compose -f ./deploy-compose.yml down
+         </code>
+        </p>
+       </blockquote>
+       <p>
+        <strong>
+         Starting the docker container
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-23-1" id="__codelineno-23-1" name="__codelineno-23-1"></a>npm<span class="w"> </span>run<span class="w"> </span>start:deployed
+</code></pre>
+       </div>
+       <blockquote>
+        <p>
+         This simply runs
+         <code>
+          docker-compose -f ./deploy-compose.yml up -d
+         </code>
+        </p>
+       </blockquote>
+       <p>
+        <strong>
+         Check active docker containers
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-24-1" id="__codelineno-24-1" name="__codelineno-24-1"></a>docker<span class="w"> </span>ps
+</code></pre>
+       </div>
+       <h2 id="part-iv-editing-the-nginx-file-for-custom-domains-and-advanced-configs">
+        Part IV: Editing the NGINX file (for custom domains and advanced configs)
+       </h2>
+       <p>
+        In case you would like to edit the NGINX file for whatever reason, such as pointing your server to a custom domain, use the following:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-25-1" id="__codelineno-25-1" name="__codelineno-25-1"></a><span class="c1"># First, stop the active instance if running</span>
+<a href="#__codelineno-25-2" id="__codelineno-25-2" name="__codelineno-25-2"></a>npm<span class="w"> </span>run<span class="w"> </span>stop:deployed
+<a href="#__codelineno-25-3" id="__codelineno-25-3" name="__codelineno-25-3"></a>
+<a href="#__codelineno-25-4" id="__codelineno-25-4" name="__codelineno-25-4"></a><span class="c1"># now you can safely edit</span>
+<a href="#__codelineno-25-5" id="__codelineno-25-5" name="__codelineno-25-5"></a>nano<span class="w"> </span>client/nginx.conf
+</code></pre>
+       </div>
+       <p>
+        I won't be walking you through custom domain setup or any other changes to NGINX, you can look into the
+        <a href="cloudflare.html">
+         Cloudflare guide
+        </a>
+        or the
+        <a href="nginx.html">
+         NGINX guide
+        </a>
+        to get you started with custom domains.
+       </p>
+       <p>
+        However, I will show you what to edit on the LibreChat side for a custom domain with this setup.
+       </p>
+       <p>
+        Since NGINX is being used as a proxy pass by default, I only edit the following:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-26-1" id="__codelineno-26-1" name="__codelineno-26-1"></a><span class="c1"># before</span>
+<a href="#__codelineno-26-2" id="__codelineno-26-2" name="__codelineno-26-2"></a>server_name<span class="w"> </span>localhost<span class="p">;</span>
+<a href="#__codelineno-26-3" id="__codelineno-26-3" name="__codelineno-26-3"></a>
+<a href="#__codelineno-26-4" id="__codelineno-26-4" name="__codelineno-26-4"></a><span class="c1"># after</span>
+<a href="#__codelineno-26-5" id="__codelineno-26-5" name="__codelineno-26-5"></a>server_name<span class="w"> </span>custom.domain.com<span class="p">;</span>
+</code></pre>
+       </div>
+       <p>
+        Exit nano with
+       </p>
+       <blockquote>
+        <p>
+         Note: this works because the deploy-compose.yml file is using NGINX by default, unlike the main docker-compose.yml file. As always, you can configure the compose files as you need.
+        </p>
+       </blockquote>
+       <p>
+        Now commit these changes to a separate branch:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-27-1" id="__codelineno-27-1" name="__codelineno-27-1"></a><span class="c1"># create a new branch</span>
+<a href="#__codelineno-27-2" id="__codelineno-27-2" name="__codelineno-27-2"></a><span class="c1"># example: git checkout -b edit</span>
+<a href="#__codelineno-27-3" id="__codelineno-27-3" name="__codelineno-27-3"></a>git<span class="w"> </span>checkout<span class="w"> </span>-b<span class="w"> </span>&lt;branchname&gt;
+<a href="#__codelineno-27-4" id="__codelineno-27-4" name="__codelineno-27-4"></a>
+<a href="#__codelineno-27-5" id="__codelineno-27-5" name="__codelineno-27-5"></a><span class="c1"># stage all file changes</span>
+<a href="#__codelineno-27-6" id="__codelineno-27-6" name="__codelineno-27-6"></a>git<span class="w"> </span>add<span class="w"> </span>.
+</code></pre>
+       </div>
+       <p>
+        To commit changes to a git branch, you will need to identify yourself on git. These can be fake values, but if you would like them to sync up with GitHub, should you push this branch to a forked repo of LibreChat, use your GitHub email
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-28-1" id="__codelineno-28-1" name="__codelineno-28-1"></a><span class="c1"># these values will work if you don't care what they are</span>
+<a href="#__codelineno-28-2" id="__codelineno-28-2" name="__codelineno-28-2"></a>git<span class="w"> </span>config<span class="w"> </span>--global<span class="w"> </span>user.email<span class="w"> </span><span class="s2">"you@example.com"</span>
+<a href="#__codelineno-28-3" id="__codelineno-28-3" name="__codelineno-28-3"></a>git<span class="w"> </span>config<span class="w"> </span>--global<span class="w"> </span>user.name<span class="w"> </span><span class="s2">"Your Name"</span>
+<a href="#__codelineno-28-4" id="__codelineno-28-4" name="__codelineno-28-4"></a>
+<a href="#__codelineno-28-5" id="__codelineno-28-5" name="__codelineno-28-5"></a><span class="c1"># Now you can commit the change</span>
+<a href="#__codelineno-28-6" id="__codelineno-28-6" name="__codelineno-28-6"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"edited nginx.conf"</span>
+</code></pre>
+       </div>
+       <p>
+        Updating on an edited branch will work a little differently now
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-29-1" id="__codelineno-29-1" name="__codelineno-29-1"></a>npm<span class="w"> </span>run<span class="w"> </span>rebase:deployed
+</code></pre>
+       </div>
+       <p>
+        You should be all set!
+       </p>
+       <blockquote>
+        <p>
+         :warning: You will experience merge conflicts if you start significantly editing the branch and this is not recommended unless you know what you're doing
+        </p>
+        <p>
+         Note that any changes to the code in this environment won't be reflected because the compose file is pulling the docker images built automatically by GitHub
+        </p>
+       </blockquote>
+       <h2 id="part-v-use-the-latest-stable-release-instead-of-latest-main-branch">
+        Part V: Use the Latest Stable Release instead of Latest Main Branch
+       </h2>
+       <p>
+        By default, this setup will pull the latest updates to the main branch of Librechat. If you would rather have the latest "stable" release, which is defined by the
+        <a href="https://github.com/danny-avila/LibreChat/releases">
+         latest tags
+        </a>
+        , you will need to edit deploy-compose.yml and commit your changes exactly as above in Part V. Be aware that you won't benefit from the latest feature as soon as they come if you do so.
+       </p>
+       <p>
+        Let's edit
+        <code>
+         deploy-compose.yml
+        </code>
+        :
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-30-1" id="__codelineno-30-1" name="__codelineno-30-1"></a>nano<span class="w"> </span>deploy-compose.yml
+</code></pre>
+       </div>
+       <p>
+        Change
+        <code>
+         librechat-dev-api
+        </code>
+        to
+        <code>
+         librechat-api
+        </code>
+        :
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-31-1" id="__codelineno-31-1" name="__codelineno-31-1"></a><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/danny-avila/librechat-api:latest</span>
+</code></pre>
+       </div>
+       <p>
+        Stage and commit as in Part V, and you're all set!
+       </p>
+       <hr/>
+       <h3 id="note-if-youre-still-having-trouble-before-creating-a-new-issue-please-search-for-similar-ones-on-our-issues-thread-on-our-discord-or-our-troubleshooting-discussion-on-our-discussions-page-if-you-dont-find-a-relevant-issue-feel-free-to-create-a-new-one-and-provide-as-much-detail-as-possible">
+        Note: If you're still having trouble, before creating a new issue, please search for similar ones on our
+        <a href="https://discord.librechat.ai">
+         #issues thread on our discord
+        </a>
+        or our
+        <a href="https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting">
+         troubleshooting discussion
+        </a>
+        on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+       </h3>
+      </article>
+     </div>
+     <script>
+      var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))
+     </script>
+    </div>
+    <button class="md-top md-icon" data-md-component="top" hidden="" type="button">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z">
+      </path>
+     </svg>
+     Back to top
+    </button>
+   </main>
+   <footer class="md-footer">
+    <div class="md-footer-meta md-typeset">
+     <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+       <div class="md-copyright__highlight">
+        © 2024
+        <a href="https://librechat.ai/" rel="noopener" target="_blank">
+         LibreChat
+        </a>
+       </div>
+       Made with
+       <a href="https://squidfunk.github.io/mkdocs-material/" rel="noopener" target="_blank">
+        Material for MkDocs
+       </a>
+      </div>
+      <div class="md-social">
+       <a class="md-social__link" href="https://discord.librechat.ai" rel="noopener" target="_blank" title="Discord">
+        <svg viewbox="0 0 640 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M524.531 69.836a1.5 1.5 0 0 0-.764-.7A485.065 485.065 0 0 0 404.081 32.03a1.816 1.816 0 0 0-1.923.91 337.461 337.461 0 0 0-14.9 30.6 447.848 447.848 0 0 0-134.426 0 309.541 309.541 0 0 0-15.135-30.6 1.89 1.89 0 0 0-1.924-.91 483.689 483.689 0 0 0-119.688 37.107 1.712 1.712 0 0 0-.788.676C39.068 183.651 18.186 294.69 28.43 404.354a2.016 2.016 0 0 0 .765 1.375 487.666 487.666 0 0 0 146.825 74.189 1.9 1.9 0 0 0 2.063-.676A348.2 348.2 0 0 0 208.12 430.4a1.86 1.86 0 0 0-1.019-2.588 321.173 321.173 0 0 1-45.868-21.853 1.885 1.885 0 0 1-.185-3.126 251.047 251.047 0 0 0 9.109-7.137 1.819 1.819 0 0 1 1.9-.256c96.229 43.917 200.41 43.917 295.5 0a1.812 1.812 0 0 1 1.924.233 234.533 234.533 0 0 0 9.132 7.16 1.884 1.884 0 0 1-.162 3.126 301.407 301.407 0 0 1-45.89 21.83 1.875 1.875 0 0 0-1 2.611 391.055 391.055 0 0 0 30.014 48.815 1.864 1.864 0 0 0 2.063.7A486.048 486.048 0 0 0 610.7 405.729a1.882 1.882 0 0 0 .765-1.352c12.264-126.783-20.532-236.912-86.934-334.541ZM222.491 337.58c-28.972 0-52.844-26.587-52.844-59.239s23.409-59.241 52.844-59.241c29.665 0 53.306 26.82 52.843 59.239 0 32.654-23.41 59.241-52.843 59.241Zm195.38 0c-28.971 0-52.843-26.587-52.843-59.239s23.409-59.241 52.843-59.241c29.667 0 53.307 26.82 52.844 59.239 0 32.654-23.177 59.241-52.844 59.241Z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://librechat.ai" rel="noopener" target="_blank" title="GitHub">
+        <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://yt.librechat.ai" rel="noopener" target="_blank" title="YouTube">
+        <svg viewbox="0 0 576 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305zm-317.51 213.508V175.185l142.739 81.205-142.739 81.201z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://linkedin.librechat.ai" rel="noopener" target="_blank" title="LinkedIn">
+        <svg viewbox="0 0 448 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3zM135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5zm282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9V416z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://demo.librechat.cfd" rel="noopener" target="_blank" title="Demo">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M278.5 215.6 23 471c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l57-57h68c49.7 0 97.9-14.4 139-41 11.1-7.2 5.5-23-7.8-23-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l81-24.3c2.5-.8 4.8-2.1 6.7-4l22.4-22.4c10.1-10.1 2.9-27.3-11.3-27.3H377c-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l112-33.6c4-1.2 7.4-3.9 9.3-7.7 10.8-21 16.4-44.5 16.4-68.6 0-41-16.3-80.3-45.3-109.3l-5.5-5.5C432.3 16.3 393 0 352 0s-80.3 16.3-109.3 45.3L139 149c-48 48-75 113.1-75 181v55.3l189.6-189.5c6.2-6.2 16.4-6.2 22.6 0 5.4 5.4 6.1 13.6 2.2 19.8z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://hf.librechat.ai" rel="noopener" target="_blank" title="Hugging Face">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M256 512a256 256 0 1 0 0-512 256 256 0 1 0 0 512zm132.1-199.2c12.3-3.8 24.3 6.9 19.3 18.7-25 59.1-83.2 100.5-151.1 100.5s-126.2-41.4-151.1-100.5c-5-11.8 7-22.5 19.3-18.7 39.7 12.2 84.5 19 131.8 19s92.1-6.8 131.8-19zm-170.5-84-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8zm160 0-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8z">
+         </path>
+        </svg>
+       </a>
+      </div>
+     </div>
+    </div>
+   </footer>
+  </div>
+  <div class="md-dialog" data-md-component="dialog">
+   <div class="md-dialog__inner md-typeset">
+   </div>
+  </div>
+  <div class="md-progress" data-md-component="progress" role="progressbar">
+  </div>
+  <script id="__config" type="application/json">
+   {"base": "..", "features": ["header.autohide", "navigation.tabs", "navigation.tabs.sticky", "content.action.edit", "content.code.copy", "navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.expand", "navigation.indexes", "navigation.top"], "search": "../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}
+  </script>
+  <script src="../assets/javascripts/bundle.bd41221c.min.js">
+  </script>
+ </body>
+</html>

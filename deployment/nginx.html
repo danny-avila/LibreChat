@@ -1,0 +1,1990 @@
+<!DOCTYPE html>
+<html class="no-js" lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <meta content="Step-by-step guide for securing your LibreChat deployment with Nginx" name="description"/>
+  <link href="cloudflare.html" rel="prev"/>
+  <link href="ngrok.html" rel="next"/>
+  <link href="../assets/favicon_package/favicon-32x32.png" rel="icon"/>
+  <meta content="mkdocs-1.5.3, mkdocs-material-9.5.15" name="generator"/>
+  <title>
+   ↪️ Nginx - LibreChat
+  </title>
+  <link href="../assets/stylesheets/main.7e359304.min.css" rel="stylesheet"/>
+  <link href="../assets/stylesheets/palette.06af60db.min.css" rel="stylesheet"/>
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+  <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback" rel="stylesheet"/>
+  <style>
+   :root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}
+  </style>
+  <script>
+   __md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}
+  </script>
+  <meta content="article" property="og:type"/>
+  <meta content="↪️ Nginx" property="og:title"/>
+  <meta content="Step-by-step guide for securing your LibreChat deployment with Nginx" property="og:description"/>
+  <meta content="LibreChat" property="og:site_name"/>
+  <meta content="en_us" property="og:locale"/>
+  <meta content="Nonedeployment/nginx.html" property="og:url"/>
+  <meta content="summary" property="twitter:card"/>
+  <meta content="↪️ Nginx" property="twitter:title"/>
+  <meta content="Step-by-step guide for securing your LibreChat deployment with Nginx" property="twitter:description"/>
+ </head>
+ <body data-md-color-accent="purple" data-md-color-primary="cyan" data-md-color-scheme="slate" dir="ltr">
+  <input autocomplete="off" class="md-toggle" data-md-toggle="drawer" id="__drawer" type="checkbox"/>
+  <input autocomplete="off" class="md-toggle" data-md-toggle="search" id="__search" type="checkbox"/>
+  <label class="md-overlay" for="__drawer">
+  </label>
+  <div data-md-component="skip">
+   <a class="md-skip" href="#deploying-application-in-the-cloud-with-https-and-nginx">
+    Skip to content
+   </a>
+  </div>
+  <div data-md-component="announce">
+  </div>
+  <header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+   <nav aria-label="Header" class="md-header__inner md-grid">
+    <a aria-label="LibreChat" class="md-header__button md-logo" data-md-component="logo" href="../index.html" title="LibreChat">
+     <img alt="logo" src="../assets/LibreChat.svg"/>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+     <div class="md-header__ellipsis">
+      <div class="md-header__topic">
+       <span class="md-ellipsis">
+        LibreChat
+       </span>
+      </div>
+      <div class="md-header__topic" data-md-component="header-topic">
+       <span class="md-ellipsis">
+        ↪️ Nginx
+       </span>
+      </div>
+     </div>
+    </div>
+    <form class="md-header__option" data-md-component="palette">
+     <input aria-label="Switch to light mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="slate" id="__palette_0" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_1" hidden="" title="Switch to light mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+     <input aria-label="Switch to dark mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="default" id="__palette_1" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_0" hidden="" title="Switch to dark mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+    </form>
+    <script>
+     var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}
+    </script>
+    <label class="md-header__button md-icon" for="__search">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-search" data-md-component="search" role="dialog">
+     <label class="md-search__overlay" for="__search">
+     </label>
+     <div class="md-search__inner" role="search">
+      <form class="md-search__form" name="search">
+       <input aria-label="Search" autocapitalize="off" autocomplete="off" autocorrect="off" class="md-search__input" data-md-component="search-query" name="query" placeholder="Search" required="" spellcheck="false" type="text"/>
+       <label class="md-search__icon md-icon" for="__search">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+         </path>
+        </svg>
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z">
+         </path>
+        </svg>
+       </label>
+       <nav aria-label="Search" class="md-search__options">
+        <button aria-label="Clear" class="md-search__icon md-icon" tabindex="-1" title="Clear" type="reset">
+         <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z">
+          </path>
+         </svg>
+        </button>
+       </nav>
+      </form>
+      <div class="md-search__output">
+       <div class="md-search__scrollwrap" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+         <div class="md-search-result__meta">
+          Initializing search
+         </div>
+         <ol class="md-search-result__list" role="presentation">
+         </ol>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div class="md-header__source">
+     <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+      <div class="md-source__icon md-icon">
+       <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+        <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+        <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+        </path>
+       </svg>
+      </div>
+      <div class="md-source__repository">
+       danny-avila/LibreChat
+      </div>
+     </a>
+    </div>
+   </nav>
+   <nav aria-label="Tabs" class="md-tabs" data-md-component="tabs">
+    <div class="md-grid">
+     <ul class="md-tabs__list">
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../index.html">
+        Home
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../install/index.html">
+        Installation and Configuration
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../features/index.html">
+        Features
+       </a>
+      </li>
+      <li class="md-tabs__item md-tabs__item--active">
+       <a class="md-tabs__link" href="index.html">
+        Deployment
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../general_info/index.html">
+        General Information
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../contributions/index.html">
+        Contributing to LibreChat
+       </a>
+      </li>
+     </ul>
+    </div>
+   </nav>
+  </header>
+  <div class="md-container" data-md-component="container">
+   <main class="md-main" data-md-component="main">
+    <div class="md-main__inner md-grid">
+     <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Navigation" class="md-nav md-nav--primary md-nav--lifted" data-md-level="0">
+         <label class="md-nav__title" for="__drawer">
+          <a aria-label="LibreChat" class="md-nav__button md-logo" data-md-component="logo" href="../index.html" title="LibreChat">
+           <img alt="logo" src="../assets/LibreChat.svg"/>
+          </a>
+          LibreChat
+         </label>
+         <div class="md-nav__source">
+          <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+           <div class="md-source__icon md-icon">
+            <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+             <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+             <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+             </path>
+            </svg>
+           </div>
+           <div class="md-source__repository">
+            danny-avila/LibreChat
+           </div>
+          </a>
+         </div>
+         <ul class="md-nav__list" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="../index.html">
+            <span class="md-ellipsis">
+             Home
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../install/index.html">
+             <span class="md-ellipsis">
+              Installation and Configuration
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_2_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_2">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Installation and Configuration
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../install/installation/index.html">
+                <span class="md-ellipsis">
+                 Installation
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_2_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Installation
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/docker_compose_install.html">
+                  <span class="md-ellipsis">
+                   🐳 Docker Compose ✨(Recommended)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/container_install.html">
+                  <span class="md-ellipsis">
+                   🦦 Container (Podman)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/linux_install.html">
+                  <span class="md-ellipsis">
+                   🐧 Linux
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/mac_install.html">
+                  <span class="md-ellipsis">
+                   🍎 Mac
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/installation/windows_install.html">
+                  <span class="md-ellipsis">
+                   🪟 Windows
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2_3" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../install/configuration/index.html">
+                <span class="md-ellipsis">
+                 Configuration
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_2_3_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_3">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Configuration
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/dotenv.html">
+                  <span class="md-ellipsis">
+                   ⚙️ Environment Variables
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/custom_config.html">
+                  <span class="md-ellipsis">
+                   🖥️ Custom Config
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/azure_openai.html">
+                  <span class="md-ellipsis">
+                   🅰️ Azure OpenAI
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/ai_endpoints.html">
+                  <span class="md-ellipsis">
+                   ✅ Compatible AI Endpoints
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/docker_override.html">
+                  <span class="md-ellipsis">
+                   🐋 Docker Compose Override
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/ai_setup.html">
+                  <span class="md-ellipsis">
+                   🤖 AI Setup
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/litellm.html">
+                  <span class="md-ellipsis">
+                   🚅 LiteLLM
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/free_ai_apis.html">
+                  <span class="md-ellipsis">
+                   💸 Free AI APIs
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/ollama.html">
+                  <span class="md-ellipsis">
+                   🦙 Ollama
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/user_auth_system.html">
+                  <span class="md-ellipsis">
+                   🛂 Authentication System
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/mongodb.html">
+                  <span class="md-ellipsis">
+                   🍃 Online MongoDB
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/default_language.html">
+                  <span class="md-ellipsis">
+                   🌍 Default Language
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../install/configuration/misc.html">
+                  <span class="md-ellipsis">
+                   🌀 Miscellaneous
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../features/index.html">
+             <span class="md-ellipsis">
+              Features
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_3_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_3">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Features
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../features/plugins/index.html">
+                <span class="md-ellipsis">
+                 Plugins
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_3_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_3_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Plugins
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/introduction.html">
+                  <span class="md-ellipsis">
+                   🔌 Introduction
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/make_your_own.html">
+                  <span class="md-ellipsis">
+                   🛠️ Make Your Own
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/chatgpt_plugins_openapi.html">
+                  <span class="md-ellipsis">
+                   🧑‍💼 Official ChatGPT Plugins
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/google_search.html">
+                  <span class="md-ellipsis">
+                   🔎 Google Search
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/stable_diffusion.html">
+                  <span class="md-ellipsis">
+                   🖌️ Stable Diffusion
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/wolfram.html">
+                  <span class="md-ellipsis">
+                   🧠 Wolfram|Alpha
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../features/plugins/azure_ai_search.html">
+                  <span class="md-ellipsis">
+                   ⚡ Azure AI Search
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/presets.html">
+               <span class="md-ellipsis">
+                🔖 Presets
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/mod_system.html">
+               <span class="md-ellipsis">
+                🔨 Automated Moderation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/token_usage.html">
+               <span class="md-ellipsis">
+                🪙 Token Usage
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/firebase.html">
+               <span class="md-ellipsis">
+                🔥 Firebase CDN Setup
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/manage_your_database.html">
+               <span class="md-ellipsis">
+                🍃 Manage Your Database
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/logging_system.html">
+               <span class="md-ellipsis">
+                🪵 Logging System
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/bing_jailbreak.html">
+               <span class="md-ellipsis">
+                😈 Bing Jailbreak
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../features/third_party.html">
+               <span class="md-ellipsis">
+                ✨ Third-Party Tools and Contributions
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+           <input checked="" class="md-nav__toggle md-toggle" id="__nav_4" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="index.html">
+             <span class="md-ellipsis">
+              Deployment
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="true" aria-labelledby="__nav_4_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_4">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Deployment
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="introduction.html">
+               <span class="md-ellipsis">
+                🌐 Deployment Introduction
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="digitalocean.html">
+               <span class="md-ellipsis">
+                🌊 DigitalOcean ✨(Recommended)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="docker_ubuntu_deploy.html">
+               <span class="md-ellipsis">
+                🐳 Ubuntu Docker Deployment
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="huggingface.html">
+               <span class="md-ellipsis">
+                🤗 HuggingFace
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="railway.html">
+               <span class="md-ellipsis">
+                🛤️ Railway (one-click)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="linode.html">
+               <span class="md-ellipsis">
+                🐧 Linode
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="azure-terraform.html">
+               <span class="md-ellipsis">
+                ⚡ Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="render.html">
+               <span class="md-ellipsis">
+                ⏹️ Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="meilisearch_in_render.html">
+               <span class="md-ellipsis">
+                🔎 Meilisearch in Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="hetzner_ubuntu.html">
+               <span class="md-ellipsis">
+                🏗️ Hetzner
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="heroku.html">
+               <span class="md-ellipsis">
+                🌈 Heroku
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="zeabur.html">
+               <span class="md-ellipsis">
+                🦓 Zeabur
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="cloudflare.html">
+               <span class="md-ellipsis">
+                ☁️ Cloudflare
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item md-nav__item--active">
+              <input class="md-nav__toggle md-toggle" id="__toc" type="checkbox"/>
+              <label class="md-nav__link md-nav__link--active" for="__toc">
+               <span class="md-ellipsis">
+                ↪️ Nginx
+               </span>
+               <span class="md-nav__icon md-icon">
+               </span>
+              </label>
+              <a class="md-nav__link md-nav__link--active" href="nginx.html">
+               <span class="md-ellipsis">
+                ↪️ Nginx
+               </span>
+              </a>
+              <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+               <label class="md-nav__title" for="__toc">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Table of contents
+               </label>
+               <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#faq">
+                  <span class="md-ellipsis">
+                   FAQ
+                  </span>
+                 </a>
+                 <nav aria-label="FAQ" class="md-nav">
+                  <ul class="md-nav__list">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#why-do-i-need-reverse-proxy">
+                     <span class="md-ellipsis">
+                      Why do I need reverse proxy?
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#why-do-i-need-https">
+                     <span class="md-ellipsis">
+                      Why do I need HTTPS?
+                     </span>
+                    </a>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#prerequisites">
+                  <span class="md-ellipsis">
+                   Prerequisites
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#initial-setup">
+                  <span class="md-ellipsis">
+                   Initial Setup
+                  </span>
+                 </a>
+                 <nav aria-label="Initial Setup" class="md-nav">
+                  <ul class="md-nav__list">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#pointing-your-domain-to-your-website">
+                     <span class="md-ellipsis">
+                      Pointing Your Domain to Your Website
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#configure-dns">
+                     <span class="md-ellipsis">
+                      Configure DNS:
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#verify-domain-propagation">
+                     <span class="md-ellipsis">
+                      Verify Domain Propagation
+                     </span>
+                    </a>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#obtain-a-ssltls-certificate">
+                  <span class="md-ellipsis">
+                   Obtain a SSL/TLS Certificate
+                  </span>
+                 </a>
+                 <nav aria-label="Obtain a SSL/TLS Certificate" class="md-nav">
+                  <ul class="md-nav__list">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#install-certbot">
+                     <span class="md-ellipsis">
+                      Install Certbot
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#obtain-the-certificate">
+                     <span class="md-ellipsis">
+                      Obtain the Certificate
+                     </span>
+                    </a>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#set-up-nginx-as-a-reverse-proxy">
+                  <span class="md-ellipsis">
+                   Set Up NGINX as a Reverse Proxy
+                  </span>
+                 </a>
+                 <nav aria-label="Set Up NGINX as a Reverse Proxy" class="md-nav">
+                  <ul class="md-nav__list">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#using-the-deploy-composeyml-docker-compose-the-recommended-way">
+                     <span class="md-ellipsis">
+                      Using the deploy-compose.yml Docker Compose (the recommended way)
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#normal-host-based-deployment">
+                     <span class="md-ellipsis">
+                      Normal Host based deployment
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#configuration-without-basic-authentication">
+                     <span class="md-ellipsis">
+                      Configuration without Basic Authentication
+                     </span>
+                    </a>
+                    <nav aria-label="Configuration without Basic Authentication" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#use-case">
+                        <span class="md-ellipsis">
+                         Use Case
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#user-perspective">
+                        <span class="md-ellipsis">
+                         User Perspective
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#administrator-perspective">
+                        <span class="md-ellipsis">
+                         Administrator Perspective
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#configuration-example">
+                        <span class="md-ellipsis">
+                         Configuration Example
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#configuration-with-basic-authentication">
+                     <span class="md-ellipsis">
+                      Configuration with Basic Authentication
+                     </span>
+                    </a>
+                    <nav aria-label="Configuration with Basic Authentication" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#use-case_1">
+                        <span class="md-ellipsis">
+                         Use Case
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#user-perspective_1">
+                        <span class="md-ellipsis">
+                         User Perspective
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#administrator-perspective_1">
+                        <span class="md-ellipsis">
+                         Administrator Perspective
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#configuration-example_1">
+                        <span class="md-ellipsis">
+                         Configuration Example
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#summary-of-differences">
+                     <span class="md-ellipsis">
+                      Summary of Differences
+                     </span>
+                    </a>
+                    <nav aria-label="Summary of Differences" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#option-a-configure-nginx-without-basic-authentication-using-docker-compose-with-ssl">
+                        <span class="md-ellipsis">
+                         Option A: Configure NGINX without Basic Authentication using Docker Compose with SSL
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#option-b-configure-nginx-without-basic-authentication-on-the-host">
+                        <span class="md-ellipsis">
+                         Option B: Configure NGINX without Basic Authentication on the host
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#run-the-application">
+                  <span class="md-ellipsis">
+                   Run the application
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="ngrok.html">
+               <span class="md-ellipsis">
+                🪨 Ngrok
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="traefik.html">
+               <span class="md-ellipsis">
+                🚦 Traefik
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_5" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../general_info/index.html">
+             <span class="md-ellipsis">
+              General Information
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_5_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_5">
+             <span class="md-nav__icon md-icon">
+             </span>
+             General Information
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/breaking_changes.html">
+               <span class="md-ellipsis">
+                ⚠️ Breaking Changes
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/multilingual_information.html">
+               <span class="md-ellipsis">
+                🌍 Multilingual Information
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/project_origin.html">
+               <span class="md-ellipsis">
+                🧭 Origin
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../general_info/tech_stack.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Tech Stack
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_6" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../contributions/index.html">
+             <span class="md-ellipsis">
+              Contributing to LibreChat
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_6_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_6">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Contributing to LibreChat
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../contributions/how_to_contribute.html">
+               <span class="md-ellipsis">
+                🙌 Getting Started for Contributors
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../contributions/documentation_guidelines.html">
+               <span class="md-ellipsis">
+                📝 Documentation Guidelines
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../contributions/translation_contribution.html">
+               <span class="md-ellipsis">
+                🌍 Contribute a Translation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../contributions/coding_conventions.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Code Standards and Conventions
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../contributions/testing.html">
+               <span class="md-ellipsis">
+                🧪 Testing During Development
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+         <label class="md-nav__title" for="__toc">
+          <span class="md-nav__icon md-icon">
+          </span>
+          Table of contents
+         </label>
+         <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#faq">
+            <span class="md-ellipsis">
+             FAQ
+            </span>
+           </a>
+           <nav aria-label="FAQ" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#why-do-i-need-reverse-proxy">
+               <span class="md-ellipsis">
+                Why do I need reverse proxy?
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#why-do-i-need-https">
+               <span class="md-ellipsis">
+                Why do I need HTTPS?
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#prerequisites">
+            <span class="md-ellipsis">
+             Prerequisites
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#initial-setup">
+            <span class="md-ellipsis">
+             Initial Setup
+            </span>
+           </a>
+           <nav aria-label="Initial Setup" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#pointing-your-domain-to-your-website">
+               <span class="md-ellipsis">
+                Pointing Your Domain to Your Website
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#configure-dns">
+               <span class="md-ellipsis">
+                Configure DNS:
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#verify-domain-propagation">
+               <span class="md-ellipsis">
+                Verify Domain Propagation
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#obtain-a-ssltls-certificate">
+            <span class="md-ellipsis">
+             Obtain a SSL/TLS Certificate
+            </span>
+           </a>
+           <nav aria-label="Obtain a SSL/TLS Certificate" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#install-certbot">
+               <span class="md-ellipsis">
+                Install Certbot
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#obtain-the-certificate">
+               <span class="md-ellipsis">
+                Obtain the Certificate
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#set-up-nginx-as-a-reverse-proxy">
+            <span class="md-ellipsis">
+             Set Up NGINX as a Reverse Proxy
+            </span>
+           </a>
+           <nav aria-label="Set Up NGINX as a Reverse Proxy" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#using-the-deploy-composeyml-docker-compose-the-recommended-way">
+               <span class="md-ellipsis">
+                Using the deploy-compose.yml Docker Compose (the recommended way)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#normal-host-based-deployment">
+               <span class="md-ellipsis">
+                Normal Host based deployment
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#configuration-without-basic-authentication">
+               <span class="md-ellipsis">
+                Configuration without Basic Authentication
+               </span>
+              </a>
+              <nav aria-label="Configuration without Basic Authentication" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#use-case">
+                  <span class="md-ellipsis">
+                   Use Case
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#user-perspective">
+                  <span class="md-ellipsis">
+                   User Perspective
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#administrator-perspective">
+                  <span class="md-ellipsis">
+                   Administrator Perspective
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#configuration-example">
+                  <span class="md-ellipsis">
+                   Configuration Example
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#configuration-with-basic-authentication">
+               <span class="md-ellipsis">
+                Configuration with Basic Authentication
+               </span>
+              </a>
+              <nav aria-label="Configuration with Basic Authentication" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#use-case_1">
+                  <span class="md-ellipsis">
+                   Use Case
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#user-perspective_1">
+                  <span class="md-ellipsis">
+                   User Perspective
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#administrator-perspective_1">
+                  <span class="md-ellipsis">
+                   Administrator Perspective
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#configuration-example_1">
+                  <span class="md-ellipsis">
+                   Configuration Example
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#summary-of-differences">
+               <span class="md-ellipsis">
+                Summary of Differences
+               </span>
+              </a>
+              <nav aria-label="Summary of Differences" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#option-a-configure-nginx-without-basic-authentication-using-docker-compose-with-ssl">
+                  <span class="md-ellipsis">
+                   Option A: Configure NGINX without Basic Authentication using Docker Compose with SSL
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#option-b-configure-nginx-without-basic-authentication-on-the-host">
+                  <span class="md-ellipsis">
+                   Option B: Configure NGINX without Basic Authentication on the host
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#run-the-application">
+            <span class="md-ellipsis">
+             Run the application
+            </span>
+           </a>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-content" data-md-component="content">
+      <article class="md-content__inner md-typeset">
+       <a class="md-content__button md-icon" href="https://github.com/danny-avila/LibreChat/blob/main/docs/deployment/nginx.md" title="Edit this page">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z">
+         </path>
+        </svg>
+       </a>
+       <h1 id="deploying-application-in-the-cloud-with-https-and-nginx">
+        Deploying Application in the Cloud with HTTPS and NGINX
+       </h1>
+       <p>
+        This guide covers the essential steps for securing your LibreChat deployment with an SSL/TLS certificate for HTTPS, setting up Nginx as a reverse proxy, and configuring your domain.
+       </p>
+       <h2 id="faq">
+        FAQ
+       </h2>
+       <h3 id="why-do-i-need-reverse-proxy">
+        Why do I need reverse proxy?
+       </h3>
+       <p>
+        A reverse proxy is a server that sits between clients and the web servers that host actual applications. It forwards client requests to the back-end servers and returns the server's response to the client. Using a reverse proxy in deployment can enhance security, load balancing, and caching. It hides the characteristics and origins of the back-end servers, providing an additional layer of defense against attacks. Additionally, it can distribute traffic among several servers, improving performance and scalability.
+       </p>
+       <h3 id="why-do-i-need-https">
+        Why do I need HTTPS?
+       </h3>
+       <p>
+        Implementing HTTPS in your Nginx configuration is vital when deploying an application for several reasons:
+       </p>
+       <p>
+        Data Security: HTTPS encrypts the data transmitted between the client (user's browser) and the server, protecting sensitive information from being intercepted by third parties. This is particularly important for applications handling personal, financial, or otherwise confidential information.
+       </p>
+       <p>
+        Authentication: HTTPS provides a mechanism for users to verify that they are communicating with the intended website, reducing the risk of man-in-the-middle attacks, phishing, and other threats where an attacker might impersonate your site.
+       </p>
+       <p>
+        SEO and Trust: Search engines like Google give preference to HTTPS-enabled websites, potentially improving your site's search ranking. Additionally, browsers display security warnings for sites not using HTTPS, which can erode trust and deter users from using your application.
+       </p>
+       <p>
+        Regulatory Compliance: For many types of applications, particularly those dealing with personal data, HTTPS may be required to comply with legal standards and regulations, such as GDPR, HIPAA, or PCI-DSS.
+       </p>
+       <p>
+        By configuring HTTPS in Nginx, you ensure that your application benefits from enhanced security, improved trust and compliance, and better user experience.
+       </p>
+       <h2 id="prerequisites">
+        Prerequisites
+       </h2>
+       <ol>
+        <li>
+         A cloud server (e.g., AWS, Google Cloud, Azure, Digital Ocean).
+        </li>
+        <li>
+         A registered domain name.
+        </li>
+        <li>
+         Terminal access to your cloud server.
+        </li>
+        <li>
+         Node.js and NPM installed on your server.
+        </li>
+       </ol>
+       <h2 id="initial-setup">
+        Initial Setup
+       </h2>
+       <h3 id="pointing-your-domain-to-your-website">
+        Pointing Your Domain to Your Website
+       </h3>
+       <p>
+        Before proceeding with certificate acquisition, it's crucial to direct your domain to your cloud server. This step is foundational and must precede SSL certificate setup due to the time DNS records may require to propagate globally. Ensure that this DNS configuration is fully operational before moving forward.
+       </p>
+       <h3 id="configure-dns">
+        Configure DNS:
+       </h3>
+       <ul>
+        <li>
+         Log in to your domain registrar's control panel.
+        </li>
+        <li>
+         Navigate to DNS settings.
+        </li>
+        <li>
+         Create an
+         <code>
+          A record
+         </code>
+         pointing your domain to the IP address of your cloud server.
+        </li>
+       </ul>
+       <h3 id="verify-domain-propagation">
+        Verify Domain Propagation
+       </h3>
+       <ul>
+        <li>
+         It may take some time for DNS changes to propagate.
+        </li>
+        <li>
+         You can check the status by pinging your domain:
+         <code>
+          ping your_domain.com
+         </code>
+        </li>
+       </ul>
+       <p>
+        Comment: remember to replace
+        <code>
+         your_domain.com
+        </code>
+        with your actual domain name.
+       </p>
+       <h2 id="obtain-a-ssltls-certificate">
+        Obtain a SSL/TLS Certificate
+       </h2>
+       <p>
+        To secure your LibreChat application with HTTPS, you'll need an SSL/TLS certificate. Let's Encrypt offers free certificates:
+       </p>
+       <h3 id="install-certbot">
+        Install Certbot
+       </h3>
+       <ul>
+        <li>
+         For Ubuntu:
+         <code>
+          sudo apt-get install certbot python3-certbot-nginx
+         </code>
+        </li>
+        <li>
+         For CentOS:
+         <code>
+          sudo yum install certbot python2-certbot-nginx
+         </code>
+        </li>
+       </ul>
+       <h3 id="obtain-the-certificate">
+        Obtain the Certificate
+       </h3>
+       <ul>
+        <li>
+         Run
+         <code>
+          sudo certbot --nginx
+         </code>
+         to obtain and install the certificate automatically for NGINX.
+        </li>
+        <li>
+         Follow the on-screen instructions. Certbot will ask for information and complete the validation process.
+        </li>
+        <li>
+         Once successful, Certbot will store your certificate files.
+        </li>
+       </ul>
+       <h2 id="set-up-nginx-as-a-reverse-proxy">
+        Set Up NGINX as a Reverse Proxy
+       </h2>
+       <p>
+        NGINX acts as a reverse proxy, forwarding client requests to your LibreChat application.
+There are 2 different options for the nginx server, which depends on the method you want to deploy the LibreChat.
+       </p>
+       <h3 id="using-the-deploy-composeyml-docker-compose-the-recommended-way">
+        Using the
+        <code>
+         deploy-compose.yml
+        </code>
+        Docker Compose (the recommended way)
+       </h3>
+       <p>
+        The
+        <code>
+         deploy-compose.yml
+        </code>
+        has already the Nginx app within it. it used the file
+        <code>
+         client/nginx.conf
+        </code>
+        for the Nginx configuration.
+But here is the problem... using the
+        <code>
+         sudo certbot --nginx
+        </code>
+        you extracted the cert to the ... host conf so we will need to duplicate the cert to the dockers to make it work.
+       </p>
+       <h3 id="normal-host-based-deployment">
+        Normal Host based deployment
+       </h3>
+       <p>
+        If you are deploying from the host without dockers you need to install the Nginx on the host, as below. However if you use the docker compose
+        <code>
+         deploy-compose.yml
+        </code>
+        - DON'T install Nginx on the host since it will mess within your Nginx within the Docker.
+       </p>
+       <ol>
+        <li>
+         <p>
+          <strong>
+           Install NGINX
+          </strong>
+          :
+         </p>
+        </li>
+        <li>
+         <p>
+          Ubuntu:
+          <code>
+           sudo apt-get install nginx
+          </code>
+         </p>
+        </li>
+        <li>
+         <p>
+          CentOS:
+          <code>
+           sudo yum install nginx
+          </code>
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Start NGINX
+          </strong>
+          :
+         </p>
+        </li>
+        <li>
+         <p>
+          Start NGINX:
+          <code>
+           sudo systemctl start nginx
+          </code>
+         </p>
+        </li>
+        <li>
+         <p>
+          Follow the on-screen instructions. Press Enter for any screen that opens during the process.
+         </p>
+        </li>
+        <li>
+         <p>
+          You might be asked to execute
+          <code>
+           sudo reboot
+          </code>
+          to restart your server. This will apply any kernel updates and restart your services.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           What type of Nginx Configuration I want?
+          </strong>
+         </p>
+        </li>
+       </ol>
+       <p>
+        There are 2 different use cases, each calling for a bit different configuration.
+       </p>
+       <h3 id="configuration-without-basic-authentication">
+        Configuration without Basic Authentication
+       </h3>
+       <h4 id="use-case">
+        Use Case
+       </h4>
+       <p>
+        Suitable for production environments or when application has a built-in robust authentication system. Ideal for dynamic user management scenarios.
+       </p>
+       <h4 id="user-perspective">
+        User Perspective
+       </h4>
+       <ul>
+        <li>
+         Seamless access after application login.
+        </li>
+        <li>
+         No additional Nginx login required.
+        </li>
+       </ul>
+       <h4 id="administrator-perspective">
+        Administrator Perspective
+       </h4>
+       <ul>
+        <li>
+         No
+         <code>
+          .htpasswd
+         </code>
+         maintenance required.
+        </li>
+        <li>
+         Focus on application security and SSL certificate management.
+        </li>
+       </ul>
+       <h4 id="configuration-example">
+        Configuration Example
+       </h4>
+       <p>
+        This guide assumes the use case of installing without Basic Authentication, so if this is your case, jump over to
+        <code>
+         Configure NGINX without Basic Authentication
+        </code>
+        below.
+       </p>
+       <hr/>
+       <h3 id="configuration-with-basic-authentication">
+        Configuration with Basic Authentication
+       </h3>
+       <h4 id="use-case_1">
+        Use Case
+       </h4>
+       <p>
+        Appropriate for smaller environments like staging, internal tools, or additional security layers. Useful if application lacks its own authentication.
+       </p>
+       <h4 id="user-perspective_1">
+        User Perspective
+       </h4>
+       <ul>
+        <li>
+         Additional login prompt for Nginx access.
+        </li>
+        <li>
+         Separate credentials for Nginx and application.
+        </li>
+       </ul>
+       <h4 id="administrator-perspective_1">
+        Administrator Perspective
+       </h4>
+       <ul>
+        <li>
+         Maintenance of
+         <code>
+          .htpasswd
+         </code>
+         file required.
+        </li>
+        <li>
+         Extra security layer management.
+        </li>
+       </ul>
+       <h4 id="configuration-example_1">
+        Configuration Example
+       </h4>
+       <p>
+        For example configuration with Basic Authentication see
+        <a href="../install/configuration/misc.html">
+         🌀 Miscellaneous
+        </a>
+       </p>
+       <hr/>
+       <h3 id="summary-of-differences">
+        Summary of Differences
+       </h3>
+       <ul>
+        <li>
+         <strong>
+          User Experience
+         </strong>
+         : Direct application access vs. additional Nginx login.
+        </li>
+        <li>
+         <strong>
+          Administration
+         </strong>
+         : Less overhead vs.
+         <code>
+          .htpasswd
+         </code>
+         management.
+        </li>
+        <li>
+         <strong>
+          Security
+         </strong>
+         : Application security vs. added Nginx layer.
+        </li>
+       </ul>
+       <h4 id="option-a-configure-nginx-without-basic-authentication-using-docker-compose-with-ssl">
+        Option A: Configure NGINX without Basic Authentication using Docker Compose with SSL
+       </h4>
+       <p>
+        For the time being - this requires a bit of an effort...
+The exact details might change in the future so I will try to give here the basics, and I invite you to improve this section.
+       </p>
+       <p>
+        You need to change 2 files
+       </p>
+       <ol>
+        <li>
+         client/nginx.conf
+        </li>
+       </ol>
+       <p>
+        Here is an example (it is not one to one with the current code base - TODO: Fix the code and this in the future)
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-0-1" id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="c1"># Secure default configuration with SSL enabled</span>
+<a href="#__codelineno-0-2" id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="c1"># Based on Mozilla SSL Configuration Generator and provided configuration</span>
+<a href="#__codelineno-0-3" id="__codelineno-0-3" name="__codelineno-0-3"></a>
+<a href="#__codelineno-0-4" id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="c1"># Block to handle direct IP access and undefined server names</span>
+<a href="#__codelineno-0-5" id="__codelineno-0-5" name="__codelineno-0-5"></a>server<span class="w"> </span><span class="o">{</span>
+<a href="#__codelineno-0-6" id="__codelineno-0-6" name="__codelineno-0-6"></a><span class="w">    </span>listen<span class="w"> </span><span class="m">80</span><span class="w"> </span>default_server<span class="p">;</span>
+<a href="#__codelineno-0-7" id="__codelineno-0-7" name="__codelineno-0-7"></a><span class="w">    </span>listen<span class="w"> </span><span class="o">[</span>::<span class="o">]</span>:80<span class="w"> </span>default_server<span class="p">;</span>
+<a href="#__codelineno-0-8" id="__codelineno-0-8" name="__codelineno-0-8"></a><span class="w">    </span>listen<span class="w"> </span><span class="m">443</span><span class="w"> </span>ssl<span class="w"> </span>http2<span class="w"> </span>default_server<span class="p">;</span>
+<a href="#__codelineno-0-9" id="__codelineno-0-9" name="__codelineno-0-9"></a><span class="w">    </span>listen<span class="w"> </span><span class="o">[</span>::<span class="o">]</span>:443<span class="w"> </span>ssl<span class="w"> </span>http2<span class="w"> </span>default_server<span class="p">;</span>
+<a href="#__codelineno-0-10" id="__codelineno-0-10" name="__codelineno-0-10"></a><span class="w">    </span>ssl_certificate<span class="w"> </span>/etc/letsencrypt/live/&lt;put.here.your.domain.name&gt;/fullchain.pem<span class="p">;</span><span class="w"> </span><span class="c1"># Use your cert paths</span>
+<a href="#__codelineno-0-11" id="__codelineno-0-11" name="__codelineno-0-11"></a><span class="w">    </span>ssl_certificate_key<span class="w"> </span>/etc/letsencrypt/live/&lt;put.here.your.domain.name&gt;/privkey.pem<span class="p">;</span><span class="w"> </span><span class="c1"># Use your cert paths</span>
+<a href="#__codelineno-0-12" id="__codelineno-0-12" name="__codelineno-0-12"></a><span class="w">    </span>server_name<span class="w"> </span>_<span class="p">;</span><span class="w"> </span><span class="c1"># Catch all other domain requests or direct IP access</span>
+<a href="#__codelineno-0-13" id="__codelineno-0-13" name="__codelineno-0-13"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="m">403</span><span class="p">;</span><span class="w"> </span><span class="c1"># Forbidden or use 'return 444;' to drop the request immediately without response</span>
+<a href="#__codelineno-0-14" id="__codelineno-0-14" name="__codelineno-0-14"></a><span class="o">}</span>
+<a href="#__codelineno-0-15" id="__codelineno-0-15" name="__codelineno-0-15"></a>
+<a href="#__codelineno-0-16" id="__codelineno-0-16" name="__codelineno-0-16"></a><span class="c1"># Redirect HTTP to HTTPS for your domain</span>
+<a href="#__codelineno-0-17" id="__codelineno-0-17" name="__codelineno-0-17"></a>server<span class="w"> </span><span class="o">{</span>
+<a href="#__codelineno-0-18" id="__codelineno-0-18" name="__codelineno-0-18"></a><span class="w">    </span>listen<span class="w"> </span><span class="m">80</span><span class="p">;</span>
+<a href="#__codelineno-0-19" id="__codelineno-0-19" name="__codelineno-0-19"></a><span class="w">    </span>listen<span class="w"> </span><span class="o">[</span>::<span class="o">]</span>:80<span class="p">;</span>
+<a href="#__codelineno-0-20" id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="w">    </span>server_name<span class="w"> </span>&lt;put.here.your.domain.name&gt;<span class="p">;</span><span class="w"> </span><span class="c1"># Your domain</span>
+<a href="#__codelineno-0-21" id="__codelineno-0-21" name="__codelineno-0-21"></a>
+<a href="#__codelineno-0-22" id="__codelineno-0-22" name="__codelineno-0-22"></a><span class="w">    </span><span class="c1"># Redirect all HTTP traffic to HTTPS</span>
+<a href="#__codelineno-0-23" id="__codelineno-0-23" name="__codelineno-0-23"></a><span class="w">    </span>location<span class="w"> </span>/<span class="w"> </span><span class="o">{</span>
+<a href="#__codelineno-0-24" id="__codelineno-0-24" name="__codelineno-0-24"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="m">301</span><span class="w"> </span>https://<span class="nv">$host$request_uri</span><span class="p">;</span>
+<a href="#__codelineno-0-25" id="__codelineno-0-25" name="__codelineno-0-25"></a><span class="w">    </span><span class="o">}</span>
+<a href="#__codelineno-0-26" id="__codelineno-0-26" name="__codelineno-0-26"></a><span class="o">}</span>
+<a href="#__codelineno-0-27" id="__codelineno-0-27" name="__codelineno-0-27"></a>
+<a href="#__codelineno-0-28" id="__codelineno-0-28" name="__codelineno-0-28"></a><span class="c1"># HTTPS server configuration for your domain</span>
+<a href="#__codelineno-0-29" id="__codelineno-0-29" name="__codelineno-0-29"></a>server<span class="w"> </span><span class="o">{</span>
+<a href="#__codelineno-0-30" id="__codelineno-0-30" name="__codelineno-0-30"></a><span class="w">    </span>listen<span class="w"> </span><span class="m">443</span><span class="w"> </span>ssl<span class="w"> </span>http2<span class="p">;</span>
+<a href="#__codelineno-0-31" id="__codelineno-0-31" name="__codelineno-0-31"></a><span class="w">    </span>listen<span class="w"> </span><span class="o">[</span>::<span class="o">]</span>:443<span class="w"> </span>ssl<span class="w"> </span>http2<span class="p">;</span><span class="w"> </span><span class="c1"># IPv6 support</span>
+<a href="#__codelineno-0-32" id="__codelineno-0-32" name="__codelineno-0-32"></a>
+<a href="#__codelineno-0-33" id="__codelineno-0-33" name="__codelineno-0-33"></a><span class="w">    </span>server_name<span class="w"> </span>&lt;put.here.your.domain.name&gt;<span class="p">;</span><span class="w"> </span><span class="c1"># Your domain</span>
+<a href="#__codelineno-0-34" id="__codelineno-0-34" name="__codelineno-0-34"></a>
+<a href="#__codelineno-0-35" id="__codelineno-0-35" name="__codelineno-0-35"></a><span class="w">    </span><span class="c1"># SSL Certificate settings</span>
+<a href="#__codelineno-0-36" id="__codelineno-0-36" name="__codelineno-0-36"></a><span class="w">    </span>ssl_certificate<span class="w"> </span>/etc/letsencrypt/live/&lt;put.here.your.domain.name&gt;/fullchain.pem<span class="p">;</span><span class="w"> </span><span class="c1"># managed by Certbot</span>
+<a href="#__codelineno-0-37" id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="w">    </span>ssl_certificate_key<span class="w"> </span>/etc/letsencrypt/live/&lt;put.here.your.domain.name&gt;/privkey.pem<span class="p">;</span><span class="w"> </span><span class="c1"># managed by Certbot</span>
+<a href="#__codelineno-0-38" id="__codelineno-0-38" name="__codelineno-0-38"></a>
+<a href="#__codelineno-0-39" id="__codelineno-0-39" name="__codelineno-0-39"></a><span class="w">    </span><span class="c1"># Recommended SSL settings</span>
+<a href="#__codelineno-0-40" id="__codelineno-0-40" name="__codelineno-0-40"></a><span class="w">    </span>include<span class="w"> </span>/etc/letsencrypt/options-ssl-nginx.conf<span class="p">;</span><span class="w"> </span><span class="c1"># managed by Certbot or replace with Mozilla's recommended settings</span>
+<a href="#__codelineno-0-41" id="__codelineno-0-41" name="__codelineno-0-41"></a><span class="w">    </span>ssl_dhparam<span class="w"> </span>/etc/letsencrypt/ssl-dhparams.pem<span class="p">;</span><span class="w"> </span><span class="c1"># managed by Certbot or Mozilla's recommended dhparam</span>
+<a href="#__codelineno-0-42" id="__codelineno-0-42" name="__codelineno-0-42"></a>
+<a href="#__codelineno-0-43" id="__codelineno-0-43" name="__codelineno-0-43"></a><span class="w">    </span><span class="c1"># Increase the client_max_body_size to allow larger file uploads</span>
+<a href="#__codelineno-0-44" id="__codelineno-0-44" name="__codelineno-0-44"></a><span class="w">    </span>client_max_body_size<span class="w"> </span>25M<span class="p">;</span>
+<a href="#__codelineno-0-45" id="__codelineno-0-45" name="__codelineno-0-45"></a>
+<a href="#__codelineno-0-46" id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="w">    </span><span class="c1"># Proxy settings for the API and front-end</span>
+<a href="#__codelineno-0-47" id="__codelineno-0-47" name="__codelineno-0-47"></a><span class="w">    </span>location<span class="w"> </span>/api<span class="w"> </span><span class="o">{</span>
+<a href="#__codelineno-0-48" id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="w">        </span>proxy_pass<span class="w"> </span>http://api:3080/api<span class="p">;</span><span class="w"> </span><span class="c1"># or use http://api:3080/api if 'api' is a service name in Docker</span>
+<a href="#__codelineno-0-49" id="__codelineno-0-49" name="__codelineno-0-49"></a><span class="w">        </span>proxy_http_version<span class="w"> </span><span class="m">1</span>.1<span class="p">;</span>
+<a href="#__codelineno-0-50" id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="w">        </span>proxy_set_header<span class="w"> </span>Upgrade<span class="w"> </span><span class="nv">$http_upgrade</span><span class="p">;</span>
+<a href="#__codelineno-0-51" id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="w">        </span>proxy_set_header<span class="w"> </span>Connection<span class="w"> </span><span class="s1">'upgrade'</span><span class="p">;</span>
+<a href="#__codelineno-0-52" id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="w">        </span>proxy_set_header<span class="w"> </span>Host<span class="w"> </span><span class="nv">$host</span><span class="p">;</span>
+<a href="#__codelineno-0-53" id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="w">        </span>proxy_cache_bypass<span class="w"> </span><span class="nv">$http_upgrade</span><span class="p">;</span>
+<a href="#__codelineno-0-54" id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="w">    </span><span class="o">}</span>
+<a href="#__codelineno-0-55" id="__codelineno-0-55" name="__codelineno-0-55"></a>
+<a href="#__codelineno-0-56" id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="w">    </span>location<span class="w"> </span>/<span class="w"> </span><span class="o">{</span>
+<a href="#__codelineno-0-57" id="__codelineno-0-57" name="__codelineno-0-57"></a><span class="w">        </span>proxy_pass<span class="w"> </span>http://api:3080<span class="p">;</span><span class="w"> </span><span class="c1"># or use http://api:3080 if 'api' is a service name in Docker</span>
+<a href="#__codelineno-0-58" id="__codelineno-0-58" name="__codelineno-0-58"></a><span class="w">        </span>proxy_http_version<span class="w"> </span><span class="m">1</span>.1<span class="p">;</span>
+<a href="#__codelineno-0-59" id="__codelineno-0-59" name="__codelineno-0-59"></a><span class="w">        </span>proxy_set_header<span class="w"> </span>Upgrade<span class="w"> </span><span class="nv">$http_upgrade</span><span class="p">;</span>
+<a href="#__codelineno-0-60" id="__codelineno-0-60" name="__codelineno-0-60"></a><span class="w">        </span>proxy_set_header<span class="w"> </span>Connection<span class="w"> </span><span class="s1">'upgrade'</span><span class="p">;</span>
+<a href="#__codelineno-0-61" id="__codelineno-0-61" name="__codelineno-0-61"></a><span class="w">        </span>proxy_set_header<span class="w"> </span>Host<span class="w"> </span><span class="nv">$host</span><span class="p">;</span>
+<a href="#__codelineno-0-62" id="__codelineno-0-62" name="__codelineno-0-62"></a><span class="w">        </span>proxy_cache_bypass<span class="w"> </span><span class="nv">$http_upgrade</span><span class="p">;</span>
+<a href="#__codelineno-0-63" id="__codelineno-0-63" name="__codelineno-0-63"></a><span class="w">    </span><span class="o">}</span>
+<a href="#__codelineno-0-64" id="__codelineno-0-64" name="__codelineno-0-64"></a><span class="o">}</span>
+</code></pre>
+       </div>
+       <ol>
+        <li>
+         deploy-compose.yml
+        </li>
+       </ol>
+       <p>
+        go to the client section
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-1-1" id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="nt">client</span><span class="p">:</span>
+<a href="#__codelineno-1-2" id="__codelineno-1-2" name="__codelineno-1-2"></a><span class="w">  </span><span class="nt">build</span><span class="p">:</span>
+<a href="#__codelineno-1-3" id="__codelineno-1-3" name="__codelineno-1-3"></a><span class="w">    </span><span class="nt">context</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.</span>
+<a href="#__codelineno-1-4" id="__codelineno-1-4" name="__codelineno-1-4"></a><span class="w">    </span><span class="nt">dockerfile</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Dockerfile.multi</span>
+<a href="#__codelineno-1-5" id="__codelineno-1-5" name="__codelineno-1-5"></a><span class="w">    </span><span class="nt">target</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-stage</span>
+<a href="#__codelineno-1-6" id="__codelineno-1-6" name="__codelineno-1-6"></a><span class="w">  </span><span class="nt">container_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">LibreChat-NGINX</span>
+<a href="#__codelineno-1-7" id="__codelineno-1-7" name="__codelineno-1-7"></a><span class="w">  </span><span class="nt">ports</span><span class="p">:</span>
+<a href="#__codelineno-1-8" id="__codelineno-1-8" name="__codelineno-1-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">80:80</span>
+<a href="#__codelineno-1-9" id="__codelineno-1-9" name="__codelineno-1-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">443:443</span>
+<a href="#__codelineno-1-10" id="__codelineno-1-10" name="__codelineno-1-10"></a><span class="w">  </span><span class="nt">depends_on</span><span class="p">:</span>
+<a href="#__codelineno-1-11" id="__codelineno-1-11" name="__codelineno-1-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api</span>
+<a href="#__codelineno-1-12" id="__codelineno-1-12" name="__codelineno-1-12"></a><span class="w">  </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">always</span>
+<a href="#__codelineno-1-13" id="__codelineno-1-13" name="__codelineno-1-13"></a><span class="w">  </span><span class="nt">volumes</span><span class="p">:</span>
+<a href="#__codelineno-1-14" id="__codelineno-1-14" name="__codelineno-1-14"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./client/nginx.conf:/etc/nginx/conf.d/default.conf</span>
+</code></pre>
+       </div>
+       <p>
+        and add to the volumes reference to the certificates that
+        <code>
+         sudo certbot --nginx
+        </code>
+        added to your
+        <strong>
+         host
+        </strong>
+        configuration
+e.g.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-2-1" id="__codelineno-2-1" name="__codelineno-2-1"></a><span class="nt">client</span><span class="p">:</span>
+<a href="#__codelineno-2-2" id="__codelineno-2-2" name="__codelineno-2-2"></a><span class="w">  </span><span class="nt">build</span><span class="p">:</span>
+<a href="#__codelineno-2-3" id="__codelineno-2-3" name="__codelineno-2-3"></a><span class="w">    </span><span class="nt">context</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.</span>
+<a href="#__codelineno-2-4" id="__codelineno-2-4" name="__codelineno-2-4"></a><span class="w">    </span><span class="nt">dockerfile</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Dockerfile.multi</span>
+<a href="#__codelineno-2-5" id="__codelineno-2-5" name="__codelineno-2-5"></a><span class="w">    </span><span class="nt">target</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-stage</span>
+<a href="#__codelineno-2-6" id="__codelineno-2-6" name="__codelineno-2-6"></a><span class="w">  </span><span class="nt">container_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">LibreChat-NGINX</span>
+<a href="#__codelineno-2-7" id="__codelineno-2-7" name="__codelineno-2-7"></a><span class="w">  </span><span class="nt">ports</span><span class="p">:</span>
+<a href="#__codelineno-2-8" id="__codelineno-2-8" name="__codelineno-2-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">80:80</span>
+<a href="#__codelineno-2-9" id="__codelineno-2-9" name="__codelineno-2-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">443:443</span>
+<a href="#__codelineno-2-10" id="__codelineno-2-10" name="__codelineno-2-10"></a><span class="w">  </span><span class="nt">depends_on</span><span class="p">:</span>
+<a href="#__codelineno-2-11" id="__codelineno-2-11" name="__codelineno-2-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">api</span>
+<a href="#__codelineno-2-12" id="__codelineno-2-12" name="__codelineno-2-12"></a><span class="w">  </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">always</span>
+<a href="#__codelineno-2-13" id="__codelineno-2-13" name="__codelineno-2-13"></a><span class="w">  </span><span class="nt">volumes</span><span class="p">:</span>
+<a href="#__codelineno-2-14" id="__codelineno-2-14" name="__codelineno-2-14"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./client/nginx.conf:/etc/nginx/conf.d/default.conf</span>
+<a href="#__codelineno-2-15" id="__codelineno-2-15" name="__codelineno-2-15"></a><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">- /etc/letsencrypt/live/&lt;put.here.your.domain.name&gt;:/etc/letsencrypt/live/&lt;put.here.your.domain.name&gt;</span>
+<a href="#__codelineno-2-16" id="__codelineno-2-16" name="__codelineno-2-16"></a><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">- /etc/letsencrypt/archive/&lt;put.here.your.domain.name&gt;:/etc/letsencrypt/archive/&lt;put.here.your.domain.name&gt;</span>
+<a href="#__codelineno-2-17" id="__codelineno-2-17" name="__codelineno-2-17"></a><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">- /etc/letsencrypt/options-ssl-nginx.conf:/etc/letsencrypt/options-ssl-nginx.conf</span>
+<a href="#__codelineno-2-18" id="__codelineno-2-18" name="__codelineno-2-18"></a><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">- /etc/letsencrypt/ssl-dhparams.pem:/etc/letsencrypt/ssl-dhparams.pem</span>
+</code></pre>
+       </div>
+       <p>
+        after you changed them you should follow the instruction from
+        <a href="digitalocean.html#part-v-editing-the-nginx-file-for-custom-domains-and-advanced-configs">
+         Part V: Editing the NGINX file
+        </a>
+        **
+in order to update the git and deploy from a rebased branch.
+[TBA: TO ADD HERE a simple explanation based on that explanation]
+       </p>
+       <h4 id="option-b-configure-nginx-without-basic-authentication-on-the-host">
+        Option B: Configure NGINX without Basic Authentication on the host
+       </h4>
+       <ul>
+        <li>
+         Open the LibreChat NGINX configuration file:
+         <code>
+          sudo nano /etc/nginx/sites-available/default
+         </code>
+        </li>
+        <li>
+         Replace the file content with the following, ensuring to replace
+         <code>
+          your_domain.com
+         </code>
+         with your domain and
+         <code>
+          app_port
+         </code>
+         with your application's port:
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-3-1" id="__codelineno-3-1" name="__codelineno-3-1"></a>server<span class="w"> </span><span class="o">{</span>
+<a href="#__codelineno-3-2" id="__codelineno-3-2" name="__codelineno-3-2"></a><span class="w">    </span>listen<span class="w"> </span><span class="m">80</span><span class="p">;</span>
+<a href="#__codelineno-3-3" id="__codelineno-3-3" name="__codelineno-3-3"></a><span class="w">    </span>server_name<span class="w"> </span>your_domain.com<span class="p">;</span>
+<a href="#__codelineno-3-4" id="__codelineno-3-4" name="__codelineno-3-4"></a>
+<a href="#__codelineno-3-5" id="__codelineno-3-5" name="__codelineno-3-5"></a><span class="w">    </span>location<span class="w"> </span>/<span class="w"> </span><span class="o">{</span>
+<a href="#__codelineno-3-6" id="__codelineno-3-6" name="__codelineno-3-6"></a><span class="w">        </span>proxy_pass<span class="w"> </span>http://localhost:3080<span class="p">;</span>
+<a href="#__codelineno-3-7" id="__codelineno-3-7" name="__codelineno-3-7"></a><span class="w">        </span>proxy_http_version<span class="w"> </span><span class="m">1</span>.1<span class="p">;</span>
+<a href="#__codelineno-3-8" id="__codelineno-3-8" name="__codelineno-3-8"></a><span class="w">        </span>proxy_set_header<span class="w"> </span>Upgrade<span class="w"> </span><span class="nv">$http_upgrade</span><span class="p">;</span>
+<a href="#__codelineno-3-9" id="__codelineno-3-9" name="__codelineno-3-9"></a><span class="w">        </span>proxy_set_header<span class="w"> </span>Connection<span class="w"> </span><span class="s1">'upgrade'</span><span class="p">;</span>
+<a href="#__codelineno-3-10" id="__codelineno-3-10" name="__codelineno-3-10"></a><span class="w">        </span>proxy_set_header<span class="w"> </span>Host<span class="w"> </span><span class="nv">$host</span><span class="p">;</span>
+<a href="#__codelineno-3-11" id="__codelineno-3-11" name="__codelineno-3-11"></a><span class="w">        </span>proxy_cache_bypass<span class="w"> </span><span class="nv">$http_upgrade</span><span class="p">;</span>
+<a href="#__codelineno-3-12" id="__codelineno-3-12" name="__codelineno-3-12"></a><span class="w">    </span><span class="o">}</span>
+<a href="#__codelineno-3-13" id="__codelineno-3-13" name="__codelineno-3-13"></a><span class="o">}</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         Check NGINX Configuration &amp; Restart
+        </strong>
+        :
+       </p>
+       <ul>
+        <li>
+         Validate the configuration:
+         <code>
+          sudo nginx -t
+         </code>
+        </li>
+        <li>
+         Reload NGINX:
+         <code>
+          sudo systemctl reload nginx
+         </code>
+        </li>
+       </ul>
+       <h2 id="run-the-application">
+        Run the application
+       </h2>
+       <ol>
+        <li>
+         Navigate to your application's directory:
+        </li>
+       </ol>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-4-1" id="__codelineno-4-1" name="__codelineno-4-1"></a><span class="nb">cd</span><span class="w"> </span>LibreChat<span class="w">  </span><span class="c1"># Replace 'LibreChat' with your actual application directory.</span>
+</code></pre>
+       </div>
+       <ol>
+        <li>
+         Start your application using Docker Compose:
+        </li>
+       </ol>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-5-1" id="__codelineno-5-1" name="__codelineno-5-1"></a>sudo<span class="w"> </span>docker-compose<span class="w"> </span>-f<span class="w"> </span>./deploy-compose.yml<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre>
+       </div>
+      </article>
+     </div>
+     <script>
+      var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))
+     </script>
+    </div>
+    <button class="md-top md-icon" data-md-component="top" hidden="" type="button">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z">
+      </path>
+     </svg>
+     Back to top
+    </button>
+   </main>
+   <footer class="md-footer">
+    <div class="md-footer-meta md-typeset">
+     <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+       <div class="md-copyright__highlight">
+        © 2024
+        <a href="https://librechat.ai/" rel="noopener" target="_blank">
+         LibreChat
+        </a>
+       </div>
+       Made with
+       <a href="https://squidfunk.github.io/mkdocs-material/" rel="noopener" target="_blank">
+        Material for MkDocs
+       </a>
+      </div>
+      <div class="md-social">
+       <a class="md-social__link" href="https://discord.librechat.ai" rel="noopener" target="_blank" title="Discord">
+        <svg viewbox="0 0 640 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M524.531 69.836a1.5 1.5 0 0 0-.764-.7A485.065 485.065 0 0 0 404.081 32.03a1.816 1.816 0 0 0-1.923.91 337.461 337.461 0 0 0-14.9 30.6 447.848 447.848 0 0 0-134.426 0 309.541 309.541 0 0 0-15.135-30.6 1.89 1.89 0 0 0-1.924-.91 483.689 483.689 0 0 0-119.688 37.107 1.712 1.712 0 0 0-.788.676C39.068 183.651 18.186 294.69 28.43 404.354a2.016 2.016 0 0 0 .765 1.375 487.666 487.666 0 0 0 146.825 74.189 1.9 1.9 0 0 0 2.063-.676A348.2 348.2 0 0 0 208.12 430.4a1.86 1.86 0 0 0-1.019-2.588 321.173 321.173 0 0 1-45.868-21.853 1.885 1.885 0 0 1-.185-3.126 251.047 251.047 0 0 0 9.109-7.137 1.819 1.819 0 0 1 1.9-.256c96.229 43.917 200.41 43.917 295.5 0a1.812 1.812 0 0 1 1.924.233 234.533 234.533 0 0 0 9.132 7.16 1.884 1.884 0 0 1-.162 3.126 301.407 301.407 0 0 1-45.89 21.83 1.875 1.875 0 0 0-1 2.611 391.055 391.055 0 0 0 30.014 48.815 1.864 1.864 0 0 0 2.063.7A486.048 486.048 0 0 0 610.7 405.729a1.882 1.882 0 0 0 .765-1.352c12.264-126.783-20.532-236.912-86.934-334.541ZM222.491 337.58c-28.972 0-52.844-26.587-52.844-59.239s23.409-59.241 52.844-59.241c29.665 0 53.306 26.82 52.843 59.239 0 32.654-23.41 59.241-52.843 59.241Zm195.38 0c-28.971 0-52.843-26.587-52.843-59.239s23.409-59.241 52.843-59.241c29.667 0 53.307 26.82 52.844 59.239 0 32.654-23.177 59.241-52.844 59.241Z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://librechat.ai" rel="noopener" target="_blank" title="GitHub">
+        <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://yt.librechat.ai" rel="noopener" target="_blank" title="YouTube">
+        <svg viewbox="0 0 576 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305zm-317.51 213.508V175.185l142.739 81.205-142.739 81.201z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://linkedin.librechat.ai" rel="noopener" target="_blank" title="LinkedIn">
+        <svg viewbox="0 0 448 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3zM135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5zm282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9V416z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://demo.librechat.cfd" rel="noopener" target="_blank" title="Demo">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M278.5 215.6 23 471c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l57-57h68c49.7 0 97.9-14.4 139-41 11.1-7.2 5.5-23-7.8-23-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l81-24.3c2.5-.8 4.8-2.1 6.7-4l22.4-22.4c10.1-10.1 2.9-27.3-11.3-27.3H377c-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l112-33.6c4-1.2 7.4-3.9 9.3-7.7 10.8-21 16.4-44.5 16.4-68.6 0-41-16.3-80.3-45.3-109.3l-5.5-5.5C432.3 16.3 393 0 352 0s-80.3 16.3-109.3 45.3L139 149c-48 48-75 113.1-75 181v55.3l189.6-189.5c6.2-6.2 16.4-6.2 22.6 0 5.4 5.4 6.1 13.6 2.2 19.8z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://hf.librechat.ai" rel="noopener" target="_blank" title="Hugging Face">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M256 512a256 256 0 1 0 0-512 256 256 0 1 0 0 512zm132.1-199.2c12.3-3.8 24.3 6.9 19.3 18.7-25 59.1-83.2 100.5-151.1 100.5s-126.2-41.4-151.1-100.5c-5-11.8 7-22.5 19.3-18.7 39.7 12.2 84.5 19 131.8 19s92.1-6.8 131.8-19zm-170.5-84-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8zm160 0-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8z">
+         </path>
+        </svg>
+       </a>
+      </div>
+     </div>
+    </div>
+   </footer>
+  </div>
+  <div class="md-dialog" data-md-component="dialog">
+   <div class="md-dialog__inner md-typeset">
+   </div>
+  </div>
+  <div class="md-progress" data-md-component="progress" role="progressbar">
+  </div>
+  <script id="__config" type="application/json">
+   {"base": "..", "features": ["header.autohide", "navigation.tabs", "navigation.tabs.sticky", "content.action.edit", "content.code.copy", "navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.expand", "navigation.indexes", "navigation.top"], "search": "../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}
+  </script>
+  <script src="../assets/javascripts/bundle.bd41221c.min.js">
+  </script>
+ </body>
+</html>

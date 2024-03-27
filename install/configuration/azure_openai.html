@@ -1,0 +1,3075 @@
+<!DOCTYPE html>
+<html class="no-js" lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <meta content="Comprehensive guide for configuring Azure OpenAI through the `librechat.yaml` file AKA the LibreChat Config file. This document is your one-stop resource for understanding and customizing Azure settings and models." name="description"/>
+  <link href="index.html" rel="prev"/>
+  <link href="ai_endpoints.html" rel="next"/>
+  <link href="../../assets/favicon_package/favicon-32x32.png" rel="icon"/>
+  <meta content="mkdocs-1.5.3, mkdocs-material-9.5.15" name="generator"/>
+  <title>
+   🅰️ Azure OpenAI - LibreChat
+  </title>
+  <link href="../../assets/stylesheets/main.7e359304.min.css" rel="stylesheet"/>
+  <link href="../../assets/stylesheets/palette.06af60db.min.css" rel="stylesheet"/>
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+  <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback" rel="stylesheet"/>
+  <style>
+   :root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}
+  </style>
+  <script>
+   __md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}
+  </script>
+  <meta content="article" property="og:type"/>
+  <meta content="🅰️ Azure OpenAI" property="og:title"/>
+  <meta content="Comprehensive guide for configuring Azure OpenAI through the `librechat.yaml` file AKA the LibreChat Config file. This document is your one-stop resource for understanding and customizing Azure settings and models." property="og:description"/>
+  <meta content="LibreChat" property="og:site_name"/>
+  <meta content="en_us" property="og:locale"/>
+  <meta content="Noneinstall/configuration/azure_openai.html" property="og:url"/>
+  <meta content="summary" property="twitter:card"/>
+  <meta content="🅰️ Azure OpenAI" property="twitter:title"/>
+  <meta content="Comprehensive guide for configuring Azure OpenAI through the `librechat.yaml` file AKA the LibreChat Config file. This document is your one-stop resource for understanding and customizing Azure settings and models." property="twitter:description"/>
+ </head>
+ <body data-md-color-accent="purple" data-md-color-primary="cyan" data-md-color-scheme="slate" dir="ltr">
+  <input autocomplete="off" class="md-toggle" data-md-toggle="drawer" id="__drawer" type="checkbox"/>
+  <input autocomplete="off" class="md-toggle" data-md-toggle="search" id="__search" type="checkbox"/>
+  <label class="md-overlay" for="__drawer">
+  </label>
+  <div data-md-component="skip">
+   <a class="md-skip" href="#azure-openai">
+    Skip to content
+   </a>
+  </div>
+  <div data-md-component="announce">
+  </div>
+  <header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+   <nav aria-label="Header" class="md-header__inner md-grid">
+    <a aria-label="LibreChat" class="md-header__button md-logo" data-md-component="logo" href="../../index.html" title="LibreChat">
+     <img alt="logo" src="../../assets/LibreChat.svg"/>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+     <div class="md-header__ellipsis">
+      <div class="md-header__topic">
+       <span class="md-ellipsis">
+        LibreChat
+       </span>
+      </div>
+      <div class="md-header__topic" data-md-component="header-topic">
+       <span class="md-ellipsis">
+        🅰️ Azure OpenAI
+       </span>
+      </div>
+     </div>
+    </div>
+    <form class="md-header__option" data-md-component="palette">
+     <input aria-label="Switch to light mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="slate" id="__palette_0" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_1" hidden="" title="Switch to light mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+     <input aria-label="Switch to dark mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="default" id="__palette_1" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_0" hidden="" title="Switch to dark mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+    </form>
+    <script>
+     var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}
+    </script>
+    <label class="md-header__button md-icon" for="__search">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-search" data-md-component="search" role="dialog">
+     <label class="md-search__overlay" for="__search">
+     </label>
+     <div class="md-search__inner" role="search">
+      <form class="md-search__form" name="search">
+       <input aria-label="Search" autocapitalize="off" autocomplete="off" autocorrect="off" class="md-search__input" data-md-component="search-query" name="query" placeholder="Search" required="" spellcheck="false" type="text"/>
+       <label class="md-search__icon md-icon" for="__search">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+         </path>
+        </svg>
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z">
+         </path>
+        </svg>
+       </label>
+       <nav aria-label="Search" class="md-search__options">
+        <button aria-label="Clear" class="md-search__icon md-icon" tabindex="-1" title="Clear" type="reset">
+         <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z">
+          </path>
+         </svg>
+        </button>
+       </nav>
+      </form>
+      <div class="md-search__output">
+       <div class="md-search__scrollwrap" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+         <div class="md-search-result__meta">
+          Initializing search
+         </div>
+         <ol class="md-search-result__list" role="presentation">
+         </ol>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div class="md-header__source">
+     <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+      <div class="md-source__icon md-icon">
+       <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+        <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+        <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+        </path>
+       </svg>
+      </div>
+      <div class="md-source__repository">
+       danny-avila/LibreChat
+      </div>
+     </a>
+    </div>
+   </nav>
+   <nav aria-label="Tabs" class="md-tabs" data-md-component="tabs">
+    <div class="md-grid">
+     <ul class="md-tabs__list">
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../index.html">
+        Home
+       </a>
+      </li>
+      <li class="md-tabs__item md-tabs__item--active">
+       <a class="md-tabs__link" href="../index.html">
+        Installation and Configuration
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../features/index.html">
+        Features
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../deployment/index.html">
+        Deployment
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../general_info/index.html">
+        General Information
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../contributions/index.html">
+        Contributing to LibreChat
+       </a>
+      </li>
+     </ul>
+    </div>
+   </nav>
+  </header>
+  <div class="md-container" data-md-component="container">
+   <main class="md-main" data-md-component="main">
+    <div class="md-main__inner md-grid">
+     <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Navigation" class="md-nav md-nav--primary md-nav--lifted" data-md-level="0">
+         <label class="md-nav__title" for="__drawer">
+          <a aria-label="LibreChat" class="md-nav__button md-logo" data-md-component="logo" href="../../index.html" title="LibreChat">
+           <img alt="logo" src="../../assets/LibreChat.svg"/>
+          </a>
+          LibreChat
+         </label>
+         <div class="md-nav__source">
+          <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+           <div class="md-source__icon md-icon">
+            <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+             <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+             <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+             </path>
+            </svg>
+           </div>
+           <div class="md-source__repository">
+            danny-avila/LibreChat
+           </div>
+          </a>
+         </div>
+         <ul class="md-nav__list" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="../../index.html">
+            <span class="md-ellipsis">
+             Home
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+           <input checked="" class="md-nav__toggle md-toggle" id="__nav_2" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../index.html">
+             <span class="md-ellipsis">
+              Installation and Configuration
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="true" aria-labelledby="__nav_2_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_2">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Installation and Configuration
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../installation/index.html">
+                <span class="md-ellipsis">
+                 Installation
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_2_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Installation
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/docker_compose_install.html">
+                  <span class="md-ellipsis">
+                   🐳 Docker Compose ✨(Recommended)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/container_install.html">
+                  <span class="md-ellipsis">
+                   🦦 Container (Podman)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/linux_install.html">
+                  <span class="md-ellipsis">
+                   🐧 Linux
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/mac_install.html">
+                  <span class="md-ellipsis">
+                   🍎 Mac
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/windows_install.html">
+                  <span class="md-ellipsis">
+                   🪟 Windows
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+              <input checked="" class="md-nav__toggle md-toggle" id="__nav_2_3" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="index.html">
+                <span class="md-ellipsis">
+                 Configuration
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="true" aria-labelledby="__nav_2_3_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_3">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Configuration
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="dotenv.html">
+                  <span class="md-ellipsis">
+                   ⚙️ Environment Variables
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="custom_config.html">
+                  <span class="md-ellipsis">
+                   🖥️ Custom Config
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item md-nav__item--active">
+                 <input class="md-nav__toggle md-toggle" id="__toc" type="checkbox"/>
+                 <label class="md-nav__link md-nav__link--active" for="__toc">
+                  <span class="md-ellipsis">
+                   🅰️ Azure OpenAI
+                  </span>
+                  <span class="md-nav__icon md-icon">
+                  </span>
+                 </label>
+                 <a class="md-nav__link md-nav__link--active" href="azure_openai.html">
+                  <span class="md-ellipsis">
+                   🅰️ Azure OpenAI
+                  </span>
+                 </a>
+                 <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+                  <label class="md-nav__title" for="__toc">
+                   <span class="md-nav__icon md-icon">
+                   </span>
+                   Table of contents
+                  </label>
+                  <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#example">
+                     <span class="md-ellipsis">
+                      Example
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#setup">
+                     <span class="md-ellipsis">
+                      Setup
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#required-fields">
+                     <span class="md-ellipsis">
+                      Required Fields
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#endpoint-level-configuration">
+                     <span class="md-ellipsis">
+                      Endpoint-Level Configuration
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#group-level-configuration">
+                     <span class="md-ellipsis">
+                      Group-Level Configuration
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#model-level-configuration">
+                     <span class="md-ellipsis">
+                      Model-Level Configuration
+                     </span>
+                    </a>
+                    <nav aria-label="Model-Level Configuration" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#special-considerations">
+                        <span class="md-ellipsis">
+                         Special Considerations
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#model-deployments">
+                        <span class="md-ellipsis">
+                         Model Deployments
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#using-assistants-with-azure">
+                        <span class="md-ellipsis">
+                         Using Assistants with Azure
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#using-plugins-with-azure">
+                        <span class="md-ellipsis">
+                         Using Plugins with Azure
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#using-a-specified-base-url-with-azure">
+                        <span class="md-ellipsis">
+                         Using a Specified Base URL with Azure
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#enabling-auto-generated-titles-with-azure">
+                        <span class="md-ellipsis">
+                         Enabling Auto-Generated Titles with Azure
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#using-gpt-4-vision-with-azure">
+                        <span class="md-ellipsis">
+                         Using GPT-4 Vision with Azure
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#generate-images-with-azure-openai-service-dall-e">
+                        <span class="md-ellipsis">
+                         Generate images with Azure OpenAI Service (DALL-E)
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#serverless-inference-endpoints">
+                        <span class="md-ellipsis">
+                         Serverless Inference Endpoints
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#legacy-setup">
+                     <span class="md-ellipsis">
+                      ⚠️ Legacy Setup ⚠️
+                     </span>
+                    </a>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="ai_endpoints.html">
+                  <span class="md-ellipsis">
+                   ✅ Compatible AI Endpoints
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="docker_override.html">
+                  <span class="md-ellipsis">
+                   🐋 Docker Compose Override
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="ai_setup.html">
+                  <span class="md-ellipsis">
+                   🤖 AI Setup
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="litellm.html">
+                  <span class="md-ellipsis">
+                   🚅 LiteLLM
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="free_ai_apis.html">
+                  <span class="md-ellipsis">
+                   💸 Free AI APIs
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="ollama.html">
+                  <span class="md-ellipsis">
+                   🦙 Ollama
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="user_auth_system.html">
+                  <span class="md-ellipsis">
+                   🛂 Authentication System
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="mongodb.html">
+                  <span class="md-ellipsis">
+                   🍃 Online MongoDB
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="default_language.html">
+                  <span class="md-ellipsis">
+                   🌍 Default Language
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="misc.html">
+                  <span class="md-ellipsis">
+                   🌀 Miscellaneous
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../features/index.html">
+             <span class="md-ellipsis">
+              Features
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_3_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_3">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Features
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../../features/plugins/index.html">
+                <span class="md-ellipsis">
+                 Plugins
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_3_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_3_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Plugins
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/introduction.html">
+                  <span class="md-ellipsis">
+                   🔌 Introduction
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/make_your_own.html">
+                  <span class="md-ellipsis">
+                   🛠️ Make Your Own
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/chatgpt_plugins_openapi.html">
+                  <span class="md-ellipsis">
+                   🧑‍💼 Official ChatGPT Plugins
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/google_search.html">
+                  <span class="md-ellipsis">
+                   🔎 Google Search
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/stable_diffusion.html">
+                  <span class="md-ellipsis">
+                   🖌️ Stable Diffusion
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/wolfram.html">
+                  <span class="md-ellipsis">
+                   🧠 Wolfram|Alpha
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/azure_ai_search.html">
+                  <span class="md-ellipsis">
+                   ⚡ Azure AI Search
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/presets.html">
+               <span class="md-ellipsis">
+                🔖 Presets
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/mod_system.html">
+               <span class="md-ellipsis">
+                🔨 Automated Moderation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/token_usage.html">
+               <span class="md-ellipsis">
+                🪙 Token Usage
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/firebase.html">
+               <span class="md-ellipsis">
+                🔥 Firebase CDN Setup
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/manage_your_database.html">
+               <span class="md-ellipsis">
+                🍃 Manage Your Database
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/logging_system.html">
+               <span class="md-ellipsis">
+                🪵 Logging System
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/bing_jailbreak.html">
+               <span class="md-ellipsis">
+                😈 Bing Jailbreak
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/third_party.html">
+               <span class="md-ellipsis">
+                ✨ Third-Party Tools and Contributions
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_4" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../deployment/index.html">
+             <span class="md-ellipsis">
+              Deployment
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_4_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_4">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Deployment
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/introduction.html">
+               <span class="md-ellipsis">
+                🌐 Deployment Introduction
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/digitalocean.html">
+               <span class="md-ellipsis">
+                🌊 DigitalOcean ✨(Recommended)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/docker_ubuntu_deploy.html">
+               <span class="md-ellipsis">
+                🐳 Ubuntu Docker Deployment
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/huggingface.html">
+               <span class="md-ellipsis">
+                🤗 HuggingFace
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/railway.html">
+               <span class="md-ellipsis">
+                🛤️ Railway (one-click)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/linode.html">
+               <span class="md-ellipsis">
+                🐧 Linode
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/azure-terraform.html">
+               <span class="md-ellipsis">
+                ⚡ Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/render.html">
+               <span class="md-ellipsis">
+                ⏹️ Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/meilisearch_in_render.html">
+               <span class="md-ellipsis">
+                🔎 Meilisearch in Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/hetzner_ubuntu.html">
+               <span class="md-ellipsis">
+                🏗️ Hetzner
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/heroku.html">
+               <span class="md-ellipsis">
+                🌈 Heroku
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/zeabur.html">
+               <span class="md-ellipsis">
+                🦓 Zeabur
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/cloudflare.html">
+               <span class="md-ellipsis">
+                ☁️ Cloudflare
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/nginx.html">
+               <span class="md-ellipsis">
+                ↪️ Nginx
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/ngrok.html">
+               <span class="md-ellipsis">
+                🪨 Ngrok
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/traefik.html">
+               <span class="md-ellipsis">
+                🚦 Traefik
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_5" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../general_info/index.html">
+             <span class="md-ellipsis">
+              General Information
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_5_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_5">
+             <span class="md-nav__icon md-icon">
+             </span>
+             General Information
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/breaking_changes.html">
+               <span class="md-ellipsis">
+                ⚠️ Breaking Changes
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/multilingual_information.html">
+               <span class="md-ellipsis">
+                🌍 Multilingual Information
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/project_origin.html">
+               <span class="md-ellipsis">
+                🧭 Origin
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/tech_stack.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Tech Stack
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_6" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../contributions/index.html">
+             <span class="md-ellipsis">
+              Contributing to LibreChat
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_6_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_6">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Contributing to LibreChat
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/how_to_contribute.html">
+               <span class="md-ellipsis">
+                🙌 Getting Started for Contributors
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/documentation_guidelines.html">
+               <span class="md-ellipsis">
+                📝 Documentation Guidelines
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/translation_contribution.html">
+               <span class="md-ellipsis">
+                🌍 Contribute a Translation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/coding_conventions.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Code Standards and Conventions
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/testing.html">
+               <span class="md-ellipsis">
+                🧪 Testing During Development
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+         <label class="md-nav__title" for="__toc">
+          <span class="md-nav__icon md-icon">
+          </span>
+          Table of contents
+         </label>
+         <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#example">
+            <span class="md-ellipsis">
+             Example
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#setup">
+            <span class="md-ellipsis">
+             Setup
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#required-fields">
+            <span class="md-ellipsis">
+             Required Fields
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#endpoint-level-configuration">
+            <span class="md-ellipsis">
+             Endpoint-Level Configuration
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#group-level-configuration">
+            <span class="md-ellipsis">
+             Group-Level Configuration
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#model-level-configuration">
+            <span class="md-ellipsis">
+             Model-Level Configuration
+            </span>
+           </a>
+           <nav aria-label="Model-Level Configuration" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#special-considerations">
+               <span class="md-ellipsis">
+                Special Considerations
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#model-deployments">
+               <span class="md-ellipsis">
+                Model Deployments
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#using-assistants-with-azure">
+               <span class="md-ellipsis">
+                Using Assistants with Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#using-plugins-with-azure">
+               <span class="md-ellipsis">
+                Using Plugins with Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#using-a-specified-base-url-with-azure">
+               <span class="md-ellipsis">
+                Using a Specified Base URL with Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#enabling-auto-generated-titles-with-azure">
+               <span class="md-ellipsis">
+                Enabling Auto-Generated Titles with Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#using-gpt-4-vision-with-azure">
+               <span class="md-ellipsis">
+                Using GPT-4 Vision with Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#generate-images-with-azure-openai-service-dall-e">
+               <span class="md-ellipsis">
+                Generate images with Azure OpenAI Service (DALL-E)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#serverless-inference-endpoints">
+               <span class="md-ellipsis">
+                Serverless Inference Endpoints
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#legacy-setup">
+            <span class="md-ellipsis">
+             ⚠️ Legacy Setup ⚠️
+            </span>
+           </a>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-content" data-md-component="content">
+      <article class="md-content__inner md-typeset">
+       <a class="md-content__button md-icon" href="https://github.com/danny-avila/LibreChat/blob/main/docs/install/configuration/azure_openai.md" title="Edit this page">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z">
+         </path>
+        </svg>
+       </a>
+       <h1 id="azure-openai">
+        Azure OpenAI
+       </h1>
+       <p>
+        <strong>
+         Azure OpenAI Integration for LibreChat
+        </strong>
+       </p>
+       <p>
+        LibreChat boasts compatibility with Azure OpenAI API services, treating the endpoint as a first-class citizen. To properly utilize Azure OpenAI within LibreChat, it's crucial to configure the
+        <a href="custom_config.html#azure-openai-object-structure">
+         <code>
+          librechat.yaml
+         </code>
+         file
+        </a>
+        according to your specific needs. This document guides you through the essential setup process which allows seamless use of multiple deployments and models with as much flexibility as needed.
+       </p>
+       <h2 id="example">
+        Example
+       </h2>
+       <p>
+        Here's a quick snapshot of what a comprehensive configuration might look like, including many of the options and features discussed below.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-0-1" id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-0-2" id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="w">  </span><span class="nt">azureOpenAI</span><span class="p">:</span>
+<a href="#__codelineno-0-3" id="__codelineno-0-3" name="__codelineno-0-3"></a><span class="w">    </span><span class="c1"># Endpoint-level configuration</span>
+<a href="#__codelineno-0-4" id="__codelineno-0-4" name="__codelineno-0-4"></a><span class="w">    </span><span class="nt">titleModel</span><span class="p">:</span><span class="w"> </span><span class="s">"llama-70b-chat"</span>
+<a href="#__codelineno-0-5" id="__codelineno-0-5" name="__codelineno-0-5"></a><span class="w">    </span><span class="nt">plugins</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-0-6" id="__codelineno-0-6" name="__codelineno-0-6"></a><span class="w">    </span><span class="nt">assistants</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-0-7" id="__codelineno-0-7" name="__codelineno-0-7"></a><span class="w">    </span><span class="nt">groups</span><span class="p">:</span>
+<a href="#__codelineno-0-8" id="__codelineno-0-8" name="__codelineno-0-8"></a><span class="w">    </span><span class="c1"># Group-level configuration</span>
+<a href="#__codelineno-0-9" id="__codelineno-0-9" name="__codelineno-0-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="s">"my-resource-westus"</span>
+<a href="#__codelineno-0-10" id="__codelineno-0-10" name="__codelineno-0-10"></a><span class="w">      </span><span class="nt">apiKey</span><span class="p">:</span><span class="w"> </span><span class="s">"${WESTUS_API_KEY}"</span>
+<a href="#__codelineno-0-11" id="__codelineno-0-11" name="__codelineno-0-11"></a><span class="w">      </span><span class="nt">instanceName</span><span class="p">:</span><span class="w"> </span><span class="s">"my-resource-westus"</span>
+<a href="#__codelineno-0-12" id="__codelineno-0-12" name="__codelineno-0-12"></a><span class="w">      </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2024-03-01-preview"</span>
+<a href="#__codelineno-0-13" id="__codelineno-0-13" name="__codelineno-0-13"></a><span class="w">      </span><span class="c1"># Model-level configuration</span>
+<a href="#__codelineno-0-14" id="__codelineno-0-14" name="__codelineno-0-14"></a><span class="w">      </span><span class="nt">models</span><span class="p">:</span>
+<a href="#__codelineno-0-15" id="__codelineno-0-15" name="__codelineno-0-15"></a><span class="w">        </span><span class="nt">gpt-4-vision-preview</span><span class="p">:</span>
+<a href="#__codelineno-0-16" id="__codelineno-0-16" name="__codelineno-0-16"></a><span class="w">          </span><span class="nt">deploymentName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4-vision-preview</span>
+<a href="#__codelineno-0-17" id="__codelineno-0-17" name="__codelineno-0-17"></a><span class="w">          </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2024-03-01-preview"</span>
+<a href="#__codelineno-0-18" id="__codelineno-0-18" name="__codelineno-0-18"></a><span class="w">        </span><span class="nt">gpt-3.5-turbo</span><span class="p">:</span>
+<a href="#__codelineno-0-19" id="__codelineno-0-19" name="__codelineno-0-19"></a><span class="w">          </span><span class="nt">deploymentName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-35-turbo</span>
+<a href="#__codelineno-0-20" id="__codelineno-0-20" name="__codelineno-0-20"></a><span class="w">        </span><span class="nt">gpt-4-1106-preview</span><span class="p">:</span>
+<a href="#__codelineno-0-21" id="__codelineno-0-21" name="__codelineno-0-21"></a><span class="w">          </span><span class="nt">deploymentName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4-1106-preview</span>
+<a href="#__codelineno-0-22" id="__codelineno-0-22" name="__codelineno-0-22"></a><span class="w">    </span><span class="c1"># Group-level configuration</span>
+<a href="#__codelineno-0-23" id="__codelineno-0-23" name="__codelineno-0-23"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="s">"mistral-inference"</span>
+<a href="#__codelineno-0-24" id="__codelineno-0-24" name="__codelineno-0-24"></a><span class="w">      </span><span class="nt">apiKey</span><span class="p">:</span><span class="w"> </span><span class="s">"${AZURE_MISTRAL_API_KEY}"</span>
+<a href="#__codelineno-0-25" id="__codelineno-0-25" name="__codelineno-0-25"></a><span class="w">      </span><span class="nt">baseURL</span><span class="p">:</span><span class="w"> </span><span class="s">"https://Mistral-large-vnpet-serverless.region.inference.ai.azure.com/v1/chat/completions"</span>
+<a href="#__codelineno-0-26" id="__codelineno-0-26" name="__codelineno-0-26"></a><span class="w">      </span><span class="nt">serverless</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-0-27" id="__codelineno-0-27" name="__codelineno-0-27"></a><span class="w">      </span><span class="c1"># Model-level configuration</span>
+<a href="#__codelineno-0-28" id="__codelineno-0-28" name="__codelineno-0-28"></a><span class="w">      </span><span class="nt">models</span><span class="p">:</span>
+<a href="#__codelineno-0-29" id="__codelineno-0-29" name="__codelineno-0-29"></a><span class="w">        </span><span class="nt">mistral-large</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-0-30" id="__codelineno-0-30" name="__codelineno-0-30"></a><span class="w">    </span><span class="c1"># Group-level configuration</span>
+<a href="#__codelineno-0-31" id="__codelineno-0-31" name="__codelineno-0-31"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="s">"my-resource-sweden"</span>
+<a href="#__codelineno-0-32" id="__codelineno-0-32" name="__codelineno-0-32"></a><span class="w">      </span><span class="nt">apiKey</span><span class="p">:</span><span class="w"> </span><span class="s">"${SWEDEN_API_KEY}"</span>
+<a href="#__codelineno-0-33" id="__codelineno-0-33" name="__codelineno-0-33"></a><span class="w">      </span><span class="nt">instanceName</span><span class="p">:</span><span class="w"> </span><span class="s">"my-resource-sweden"</span>
+<a href="#__codelineno-0-34" id="__codelineno-0-34" name="__codelineno-0-34"></a><span class="w">      </span><span class="nt">deploymentName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4-1106-preview</span>
+<a href="#__codelineno-0-35" id="__codelineno-0-35" name="__codelineno-0-35"></a><span class="w">      </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2024-03-01-preview"</span>
+<a href="#__codelineno-0-36" id="__codelineno-0-36" name="__codelineno-0-36"></a><span class="w">      </span><span class="nt">assistants</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-0-37" id="__codelineno-0-37" name="__codelineno-0-37"></a><span class="w">      </span><span class="c1"># Model-level configuration</span>
+<a href="#__codelineno-0-38" id="__codelineno-0-38" name="__codelineno-0-38"></a><span class="w">      </span><span class="nt">models</span><span class="p">:</span>
+<a href="#__codelineno-0-39" id="__codelineno-0-39" name="__codelineno-0-39"></a><span class="w">        </span><span class="nt">gpt-4-turbo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+       </div>
+       <p>
+        Here's another working example configured according to the specifications of the
+        <a href="custom_config.html#azure-openai-object-structure">
+         Azure OpenAI Endpoint Configuration Docs:
+        </a>
+       </p>
+       <p>
+        Each level of configuration is extensively detailed in their respective sections:
+       </p>
+       <ol>
+        <li>
+         <p>
+          <a href="#endpoint-level-configuration">
+           Endpoint-level config
+          </a>
+         </p>
+        </li>
+        <li>
+         <p>
+          <a href="#group-level-configuration">
+           Group-level config
+          </a>
+         </p>
+        </li>
+        <li>
+         <p>
+          <a href="#model-level-configuration">
+           Model-level config
+          </a>
+         </p>
+        </li>
+       </ol>
+       <h2 id="setup">
+        Setup
+       </h2>
+       <ol>
+        <li>
+         <p>
+          <strong>
+           Open
+           <code>
+            librechat.yaml
+           </code>
+           for Editing
+          </strong>
+          : Use your preferred text editor or IDE to open and edit the
+          <code>
+           librechat.yaml
+          </code>
+          file.
+         </p>
+         <ul>
+          <li>
+           Optional: use a remote or custom file path with the following environment variable:
+          </li>
+         </ul>
+         <div class="highlight">
+          <pre><span></span><code><a href="#__codelineno-1-1" id="__codelineno-1-1" name="__codelineno-1-1"></a>CONFIG_PATH="/alternative/path/to/librechat.yaml"
+</code></pre>
+         </div>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Configure Azure OpenAI Settings
+          </strong>
+          : Follow the detailed structure outlined below to populate your Azure OpenAI settings appropriately. This includes specifying API keys, instance names, model groups, and other essential configurations.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Make sure to Remove Legacy Settings
+          </strong>
+          : If you are using any of the
+          <a href="#legacy-setup">
+           legacy configurations
+          </a>
+          , be sure to remove. The LibreChat server will also detect these and remind you.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Save Your Changes
+          </strong>
+          : After accurately inputting your settings, save the
+          <code>
+           librechat.yaml
+          </code>
+          file.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Restart LibreChat
+          </strong>
+          : For the changes to take effect, restart your LibreChat application. This ensures that the updated configurations are loaded and utilized.
+         </p>
+        </li>
+       </ol>
+       <h2 id="required-fields">
+        Required Fields
+       </h2>
+       <p>
+        To properly integrate Azure OpenAI with LibreChat, specific fields must be accurately configured in your
+        <code>
+         librechat.yaml
+        </code>
+        file. These fields are validated through a combination of custom and environmental variables to ensure the correct setup. Here are the detailed requirements based on the validation process:
+       </p>
+       <h2 id="endpoint-level-configuration">
+        Endpoint-Level Configuration
+       </h2>
+       <p>
+        These settings apply globally to all Azure models and groups within the endpoint. Here are the available fields:
+       </p>
+       <ol>
+        <li>
+         <p>
+          <strong>
+           titleModel
+          </strong>
+          (String, Optional): Specifies the model to use for generating conversation titles. If not provided, the default model is set as
+          <code>
+           gpt-3.5-turbo
+          </code>
+          , which will result in no titles if lacking this model.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           plugins
+          </strong>
+          (Boolean, Optional): Enables the use of plugins through Azure. Set to
+          <code>
+           true
+          </code>
+          to activate Plugins endpoint support through your Azure config. Default:
+          <code>
+           false
+          </code>
+          .
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           assistants
+          </strong>
+          (Boolean, Optional): Enables the use of assistants through Azure. Set to
+          <code>
+           true
+          </code>
+          to activate Assistants endpoint through your Azure config. Default:
+          <code>
+           false
+          </code>
+          . Note: this requires an assistants-compatible region.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           summarize
+          </strong>
+          (Boolean, Optional): Enables conversation summarization for all Azure models. Set to
+          <code>
+           true
+          </code>
+          to activate summarization. Default:
+          <code>
+           false
+          </code>
+          .
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           summaryModel
+          </strong>
+          (String, Optional): Specifies the model to use for generating conversation summaries. If not provided, the default behavior is to use the first model in the
+          <code>
+           default
+          </code>
+          array of the first group.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           titleConvo
+          </strong>
+          (Boolean, Optional): Enables conversation title generation for all Azure models. Set to
+          <code>
+           true
+          </code>
+          to activate title generation. Default:
+          <code>
+           false
+          </code>
+          .
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           titleMethod
+          </strong>
+          (String, Optional): Specifies the method to use for generating conversation titles. Valid options are
+          <code>
+           "completion"
+          </code>
+          and
+          <code>
+           "functions"
+          </code>
+          . If not provided, the default behavior is to use the
+          <code>
+           "completion"
+          </code>
+          method.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           groups
+          </strong>
+          (Array/List, Required): Specifies the list of Azure OpenAI model groups. Each group represents a set of models with shared configurations. The groups field is an array of objects, where each object defines the settings for a specific group. This is a required field at the endpoint level, and at least one group must be defined. The group-level configurations are detailed in the Group-Level Configuration section.
+         </p>
+        </li>
+       </ol>
+       <p>
+        Here's an example of how you can configure these endpoint-level settings in your
+        <code>
+         librechat.yaml
+        </code>
+        file:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-2-1" id="__codelineno-2-1" name="__codelineno-2-1"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-2-2" id="__codelineno-2-2" name="__codelineno-2-2"></a><span class="w">  </span><span class="nt">azureOpenAI</span><span class="p">:</span>
+<a href="#__codelineno-2-3" id="__codelineno-2-3" name="__codelineno-2-3"></a><span class="w">    </span><span class="nt">titleModel</span><span class="p">:</span><span class="w"> </span><span class="s">"gpt-3.5-turbo-1106"</span>
+<a href="#__codelineno-2-4" id="__codelineno-2-4" name="__codelineno-2-4"></a><span class="w">    </span><span class="nt">plugins</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-2-5" id="__codelineno-2-5" name="__codelineno-2-5"></a><span class="w">    </span><span class="nt">assistants</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-2-6" id="__codelineno-2-6" name="__codelineno-2-6"></a><span class="w">    </span><span class="nt">summarize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-2-7" id="__codelineno-2-7" name="__codelineno-2-7"></a><span class="w">    </span><span class="nt">summaryModel</span><span class="p">:</span><span class="w"> </span><span class="s">"gpt-3.5-turbo-1106"</span>
+<a href="#__codelineno-2-8" id="__codelineno-2-8" name="__codelineno-2-8"></a><span class="w">    </span><span class="nt">titleConvo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-2-9" id="__codelineno-2-9" name="__codelineno-2-9"></a><span class="w">    </span><span class="nt">titleMethod</span><span class="p">:</span><span class="w"> </span><span class="s">"functions"</span>
+<a href="#__codelineno-2-10" id="__codelineno-2-10" name="__codelineno-2-10"></a><span class="w">    </span><span class="nt">groups</span><span class="p">:</span>
+<a href="#__codelineno-2-11" id="__codelineno-2-11" name="__codelineno-2-11"></a><span class="w">      </span><span class="c1"># ... (group-level and model-level configurations)</span>
+</code></pre>
+       </div>
+       <h2 id="group-level-configuration">
+        Group-Level Configuration
+       </h2>
+       <p>
+        This is a breakdown of the fields configurable as defined for the Custom Config (
+        <code>
+         librechat.yaml
+        </code>
+        ) file. For more information on each field, see the
+        <a href="custom_config.html#azure-openai-object-structure">
+         Azure OpenAI section in the Custom Config Docs
+        </a>
+        .
+       </p>
+       <ol>
+        <li>
+         <p>
+          <strong>
+           group
+          </strong>
+          (String, Required): Unique identifier name for a group of models. Duplicate group names are not allowed and will result in validation errors.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           apiKey
+          </strong>
+          (String, Required): Must be a valid API key for Azure OpenAI services. It could be a direct key string or an environment variable reference (e.g.,
+          <code>
+           ${WESTUS_API_KEY}
+          </code>
+          ).
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           instanceName
+          </strong>
+          (String, Required): Name of the Azure OpenAI instance. This field can also support environment variable references.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           deploymentName
+          </strong>
+          (String, Optional): The deployment name at the group level is optional but required if any model within the group is set to
+          <code>
+           true
+          </code>
+          .
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           version
+          </strong>
+          (String, Optional): The Azure OpenAI API version at the group level is optional but required if any model within the group is set to
+          <code>
+           true
+          </code>
+          .
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           baseURL
+          </strong>
+          (String, Optional): Custom base URL for the Azure OpenAI API requests. Environment variable references are supported. This is optional and can be used for advanced routing scenarios.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           additionalHeaders
+          </strong>
+          (Object, Optional): Specifies any extra headers for Azure OpenAI API requests as key-value pairs. Environment variable references can be included as values.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           serverless
+          </strong>
+          (Boolean, Optional): Specifies if the group is a serverless inference chat completions endpoint from
+          <a href="https://ai.azure.com/explore">
+           Azure Model Catalog,
+          </a>
+          for which only a model identifier, baseURL, and apiKey are needed. For more info, see
+          <a href="#serverless-inference-endpoints">
+           serverless inference endpoints.
+          </a>
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           addParams
+          </strong>
+          (Object, Optional): Adds or overrides additional parameters for Azure OpenAI API requests. Useful for specifying API-specific options as key-value pairs.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           dropParams
+          </strong>
+          (Array/List, Optional): Allows for the exclusion of certain default parameters from Azure OpenAI API requests. Useful for APIs that do not accept or recognize specific parameters. This should be specified as a list of strings.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           forcePrompt
+          </strong>
+          (Boolean, Optional): Dictates whether to send a
+          <code>
+           prompt
+          </code>
+          parameter instead of
+          <code>
+           messages
+          </code>
+          in the request body. This option is useful when needing to format the request in a manner consistent with OpenAI's API expectations, particularly for scenarios preferring a single text payload.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           models
+          </strong>
+          (Object, Required): Specifies the mapping of model identifiers to their configurations within the group. The keys represent the model identifiers, which must match the corresponding OpenAI model names. The values can be either boolean (true) or objects containing model-specific settings. If a model is set to true, it inherits the group-level deploymentName and version. If a model is configured as an object, it can have its own deploymentName and version. This field is required, and at least one model must be defined within each group.
+          <a href="#model-level-configuration">
+           More info here
+          </a>
+         </p>
+        </li>
+       </ol>
+       <p>
+        Here's an example of a group-level configuration in the librechat.yaml file
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-3-1" id="__codelineno-3-1" name="__codelineno-3-1"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-3-2" id="__codelineno-3-2" name="__codelineno-3-2"></a><span class="w">  </span><span class="nt">azureOpenAI</span><span class="p">:</span>
+<a href="#__codelineno-3-3" id="__codelineno-3-3" name="__codelineno-3-3"></a><span class="w">    </span><span class="c1"># ... (endpoint-level configurations)</span>
+<a href="#__codelineno-3-4" id="__codelineno-3-4" name="__codelineno-3-4"></a><span class="w">    </span><span class="nt">groups</span><span class="p">:</span>
+<a href="#__codelineno-3-5" id="__codelineno-3-5" name="__codelineno-3-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="s">"my-resource-group"</span>
+<a href="#__codelineno-3-6" id="__codelineno-3-6" name="__codelineno-3-6"></a><span class="w">        </span><span class="nt">apiKey</span><span class="p">:</span><span class="w"> </span><span class="s">"${AZURE_API_KEY}"</span>
+<a href="#__codelineno-3-7" id="__codelineno-3-7" name="__codelineno-3-7"></a><span class="w">        </span><span class="nt">instanceName</span><span class="p">:</span><span class="w"> </span><span class="s">"my-instance"</span>
+<a href="#__codelineno-3-8" id="__codelineno-3-8" name="__codelineno-3-8"></a><span class="w">        </span><span class="nt">deploymentName</span><span class="p">:</span><span class="w"> </span><span class="s">"gpt-35-turbo"</span>
+<a href="#__codelineno-3-9" id="__codelineno-3-9" name="__codelineno-3-9"></a><span class="w">        </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2023-03-15-preview"</span>
+<a href="#__codelineno-3-10" id="__codelineno-3-10" name="__codelineno-3-10"></a><span class="w">        </span><span class="nt">baseURL</span><span class="p">:</span><span class="w"> </span><span class="s">"https://my-instance.openai.azure.com/"</span>
+<a href="#__codelineno-3-11" id="__codelineno-3-11" name="__codelineno-3-11"></a><span class="w">        </span><span class="nt">additionalHeaders</span><span class="p">:</span>
+<a href="#__codelineno-3-12" id="__codelineno-3-12" name="__codelineno-3-12"></a><span class="w">          </span><span class="nt">CustomHeader</span><span class="p">:</span><span class="w"> </span><span class="s">"HeaderValue"</span>
+<a href="#__codelineno-3-13" id="__codelineno-3-13" name="__codelineno-3-13"></a><span class="w">        </span><span class="nt">addParams</span><span class="p">:</span>
+<a href="#__codelineno-3-14" id="__codelineno-3-14" name="__codelineno-3-14"></a><span class="w">          </span><span class="nt">max_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2048</span>
+<a href="#__codelineno-3-15" id="__codelineno-3-15" name="__codelineno-3-15"></a><span class="w">          </span><span class="nt">temperature</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span>
+<a href="#__codelineno-3-16" id="__codelineno-3-16" name="__codelineno-3-16"></a><span class="w">        </span><span class="nt">dropParams</span><span class="p">:</span>
+<a href="#__codelineno-3-17" id="__codelineno-3-17" name="__codelineno-3-17"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"frequency_penalty"</span>
+<a href="#__codelineno-3-18" id="__codelineno-3-18" name="__codelineno-3-18"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"presence_penalty"</span>
+<a href="#__codelineno-3-19" id="__codelineno-3-19" name="__codelineno-3-19"></a><span class="w">        </span><span class="nt">forcePrompt</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<a href="#__codelineno-3-20" id="__codelineno-3-20" name="__codelineno-3-20"></a><span class="w">        </span><span class="nt">models</span><span class="p">:</span>
+<a href="#__codelineno-3-21" id="__codelineno-3-21" name="__codelineno-3-21"></a><span class="w">        </span><span class="c1"># ... (model-level configurations)</span>
+</code></pre>
+       </div>
+       <h2 id="model-level-configuration">
+        Model-Level Configuration
+       </h2>
+       <p>
+        Within each group, the
+        <code>
+         models
+        </code>
+        field contains a mapping of model identifiers to their configurations:
+       </p>
+       <ol>
+        <li>
+         <p>
+          <strong>
+           Model Identifier
+          </strong>
+          (String, Required): Must match the corresponding OpenAI model name. Can be a partial match.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Model Configuration
+          </strong>
+          (Boolean or Object, Required):
+         </p>
+        </li>
+        <li>
+         Boolean
+         <code>
+          true
+         </code>
+         : Uses the group-level
+         <code>
+          deploymentName
+         </code>
+         and
+         <code>
+          version
+         </code>
+         .
+        </li>
+        <li>
+         <p>
+          Object: Specifies model-specific
+          <code>
+           deploymentName
+          </code>
+          and
+          <code>
+           version
+          </code>
+          . If not provided, inherits from the group.
+         </p>
+         <ul>
+          <li>
+           <strong>
+            deploymentName
+           </strong>
+           (String, Optional): The deployment name for this specific model.
+          </li>
+          <li>
+           <strong>
+            version
+           </strong>
+           (String, Optional): The Azure OpenAI API version for this specific model.
+          </li>
+         </ul>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Serverless Inference Endpoints
+          </strong>
+          : For serverless models, set the model to
+          <code>
+           true
+          </code>
+          .
+         </p>
+        </li>
+        <li>
+         <p>
+          The
+          <strong>
+           model identifier must match its corresponding OpenAI model name
+          </strong>
+          in order for it to properly reflect its known context limits and/or function in the case of vision. For example, if you intend to use gpt-4-vision, it must be configured like so:
+         </p>
+        </li>
+       </ol>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-4-1" id="__codelineno-4-1" name="__codelineno-4-1"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-4-2" id="__codelineno-4-2" name="__codelineno-4-2"></a><span class="w">  </span><span class="nt">azureOpenAI</span><span class="p">:</span>
+<a href="#__codelineno-4-3" id="__codelineno-4-3" name="__codelineno-4-3"></a><span class="w">    </span><span class="c1"># ... (endpoint-level configurations)</span>
+<a href="#__codelineno-4-4" id="__codelineno-4-4" name="__codelineno-4-4"></a><span class="w">    </span><span class="nt">groups</span><span class="p">:</span>
+<a href="#__codelineno-4-5" id="__codelineno-4-5" name="__codelineno-4-5"></a><span class="w">    </span><span class="c1"># ... (group-level configurations)</span>
+<a href="#__codelineno-4-6" id="__codelineno-4-6" name="__codelineno-4-6"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="s">"example_group"</span>
+<a href="#__codelineno-4-7" id="__codelineno-4-7" name="__codelineno-4-7"></a><span class="w">    </span><span class="nt">models</span><span class="p">:</span>
+<a href="#__codelineno-4-8" id="__codelineno-4-8" name="__codelineno-4-8"></a><span class="w">     </span><span class="c1"># Model identifiers must match OpenAI Model name (can be a partial match)</span>
+<a href="#__codelineno-4-9" id="__codelineno-4-9" name="__codelineno-4-9"></a><span class="w">      </span><span class="nt">gpt-4-vision-preview</span><span class="p">:</span>
+<a href="#__codelineno-4-10" id="__codelineno-4-10" name="__codelineno-4-10"></a><span class="w">      </span><span class="c1"># Object setting: must include at least "deploymentName" and/or "version"</span>
+<a href="#__codelineno-4-11" id="__codelineno-4-11" name="__codelineno-4-11"></a><span class="w">        </span><span class="nt">deploymentName</span><span class="p">:</span><span class="w"> </span><span class="s">"arbitrary-deployment-name"</span>
+<a href="#__codelineno-4-12" id="__codelineno-4-12" name="__codelineno-4-12"></a><span class="w">        </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2024-02-15-preview"</span><span class="w"> </span><span class="c1"># version can be any that supports vision</span>
+<a href="#__codelineno-4-13" id="__codelineno-4-13" name="__codelineno-4-13"></a><span class="w">      </span><span class="c1"># Boolean setting, must be "true"</span>
+<a href="#__codelineno-4-14" id="__codelineno-4-14" name="__codelineno-4-14"></a><span class="w">      </span><span class="nt">gpt-4-turbo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         <p>
+          See
+          <a href="#model-deployments">
+           Model Deployments
+          </a>
+          for more examples.
+         </p>
+        </li>
+        <li>
+         <p>
+          If a model is set to
+          <code>
+           true
+          </code>
+          , it implies using the group-level
+          <code>
+           deploymentName
+          </code>
+          and
+          <code>
+           version
+          </code>
+          for this model. Both must be defined at the group level in this case.
+         </p>
+        </li>
+        <li>
+         <p>
+          If a model is configured as an object, it can specify its own
+          <code>
+           deploymentName
+          </code>
+          and
+          <code>
+           version
+          </code>
+          . If these are not provided, the model inherits the group's
+          <code>
+           deploymentName
+          </code>
+          and
+          <code>
+           version
+          </code>
+          .
+         </p>
+        </li>
+        <li>
+         <p>
+          If the group represents a
+          <a href="#serverless-inference-endpoints">
+           serverless inference endpoint
+          </a>
+          , the singular model should be set to
+          <code>
+           true
+          </code>
+          to add it to the models list.
+         </p>
+        </li>
+       </ul>
+       <h3 id="special-considerations">
+        Special Considerations
+       </h3>
+       <ol>
+        <li>
+         <p>
+          <strong>
+           Unique Names
+          </strong>
+          : Both model and group names must be unique across the entire configuration. Duplicate names lead to validation failures.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Missing Required Fields
+          </strong>
+          : Lack of required
+          <code>
+           deploymentName
+          </code>
+          or
+          <code>
+           version
+          </code>
+          either at the group level (for boolean-flagged models) or within the models' configurations (if not inheriting or explicitly specified) will result in validation errors, unless the group represents a
+          <a href="#serverless-inference-endpoints">
+           serverless inference endpoint
+          </a>
+          .
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Environment Variable References
+          </strong>
+          : The configuration supports environment variable references (e.g.,
+          <code>
+           ${VARIABLE_NAME}
+          </code>
+          ). Ensure that all referenced variables are present in your environment to avoid runtime errors. The absence of defined environment variables referenced in the config will cause errors.
+          <code>
+           ${INSTANCE_NAME}
+          </code>
+          and
+          <code>
+           ${DEPLOYMENT_NAME}
+          </code>
+          are unique placeholders, and do not correspond to environment variables, but instead correspond to the instance and deployment name of the currently selected model. It is not recommended you use
+          <code>
+           INSTANCE_NAME
+          </code>
+          and
+          <code>
+           DEPLOYMENT_NAME
+          </code>
+          as environment variable names to avoid any potential conflicts.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Error Handling
+          </strong>
+          : Any issues in the config, like duplicate names, undefined environment variables, or missing required fields, will invalidate the setup and generate descriptive error messages aiming for prompt resolution. You will not be allowed to run the server with an invalid configuration.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           Model identifiers
+          </strong>
+          : An unknown model (to the project) can be used as a model identifier, but it must match a known model to reflect its known context length, which is crucial for message/token handling; e.g.,
+          <code>
+           gpt-7000
+          </code>
+          will be valid but default to a 4k token limit, whereas
+          <code>
+           gpt-4-turbo
+          </code>
+          will be recognized as having a 128k context limit.
+         </p>
+        </li>
+       </ol>
+       <p>
+        Applying these setup requirements thoughtfully will ensure a correct and efficient integration of Azure OpenAI services with LibreChat through the
+        <code>
+         librechat.yaml
+        </code>
+        configuration. Always validate your configuration against the latest schema definitions and guidelines to maintain compatibility and functionality.
+       </p>
+       <h3 id="model-deployments">
+        Model Deployments
+       </h3>
+       <p>
+        The list of models available to your users are determined by the model groupings specified in your
+        <a href="custom_config.html#models-1">
+         <code>
+          azureOpenAI
+         </code>
+         endpoint config.
+        </a>
+       </p>
+       <p>
+        For example:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-5-1" id="__codelineno-5-1" name="__codelineno-5-1"></a><span class="c1"># Example Azure OpenAI Object Structure</span>
+<a href="#__codelineno-5-2" id="__codelineno-5-2" name="__codelineno-5-2"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-5-3" id="__codelineno-5-3" name="__codelineno-5-3"></a><span class="w">  </span><span class="nt">azureOpenAI</span><span class="p">:</span>
+<a href="#__codelineno-5-4" id="__codelineno-5-4" name="__codelineno-5-4"></a><span class="w">    </span><span class="nt">groups</span><span class="p">:</span>
+<a href="#__codelineno-5-5" id="__codelineno-5-5" name="__codelineno-5-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="s">"my-westus"</span><span class="w"> </span><span class="c1"># arbitrary name</span>
+<a href="#__codelineno-5-6" id="__codelineno-5-6" name="__codelineno-5-6"></a><span class="w">        </span><span class="nt">apiKey</span><span class="p">:</span><span class="w"> </span><span class="s">"${WESTUS_API_KEY}"</span>
+<a href="#__codelineno-5-7" id="__codelineno-5-7" name="__codelineno-5-7"></a><span class="w">        </span><span class="nt">instanceName</span><span class="p">:</span><span class="w"> </span><span class="s">"actual-instance-name"</span><span class="w"> </span><span class="c1"># name of the resource group or instance</span>
+<a href="#__codelineno-5-8" id="__codelineno-5-8" name="__codelineno-5-8"></a><span class="w">        </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2023-12-01-preview"</span>
+<a href="#__codelineno-5-9" id="__codelineno-5-9" name="__codelineno-5-9"></a><span class="w">        </span><span class="nt">models</span><span class="p">:</span>
+<a href="#__codelineno-5-10" id="__codelineno-5-10" name="__codelineno-5-10"></a><span class="w">          </span><span class="nt">gpt-4-vision-preview</span><span class="p">:</span>
+<a href="#__codelineno-5-11" id="__codelineno-5-11" name="__codelineno-5-11"></a><span class="w">            </span><span class="nt">deploymentName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4-vision-preview</span>
+<a href="#__codelineno-5-12" id="__codelineno-5-12" name="__codelineno-5-12"></a><span class="w">            </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2024-02-15-preview"</span>
+<a href="#__codelineno-5-13" id="__codelineno-5-13" name="__codelineno-5-13"></a><span class="w">          </span><span class="nt">gpt-3.5-turbo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-5-14" id="__codelineno-5-14" name="__codelineno-5-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="s">"my-eastus"</span>
+<a href="#__codelineno-5-15" id="__codelineno-5-15" name="__codelineno-5-15"></a><span class="w">        </span><span class="nt">apiKey</span><span class="p">:</span><span class="w"> </span><span class="s">"${EASTUS_API_KEY}"</span>
+<a href="#__codelineno-5-16" id="__codelineno-5-16" name="__codelineno-5-16"></a><span class="w">        </span><span class="nt">instanceName</span><span class="p">:</span><span class="w"> </span><span class="s">"actual-eastus-instance-name"</span>
+<a href="#__codelineno-5-17" id="__codelineno-5-17" name="__codelineno-5-17"></a><span class="w">        </span><span class="nt">deploymentName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4-turbo</span>
+<a href="#__codelineno-5-18" id="__codelineno-5-18" name="__codelineno-5-18"></a><span class="w">        </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2024-02-15-preview"</span>
+<a href="#__codelineno-5-19" id="__codelineno-5-19" name="__codelineno-5-19"></a><span class="w">        </span><span class="nt">models</span><span class="p">:</span>
+<a href="#__codelineno-5-20" id="__codelineno-5-20" name="__codelineno-5-20"></a><span class="w">          </span><span class="nt">gpt-4-turbo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+       </div>
+       <p>
+        The above configuration would enable
+        <code>
+         gpt-4-vision-preview
+        </code>
+        ,
+        <code>
+         gpt-3.5-turbo
+        </code>
+        and
+        <code>
+         gpt-4-turbo
+        </code>
+        for your users in the order they were defined.
+       </p>
+       <h3 id="using-assistants-with-azure">
+        Using Assistants with Azure
+       </h3>
+       <p>
+        To enable use of Assistants with Azure OpenAI, there are 2 main steps.
+       </p>
+       <p>
+        1) Set the
+        <code>
+         assistants
+        </code>
+        field at the
+        <a href="#endpoint-level-configuration">
+         Endpoint-level
+        </a>
+        to
+        <code>
+         true
+        </code>
+        , like so:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-6-1" id="__codelineno-6-1" name="__codelineno-6-1"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-6-2" id="__codelineno-6-2" name="__codelineno-6-2"></a><span class="w">  </span><span class="nt">azureOpenAI</span><span class="p">:</span>
+<a href="#__codelineno-6-3" id="__codelineno-6-3" name="__codelineno-6-3"></a><span class="w">  </span><span class="c1"># Enable use of Assistants with Azure</span>
+<a href="#__codelineno-6-4" id="__codelineno-6-4" name="__codelineno-6-4"></a><span class="w">    </span><span class="nt">assistants</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+       </div>
+       <p>
+        2) Add the
+        <code>
+         assistants
+        </code>
+        field to all groups compatible with Azure's Assistants API integration.
+       </p>
+       <ul>
+        <li>
+         At least one of your group configurations must be compatible.
+        </li>
+        <li>
+         You can check the
+         <a href="https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models#assistants-preview">
+          compatible regions and models in the Azure docs here
+         </a>
+         .
+        </li>
+        <li>
+         The version must also be "2024-02-15-preview" or later, preferably later for access to the latest features.
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-7-1" id="__codelineno-7-1" name="__codelineno-7-1"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-7-2" id="__codelineno-7-2" name="__codelineno-7-2"></a><span class="w">  </span><span class="nt">azureOpenAI</span><span class="p">:</span>
+<a href="#__codelineno-7-3" id="__codelineno-7-3" name="__codelineno-7-3"></a><span class="w">    </span><span class="nt">assistants</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-7-4" id="__codelineno-7-4" name="__codelineno-7-4"></a><span class="w">    </span><span class="nt">groups</span><span class="p">:</span>
+<a href="#__codelineno-7-5" id="__codelineno-7-5" name="__codelineno-7-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="s">"my-sweden-group"</span>
+<a href="#__codelineno-7-6" id="__codelineno-7-6" name="__codelineno-7-6"></a><span class="w">        </span><span class="nt">apiKey</span><span class="p">:</span><span class="w"> </span><span class="s">"${SWEDEN_API_KEY}"</span>
+<a href="#__codelineno-7-7" id="__codelineno-7-7" name="__codelineno-7-7"></a><span class="w">        </span><span class="nt">instanceName</span><span class="p">:</span><span class="w"> </span><span class="s">"actual-instance-name"</span>
+<a href="#__codelineno-7-8" id="__codelineno-7-8" name="__codelineno-7-8"></a><span class="w">      </span><span class="c1"># Mark this group as assistants compatible</span>
+<a href="#__codelineno-7-9" id="__codelineno-7-9" name="__codelineno-7-9"></a><span class="w">        </span><span class="nt">assistants</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-7-10" id="__codelineno-7-10" name="__codelineno-7-10"></a><span class="w">      </span><span class="c1"># version must be "2024-02-15-preview" or later</span>
+<a href="#__codelineno-7-11" id="__codelineno-7-11" name="__codelineno-7-11"></a><span class="w">        </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2024-03-01-preview"</span>
+<a href="#__codelineno-7-12" id="__codelineno-7-12" name="__codelineno-7-12"></a><span class="w">        </span><span class="nt">models</span><span class="p">:</span>
+<a href="#__codelineno-7-13" id="__codelineno-7-13" name="__codelineno-7-13"></a><span class="w">          </span><span class="c1"># ... (model-level configuration)</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         Notes:
+        </strong>
+       </p>
+       <ul>
+        <li>
+         If you mark multiple regions as assistants-compatible, assistants you create will be aggregated across regions to the main assistant selection list.
+        </li>
+        <li>
+         Files you upload to Azure OpenAI, whether at the message or assistant level, will only be available in the region the current assistant's model is part of.
+         <ul>
+          <li>
+           For this reason, it's recommended you use only one region or resource group for Azure OpenAI Assistants, or you will experience an error.
+          </li>
+          <li>
+           Uploading to "OpenAI" is the default behavior for official
+           <code>
+            code_interpeter
+           </code>
+           and
+           <code>
+            retrieval
+           </code>
+           capabilities.
+          </li>
+         </ul>
+        </li>
+        <li>
+         Downloading files that assistants generate will soon be supported.
+        </li>
+        <li>
+         If the
+         <code>
+          ASSISTANTS_API_KEY
+         </code>
+         is still set to
+         <code>
+          user_provided
+         </code>
+         in your environment file
+         <code>
+          .env
+         </code>
+         , comment it out.
+        </li>
+        <li>
+         <p>
+          As of March 14th 2024, retrieval and streaming are not supported through Azure OpenAI.
+         </p>
+         <ul>
+          <li>
+           To avoid any errors with retrieval while it's not supported, it's recommended to disable the capability altogether through the
+           <code>
+            assistants
+           </code>
+           endpoint config:
+          </li>
+         </ul>
+         <div class="highlight">
+          <pre><span></span><code><a href="#__codelineno-8-1" id="__codelineno-8-1" name="__codelineno-8-1"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-8-2" id="__codelineno-8-2" name="__codelineno-8-2"></a><span class="w">  </span><span class="nt">assistants</span><span class="p">:</span>
+<a href="#__codelineno-8-3" id="__codelineno-8-3" name="__codelineno-8-3"></a><span class="w">  </span><span class="c1"># "retrieval" omitted.</span>
+<a href="#__codelineno-8-4" id="__codelineno-8-4" name="__codelineno-8-4"></a><span class="w">    </span><span class="nt">capabilities</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"code_interpreter"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"actions"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"tools"</span><span class="p p-Indicator">]</span>
+</code></pre>
+         </div>
+         <ul>
+          <li>
+           By default, all capabilities are enabled.
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <h3 id="using-plugins-with-azure">
+        Using Plugins with Azure
+       </h3>
+       <p>
+        To use the Plugins endpoint with Azure OpenAI, you need a deployment supporting
+        <strong>
+         <a href="https://techcommunity.microsoft.com/t5/azure-ai-services-blog/function-calling-is-now-available-in-azure-openai-service/ba-p/3879241">
+          function calling
+         </a>
+        </strong>
+        . Otherwise, you need to set "Functions" off in the Agent settings. When you are not using "functions" mode, it's recommend to have "skip completion" off as well, which is a review step of what the agent generated.
+       </p>
+       <p>
+        To use Azure with the Plugins endpoint, make sure the field
+        <code>
+         plugins
+        </code>
+        is set to
+        <code>
+         true
+        </code>
+        in your Azure OpenAI endpoing config:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-9-1" id="__codelineno-9-1" name="__codelineno-9-1"></a><span class="c1"># Example Azure OpenAI Object Structure</span>
+<a href="#__codelineno-9-2" id="__codelineno-9-2" name="__codelineno-9-2"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-9-3" id="__codelineno-9-3" name="__codelineno-9-3"></a><span class="w">  </span><span class="nt">azureOpenAI</span><span class="p">:</span>
+<a href="#__codelineno-9-4" id="__codelineno-9-4" name="__codelineno-9-4"></a><span class="w">    </span><span class="nt">plugins</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w"> </span><span class="c1"># &lt;------- Set this</span>
+<a href="#__codelineno-9-5" id="__codelineno-9-5" name="__codelineno-9-5"></a><span class="w">    </span><span class="nt">groups</span><span class="p">:</span>
+<a href="#__codelineno-9-6" id="__codelineno-9-6" name="__codelineno-9-6"></a><span class="w">    </span><span class="c1"># omitted for brevity</span>
+</code></pre>
+       </div>
+       <p>
+        Configuring the
+        <code>
+         plugins
+        </code>
+        field will configure Plugins to use Azure models.
+       </p>
+       <p>
+        <strong>
+         NOTE
+        </strong>
+        : The current configuration through
+        <code>
+         librechat.yaml
+        </code>
+        uses the primary model you select from the frontend for Plugin use, which is not usually how it works without Azure, where instead the "Agent" model is used. The Agent model setting can be ignored when using Plugins through Azure.
+       </p>
+       <h3 id="using-a-specified-base-url-with-azure">
+        Using a Specified Base URL with Azure
+       </h3>
+       <p>
+        The base URL for Azure OpenAI API requests can be dynamically configured. This is useful for proxying services such as
+        <a href="https://developers.cloudflare.com/ai-gateway/providers/azureopenai/">
+         Cloudflare AI Gateway
+        </a>
+        , or if you wish to explicitly override the baseURL handling of the app.
+       </p>
+       <p>
+        LibreChat will use the baseURL field for your Azure model grouping, which can include placeholders for the Azure OpenAI API instance and deployment names.
+       </p>
+       <p>
+        In the configuration, the base URL can be customized like so:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-10-1" id="__codelineno-10-1" name="__codelineno-10-1"></a><span class="c1"># librechat.yaml file, under an Azure group:</span>
+<a href="#__codelineno-10-2" id="__codelineno-10-2" name="__codelineno-10-2"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-10-3" id="__codelineno-10-3" name="__codelineno-10-3"></a><span class="w">  </span><span class="nt">azureOpenAI</span><span class="p">:</span>
+<a href="#__codelineno-10-4" id="__codelineno-10-4" name="__codelineno-10-4"></a><span class="w">    </span><span class="nt">groups</span><span class="p">:</span>
+<a href="#__codelineno-10-5" id="__codelineno-10-5" name="__codelineno-10-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="s">"group-with-custom-base-url"</span>
+<a href="#__codelineno-10-6" id="__codelineno-10-6" name="__codelineno-10-6"></a><span class="w">      </span><span class="nt">baseURL</span><span class="p">:</span><span class="w"> </span><span class="s">"https://example.azure-api.net/${INSTANCE_NAME}/${DEPLOYMENT_NAME}"</span>
+<a href="#__codelineno-10-7" id="__codelineno-10-7" name="__codelineno-10-7"></a>
+<a href="#__codelineno-10-8" id="__codelineno-10-8" name="__codelineno-10-8"></a><span class="c1"># OR</span>
+<a href="#__codelineno-10-9" id="__codelineno-10-9" name="__codelineno-10-9"></a><span class="w">      </span><span class="nt">baseURL</span><span class="p">:</span><span class="w"> </span><span class="s">"https://${INSTANCE_NAME}.openai.azure.com/openai/deployments/${DEPLOYMENT_NAME}"</span>
+<a href="#__codelineno-10-10" id="__codelineno-10-10" name="__codelineno-10-10"></a>
+<a href="#__codelineno-10-11" id="__codelineno-10-11" name="__codelineno-10-11"></a><span class="c1"># Cloudflare example</span>
+<a href="#__codelineno-10-12" id="__codelineno-10-12" name="__codelineno-10-12"></a><span class="w">      </span><span class="nt">baseURL</span><span class="p">:</span><span class="w"> </span><span class="s">"https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/${INSTANCE_NAME}/${DEPLOYMENT_NAME}"</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         NOTE
+        </strong>
+        :
+        <code>
+         ${INSTANCE_NAME}
+        </code>
+        and
+        <code>
+         ${DEPLOYMENT_NAME}
+        </code>
+        are unique placeholders, and do not correspond to environment variables, but instead correspond to the instance and deployment name of the currently selected model. It is not recommended you use INSTANCE_NAME and DEPLOYMENT_NAME as environment variable names to avoid any potential conflicts.
+       </p>
+       <p>
+        <strong>
+         You can also omit the placeholders completely and simply construct the baseURL with your credentials:
+        </strong>
+       </p>
+       <p>
+        <div class="highlight">
+         <pre><span></span><code><a href="#__codelineno-11-1" id="__codelineno-11-1" name="__codelineno-11-1"></a><span class="w">      </span><span class="nt">baseURL</span><span class="p">:</span><span class="w"> </span><span class="s">"https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/my-secret-instance/my-deployment"</span>
+</code></pre>
+        </div>
+        <strong>
+         Lastly, you can specify the entire baseURL through a custom environment variable
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-12-1" id="__codelineno-12-1" name="__codelineno-12-1"></a><span class="w">      </span><span class="nt">baseURL</span><span class="p">:</span><span class="w"> </span><span class="s">"${MY_CUSTOM_BASEURL}"</span>
+</code></pre>
+       </div>
+       <h3 id="enabling-auto-generated-titles-with-azure">
+        Enabling Auto-Generated Titles with Azure
+       </h3>
+       <p>
+        To enable titling for Azure, set
+        <code>
+         titleConvo
+        </code>
+        to
+        <code>
+         true
+        </code>
+        .
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-13-1" id="__codelineno-13-1" name="__codelineno-13-1"></a><span class="c1"># Example Azure OpenAI Object Structure</span>
+<a href="#__codelineno-13-2" id="__codelineno-13-2" name="__codelineno-13-2"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-13-3" id="__codelineno-13-3" name="__codelineno-13-3"></a><span class="w">  </span><span class="nt">azureOpenAI</span><span class="p">:</span>
+<a href="#__codelineno-13-4" id="__codelineno-13-4" name="__codelineno-13-4"></a><span class="w">    </span><span class="nt">titleConvo</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w"> </span><span class="c1"># &lt;------- Set this</span>
+<a href="#__codelineno-13-5" id="__codelineno-13-5" name="__codelineno-13-5"></a><span class="w">    </span><span class="nt">groups</span><span class="p">:</span>
+<a href="#__codelineno-13-6" id="__codelineno-13-6" name="__codelineno-13-6"></a><span class="w">    </span><span class="c1"># omitted for brevity</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         You can also specify the model to use for titling, with
+         <code>
+          titleModel
+         </code>
+        </strong>
+        provided you have configured it in your group(s).
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-14-1" id="__codelineno-14-1" name="__codelineno-14-1"></a><span class="w">    </span><span class="nt">titleModel</span><span class="p">:</span><span class="w"> </span><span class="s">"gpt-3.5-turbo"</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         Note
+        </strong>
+        : "gpt-3.5-turbo" is the default value, so you can omit it if you want to use this exact model and have it configured. If not configured and
+        <code>
+         titleConvo
+        </code>
+        is set to
+        <code>
+         true
+        </code>
+        , the titling process will result in an error and no title will be generated.
+       </p>
+       <h3 id="using-gpt-4-vision-with-azure">
+        Using GPT-4 Vision with Azure
+       </h3>
+       <p>
+        To use Vision (image analysis) with Azure OpenAI, you need to make sure
+        <code>
+         gpt-4-vision-preview
+        </code>
+        is a specified model
+        <a href="#model-deployments">
+         in one of your groupings
+        </a>
+       </p>
+       <p>
+        This will work seamlessly as it does with the
+        <a href="#openai">
+         OpenAI endpoint
+        </a>
+        (no need to select the vision model, it will be switched behind the scenes)
+       </p>
+       <h3 id="generate-images-with-azure-openai-service-dall-e">
+        Generate images with Azure OpenAI Service (DALL-E)
+       </h3>
+       <table>
+        <thead>
+         <tr>
+          <th>
+           Model ID
+          </th>
+          <th>
+           Feature Availability
+          </th>
+          <th>
+           Max Request (characters)
+          </th>
+         </tr>
+        </thead>
+        <tbody>
+         <tr>
+          <td>
+           dalle2
+          </td>
+          <td>
+           East US
+          </td>
+          <td>
+           1000
+          </td>
+         </tr>
+         <tr>
+          <td>
+           dalle3
+          </td>
+          <td>
+           Sweden Central
+          </td>
+          <td>
+           4000
+          </td>
+         </tr>
+        </tbody>
+       </table>
+       <ul>
+        <li>
+         First you need to create an Azure resource that hosts DALL-E
+         <ul>
+          <li>
+           At the time of writing, dall-e-3 is available in the
+           <code>
+            SwedenCentral
+           </code>
+           region, dall-e-2 in the
+           <code>
+            EastUS
+           </code>
+           region.
+          </li>
+         </ul>
+        </li>
+        <li>
+         Then, you need to deploy the image generation model in one of the above regions.
+         <ul>
+          <li>
+           Read the
+           <a href="https://learn.microsoft.com/en-us/azure/ai-services/openai/dall-e-quickstart">
+            Azure OpenAI Image Generation Quickstart Guide
+           </a>
+           for further assistance
+          </li>
+         </ul>
+        </li>
+        <li>
+         Configure your environment variables based on Azure credentials:
+        </li>
+       </ul>
+       <p>
+        <strong>
+         - For DALL-E-3:
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-15-1" id="__codelineno-15-1" name="__codelineno-15-1"></a><span class="nv">DALLE3_AZURE_API_VERSION</span><span class="o">=</span>the-api-version<span class="w"> </span><span class="c1"># e.g.: 2023-12-01-preview</span>
+<a href="#__codelineno-15-2" id="__codelineno-15-2" name="__codelineno-15-2"></a><span class="nv">DALLE3_BASEURL</span><span class="o">=</span>https://&lt;AZURE_OPENAI_API_INSTANCE_NAME&gt;.openai.azure.com/openai/deployments/&lt;DALLE3_DEPLOYMENT_NAME&gt;/
+<a href="#__codelineno-15-3" id="__codelineno-15-3" name="__codelineno-15-3"></a><span class="nv">DALLE3_API_KEY</span><span class="o">=</span>your-azure-api-key-for-dall-e-3
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         - For DALL-E-2:
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-16-1" id="__codelineno-16-1" name="__codelineno-16-1"></a><span class="nv">DALLE2_AZURE_API_VERSION</span><span class="o">=</span>the-api-version<span class="w"> </span><span class="c1"># e.g.: 2023-12-01-preview</span>
+<a href="#__codelineno-16-2" id="__codelineno-16-2" name="__codelineno-16-2"></a><span class="nv">DALLE2_BASEURL</span><span class="o">=</span>https://&lt;AZURE_OPENAI_API_INSTANCE_NAME&gt;.openai.azure.com/openai/deployments/&lt;DALLE2_DEPLOYMENT_NAME&gt;/
+<a href="#__codelineno-16-3" id="__codelineno-16-3" name="__codelineno-16-3"></a><span class="nv">DALLE2_API_KEY</span><span class="o">=</span>your-azure-api-key-for-dall-e-2
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         DALL-E Notes:
+        </strong>
+       </p>
+       <ul>
+        <li>
+         For DALL-E-3, the default system prompt has the LLM prefer the
+         <a href="https://platform.openai.com/docs/api-reference/images/create#images-create-style">
+          "vivid" style
+         </a>
+         parameter, which seems to be the preferred setting for ChatGPT as "natural" can sometimes produce lackluster results.
+        </li>
+        <li>
+         See official prompt for reference:
+         <strong>
+          <a href="https://github.com/spdustin/ChatGPT-AutoExpert/blob/main/_system-prompts/dall-e.md">
+           DALL-E System Prompt
+          </a>
+         </strong>
+        </li>
+        <li>
+         You can adjust the system prompts to your liking:
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-17-1" id="__codelineno-17-1" name="__codelineno-17-1"></a><span class="nv">DALLE3_SYSTEM_PROMPT</span><span class="o">=</span><span class="s2">"Your DALL-E-3 System Prompt here"</span>
+<a href="#__codelineno-17-2" id="__codelineno-17-2" name="__codelineno-17-2"></a><span class="nv">DALLE2_SYSTEM_PROMPT</span><span class="o">=</span><span class="s2">"Your DALL-E-2 System Prompt here"</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         The
+         <code>
+          DALLE_REVERSE_PROXY
+         </code>
+         environment variable is ignored when Azure credentials (DALLEx_AZURE_API_VERSION and DALLEx_BASEURL) for DALL-E are configured.
+        </li>
+       </ul>
+       <h3 id="serverless-inference-endpoints">
+        Serverless Inference Endpoints
+       </h3>
+       <p>
+        Through the
+        <code>
+         librechat.yaml
+        </code>
+        file, you can configure Azure AI Studio serverless inference endpoints to access models from the
+        <a href="https://ai.azure.com/explore">
+         Azure Model Catalog.
+        </a>
+        Only a model identifier,
+        <code>
+         baseURL
+        </code>
+        , and
+        <code>
+         apiKey
+        </code>
+        are needed along with the
+        <code>
+         serverless
+        </code>
+        field to indicate the special handling these endpoints need.
+       </p>
+       <ul>
+        <li>
+         <p>
+          You will need to follow the instructions in the compatible model cards to set up
+          <strong>
+           MaaS
+          </strong>
+          ("Models as a Service") access on Azure AI Studio.
+         </p>
+         <ul>
+          <li>
+           <p>
+            For reference, here are 2 known compatible model cards:
+           </p>
+          </li>
+          <li>
+           <p>
+            <a href="https://aka.ms/aistudio/landing/mistral-large">
+             Mistral-large
+            </a>
+            |
+            <a href="https://aka.ms/aistudio/landing/Llama-2-70b-chat">
+             Llama-2-70b-chat
+            </a>
+           </p>
+          </li>
+         </ul>
+        </li>
+        <li>
+         <p>
+          You can also review
+          <a href="https://techcommunity.microsoft.com/t5/ai-machine-learning-blog/mistral-large-mistral-ai-s-flagship-llm-debuts-on-azure-ai/ba-p/4066996">
+           the technical blog for the "Mistral-large" model release
+          </a>
+          for more info.
+         </p>
+        </li>
+        <li>
+         <p>
+          Then, you will need to add them to your azureOpenAI config in the librechat.yaml file.
+         </p>
+        </li>
+        <li>
+         <p>
+          Here are my example configurations for both Mistral-large and LLama-2-70b-chat:
+         </p>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-18-1" id="__codelineno-18-1" name="__codelineno-18-1"></a><span class="nt">endpoints</span><span class="p">:</span>
+<a href="#__codelineno-18-2" id="__codelineno-18-2" name="__codelineno-18-2"></a><span class="w">  </span><span class="nt">azureOpenAI</span><span class="p">:</span>
+<a href="#__codelineno-18-3" id="__codelineno-18-3" name="__codelineno-18-3"></a><span class="w">    </span><span class="nt">groups</span><span class="p">:</span>
+<a href="#__codelineno-18-4" id="__codelineno-18-4" name="__codelineno-18-4"></a><span class="c1"># serverless examples</span>
+<a href="#__codelineno-18-5" id="__codelineno-18-5" name="__codelineno-18-5"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="s">"mistral-inference"</span>
+<a href="#__codelineno-18-6" id="__codelineno-18-6" name="__codelineno-18-6"></a><span class="w">      </span><span class="nt">apiKey</span><span class="p">:</span><span class="w"> </span><span class="s">"${AZURE_MISTRAL_API_KEY}"</span><span class="w"> </span><span class="c1"># arbitrary env var name</span>
+<a href="#__codelineno-18-7" id="__codelineno-18-7" name="__codelineno-18-7"></a><span class="w">      </span><span class="nt">baseURL</span><span class="p">:</span><span class="w"> </span><span class="s">"https://Mistral-large-vnpet-serverless.region.inference.ai.azure.com/v1/chat/completions"</span>
+<a href="#__codelineno-18-8" id="__codelineno-18-8" name="__codelineno-18-8"></a><span class="w">      </span><span class="nt">serverless</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-18-9" id="__codelineno-18-9" name="__codelineno-18-9"></a><span class="w">      </span><span class="nt">models</span><span class="p">:</span>
+<a href="#__codelineno-18-10" id="__codelineno-18-10" name="__codelineno-18-10"></a><span class="w">        </span><span class="nt">mistral-large</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-18-11" id="__codelineno-18-11" name="__codelineno-18-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">group</span><span class="p">:</span><span class="w"> </span><span class="s">"llama-70b-chat"</span>
+<a href="#__codelineno-18-12" id="__codelineno-18-12" name="__codelineno-18-12"></a><span class="w">      </span><span class="nt">apiKey</span><span class="p">:</span><span class="w"> </span><span class="s">"${AZURE_LLAMA2_70B_API_KEY}"</span><span class="w"> </span><span class="c1"># arbitrary env var name</span>
+<a href="#__codelineno-18-13" id="__codelineno-18-13" name="__codelineno-18-13"></a><span class="w">      </span><span class="nt">baseURL</span><span class="p">:</span><span class="w"> </span><span class="s">"https://Llama-2-70b-chat-qmvyb-serverless.region.inference.ai.azure.com/v1/chat/completions"</span>
+<a href="#__codelineno-18-14" id="__codelineno-18-14" name="__codelineno-18-14"></a><span class="w">      </span><span class="nt">serverless</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a href="#__codelineno-18-15" id="__codelineno-18-15" name="__codelineno-18-15"></a><span class="w">      </span><span class="nt">models</span><span class="p">:</span>
+<a href="#__codelineno-18-16" id="__codelineno-18-16" name="__codelineno-18-16"></a><span class="w">        </span><span class="nt">llama-70b-chat</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         Notes
+        </strong>
+        :
+       </p>
+       <ul>
+        <li>
+         Make sure to add the appropriate suffix for your deployment, either "/v1/chat/completions" or "/v1/completions"
+        </li>
+        <li>
+         If using "/v1/completions" (without "chat"), you need to set the
+         <code>
+          forcePrompt
+         </code>
+         field to
+         <code>
+          true
+         </code>
+         in your
+         <a href="#group-level-configuration">
+          group config.
+         </a>
+        </li>
+        <li>
+         Compatibility with LibreChat relies on parity with OpenAI API specs, which at the time of writing, are typically
+         <strong>
+          "Pay-as-you-go"
+         </strong>
+         or "Models as a Service" (MaaS) deployments on Azure AI Studio, that are OpenAI-SDK-compatible with either v1/completions or v1/chat/completions endpoint handling.
+        </li>
+        <li>
+         At the moment, only
+         <a href="https://azure.microsoft.com/en-us/blog/microsoft-and-mistral-ai-announce-new-partnership-to-accelerate-ai-innovation-and-introduce-mistral-large-first-on-azure/">
+          "Mistral-large"
+         </a>
+         and
+         <a href="https://techcommunity.microsoft.com/t5/ai-machine-learning-blog/announcing-llama-2-inference-apis-and-hosted-fine-tuning-through/ba-p/3979227">
+          LLama-2 Chat models
+         </a>
+         are compatible from the Azure model catalog. You can filter by "Chat completion" under inference tasks to see the full list; however, real time endpoint models have not been tested.
+        </li>
+        <li>
+         These serverless inference endpoint/models are likely not compatible with OpenAI function calling, which enables the use of Plugins. As they have yet been tested, they are available on the Plugins endpoint, although they are not expected to work.
+        </li>
+       </ul>
+       <hr/>
+       <h2 id="legacy-setup">
+        ⚠️ Legacy Setup ⚠️
+       </h2>
+       <hr/>
+       <p>
+        <strong>
+         Note:
+        </strong>
+        The legacy instructions may be used for a simple setup but they are no longer recommended as of v0.7.0 and may break in future versions. This was done to improve upon legacy configuration settings, to allow multiple deployments/model configurations setup with ease:
+        <strong>
+         <a href="https://github.com/danny-avila/LibreChat/issues/1390">
+          #1390
+         </a>
+        </strong>
+       </p>
+       <p>
+        <strong>
+         Use the recommended
+         <a href="#setup">
+          Setup
+         </a>
+         in the section above.
+        </strong>
+       </p>
+       <p>
+        <strong>
+         Required Variables (legacy)
+        </strong>
+       </p>
+       <p>
+        These variables construct the API URL for Azure OpenAI.
+       </p>
+       <ul>
+        <li>
+         <code>
+          AZURE_API_KEY
+         </code>
+         : Your Azure OpenAI API key.
+        </li>
+        <li>
+         <code>
+          AZURE_OPENAI_API_INSTANCE_NAME
+         </code>
+         : The instance name of your Azure OpenAI API.
+        </li>
+        <li>
+         <code>
+          AZURE_OPENAI_API_DEPLOYMENT_NAME
+         </code>
+         : The deployment name of your Azure OpenAI API.
+        </li>
+        <li>
+         <code>
+          AZURE_OPENAI_API_VERSION
+         </code>
+         : The version of your Azure OpenAI API.
+        </li>
+       </ul>
+       <p>
+        For example, with these variables, the URL for chat completion would look something like:
+        <div class="highlight">
+         <pre><span></span><code><a href="#__codelineno-19-1" id="__codelineno-19-1" name="__codelineno-19-1"></a>https://{AZURE_OPENAI_API_INSTANCE_NAME}.openai.azure.com/openai/deployments/{AZURE_OPENAI_API_DEPLOYMENT_NAME}/chat/completions?api-version={AZURE_OPENAI_API_VERSION}
+</code></pre>
+        </div>
+        You should also consider changing the
+        <code>
+         AZURE_OPENAI_MODELS
+        </code>
+        variable to the models available in your deployment.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-20-1" id="__codelineno-20-1" name="__codelineno-20-1"></a><span class="c1"># .env file</span>
+<a href="#__codelineno-20-2" id="__codelineno-20-2" name="__codelineno-20-2"></a><span class="nv">AZURE_OPENAI_MODELS</span><span class="o">=</span>gpt-4-1106-preview,gpt-4,gpt-3.5-turbo,gpt-3.5-turbo-1106,gpt-4-vision-preview
+</code></pre>
+       </div>
+       <p>
+        Overriding the construction of the API URL is possible as of implementing
+        <strong>
+         <a href="https://github.com/danny-avila/LibreChat/issues/1266">
+          Issue #1266
+         </a>
+        </strong>
+       </p>
+       <p>
+        <strong>
+         Model Deployments (legacy)
+        </strong>
+       </p>
+       <blockquote>
+        <p>
+         Note: a change will be developed to improve current configuration settings, to allow multiple deployments/model configurations setup with ease:
+         <strong>
+          <a href="https://github.com/danny-avila/LibreChat/issues/1390">
+           #1390
+          </a>
+         </strong>
+        </p>
+       </blockquote>
+       <p>
+        As of 2023-12-18, the Azure API allows only one model per deployment.
+       </p>
+       <p>
+        <strong>
+         It's highly recommended
+        </strong>
+        to name your deployments
+        <em>
+         after
+        </em>
+        the model name (e.g., "gpt-3.5-turbo") for easy deployment switching.
+       </p>
+       <p>
+        When you do so, LibreChat will correctly switch the deployment, while associating the correct max context per model, if you have the following environment variable set:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-21-1" id="__codelineno-21-1" name="__codelineno-21-1"></a><span class="nv">AZURE_USE_MODEL_AS_DEPLOYMENT_NAME</span><span class="o">=</span>TRUE
+</code></pre>
+       </div>
+       <p>
+        For example, when you have set
+        <code>
+         AZURE_USE_MODEL_AS_DEPLOYMENT_NAME=TRUE
+        </code>
+        , the following deployment configuration provides the most seamless, error-free experience for LibreChat, including Vision support and tracking the correct max context tokens:
+       </p>
+       <p>
+        <img alt="Screenshot 2023-12-18 111742" src="https://github.com/danny-avila/LibreChat/assets/110412045/4aa8a61c-0317-4681-8262-a6382dcaa7b0"/>
+       </p>
+       <p>
+        Alternatively, you can use custom deployment names and set
+        <code>
+         AZURE_OPENAI_DEFAULT_MODEL
+        </code>
+        for expected functionality.
+       </p>
+       <ul>
+        <li>
+         <strong>
+          <code>
+           AZURE_OPENAI_MODELS
+          </code>
+         </strong>
+         : List the available models, separated by commas without spaces. The first listed model will be the default. If left blank, internal settings will be used. Note that deployment names can't have periods, which are removed when generating the endpoint.
+        </li>
+       </ul>
+       <p>
+        Example use:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-22-1" id="__codelineno-22-1" name="__codelineno-22-1"></a><span class="c1"># .env file</span>
+<a href="#__codelineno-22-2" id="__codelineno-22-2" name="__codelineno-22-2"></a><span class="nv">AZURE_OPENAI_MODELS</span><span class="o">=</span>gpt-3.5-turbo,gpt-4,gpt-5
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         <strong>
+          <code>
+           AZURE_USE_MODEL_AS_DEPLOYMENT_NAME
+          </code>
+         </strong>
+         : Enable using the model name as the deployment name for the API URL.
+        </li>
+       </ul>
+       <p>
+        Example use:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-23-1" id="__codelineno-23-1" name="__codelineno-23-1"></a><span class="c1"># .env file</span>
+<a href="#__codelineno-23-2" id="__codelineno-23-2" name="__codelineno-23-2"></a><span class="nv">AZURE_USE_MODEL_AS_DEPLOYMENT_NAME</span><span class="o">=</span>TRUE
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         Setting a Default Model for Azure (legacy)
+        </strong>
+       </p>
+       <p>
+        This section is relevant when you are
+        <strong>
+         not
+        </strong>
+        naming deployments after model names as shown above.
+       </p>
+       <p>
+        <strong>
+         Important:
+        </strong>
+        The Azure OpenAI API does not use the
+        <code>
+         model
+        </code>
+        field in the payload but is a necessary identifier for LibreChat. If your deployment names do not correspond to the model names, and you're having issues with the model not being recognized, you should set this field to explicitly tell LibreChat to treat your Azure OpenAI API requests as if the specified model was selected.
+       </p>
+       <p>
+        If AZURE_USE_MODEL_AS_DEPLOYMENT_NAME is enabled, the model you set with
+        <code>
+         AZURE_OPENAI_DEFAULT_MODEL
+        </code>
+        will
+        <strong>
+         not
+        </strong>
+        be recognized and will
+        <strong>
+         not
+        </strong>
+        be used as the deployment name; instead, it will use the model selected by the user as the "deployment" name.
+       </p>
+       <ul>
+        <li>
+         <strong>
+          <code>
+           AZURE_OPENAI_DEFAULT_MODEL
+          </code>
+         </strong>
+         : Override the model setting for Azure, useful if using custom deployment names.
+        </li>
+       </ul>
+       <p>
+        Example use:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-24-1" id="__codelineno-24-1" name="__codelineno-24-1"></a><span class="c1"># .env file</span>
+<a href="#__codelineno-24-2" id="__codelineno-24-2" name="__codelineno-24-2"></a><span class="c1"># MUST be a real OpenAI model, named exactly how it is recognized by OpenAI API (not Azure)</span>
+<a href="#__codelineno-24-3" id="__codelineno-24-3" name="__codelineno-24-3"></a><span class="nv">AZURE_OPENAI_DEFAULT_MODEL</span><span class="o">=</span>gpt-3.5-turbo<span class="w"> </span><span class="c1"># do include periods in the model name here</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         Using a Specified Base URL with Azure (legacy)
+        </strong>
+       </p>
+       <p>
+        The base URL for Azure OpenAI API requests can be dynamically configured. This is useful for proxying services such as
+        <a href="https://developers.cloudflare.com/ai-gateway/providers/azureopenai/">
+         Cloudflare AI Gateway
+        </a>
+        , or if you wish to explicitly override the baseURL handling of the app.
+       </p>
+       <p>
+        LibreChat will use the
+        <code>
+         AZURE_OPENAI_BASEURL
+        </code>
+        environment variable, which can include placeholders for the Azure OpenAI API instance and deployment names.
+       </p>
+       <p>
+        In the application's environment configuration, the base URL is set like this:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-25-1" id="__codelineno-25-1" name="__codelineno-25-1"></a><span class="c1"># .env file</span>
+<a href="#__codelineno-25-2" id="__codelineno-25-2" name="__codelineno-25-2"></a><span class="nv">AZURE_OPENAI_BASEURL</span><span class="o">=</span>https://example.azure-api.net/<span class="si">${</span><span class="nv">INSTANCE_NAME</span><span class="si">}</span>/<span class="si">${</span><span class="nv">DEPLOYMENT_NAME</span><span class="si">}</span>
+<a href="#__codelineno-25-3" id="__codelineno-25-3" name="__codelineno-25-3"></a>
+<a href="#__codelineno-25-4" id="__codelineno-25-4" name="__codelineno-25-4"></a><span class="c1"># OR</span>
+<a href="#__codelineno-25-5" id="__codelineno-25-5" name="__codelineno-25-5"></a><span class="nv">AZURE_OPENAI_BASEURL</span><span class="o">=</span>https://<span class="si">${</span><span class="nv">INSTANCE_NAME</span><span class="si">}</span>.openai.azure.com/openai/deployments/<span class="si">${</span><span class="nv">DEPLOYMENT_NAME</span><span class="si">}</span>
+<a href="#__codelineno-25-6" id="__codelineno-25-6" name="__codelineno-25-6"></a>
+<a href="#__codelineno-25-7" id="__codelineno-25-7" name="__codelineno-25-7"></a><span class="c1"># Cloudflare example</span>
+<a href="#__codelineno-25-8" id="__codelineno-25-8" name="__codelineno-25-8"></a><span class="nv">AZURE_OPENAI_BASEURL</span><span class="o">=</span>https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/<span class="si">${</span><span class="nv">INSTANCE_NAME</span><span class="si">}</span>/<span class="si">${</span><span class="nv">DEPLOYMENT_NAME</span><span class="si">}</span>
+</code></pre>
+       </div>
+       <p>
+        The application replaces
+        <code>
+         ${INSTANCE_NAME}
+        </code>
+        and
+        <code>
+         ${DEPLOYMENT_NAME}
+        </code>
+        in the
+        <code>
+         AZURE_OPENAI_BASEURL
+        </code>
+        , processed according to the other settings discussed in the guide.
+       </p>
+       <p>
+        <strong>
+         You can also omit the placeholders completely and simply construct the baseURL with your credentials:
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-26-1" id="__codelineno-26-1" name="__codelineno-26-1"></a><span class="c1"># .env file</span>
+<a href="#__codelineno-26-2" id="__codelineno-26-2" name="__codelineno-26-2"></a><span class="nv">AZURE_OPENAI_BASEURL</span><span class="o">=</span>https://instance-1.openai.azure.com/openai/deployments/deployment-1
+<a href="#__codelineno-26-3" id="__codelineno-26-3" name="__codelineno-26-3"></a>
+<a href="#__codelineno-26-4" id="__codelineno-26-4" name="__codelineno-26-4"></a><span class="c1"># Cloudflare example</span>
+<a href="#__codelineno-26-5" id="__codelineno-26-5" name="__codelineno-26-5"></a><span class="nv">AZURE_OPENAI_BASEURL</span><span class="o">=</span>https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/instance-1/deployment-1
+</code></pre>
+       </div>
+       <p>
+        Setting these values will override all of the application's internal handling of the instance and deployment names and use your specified base URL.
+       </p>
+       <p>
+        <strong>
+         Notes:
+        </strong>
+        - You should still provide the
+        <code>
+         AZURE_OPENAI_API_VERSION
+        </code>
+        and
+        <code>
+         AZURE_API_KEY
+        </code>
+        via the .env file as they are programmatically added to the requests.
+- When specifying instance and deployment names in the
+        <code>
+         AZURE_OPENAI_BASEURL
+        </code>
+        , their respective environment variables can be omitted (
+        <code>
+         AZURE_OPENAI_API_INSTANCE_NAME
+        </code>
+        and
+        <code>
+         AZURE_OPENAI_API_DEPLOYMENT_NAME
+        </code>
+        ) except for use with Plugins.
+- Specifying instance and deployment names in the
+        <code>
+         AZURE_OPENAI_BASEURL
+        </code>
+        instead of placeholders creates conflicts with "plugins," "vision," "default-model," and "model-as-deployment-name" support.
+- Due to the conflicts that arise with other features, it is recommended to use placeholder for instance and deployment names in the
+        <code>
+         AZURE_OPENAI_BASEURL
+        </code>
+       </p>
+       <p>
+        <strong>
+         Enabling Auto-Generated Titles with Azure (legacy)
+        </strong>
+       </p>
+       <p>
+        The default titling model is set to
+        <code>
+         gpt-3.5-turbo
+        </code>
+        .
+       </p>
+       <p>
+        If you're using
+        <code>
+         AZURE_USE_MODEL_AS_DEPLOYMENT_NAME
+        </code>
+        and have "gpt-35-turbo" setup as a deployment name, this should work out-of-the-box.
+       </p>
+       <p>
+        In any case, you can adjust the title model as such:
+        <code>
+         OPENAI_TITLE_MODEL=your-title-model
+        </code>
+       </p>
+       <p>
+        <strong>
+         Using GPT-4 Vision with Azure (legacy)
+        </strong>
+       </p>
+       <p>
+        Currently, the best way to setup Vision is to use your deployment names as the model names, as
+        <a href="#model-deployments">
+         shown here
+        </a>
+       </p>
+       <p>
+        This will work seamlessly as it does with the
+        <a href="#openai">
+         OpenAI endpoint
+        </a>
+        (no need to select the vision model, it will be switched behind the scenes)
+       </p>
+       <p>
+        Alternatively, you can set the
+        <a href="#required-variables">
+         required variables
+        </a>
+        to explicitly use your vision deployment, but this may limit you to exclusively using your vision deployment for all Azure chat settings.
+       </p>
+       <p>
+        <strong>
+         Notes:
+        </strong>
+       </p>
+       <ul>
+        <li>
+         If using
+         <code>
+          AZURE_OPENAI_BASEURL
+         </code>
+         , you should not specify instance and deployment names instead of placeholders as the vision request will fail.
+        </li>
+        <li>
+         As of December 18th, 2023, Vision models seem to have degraded performance with Azure OpenAI when compared to
+         <a href="#openai">
+          OpenAI
+         </a>
+        </li>
+       </ul>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/110412045/7306185f-c32c-4483-9167-af514cc1c2dd"/>
+       </p>
+       <blockquote>
+        <p>
+         Note: a change will be developed to improve current configuration settings, to allow multiple deployments/model configurations setup with ease:
+         <strong>
+          <a href="https://github.com/danny-avila/LibreChat/issues/1390">
+           #1390
+          </a>
+         </strong>
+        </p>
+       </blockquote>
+       <p>
+        <strong>
+         Optional Variables (legacy)
+        </strong>
+       </p>
+       <p>
+        <em>
+         These variables are currently not used by LibreChat
+        </em>
+       </p>
+       <ul>
+        <li>
+         <code>
+          AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME
+         </code>
+         : The deployment name for completion. This is currently not in use but may be used in future.
+        </li>
+        <li>
+         <code>
+          AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME
+         </code>
+         : The deployment name for embedding. This is currently not in use but may be used in future.
+        </li>
+       </ul>
+       <p>
+        These two variables are optional but may be used in future updates of this project.
+       </p>
+       <p>
+        <strong>
+         Using Plugins with Azure
+        </strong>
+       </p>
+       <p>
+        Note: To use the Plugins endpoint with Azure OpenAI, you need a deployment supporting
+        <strong>
+         <a href="https://techcommunity.microsoft.com/t5/azure-ai-services-blog/function-calling-is-now-available-in-azure-openai-service/ba-p/3879241">
+          function calling
+         </a>
+        </strong>
+        . Otherwise, you need to set "Functions" off in the Agent settings. When you are not using "functions" mode, it's recommend to have "skip completion" off as well, which is a review step of what the agent generated.
+       </p>
+       <p>
+        To use Azure with the Plugins endpoint, make sure the following environment variables are set:
+       </p>
+       <ul>
+        <li>
+         <code>
+          PLUGINS_USE_AZURE
+         </code>
+         : If set to "true" or any truthy value, this will enable the program to use Azure with the Plugins endpoint.
+        </li>
+        <li>
+         <code>
+          AZURE_API_KEY
+         </code>
+         : Your Azure API key must be set with an environment variable.
+        </li>
+       </ul>
+       <p>
+        <strong>
+         Important:
+        </strong>
+       </p>
+       <ul>
+        <li>
+         If using
+         <code>
+          AZURE_OPENAI_BASEURL
+         </code>
+         , you should not specify instance and deployment names instead of placeholders as the plugin request will fail.
+        </li>
+       </ul>
+       <p>
+        <strong>
+         Generate images with Azure OpenAI Service (DALL-E)
+        </strong>
+       </p>
+       <p>
+        See the
+        <a href="#generate-images-with-azure-openai-service-dall-e">
+         current Azure DALL-E guide
+        </a>
+        as it applies to legacy configurations
+       </p>
+      </article>
+     </div>
+     <script>
+      var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))
+     </script>
+    </div>
+    <button class="md-top md-icon" data-md-component="top" hidden="" type="button">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z">
+      </path>
+     </svg>
+     Back to top
+    </button>
+   </main>
+   <footer class="md-footer">
+    <div class="md-footer-meta md-typeset">
+     <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+       <div class="md-copyright__highlight">
+        © 2024
+        <a href="https://librechat.ai/" rel="noopener" target="_blank">
+         LibreChat
+        </a>
+       </div>
+       Made with
+       <a href="https://squidfunk.github.io/mkdocs-material/" rel="noopener" target="_blank">
+        Material for MkDocs
+       </a>
+      </div>
+      <div class="md-social">
+       <a class="md-social__link" href="https://discord.librechat.ai" rel="noopener" target="_blank" title="Discord">
+        <svg viewbox="0 0 640 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M524.531 69.836a1.5 1.5 0 0 0-.764-.7A485.065 485.065 0 0 0 404.081 32.03a1.816 1.816 0 0 0-1.923.91 337.461 337.461 0 0 0-14.9 30.6 447.848 447.848 0 0 0-134.426 0 309.541 309.541 0 0 0-15.135-30.6 1.89 1.89 0 0 0-1.924-.91 483.689 483.689 0 0 0-119.688 37.107 1.712 1.712 0 0 0-.788.676C39.068 183.651 18.186 294.69 28.43 404.354a2.016 2.016 0 0 0 .765 1.375 487.666 487.666 0 0 0 146.825 74.189 1.9 1.9 0 0 0 2.063-.676A348.2 348.2 0 0 0 208.12 430.4a1.86 1.86 0 0 0-1.019-2.588 321.173 321.173 0 0 1-45.868-21.853 1.885 1.885 0 0 1-.185-3.126 251.047 251.047 0 0 0 9.109-7.137 1.819 1.819 0 0 1 1.9-.256c96.229 43.917 200.41 43.917 295.5 0a1.812 1.812 0 0 1 1.924.233 234.533 234.533 0 0 0 9.132 7.16 1.884 1.884 0 0 1-.162 3.126 301.407 301.407 0 0 1-45.89 21.83 1.875 1.875 0 0 0-1 2.611 391.055 391.055 0 0 0 30.014 48.815 1.864 1.864 0 0 0 2.063.7A486.048 486.048 0 0 0 610.7 405.729a1.882 1.882 0 0 0 .765-1.352c12.264-126.783-20.532-236.912-86.934-334.541ZM222.491 337.58c-28.972 0-52.844-26.587-52.844-59.239s23.409-59.241 52.844-59.241c29.665 0 53.306 26.82 52.843 59.239 0 32.654-23.41 59.241-52.843 59.241Zm195.38 0c-28.971 0-52.843-26.587-52.843-59.239s23.409-59.241 52.843-59.241c29.667 0 53.307 26.82 52.844 59.239 0 32.654-23.177 59.241-52.844 59.241Z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://librechat.ai" rel="noopener" target="_blank" title="GitHub">
+        <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://yt.librechat.ai" rel="noopener" target="_blank" title="YouTube">
+        <svg viewbox="0 0 576 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305zm-317.51 213.508V175.185l142.739 81.205-142.739 81.201z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://linkedin.librechat.ai" rel="noopener" target="_blank" title="LinkedIn">
+        <svg viewbox="0 0 448 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3zM135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5zm282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9V416z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://demo.librechat.cfd" rel="noopener" target="_blank" title="Demo">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M278.5 215.6 23 471c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l57-57h68c49.7 0 97.9-14.4 139-41 11.1-7.2 5.5-23-7.8-23-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l81-24.3c2.5-.8 4.8-2.1 6.7-4l22.4-22.4c10.1-10.1 2.9-27.3-11.3-27.3H377c-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l112-33.6c4-1.2 7.4-3.9 9.3-7.7 10.8-21 16.4-44.5 16.4-68.6 0-41-16.3-80.3-45.3-109.3l-5.5-5.5C432.3 16.3 393 0 352 0s-80.3 16.3-109.3 45.3L139 149c-48 48-75 113.1-75 181v55.3l189.6-189.5c6.2-6.2 16.4-6.2 22.6 0 5.4 5.4 6.1 13.6 2.2 19.8z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://hf.librechat.ai" rel="noopener" target="_blank" title="Hugging Face">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M256 512a256 256 0 1 0 0-512 256 256 0 1 0 0 512zm132.1-199.2c12.3-3.8 24.3 6.9 19.3 18.7-25 59.1-83.2 100.5-151.1 100.5s-126.2-41.4-151.1-100.5c-5-11.8 7-22.5 19.3-18.7 39.7 12.2 84.5 19 131.8 19s92.1-6.8 131.8-19zm-170.5-84-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8zm160 0-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8z">
+         </path>
+        </svg>
+       </a>
+      </div>
+     </div>
+    </div>
+   </footer>
+  </div>
+  <div class="md-dialog" data-md-component="dialog">
+   <div class="md-dialog__inner md-typeset">
+   </div>
+  </div>
+  <div class="md-progress" data-md-component="progress" role="progressbar">
+  </div>
+  <script id="__config" type="application/json">
+   {"base": "../..", "features": ["header.autohide", "navigation.tabs", "navigation.tabs.sticky", "content.action.edit", "content.code.copy", "navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.expand", "navigation.indexes", "navigation.top"], "search": "../../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}
+  </script>
+  <script src="../../assets/javascripts/bundle.bd41221c.min.js">
+  </script>
+ </body>
+</html>

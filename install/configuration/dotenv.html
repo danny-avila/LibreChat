@@ -1,0 +1,4090 @@
+<!DOCTYPE html>
+<html class="no-js" lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <meta content="Comprehensive guide for configuring your application's environment with the `.env` file. This document is your one-stop resource for understanding and customizing the environment variables that will shape your application's behavior in different contexts." name="description"/>
+  <link href="../installation/windows_install.html" rel="prev"/>
+  <link href="custom_config.html" rel="next"/>
+  <link href="../../assets/favicon_package/favicon-32x32.png" rel="icon"/>
+  <meta content="mkdocs-1.5.3, mkdocs-material-9.5.15" name="generator"/>
+  <title>
+   ⚙️ Environment Variables - LibreChat
+  </title>
+  <link href="../../assets/stylesheets/main.7e359304.min.css" rel="stylesheet"/>
+  <link href="../../assets/stylesheets/palette.06af60db.min.css" rel="stylesheet"/>
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+  <link href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback" rel="stylesheet"/>
+  <style>
+   :root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}
+  </style>
+  <script>
+   __md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}
+  </script>
+  <meta content="article" property="og:type"/>
+  <meta content="⚙️ Environment Variables" property="og:title"/>
+  <meta content="Comprehensive guide for configuring your application's environment with the `.env` file. This document is your one-stop resource for understanding and customizing the environment variables that will shape your application's behavior in different contexts." property="og:description"/>
+  <meta content="LibreChat" property="og:site_name"/>
+  <meta content="en_us" property="og:locale"/>
+  <meta content="Noneinstall/configuration/dotenv.html" property="og:url"/>
+  <meta content="summary" property="twitter:card"/>
+  <meta content="⚙️ Environment Variables" property="twitter:title"/>
+  <meta content="Comprehensive guide for configuring your application's environment with the `.env` file. This document is your one-stop resource for understanding and customizing the environment variables that will shape your application's behavior in different contexts." property="twitter:description"/>
+ </head>
+ <body data-md-color-accent="purple" data-md-color-primary="cyan" data-md-color-scheme="slate" dir="ltr">
+  <input autocomplete="off" class="md-toggle" data-md-toggle="drawer" id="__drawer" type="checkbox"/>
+  <input autocomplete="off" class="md-toggle" data-md-toggle="search" id="__search" type="checkbox"/>
+  <label class="md-overlay" for="__drawer">
+  </label>
+  <div data-md-component="skip">
+   <a class="md-skip" href="#env-file-configuration">
+    Skip to content
+   </a>
+  </div>
+  <div data-md-component="announce">
+  </div>
+  <header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+   <nav aria-label="Header" class="md-header__inner md-grid">
+    <a aria-label="LibreChat" class="md-header__button md-logo" data-md-component="logo" href="../../index.html" title="LibreChat">
+     <img alt="logo" src="../../assets/LibreChat.svg"/>
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+     <div class="md-header__ellipsis">
+      <div class="md-header__topic">
+       <span class="md-ellipsis">
+        LibreChat
+       </span>
+      </div>
+      <div class="md-header__topic" data-md-component="header-topic">
+       <span class="md-ellipsis">
+        ⚙️ Environment Variables
+       </span>
+      </div>
+     </div>
+    </div>
+    <form class="md-header__option" data-md-component="palette">
+     <input aria-label="Switch to light mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="slate" id="__palette_0" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_1" hidden="" title="Switch to light mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12c0-2.42-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+     <input aria-label="Switch to dark mode" class="md-option" data-md-color-accent="purple" data-md-color-media="" data-md-color-primary="cyan" data-md-color-scheme="default" id="__palette_1" name="__palette" type="radio"/>
+     <label class="md-header__button md-icon" for="__palette_0" hidden="" title="Switch to dark mode">
+      <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+       <path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69Z">
+       </path>
+      </svg>
+     </label>
+    </form>
+    <script>
+     var media,input,key,value,palette=__md_get("__palette");if(palette&&palette.color){"(prefers-color-scheme)"===palette.color.media&&(media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']"),palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent"));for([key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}
+    </script>
+    <label class="md-header__button md-icon" for="__search">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+      </path>
+     </svg>
+    </label>
+    <div class="md-search" data-md-component="search" role="dialog">
+     <label class="md-search__overlay" for="__search">
+     </label>
+     <div class="md-search__inner" role="search">
+      <form class="md-search__form" name="search">
+       <input aria-label="Search" autocapitalize="off" autocomplete="off" autocorrect="off" class="md-search__input" data-md-component="search-query" name="query" placeholder="Search" required="" spellcheck="false" type="text"/>
+       <label class="md-search__icon md-icon" for="__search">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z">
+         </path>
+        </svg>
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z">
+         </path>
+        </svg>
+       </label>
+       <nav aria-label="Search" class="md-search__options">
+        <button aria-label="Clear" class="md-search__icon md-icon" tabindex="-1" title="Clear" type="reset">
+         <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z">
+          </path>
+         </svg>
+        </button>
+       </nav>
+      </form>
+      <div class="md-search__output">
+       <div class="md-search__scrollwrap" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+         <div class="md-search-result__meta">
+          Initializing search
+         </div>
+         <ol class="md-search-result__list" role="presentation">
+         </ol>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div class="md-header__source">
+     <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+      <div class="md-source__icon md-icon">
+       <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+        <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+        <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+        </path>
+       </svg>
+      </div>
+      <div class="md-source__repository">
+       danny-avila/LibreChat
+      </div>
+     </a>
+    </div>
+   </nav>
+   <nav aria-label="Tabs" class="md-tabs" data-md-component="tabs">
+    <div class="md-grid">
+     <ul class="md-tabs__list">
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../index.html">
+        Home
+       </a>
+      </li>
+      <li class="md-tabs__item md-tabs__item--active">
+       <a class="md-tabs__link" href="../index.html">
+        Installation and Configuration
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../features/index.html">
+        Features
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../deployment/index.html">
+        Deployment
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../general_info/index.html">
+        General Information
+       </a>
+      </li>
+      <li class="md-tabs__item">
+       <a class="md-tabs__link" href="../../contributions/index.html">
+        Contributing to LibreChat
+       </a>
+      </li>
+     </ul>
+    </div>
+   </nav>
+  </header>
+  <div class="md-container" data-md-component="container">
+   <main class="md-main" data-md-component="main">
+    <div class="md-main__inner md-grid">
+     <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Navigation" class="md-nav md-nav--primary md-nav--lifted" data-md-level="0">
+         <label class="md-nav__title" for="__drawer">
+          <a aria-label="LibreChat" class="md-nav__button md-logo" data-md-component="logo" href="../../index.html" title="LibreChat">
+           <img alt="logo" src="../../assets/LibreChat.svg"/>
+          </a>
+          LibreChat
+         </label>
+         <div class="md-nav__source">
+          <a class="md-source" data-md-component="source" href="https://github.com/danny-avila/LibreChat" title="Go to repository">
+           <div class="md-source__icon md-icon">
+            <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+             <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+             <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+             </path>
+            </svg>
+           </div>
+           <div class="md-source__repository">
+            danny-avila/LibreChat
+           </div>
+          </a>
+         </div>
+         <ul class="md-nav__list" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="../../index.html">
+            <span class="md-ellipsis">
+             Home
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+           <input checked="" class="md-nav__toggle md-toggle" id="__nav_2" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../index.html">
+             <span class="md-ellipsis">
+              Installation and Configuration
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="true" aria-labelledby="__nav_2_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_2">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Installation and Configuration
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_2_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../installation/index.html">
+                <span class="md-ellipsis">
+                 Installation
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_2_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Installation
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/docker_compose_install.html">
+                  <span class="md-ellipsis">
+                   🐳 Docker Compose ✨(Recommended)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/container_install.html">
+                  <span class="md-ellipsis">
+                   🦦 Container (Podman)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/linux_install.html">
+                  <span class="md-ellipsis">
+                   🐧 Linux
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/mac_install.html">
+                  <span class="md-ellipsis">
+                   🍎 Mac
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../installation/windows_install.html">
+                  <span class="md-ellipsis">
+                   🪟 Windows
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+              <input checked="" class="md-nav__toggle md-toggle" id="__nav_2_3" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="index.html">
+                <span class="md-ellipsis">
+                 Configuration
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="true" aria-labelledby="__nav_2_3_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_2_3">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Configuration
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item md-nav__item--active">
+                 <input class="md-nav__toggle md-toggle" id="__toc" type="checkbox"/>
+                 <label class="md-nav__link md-nav__link--active" for="__toc">
+                  <span class="md-ellipsis">
+                   ⚙️ Environment Variables
+                  </span>
+                  <span class="md-nav__icon md-icon">
+                  </span>
+                 </label>
+                 <a class="md-nav__link md-nav__link--active" href="dotenv.html">
+                  <span class="md-ellipsis">
+                   ⚙️ Environment Variables
+                  </span>
+                 </a>
+                 <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+                  <label class="md-nav__title" for="__toc">
+                   <span class="md-nav__icon md-icon">
+                   </span>
+                   Table of contents
+                  </label>
+                  <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#server-configuration">
+                     <span class="md-ellipsis">
+                      Server Configuration
+                     </span>
+                    </a>
+                    <nav aria-label="Server Configuration" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#port">
+                        <span class="md-ellipsis">
+                         Port
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#mongodb-database">
+                        <span class="md-ellipsis">
+                         MongoDB Database
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#application-domains">
+                        <span class="md-ellipsis">
+                         Application Domains
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#prevent-public-search-engines-indexing">
+                        <span class="md-ellipsis">
+                         Prevent Public Search Engines Indexing
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#logging">
+                        <span class="md-ellipsis">
+                         Logging
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#permission">
+                        <span class="md-ellipsis">
+                         Permission
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#configuration-path-librechatyaml">
+                        <span class="md-ellipsis">
+                         Configuration Path - librechat.yaml
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#endpoints">
+                     <span class="md-ellipsis">
+                      Endpoints
+                     </span>
+                    </a>
+                    <nav aria-label="Endpoints" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#general-config">
+                        <span class="md-ellipsis">
+                         General Config
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#known-endpoints-librechatyaml">
+                        <span class="md-ellipsis">
+                         Known Endpoints - librechat.yaml
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#anthropic">
+                        <span class="md-ellipsis">
+                         Anthropic
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#azure">
+                        <span class="md-ellipsis">
+                         Azure
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#bingai">
+                        <span class="md-ellipsis">
+                         BingAI
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#google">
+                        <span class="md-ellipsis">
+                         Google
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#openai">
+                        <span class="md-ellipsis">
+                         OpenAI
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#assistants">
+                        <span class="md-ellipsis">
+                         Assistants
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#openrouter">
+                        <span class="md-ellipsis">
+                         OpenRouter
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#plugins">
+                        <span class="md-ellipsis">
+                         Plugins
+                        </span>
+                       </a>
+                       <nav aria-label="Plugins" class="md-nav">
+                        <ul class="md-nav__list">
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#general-configuration">
+                           <span class="md-ellipsis">
+                            General Configuration:
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#azure-ai-search">
+                           <span class="md-ellipsis">
+                            Azure AI Search
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#dall-e">
+                           <span class="md-ellipsis">
+                            DALL-E:
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#google-search">
+                           <span class="md-ellipsis">
+                            Google Search
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#serpapi">
+                           <span class="md-ellipsis">
+                            SerpAPI
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#stable-diffusion-automatic1111">
+                           <span class="md-ellipsis">
+                            Stable Diffusion (Automatic1111)
+                           </span>
+                          </a>
+                         </li>
+                        </ul>
+                       </nav>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#tavily">
+                        <span class="md-ellipsis">
+                         Tavily
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#traversaal">
+                        <span class="md-ellipsis">
+                         Traversaal
+                        </span>
+                       </a>
+                       <nav aria-label="Traversaal" class="md-nav">
+                        <ul class="md-nav__list">
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#wolframalpha">
+                           <span class="md-ellipsis">
+                            WolframAlpha
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#zapier">
+                           <span class="md-ellipsis">
+                            Zapier
+                           </span>
+                          </a>
+                         </li>
+                        </ul>
+                       </nav>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#search-meilisearch">
+                     <span class="md-ellipsis">
+                      Search (Meilisearch)
+                     </span>
+                    </a>
+                   </li>
+                   <li class="md-nav__item">
+                    <a class="md-nav__link" href="#user-system">
+                     <span class="md-ellipsis">
+                      User System
+                     </span>
+                    </a>
+                    <nav aria-label="User System" class="md-nav">
+                     <ul class="md-nav__list">
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#moderation">
+                        <span class="md-ellipsis">
+                         Moderation
+                        </span>
+                       </a>
+                       <nav aria-label="Moderation" class="md-nav">
+                        <ul class="md-nav__list">
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#basic-moderation-settings">
+                           <span class="md-ellipsis">
+                            Basic Moderation Settings
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#score-for-each-violation">
+                           <span class="md-ellipsis">
+                            Score for each violation
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#login-and-registration-rate-limiting">
+                           <span class="md-ellipsis">
+                            Login and registration rate limiting.
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#message-rate-limiting-per-user-ip">
+                           <span class="md-ellipsis">
+                            Message rate limiting (per user &amp; IP)
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#limiters">
+                           <span class="md-ellipsis">
+                            Limiters
+                           </span>
+                          </a>
+                         </li>
+                        </ul>
+                       </nav>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#balance">
+                        <span class="md-ellipsis">
+                         Balance
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#registration-and-login">
+                        <span class="md-ellipsis">
+                         Registration and Login
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#social-logins">
+                        <span class="md-ellipsis">
+                         Social Logins
+                        </span>
+                       </a>
+                       <nav aria-label="Social Logins" class="md-nav">
+                        <ul class="md-nav__list">
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#discord-authentication">
+                           <span class="md-ellipsis">
+                            Discord Authentication
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#facebook-authentication">
+                           <span class="md-ellipsis">
+                            Facebook Authentication
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#github-authentication">
+                           <span class="md-ellipsis">
+                            GitHub Authentication
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#google-authentication">
+                           <span class="md-ellipsis">
+                            Google Authentication
+                           </span>
+                          </a>
+                         </li>
+                         <li class="md-nav__item">
+                          <a class="md-nav__link" href="#openid-authentication">
+                           <span class="md-ellipsis">
+                            OpenID Authentication
+                           </span>
+                          </a>
+                         </li>
+                        </ul>
+                       </nav>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#email-password-reset">
+                        <span class="md-ellipsis">
+                         Email Password Reset
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#ui">
+                        <span class="md-ellipsis">
+                         UI
+                        </span>
+                       </a>
+                      </li>
+                      <li class="md-nav__item">
+                       <a class="md-nav__link" href="#other">
+                        <span class="md-ellipsis">
+                         Other
+                        </span>
+                       </a>
+                      </li>
+                     </ul>
+                    </nav>
+                   </li>
+                  </ul>
+                 </nav>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="custom_config.html">
+                  <span class="md-ellipsis">
+                   🖥️ Custom Config
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="azure_openai.html">
+                  <span class="md-ellipsis">
+                   🅰️ Azure OpenAI
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="ai_endpoints.html">
+                  <span class="md-ellipsis">
+                   ✅ Compatible AI Endpoints
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="docker_override.html">
+                  <span class="md-ellipsis">
+                   🐋 Docker Compose Override
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="ai_setup.html">
+                  <span class="md-ellipsis">
+                   🤖 AI Setup
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="litellm.html">
+                  <span class="md-ellipsis">
+                   🚅 LiteLLM
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="free_ai_apis.html">
+                  <span class="md-ellipsis">
+                   💸 Free AI APIs
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="ollama.html">
+                  <span class="md-ellipsis">
+                   🦙 Ollama
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="user_auth_system.html">
+                  <span class="md-ellipsis">
+                   🛂 Authentication System
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="mongodb.html">
+                  <span class="md-ellipsis">
+                   🍃 Online MongoDB
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="default_language.html">
+                  <span class="md-ellipsis">
+                   🌍 Default Language
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="misc.html">
+                  <span class="md-ellipsis">
+                   🌀 Miscellaneous
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../features/index.html">
+             <span class="md-ellipsis">
+              Features
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_3_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_3">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Features
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item md-nav__item--nested">
+              <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_3_2" type="checkbox"/>
+              <div class="md-nav__link md-nav__container">
+               <a class="md-nav__link" href="../../features/plugins/index.html">
+                <span class="md-ellipsis">
+                 Plugins
+                </span>
+               </a>
+               <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon">
+                </span>
+               </label>
+              </div>
+              <nav aria-expanded="false" aria-labelledby="__nav_3_2_label" class="md-nav" data-md-level="2">
+               <label class="md-nav__title" for="__nav_3_2">
+                <span class="md-nav__icon md-icon">
+                </span>
+                Plugins
+               </label>
+               <ul class="md-nav__list" data-md-scrollfix="">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/introduction.html">
+                  <span class="md-ellipsis">
+                   🔌 Introduction
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/make_your_own.html">
+                  <span class="md-ellipsis">
+                   🛠️ Make Your Own
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/chatgpt_plugins_openapi.html">
+                  <span class="md-ellipsis">
+                   🧑‍💼 Official ChatGPT Plugins
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/google_search.html">
+                  <span class="md-ellipsis">
+                   🔎 Google Search
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/stable_diffusion.html">
+                  <span class="md-ellipsis">
+                   🖌️ Stable Diffusion
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/wolfram.html">
+                  <span class="md-ellipsis">
+                   🧠 Wolfram|Alpha
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="../../features/plugins/azure_ai_search.html">
+                  <span class="md-ellipsis">
+                   ⚡ Azure AI Search
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/presets.html">
+               <span class="md-ellipsis">
+                🔖 Presets
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/mod_system.html">
+               <span class="md-ellipsis">
+                🔨 Automated Moderation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/token_usage.html">
+               <span class="md-ellipsis">
+                🪙 Token Usage
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/firebase.html">
+               <span class="md-ellipsis">
+                🔥 Firebase CDN Setup
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/manage_your_database.html">
+               <span class="md-ellipsis">
+                🍃 Manage Your Database
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/logging_system.html">
+               <span class="md-ellipsis">
+                🪵 Logging System
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/bing_jailbreak.html">
+               <span class="md-ellipsis">
+                😈 Bing Jailbreak
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../features/third_party.html">
+               <span class="md-ellipsis">
+                ✨ Third-Party Tools and Contributions
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_4" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../deployment/index.html">
+             <span class="md-ellipsis">
+              Deployment
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_4_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_4">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Deployment
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/introduction.html">
+               <span class="md-ellipsis">
+                🌐 Deployment Introduction
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/digitalocean.html">
+               <span class="md-ellipsis">
+                🌊 DigitalOcean ✨(Recommended)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/docker_ubuntu_deploy.html">
+               <span class="md-ellipsis">
+                🐳 Ubuntu Docker Deployment
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/huggingface.html">
+               <span class="md-ellipsis">
+                🤗 HuggingFace
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/railway.html">
+               <span class="md-ellipsis">
+                🛤️ Railway (one-click)
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/linode.html">
+               <span class="md-ellipsis">
+                🐧 Linode
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/azure-terraform.html">
+               <span class="md-ellipsis">
+                ⚡ Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/render.html">
+               <span class="md-ellipsis">
+                ⏹️ Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/meilisearch_in_render.html">
+               <span class="md-ellipsis">
+                🔎 Meilisearch in Render
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/hetzner_ubuntu.html">
+               <span class="md-ellipsis">
+                🏗️ Hetzner
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/heroku.html">
+               <span class="md-ellipsis">
+                🌈 Heroku
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/zeabur.html">
+               <span class="md-ellipsis">
+                🦓 Zeabur
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/cloudflare.html">
+               <span class="md-ellipsis">
+                ☁️ Cloudflare
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/nginx.html">
+               <span class="md-ellipsis">
+                ↪️ Nginx
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/ngrok.html">
+               <span class="md-ellipsis">
+                🪨 Ngrok
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../deployment/traefik.html">
+               <span class="md-ellipsis">
+                🚦 Traefik
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_5" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../general_info/index.html">
+             <span class="md-ellipsis">
+              General Information
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_5_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_5">
+             <span class="md-nav__icon md-icon">
+             </span>
+             General Information
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/breaking_changes.html">
+               <span class="md-ellipsis">
+                ⚠️ Breaking Changes
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/multilingual_information.html">
+               <span class="md-ellipsis">
+                🌍 Multilingual Information
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/project_origin.html">
+               <span class="md-ellipsis">
+                🧭 Origin
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../general_info/tech_stack.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Tech Stack
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item md-nav__item--nested">
+           <input class="md-nav__toggle md-toggle md-toggle--indeterminate" id="__nav_6" type="checkbox"/>
+           <div class="md-nav__link md-nav__container">
+            <a class="md-nav__link" href="../../contributions/index.html">
+             <span class="md-ellipsis">
+              Contributing to LibreChat
+             </span>
+            </a>
+            <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+             <span class="md-nav__icon md-icon">
+             </span>
+            </label>
+           </div>
+           <nav aria-expanded="false" aria-labelledby="__nav_6_label" class="md-nav" data-md-level="1">
+            <label class="md-nav__title" for="__nav_6">
+             <span class="md-nav__icon md-icon">
+             </span>
+             Contributing to LibreChat
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix="">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/how_to_contribute.html">
+               <span class="md-ellipsis">
+                🙌 Getting Started for Contributors
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/documentation_guidelines.html">
+               <span class="md-ellipsis">
+                📝 Documentation Guidelines
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/translation_contribution.html">
+               <span class="md-ellipsis">
+                🌍 Contribute a Translation
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/coding_conventions.html">
+               <span class="md-ellipsis">
+                🧑‍💻 Code Standards and Conventions
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="../../contributions/testing.html">
+               <span class="md-ellipsis">
+                🧪 Testing During Development
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+      <div class="md-sidebar__scrollwrap">
+       <div class="md-sidebar__inner">
+        <nav aria-label="Table of contents" class="md-nav md-nav--secondary">
+         <label class="md-nav__title" for="__toc">
+          <span class="md-nav__icon md-icon">
+          </span>
+          Table of contents
+         </label>
+         <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#server-configuration">
+            <span class="md-ellipsis">
+             Server Configuration
+            </span>
+           </a>
+           <nav aria-label="Server Configuration" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#port">
+               <span class="md-ellipsis">
+                Port
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#mongodb-database">
+               <span class="md-ellipsis">
+                MongoDB Database
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#application-domains">
+               <span class="md-ellipsis">
+                Application Domains
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#prevent-public-search-engines-indexing">
+               <span class="md-ellipsis">
+                Prevent Public Search Engines Indexing
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#logging">
+               <span class="md-ellipsis">
+                Logging
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#permission">
+               <span class="md-ellipsis">
+                Permission
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#configuration-path-librechatyaml">
+               <span class="md-ellipsis">
+                Configuration Path - librechat.yaml
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#endpoints">
+            <span class="md-ellipsis">
+             Endpoints
+            </span>
+           </a>
+           <nav aria-label="Endpoints" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#general-config">
+               <span class="md-ellipsis">
+                General Config
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#known-endpoints-librechatyaml">
+               <span class="md-ellipsis">
+                Known Endpoints - librechat.yaml
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#anthropic">
+               <span class="md-ellipsis">
+                Anthropic
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#azure">
+               <span class="md-ellipsis">
+                Azure
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#bingai">
+               <span class="md-ellipsis">
+                BingAI
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#google">
+               <span class="md-ellipsis">
+                Google
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#openai">
+               <span class="md-ellipsis">
+                OpenAI
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#assistants">
+               <span class="md-ellipsis">
+                Assistants
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#openrouter">
+               <span class="md-ellipsis">
+                OpenRouter
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#plugins">
+               <span class="md-ellipsis">
+                Plugins
+               </span>
+              </a>
+              <nav aria-label="Plugins" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#general-configuration">
+                  <span class="md-ellipsis">
+                   General Configuration:
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#azure-ai-search">
+                  <span class="md-ellipsis">
+                   Azure AI Search
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#dall-e">
+                  <span class="md-ellipsis">
+                   DALL-E:
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#google-search">
+                  <span class="md-ellipsis">
+                   Google Search
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#serpapi">
+                  <span class="md-ellipsis">
+                   SerpAPI
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#stable-diffusion-automatic1111">
+                  <span class="md-ellipsis">
+                   Stable Diffusion (Automatic1111)
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#tavily">
+               <span class="md-ellipsis">
+                Tavily
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#traversaal">
+               <span class="md-ellipsis">
+                Traversaal
+               </span>
+              </a>
+              <nav aria-label="Traversaal" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#wolframalpha">
+                  <span class="md-ellipsis">
+                   WolframAlpha
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#zapier">
+                  <span class="md-ellipsis">
+                   Zapier
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+            </ul>
+           </nav>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#search-meilisearch">
+            <span class="md-ellipsis">
+             Search (Meilisearch)
+            </span>
+           </a>
+          </li>
+          <li class="md-nav__item">
+           <a class="md-nav__link" href="#user-system">
+            <span class="md-ellipsis">
+             User System
+            </span>
+           </a>
+           <nav aria-label="User System" class="md-nav">
+            <ul class="md-nav__list">
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#moderation">
+               <span class="md-ellipsis">
+                Moderation
+               </span>
+              </a>
+              <nav aria-label="Moderation" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#basic-moderation-settings">
+                  <span class="md-ellipsis">
+                   Basic Moderation Settings
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#score-for-each-violation">
+                  <span class="md-ellipsis">
+                   Score for each violation
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#login-and-registration-rate-limiting">
+                  <span class="md-ellipsis">
+                   Login and registration rate limiting.
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#message-rate-limiting-per-user-ip">
+                  <span class="md-ellipsis">
+                   Message rate limiting (per user &amp; IP)
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#limiters">
+                  <span class="md-ellipsis">
+                   Limiters
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#balance">
+               <span class="md-ellipsis">
+                Balance
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#registration-and-login">
+               <span class="md-ellipsis">
+                Registration and Login
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#social-logins">
+               <span class="md-ellipsis">
+                Social Logins
+               </span>
+              </a>
+              <nav aria-label="Social Logins" class="md-nav">
+               <ul class="md-nav__list">
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#discord-authentication">
+                  <span class="md-ellipsis">
+                   Discord Authentication
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#facebook-authentication">
+                  <span class="md-ellipsis">
+                   Facebook Authentication
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#github-authentication">
+                  <span class="md-ellipsis">
+                   GitHub Authentication
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#google-authentication">
+                  <span class="md-ellipsis">
+                   Google Authentication
+                  </span>
+                 </a>
+                </li>
+                <li class="md-nav__item">
+                 <a class="md-nav__link" href="#openid-authentication">
+                  <span class="md-ellipsis">
+                   OpenID Authentication
+                  </span>
+                 </a>
+                </li>
+               </ul>
+              </nav>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#email-password-reset">
+               <span class="md-ellipsis">
+                Email Password Reset
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#ui">
+               <span class="md-ellipsis">
+                UI
+               </span>
+              </a>
+             </li>
+             <li class="md-nav__item">
+              <a class="md-nav__link" href="#other">
+               <span class="md-ellipsis">
+                Other
+               </span>
+              </a>
+             </li>
+            </ul>
+           </nav>
+          </li>
+         </ul>
+        </nav>
+       </div>
+      </div>
+     </div>
+     <div class="md-content" data-md-component="content">
+      <article class="md-content__inner md-typeset">
+       <a class="md-content__button md-icon" href="https://github.com/danny-avila/LibreChat/blob/main/docs/install/configuration/dotenv.md" title="Edit this page">
+        <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+         <path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z">
+         </path>
+        </svg>
+       </a>
+       <h1 id="env-file-configuration">
+        .env File Configuration
+       </h1>
+       <p>
+        Welcome to the comprehensive guide for configuring your application's environment with the
+        <code>
+         .env
+        </code>
+        file. This document is your one-stop resource for understanding and customizing the environment variables that will shape your application's behavior in different contexts.
+       </p>
+       <p>
+        While the default settings provide a solid foundation for a standard
+        <code>
+         docker
+        </code>
+        installation, delving into this guide will unveil the full potential of LibreChat. This guide empowers you to tailor LibreChat to your precise needs. Discover how to adjust language model availability, integrate social logins, manage the automatic moderation system, and much more. It's all about giving you the control to fine-tune LibreChat for an optimal user experience.
+       </p>
+       <blockquote>
+        <p>
+         <strong>
+          Reminder: Please restart LibreChat for the configuration changes to take effect
+         </strong>
+        </p>
+       </blockquote>
+       <p>
+        Alternatively, you can create a new file named
+        <code>
+         docker-compose.override.yml
+        </code>
+        in the same directory as your main
+        <code>
+         docker-compose.yml
+        </code>
+        file for LibreChat, where you can set your .env variables as needed under
+        <code>
+         environment
+        </code>
+        , or modify the default configuration provided by the main
+        <code>
+         docker-compose.yml
+        </code>
+        , without the need to directly edit or duplicate the whole file.
+       </p>
+       <p>
+        For more info see:
+       </p>
+       <ul>
+        <li>
+         <p>
+          Our quick guide:
+         </p>
+         <ul>
+          <li>
+           <strong>
+            <a href="docker_override.html">
+             Docker Override
+            </a>
+           </strong>
+          </li>
+         </ul>
+        </li>
+        <li>
+         <p>
+          The official docker documentation:
+         </p>
+         <ul>
+          <li>
+           <strong>
+            <a href="https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files">
+             docker docs - understanding-multiple-compose-files
+            </a>
+           </strong>
+          </li>
+          <li>
+           <strong>
+            <a href="https://docs.docker.com/compose/multiple-compose-files/merge/#merge-compose-files">
+             docker docs - merge-compose-files
+            </a>
+           </strong>
+          </li>
+          <li>
+           <strong>
+            <a href="https://docs.docker.com/compose/reference/#specifying-multiple-compose-files">
+             docker docs - specifying-multiple-compose-files
+            </a>
+           </strong>
+          </li>
+         </ul>
+        </li>
+        <li>
+         <p>
+          You can also view an example of an override file for LibreChat in your LibreChat folder and on GitHub:
+         </p>
+         <ul>
+          <li>
+           <strong>
+            <a href="https://github.com/danny-avila/LibreChat/blob/main/docker-compose.override.yaml.example">
+             docker-compose.override.example
+            </a>
+           </strong>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <hr/>
+       <h2 id="server-configuration">
+        Server Configuration
+       </h2>
+       <h3 id="port">
+        Port
+       </h3>
+       <ul>
+        <li>
+         The server will listen to localhost:3080 by default. You can change the target IP as you want. If you want to make this server available externally, for example to share the server with others or expose this from a Docker container, set host to 0.0.0.0 or your external IP interface.
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Tips: Setting host to 0.0.0.0 means listening on all interfaces. It's not a real IP.
+        </p>
+       </blockquote>
+       <ul>
+        <li>
+         Use localhost:port rather than 0.0.0.0:port to access the server.
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-0-1" id="__codelineno-0-1" name="__codelineno-0-1"></a><span class="nv">HOST</span><span class="o">=</span>localhost
+<a href="#__codelineno-0-2" id="__codelineno-0-2" name="__codelineno-0-2"></a><span class="nv">PORT</span><span class="o">=</span><span class="m">3080</span>
+</code></pre>
+       </div>
+       <h3 id="mongodb-database">
+        MongoDB Database
+       </h3>
+       <ul>
+        <li>
+         Change this to your MongoDB URI if different. You should also add
+         <code>
+          LibreChat
+         </code>
+         or your own
+         <code>
+          APP_TITLE
+         </code>
+         as the database name in the URI. For example:
+        </li>
+        <li>
+         if you are using docker, the URI format is
+         <code>
+          mongodb://&lt;ip&gt;:&lt;port&gt;/&lt;database&gt;
+         </code>
+         . Your
+         <code>
+          MONGO_URI
+         </code>
+         should look like this:
+         <code>
+          mongodb://127.0.0.1:27018/LibreChat
+         </code>
+        </li>
+        <li>
+         if you are using an online db, the URI format is
+         <code>
+          mongodb+srv://&lt;username&gt;:&lt;password&gt;@&lt;host&gt;/&lt;database&gt;?&lt;options&gt;
+         </code>
+         . Your
+         <code>
+          MONGO_URI
+         </code>
+         should look like this:
+         <code>
+          mongodb+srv://username:password@host.mongodb.net/LibreChat?retryWrites=true
+         </code>
+         (
+         <code>
+          retryWrites=true
+         </code>
+         is the only option you need when using the online db)
+        </li>
+        <li>
+         Instruction on how to create an online MongoDB database (useful for use without docker):
+         <ul>
+          <li>
+           <a href="mongodb.html">
+            Online MongoDB
+           </a>
+          </li>
+         </ul>
+        </li>
+        <li>
+         Securely access your docker MongoDB database:
+         <ul>
+          <li>
+           <a href="../../features/manage_your_database.html">
+            Manage your database
+           </a>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-1-1" id="__codelineno-1-1" name="__codelineno-1-1"></a><span class="nv">MONGO_URI</span><span class="o">=</span>mongodb://127.0.0.1:27018/LibreChat
+</code></pre>
+       </div>
+       <h3 id="application-domains">
+        Application Domains
+       </h3>
+       <ul>
+        <li>
+         To use LibreChat locally, set
+         <code>
+          DOMAIN_CLIENT
+         </code>
+         and
+         <code>
+          DOMAIN_SERVER
+         </code>
+         to
+         <code>
+          http://localhost:3080
+         </code>
+         (3080 being the port previously configured)
+        </li>
+        <li>
+         When deploying LibreChat to a custom domain, set
+         <code>
+          DOMAIN_CLIENT
+         </code>
+         and
+         <code>
+          DOMAIN_SERVER
+         </code>
+         to your deployed URL, e.g.
+         <code>
+          https://librechat.example.com
+         </code>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-2-1" id="__codelineno-2-1" name="__codelineno-2-1"></a><span class="nv">DOMAIN_CLIENT</span><span class="o">=</span>http://localhost:3080
+<a href="#__codelineno-2-2" id="__codelineno-2-2" name="__codelineno-2-2"></a><span class="nv">DOMAIN_SERVER</span><span class="o">=</span>http://localhost:3080
+</code></pre>
+       </div>
+       <h3 id="prevent-public-search-engines-indexing">
+        Prevent Public Search Engines Indexing
+       </h3>
+       <p>
+        By default, your website will not be indexed by public search engines (e.g. Google, Bing, …). This means that people will not be able to find your website through these search engines. If you want to make your website more visible and searchable, you can change the following setting to
+        <code>
+         false
+        </code>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-3-1" id="__codelineno-3-1" name="__codelineno-3-1"></a><span class="nv">NO_INDEX</span><span class="o">=</span><span class="nb">true</span>
+</code></pre>
+       </div>
+       <blockquote>
+        <p>
+         ❗
+         <strong>
+          Note:
+         </strong>
+         This method is not guaranteed to work for all search engines, and some search engines may still index your website or web page for other purposes, such as caching or archiving. Therefore, you should not rely solely on this method to protect sensitive or confidential information on your website or web page.
+        </p>
+       </blockquote>
+       <h3 id="logging">
+        Logging
+       </h3>
+       <p>
+        LibreChat has built-in central logging, see
+        <a href="../../features/logging_system.html">
+         Logging System
+        </a>
+        for more info.
+       </p>
+       <ul>
+        <li>
+         Debug logging is enabled by default and crucial for development.
+        </li>
+        <li>
+         To report issues, reproduce the error and submit logs from
+         <code>
+          ./api/logs/debug-%DATE%.log
+         </code>
+         at:
+         <strong>
+          <a href="https://github.com/danny-avila/LibreChat/issues">
+           LibreChat GitHub Issues
+          </a>
+         </strong>
+        </li>
+        <li>
+         Error logs are stored in the same location.
+        </li>
+        <li>
+         Keep debug logs active by default or disable them by setting
+         <code>
+          DEBUG_LOGGING=false
+         </code>
+         in the environment variable.
+        </li>
+        <li>
+         For more information about this feature, read our docs:
+         <strong>
+          <a href="../../features/logging_system.html">
+           Logging System
+          </a>
+         </strong>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-4-1" id="__codelineno-4-1" name="__codelineno-4-1"></a><span class="nv">DEBUG_LOGGING</span><span class="o">=</span><span class="nb">true</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Enable verbose server output in the console with
+         <code>
+          DEBUG_CONSOLE=TRUE
+         </code>
+         , though it's not recommended due to high verbosity.
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-5-1" id="__codelineno-5-1" name="__codelineno-5-1"></a><span class="nv">DEBUG_CONSOLE</span><span class="o">=</span><span class="nb">false</span>
+</code></pre>
+       </div>
+       <p>
+        This is not recommend, however, as the outputs can be quite verbose, and so it's disabled by default.
+       </p>
+       <h3 id="permission">
+        Permission
+       </h3>
+       <blockquote>
+        <p>
+         UID and GID are numbers assigned by Linux to each user and group on the system. If you have permission problems, set here the UID and GID of the user running the docker compose command. The applications in the container will run with these uid/gid.
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-6-1" id="__codelineno-6-1" name="__codelineno-6-1"></a><span class="nv">UID</span><span class="o">=</span><span class="m">1000</span>
+<a href="#__codelineno-6-2" id="__codelineno-6-2" name="__codelineno-6-2"></a><span class="nv">GID</span><span class="o">=</span><span class="m">1000</span>
+</code></pre>
+       </div>
+       <h3 id="configuration-path-librechatyaml">
+        Configuration Path -
+        <code>
+         librechat.yaml
+        </code>
+       </h3>
+       <p>
+        Specify an alternative location for the LibreChat configuration file. 
+You may specify an
+        <strong>
+         absolute path
+        </strong>
+        , a
+        <strong>
+         relative path
+        </strong>
+        , or a
+        <strong>
+         URL
+        </strong>
+        . The filename in the path is flexible and does not have to be
+        <code>
+         librechat.yaml
+        </code>
+        ; any valid configuration file will work.
+       </p>
+       <blockquote>
+        <p>
+         <strong>
+          Note
+         </strong>
+         : If you prefer LibreChat to search for the configuration file in the root directory (which is the default behavior), simply leave this option commented out.
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-7-1" id="__codelineno-7-1" name="__codelineno-7-1"></a><span class="c1"># To set an alternative configuration path or URL, uncomment the line below and replace it with your desired path or URL.</span>
+<a href="#__codelineno-7-2" id="__codelineno-7-2" name="__codelineno-7-2"></a><span class="c1"># CONFIG_PATH="/your/alternative/path/to/config.yaml"</span>
+</code></pre>
+       </div>
+       <h2 id="endpoints">
+        Endpoints
+       </h2>
+       <p>
+        In this section you can configure the endpoints and models selection, their API keys, and the proxy and reverse proxy settings for the endpoints that support it.
+       </p>
+       <h3 id="general-config">
+        General Config
+       </h3>
+       <ul>
+        <li>
+         Uncomment
+         <code>
+          ENDPOINTS
+         </code>
+         to customize the available endpoints in LibreChat
+        </li>
+        <li>
+         <code>
+          PROXY
+         </code>
+         is to be used by all endpoints (leave blank by default)
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-8-1" id="__codelineno-8-1" name="__codelineno-8-1"></a><span class="nv">ENDPOINTS</span><span class="o">=</span>openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
+<a href="#__codelineno-8-2" id="__codelineno-8-2" name="__codelineno-8-2"></a><span class="nv">PROXY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Titling is enabled by default for all Endpoints when initiating a conversation (proceeding the first AI response).
+         <ul>
+          <li>
+           Set to
+           <code>
+            false
+           </code>
+           to disable this feature.
+          </li>
+          <li>
+           Not all endpoints support titling.
+          </li>
+          <li>
+           You can configure this feature on an Endpoint-level using
+           <a href="custom_config.html">
+            the
+            <code>
+             librechat.yaml
+            </code>
+            config file
+           </a>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-9-1" id="__codelineno-9-1" name="__codelineno-9-1"></a><span class="nv">TITLE_CONVO</span><span class="o">=</span><span class="nb">true</span>
+</code></pre>
+       </div>
+       <h3 id="known-endpoints-librechatyaml">
+        Known Endpoints - librechat.yaml
+       </h3>
+       <ul>
+        <li>
+         see:
+         <a href="ai_endpoints.html">
+          AI Endpoints
+         </a>
+        </li>
+        <li>
+         see also:
+         <a href="custom_config.html">
+          Custom Configuration
+         </a>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-10-1" id="__codelineno-10-1" name="__codelineno-10-1"></a><span class="nv">GROQ_API_KEY</span><span class="o">=</span>
+<a href="#__codelineno-10-2" id="__codelineno-10-2" name="__codelineno-10-2"></a><span class="nv">SHUTTLEAI_KEY</span><span class="o">=</span>
+<a href="#__codelineno-10-3" id="__codelineno-10-3" name="__codelineno-10-3"></a><span class="nv">OPENROUTER_KEY</span><span class="o">=</span>
+<a href="#__codelineno-10-4" id="__codelineno-10-4" name="__codelineno-10-4"></a><span class="nv">MISTRAL_API_KEY</span><span class="o">=</span>
+<a href="#__codelineno-10-5" id="__codelineno-10-5" name="__codelineno-10-5"></a><span class="nv">ANYSCALE_API_KEY</span><span class="o">=</span>
+<a href="#__codelineno-10-6" id="__codelineno-10-6" name="__codelineno-10-6"></a><span class="nv">FIREWORKS_API_KEY</span><span class="o">=</span>
+<a href="#__codelineno-10-7" id="__codelineno-10-7" name="__codelineno-10-7"></a><span class="nv">PERPLEXITY_API_KEY</span><span class="o">=</span>
+<a href="#__codelineno-10-8" id="__codelineno-10-8" name="__codelineno-10-8"></a><span class="nv">TOGETHERAI_API_KEY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <h3 id="anthropic">
+        Anthropic
+       </h3>
+       <p>
+        see:
+        <a href="ai_setup.html#anthropic">
+         Anthropic Endpoint
+        </a>
+        - You can request an access key from https://console.anthropic.com/
+- Leave
+        <code>
+         ANTHROPIC_API_KEY=
+        </code>
+        blank to disable this endpoint
+- Set
+        <code>
+         ANTHROPIC_API_KEY=
+        </code>
+        to "user_provided" to allow users to provide their own API key from the WebUI
+- If you have access to a reverse proxy for
+        <code>
+         Anthropic
+        </code>
+        , you can set it with
+        <code>
+         ANTHROPIC_REVERSE_PROXY=
+        </code>
+        - leave blank or comment it out to use default base url
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-11-1" id="__codelineno-11-1" name="__codelineno-11-1"></a><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>user_provided
+<a href="#__codelineno-11-2" id="__codelineno-11-2" name="__codelineno-11-2"></a><span class="nv">ANTHROPIC_MODELS</span><span class="o">=</span>claude-3-opus-20240229,claude-3-sonnet-20240229,claude-2.1,claude-2,claude-1.2,claude-1,claude-1-100k,claude-instant-1,claude-instant-1-100k
+<a href="#__codelineno-11-3" id="__codelineno-11-3" name="__codelineno-11-3"></a><span class="nv">ANTHROPIC_REVERSE_PROXY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Titling is enabled by default but is configured with the environment variable
+         <code>
+          TITLE_CONVO
+         </code>
+         for all Endpoints. The default model used for Anthropic titling is "claude-3-haiku-20240307". You can change it by uncommenting the following and setting the desired model.
+         <strong>
+          (Optional)
+         </strong>
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         <strong>
+          Note:
+         </strong>
+         Must be compatible with the Anthropic Endpoint. Also, Claude 2 and Claude 3 models perform best at this task, with
+         <code>
+          claude-3-haiku
+         </code>
+         models being the cheapest.
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-12-1" id="__codelineno-12-1" name="__codelineno-12-1"></a><span class="nv">ANTHROPIC_TITLE_MODEL</span><span class="o">=</span>claude-3-haiku-20240307
+</code></pre>
+       </div>
+       <h3 id="azure">
+        Azure
+       </h3>
+       <p>
+        <strong>
+         Important:
+        </strong>
+        See
+        <a href="ai_setup.html#azure-openai">
+         the complete Azure OpenAI setup guide
+        </a>
+        for thorough instructions on enabling Azure OpenAI
+       </p>
+       <ul>
+        <li>
+         To use Azure with this project, set the following variables. These will be used to build the API URL.
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-13-1" id="__codelineno-13-1" name="__codelineno-13-1"></a><span class="nv">AZURE_API_KEY</span><span class="o">=</span>
+<a href="#__codelineno-13-2" id="__codelineno-13-2" name="__codelineno-13-2"></a><span class="nv">AZURE_OPENAI_API_INSTANCE_NAME</span><span class="o">=</span>
+<a href="#__codelineno-13-3" id="__codelineno-13-3" name="__codelineno-13-3"></a><span class="nv">AZURE_OPENAI_API_DEPLOYMENT_NAME</span><span class="o">=</span>
+<a href="#__codelineno-13-4" id="__codelineno-13-4" name="__codelineno-13-4"></a><span class="nv">AZURE_OPENAI_API_VERSION</span><span class="o">=</span>
+<a href="#__codelineno-13-5" id="__codelineno-13-5" name="__codelineno-13-5"></a><span class="nv">AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME</span><span class="o">=</span>
+<a href="#__codelineno-13-6" id="__codelineno-13-6" name="__codelineno-13-6"></a><span class="nv">AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <blockquote>
+        <p>
+         Note: As of 2023-11-10, the Azure API only allows one model per deployment,
+        </p>
+       </blockquote>
+       <ul>
+        <li>
+         Chat completion:
+         <code>
+          https://{AZURE_OPENAI_API_INSTANCE_NAME}.openai.azure.com/openai/deployments/{AZURE_OPENAI_API_DEPLOYMENT_NAME}/chat/completions?api-version={AZURE_OPENAI_API_VERSION}
+         </code>
+        </li>
+        <li>
+         You should also consider changing the
+         <code>
+          OPENAI_MODELS
+         </code>
+         variable to the models available in your instance/deployment.
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Note:
+         <code>
+          AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME
+         </code>
+         and
+         <code>
+          AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME
+         </code>
+         are optional but might be used in the future
+        </p>
+       </blockquote>
+       <ul>
+        <li>
+         <p>
+          It's recommended to name your deployments after the model name, e.g.
+          <code>
+           gpt-35-turbo,
+          </code>
+          which allows for fast deployment switching and
+          <code>
+           AZURE_USE_MODEL_AS_DEPLOYMENT_NAME
+          </code>
+          <strong>
+           enabled
+          </strong>
+          . However, you can use non-model deployment names and setting the
+          <code>
+           AZURE_OPENAI_DEFAULT_MODEL
+          </code>
+          to ensure it works as expected.
+         </p>
+        </li>
+        <li>
+         <p>
+          Identify the available models, separated by commas
+          <em>
+           without spaces
+          </em>
+          . The first will be default. Leave it blank or as is to use internal settings.
+         </p>
+        </li>
+        <li>
+         <p>
+          <strong>
+           The base URL for Azure OpenAI API requests can be dynamically configured.
+          </strong>
+         </p>
+        </li>
+       </ul>
+       <p>
+        <div class="highlight">
+         <pre><span></span><code><a href="#__codelineno-14-1" id="__codelineno-14-1" name="__codelineno-14-1"></a><span class="c1"># .env file</span>
+<a href="#__codelineno-14-2" id="__codelineno-14-2" name="__codelineno-14-2"></a><span class="nv">AZURE_OPENAI_BASEURL</span><span class="o">=</span>https://<span class="si">${</span><span class="nv">INSTANCE_NAME</span><span class="si">}</span>.openai.azure.com/openai/deployments/<span class="si">${</span><span class="nv">DEPLOYMENT_NAME</span><span class="si">}</span>
+<a href="#__codelineno-14-3" id="__codelineno-14-3" name="__codelineno-14-3"></a>
+<a href="#__codelineno-14-4" id="__codelineno-14-4" name="__codelineno-14-4"></a><span class="c1"># Cloudflare example</span>
+<a href="#__codelineno-14-5" id="__codelineno-14-5" name="__codelineno-14-5"></a><span class="nv">AZURE_OPENAI_BASEURL</span><span class="o">=</span>https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/<span class="si">${</span><span class="nv">INSTANCE_NAME</span><span class="si">}</span>/<span class="si">${</span><span class="nv">DEPLOYMENT_NAME</span><span class="si">}</span>
+</code></pre>
+        </div>
+        - Sets the base URL for Azure OpenAI API requests.
+- Can include
+        <code>
+         ${INSTANCE_NAME}
+        </code>
+        and
+        <code>
+         ${DEPLOYMENT_NAME}
+        </code>
+        placeholders or specific credentials.
+- Example: "https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/
+        <span class="arithmatex" deployment_name="DEPLOYMENT_NAME">
+         \({INSTANCE_NAME}/\)
+        </span>
+        "
+-
+        <a href="ai_setup.html#using-a-specified-base-url-with-azure">
+         More info about
+         <code>
+          AZURE_OPENAI_BASEURL
+         </code>
+         here
+        </a>
+       </p>
+       <blockquote>
+        <p>
+         Note: as deployment names can't have periods, they will be removed when the endpoint is generated.
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-15-1" id="__codelineno-15-1" name="__codelineno-15-1"></a><span class="nv">AZURE_OPENAI_MODELS</span><span class="o">=</span>gpt-3.5-turbo,gpt-4
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         This enables the use of the model name as the deployment name, e.g. "gpt-3.5-turbo" as the deployment name
+         <strong>
+          (Advanced)
+         </strong>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-16-1" id="__codelineno-16-1" name="__codelineno-16-1"></a><span class="nv">AZURE_USE_MODEL_AS_DEPLOYMENT_NAME</span><span class="o">=</span>TRUE
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         To use Azure with the Plugins endpoint, you need the variables above, and uncomment the following variable:
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Note: This may not work as expected and Azure OpenAI may not support OpenAI Functions yet
+Omit/leave it commented to use the default OpenAI API
+        </p>
+       </blockquote>
+       <p>
+        <div class="highlight">
+         <pre><span></span><code><a href="#__codelineno-17-1" id="__codelineno-17-1" name="__codelineno-17-1"></a><span class="nv">PLUGINS_USE_AZURE</span><span class="o">=</span><span class="s2">"true"</span>
+</code></pre>
+        </div>
+        ** Generate images with Azure OpenAI Service**
+       </p>
+       <ul>
+        <li>
+         For DALL-E-3:
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-18-1" id="__codelineno-18-1" name="__codelineno-18-1"></a><span class="nv">DALLE3_AZURE_API_VERSION</span><span class="o">=</span>the-api-version<span class="w"> </span><span class="c1"># e.g.: 2023-12-01-preview</span>
+<a href="#__codelineno-18-2" id="__codelineno-18-2" name="__codelineno-18-2"></a><span class="nv">DALLE3_BASEURL</span><span class="o">=</span>https://&lt;AZURE_OPENAI_API_INSTANCE_NAME&gt;.openai.azure.com/openai/deployments/&lt;DALLE3_DEPLOYMENT_NAME&gt;/
+<a href="#__codelineno-18-3" id="__codelineno-18-3" name="__codelineno-18-3"></a><span class="nv">DALLE3_API_KEY</span><span class="o">=</span>your-azure-api-key-for-dall-e-3
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         For DALL-E-2:
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-19-1" id="__codelineno-19-1" name="__codelineno-19-1"></a><span class="nv">DALLE2_AZURE_API_VERSION</span><span class="o">=</span>the-api-version<span class="w"> </span><span class="c1"># e.g.: 2023-12-01-preview</span>
+<a href="#__codelineno-19-2" id="__codelineno-19-2" name="__codelineno-19-2"></a><span class="nv">DALLE2_BASEURL</span><span class="o">=</span>https://&lt;AZURE_OPENAI_API_INSTANCE_NAME&gt;.openai.azure.com/openai/deployments/&lt;DALLE2_DEPLOYMENT_NAME&gt;/
+<a href="#__codelineno-19-3" id="__codelineno-19-3" name="__codelineno-19-3"></a><span class="nv">DALLE2_API_KEY</span><span class="o">=</span>your-azure-api-key-for-dall-e-2
+</code></pre>
+       </div>
+       <h3 id="bingai">
+        BingAI
+       </h3>
+       <p>
+        Bing, also used for Sydney, jailbreak, and Bing Image Creator, see:
+        <a href="ai_setup.html#bingai">
+         Bing Access token
+        </a>
+        and
+        <a href="../../features/bing_jailbreak.html">
+         Bing Jailbreak
+        </a>
+       </p>
+       <ul>
+        <li>
+         Follow these instructions to get your bing access token (it's best to use the full cookie string for that purpose):
+         <strong>
+          <a href="ai_setup.html#bingai">
+           Bing Access Token
+          </a>
+         </strong>
+        </li>
+        <li>
+         Leave
+         <code>
+          BINGAI_TOKEN=
+         </code>
+         blank to disable this endpoint
+        </li>
+        <li>
+         Set
+         <code>
+          BINGAI_TOKEN=
+         </code>
+         to "user_provided" to allow users to provide their own API key from the WebUI
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Note: It is recommended to leave it as "user_provided" and provide the token from the WebUI.
+        </p>
+       </blockquote>
+       <ul>
+        <li>
+         <code>
+          BINGAI_HOST
+         </code>
+         can be necessary for some people in different countries, e.g. China (
+         <code>
+          https://cn.bing.com
+         </code>
+         ). Leave it blank or commented out to use default server.
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-20-1" id="__codelineno-20-1" name="__codelineno-20-1"></a><span class="nv">BINGAI_TOKEN</span><span class="o">=</span>user_provided
+<a href="#__codelineno-20-2" id="__codelineno-20-2" name="__codelineno-20-2"></a><span class="nv">BINGAI_HOST</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <h3 id="google">
+        Google
+       </h3>
+       <p>
+        Follow these instructions to setup the
+        <a href="ai_setup.html#google">
+         Google Endpoint
+        </a>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-21-1" id="__codelineno-21-1" name="__codelineno-21-1"></a><span class="nv">GOOGLE_KEY</span><span class="o">=</span>user_provided
+<a href="#__codelineno-21-2" id="__codelineno-21-2" name="__codelineno-21-2"></a><span class="nv">GOOGLE_REVERSE_PROXY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Customize the available models, separated by commas,
+         <strong>
+          without spaces
+         </strong>
+         .
+         <ul>
+          <li>
+           The first will be default.
+          </li>
+          <li>
+           Leave it blank or commented out to use internal settings (default: all listed below).
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-22-1" id="__codelineno-22-1" name="__codelineno-22-1"></a><span class="c1"># all available models as of 12/16/23</span>
+<a href="#__codelineno-22-2" id="__codelineno-22-2" name="__codelineno-22-2"></a><span class="nv">GOOGLE_MODELS</span><span class="o">=</span>gemini-pro,gemini-pro-vision,chat-bison,chat-bison-32k,codechat-bison,codechat-bison-32k,text-bison,text-bison-32k,text-unicorn,code-gecko,code-bison,code-bison-32k
+</code></pre>
+       </div>
+       <h3 id="openai">
+        OpenAI
+       </h3>
+       <ul>
+        <li>
+         <p>
+          To get your OpenAI API key, you need to:
+         </p>
+         <ul>
+          <li>
+           Go to https://platform.openai.com/account/api-keys
+          </li>
+          <li>
+           Create an account or log in with your existing one
+          </li>
+          <li>
+           Add a payment method to your account (this is not free, sorry 😬)
+          </li>
+          <li>
+           Copy your secret key (sk-...) to
+           <code>
+            OPENAI_API_KEY
+           </code>
+          </li>
+         </ul>
+        </li>
+        <li>
+         <p>
+          Leave
+          <code>
+           OPENAI_API_KEY=
+          </code>
+          blank to disable this endpoint
+         </p>
+        </li>
+        <li>
+         Set
+         <code>
+          OPENAI_API_KEY=
+         </code>
+         to "user_provided" to allow users to provide their own API key from the WebUI
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-23-1" id="__codelineno-23-1" name="__codelineno-23-1"></a><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>user_provided
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         You can specify which organization to use for each API request to OpenAI. However, it is not required if you are only part of a single organization or intend to use your default organization. You can check your
+         <a href="https://platform.openai.com/account/api-keys">
+          default organization here
+         </a>
+         . This can also help you limit your LibreChat instance from allowing API keys outside of your organization to be used, as a mismatch between key and organization will throw an API error.
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-24-1" id="__codelineno-24-1" name="__codelineno-24-1"></a><span class="c1"># Optional</span>
+<a href="#__codelineno-24-2" id="__codelineno-24-2" name="__codelineno-24-2"></a><span class="nv">OPENAI_ORGANIZATION</span><span class="o">=</span>org-Y6rfake63IhVorgqfPQmGmgtId
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Set to true to enable debug mode for the OpenAI endpoint
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-25-1" id="__codelineno-25-1" name="__codelineno-25-1"></a><span class="nv">DEBUG_OPENAI</span><span class="o">=</span><span class="nb">false</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Customize the available models, separated by commas,
+         <strong>
+          without spaces
+         </strong>
+         .
+         <ul>
+          <li>
+           The first will be default.
+          </li>
+          <li>
+           Leave it blank or commented out to use internal settings.
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-26-1" id="__codelineno-26-1" name="__codelineno-26-1"></a><span class="nv">OPENAI_MODELS</span><span class="o">=</span>gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Titling is enabled by default but is configured with the environment variable
+         <code>
+          TITLE_CONVO
+         </code>
+         for all Endpoints. The default model used for OpenAI titling is gpt-3.5-turbo. You can change it by uncommenting the following and setting the desired model.
+         <strong>
+          (Optional)
+         </strong>
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         <strong>
+          Note:
+         </strong>
+         Must be compatible with the OpenAI Endpoint.
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-27-1" id="__codelineno-27-1" name="__codelineno-27-1"></a><span class="nv">OPENAI_TITLE_MODEL</span><span class="o">=</span>gpt-3.5-turbo
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Enable message summarization by uncommenting the following
+         <strong>
+          (Optional/Experimental)
+         </strong>
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         <strong>
+          Note:
+         </strong>
+         this may affect response time when a summary is being generated.
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-28-1" id="__codelineno-28-1" name="__codelineno-28-1"></a><span class="nv">OPENAI_SUMMARIZE</span><span class="o">=</span><span class="nb">true</span>
+</code></pre>
+       </div>
+       <blockquote>
+        <p>
+         <strong>
+          Experimental
+         </strong>
+         : We are using the ConversationSummaryBufferMemory method to summarize messages. To learn more about this, see this article:
+         <a href="https://www.pinecone.io/learn/series/langchain/langchain-conversational-memory/">
+          https://www.pinecone.io/learn/series/langchain/langchain-conversational-memory/
+         </a>
+        </p>
+       </blockquote>
+       <ul>
+        <li>
+         Reverse proxy settings for OpenAI:
+         <ul>
+          <li>
+           see:
+           <a href="litellm.html">
+            LiteLLM
+           </a>
+          </li>
+          <li>
+           see also:
+           <a href="free_ai_apis.html#nagaai">
+            Free AI APIs
+           </a>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <p>
+        <strong>
+         Important
+        </strong>
+        : As of v0.6.6, it's recommend you use the
+        <code>
+         librechat.yaml
+        </code>
+        <a href="custom_config.html">
+         Configuration file (guide here)
+        </a>
+        to add Reverse Proxies as separate endpoints.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-29-1" id="__codelineno-29-1" name="__codelineno-29-1"></a><span class="nv">OPENAI_REVERSE_PROXY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Sometimes when using Local LLM APIs, you may need to force the API to be called with a
+         <code>
+          prompt
+         </code>
+         payload instead of a
+         <code>
+          messages
+         </code>
+         payload; to mimic the
+         <code>
+          /v1/completions
+         </code>
+         request instead of
+         <code>
+          /v1/chat/completions
+         </code>
+         . This may be the case for LocalAI with some models. To do so, uncomment the following
+         <strong>
+          (Advanced)
+         </strong>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-30-1" id="__codelineno-30-1" name="__codelineno-30-1"></a><span class="nv">OPENAI_FORCE_PROMPT</span><span class="o">=</span><span class="nb">true</span>
+</code></pre>
+       </div>
+       <h3 id="assistants">
+        Assistants
+       </h3>
+       <ul>
+        <li>
+         The
+         <a href="https://platform.openai.com/docs/assistants/overview">
+          Assistants API by OpenAI
+         </a>
+         has a dedicated endpoint.
+        </li>
+        <li>
+         <p>
+          To get your OpenAI API key, you need to:
+         </p>
+         <ul>
+          <li>
+           Go to
+           <a href="https://platform.openai.com/account/api-keys">
+            https://platform.openai.com/account/api-keys
+           </a>
+          </li>
+          <li>
+           Create an account or log in with your existing one
+          </li>
+          <li>
+           Add a payment method to your account (this is not free, sorry 😬)
+          </li>
+          <li>
+           Copy your secret key (sk-...) to
+           <code>
+            ASSISTANTS_API_KEY
+           </code>
+          </li>
+         </ul>
+        </li>
+        <li>
+         <p>
+          Leave
+          <code>
+           ASSISTANTS_API_KEY=
+          </code>
+          blank to disable this endpoint
+         </p>
+        </li>
+        <li>
+         Set
+         <code>
+          ASSISTANTS_API_KEY=
+         </code>
+         to
+         <code>
+          user_provided
+         </code>
+         to allow users to provide their own API key from the WebUI
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-31-1" id="__codelineno-31-1" name="__codelineno-31-1"></a><span class="nv">ASSISTANTS_API_KEY</span><span class="o">=</span>user_provided
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Customize the available models, separated by commas,
+         <strong>
+          without spaces
+         </strong>
+         .
+         <ul>
+          <li>
+           The first will be default.
+          </li>
+          <li>
+           Leave it blank or commented out to use internal settings:
+           <ul>
+            <li>
+             The models list will be fetched from OpenAI but only Assistants-API-compatible models will be shown; at the time of writing, they are as shown in the example below.
+            </li>
+           </ul>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-32-1" id="__codelineno-32-1" name="__codelineno-32-1"></a><span class="nv">ASSISTANTS_MODELS</span><span class="o">=</span>gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         If necessary, you can also set an alternate base URL instead of the official one with
+         <code>
+          ASSISTANTS_BASE_URL
+         </code>
+         , which is similar to the OpenAI counterpart
+         <code>
+          OPENAI_REVERSE_PROXY
+         </code>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-33-1" id="__codelineno-33-1" name="__codelineno-33-1"></a><span class="nv">ASSISTANTS_BASE_URL</span><span class="o">=</span>http://your-alt-baseURL:3080/
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         <p>
+          If you have previously set the
+          <a href="#endpoints">
+           <code>
+            ENDPOINTS
+           </code>
+           value in your .env file
+          </a>
+          , you will need to add the value
+          <code>
+           assistants
+          </code>
+         </p>
+        </li>
+        <li>
+         <p>
+          There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, and determining which assistants can be used, that are available via the
+          <a href="custom_config.html#assistants-endpoint-object-structure">
+           <code>
+            librechat.yaml
+           </code>
+           custom config file
+          </a>
+          .
+         </p>
+        </li>
+       </ul>
+       <h3 id="openrouter">
+        OpenRouter
+       </h3>
+       <p>
+        See
+        <a href="free_ai_apis.html#openrouter-preferred">
+         OpenRouter
+        </a>
+        for more info.
+       </p>
+       <ul>
+        <li>
+         OpenRouter is a legitimate proxy service to a multitude of LLMs, both closed and open source, including: OpenAI models, Anthropic models, Meta's Llama models, pygmalionai/mythalion-13b and many more open source models. Newer integrations are usually discounted, too!
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Note: this overrides the OpenAI and Plugins Endpoints.
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-34-1" id="__codelineno-34-1" name="__codelineno-34-1"></a><span class="nv">OPENROUTER_API_KEY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <h3 id="plugins">
+        Plugins
+       </h3>
+       <p>
+        Here are some useful documentation about plugins:
+       </p>
+       <ul>
+        <li>
+         <a href="../../features/plugins/introduction.html">
+          Introduction
+         </a>
+        </li>
+        <li>
+         <a href="../../features/plugins/make_your_own.html">
+          Make Your Own
+         </a>
+        </li>
+        <li>
+         <a href="../../features/plugins/chatgpt_plugins_openapi.html">
+          Using official ChatGPT Plugins
+         </a>
+        </li>
+       </ul>
+       <h4 id="general-configuration">
+        General Configuration:
+       </h4>
+       <ul>
+        <li>
+         Identify the available models, separated by commas
+         <strong>
+          without spaces
+         </strong>
+         . The first model in the list will be set as default. Leave it blank or commented out to use internal settings.
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-35-1" id="__codelineno-35-1" name="__codelineno-35-1"></a><span class="nv">PLUGIN_MODELS</span><span class="o">=</span>gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Set to false or comment out to disable debug mode for plugins
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-36-1" id="__codelineno-36-1" name="__codelineno-36-1"></a><span class="nv">DEBUG_PLUGINS</span><span class="o">=</span><span class="nb">true</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         For securely storing credentials, you need a fixed key and IV. You can set them here for prod and dev environments.
+         <ul>
+          <li>
+           You need a 32-byte key (64 characters in hex) and 16-byte IV (32 characters in hex) You can use this replit to generate some quickly:
+           <strong>
+            <a href="https://replit.com/@daavila/crypto#index.js">
+             Key Generator
+            </a>
+           </strong>
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Warning: If you don't set them, the app will crash on startup.
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-37-1" id="__codelineno-37-1" name="__codelineno-37-1"></a><span class="nv">CREDS_KEY</span><span class="o">=</span>f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0
+<a href="#__codelineno-37-2" id="__codelineno-37-2" name="__codelineno-37-2"></a><span class="nv">CREDS_IV</span><span class="o">=</span>e2341419ec3dd3d19b13a1a87fafcbfb
+</code></pre>
+       </div>
+       <h4 id="azure-ai-search">
+        Azure AI Search
+       </h4>
+       <p>
+        This plugin supports searching Azure AI Search for answers to your questions. See:
+        <a href="../../features/plugins/azure_ai_search.html">
+         Azure AI Search
+        </a>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-38-1" id="__codelineno-38-1" name="__codelineno-38-1"></a><span class="nv">AZURE_AI_SEARCH_SERVICE_ENDPOINT</span><span class="o">=</span>
+<a href="#__codelineno-38-2" id="__codelineno-38-2" name="__codelineno-38-2"></a><span class="nv">AZURE_AI_SEARCH_INDEX_NAME</span><span class="o">=</span>
+<a href="#__codelineno-38-3" id="__codelineno-38-3" name="__codelineno-38-3"></a><span class="nv">AZURE_AI_SEARCH_API_KEY</span><span class="o">=</span>
+<a href="#__codelineno-38-4" id="__codelineno-38-4" name="__codelineno-38-4"></a>
+<a href="#__codelineno-38-5" id="__codelineno-38-5" name="__codelineno-38-5"></a><span class="nv">AZURE_AI_SEARCH_API_VERSION</span><span class="o">=</span>
+<a href="#__codelineno-38-6" id="__codelineno-38-6" name="__codelineno-38-6"></a><span class="nv">AZURE_AI_SEARCH_SEARCH_OPTION_QUERY_TYPE</span><span class="o">=</span>
+<a href="#__codelineno-38-7" id="__codelineno-38-7" name="__codelineno-38-7"></a><span class="nv">AZURE_AI_SEARCH_SEARCH_OPTION_TOP</span><span class="o">=</span>
+<a href="#__codelineno-38-8" id="__codelineno-38-8" name="__codelineno-38-8"></a><span class="nv">AZURE_AI_SEARCH_SEARCH_OPTION_SELECT</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <h4 id="dall-e">
+        DALL-E:
+       </h4>
+       <p>
+        <strong>
+         Note:
+        </strong>
+        Make sure the
+        <code>
+         gptPlugins
+        </code>
+        endpoint is set in the
+        <a href="#endpoints">
+         <code>
+          ENDPOINTS
+         </code>
+        </a>
+        environment variable if it was configured before.
+       </p>
+       <p>
+        <strong>
+         API Keys:
+        </strong>
+        -
+        <code>
+         DALLE_API_KEY
+        </code>
+        : This environment variable is intended for storing the OpenAI API key that grants access to both DALL-E 2 and DALL-E 3 services. Typically, this key should be kept private. If you are distributing a plugin or software that integrates with DALL-E, you may choose to leave this commented out, requiring the end user to input their own API key. If you have a shared API key you want to distribute with your software (not recommended for security reasons), you can uncomment this and provide the key.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-39-1" id="__codelineno-39-1" name="__codelineno-39-1"></a><span class="nv">DALLE_API_KEY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         <code>
+          DALLE3_API_KEY
+         </code>
+         and
+         <code>
+          DALLE2_API_KEY
+         </code>
+         : These are similar to the above but are specific to each version of DALL-E. They allow for separate keys for DALL-E 2 and DALL-E 3, providing flexibility if you have different access credentials or subscription levels for each service.
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-40-1" id="__codelineno-40-1" name="__codelineno-40-1"></a><span class="nv">DALLE3_API_KEY</span><span class="o">=</span>
+<a href="#__codelineno-40-2" id="__codelineno-40-2" name="__codelineno-40-2"></a><span class="nv">DALLE2_API_KEY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         System Prompts:
+        </strong>
+        -
+        <code>
+         DALLE3_SYSTEM_PROMPT
+        </code>
+        and
+        <code>
+         DALLE2_SYSTEM_PROMPT
+        </code>
+        : These variables allow users to set system prompts that can preconfigure or guide the image generation process for DALL-E 3 and DALL-E 2, respectively. Use these to set default prompts or special instructions that affect how the AI interprets the user's input prompts.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-41-1" id="__codelineno-41-1" name="__codelineno-41-1"></a><span class="nv">DALLE3_SYSTEM_PROMPT</span><span class="o">=</span><span class="s2">"Your DALL-E-3 System Prompt here"</span>
+<a href="#__codelineno-41-2" id="__codelineno-41-2" name="__codelineno-41-2"></a><span class="nv">DALLE2_SYSTEM_PROMPT</span><span class="o">=</span><span class="s2">"Your DALL-E-2 System Prompt here"</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         Reverse Proxy Settings:
+        </strong>
+        -
+        <code>
+         DALLE_REVERSE_PROXY
+        </code>
+        : This setting enables the specification of a reverse proxy for DALL-E API requests. This can be useful for routing traffic through a specific server, potentially for purposes like caching, logging, or adding additional layers of security. Ensure that the URL follows the required pattern and is appropriately configured to handle DALL-E requests.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-42-1" id="__codelineno-42-1" name="__codelineno-42-1"></a><span class="nv">DALLE_REVERSE_PROXY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         Base URLs:
+        </strong>
+        -
+        <code>
+         DALLE3_BASEURL
+        </code>
+        and
+        <code>
+         DALLE2_BASEURL
+        </code>
+        : These variables define the base URLs for DALL-E 3 and DALL-E 2 API endpoints, respectively. These might need to be set if you are using a custom proxy or a specific regional endpoint provided by OpenAI.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-43-1" id="__codelineno-43-1" name="__codelineno-43-1"></a><span class="nv">DALLE3_BASEURL</span><span class="o">=</span>
+<a href="#__codelineno-43-2" id="__codelineno-43-2" name="__codelineno-43-2"></a><span class="nv">DALLE2_BASEURL</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <p>
+        <strong>
+         Azure OpenAI Integration (Optional):
+        </strong>
+        -
+        <code>
+         DALLE3_AZURE_API_VERSION
+        </code>
+        and
+        <code>
+         DALLE2_AZURE_API_VERSION
+        </code>
+        : If you are using Azure's OpenAI service to access DALL-E, these environment variables specify the API version for DALL-E 3 and DALL-E 2, respectively. Azure may have specific API version strings that need to be set to ensure compatibility with their services.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-44-1" id="__codelineno-44-1" name="__codelineno-44-1"></a><span class="nv">DALLE3_AZURE_API_VERSION</span><span class="o">=</span>
+<a href="#__codelineno-44-2" id="__codelineno-44-2" name="__codelineno-44-2"></a><span class="nv">DALLE2_AZURE_API_VERSION</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <hr/>
+       <p>
+        Remember to replace placeholder text such as "Your DALL-E-3 System Prompt here" with actual prompts or instructions and provide your actual API keys if you choose to include them directly in the file (though managing sensitive keys outside of the codebase is a best practice). Always review and respect OpenAI's usage policies when embedding API keys in software.
+       </p>
+       <blockquote>
+        <p>
+         Note: if you have PROXY set, it will be used for DALL-E calls also, which is universal for the app
+        </p>
+       </blockquote>
+       <h4 id="google-search">
+        Google Search
+       </h4>
+       <p>
+        See detailed instructions here:
+        <a href="../../features/plugins/google_search.html">
+         Google Search
+        </a>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-45-1" id="__codelineno-45-1" name="__codelineno-45-1"></a><span class="nv">GOOGLE_API_KEY</span><span class="o">=</span>
+<a href="#__codelineno-45-2" id="__codelineno-45-2" name="__codelineno-45-2"></a><span class="nv">GOOGLE_CSE_ID</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <h4 id="serpapi">
+        SerpAPI
+       </h4>
+       <p>
+        SerpApi is a real-time API to access Google search results (not as performant)
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-46-1" id="__codelineno-46-1" name="__codelineno-46-1"></a><span class="nv">SERPAPI_API_KEY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <h4 id="stable-diffusion-automatic1111">
+        Stable Diffusion (Automatic1111)
+       </h4>
+       <p>
+        See detailed instructions here:
+        <strong>
+         <a href="../../features/plugins/stable_diffusion.html">
+          Stable Diffusion
+         </a>
+        </strong>
+       </p>
+       <ul>
+        <li>
+         Use
+         <code>
+          http://127.0.0.1:7860
+         </code>
+         with local install and
+         <code>
+          http://host.docker.internal:7860
+         </code>
+         for docker
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-47-1" id="__codelineno-47-1" name="__codelineno-47-1"></a><span class="nv">SD_WEBUI_URL</span><span class="o">=</span>http://host.docker.internal:7860
+</code></pre>
+       </div>
+       <h3 id="tavily">
+        Tavily
+       </h3>
+       <p>
+        Get your API key here:
+        <a href="https://tavily.com/#api">
+         https://tavily.com/#api
+        </a>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-48-1" id="__codelineno-48-1" name="__codelineno-48-1"></a><span class="nv">TAVILY_API_KEY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <h3 id="traversaal">
+        Traversaal
+       </h3>
+       <p>
+        LLM-enhanced search tool.
+Get API key here: https://api.traversaal.ai/dashboard
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-49-1" id="__codelineno-49-1" name="__codelineno-49-1"></a><span class="nv">TRAVERSAAL_API_KEY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <h4 id="wolframalpha">
+        WolframAlpha
+       </h4>
+       <p>
+        See detailed instructions here:
+        <strong>
+         <a href="../../features/plugins/wolfram.html">
+          Wolfram Alpha
+         </a>
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-50-1" id="__codelineno-50-1" name="__codelineno-50-1"></a><span class="nv">WOLFRAM_APP_ID</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <h4 id="zapier">
+        Zapier
+       </h4>
+       <ul>
+        <li>
+         You need a Zapier account. Get your API key from here:
+         <strong>
+          <a href="https://nla.zapier.com/credentials/">
+           Zapier
+          </a>
+         </strong>
+        </li>
+        <li>
+         Create allowed actions - Follow step 3 in this getting start guide from Zapier
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Note: zapier is known to be finicky with certain actions. Writing email drafts is probably the best use of it.
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-51-1" id="__codelineno-51-1" name="__codelineno-51-1"></a><span class="nv">ZAPIER_NLA_API_KEY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <h2 id="search-meilisearch">
+        Search (Meilisearch)
+       </h2>
+       <p>
+        Enables search in messages and conversations:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-52-1" id="__codelineno-52-1" name="__codelineno-52-1"></a><span class="nv">SEARCH</span><span class="o">=</span><span class="nb">true</span>
+</code></pre>
+       </div>
+       <blockquote>
+        <p>
+         Note: If you're not using docker, it requires the installation of the free self-hosted Meilisearch or a paid remote plan
+        </p>
+       </blockquote>
+       <p>
+        To disable anonymized telemetry analytics for MeiliSearch for absolute privacy, set to true:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-53-1" id="__codelineno-53-1" name="__codelineno-53-1"></a><span class="nv">MEILI_NO_ANALYTICS</span><span class="o">=</span><span class="nb">true</span>
+</code></pre>
+       </div>
+       <p>
+        For the API server to connect to the search server. Replace '0.0.0.0' with 'meilisearch' if serving MeiliSearch with docker-compose.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-54-1" id="__codelineno-54-1" name="__codelineno-54-1"></a><span class="nv">MEILI_HOST</span><span class="o">=</span>http://0.0.0.0:7700
+</code></pre>
+       </div>
+       <p>
+        This master key must be at least 16 bytes, composed of valid UTF-8 characters. MeiliSearch will throw an error and refuse to launch if no master key is provided or if it is under 16 bytes. MeiliSearch will suggest a secure autogenerated master key. This is a ready made secure key for docker-compose, you can replace it with your own.
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-55-1" id="__codelineno-55-1" name="__codelineno-55-1"></a><span class="nv">MEILI_MASTER_KEY</span><span class="o">=</span>DrhYf7zENyR6AlUCKmnz0eYASOQdl6zxH7s7MKFSfFCt
+</code></pre>
+       </div>
+       <h2 id="user-system">
+        User System
+       </h2>
+       <p>
+        This section contains the configuration for:
+       </p>
+       <ul>
+        <li>
+         <a href="#moderation">
+          Automated Moderation
+         </a>
+        </li>
+        <li>
+         <a href="#balance">
+          Balance/Token Usage
+         </a>
+        </li>
+        <li>
+         <a href="#registration-and-login">
+          Registration and Social Logins
+         </a>
+        </li>
+        <li>
+         <a href="#email-password-reset">
+          Email Password Reset
+         </a>
+        </li>
+       </ul>
+       <h3 id="moderation">
+        Moderation
+       </h3>
+       <p>
+        The Automated Moderation System uses a scoring mechanism to track user violations. As users commit actions like excessive logins, registrations, or messaging, they accumulate violation scores. Upon reaching a set threshold, the user and their IP are temporarily banned. This system ensures platform security by monitoring and penalizing rapid or suspicious activities.
+       </p>
+       <p>
+        see:
+        <strong>
+         <a href="../../features/mod_system.html">
+          Automated Moderation
+         </a>
+        </strong>
+       </p>
+       <h4 id="basic-moderation-settings">
+        Basic Moderation Settings
+       </h4>
+       <ul>
+        <li>
+         <code>
+          OPENAI_MODERATION
+         </code>
+         : Set to true or false, Whether or not to enable OpenAI moderation on the
+         <strong>
+          OpenAI
+         </strong>
+         and
+         <strong>
+          Plugins
+         </strong>
+         endpoints
+        </li>
+        <li>
+         <code>
+          OPENAI_MODERATION_API_KEY
+         </code>
+         : Your OpenAI API key
+        </li>
+        <li>
+         <code>
+          OPENAI_MODERATION_REVERSE_PROXY
+         </code>
+         : Note: Commented out by default, this is not working with all reverse proxys
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-56-1" id="__codelineno-56-1" name="__codelineno-56-1"></a><span class="nv">OPENAI_MODERATION</span><span class="o">=</span><span class="nb">false</span>
+<a href="#__codelineno-56-2" id="__codelineno-56-2" name="__codelineno-56-2"></a><span class="nv">OPENAI_MODERATION_API_KEY</span><span class="o">=</span>
+<a href="#__codelineno-56-3" id="__codelineno-56-3" name="__codelineno-56-3"></a><span class="nv">OPENAI_MODERATION_REVERSE_PROXY</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         <code>
+          BAN_VIOLATIONS
+         </code>
+         : Whether or not to enable banning users for violations (they will still be logged)
+        </li>
+        <li>
+         <code>
+          BAN_DURATION
+         </code>
+         : How long the user and associated IP are banned for (in milliseconds)
+        </li>
+        <li>
+         <code>
+          BAN_INTERVAL
+         </code>
+         : The user will be banned everytime their score reaches/crosses over the interval threshold
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-57-1" id="__codelineno-57-1" name="__codelineno-57-1"></a><span class="nv">BAN_VIOLATIONS</span><span class="o">=</span><span class="nb">true</span>
+<a href="#__codelineno-57-2" id="__codelineno-57-2" name="__codelineno-57-2"></a><span class="nv">BAN_DURATION</span><span class="o">=</span><span class="m">1000</span><span class="w"> </span>*<span class="w"> </span><span class="m">60</span><span class="w"> </span>*<span class="w"> </span><span class="m">60</span><span class="w"> </span>*<span class="w"> </span><span class="m">2</span>
+<a href="#__codelineno-57-3" id="__codelineno-57-3" name="__codelineno-57-3"></a><span class="nv">BAN_INTERVAL</span><span class="o">=</span><span class="m">20</span><span class="w"> </span>
+</code></pre>
+       </div>
+       <h4 id="score-for-each-violation">
+        Score for each violation
+       </h4>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-58-1" id="__codelineno-58-1" name="__codelineno-58-1"></a><span class="nv">LOGIN_VIOLATION_SCORE</span><span class="o">=</span><span class="m">1</span>
+<a href="#__codelineno-58-2" id="__codelineno-58-2" name="__codelineno-58-2"></a><span class="nv">REGISTRATION_VIOLATION_SCORE</span><span class="o">=</span><span class="m">1</span>
+<a href="#__codelineno-58-3" id="__codelineno-58-3" name="__codelineno-58-3"></a><span class="nv">CONCURRENT_VIOLATION_SCORE</span><span class="o">=</span><span class="m">1</span>
+<a href="#__codelineno-58-4" id="__codelineno-58-4" name="__codelineno-58-4"></a><span class="nv">MESSAGE_VIOLATION_SCORE</span><span class="o">=</span><span class="m">1</span>
+<a href="#__codelineno-58-5" id="__codelineno-58-5" name="__codelineno-58-5"></a><span class="nv">NON_BROWSER_VIOLATION_SCORE</span><span class="o">=</span><span class="m">20</span>
+<a href="#__codelineno-58-6" id="__codelineno-58-6" name="__codelineno-58-6"></a><span class="nv">ILLEGAL_MODEL_REQ_SCORE</span><span class="o">=</span><span class="m">5</span>
+</code></pre>
+       </div>
+       <blockquote>
+        <p>
+         Note: Non-browser access and Illegal model requests are almost always nefarious as it means a 3rd party is attempting to access the server through an automated script.
+        </p>
+       </blockquote>
+       <h4 id="login-and-registration-rate-limiting">
+        Login and registration rate limiting.
+       </h4>
+       <ul>
+        <li>
+         <code>
+          LOGIN_MAX
+         </code>
+         : The max amount of logins allowed per IP per
+         <code>
+          LOGIN_WINDOW
+         </code>
+        </li>
+        <li>
+         <code>
+          LOGIN_WINDOW
+         </code>
+         : In minutes, determines the window of time for
+         <code>
+          LOGIN_MAX
+         </code>
+         logins
+        </li>
+        <li>
+         <code>
+          REGISTER_MAX
+         </code>
+         : The max amount of registrations allowed per IP per
+         <code>
+          REGISTER_WINDOW
+         </code>
+        </li>
+        <li>
+         <code>
+          REGISTER_WINDOW
+         </code>
+         : In minutes, determines the window of time for
+         <code>
+          REGISTER_MAX
+         </code>
+         registrations
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-59-1" id="__codelineno-59-1" name="__codelineno-59-1"></a><span class="nv">LOGIN_MAX</span><span class="o">=</span><span class="m">7</span>
+<a href="#__codelineno-59-2" id="__codelineno-59-2" name="__codelineno-59-2"></a><span class="nv">LOGIN_WINDOW</span><span class="o">=</span><span class="m">5</span>
+<a href="#__codelineno-59-3" id="__codelineno-59-3" name="__codelineno-59-3"></a><span class="nv">REGISTER_MAX</span><span class="o">=</span><span class="m">5</span>
+<a href="#__codelineno-59-4" id="__codelineno-59-4" name="__codelineno-59-4"></a><span class="nv">REGISTER_WINDOW</span><span class="o">=</span><span class="m">60</span>
+</code></pre>
+       </div>
+       <h4 id="message-rate-limiting-per-user-ip">
+        Message rate limiting (per user &amp; IP)
+       </h4>
+       <ul>
+        <li>
+         <code>
+          LIMIT_CONCURRENT_MESSAGES
+         </code>
+         : Whether to limit the amount of messages a user can send per request
+        </li>
+        <li>
+         <code>
+          CONCURRENT_MESSAGE_MAX
+         </code>
+         : The max amount of messages a user can send per request
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-60-1" id="__codelineno-60-1" name="__codelineno-60-1"></a><span class="nv">LIMIT_CONCURRENT_MESSAGES</span><span class="o">=</span><span class="nb">true</span>
+<a href="#__codelineno-60-2" id="__codelineno-60-2" name="__codelineno-60-2"></a><span class="nv">CONCURRENT_MESSAGE_MAX</span><span class="o">=</span><span class="m">2</span>
+</code></pre>
+       </div>
+       <h4 id="limiters">
+        Limiters
+       </h4>
+       <blockquote>
+        <p>
+         Note: You can utilize both limiters, but default is to limit by IP only.
+        </p>
+       </blockquote>
+       <ul>
+        <li>
+         <strong>
+          IP Limiter:
+         </strong>
+        </li>
+        <li>
+         <code>
+          LIMIT_MESSAGE_IP
+         </code>
+         : Whether to limit the amount of messages an IP can send per
+         <code>
+          MESSAGE_IP_WINDOW
+         </code>
+        </li>
+        <li>
+         <code>
+          MESSAGE_IP_MAX
+         </code>
+         : The max amount of messages an IP can send per
+         <code>
+          MESSAGE_IP_WINDOW
+         </code>
+        </li>
+        <li>
+         <code>
+          MESSAGE_IP_WINDOW
+         </code>
+         : In minutes, determines the window of time for
+         <code>
+          MESSAGE_IP_MAX
+         </code>
+         messages
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-61-1" id="__codelineno-61-1" name="__codelineno-61-1"></a><span class="nv">LIMIT_MESSAGE_IP</span><span class="o">=</span><span class="nb">true</span>
+<a href="#__codelineno-61-2" id="__codelineno-61-2" name="__codelineno-61-2"></a><span class="nv">MESSAGE_IP_MAX</span><span class="o">=</span><span class="m">40</span>
+<a href="#__codelineno-61-3" id="__codelineno-61-3" name="__codelineno-61-3"></a><span class="nv">MESSAGE_IP_WINDOW</span><span class="o">=</span><span class="m">1</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         <strong>
+          User Limiter:
+         </strong>
+        </li>
+        <li>
+         <code>
+          LIMIT_MESSAGE_USER
+         </code>
+         : Whether to limit the amount of messages an IP can send per
+         <code>
+          MESSAGE_USER_WINDOW
+         </code>
+        </li>
+        <li>
+         <code>
+          MESSAGE_USER_MAX
+         </code>
+         : The max amount of messages an IP can send per
+         <code>
+          MESSAGE_USER_WINDOW
+         </code>
+        </li>
+        <li>
+         <code>
+          MESSAGE_USER_WINDOW
+         </code>
+         : In minutes, determines the window of time for
+         <code>
+          MESSAGE_USER_MAX
+         </code>
+         messages
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-62-1" id="__codelineno-62-1" name="__codelineno-62-1"></a><span class="nv">LIMIT_MESSAGE_USER</span><span class="o">=</span><span class="nb">false</span>
+<a href="#__codelineno-62-2" id="__codelineno-62-2" name="__codelineno-62-2"></a><span class="nv">MESSAGE_USER_MAX</span><span class="o">=</span><span class="m">40</span>
+<a href="#__codelineno-62-3" id="__codelineno-62-3" name="__codelineno-62-3"></a><span class="nv">MESSAGE_USER_WINDOW</span><span class="o">=</span><span class="m">1</span>
+</code></pre>
+       </div>
+       <h3 id="balance">
+        Balance
+       </h3>
+       <p>
+        The following enables user balances for the OpenAI/Plugins endpoints, which you can add manually or you will need to build out a balance accruing system for users.
+       </p>
+       <p>
+        see:
+        <strong>
+         <a href="../../features/token_usage.html">
+          Token Usage
+         </a>
+        </strong>
+       </p>
+       <ul>
+        <li>
+         To manually add balances, run the following command:
+         <code>
+          npm run add-balance
+         </code>
+        </li>
+        <li>
+         You can also specify the email and token credit amount to add, e.g.:
+         <code>
+          npm run add-balance example@example.com 1000
+         </code>
+        </li>
+        <li>
+         To list the balance of every user:
+         <code>
+          npm run list-balances
+         </code>
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         <strong>
+          Note:
+         </strong>
+         1000 credits = $0.001 (1 mill USD)
+        </p>
+       </blockquote>
+       <ul>
+        <li>
+         Set to
+         <code>
+          true
+         </code>
+         to enable token credit balances for the OpenAI/Plugins endpoints
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-63-1" id="__codelineno-63-1" name="__codelineno-63-1"></a><span class="nv">CHECK_BALANCE</span><span class="o">=</span><span class="nb">false</span>
+</code></pre>
+       </div>
+       <h3 id="registration-and-login">
+        Registration and Login
+       </h3>
+       <p>
+        see:
+        <strong>
+         <a href="user_auth_system.html">
+          User/Auth System
+         </a>
+        </strong>
+       </p>
+       <p>
+        <img alt="image" src="https://github.com/danny-avila/LibreChat/assets/81851188/52a37d1d-7392-4a9a-a79f-90ed2da7f841"/>
+       </p>
+       <ul>
+        <li>
+         General Settings:
+         <ul>
+          <li>
+           <code>
+            ALLOW_EMAIL_LOGIN
+           </code>
+           : Email login. Set to
+           <code>
+            true
+           </code>
+           or
+           <code>
+            false
+           </code>
+           to enable or disable ONLY email login.
+          </li>
+          <li>
+           <code>
+            ALLOW_REGISTRATION
+           </code>
+           : Email registration of new users. Set to
+           <code>
+            true
+           </code>
+           or
+           <code>
+            false
+           </code>
+           to enable or disable Email registration.
+          </li>
+          <li>
+           <code>
+            ALLOW_SOCIAL_LOGIN
+           </code>
+           : Allow users to connect to LibreChat with various social networks, see below. Set to
+           <code>
+            true
+           </code>
+           or
+           <code>
+            false
+           </code>
+           to enable or disable.
+          </li>
+          <li>
+           <code>
+            ALLOW_SOCIAL_REGISTRATION
+           </code>
+           : Enable or disable registration of new user using various social network. Set to
+           <code>
+            true
+           </code>
+           or
+           <code>
+            false
+           </code>
+           to enable or disable.
+          </li>
+         </ul>
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         <strong>
+          Quick Tip:
+         </strong>
+         Even with registration disabled, add users directly to the database using
+         <code>
+          npm run create-user
+         </code>
+         .
+         <strong>
+          Quick Tip:
+         </strong>
+         With registration disabled, you can delete a user with
+         <code>
+          npm run delete-user email@domain.com
+         </code>
+         .
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-64-1" id="__codelineno-64-1" name="__codelineno-64-1"></a><span class="nv">ALLOW_EMAIL_LOGIN</span><span class="o">=</span><span class="nb">true</span>
+<a href="#__codelineno-64-2" id="__codelineno-64-2" name="__codelineno-64-2"></a><span class="nv">ALLOW_REGISTRATION</span><span class="o">=</span><span class="nb">true</span>
+<a href="#__codelineno-64-3" id="__codelineno-64-3" name="__codelineno-64-3"></a><span class="nv">ALLOW_SOCIAL_LOGIN</span><span class="o">=</span><span class="nb">false</span>
+<a href="#__codelineno-64-4" id="__codelineno-64-4" name="__codelineno-64-4"></a><span class="nv">ALLOW_SOCIAL_REGISTRATION</span><span class="o">=</span><span class="nb">false</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         Default values: session expiry: 15 minutes, refresh token expiry: 7 days
+        </li>
+        <li>
+         For more information:
+         <strong>
+          <a href="https://github.com/danny-avila/LibreChat/pull/927">
+           Refresh Token
+          </a>
+         </strong>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-65-1" id="__codelineno-65-1" name="__codelineno-65-1"></a><span class="nv">SESSION_EXPIRY</span><span class="o">=</span><span class="m">1000</span><span class="w"> </span>*<span class="w"> </span><span class="m">60</span><span class="w"> </span>*<span class="w"> </span><span class="m">15</span>
+<a href="#__codelineno-65-2" id="__codelineno-65-2" name="__codelineno-65-2"></a><span class="nv">REFRESH_TOKEN_EXPIRY</span><span class="o">=(</span><span class="m">1000</span><span class="w"> </span>*<span class="w"> </span><span class="m">60</span><span class="w"> </span>*<span class="w"> </span><span class="m">60</span><span class="w"> </span>*<span class="w"> </span><span class="m">24</span><span class="o">)</span><span class="w"> </span>*<span class="w"> </span><span class="m">7</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         You should use new secure values. The examples given are 32-byte keys (64 characters in hex).
+        </li>
+        <li>
+         Use this replit to generate some quickly:
+         <strong>
+          <a href="https://replit.com/@daavila/crypto#index.js">
+           JWT Keys
+          </a>
+         </strong>
+        </li>
+       </ul>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-66-1" id="__codelineno-66-1" name="__codelineno-66-1"></a><span class="nv">JWT_SECRET</span><span class="o">=</span>16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
+<a href="#__codelineno-66-2" id="__codelineno-66-2" name="__codelineno-66-2"></a><span class="nv">JWT_REFRESH_SECRET</span><span class="o">=</span>eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418
+</code></pre>
+       </div>
+       <h3 id="social-logins">
+        Social Logins
+       </h3>
+       <h4 id="discord-authentication">
+        <a href="user_auth_system.html#discord">
+         Discord Authentication
+        </a>
+       </h4>
+       <p>
+        for more information:
+        <strong>
+         <a href="user_auth_system.html#discord">
+          Discord
+         </a>
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-67-1" id="__codelineno-67-1" name="__codelineno-67-1"></a><span class="c1"># Discord</span>
+<a href="#__codelineno-67-2" id="__codelineno-67-2" name="__codelineno-67-2"></a><span class="nv">DISCORD_CLIENT_ID</span><span class="o">=</span>your_client_id
+<a href="#__codelineno-67-3" id="__codelineno-67-3" name="__codelineno-67-3"></a><span class="nv">DISCORD_CLIENT_SECRET</span><span class="o">=</span>your_client_secret
+<a href="#__codelineno-67-4" id="__codelineno-67-4" name="__codelineno-67-4"></a><span class="nv">DISCORD_CALLBACK_URL</span><span class="o">=</span>/oauth/discord/callback
+</code></pre>
+       </div>
+       <h4 id="facebook-authentication">
+        <a href="user_auth_system.html#facebook">
+         Facebook Authentication
+        </a>
+       </h4>
+       <p>
+        for more information:
+        <strong>
+         <a href="user_auth_system.html#facebook">
+          Facebook Authentication
+         </a>
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-68-1" id="__codelineno-68-1" name="__codelineno-68-1"></a><span class="c1"># Facebook</span>
+<a href="#__codelineno-68-2" id="__codelineno-68-2" name="__codelineno-68-2"></a><span class="nv">FACEBOOK_CLIENT_ID</span><span class="o">=</span>
+<a href="#__codelineno-68-3" id="__codelineno-68-3" name="__codelineno-68-3"></a><span class="nv">FACEBOOK_CLIENT_SECRET</span><span class="o">=</span>
+<a href="#__codelineno-68-4" id="__codelineno-68-4" name="__codelineno-68-4"></a><span class="nv">FACEBOOK_CALLBACK_URL</span><span class="o">=</span>/oauth/facebook/callback
+</code></pre>
+       </div>
+       <h4 id="github-authentication">
+        <a href="user_auth_system.html#github">
+         GitHub Authentication
+        </a>
+       </h4>
+       <p>
+        for more information:
+        <strong>
+         <a href="user_auth_system.html#github">
+          GitHub Authentication
+         </a>
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-69-1" id="__codelineno-69-1" name="__codelineno-69-1"></a><span class="c1"># GitHub</span>
+<a href="#__codelineno-69-2" id="__codelineno-69-2" name="__codelineno-69-2"></a><span class="nv">GITHUB_CLIENT_ID</span><span class="o">=</span>your_client_id
+<a href="#__codelineno-69-3" id="__codelineno-69-3" name="__codelineno-69-3"></a><span class="nv">GITHUB_CLIENT_SECRET</span><span class="o">=</span>your_client_secret
+<a href="#__codelineno-69-4" id="__codelineno-69-4" name="__codelineno-69-4"></a><span class="nv">GITHUB_CALLBACK_URL</span><span class="o">=</span>/oauth/github/callback
+</code></pre>
+       </div>
+       <h4 id="google-authentication">
+        <a href="user_auth_system.html#google">
+         Google Authentication
+        </a>
+       </h4>
+       <p>
+        for more information:
+        <strong>
+         <a href="user_auth_system.html#google">
+          Google Authentication
+         </a>
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-70-1" id="__codelineno-70-1" name="__codelineno-70-1"></a><span class="c1"># Google</span>
+<a href="#__codelineno-70-2" id="__codelineno-70-2" name="__codelineno-70-2"></a><span class="nv">GOOGLE_CLIENT_ID</span><span class="o">=</span>
+<a href="#__codelineno-70-3" id="__codelineno-70-3" name="__codelineno-70-3"></a><span class="nv">GOOGLE_CLIENT_SECRET</span><span class="o">=</span>
+<a href="#__codelineno-70-4" id="__codelineno-70-4" name="__codelineno-70-4"></a><span class="nv">GOOGLE_CALLBACK_URL</span><span class="o">=</span>/oauth/google/callback
+</code></pre>
+       </div>
+       <h4 id="openid-authentication">
+        <a href="user_auth_system.html#openid-with-aws-cognito">
+         OpenID Authentication
+        </a>
+       </h4>
+       <p>
+        for more information:
+        <strong>
+         <a href="user_auth_system.html#openid-with-azure-ad">
+          Azure OpenID Authentication
+         </a>
+        </strong>
+        or
+        <strong>
+         <a href="user_auth_system.html#openid-with-aws-cognito">
+          AWS Cognito OpenID Authentication
+         </a>
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-71-1" id="__codelineno-71-1" name="__codelineno-71-1"></a><span class="c1"># OpenID</span>
+<a href="#__codelineno-71-2" id="__codelineno-71-2" name="__codelineno-71-2"></a><span class="nv">OPENID_CLIENT_ID</span><span class="o">=</span>
+<a href="#__codelineno-71-3" id="__codelineno-71-3" name="__codelineno-71-3"></a><span class="nv">OPENID_CLIENT_SECRET</span><span class="o">=</span>
+<a href="#__codelineno-71-4" id="__codelineno-71-4" name="__codelineno-71-4"></a><span class="nv">OPENID_ISSUER</span><span class="o">=</span>
+<a href="#__codelineno-71-5" id="__codelineno-71-5" name="__codelineno-71-5"></a><span class="nv">OPENID_SESSION_SECRET</span><span class="o">=</span>
+<a href="#__codelineno-71-6" id="__codelineno-71-6" name="__codelineno-71-6"></a><span class="nv">OPENID_SCOPE</span><span class="o">=</span><span class="s2">"openid profile email"</span>
+<a href="#__codelineno-71-7" id="__codelineno-71-7" name="__codelineno-71-7"></a><span class="nv">OPENID_CALLBACK_URL</span><span class="o">=</span>/oauth/openid/callback
+<a href="#__codelineno-71-8" id="__codelineno-71-8" name="__codelineno-71-8"></a>
+<a href="#__codelineno-71-9" id="__codelineno-71-9" name="__codelineno-71-9"></a><span class="nv">OPENID_BUTTON_LABEL</span><span class="o">=</span>
+<a href="#__codelineno-71-10" id="__codelineno-71-10" name="__codelineno-71-10"></a><span class="nv">OPENID_IMAGE_URL</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <h3 id="email-password-reset">
+        Email Password Reset
+       </h3>
+       <p>
+        Email is used for password reset. See:
+        <strong>
+         <a href="user_auth_system.html#email-and-password-reset">
+          Email Password Reset
+         </a>
+        </strong>
+       </p>
+       <ul>
+        <li>
+         Note that all either service or host, username and password and the From address must be set for email to work.
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         If using
+         <code>
+          EMAIL_SERVICE
+         </code>
+         ,
+         <strong>
+          do NOT
+         </strong>
+         set the extended connection parameters:
+        </p>
+        <p>
+         <code>
+          HOST
+         </code>
+         ,
+         <code>
+          PORT
+         </code>
+         ,
+         <code>
+          ENCRYPTION
+         </code>
+         ,
+         <code>
+          ENCRYPTION_HOSTNAME
+         </code>
+         ,
+         <code>
+          ALLOW_SELFSIGNED
+         </code>
+        </p>
+        <p>
+         Failing to set valid values here will result in LibreChat using the unsecured password reset!
+        </p>
+       </blockquote>
+       <p>
+        See:
+        <strong>
+         <a href="https://community.nodemailer.com/2-0-0-beta/setup-smtp/well-known-services/">
+          nodemailer well-known-services
+         </a>
+        </strong>
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-72-1" id="__codelineno-72-1" name="__codelineno-72-1"></a><span class="nv">EMAIL_SERVICE</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <p>
+        If
+        <code>
+         EMAIL_SERVICE
+        </code>
+        is not set, connect to this server:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-73-1" id="__codelineno-73-1" name="__codelineno-73-1"></a><span class="nv">EMAIL_HOST</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <p>
+        Mail server port to connect to with EMAIL_HOST (usually 25, 465, 587, 2525):
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-74-1" id="__codelineno-74-1" name="__codelineno-74-1"></a><span class="nv">EMAIL_PORT</span><span class="o">=</span><span class="m">25</span>
+</code></pre>
+       </div>
+       <p>
+        Encryption valid values:
+        <code>
+         starttls
+        </code>
+        (force STARTTLS),
+        <code>
+         tls
+        </code>
+        (obligatory TLS), anything else (use STARTTLS if available):
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-75-1" id="__codelineno-75-1" name="__codelineno-75-1"></a><span class="nv">EMAIL_ENCRYPTION</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <p>
+        Check the name in the certificate against this instead of
+        <code>
+         EMAIL_HOST
+        </code>
+        :
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-76-1" id="__codelineno-76-1" name="__codelineno-76-1"></a><span class="nv">EMAIL_ENCRYPTION_HOSTNAME</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <p>
+        Set to true to allow self-signed, anything else will disallow self-signed:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-77-1" id="__codelineno-77-1" name="__codelineno-77-1"></a><span class="nv">EMAIL_ALLOW_SELFSIGNED</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <p>
+        Username used for authentication. For consumer services, this MUST usually match EMAIL_FROM:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-78-1" id="__codelineno-78-1" name="__codelineno-78-1"></a><span class="nv">EMAIL_USERNAME</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <p>
+        Password used for authentication:
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-79-1" id="__codelineno-79-1" name="__codelineno-79-1"></a><span class="nv">EMAIL_PASSWORD</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <p>
+        The human-readable address in the From is constructed as
+        <code>
+         EMAIL_FROM_NAME &lt;EMAIL_FROM&gt;
+        </code>
+        . Defaults to
+        <code>
+         APP_TITLE
+        </code>
+        :
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-80-1" id="__codelineno-80-1" name="__codelineno-80-1"></a><span class="nv">EMAIL_FROM_NAME</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <p>
+        Mail address for from field. It is
+        <strong>
+         REQUIRED
+        </strong>
+        to set a value here (even if it's not porperly working):
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-81-1" id="__codelineno-81-1" name="__codelineno-81-1"></a><span class="nv">EMAIL_FROM</span><span class="o">=</span>noreply@librechat.ai<span class="w"> </span>
+</code></pre>
+       </div>
+       <h3 id="ui">
+        UI
+       </h3>
+       <ul>
+        <li>
+         <strong>
+          Help and FAQ button:
+         </strong>
+        </li>
+       </ul>
+       <p>
+        Empty or commented
+        <code>
+         HELP_AND_FAQ_URL
+        </code>
+        , button enabled
+       </p>
+       <p>
+        <code>
+         HELP_AND_FAQ_URL=https://example.com
+        </code>
+        , button enabled and goes to
+        <code>
+         https://example.com
+        </code>
+       </p>
+       <p>
+        <code>
+         HELP_AND_FAQ_URL=/
+        </code>
+        , button disabled
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-82-1" id="__codelineno-82-1" name="__codelineno-82-1"></a><span class="nv">HELP_AND_FAQ_URL</span><span class="o">=</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         <strong>
+          App title and footer:
+         </strong>
+        </li>
+       </ul>
+       <p>
+        Uncomment to add a custom footer
+       </p>
+       <p>
+        Uncomment and make empty "" to remove the footer
+       </p>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-83-1" id="__codelineno-83-1" name="__codelineno-83-1"></a><span class="nv">APP_TITLE</span><span class="o">=</span>LibreChat
+<a href="#__codelineno-83-2" id="__codelineno-83-2" name="__codelineno-83-2"></a><span class="nv">CUSTOM_FOOTER</span><span class="o">=</span><span class="s2">"My custom footer"</span>
+</code></pre>
+       </div>
+       <ul>
+        <li>
+         <strong>
+          Birthday Hat:
+         </strong>
+         Give the AI Icon a Birthday Hat 🥳
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         Will show automatically on February 11th (LibreChat's birthday)
+        </p>
+        <p>
+         Set this to
+         <code>
+          false
+         </code>
+         to disable the birthday hat
+        </p>
+        <p>
+         Set to
+         <code>
+          true
+         </code>
+         to enable all the time.
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-84-1" id="__codelineno-84-1" name="__codelineno-84-1"></a><span class="nv">SHOW_BIRTHDAY_ICON</span><span class="o">=</span><span class="nb">true</span>
+</code></pre>
+       </div>
+       <h3 id="other">
+        Other
+       </h3>
+       <ul>
+        <li>
+         <strong>
+          Redis:
+         </strong>
+         Redis support is experimental, you may encounter some problems when using it.
+        </li>
+       </ul>
+       <blockquote>
+        <p>
+         If using Redis, you should flush the cache after changing any LibreChat settings
+        </p>
+       </blockquote>
+       <div class="highlight">
+        <pre><span></span><code><a href="#__codelineno-85-1" id="__codelineno-85-1" name="__codelineno-85-1"></a><span class="nv">REDIS_URI</span><span class="o">=</span>
+<a href="#__codelineno-85-2" id="__codelineno-85-2" name="__codelineno-85-2"></a><span class="nv">USE_REDIS</span><span class="o">=</span>
+</code></pre>
+       </div>
+      </article>
+     </div>
+     <script>
+      var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))
+     </script>
+    </div>
+    <button class="md-top md-icon" data-md-component="top" hidden="" type="button">
+     <svg viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12Z">
+      </path>
+     </svg>
+     Back to top
+    </button>
+   </main>
+   <footer class="md-footer">
+    <div class="md-footer-meta md-typeset">
+     <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+       <div class="md-copyright__highlight">
+        © 2024
+        <a href="https://librechat.ai/" rel="noopener" target="_blank">
+         LibreChat
+        </a>
+       </div>
+       Made with
+       <a href="https://squidfunk.github.io/mkdocs-material/" rel="noopener" target="_blank">
+        Material for MkDocs
+       </a>
+      </div>
+      <div class="md-social">
+       <a class="md-social__link" href="https://discord.librechat.ai" rel="noopener" target="_blank" title="Discord">
+        <svg viewbox="0 0 640 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M524.531 69.836a1.5 1.5 0 0 0-.764-.7A485.065 485.065 0 0 0 404.081 32.03a1.816 1.816 0 0 0-1.923.91 337.461 337.461 0 0 0-14.9 30.6 447.848 447.848 0 0 0-134.426 0 309.541 309.541 0 0 0-15.135-30.6 1.89 1.89 0 0 0-1.924-.91 483.689 483.689 0 0 0-119.688 37.107 1.712 1.712 0 0 0-.788.676C39.068 183.651 18.186 294.69 28.43 404.354a2.016 2.016 0 0 0 .765 1.375 487.666 487.666 0 0 0 146.825 74.189 1.9 1.9 0 0 0 2.063-.676A348.2 348.2 0 0 0 208.12 430.4a1.86 1.86 0 0 0-1.019-2.588 321.173 321.173 0 0 1-45.868-21.853 1.885 1.885 0 0 1-.185-3.126 251.047 251.047 0 0 0 9.109-7.137 1.819 1.819 0 0 1 1.9-.256c96.229 43.917 200.41 43.917 295.5 0a1.812 1.812 0 0 1 1.924.233 234.533 234.533 0 0 0 9.132 7.16 1.884 1.884 0 0 1-.162 3.126 301.407 301.407 0 0 1-45.89 21.83 1.875 1.875 0 0 0-1 2.611 391.055 391.055 0 0 0 30.014 48.815 1.864 1.864 0 0 0 2.063.7A486.048 486.048 0 0 0 610.7 405.729a1.882 1.882 0 0 0 .765-1.352c12.264-126.783-20.532-236.912-86.934-334.541ZM222.491 337.58c-28.972 0-52.844-26.587-52.844-59.239s23.409-59.241 52.844-59.241c29.665 0 53.306 26.82 52.843 59.239 0 32.654-23.41 59.241-52.843 59.241Zm195.38 0c-28.971 0-52.843-26.587-52.843-59.239s23.409-59.241 52.843-59.241c29.667 0 53.307 26.82 52.844 59.239 0 32.654-23.177 59.241-52.844 59.241Z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://librechat.ai" rel="noopener" target="_blank" title="GitHub">
+        <svg viewbox="0 0 496 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://yt.librechat.ai" rel="noopener" target="_blank" title="YouTube">
+        <svg viewbox="0 0 576 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M549.655 124.083c-6.281-23.65-24.787-42.276-48.284-48.597C458.781 64 288 64 288 64S117.22 64 74.629 75.486c-23.497 6.322-42.003 24.947-48.284 48.597-11.412 42.867-11.412 132.305-11.412 132.305s0 89.438 11.412 132.305c6.281 23.65 24.787 41.5 48.284 47.821C117.22 448 288 448 288 448s170.78 0 213.371-11.486c23.497-6.321 42.003-24.171 48.284-47.821 11.412-42.867 11.412-132.305 11.412-132.305s0-89.438-11.412-132.305zm-317.51 213.508V175.185l142.739 81.205-142.739 81.201z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://linkedin.librechat.ai" rel="noopener" target="_blank" title="LinkedIn">
+        <svg viewbox="0 0 448 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3zM135.4 416H69V202.2h66.5V416zm-33.2-243c-21.3 0-38.5-17.3-38.5-38.5S80.9 96 102.2 96c21.2 0 38.5 17.3 38.5 38.5 0 21.3-17.2 38.5-38.5 38.5zm282.1 243h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9V416z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://demo.librechat.cfd" rel="noopener" target="_blank" title="Demo">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M278.5 215.6 23 471c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l57-57h68c49.7 0 97.9-14.4 139-41 11.1-7.2 5.5-23-7.8-23-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l81-24.3c2.5-.8 4.8-2.1 6.7-4l22.4-22.4c10.1-10.1 2.9-27.3-11.3-27.3H377c-5.1 0-9.2-4.1-9.2-9.2 0-4.1 2.7-7.6 6.5-8.8l112-33.6c4-1.2 7.4-3.9 9.3-7.7 10.8-21 16.4-44.5 16.4-68.6 0-41-16.3-80.3-45.3-109.3l-5.5-5.5C432.3 16.3 393 0 352 0s-80.3 16.3-109.3 45.3L139 149c-48 48-75 113.1-75 181v55.3l189.6-189.5c6.2-6.2 16.4-6.2 22.6 0 5.4 5.4 6.1 13.6 2.2 19.8z">
+         </path>
+        </svg>
+       </a>
+       <a class="md-social__link" href="https://hf.librechat.ai" rel="noopener" target="_blank" title="Hugging Face">
+        <svg viewbox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+         <!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.-->
+         <path d="M256 512a256 256 0 1 0 0-512 256 256 0 1 0 0 512zm132.1-199.2c12.3-3.8 24.3 6.9 19.3 18.7-25 59.1-83.2 100.5-151.1 100.5s-126.2-41.4-151.1-100.5c-5-11.8 7-22.5 19.3-18.7 39.7 12.2 84.5 19 131.8 19s92.1-6.8 131.8-19zm-170.5-84-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8zm160 0-.2-.2c-.2-.2-.4-.5-.7-.9-.6-.8-1.6-2-2.8-3.4-2.5-2.8-6-6.6-10.2-10.3-8.8-7.8-18.8-14-27.7-14s-18.9 6.2-27.7 14c-4.2 3.7-7.7 7.5-10.2 10.3-1.2 1.4-2.2 2.6-2.8 3.4-.3.4-.6.7-.7.9l-.2.2c-2.1 2.8-5.7 3.9-8.9 2.8s-5.5-4.1-5.5-7.6c0-17.9 6.7-35.6 16.6-48.8 9.8-13 23.9-23.2 39.4-23.2s29.6 10.2 39.4 23.2c9.9 13.2 16.6 30.9 16.6 48.8 0 3.4-2.2 6.5-5.5 7.6s-6.9 0-8.9-2.8z">
+         </path>
+        </svg>
+       </a>
+      </div>
+     </div>
+    </div>
+   </footer>
+  </div>
+  <div class="md-dialog" data-md-component="dialog">
+   <div class="md-dialog__inner md-typeset">
+   </div>
+  </div>
+  <div class="md-progress" data-md-component="progress" role="progressbar">
+  </div>
+  <script id="__config" type="application/json">
+   {"base": "../..", "features": ["header.autohide", "navigation.tabs", "navigation.tabs.sticky", "content.action.edit", "content.code.copy", "navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.expand", "navigation.indexes", "navigation.top"], "search": "../../assets/javascripts/workers/search.b8dbb3d2.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}
+  </script>
+  <script src="../../assets/javascripts/bundle.bd41221c.min.js">
+  </script>
+ </body>
+</html>

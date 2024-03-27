@@ -1,0 +1,4 @@
+mkdocs-material
+mkdocs-nav-weight
+mkdocs-publisher
+mkdocs-exclude
