@@ -6,7 +6,7 @@ import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import store from '~/store';
 import Hark from 'hark';
 
-const useSpeechToTextExternal = (submitMessage) => {
+const useSpeechToTextExternal = () => {
   const { showToast } = useToastContext();
   const { data: startupConfig } = useGetStartupConfig();
   const isExternalSpeechEnabled = startupConfig?.speechToTextExternal ?? false;
@@ -25,9 +25,6 @@ const useSpeechToTextExternal = (submitMessage) => {
       const extractedText = data.text;
       setText(extractedText);
       setIsRequestBeingMade(false);
-      if (chatAudio) {
-        submitMessage(extractedText);
-      }
     },
     onError: () => {
       showToast({

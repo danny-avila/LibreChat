@@ -85,7 +85,7 @@ const ChatForm = ({ index = 0 }) => {
     text: externalSpeechText,
     externalStartRecording: startExternalRecording,
     externalStopRecording: stopExternalRecording,
-  } = useSpeechToTextExternal(submitMessage);
+  } = useSpeechToTextExternal();
 
   const isListening = useExternalSpeech ? externalIsListening : speechIsListening;
   const isLoading = useExternalSpeech ? externalIsLoading : speechIsLoading;
