@@ -59,7 +59,6 @@ const ChatForm = ({ index = 0 }) => {
       if (!data) {
         return console.warn('No data provided to submitMessage');
       }
-      console.log('submitMessage', data);
       ask({ text: data.text });
       methods.reset();
       textAreaRef.current?.setRangeText('', 0, data.text.length, 'end');

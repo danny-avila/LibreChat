@@ -27,7 +27,6 @@ const useSpeechToTextExternal = (submitMessage) => {
       setIsRequestBeingMade(false);
       if (chatAudio) {
         submitMessage(extractedText);
-        console.log('submitMessage', extractedText);
       }
     },
     onError: () => {
@@ -102,12 +101,14 @@ const useSpeechToTextExternal = (submitMessage) => {
         mediaRecorderRef.current.addEventListener('stop', handleStop);
         mediaRecorderRef.current.start(100);
         if (!harkRef.current && chatAudio) {
-          harkRef.current = Hark(audioStream.current, {});
+          harkRef.current = Hark(audioStream.current, {
+            interval: 150,
+          });
           harkRef.current.on('speaking', () => {
-            console.log('speaking');
+            // start
           });
           harkRef.current.on('stopped_speaking', () => {
-            console.log('stopped speaking');
+            // stop
             stopRecording();
           });
         }
