@@ -6,6 +6,7 @@ const {
   processFileUpload,
   processDeleteRequest,
 } = require('~/server/services/Files/process');
+const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
@@ -65,15 +66,17 @@ router.delete('/', async (req, res) => {
   }
 });
 
-router.get('/download/:userId/:filename', async (req, res) => {
+router.get('/download/:userId/:filepath', async (req, res) => {
   try {
-    const { userId, filename } = req.params;
+    const { userId, filepath } = req.params;
 
     if (userId !== req.user.id) {
       return res.status(403).send('Forbidden');
     }
 
-    const [file] = await getFiles({ file_id: filename.split('.')[0] });
+    const parts = filepath.split('/');
+    const file_id = parts[2];
+    const [file] = await getFiles({ file_id });
 
     if (!file) {
       return res.status(404).send('File not found');
@@ -83,20 +86,35 @@ router.get('/download/:userId/:filename', async (req, res) => {
       return res.status(403).send('Forbidden');
     }
 
-    if (file.source === FileSources.openai) {
-      return res.status(403).send('Forbidden');
+    if (file.source === FileSources.openai && !file.model) {
+      return res.status(400).send('The model used when creating this file is not available');
     }
 
     const { getDownloadStream } = getStrategyFunctions(file.source);
     if (!getDownloadStream) {
       return res.status(501).send('Not Implemented');
     }
-    const fileStream = getDownloadStream(file);
 
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', 'application/octet-stream');
+    const setHeaders = () => {
+      res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+      res.setHeader('Content-Type', 'application/octet-stream');
+    };
 
-    fileStream.pipe(res);
+    /** @type {{ body: import('stream').PassThrough } | undefined} */
+    let passThrough;
+    /** @type {ReadableStream | undefined} */
+    let fileStream;
+    if (file.source === FileSources.openai) {
+      req.body = { model: file.model };
+      const { openai } = await initializeClient({ req, res });
+      passThrough = await getDownloadStream(file_id, openai);
+      setHeaders();
+      passThrough.body.pipe(res);
+    } else {
+      fileStream = getDownloadStream(file_id);
+      setHeaders();
+      fileStream.pipe(res);
+    }
   } catch (error) {
     console.error('Error downloading file:', error);
     res.status(500).send('Error downloading file');

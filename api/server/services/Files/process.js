@@ -294,9 +294,10 @@ const processFileUpload = async ({ req, res, file, metadata }) => {
       file_id: id ?? file_id,
       temp_file_id,
       bytes,
-      filepath: isAssistantUpload ? `${openai.baseURL}/files/${id}` : filepath,
       filename: filename ?? file.originalname,
+      filepath: isAssistantUpload ? `${openai.baseURL}/files/${id}` : filepath,
       context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
+      model: isAssistantUpload ? req.body.model : undefined,
       type: file.mimetype,
       embedded,
       source,
@@ -324,7 +325,7 @@ const processOpenAIFile = async ({
   updateUsage = false,
 }) => {
   const _file = await openai.files.retrieve(file_id);
-  const filepath = `${openai.baseURL}/files/${file_id}`;
+  const filepath = `${openai.baseURL}/files/${userId}/${file_id}/${filename}`;
   const file = {
     ..._file,
     file_id,
@@ -333,6 +334,7 @@ const processOpenAIFile = async ({
     filename,
     user: userId,
     source: FileSources.openai,
+    model: openai.req.body.model,
     type: mime.getType(filename),
     context: FileContext.assistants_output,
   };
@@ -395,6 +397,7 @@ const processOpenAIFileOutput = async ({ req, buffer, file_id, filename }) => {
     filename,
     user: req.user.id,
     bytes: buffer.length,
+    model: req.body.model,
     context: FileContext.assistants_output,
   };
 
@@ -408,7 +411,7 @@ const processOpenAIFileOutput = async ({ req, buffer, file_id, filename }) => {
   return await createFile(
     {
       ...file,
-      filepath,
+      filepath: path.posix.join('/', filepath, filename),
       source: FileSources.openai,
     },
     true,
