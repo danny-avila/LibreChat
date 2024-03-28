@@ -1,6 +1,6 @@
 import { useRecoilState } from 'recoil';
 import { useForm } from 'react-hook-form';
-import TextareaAutosize from 'react-textarea-autosize';
+// import TextareaAutosize from 'react-textarea-autosize';
 import { memo, useCallback, useRef, useMemo, useEffect } from 'react';
 import {
   supportsFiles,
@@ -10,6 +10,7 @@ import {
 } from 'librechat-data-provider';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import { useRequiresKey, useTextarea } from '~/hooks';
+import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
 import AttachFile from './Files/AttachFile';

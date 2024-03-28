@@ -23,6 +23,7 @@ export type NavLink = {
   label?: string;
   icon: LucideIcon;
   Component?: React.ComponentType;
+  onClick?: () => void;
   variant?: 'default' | 'ghost';
   id: string;
 };

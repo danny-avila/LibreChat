@@ -18,6 +18,7 @@ export * from './Table';
 export * from './Tabs';
 export * from './Templates';
 export * from './Textarea';
+export * from './TextareaAutosize';
 export * from './Tooltip';
 export { default as Dropdown } from './Dropdown';
 export { default as FileUpload } from './FileUpload';

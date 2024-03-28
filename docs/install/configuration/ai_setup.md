@@ -4,37 +4,6 @@ description: This doc explains how to setup your AI providers, their APIs and cr
 weight: -8
 ---
 
-<!-- # Table of Contents
-
-- [Table of Contents](#table-of-contents)
-- [AI Setup](#ai-setup)
-  - [General](#general)
-    - [Free AI APIs](#free-ai-apis)
-    - [Setting a Default Endpoint](#setting-a-default-endpoint)
-    - [Setting a Default Preset](#setting-a-default-preset)
-  - [OpenAI](#openai)
-  - [Anthropic](#anthropic)
-  - [Google](#google)
-    - [Generative Language API (Gemini)](#generative-language-api-gemini)
-    - [Vertex AI (PaLM 2 \& Codey)](#vertex-ai-palm-2--codey)
-    - [1. Once signed up, Enable the Vertex AI API on Google Cloud:](#1-once-signed-up-enable-the-vertex-ai-api-on-google-cloud)
-    - [2. Create a Service Account with Vertex AI role:](#2-create-a-service-account-with-vertex-ai-role)
-    - [3. Create a JSON key to Save in your Project Directory:](#3-create-a-json-key-to-save-in-your-project-directory)
-  - [Azure OpenAI](#azure-openai)
-    - [Required Variables](#required-variables)
-    - [Model Deployments](#model-deployments)
-    - [Setting a Default Model for Azure](#setting-a-default-model-for-azure)
-    - [Enabling Auto-Generated Titles with Azure](#enabling-auto-generated-titles-with-azure)
-    - [Using GPT-4 Vision with Azure](#using-gpt-4-vision-with-azure)
-    - [Optional Variables](#optional-variables)
-    - [Using Plugins with Azure](#using-plugins-with-azure)
-  - [OpenRouter](#openrouter)
-  - [Unofficial APIs](#unofficial-apis)
-    - [BingAI](#bingai)
-  - [Conclusion](#conclusion) -->
-
----
-
 # AI Setup
 
 This doc explains how to setup your AI providers, their APIs and credentials.
@@ -287,26 +256,6 @@ As noted earlier, [review the Custom Config Guide (click here)](./custom_config.
 
 **Important:** Stability for Unofficial APIs are not guaranteed. Access methods to these APIs are hacky, prone to errors, and patching, and are marked lowest in priority in LibreChat's development.
 
-<!-- ### ChatGPTBrowser
-
-**Backend Access to https://chat.openai.com/api**
-
-This is not to be confused with [OpenAI's Official API](#openai)!
-
-> Note that this is disabled by default and requires additional configuration to work. 
-> Also, using this may have your data exposed to 3rd parties if using a proxy, and OpenAI may flag your account.
-
-To get your Access token for ChatGPT Browser Access, you need to:
-
-- Go to **[https://chat.openai.com](https://chat.openai.com)**
-- Create an account or log in with your existing one
-- Visit **[https://chat.openai.com/api/auth/session](https://chat.openai.com/api/auth/session)**
-- Copy the value of the "accessToken" field and save it in ./.env as CHATGPT_ACCESS_TOKEN
-
-Warning: There may be a chance of your account being banned if you deploy the app to multiple users with this method. Use at your own risk.
-
---- -->
-
 ### BingAI
 I recommend using Microsoft Edge for this:
 
@@ -318,8 +267,9 @@ I recommend using Microsoft Edge for this:
 - Look for `lsp.asx` (if it's not there look into the other entries for one with a **very long** cookie) 
 - Copy the whole cookie value. (Yes it's very long 😉)
 - Use this **"full cookie string"** for your "BingAI Token"
-  - <p align="left">
-    <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d4dfd370-eddc-4694-ab16-076f913ff430" width="50%">
+
+<p align="left">
+    <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d4dfd370-eddc-4694-ab16-076f913ff430" width="50%"/>
 </p>
 
 ### copilot-gpt4-service
