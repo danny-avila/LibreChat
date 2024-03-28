@@ -13,13 +13,10 @@ const {
 const { convertToWebP, resizeAndConvert } = require('~/server/services/Files/images');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
-const { isEnabled, determineFileType } = require('~/server/utils');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
 const { getStrategyFunctions } = require('./strategies');
+const { determineFileType } = require('~/server/utils');
 const { logger } = require('~/config');
-
-// TODO: replace this with a config property
-const { ASSISTANTS_DOWNLOAD_FILES = 'true' } = process.env;
 
 const processFiles = async (files) => {
   const promises = [];
@@ -379,46 +376,6 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
 };
 
 /**
- * Process OpenAI image files, convert to webp, save and return file metadata.
- * @param {object} params - The params object.
- * @param {Express.Request} params.req - The Express request object.
- * @param {Buffer} params.buffer - The image buffer.
- * @param {string} params.file_id - The file ID.
- * @param {string} params.filename - The filename.
- * @returns {Promise<MongoFile>} The file metadata.
- */
-const processOpenAIFileOutput = async ({ req, buffer, file_id, filename }) => {
-  const source = req.app.locals.fileStrategy;
-  const type = mime.getType(filename);
-  const file = {
-    type,
-    file_id,
-    usage: 1,
-    filename,
-    user: req.user.id,
-    bytes: buffer.length,
-    model: req.body.model,
-    context: FileContext.assistants_output,
-  };
-
-  const { saveBuffer } = getStrategyFunctions(source);
-  const filepath = await saveBuffer({
-    userId: req.user.id,
-    fileName: filename,
-    buffer,
-    basePath: 'outputs',
-  });
-  return await createFile(
-    {
-      ...file,
-      filepath: path.posix.join('/', filepath, filename),
-      source: FileSources.openai,
-    },
-    true,
-  );
-};
-
-/**
  * Retrieves and processes an OpenAI file based on its type.
  *
  * @param {Object} params - The params passed to the function.
@@ -447,26 +404,7 @@ async function retrieveAndProcessFile({
 
   let basename = _basename;
   const fileExt = path.extname(basename);
-  const downloadFiles = isEnabled(ASSISTANTS_DOWNLOAD_FILES);
-  const storeOutputFiles = client.req.app.locals[EModelEndpoint.assistants]?.storeOutputFiles;
   const processArgs = { openai, file_id, filename: basename, userId: client.req.user.id };
-
-  /**
-   * Process other file types (non-image) from OpenAI.
-   * @param {Buffer} dataBuffer - The file buffer.
-   * @returns {Promise<MongoFile>} The file metadata.
-   */
-  const processOtherFileTypes = async (dataBuffer) => {
-    if (storeOutputFiles) {
-      return await processOpenAIFileOutput({
-        file_id,
-        req: client.req,
-        buffer: dataBuffer,
-        filename: basename,
-      });
-    }
-    return await processOpenAIFile({ ...processArgs, saveFile: true });
-  };
 
   /**
    * @returns {Promise<Buffer>} The file data buffer.
@@ -477,26 +415,23 @@ async function retrieveAndProcessFile({
     return Buffer.from(arrayBuffer);
   };
 
-  // If file downloads are not enabled or no basename provided, return only the file metadata
-  if (!downloadFiles || !basename) {
+  // If no basename provided, return only the file metadata
+  if (!basename) {
     return await processOpenAIFile({ ...processArgs, saveFile: true });
   }
 
   let dataBuffer;
-  if (
-    downloadFiles &&
-    (unknownType || !fileExt || imageExtRegex.test(basename) || storeOutputFiles)
-  ) {
+  if (unknownType || !fileExt || imageExtRegex.test(basename)) {
     try {
       dataBuffer = await getDataBuffer();
     } catch (error) {
       logger.error('Error downloading file from OpenAI:', error);
       dataBuffer = null;
     }
+  }
 
-    if (!dataBuffer) {
-      return await processOpenAIFile({ ...processArgs, saveFile: true });
-    }
+  if (!dataBuffer) {
+    return await processOpenAIFile({ ...processArgs, saveFile: true });
   }
 
   // If the filetype is unknown, inspect the file
@@ -505,7 +440,7 @@ async function retrieveAndProcessFile({
     const isImageOutput = detectedExt && imageExtRegex.test('.' + detectedExt);
 
     if (!isImageOutput) {
-      return await processOtherFileTypes(dataBuffer);
+      return await processOpenAIFile({ ...processArgs, saveFile: true });
     }
 
     return await processOpenAIImageOutput({
@@ -525,7 +460,7 @@ async function retrieveAndProcessFile({
     });
   } else {
     logger.debug(`[retrieveAndProcessFile] Non-image file type detected: ${basename}`);
-    return await processOtherFileTypes(dataBuffer);
+    return await processOpenAIFile({ ...processArgs, saveFile: true });
   }
 }
 
