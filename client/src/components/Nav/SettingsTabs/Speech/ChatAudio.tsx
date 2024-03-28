@@ -20,7 +20,7 @@ export default function ChatAudioSwitch({
 
   return (
     <div className="flex items-center justify-between">
-      <div>Chat Audio Automatic</div>
+      <div>{localize('com_ui_chat_audio_automatic')}</div>
       <Switch
         id="ChatAudio"
         checked={chatAudio}

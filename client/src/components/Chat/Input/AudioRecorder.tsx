@@ -1,6 +1,7 @@
 import React from 'react';
 import { ListeningIcon, Spinner, SpeechIcon } from '~/components/svg';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
+import { useLocalize } from '~/hooks';
 
 export default function AudioRecorder({
   isListening,
@@ -9,6 +10,7 @@ export default function AudioRecorder({
   stopRecording,
   disabled,
 }) {
+  const localize = useLocalize();
   const handleStartRecording = async () => {
     await startRecording();
   };
@@ -36,7 +38,7 @@ export default function AudioRecorder({
           </button>
         </TooltipTrigger>
         <TooltipContent side="top" sideOffset={10}>
-          Use microphone
+          {localize('com_ui_use_micrphone')}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
