@@ -141,7 +141,7 @@ export default {
   com_ui_upload: 'Subir',
   com_ui_connect: 'Conectar',
   com_ui_upload_delay:
-    'La carga de \'{0}\' está tomando más tiempo del esperado. Espere mientras el archivo termina de indexarse para su recuperación.',
+    'La carga de "{0}" está tomando más tiempo del esperado. Espere mientras el archivo termina de indexarse para su recuperación.',
   com_ui_privacy_policy: 'Política de privacidad',
   com_ui_terms_of_service: 'Términos de servicio',
   com_auth_error_login:
@@ -262,7 +262,7 @@ export default {
   com_endpoint_openai_resend_files:
     'Reenviar todos los archivos adjuntos anteriormente. Nota: esto aumentará el costo de tokens y puede experimentar errores con muchos archivos adjuntos.',
   com_endpoint_openai_detail:
-    'La resolución para las solicitudes de Vision. \'Baja\' es más económica y rápida, \'Alta\' es más detallada y costosa, y \'Automática\' elegirá automáticamente entre las dos en función de la resolución de la imagen.',
+    'La resolución para las solicitudes de Vision. "Baja" es más económica y rápida, "Alta" es más detallada y costosa, y "Automática" elegirá automáticamente entre las dos en función de la resolución de la imagen.',
   com_endpoint_openai_custom_name_placeholder: 'Establecer un nombre personalizado para ChatGPT',
   com_endpoint_openai_prompt_prefix_placeholder:
     'Establecer instrucciones personalizadas para incluir en el Mensaje del sistema. Predeterminado: ninguno',
