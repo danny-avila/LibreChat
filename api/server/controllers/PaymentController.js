@@ -7,14 +7,14 @@ exports.createPaymentIntent = async (req, res) => {
     const { priceId, userId, domain, email } = req.body;
 
     const validPriceIds = [
-      'price_1ORgxoHKD0byXXClx3u1yLa0',
-      'price_1ORgyJHKD0byXXClfvOyCbp7',
-      'price_1ORgyiHKD0byXXClHetdaI3W',
-      'price_1ORgzMHKD0byXXClDCm5PkwO',
-      'price_1ORgzyHKD0byXXCl9hIUu3Fn',
-      'price_1ORh0JHKD0byXXCl40t8BtlB',
-      'price_1ORh0cHKD0byXXClqFvZXCiA',
-      'price_1ORh15HKD0byXXClGtCFxyXf',
+      'price_1ORgxoHKD0byXXClx3u1yLa0', // 10 CNY - only for China users
+      'price_1ORgyJHKD0byXXClfvOyCbp7', // 35 CNY - only for China users
+      'price_1ORgyiHKD0byXXClHetdaI3W', // 50 CNY - only for China users
+      'price_1ORgzMHKD0byXXClDCm5PkwO', // 250 CNY - only for China users
+      'price_1ORgzyHKD0byXXCl9hIUu3Fn', // 2 USD - only for global users
+      'price_1ORh0JHKD0byXXCl40t8BtlB', // 6 USD - only for global users
+      'price_1ORh0cHKD0byXXClqFvZXCiA', // 10 USD - only for global users
+      'price_1ORh15HKD0byXXClGtCFxyXf', // 50 USD - only for global users
     ];
 
     if (!validPriceIds.includes(priceId)) {
@@ -86,28 +86,28 @@ exports.handleWebhook = async (req, res) => {
 
     let tokens;
     switch (priceId) {
-      case 'price_1ORgzMHKD0byXXClDCm5PkwO':
+      case 'price_1ORgzMHKD0byXXClDCm5PkwO': // 250 CNY - only for China users
         tokens = 10000000;
         break;
-      case 'price_1ORgyiHKD0byXXClHetdaI3W':
+      case 'price_1ORgyiHKD0byXXClHetdaI3W': // 50 CNY - only for China users
         tokens = 1000000;
         break;
-      case 'price_1ORgyJHKD0byXXClfvOyCbp7':
+      case 'price_1ORgyJHKD0byXXClfvOyCbp7': // 35 CNY - only for China users
         tokens = 500000;
         break;
-      case 'price_1ORgxoHKD0byXXClx3u1yLa0':
+      case 'price_1ORgxoHKD0byXXClx3u1yLa0': // 10 CNY - only for China users
         tokens = 100000;
         break;
-      case 'price_1ORgzyHKD0byXXCl9hIUu3Fn':
+      case 'price_1ORgzyHKD0byXXCl9hIUu3Fn': // 2 USD - only for global users
         tokens = 100000;
         break;
-      case 'price_1ORh0JHKD0byXXCl40t8BtlB':
+      case 'price_1ORh0JHKD0byXXCl40t8BtlB': // 6 USD - only for global users
         tokens = 500000;
         break;
-      case 'price_1ORh0cHKD0byXXClqFvZXCiA':
+      case 'price_1ORh0cHKD0byXXClqFvZXCiA': // 10 USD - only for global users
         tokens = 1000000;
         break;
-      case 'price_1ORh15HKD0byXXClGtCFxyXf':
+      case 'price_1ORh15HKD0byXXClGtCFxyXf': // 50 USD - only for global users
         tokens = 10000000;
         break;
       default:
