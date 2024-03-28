@@ -99,7 +99,7 @@ const useSpeechToTextExternal = () => {
         mediaRecorderRef.current.start(100);
         if (!harkRef.current && chatAudio) {
           harkRef.current = Hark(audioStream.current, {
-            interval: 150,
+            interval: 100,
           });
           harkRef.current.on('speaking', () => {
             // start
