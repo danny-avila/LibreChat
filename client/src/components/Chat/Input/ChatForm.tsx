@@ -71,6 +71,14 @@ const ChatForm = ({ index = 0 }) => {
   const { data: startupConfig } = useGetStartupConfig();
   const useExternalSpeech = startupConfig?.speechToTextExternal;
 
+  const handleTranscriptionComplete = (text: string) => {
+    if (text) {
+      ask({ text });
+      methods.reset({ text: '' });
+      clearText();
+    }
+  };
+
   const {
     isListening: speechIsListening,
     isLoading: speechIsLoading,
@@ -85,7 +93,8 @@ const ChatForm = ({ index = 0 }) => {
     text: externalSpeechText,
     externalStartRecording: startExternalRecording,
     externalStopRecording: stopExternalRecording,
-  } = useSpeechToTextExternal();
+    clearText,
+  } = useSpeechToTextExternal(handleTranscriptionComplete);
 
   const isListening = useExternalSpeech ? externalIsListening : speechIsListening;
   const isLoading = useExternalSpeech ? externalIsLoading : speechIsLoading;

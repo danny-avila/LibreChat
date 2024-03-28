@@ -6,7 +6,7 @@ import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import store from '~/store';
 import Hark from 'hark';
 
-const useSpeechToTextExternal = () => {
+const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void) => {
   const { showToast } = useToastContext();
   const { data: startupConfig } = useGetStartupConfig();
   const isExternalSpeechEnabled = startupConfig?.speechToTextExternal ?? false;
@@ -25,6 +25,9 @@ const useSpeechToTextExternal = () => {
       const extractedText = data.text;
       setText(extractedText);
       setIsRequestBeingMade(false);
+      if (chatAudio) {
+        onTranscriptionComplete(extractedText);
+      }
     },
     onError: () => {
       showToast({
@@ -41,6 +44,10 @@ const useSpeechToTextExternal = () => {
       mediaRecorderRef.current.removeEventListener('stop', handleStop);
       mediaRecorderRef.current = null;
     }
+  };
+
+  const clearText = () => {
+    setText('');
   };
 
   const getMicrophonePermission = async () => {
@@ -199,6 +206,7 @@ const useSpeechToTextExternal = () => {
     text,
     externalStartRecording,
     externalStopRecording,
+    clearText,
   };
 };
 
