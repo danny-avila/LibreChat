@@ -326,15 +326,51 @@ export const useGetAssistantDocsQuery = (
 };
 
 export const useFileDownload = (userId: string, filepath: string): QueryObserverResult<string> => {
+  const queryClient = useQueryClient();
   return useQuery(
     [QueryKeys.fileDownload, filepath],
     async () => {
       if (!userId) {
         console.warn('No user ID provided for file download');
       }
-      const blob = await dataService.getFileDownload(userId, filepath);
-      const downloadUrl = window.URL.createObjectURL(blob);
-      return downloadUrl;
+      const response = await dataService.getFileDownload(userId, filepath);
+      const blob = response.data;
+      const downloadURL = window.URL.createObjectURL(blob);
+      try {
+        const metadata: TFile | undefined = JSON.parse(response.headers['x-file-metadata']);
+        if (!metadata) {
+          console.warn('No metadata found for file download', response.headers);
+          return downloadURL;
+        }
+
+        const currentFiles = queryClient.getQueryData<t.TFile[]>([QueryKeys.files]);
+
+        if (!currentFiles) {
+          console.warn('No current files found in cache, skipped updating file query cache');
+          return downloadURL;
+        }
+
+        const fileIndex = currentFiles.findIndex((file) => file.file_id === metadata.file_id);
+
+        if (fileIndex > -1) {
+          console.warn('File already exists in cache, skipped updating file query cache');
+          return downloadURL;
+        }
+
+        queryClient.setQueryData<t.TFile[]>(
+          [QueryKeys.files],
+          [
+            {
+              ...metadata,
+            },
+            ...currentFiles,
+          ],
+        );
+      } catch (e) {
+        console.error('Error parsing file metadata, skipped updating file query cache', e);
+      }
+
+      return downloadURL;
     },
     {
       enabled: false,
