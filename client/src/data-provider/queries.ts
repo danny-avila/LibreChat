@@ -21,7 +21,7 @@ import type {
   TEndpointsConfig,
   TCheckUserKeyResponse,
 } from 'librechat-data-provider';
-import { findPageForConversation } from '~/utils';
+import { findPageForConversation, addFileToCache } from '~/utils';
 
 export const useGetFiles = <TData = TFile[] | boolean>(
   config?: UseQueryOptions<TFile[], unknown, TData>,
@@ -343,29 +343,7 @@ export const useFileDownload = (userId: string, filepath: string): QueryObserver
           return downloadURL;
         }
 
-        const currentFiles = queryClient.getQueryData<t.TFile[]>([QueryKeys.files]);
-
-        if (!currentFiles) {
-          console.warn('No current files found in cache, skipped updating file query cache');
-          return downloadURL;
-        }
-
-        const fileIndex = currentFiles.findIndex((file) => file.file_id === metadata.file_id);
-
-        if (fileIndex > -1) {
-          console.warn('File already exists in cache, skipped updating file query cache');
-          return downloadURL;
-        }
-
-        queryClient.setQueryData<t.TFile[]>(
-          [QueryKeys.files],
-          [
-            {
-              ...metadata,
-            },
-            ...currentFiles,
-          ],
-        );
+        addFileToCache(queryClient, metadata);
       } catch (e) {
         console.error('Error parsing file metadata, skipped updating file query cache', e);
       }
