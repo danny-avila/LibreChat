@@ -549,6 +549,7 @@ async function processMessages({ openai, client, messages = [] }) {
 
   let text = '';
   let edited = false;
+  const sources = [];
   for (const message of sorted) {
     message.files = [];
     for (const content of message.content) {
@@ -588,6 +589,17 @@ async function processMessages({ openai, client, messages = [] }) {
         const file_id = annotationType?.file_id;
         const alreadyProcessed = client.processedFileIds.has(file_id);
 
+        const replaceCurrentAnnotation = (replacement = '') => {
+          currentText = replaceAnnotation(
+            currentText,
+            annotation.start_index,
+            annotation.end_index,
+            annotation.text,
+            replacement,
+          );
+          edited = true;
+        };
+
         if (alreadyProcessed) {
           const { file_id } = annotationType || {};
           file = await retrieveAndProcessFile({ openai, client, file_id, unknownType: true });
@@ -599,6 +611,7 @@ async function processMessages({ openai, client, messages = [] }) {
             file_id,
             basename,
           });
+          replaceCurrentAnnotation(file.filepath);
         } else if (type === AnnotationTypes.FILE_CITATION) {
           file = await retrieveAndProcessFile({
             openai,
@@ -606,17 +619,8 @@ async function processMessages({ openai, client, messages = [] }) {
             file_id,
             unknownType: true,
           });
-        }
-
-        if (file.filepath) {
-          currentText = replaceAnnotation(
-            currentText,
-            annotation.start_index,
-            annotation.end_index,
-            annotation.text,
-            file.filepath,
-          );
-          edited = true;
+          sources.push(file.filename);
+          replaceCurrentAnnotation(`^${sources.length}^`);
         }
 
         text += currentText + ' ';
@@ -628,6 +632,13 @@ async function processMessages({ openai, client, messages = [] }) {
         client.processedFileIds.add(file_id);
         message.files.push(file);
       }
+    }
+  }
+
+  if (sources.length) {
+    text += '\n\n';
+    for (let i = 0; i < sources.length; i++) {
+      text += `^${i + 1}.^ ${sources[i]}${i === sources.length - 1 ? '' : '\n'}`;
     }
   }
 
