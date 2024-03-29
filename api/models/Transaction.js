@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const { isEnabled } = require('../server/utils/handleText');
 const transactionSchema = require('./schema/transaction');
 const { getMultiplier } = require('./tx');
+const { logger } = require('~/config');
 const Balance = require('./Balance');
 const cancelRate = 1.15;
 
@@ -64,7 +65,7 @@ async function getTransactions(filter) {
   try {
     return await Transaction.find(filter).lean();
   } catch (error) {
-    console.error('Error querying transactions:', error);
+    logger.error('Error querying transactions:', error);
     throw error;
   }
 }

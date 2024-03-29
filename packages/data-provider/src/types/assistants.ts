@@ -182,6 +182,11 @@ export type Text = {
   value: string;
 };
 
+export enum AnnotationTypes {
+  FILE_CITATION = 'file_citation',
+  FILE_PATH = 'file_path',
+}
+
 export enum ContentTypes {
   TEXT = 'text',
   TOOL_CALL = 'tool_call',
@@ -246,7 +251,10 @@ export type TMessageContentParts =
   | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata };
 
 export type StreamContentData = TMessageContentParts & {
+  /** The index of the current content part */
   index: number;
+  /** The current text content was already served but edited to replace elements therein */
+  edited?: boolean;
 };
 
 export type TContentData = StreamContentData & {

@@ -597,7 +597,7 @@ router.post('/', validateModel, buildEndpointOption, setHeaders, async (req, res
 
     /** @type {ResponseMessage} */
     const responseMessage = {
-      ...response.finalMessage,
+      ...(response.responseMessage ?? response.finalMessage),
       parentMessageId: userMessageId,
       conversationId,
       user: req.user.id,
