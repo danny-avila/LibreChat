@@ -71,27 +71,33 @@ router.get('/download/:userId/:filepath', async (req, res) => {
     const { userId, filepath } = req.params;
 
     if (userId !== req.user.id) {
+      logger.warn(`${errorPrefix} forbidden: ${file_id}`);
       return res.status(403).send('Forbidden');
     }
 
     const parts = filepath.split('/');
     const file_id = parts[2];
     const [file] = await getFiles({ file_id });
+    const errorPrefix = `File download requested by user ${userId}`;
 
     if (!file) {
+      logger.warn(`${errorPrefix} not found: ${file_id}`);
       return res.status(404).send('File not found');
     }
 
     if (!file.filepath.includes(userId)) {
+      logger.warn(`${errorPrefix} forbidden: ${file_id}`);
       return res.status(403).send('Forbidden');
     }
 
     if (file.source === FileSources.openai && !file.model) {
+      logger.warn(`${errorPrefix} has no associated model: ${file_id}`);
       return res.status(400).send('The model used when creating this file is not available');
     }
 
     const { getDownloadStream } = getStrategyFunctions(file.source);
     if (!getDownloadStream) {
+      logger.warn(`${errorPrefix} has no stream method implemented: ${file.source}`);
       return res.status(501).send('Not Implemented');
     }
 

@@ -11,8 +11,9 @@ import type { TMessage } from 'librechat-data-provider';
 import type { PluggableList } from 'unified';
 import { cn, langSubset, validateIframe, processLaTeX } from '~/utils';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import { useChatContext, useToastContext } from '~/Providers';
 import { useFileDownload } from '~/data-provider';
-import { useChatContext } from '~/Providers';
+import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
 
 type TCodeProps = {
@@ -40,6 +41,8 @@ export const code = memo(({ inline, className, children }: TCodeProps) => {
 
 export const a = memo(({ href, children }: { href: string; children: React.ReactNode }) => {
   const user = useRecoilValue(store.user);
+  const { showToast } = useToastContext();
+  const localize = useLocalize();
 
   const { filepath, filename } = useMemo(() => {
     const pattern = new RegExp(`(?:files|outputs)/${user?.id}/([^\\s]+)`);
@@ -69,6 +72,10 @@ export const a = memo(({ href, children }: { href: string; children: React.React
       const stream = await downloadFile();
       if (!stream.data) {
         console.error('Error downloading file: No data found');
+        showToast({
+          status: 'error',
+          message: localize('com_ui_download_error'),
+        });
         return;
       }
       const link = document.createElement('a');
