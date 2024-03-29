@@ -367,12 +367,16 @@ const processOpenAIFile = async ({
  * @returns {Promise<MongoFile>} The file metadata.
  */
 const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileExt }) => {
+  const currentDate = new Date();
+  const formattedDate = currentDate.toISOString();
   const _file = await convertToWebP(req, buffer, 'high', `${file_id}${fileExt}`);
   const file = {
     ..._file,
     usage: 1,
     user: req.user.id,
     type: 'image/webp',
+    createdAt: formattedDate,
+    updatedAt: formattedDate,
     source: req.app.locals.fileStrategy,
     context: FileContext.assistants_output,
     file_id: `${file_id}${hostImageIdSuffix}`,

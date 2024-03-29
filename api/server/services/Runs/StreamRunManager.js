@@ -1,4 +1,3 @@
-const path = require('path');
 const {
   StepTypes,
   ContentTypes,
@@ -223,10 +222,7 @@ class StreamRunManager {
       basename: `${file_id}.png`,
     });
 
-    const prelimImage = {
-      ...file,
-      filename: path.basename(file.filepath),
-    };
+    const prelimImage = file;
 
     // check if every key has a value before adding to content
     const prelimImageKeys = Object.keys(prelimImage);
