@@ -1,6 +1,6 @@
 // Portuguese phrases
-// arquivo deepcode ignore NoHardcodedPasswords: Nenhum valor hardcoded presente neste arquivo
-// arquivo deepcode ignore HardcodedNonCryptoSecret: Nenhum segredo hardcoded presente neste arquivo
+// file deepcode ignore NoHardcodedPasswords: No hardcoded values present in this file
+// file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
   com_files_no_results: 'Nenhum resultado.',
