@@ -18,6 +18,11 @@ export const defaultRetrievalModels = [
   'gpt-4-1106',
 ];
 
+export enum SettingsViews {
+  default = 'default',
+  advanced = 'advanced',
+}
+
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
 export const modelConfigSchema = z
@@ -55,8 +60,8 @@ export const azureGroupSchema = z
   .and(azureBaseSchema);
 
 export const azureGroupConfigsSchema = z.array(azureGroupSchema).min(1);
+export type TAzureGroup = z.infer<typeof azureGroupSchema>;
 export type TAzureGroups = z.infer<typeof azureGroupConfigsSchema>;
-
 export type TAzureModelMapSchema = {
   // deploymentName?: string;
   // version?: string;
@@ -77,6 +82,7 @@ export type TValidatedAzureConfig = {
 
 export enum Capabilities {
   code_interpreter = 'code_interpreter',
+  image_vision = 'image_vision',
   retrieval = 'retrieval',
   actions = 'actions',
   tools = 'tools',
@@ -95,6 +101,7 @@ export const assistantEndpointSchema = z.object({
     .optional()
     .default([
       Capabilities.code_interpreter,
+      Capabilities.image_vision,
       Capabilities.retrieval,
       Capabilities.actions,
       Capabilities.tools,
@@ -143,6 +150,8 @@ export const endpointSchema = z.object({
   customOrder: z.number().optional(),
 });
 
+export type TEndpoint = z.infer<typeof endpointSchema>;
+
 export const azureEndpointSchema = z
   .object({
     groups: azureGroupConfigsSchema,
@@ -178,7 +187,7 @@ export const rateLimitSchema = z.object({
 
 export const configSchema = z.object({
   version: z.string(),
-  cache: z.boolean(),
+  cache: z.boolean().optional().default(true),
   interface: z
     .object({
       privacyPolicy: z
@@ -221,6 +230,7 @@ export type TCustomConfig = z.infer<typeof configSchema>;
 
 export enum KnownEndpoints {
   mistral = 'mistral',
+  shuttleai = 'shuttleai',
   openrouter = 'openrouter',
   groq = 'groq',
   anyscale = 'anyscale',
@@ -291,6 +301,7 @@ export const defaultModels = {
   [EModelEndpoint.anthropic]: [
     'claude-3-opus-20240229',
     'claude-3-sonnet-20240229',
+    'claude-3-haiku-20240307',
     'claude-2.1',
     'claude-2',
     'claude-1.2',
@@ -342,11 +353,12 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
 ]);
 
 export const supportsBalanceCheck = {
+  [EModelEndpoint.custom]: true,
   [EModelEndpoint.openAI]: true,
   [EModelEndpoint.anthropic]: true,
-  [EModelEndpoint.azureOpenAI]: true,
   [EModelEndpoint.gptPlugins]: true,
-  [EModelEndpoint.custom]: true,
+  [EModelEndpoint.assistants]: true,
+  [EModelEndpoint.azureOpenAI]: true,
 };
 
 export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision', 'claude-3'];
@@ -436,6 +448,10 @@ export enum ViolationTypes {
    * Illegal Model Request (not available).
    */
   ILLEGAL_MODEL_REQUEST = 'illegal_model_request',
+  /**
+   * Token Limit Violation.
+   */
+  TOKEN_BALANCE = 'token_balance',
 }
 
 /**
@@ -517,7 +533,35 @@ export enum Constants {
 }
 
 export const defaultOrderQuery: {
-  order: 'asc';
+  order: 'desc';
+  limit: 100;
 } = {
-  order: 'asc',
+  order: 'desc',
+  limit: 100,
 };
+
+export enum AssistantStreamEvents {
+  ThreadCreated = 'thread.created',
+  ThreadRunCreated = 'thread.run.created',
+  ThreadRunQueued = 'thread.run.queued',
+  ThreadRunInProgress = 'thread.run.in_progress',
+  ThreadRunRequiresAction = 'thread.run.requires_action',
+  ThreadRunCompleted = 'thread.run.completed',
+  ThreadRunFailed = 'thread.run.failed',
+  ThreadRunCancelling = 'thread.run.cancelling',
+  ThreadRunCancelled = 'thread.run.cancelled',
+  ThreadRunExpired = 'thread.run.expired',
+  ThreadRunStepCreated = 'thread.run.step.created',
+  ThreadRunStepInProgress = 'thread.run.step.in_progress',
+  ThreadRunStepCompleted = 'thread.run.step.completed',
+  ThreadRunStepFailed = 'thread.run.step.failed',
+  ThreadRunStepCancelled = 'thread.run.step.cancelled',
+  ThreadRunStepExpired = 'thread.run.step.expired',
+  ThreadRunStepDelta = 'thread.run.step.delta',
+  ThreadMessageCreated = 'thread.message.created',
+  ThreadMessageInProgress = 'thread.message.in_progress',
+  ThreadMessageCompleted = 'thread.message.completed',
+  ThreadMessageIncomplete = 'thread.message.incomplete',
+  ThreadMessageDelta = 'thread.message.delta',
+  ErrorEvent = 'error',
+}

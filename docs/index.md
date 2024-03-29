@@ -6,10 +6,9 @@ weight: -10
 
 <p align="center">
   <a href="https://librechat.ai">
-    <img src="assets/LibreChat.svg" style="margin-left: 40px; height: 256px; width: 256px;>
+    <img src="assets/LibreChat.svg" style="margin-left: 40px; height: 256px; width: 256px;"/>
   </a>
   <a href="https://librechat.ai">
-    <!-- Use the margin-top property to add some space between the image and the text -->
     <h1 align="center" style="padding: 0;">LibreChat</h1>
   </a>
 </p>
@@ -18,19 +17,19 @@ weight: -10
 <p align="center">
   <a href="https://discord.librechat.ai"> 
     <img
-      src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&logoColor=white&labelColor=000000&color=blueviolet">
+      src="https://img.shields.io/discord/1086345563026489514?label=&logo=discord&style=for-the-badge&logoWidth=20&logoColor=white&labelColor=000000&color=blueviolet"/>
   </a>
   <a href="https://www.youtube.com/@LibreChat"> 
     <img
-      src="https://img.shields.io/badge/YOUTUBE-red.svg?style=for-the-badge&logo=youtube&logoColor=white&labelColor=000000&logoWidth=20">
+      src="https://img.shields.io/badge/YOUTUBE-red.svg?style=for-the-badge&logo=youtube&logoColor=white&labelColor=000000&logoWidth=20"/>
   </a>
   <a href="https://github.librechat.ai"> 
     <img 
-      src="https://img.shields.io/badge/GITHUB-blue.svg?style=for-the-badge&logo=github&logoColor=white&labelColor=000000&logoWidth=20">
+      src="https://img.shields.io/badge/GITHUB-blue.svg?style=for-the-badge&logo=github&logoColor=white&labelColor=000000&logoWidth=20"/>
   </a>
 <a aria-label="Sponsors" href="https://github.com/sponsors/danny-avila">
     <img
-      src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&logo=github-sponsors&logoColor=white&labelColor=000000&logoWidth=20">
+      src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&logo=github-sponsors&logoColor=white&labelColor=000000&logoWidth=20"/>
   </a>
 </p>
 

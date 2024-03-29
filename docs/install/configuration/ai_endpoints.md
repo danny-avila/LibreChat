@@ -21,7 +21,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 - **Known:** icon provided.
 
-- **Temperature:** If you set a temperature value of 0, it will be converted to 1e-8. If you run into any issues, please try setting the value to a float32 > 0 and <= 2.
+- **Temperature:** If you set a temperature value of 0, it will be converted to 1e-8. If you run into any issues, please try setting the value to a float32 greater than 0 and less than or equal to 2.
 
 - Groq is currently free but rate limited: 10 queries/minute, 100/hour.
 
@@ -129,6 +129,33 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 ```
 
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/9f2d8ad9-3f49-4fe3-a3ed-c85994c1c85f)
+
+## ShuttleAI
+> ShuttleAI API key: [shuttleai.app/keys](https://shuttleai.app/keys)
+
+**Notes:**
+
+- **Known:** icon provided, fetching list of models is recommended.
+
+```yaml
+    - name: "ShuttleAI"
+      apiKey: "${SHUTTLEAI_API_KEY}"
+      baseURL: "https://api.shuttleai.app/v1"
+      models:
+        default: [
+          "shuttle-1", "shuttle-turbo"
+          ]
+        fetch: true
+      titleConvo: true
+      titleModel: "gemini-pro"
+      summarize: false
+      summaryModel: "llama-summarize"
+      forcePrompt: false
+      modelDisplayLabel: "ShuttleAI"
+      dropParams: ["user"]
+```
+
+![image](https://raw.githubusercontent.com/danny-avila/LibreChat/main/client/public/assets/ShuttleAI_Fibonacci.png)
 
 ## Fireworks
 > Fireworks API key: [fireworks.ai/api-keys](https://fireworks.ai/api-keys)

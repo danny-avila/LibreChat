@@ -1,3 +1,4 @@
+const throttle = require('lodash/throttle');
 const { getResponseSender, Constants } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
@@ -16,13 +17,10 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
   logger.debug('[AskController]', { text, conversationId, ...endpointOption });
 
-  let metadata;
   let userMessage;
   let promptTokens;
   let userMessageId;
   let responseMessageId;
-  let lastSavedTimestamp = 0;
-  let saveDelay = 100;
   const sender = getResponseSender({
     ...endpointOption,
     model: endpointOption.modelOptions.model,
@@ -30,8 +28,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   });
   const newConvo = !conversationId;
   const user = req.user.id;
-
-  const addMetadata = (data) => (metadata = data);
 
   const getReqData = (data = {}) => {
     for (let key in data) {
@@ -54,11 +50,8 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     const { client } = await initializeClient({ req, res, endpointOption });
 
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
-      onProgress: ({ text: partialText }) => {
-        const currentTimestamp = Date.now();
-
-        if (currentTimestamp - lastSavedTimestamp > saveDelay) {
-          lastSavedTimestamp = currentTimestamp;
+      onProgress: throttle(
+        ({ text: partialText }) => {
           saveMessage({
             messageId: responseMessageId,
             sender,
@@ -70,12 +63,10 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
             error: false,
             user,
           });
-        }
-
-        if (saveDelay < 500) {
-          saveDelay = 500;
-        }
-      },
+        },
+        3000,
+        { trailing: false },
+      ),
     });
 
     getText = getPartialText;
@@ -113,7 +104,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       overrideParentMessageId,
       getReqData,
       onStart,
-      addMetadata,
       abortController,
       onProgress: progressCallback.call(null, {
         res,
@@ -126,10 +116,6 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     if (overrideParentMessageId) {
       response.parentMessageId = overrideParentMessageId;
-    }
-
-    if (metadata) {
-      response = { ...response, ...metadata };
     }
 
     response.endpoint = endpointOption.endpoint;

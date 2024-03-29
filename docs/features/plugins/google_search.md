@@ -13,10 +13,7 @@ GOOGLE_CSE_ID="...."
   
 You first need to create a programmable search engine and get the search engine ID: **[https://developers.google.com/custom-search/docs/tutorial/creatingcse](https://developers.google.com/custom-search/docs/tutorial/creatingcse)**  
   
-Then you can get the API key, click the "Get a key" button on this page: **[https://developers.google.com/custom-search/v1/introduction](https://developers.google.com/custom-search/v1/introduction)**  
-
-<!-- You can limit the max price that is charged for a single search request by setting `MAX_SEARCH_PRICE` in your `.env` file. -->
-
+Then you can get the API key, click the "Get a key" button on this page: **[https://developers.google.com/custom-search/v1/introduction](https://developers.google.com/custom-search/v1/introduction)**
 
 ## 1\. Go to the [Programmable Search Engine docs](https://developers.google.com/custom-search/docs/tutorial/creatingcse) to get a Search engine ID
 

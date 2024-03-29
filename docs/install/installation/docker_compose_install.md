@@ -54,30 +54,46 @@ That's it! If you need more detailed information on configuring your compose fil
 The following commands will fetch the latest code of LibreChat and build a new docker image.
 
 ```bash
-git pull
+# Stop the running container(s)
 docker compose down
-docker compose up --build
+
+# Pull latest project changes
+git pull
+
+# Pull the latest LibreChat image (default setup)
+docker compose pull
+
+# Start LibreChat
+docker compose up
 ```
 
-If you're having issues running this command, you can try running what the script does manually:
+If you're having issues running the above commands, you can try a comprehensive approach:
 
 Prefix commands with `sudo` according to your environment permissions.
 
 ```bash
 # Stop the container (if running)
 docker compose down
+
 # Switch to the repo's main branch
 git checkout main
+
 # Pull the latest changes to the main branch from Github
-git pull 
+git pull
+
 # Prune all LibreChat Docker images
 docker rmi librechat:latest
-# Remove all unused dangling Docker images.
+
+# Optional: Remove all unused dangling Docker images.
 # Be careful, as this will delete all dangling docker images on your
 # computer, also those not created by LibreChat!
 docker image prune -f
-# Building a new LibreChat image without cache
-docker compose build --no-cache
+
+# If building the LibreChat image Locally, build without cache (legacy setup)
+# docker compose build --no-cache
+
+# Pull the latest image (default setup)
+docker compose pull
 
 # Start LibreChat
 docker compose up

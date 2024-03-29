@@ -30,7 +30,7 @@ const EditPresetDialog = ({
     select: mapEndpoints,
   });
 
-  const { endpoint } = preset || {};
+  const { endpoint, endpointType, model } = preset || {};
   if (!endpoint) {
     return null;
   }
@@ -53,7 +53,7 @@ const EditPresetDialog = ({
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">
             <div className="grid w-full">
-              <div className="col-span-4 flex items-start md:flex-row justify-start flex-col gap-6 pb-4">
+              <div className="col-span-4 flex flex-col items-start justify-start gap-6 pb-4 md:flex-row">
                 <div className="flex w-full flex-col">
                   <Label htmlFor="preset-name" className="mb-1 text-left text-sm font-medium">
                     {localize('com_endpoint_preset_name')}
@@ -81,7 +81,7 @@ const EditPresetDialog = ({
                   />
                 </div>
               </div>
-              <div className="col-span-2 flex items-start justify-start gap-4 sm:col-span-1">
+              <div className="col-span-2 flex items-start justify-between gap-4 sm:col-span-4">
                 <div className="flex w-full flex-col">
                   <Label
                     htmlFor="endpoint"
@@ -90,13 +90,16 @@ const EditPresetDialog = ({
                     {'ㅤ'}
                   </Label>
                   <PopoverButtons
-                    buttonClass="ml-0 w-full dark:bg-gray-700 dark:hover:bg-gray-800 p-2 h-[40px] justify-center mt-0"
-                    iconClass="hidden lg:block w-4"
+                    buttonClass="ml-0 w-full border border-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:hover:bg-gray-600 p-2 h-[40px] justify-center mt-0"
+                    iconClass="hidden lg:block w-4 "
+                    endpoint={endpoint}
+                    endpointType={endpointType}
+                    model={model}
                   />
                 </div>
               </div>
             </div>
-            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-700" />
+            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-600" />
             <div className="w-full p-0">
               <EndpointSettings
                 conversation={preset}
@@ -112,7 +115,7 @@ const EditPresetDialog = ({
           <div className="mb-6 md:mb-2">
             <DialogButton
               onClick={exportPreset}
-              className="border-gray-100 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-600"
+              className="border-gray-100 hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
             >
               {localize('com_endpoint_export')}
             </DialogButton>

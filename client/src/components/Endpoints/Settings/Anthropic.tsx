@@ -21,16 +21,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   if (!conversation) {
     return null;
   }
-  const {
-    model,
-    modelLabel,
-    promptPrefix,
-    temperature,
-    topP,
-    topK,
-    maxOutputTokens,
-    resendImages,
-  } = conversation;
+  const { model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens, resendFiles } =
+    conversation;
 
   const setModel = setOption('model');
   const setModelLabel = setOption('modelLabel');
@@ -39,7 +31,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setTopP = setOption('topP');
   const setTopK = setOption('topK');
   const setMaxOutputTokens = setOption('maxOutputTokens');
-  const setResendImages = setOption('resendImages');
+  const setResendFiles = setOption('resendFiles');
 
   return (
     <div className="grid grid-cols-5 gap-6">
@@ -257,13 +249,13 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         <HoverCard openDelay={500}>
           <HoverCardTrigger className="grid w-full">
             <div className="flex justify-between">
-              <Label htmlFor="resend-images" className="text-left text-sm font-medium">
-                {localize('com_endpoint_plug_resend_images')}{' '}
+              <Label htmlFor="resend-files" className="text-left text-sm font-medium">
+                {localize('com_endpoint_plug_resend_files')}{' '}
               </Label>
               <Switch
-                id="resend-images"
-                checked={resendImages ?? false}
-                onCheckedChange={(checked: boolean) => setResendImages(checked)}
+                id="resend-files"
+                checked={resendFiles ?? true}
+                onCheckedChange={(checked: boolean) => setResendFiles(checked)}
                 disabled={readonly}
                 className="flex"
               />

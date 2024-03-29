@@ -4,14 +4,17 @@ const { StructuredTool } = require('langchain/tools');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { Calculator } = require('langchain/tools/calculator');
 const {
+  Tools,
   ContentTypes,
   imageGenTools,
+  actionDelimiter,
+  ImageVisionTool,
   openapiToFunction,
   validateAndParseOpenAPISpec,
-  actionDelimiter,
 } = require('librechat-data-provider');
-const { loadActionSets, createActionTool } = require('./ActionService');
+const { loadActionSets, createActionTool, domainParser } = require('./ActionService');
 const { processFileURL } = require('~/server/services/Files/process');
+const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
@@ -83,6 +86,8 @@ function loadAndFormatTools({ directory, filter = new Set() }) {
     tools.push(formattedTool);
   }
 
+  tools.push(ImageVisionTool);
+
   return tools.reduce((map, tool) => {
     map[tool.function.name] = tool;
     return map;
@@ -100,8 +105,8 @@ function loadAndFormatTools({ directory, filter = new Set() }) {
  */
 function formatToOpenAIAssistantTool(tool) {
   return {
-    type: 'function',
-    function: {
+    type: Tools.function,
+    [Tools.function]: {
       name: tool.name,
       description: tool.description,
       parameters: zodToJsonSchema(tool.schema),
@@ -110,28 +115,57 @@ function formatToOpenAIAssistantTool(tool) {
 }
 
 /**
+ * Processes the required actions by calling the appropriate tools and returning the outputs.
+ * @param {OpenAIClient} client - OpenAI or StreamRunManager Client.
+ * @param {RequiredAction} requiredActions - The current required action.
+ * @returns {Promise<ToolOutput>} The outputs of the tools.
+ */
+const processVisionRequest = async (client, currentAction) => {
+  if (!client.visionPromise) {
+    return {
+      tool_call_id: currentAction.toolCallId,
+      output: 'No image details found.',
+    };
+  }
+
+  /** @type {ChatCompletion | undefined} */
+  const completion = await client.visionPromise;
+  if (completion.usage) {
+    recordUsage({
+      user: client.req.user.id,
+      model: client.req.body.model,
+      conversationId: (client.responseMessage ?? client.finalMessage).conversationId,
+      ...completion.usage,
+    });
+  }
+  const output = completion?.choices?.[0]?.message?.content ?? 'No image details found.';
+  return {
+    tool_call_id: currentAction.toolCallId,
+    output,
+  };
+};
+
+/**
  * Processes return required actions from run.
- *
- * @param {OpenAIClient} openai - OpenAI Client.
+ * @param {OpenAIClient} client - OpenAI or StreamRunManager Client.
  * @param {RequiredAction[]} requiredActions - The required actions to submit outputs for.
  * @returns {Promise<ToolOutputs>} The outputs of the tools.
- *
  */
-async function processRequiredActions(openai, requiredActions) {
+async function processRequiredActions(client, requiredActions) {
   logger.debug(
-    `[required actions] user: ${openai.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
+    `[required actions] user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
     requiredActions,
   );
   const tools = requiredActions.map((action) => action.tool);
   const loadedTools = await loadTools({
-    user: openai.req.user.id,
-    model: openai.req.body.model ?? 'gpt-3.5-turbo-1106',
+    user: client.req.user.id,
+    model: client.req.body.model ?? 'gpt-3.5-turbo-1106',
     tools,
     functions: true,
     options: {
       processFileURL,
-      openAIApiKey: openai.apiKey,
-      fileStrategy: openai.req.app.locals.fileStrategy,
+      openAIApiKey: client.apiKey,
+      fileStrategy: client.req.app.locals.fileStrategy,
       returnMetadata: true,
     },
     skipSpecs: true,
@@ -152,6 +186,10 @@ async function processRequiredActions(openai, requiredActions) {
 
   for (let i = 0; i < requiredActions.length; i++) {
     const currentAction = requiredActions[i];
+    if (currentAction.tool === ImageVisionTool.function.name) {
+      promises.push(processVisionRequest(client, currentAction));
+      continue;
+    }
     let tool = ToolMap[currentAction.tool] ?? ActionToolMap[currentAction.tool];
 
     const handleToolOutput = async (output) => {
@@ -170,14 +208,14 @@ async function processRequiredActions(openai, requiredActions) {
         action: isActionTool,
       };
 
-      const toolCallIndex = openai.mappedOrder.get(toolCall.id);
+      const toolCallIndex = client.mappedOrder.get(toolCall.id);
 
       if (imageGenTools.has(currentAction.tool)) {
         const imageOutput = output;
         toolCall.function.output = `${currentAction.tool} displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.`;
 
         // Streams the "Finished" state of the tool call in the UI
-        openai.addContentData({
+        client.addContentData({
           [ContentTypes.TOOL_CALL]: toolCall,
           index: toolCallIndex,
           type: ContentTypes.TOOL_CALL,
@@ -198,10 +236,10 @@ async function processRequiredActions(openai, requiredActions) {
           index: toolCallIndex,
         };
 
-        openai.addContentData(image_file);
+        client.addContentData(image_file);
 
         // Update the stored tool call
-        openai.seenToolCalls.set(toolCall.id, toolCall);
+        client.seenToolCalls && client.seenToolCalls.set(toolCall.id, toolCall);
 
         return {
           tool_call_id: currentAction.toolCallId,
@@ -209,8 +247,8 @@ async function processRequiredActions(openai, requiredActions) {
         };
       }
 
-      openai.seenToolCalls.set(toolCall.id, toolCall);
-      openai.addContentData({
+      client.seenToolCalls && client.seenToolCalls.set(toolCall.id, toolCall);
+      client.addContentData({
         [ContentTypes.TOOL_CALL]: toolCall,
         index: toolCallIndex,
         type: ContentTypes.TOOL_CALL,
@@ -230,13 +268,13 @@ async function processRequiredActions(openai, requiredActions) {
       if (!actionSets.length) {
         actionSets =
           (await loadActionSets({
-            user: openai.req.user.id,
-            assistant_id: openai.req.body.assistant_id,
+            user: client.req.user.id,
+            assistant_id: client.req.body.assistant_id,
           })) ?? [];
       }
 
       const actionSet = actionSets.find((action) =>
-        currentAction.tool.includes(action.metadata.domain),
+        currentAction.tool.includes(domainParser(client.req, action.metadata.domain, true)),
       );
 
       if (!actionSet) {
@@ -251,7 +289,7 @@ async function processRequiredActions(openai, requiredActions) {
         const validationResult = validateAndParseOpenAPISpec(actionSet.metadata.raw_spec);
         if (!validationResult.spec) {
           throw new Error(
-            `Invalid spec: user: ${openai.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
+            `Invalid spec: user: ${client.req.user.id} | thread_id: ${requiredActions[0].thread_id} | run_id: ${requiredActions[0].run_id}`,
           );
         }
         const { requestBuilders } = openapiToFunction(validationResult.spec);
@@ -260,7 +298,7 @@ async function processRequiredActions(openai, requiredActions) {
       }
 
       const functionName = currentAction.tool.replace(
-        `${actionDelimiter}${actionSet.metadata.domain}`,
+        `${actionDelimiter}${domainParser(client.req, actionSet.metadata.domain, true)}`,
         '',
       );
       const requestBuilder = builders[functionName];

@@ -37,7 +37,7 @@ const modelQueries = isEnabled(process.env.USE_REDIS)
 
 const abortKeys = isEnabled(USE_REDIS)
   ? new Keyv({ store: keyvRedis })
-  : new Keyv({ namespace: CacheKeys.ABORT_KEYS });
+  : new Keyv({ namespace: CacheKeys.ABORT_KEYS, ttl: 600000 });
 
 const namespaces = {
   [CacheKeys.CONFIG_STORE]: config,
@@ -47,7 +47,7 @@ const namespaces = {
   concurrent: createViolationInstance('concurrent'),
   non_browser: createViolationInstance('non_browser'),
   message_limit: createViolationInstance('message_limit'),
-  token_balance: createViolationInstance('token_balance'),
+  token_balance: createViolationInstance(ViolationTypes.TOKEN_BALANCE),
   registrations: createViolationInstance('registrations'),
   [ViolationTypes.FILE_UPLOAD_LIMIT]: createViolationInstance(ViolationTypes.FILE_UPLOAD_LIMIT),
   [ViolationTypes.ILLEGAL_MODEL_REQUEST]: createViolationInstance(

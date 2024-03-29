@@ -15,7 +15,12 @@ import type {
   TModelsConfig,
   TEndpointsConfig,
 } from 'librechat-data-provider';
-import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
+import {
+  buildDefaultConvo,
+  getDefaultEndpoint,
+  getEndpointField,
+  updateLastSelectedModel,
+} from '~/utils';
 import { useDeleteFilesMutation, useListAssistantsQuery } from '~/data-provider';
 import useOriginNavigate from './useOriginNavigate';
 import useSetStorage from './useSetStorage';
@@ -32,7 +37,8 @@ const useNewConvo = (index = 0) => {
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
 
   const { data: assistants = [] } = useListAssistantsQuery(defaultOrderQuery, {
-    select: (res) => res.data.map(({ id, name, metadata }) => ({ id, name, metadata })),
+    select: (res) =>
+      res.data.map(({ id, name, metadata, model }) => ({ id, name, metadata, model })),
   });
 
   const { mutateAsync } = useDeleteFilesMutation({
@@ -81,10 +87,30 @@ const useNewConvo = (index = 0) => {
             conversation.endpointType = undefined;
           }
 
-          if (!conversation.assistant_id && defaultEndpoint === EModelEndpoint.assistants) {
-            const assistant_id =
+          const isAssistantEndpoint = defaultEndpoint === EModelEndpoint.assistants;
+
+          if (!conversation.assistant_id && isAssistantEndpoint) {
+            conversation.assistant_id =
               localStorage.getItem(`assistant_id__${index}`) ?? assistants[0]?.id;
-            conversation.assistant_id = assistant_id;
+          }
+
+          if (
+            conversation.assistant_id &&
+            isAssistantEndpoint &&
+            conversation.conversationId === 'new'
+          ) {
+            const assistant = assistants.find(
+              (assistant) => assistant.id === conversation.assistant_id,
+            );
+            conversation.model = assistant?.model;
+            updateLastSelectedModel({
+              endpoint: EModelEndpoint.assistants,
+              model: conversation.model,
+            });
+          }
+
+          if (conversation.assistant_id && !isAssistantEndpoint) {
+            conversation.assistant_id = undefined;
           }
 
           const models = modelsConfig?.[defaultEndpoint] ?? [];
@@ -139,9 +165,10 @@ const useNewConvo = (index = 0) => {
 
       if (conversation.conversationId === 'new' && !modelsData) {
         const filesToDelete = Array.from(files.values())
-          .filter((file) => file.filepath && file.source)
+          .filter((file) => file.filepath && file.source && !file.embedded && file.temp_file_id)
           .map((file) => ({
             file_id: file.file_id,
+            embedded: !!file.embedded,
             filepath: file.filepath as string,
             source: file.source as FileSources, // Ensure that the source is of type FileSources
           }));

@@ -41,7 +41,7 @@ const Dropdown: FC<DropdownProps> = ({
           <Listbox.Button
             data-testid={testId}
             className={cn(
-              'relative inline-flex items-center justify-between rounded-md border-gray-300 bg-white py-2 pl-3 pr-8 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700',
+              'relative inline-flex items-center justify-between rounded-md border-gray-300 bg-white py-2 pl-3 pr-8 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 ',
               'w-auto',
               className,
             )}
@@ -61,13 +61,13 @@ const Dropdown: FC<DropdownProps> = ({
                 stroke="currentColor"
                 className="h-4 w-5 rotate-0 transform text-gray-400 transition-transform duration-300 ease-in-out"
               >
-              <polyline points="6 9 12 15 18 9"></polyline>
+                <polyline points="6 9 12 15 18 9"></polyline>
               </svg>
             </span>
           </Listbox.Button>
           <Listbox.Options
             className={cn(
-              'absolute z-50 mt-1 max-h-[40vh] overflow-auto rounded-md border-gray-300 bg-white text-gray-700 shadow-lg transition-opacity hover:bg-gray-50 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700',
+              'absolute z-50 mt-1 max-h-[40vh] overflow-auto rounded-md border-gray-300 bg-white text-gray-700 shadow-lg transition-opacity hover:bg-gray-50 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600',
               className,
             )}
             style={{ width: width ? `${width}px` : 'auto' }}
@@ -77,7 +77,7 @@ const Dropdown: FC<DropdownProps> = ({
                 key={index}
                 value={typeof item === 'string' ? item : item.value}
                 className={cn(
-                  'relative cursor-pointer select-none border-gray-300 bg-white py-1 pl-3 pr-6 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700',
+                  'relative cursor-pointer select-none border-gray-300 bg-white py-1 pl-3 pr-6 text-gray-700 hover:bg-gray-50 dark:border-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600',
                 )}
                 style={{ width: width ? `${width}px` : 'auto' }}
                 data-theme={typeof item === 'string' ? item : (item as OptionType).value}
