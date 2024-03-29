@@ -20,7 +20,9 @@ import Hebrew from './languages/He';
 
 // === import additional language files here === //
 
-const languageMap: { [key: string]: unknown } = {
+type Language = Record<string, string>;
+
+const languageMap: Record<string, Language> = {
   'en-US': English,
   'ar-EG': Arabic,
   'zh-CN': Chinese,
@@ -61,8 +63,20 @@ if (!String.prototype.format) {
 
 // input: language code in string
 // returns an object of translated strings in the language
-export const getTranslations = (langCode: string) => {
-  return languageMap[langCode] || English;
+export const getTranslations = (langCode: string): Language => {
+  if (languageMap[langCode]) {
+    return languageMap[langCode];
+  }
+
+  const [langPart] = langCode.split('-');
+
+  const matchingLangCode = Object.keys(languageMap).find((key) => key.startsWith(langPart));
+
+  if (matchingLangCode) {
+    return languageMap[matchingLangCode];
+  }
+
+  return English;
 };
 
 // input: language code in string & phrase key in string

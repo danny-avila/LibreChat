@@ -278,6 +278,12 @@
  */
 
 /**
+ * @exports TEndpoint
+ * @typedef {import('librechat-data-provider').TEndpoint} TEndpoint
+ * @memberof typedefs
+ */
+
+/**
  * @exports TEndpointsConfig
  * @typedef {import('librechat-data-provider').TEndpointsConfig} TEndpointsConfig
  * @memberof typedefs
@@ -436,7 +442,13 @@
 
 /**
  * @exports ThreadMessage
- * @typedef {import('openai').OpenAI.Beta.Threads.ThreadMessage} ThreadMessage
+ * @typedef {import('openai').OpenAI.Beta.Threads.Message} ThreadMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports Annotation
+ * @typedef {import('openai').OpenAI.Beta.Threads.Messages.Annotation} Annotation
  * @memberof typedefs
  */
 

@@ -46,6 +46,7 @@ export default {
   com_assistants_update_error: 'There was an error updating your assistant.',
   com_assistants_create_success: 'Successfully created',
   com_assistants_create_error: 'There was an error creating your assistant.',
+  com_ui_download_error: 'Error downloading file. The file may have been deleted.',
   com_ui_attach_error_type: 'Unsupported file type for endpoint:',
   com_ui_attach_error_size: 'File size limit exceeded for endpoint:',
   com_ui_attach_error:

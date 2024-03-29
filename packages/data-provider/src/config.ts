@@ -150,6 +150,8 @@ export const endpointSchema = z.object({
   customOrder: z.number().optional(),
 });
 
+export type TEndpoint = z.infer<typeof endpointSchema>;
+
 export const azureEndpointSchema = z
   .object({
     groups: azureGroupConfigsSchema,
