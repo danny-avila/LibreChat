@@ -58,8 +58,8 @@ const openAIModels = {
   'gpt-3.5-turbo-0125': 16375, // -10 from max
   'codellama': 100000,
   'dolphincoder': 16375, // -10 from max
-  'mistral': 32758, // -10 from max
-  'mixtral': 32758, // -10 from max
+  'mistral': 31990, // -10 from max
+  'mixtral': 31990, // -10 from max
   'neural-chat': 8187, // -5 from max
   'starcoder2': 16375, // -10 from max
 };
