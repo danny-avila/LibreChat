@@ -22,8 +22,10 @@ services:
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       - MEILI_HOST=http://meilisearch:7700
     volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
       - ./images:/app/client/public/images
-      - ./librechat.yaml:/app/librechat.yaml
       - ./logs:/app/api/logs
       - ./uploads:/app/uploads
   client:
