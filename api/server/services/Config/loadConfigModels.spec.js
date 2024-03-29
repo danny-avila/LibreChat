@@ -268,6 +268,15 @@ describe('loadConfigModels', () => {
       endpoints: {
         custom: [
           {
+            name: 'EndpointWithSameFetchKey',
+            apiKey: 'API_KEY',
+            baseURL: 'http://example.com',
+            models: {
+              fetch: true,
+              default: ['defaultModel1'],
+            },
+          },
+          {
             name: 'EmptyFetchModel',
             apiKey: 'API_KEY',
             baseURL: 'http://example.com',
@@ -283,14 +292,7 @@ describe('loadConfigModels', () => {
     fetchModels.mockResolvedValue([]);
 
     const result = await loadConfigModels(mockRequest);
-
-    expect(fetchModels).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'EmptyFetchModel',
-        apiKey: 'API_KEY',
-      }),
-    );
-
+    expect(fetchModels).toHaveBeenCalledTimes(1);
     expect(result.EmptyFetchModel).toEqual(['defaultModel1', 'defaultModel2']);
   });
 
