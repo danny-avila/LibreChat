@@ -9,6 +9,8 @@ const {
   imageExtRegex,
   EModelEndpoint,
   mergeFileConfig,
+  hostImageIdSuffix,
+  hostImageNamePrefix,
 } = require('librechat-data-provider');
 const { convertToWebP, resizeAndConvert } = require('~/server/services/Files/images');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
@@ -368,15 +370,25 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
   const _file = await convertToWebP(req, buffer, 'high', `${file_id}${fileExt}`);
   const file = {
     ..._file,
-    file_id,
     usage: 1,
-    filename,
     user: req.user.id,
     type: 'image/webp',
     source: req.app.locals.fileStrategy,
     context: FileContext.assistants_output,
+    file_id: `${file_id}${hostImageIdSuffix}`,
+    filename: `${hostImageNamePrefix}${filename}`,
   };
   createFile(file, true);
+  createFile(
+    {
+      ...file,
+      file_id,
+      filename,
+      source: FileSources.openai,
+      type: mime.getType(fileExt),
+    },
+    true,
+  );
   return file;
 };
 
