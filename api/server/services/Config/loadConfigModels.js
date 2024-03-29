@@ -69,6 +69,8 @@ async function loadConfigModels(req) {
           apiKey: API_KEY,
           name,
           userIdQuery: models.userIdQuery,
+        }).then((result) => {
+          return !result?.length ? models.default ?? [] : result;
         });
       uniqueKeyToNameMap[uniqueKey] = uniqueKeyToNameMap[uniqueKey] || [];
       uniqueKeyToNameMap[uniqueKey].push(name);
