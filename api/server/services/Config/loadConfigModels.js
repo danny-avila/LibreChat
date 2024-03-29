@@ -53,7 +53,7 @@ async function loadConfigModels(req) {
   /**
    * @type {Record<string, string[]>}
    * Map to associate unique keys with endpoint names; note: one key may can correspond to multiple endpoints */
-  const uniqueKeyToNameMap = {};
+  const uniqueKeyToEndpointsMap = {};
   /**
    * @type {Record<string, Partial<TEndpoint>>}
    * Map to associate endpoint names to their configurations */
@@ -81,8 +81,8 @@ async function loadConfigModels(req) {
           name,
           userIdQuery: models.userIdQuery,
         });
-      uniqueKeyToNameMap[uniqueKey] = uniqueKeyToNameMap[uniqueKey] || [];
-      uniqueKeyToNameMap[uniqueKey].push(name);
+      uniqueKeyToEndpointsMap[uniqueKey] = uniqueKeyToEndpointsMap[uniqueKey] || [];
+      uniqueKeyToEndpointsMap[uniqueKey].push(name);
       continue;
     }
 
@@ -97,7 +97,7 @@ async function loadConfigModels(req) {
   for (let i = 0; i < fetchedData.length; i++) {
     const currentKey = uniqueKeys[i];
     const modelData = fetchedData[i];
-    const associatedNames = uniqueKeyToNameMap[currentKey];
+    const associatedNames = uniqueKeyToEndpointsMap[currentKey];
 
     for (const name of associatedNames) {
       const endpoint = endpointsMap[name];
