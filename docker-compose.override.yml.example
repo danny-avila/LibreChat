@@ -16,7 +16,9 @@ version: '3.4'
 # services:
 #   api:
 #     volumes:
-#       - ./librechat.yaml:/app/librechat.yaml
+#     - type: bind
+#       source: ./librechat.yaml
+#       target: /app/librechat.yaml
 #     image: ghcr.io/danny-avila/librechat:latest
 
 # ---------------------------------------------------
@@ -26,7 +28,9 @@ version: '3.4'
 # # USE LIBRECHAT CONFIG FILE
 #   api:
 #     volumes:
-#       - ./librechat.yaml:/app/librechat.yaml
+#     - type: bind
+#       source: ./librechat.yaml
+#       target: /app/librechat.yaml
 
 # # LOCAL BUILD
 #   api:
