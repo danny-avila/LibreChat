@@ -37,7 +37,6 @@ const useSpeechToText = () => {
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
       setIsSpeechSupported(true);
     } else {
-      showToast({ message: 'Browser does not support SpeechRecognition', status: 'error' });
       setIsSpeechSupported(false);
       return;
     }

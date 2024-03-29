@@ -142,7 +142,7 @@ export default {
   com_ui_privacy_policy: 'Privacy policy',
   com_ui_terms_of_service: 'Terms of service',
   com_ui_use_micrphone: 'Use microphone',
-  com_ui_chat_audio_automatic: 'Chat Audio Automatic',
+  com_ui_chat_audio_automatic: 'Chat Audio Automatic (BETA)',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:

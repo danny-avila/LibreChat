@@ -196,7 +196,7 @@ const SpeechToText = atom<boolean>({
 
 const chatAudio = atom<boolean>({
   key: 'chatAudio',
-  default: true,
+  default: false,
   effects: [
     ({ setSelf, onSet }) => {
       const savedValue = localStorage.getItem('chatAudio');
