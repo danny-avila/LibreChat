@@ -255,6 +255,21 @@ async function uploadLocalFile({ req, file, file_id }) {
   return { filepath, bytes };
 }
 
+/**
+ * Retrieves a readable stream for a file from local storage.
+ *
+ * @param {string} filepath - The filepath.
+ * @returns {ReadableStream} A readable stream of the file.
+ */
+function getLocalFileStream(filepath) {
+  try {
+    return fs.createReadStream(filepath);
+  } catch (error) {
+    logger.error('Error getting local file stream:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   saveLocalFile,
   saveLocalImage,
@@ -263,4 +278,5 @@ module.exports = {
   getLocalFileURL,
   deleteLocalFile,
   uploadLocalFile,
+  getLocalFileStream,
 };

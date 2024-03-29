@@ -1,9 +1,10 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type {
-  TSubmission,
+  Text,
   TMessage,
-  TContentData,
+  TSubmission,
   ContentPart,
+  TContentData,
   TMessageContentParts,
 } from 'librechat-data-provider';
 import { useCallback, useMemo } from 'react';
@@ -46,9 +47,9 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       }
 
       // TODO: handle streaming for non-text
-      const part: ContentPart = data[ContentTypes.TEXT]
-        ? { value: data[ContentTypes.TEXT] }
-        : data[type];
+      const textPart: Text | string = data[ContentTypes.TEXT];
+      const part: ContentPart =
+        textPart && typeof textPart === 'string' ? { value: textPart } : data[type];
 
       /* spreading the content array to avoid mutation */
       response.content = [...(response.content ?? [])];

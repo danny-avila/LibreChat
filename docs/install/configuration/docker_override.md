@@ -173,14 +173,13 @@ use admin
 Replace the credentials as desired and keep in your secure records for the rest of the guide.
 
 Run command to create the admin user:
-```bash
-db.createUser({ user: "adminUser", pwd: "securePassword", roles: ["userAdminAnyDatabase", "readWriteAnyDatabase"] })
-```
 
-You should see an "ok" output:
-> { ok: 1 }
+`db.createUser({ user: "adminUser", pwd: "securePassword", roles: ["userAdminAnyDatabase", "readWriteAnyDatabase"] })`
+
+You should see an "ok" output.
 
 You can also confirm the admin was created by running `show users`:
+
 ```bash
 # example input/output
 admin> show users
@@ -273,12 +272,10 @@ use LibreChat
 ```
 
 Now we'll create the actual credentials to be used by our Mongo connection string, which will be limited to read/write access of the "LibreChat" database. As before, replace the example with your desired credentials:
-```bash
-db.createUser({ user: 'user', pwd: 'userpasswd', roles: [ { role: "readWrite", db: "LibreChat" } ] });
-```
 
-You should see an "ok" output again:
-> { ok: 1 }
+`db.createUser({ user: 'user', pwd: 'userpasswd', roles: [ { role: "readWrite", db: "LibreChat" } ] });`
+
+You should see an "ok" output again.
 
 You can verify the user creation with the `show users` command.
 

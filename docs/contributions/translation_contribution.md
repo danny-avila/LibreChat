@@ -15,8 +15,8 @@ weight: -8
 ### Preparation
 Fork the [LibreChat repository](https://github.librechat.ai) and download it using git clone. See: [Getting Started for Contributors - GitHub](./how_to_contribute.md#github)  
 
-### Add your language to `Translation.tsx`:
-- Navigate to the `client\src\localization` folder and open the `Translation.tsx` file
+### Add your language to `Translation.ts`:
+- Navigate to the `client\src\localization` folder and open the `Translation.ts` file
 
 - At the beginning of the code, add your language below all the others in this format:
 
@@ -102,7 +102,7 @@ If you followed everything you should have ^^**one new file**^^  and ^^**3 modif
 ```bash
   new file:   client/src/localization/languages/**.tsx            <-----new language
   modified:   client/src/components/Nav/SettingsTabs/General.tsx
-  modified:   client/src/localization/Translation.tsx
+  modified:   client/src/localization/Translation.ts
   modified:   client/src/localization/languages/Eng.tsx
 ```
 !!! tip
