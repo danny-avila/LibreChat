@@ -43,6 +43,7 @@ class DALLE3 extends Tool {
       config.httpAgent = new HttpsProxyAgent(process.env.PROXY);
     }
 
+    /** @type {OpenAI} */
     this.openai = new OpenAI(config);
     this.name = 'dalle';
     this.description = `Use DALLE to create images from text descriptions.

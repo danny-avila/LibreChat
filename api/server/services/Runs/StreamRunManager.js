@@ -102,18 +102,20 @@ class StreamRunManager {
    * @returns {Promise<void>}
    */
   async addContentData(data) {
-    const { type, index } = data;
-    this.finalMessage.content[index] = { type, [type]: data[type] };
+    const { type, index, edited } = data;
+    /** @type {ContentPart} */
+    const contentPart = data[type];
+    this.finalMessage.content[index] = { type, [type]: contentPart };
 
-    if (type === ContentTypes.TEXT) {
-      this.text += data[type].value;
+    if (type === ContentTypes.TEXT && !edited) {
+      this.text += contentPart.value;
       return;
     }
 
     const contentData = {
       index,
       type,
-      [type]: data[type],
+      [type]: contentPart,
       thread_id: this.thread_id,
       messageId: this.finalMessage.messageId,
       conversationId: this.finalMessage.conversationId,
@@ -593,7 +595,7 @@ class StreamRunManager {
    */
   async handleMessageEvent(event) {
     if (event.event === AssistantStreamEvents.ThreadMessageCompleted) {
-      this.messageCompleted(event);
+      await this.messageCompleted(event);
     }
   }
 
@@ -613,6 +615,7 @@ class StreamRunManager {
     this.addContentData({
       [ContentTypes.TEXT]: { value: result.text },
       type: ContentTypes.TEXT,
+      edited: result.edited,
       index,
     });
     this.messages.push(message);

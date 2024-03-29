@@ -94,14 +94,25 @@ LibreChat has built-in central logging, see [Logging System](../../features/logg
 - Keep debug logs active by default or disable them by setting `DEBUG_LOGGING=false` in the environment variable.
 - For more information about this feature, read our docs: **[Logging System](../../features/logging_system.md)**
 
+- Enable verbose file logs with `DEBUG_LOGGING=TRUE`.
+- Note: can be used with either `DEBUG_CONSOLE` or `CONSOLE_JSON` but not both.
+
 ```bash
 DEBUG_LOGGING=true
 ```
 
-- Enable verbose server output in the console with `DEBUG_CONSOLE=TRUE`, though it's not recommended due to high verbosity.
+- Enable verbose console/stdout logs with `DEBUG_CONSOLE=TRUE` in the same format as file debug logs.
+- Note: can be used in conjunction with `DEBUG_LOGGING` but not `CONSOLE_JSON`.
 
 ```bash
 DEBUG_CONSOLE=false
+```
+
+- Enable verbose JSON console/stdout logs suitable for cloud deployments like GCP/AWS
+- Note: can be used in conjunction with `DEBUG_LOGGING` but not `DEBUG_CONSOLE`.
+
+```bash
+CONSOLE_JSON=false
 ```
 
 This is not recommend, however, as the outputs can be quite verbose, and so it's disabled by default.

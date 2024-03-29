@@ -15,7 +15,9 @@ const mongoose = require('mongoose');
  * @property {'file'} object - Type of object, always 'file'
  * @property {string} type - Type of file
  * @property {number} usage - Number of uses of the file
+ * @property {string} [context] - Context of the file origin
  * @property {boolean} [embedded] - Whether or not the file is embedded in vector db
+ * @property {string} [model] - The model to identify the group region of the file (for Azure OpenAI hosting)
  * @property {string} [source] - The source of the file
  * @property {number} [width] - Optional width of the file
  * @property {number} [height] - Optional height of the file
@@ -81,6 +83,9 @@ const fileSchema = mongoose.Schema(
     source: {
       type: String,
       default: FileSources.local,
+    },
+    model: {
+      type: String,
     },
     width: Number,
     height: Number,
