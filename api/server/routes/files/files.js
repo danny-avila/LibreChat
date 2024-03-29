@@ -122,7 +122,7 @@ router.get('/download/:userId/:filepath', async (req, res) => {
       fileStream.pipe(res);
     }
   } catch (error) {
-    console.error('Error downloading file:', error);
+    logger.error('Error downloading file:', error);
     res.status(500).send('Error downloading file');
   }
 });

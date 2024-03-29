@@ -16,7 +16,7 @@ const { logger } = require('~/config');
 async function deleteFile(basePath, fileName) {
   const storage = getFirebaseStorage();
   if (!storage) {
-    console.error('Firebase is not initialized. Cannot delete file from Firebase Storage.');
+    logger.error('Firebase is not initialized. Cannot delete file from Firebase Storage.');
     throw new Error('Firebase is not initialized');
   }
 
@@ -24,9 +24,9 @@ async function deleteFile(basePath, fileName) {
 
   try {
     await deleteObject(storageRef);
-    console.log('File deleted successfully from Firebase Storage');
+    logger.debug('File deleted successfully from Firebase Storage');
   } catch (error) {
-    console.error('Error deleting file from Firebase Storage:', error.message);
+    logger.error('Error deleting file from Firebase Storage:', error.message);
     throw error;
   }
 }
@@ -52,7 +52,7 @@ async function deleteFile(basePath, fileName) {
 async function saveURLToFirebase({ userId, URL, fileName, basePath = 'images' }) {
   const storage = getFirebaseStorage();
   if (!storage) {
-    console.error('Firebase is not initialized. Cannot save file to Firebase Storage.');
+    logger.error('Firebase is not initialized. Cannot save file to Firebase Storage.');
     return null;
   }
 
@@ -64,7 +64,7 @@ async function saveURLToFirebase({ userId, URL, fileName, basePath = 'images' })
     await uploadBytes(storageRef, buffer);
     return await getBufferMetadata(buffer);
   } catch (error) {
-    console.error('Error uploading file to Firebase Storage:', error.message);
+    logger.error('Error uploading file to Firebase Storage:', error.message);
     return null;
   }
 }
@@ -88,7 +88,7 @@ async function saveURLToFirebase({ userId, URL, fileName, basePath = 'images' })
 async function getFirebaseURL({ fileName, basePath = 'images' }) {
   const storage = getFirebaseStorage();
   if (!storage) {
-    console.error('Firebase is not initialized. Cannot get image URL from Firebase Storage.');
+    logger.error('Firebase is not initialized. Cannot get image URL from Firebase Storage.');
     return null;
   }
 
@@ -97,7 +97,7 @@ async function getFirebaseURL({ fileName, basePath = 'images' }) {
   try {
     return await getDownloadURL(storageRef);
   } catch (error) {
-    console.error('Error fetching file URL from Firebase Storage:', error.message);
+    logger.error('Error fetching file URL from Firebase Storage:', error.message);
     return null;
   }
 }
