@@ -433,13 +433,15 @@ async function checkMessageGaps({ openai, latestMessageId, thread_id, run_id, co
   }
 
   let addedCurrentMessage = false;
-  const apiMessages = response.data.map((msg) => {
-    if (msg.id === currentMessage.id) {
-      addedCurrentMessage = true;
-      return currentMessage;
-    }
-    return msg;
-  });
+  const apiMessages = response.data
+    .map((msg) => {
+      if (msg.id === currentMessage.id) {
+        addedCurrentMessage = true;
+        return currentMessage;
+      }
+      return msg;
+    })
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
   if (!addedCurrentMessage) {
     apiMessages.push(currentMessage);
