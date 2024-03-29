@@ -278,6 +278,12 @@
  */
 
 /**
+ * @exports TEndpoint
+ * @typedef {import('librechat-data-provider').TEndpoint} TEndpoint
+ * @memberof typedefs
+ */
+
+/**
  * @exports TEndpointsConfig
  * @typedef {import('librechat-data-provider').TEndpointsConfig} TEndpointsConfig
  * @memberof typedefs
