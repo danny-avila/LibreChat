@@ -19,9 +19,8 @@ exports.createBitcoinCharge = async (req, res) => {
       description: chargeDescription,
       customer_name: email,
       order_id: userId,
-      callback_url:
-        'https://f6bb-23-27-206-157.ngrok-free.app/api/payment/opennode/callback            ',
-      success_url: 'https://f6bb-23-27-206-157.ngrok-free.app',
+      callback_url: 'https://gptchina.io/api/payment/opennode/callback            ',
+      success_url: 'https://gptchina.io',
       selectedTokens: selectedTokens,
     };
 
