@@ -75,14 +75,15 @@ exports.executePayment = async (req, res) => {
 
   const request = new paypal.orders.OrdersCaptureRequest(orderId);
   request.requestBody({});
-  console.log('Sending PayPal order create request with:', request);
+  console.log('Sending PayPal order capture request with:', request);
 
   try {
     const capture = await client().execute(request);
+    console.log('Payment captured successfully:', capture.result);
     res.status(200).json(capture.result);
   } catch (error) {
-    console.error(error);
-    res.status(500).send('Error executing PayPal payment');
+    console.error('Error capturing PayPal payment:', error);
+    res.status(500).send('Error capturing PayPal payment');
   }
 };
 
@@ -92,22 +93,31 @@ exports.handleWebhook = async (req, res) => {
   const event = req.body;
 
   if (event.event_type === 'CHECKOUT.ORDER.APPROVED') {
-    const purchaseUnit = event.resource.purchase_units[0];
-    const customId = purchaseUnit.custom_id;
-    // Split the custom_id to extract userId and selectedTokens
-    const [userId, selectedTokens] = customId.split(':');
-
-    console.log(`Approved payment for user ${userId} with selected tokens ${selectedTokens}.`);
+    const orderId = event.resource.id;
+    console.log('Order approved, initiating payment capture for order:', orderId);
 
     try {
-      // Assuming selectedTokens is the number of tokens to add
+      const request = new paypal.orders.OrdersCaptureRequest(orderId);
+      request.requestBody({});
+      const capture = await client().execute(request);
+      console.log('Payment captured successfully:', capture.result);
+
+      const purchaseUnit = capture.result.purchase_units[0];
+      const customId = purchaseUnit.custom_id;
+      const [userId, selectedTokens] = customId.split(':');
+
+      console.log(`Captured payment for user ${userId} with selected tokens ${selectedTokens}.`);
+
       const newBalance = await addTokensByUserId(userId, parseInt(selectedTokens, 10));
       console.log(`Success! ${selectedTokens} tokens added, new balance is ${newBalance}.`);
       res.status(200).send('Success! Tokens added.');
     } catch (error) {
-      console.error(`Error updating token balance for user ${userId}:`, error);
-      res.status(500).send({ error: `Error updating token balance: ${error.message}` });
+      console.error('Error capturing payment or updating token balance:', error);
+      res.status(500).send({ error: `Error processing payment: ${error.message}` });
     }
+  } else if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
+    console.log('Payment capture completed:', event.resource);
+    res.status(200).send('Payment capture completed.');
   } else {
     console.log('Unhandled event type:', event.event_type);
     res.status(200).send('Event received, but not handled.');
