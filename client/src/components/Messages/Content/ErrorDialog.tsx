@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Dialog } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { loadStripe } from '@stripe/stripe-js';
-import { useAuthContext } from '../../../hooks/AuthContext.tsx';
+import { useAuthContext } from '../../../hooks/AuthContext';
 import { Spinner } from '~/components';
 import { SiWechat, SiAlipay } from 'react-icons/si';
 import { FaCreditCard, FaCcPaypal, FaBitcoin } from 'react-icons/fa';
