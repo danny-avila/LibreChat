@@ -226,11 +226,11 @@ export default function ErrorDialog({ open, onOpenChange }) {
                 isSelected={selectedPaymentOption === 'card'}
                 onClick={() => setSelectedPaymentOption('card')}
               />
-              <PaymentOptionButton
+              {/* <PaymentOptionButton
                 icon={FaCcPaypal}
                 isSelected={selectedPaymentOption === 'paypal'}
                 onClick={() => setSelectedPaymentOption('paypal')}
-              />
+              /> */}
               <PaymentOptionButton
                 icon={FaBitcoin}
                 isSelected={selectedPaymentOption === 'bitcoin'}
