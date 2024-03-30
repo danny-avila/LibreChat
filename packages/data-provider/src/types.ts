@@ -234,6 +234,8 @@ export type TStartupConfig = {
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   customFooter?: string;
+  proMemberPaymentURL: string;
+  portalWebsiteURL: string;
 };
 
 export type TRefreshTokenResponse = {
