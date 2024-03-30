@@ -12,6 +12,12 @@ weight: -10
 
 ---
 
+## v0.7.0+
+
+!!! info "🗃️ RAG API (Chat with Files)"
+
+    - **RAG API Update**: The default Docker compose files now include a Python API and Vector Database for RAG (Retrieval-Augmented Generation). Read more about this in the [RAG API page](../features/rag_api.md)
+
 ## v0.6.10+ (-dev build)
 
 !!! info "🔎Meilisearch v1.7"

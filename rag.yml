@@ -21,7 +21,7 @@ services:
       - POSTGRES_USER=myuser
       - POSTGRES_PASSWORD=mypassword
     ports:
-      - "8000:8000"
+      - "${RAG_PORT}:${RAG_PORT}"
     depends_on:
       - vectordb
     env_file:
