@@ -12,21 +12,6 @@ const stripePromise = loadStripe(
   'pk_live_51MwvEEHKD0byXXCl8IzAvUl0oZ7RE6vIz72lWUVYl5rW3zy0u3FiGtIAgsbmqSHbhkTJeZjs5VEbQMNStaaQL9xQ001pwxI3RP',
 );
 
-const getPriceId = (selectedTokens) => {
-  switch (selectedTokens) {
-    case 100000:
-      return 'price_1ORgxoHKD0byXXClx3u1yLa0';
-    case 500000:
-      return 'price_1ORgyJHKD0byXXClfvOyCbp7';
-    case 1000000:
-      return 'price_1ORgyiHKD0byXXClHetdaI3W';
-    case 10000000:
-      return 'price_1ORgzMHKD0byXXClDCm5PkwO';
-    default:
-      return null;
-  }
-};
-
 export default function ErrorDialog({ open, onOpenChange }) {
   const { user } = useAuthContext();
   const userId = user?.id;
@@ -43,27 +28,30 @@ export default function ErrorDialog({ open, onOpenChange }) {
       label: localize('com_token_package_label_100k'),
       price: localize('com_token_package_price_100k'),
       amountCNY: 10,
+      priceId: 'price_1ORgxoHKD0byXXClx3u1yLa0',
     },
     {
       tokens: 500000,
       label: localize('com_token_package_label_500k'),
       price: localize('com_token_package_price_500k'),
       amountCNY: 35,
+      priceId: 'price_1ORgyJHKD0byXXClfvOyCbp7',
     },
     {
       tokens: 1000000,
       label: localize('com_token_package_label_1m'),
       price: localize('com_token_package_price_1m'),
       amountCNY: 50,
+      priceId: 'price_1ORgyiHKD0byXXClHetdaI3W',
     },
     {
       tokens: 10000000,
       label: localize('com_token_package_label_10m'),
       price: localize('com_token_package_price_10m'),
       amountCNY: 250,
+      priceId: 'price_1ORgzMHKD0byXXClDCm5PkwO',
     },
   ];
-
   const fetchTokenBalance = useCallback(async () => {
     try {
       const response = await fetch('/api/balance');
@@ -79,18 +67,14 @@ export default function ErrorDialog({ open, onOpenChange }) {
   }, []);
 
   const handlePurchase = useCallback(async () => {
-    if (selectedTokens === null || selectedPaymentOption === null) {return;}
+    if (selectedTokens === null || selectedPaymentOption === null) {
+      return;
+    }
 
     // Find the selected token option to get its CNY amount and price ID
     const selectedOption = tokenOptions.find((option) => option.tokens === selectedTokens);
     if (!selectedOption) {
       console.error('Invalid token selection');
-      return;
-    }
-
-    const priceId = getPriceId(selectedTokens);
-    if (!priceId) {
-      console.error('Invalid token selection for price ID');
       return;
     }
 
@@ -129,26 +113,25 @@ export default function ErrorDialog({ open, onOpenChange }) {
           body: JSON.stringify({
             userId,
             amount: selectedTokens,
+            amountCNY: selectedOption.amountCNY,
+            selectedTokens: selectedTokens,
           }),
         });
         const data = await response.json();
-        if (data && data.links) {
-          const approvalUrl = data.links.find((link) => link.rel === 'approve').href;
-          if (approvalUrl) {
-            window.location.href = approvalUrl;
-          } else {
-            console.error('No approval URL found');
-          }
+        console.log(data);
+        if (data && data.approvalUrl) {
+          window.location.href = data.approvalUrl;
         } else {
-          console.error('Failed to initiate PayPal payment', data.error || 'Missing data');
+          console.error('Failed to initiate PayPal payment', data.error || 'Missing approval URL');
         }
       } else {
-        // Default to Stripe logic
+        const { priceId } = selectedOption;
         const res = await fetch('/api/payment/stripe/create-checkout-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ priceId, userId, domain: 'gptchina.io', email }),
         });
+        console.log('res', res);
         const data = await res.json();
         const stripe = await stripePromise;
         const { error } = await stripe.redirectToCheckout({ sessionId: data.sessionId });
@@ -162,6 +145,17 @@ export default function ErrorDialog({ open, onOpenChange }) {
       setProcessingTokenAmount(null);
     }
   }, [selectedTokens, selectedPaymentOption, userId, email, tokenOptions]);
+
+  const PaymentOptionButton = ({ icon: Icon, isSelected, onClick }) => (
+    <button
+      onClick={onClick}
+      className={`rounded p-2 ${
+        isSelected ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
+      } transition-colors duration-150 hover:bg-blue-600 hover:text-white`}
+    >
+      <Icon size="2.5em" />
+    </button>
+  );
 
   useEffect(() => {
     if (open) {
@@ -181,7 +175,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
                 Please Note! WeChat and Alipay valid only with a Chinese National ID-linked account
               </div>
               <div className="grid w-full grid-cols-2 gap-5 p-3">
-                {tokenOptions.map(({ tokens, label, price }) => (
+                {tokenOptions.map(({ tokens, label, price, amountCNY }) => (
                   <button
                     key={tokens}
                     onClick={() => handleSelect(tokens)}
@@ -197,66 +191,41 @@ export default function ErrorDialog({ open, onOpenChange }) {
                   </button>
                 ))}
               </div>
+
+              <div className="my-2 flex w-full items-center">
+                <div className="flex-grow border-t border-gray-300"></div>
+                <span className="text-md mx-4 flex-shrink bg-white px-2 text-gray-700 dark:text-white">
+                  Select Payment Option
+                </span>
+                <div className="flex-grow border-t border-gray-300"></div>
+              </div>
+
               <div className="my-4 flex justify-center space-x-4">
-                {/* WeChat */}
-                <button
+                <PaymentOptionButton
+                  icon={SiWechat}
+                  isSelected={selectedPaymentOption === 'wechat'}
                   onClick={() => setSelectedPaymentOption('wechat')}
-                  className={`rounded p-2 ${
-                    selectedPaymentOption === 'wechat'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-200 text-gray-700'
-                  } transition-colors duration-150 hover:bg-blue-600 hover:text-white`}
-                >
-                  <SiWechat size="2.5em" />
-                </button>
-
-                {/* Alipay */}
-                <button
+                />
+                <PaymentOptionButton
+                  icon={SiAlipay}
+                  isSelected={selectedPaymentOption === 'alipay'}
                   onClick={() => setSelectedPaymentOption('alipay')}
-                  className={`rounded p-2 ${
-                    selectedPaymentOption === 'alipay'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-200 text-gray-700'
-                  } transition-colors duration-150 hover:bg-blue-600 hover:text-white`}
-                >
-                  <SiAlipay size="2.5em" />
-                </button>
-
-                {/* Credit Card */}
-                <button
+                />
+                <PaymentOptionButton
+                  icon={FaCreditCard}
+                  isSelected={selectedPaymentOption === 'creditCard'}
                   onClick={() => setSelectedPaymentOption('creditCard')}
-                  className={`rounded p-2 ${
-                    selectedPaymentOption === 'creditCard'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-200 text-gray-700'
-                  } transition-colors duration-150 hover:bg-blue-600 hover:text-white`}
-                >
-                  <FaCreditCard size="2.5em" />
-                </button>
-
-                {/* PayPal */}
-                <button
+                />
+                <PaymentOptionButton
+                  icon={FaCcPaypal}
+                  isSelected={selectedPaymentOption === 'paypal'}
                   onClick={() => setSelectedPaymentOption('paypal')}
-                  className={`rounded p-2 ${
-                    selectedPaymentOption === 'paypal'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-200 text-gray-700'
-                  } transition-colors duration-150 hover:bg-blue-600 hover:text-white`}
-                >
-                  <FaCcPaypal size="2.5em" />
-                </button>
-
-                {/* BitCoin */}
-                <button
+                />
+                <PaymentOptionButton
+                  icon={FaBitcoin}
+                  isSelected={selectedPaymentOption === 'bitcoin'}
                   onClick={() => setSelectedPaymentOption('bitcoin')}
-                  className={`rounded p-2 ${
-                    selectedPaymentOption === 'bitcoin'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-200 text-gray-700'
-                  } transition-colors duration-150 hover:bg-blue-600 hover:text-white`}
-                >
-                  <FaBitcoin size="2.5em" />
-                </button>
+                />
               </div>
 
               <button

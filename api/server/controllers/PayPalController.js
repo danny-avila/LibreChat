@@ -15,9 +15,28 @@ function client() {
   return new paypal.core.PayPalHttpClient(environment());
 }
 
+// function to convert RMB to USD using the current exchange rate
+function convertRmbToUsd(amountCNY) {
+  const exchangeRate = 7.22; // exchange rate: 1 USD = 7.22 RMB
+  return amountCNY / exchangeRate;
+}
+
 exports.createPayment = async (req, res) => {
-  console.log('Received createPayment request with body:', req.body);
-  const { userId, amount } = req.body;
+  const { userId, amountCNY, selectedTokens } = req.body;
+  console.log(
+    'Creating PayPal payment for user',
+    userId,
+    'with amount',
+    amountCNY,
+    'CNY and selected tokens',
+    selectedTokens,
+  );
+
+  // Convert amount from RMB to USD based on the current exchange rate
+  const amountInUsd = convertRmbToUsd(amountCNY);
+
+  // Concatenate userId and selectedTokens to use as custom_id
+  const customId = `${userId}:${selectedTokens}`;
 
   const request = new paypal.orders.OrdersCreateRequest();
   request.prefer('return=representation');
@@ -27,9 +46,9 @@ exports.createPayment = async (req, res) => {
       {
         amount: {
           currency_code: 'USD',
-          value: amount.toString(),
+          value: amountInUsd.toFixed(2).toString(),
         },
-        custom_id: userId.toString(),
+        custom_id: customId, // Use concatenated customId
       },
     ],
     application_context: {
@@ -40,17 +59,13 @@ exports.createPayment = async (req, res) => {
 
   try {
     const response = await client().execute(request);
-    const { purchase_units, links } = response.result;
-
-    console.log('purchase_units:', JSON.stringify(purchase_units, null, 2));
-    console.log('links:', JSON.stringify(links, null, 2));
     if (response.statusCode === 201) {
       const approvalUrl = response.result.links.find((link) => link.rel === 'approve').href;
       console.log('Order created successfully: ', response.result.id);
       res.json({ id: response.result.id, approvalUrl: approvalUrl });
     }
   } catch (error) {
-    console.error(error);
+    console.error('Error creating PayPal payment:', error);
     res.status(500).send('Error creating PayPal payment');
   }
 };
@@ -76,18 +91,18 @@ exports.handleWebhook = async (req, res) => {
 
   const event = req.body;
 
-  console.log(`Webhook event received: ${event.event_type}`, event);
-
   if (event.event_type === 'CHECKOUT.ORDER.APPROVED') {
     const purchaseUnit = event.resource.purchase_units[0];
-    const amount = purchaseUnit.amount.value;
-    const userId = purchaseUnit.custom_id;
+    const customId = purchaseUnit.custom_id;
+    // Split the custom_id to extract userId and selectedTokens
+    const [userId, selectedTokens] = customId.split(':');
 
-    console.log(`Approved payment of $${amount} for user ${userId}.`);
+    console.log(`Approved payment for user ${userId} with selected tokens ${selectedTokens}.`);
 
     try {
-      const newBalance = await addTokensByUserId(userId, amount);
-      console.log(`Success! ${amount} tokens added, new balance is ${newBalance}.`);
+      // Assuming selectedTokens is the number of tokens to add
+      const newBalance = await addTokensByUserId(userId, parseInt(selectedTokens, 10));
+      console.log(`Success! ${selectedTokens} tokens added, new balance is ${newBalance}.`);
       res.status(200).send('Success! Tokens added.');
     } catch (error) {
       console.error(`Error updating token balance for user ${userId}:`, error);

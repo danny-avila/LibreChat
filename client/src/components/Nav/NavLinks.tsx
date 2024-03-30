@@ -15,6 +15,7 @@ import Logout from './Logout';
 import { cn } from '~/utils/';
 import ErrorDialog from '~/components/Messages/Content/ErrorDialog';
 import { Tooltip } from 'react-tooltip';
+import numeral from 'numeral';
 
 import store from '~/store';
 
@@ -53,15 +54,11 @@ function NavLinks() {
   const [showBuyTokens, setShowBuyTokens] = useState(false);
 
   function formatTokenCount(count) {
-    if (count >= 1000 && count < 1000000) {
-      return (count / 1000).toFixed(count % 1000 === 0 ? 0 : 1) + 'k';
-    } else if (count >= 1000000 && count < 10000000) {
-      return (count / 1000000).toFixed(count % 1000000 === 0 ? 0 : 1) + 'M';
-    } else if (count >= 10000000) {
-      return (count / 10000000).toFixed(count % 10000000 === 0 ? 0 : 1) + '00M';
-    } else {
-      return count;
-    }
+    // For numbers below 10 million, format with 'k' for thousands and 'M' for millions, with up to 1 decimal place if needed.
+    // For numbers 10 million and above, it automatically formats with 'M' and no decimal places, adhering to standard formatting.
+    let formatted = numeral(count).format(count >= 1000 ? '0.[0]a' : '0');
+    formatted = formatted.toUpperCase();
+    return formatted;
   }
 
   return (
