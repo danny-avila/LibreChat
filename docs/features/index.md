@@ -9,6 +9,8 @@ weight: 2
 ---
 
 * 🤖[Custom Endpoints](../install/configuration/custom_config.md)
+* 🗃️ [RAG API (Chat with Files)](./rag_api.md)
+* 🔖 [Presets](./presets.md)
 * 🔌[Plugins](./plugins/index.md)
     * 🔌 [Introduction](./plugins/introduction.md)
     * 🛠️ [Make Your Own](./plugins/make_your_own.md)
@@ -17,7 +19,6 @@ weight: 2
     * 🖌️ [Stable Diffusion](./plugins/stable_diffusion.md)
     * 🧠 [Wolfram|Alpha](./plugins/wolfram.md)
     * ⚡ [Azure AI Search](./plugins/azure_ai_search.md)
-* 🔖 [Presets](./presets.md)
 
 ---
 
