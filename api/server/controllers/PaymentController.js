@@ -3,8 +3,7 @@ const addTokensByUserId = require('../../../config/addTokens');
 
 exports.createPaymentIntent = async (req, res) => {
   try {
-    console.log('req.body:', req.body);
-    const { priceId, userId, domain, email } = req.body;
+    const { priceId, userId, domain, email, paymentMethod } = req.body;
 
     const validPriceIds = [
       'price_1ORgxoHKD0byXXClx3u1yLa0', // 10 CNY - only for China users
@@ -22,8 +21,23 @@ exports.createPaymentIntent = async (req, res) => {
       return;
     }
 
+    const validPaymentMethods = ['card', 'alipay', 'wechat_pay'];
+
+    if (!validPaymentMethods.includes(paymentMethod)) {
+      res.status(400).json({ error: 'Invalid payment method' });
+      return;
+    }
+
+    const paymentMethodOptions = {};
+
+    if (paymentMethod === 'wechat_pay') {
+      paymentMethodOptions.wechat_pay = {
+        client: 'web',
+      };
+    }
+
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card', 'wechat_pay', 'alipay'],
+      payment_method_types: [paymentMethod],
       line_items: [
         {
           price: priceId,
@@ -39,11 +53,7 @@ exports.createPaymentIntent = async (req, res) => {
         },
       },
       customer_email: email,
-      payment_method_options: {
-        wechat_pay: {
-          client: 'web',
-        },
-      },
+      payment_method_options: paymentMethodOptions,
       mode: 'payment',
       success_url: `${process.env.DOMAIN_CLIENT}`,
       cancel_url: `${process.env.DOMAIN_CLIENT}`,

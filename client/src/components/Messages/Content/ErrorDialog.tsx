@@ -73,9 +73,8 @@ export default function ErrorDialog({ open, onOpenChange }) {
       return;
     }
 
-    setErrorMessage(''); // Clear the error message when the selections are valid
+    setErrorMessage('');
 
-    // Find the selected token option to get its CNY amount and price ID
     const selectedOption = tokenOptions.find((option) => option.tokens === selectedTokens);
     if (!selectedOption) {
       console.error('Invalid token selection');
@@ -130,11 +129,14 @@ export default function ErrorDialog({ open, onOpenChange }) {
         }
       } else {
         const { priceId } = selectedOption;
+        const paymentMethod = selectedPaymentOption;
+
         const res = await fetch('/api/payment/stripe/create-checkout-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ priceId, userId, domain: 'gptchina.io', email }),
+          body: JSON.stringify({ priceId, userId, domain: 'gptchina.io', email, paymentMethod }),
         });
+
         console.log('res', res);
         const data = await res.json();
         const stripe = await stripePromise;
@@ -202,7 +204,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
 
             <div className="my-2 flex w-full items-center">
               <div className="flex-grow border-t border-gray-300"></div>
-              <span className="text-md mx-4 flex-shrink bg-white px-2 text-gray-700 dark:text-white">
+              <span className="text-md mx-4 flex-shrink bg-white px-2 text-gray-700 dark:bg-gray-900 dark:text-gray-300">
                 Select Payment Option
               </span>
               <div className="flex-grow border-t border-gray-300"></div>
@@ -211,8 +213,8 @@ export default function ErrorDialog({ open, onOpenChange }) {
             <div className="my-4 flex justify-center space-x-4">
               <PaymentOptionButton
                 icon={SiWechat}
-                isSelected={selectedPaymentOption === 'wechat'}
-                onClick={() => setSelectedPaymentOption('wechat')}
+                isSelected={selectedPaymentOption === 'wechat_pay'}
+                onClick={() => setSelectedPaymentOption('wechat_pay')}
               />
               <PaymentOptionButton
                 icon={SiAlipay}
@@ -221,8 +223,8 @@ export default function ErrorDialog({ open, onOpenChange }) {
               />
               <PaymentOptionButton
                 icon={FaCreditCard}
-                isSelected={selectedPaymentOption === 'creditCard'}
-                onClick={() => setSelectedPaymentOption('creditCard')}
+                isSelected={selectedPaymentOption === 'card'}
+                onClick={() => setSelectedPaymentOption('card')}
               />
               <PaymentOptionButton
                 icon={FaCcPaypal}
@@ -241,7 +243,9 @@ export default function ErrorDialog({ open, onOpenChange }) {
               disabled={processingTokenAmount !== null}
               className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"
             >
-              {processingTokenAmount !== null ? <Spinner /> : 'Purchase - 购买'}
+              <span className="inline-flex items-center justify-center">
+                {processingTokenAmount !== null ? <Spinner /> : 'Purchase - 购买'}
+              </span>
             </button>
           </div>
         }
