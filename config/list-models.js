@@ -1,6 +1,6 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
-const { silentExit } = require('./helpers');
+const { askQuestion, silentExit } = require('./helpers');
 const User = require('~/models/User');
 const connect = require('./connect');
 const { loadDefaultModels, loadConfigModels } = require('~/server/services/Config');
@@ -9,13 +9,21 @@ const { processModelData, getModelMaxTokens } = require('~/utils');
 (async () => {
   await connect();
 
+  let email = '';
+  if (process.argv.length >= 3) {
+    email = process.argv[2];
+  } else {
+    email = await askQuestion('Email:');
+  }
+  let user = await User.findOne({ email: email });
+  if (!user) {
+    user = {_id: '0'};
+  }
+
   let req = [];
   req.user = {
-    id: '0',
-//req.user.id,
-//    username: req.user.username,
-//    email: req.user.email,
-    // Add any other necessary fields here
+    id: user._id,
+    email: user.email,
   };
 
   req.app = {
@@ -26,12 +34,9 @@ const { processModelData, getModelMaxTokens } = require('~/utils');
   const configModels = await loadConfigModels(req);
   const models = { ...defaultModelsConfig, ...configModels };
 
-//  console.green('Model Objects');
-
   let modelList = [];
   for (const key in models) {
     if (models[key]) {
-//      console.log(models[key]);
       let modelArray = models[key];
       modelArray.forEach((model) => {
         modelList.push(model);
@@ -45,14 +50,12 @@ const { processModelData, getModelMaxTokens } = require('~/utils');
   });
 
   let modelData = [];
-
   uniqueModelList.forEach((modelName) => {
     modelMaxTokens = getModelMaxTokens(modelName);
     modelData.push({
       Name: modelName,
       MaxTokens: modelMaxTokens,
     });
-    // console.log(modelName,' ',modelConfig);
   });
 
   /**
@@ -64,10 +67,6 @@ const { processModelData, getModelMaxTokens } = require('~/utils');
 
   console.table(modelData);
   console.yellow('undefined models use the default token limit: 4096');
-
-  //console.green(modelList);
-  //console.yellow(JSON.stringify(defaultModelsConfig));
-  //console.yellow(JSON.stringify(configModels));
 
   silentExit(0);
 })();
