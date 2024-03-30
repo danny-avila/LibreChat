@@ -97,6 +97,10 @@ version: '3.4'
 #     ports:
 #       - 7700:7700
 
+# # USE RAG API IMAGE WITH LOCAL EMBEDDINGS SUPPORT
+#  rag_api:
+#    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
+
 # # ADD OLLAMA
 #  ollama:
 #    image: ollama/ollama:latest
