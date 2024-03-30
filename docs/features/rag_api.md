@@ -18,7 +18,7 @@ It leverages LangChain, PostgresQL + PGVector, and Python FastAPI to index and r
 
 OpenAI Assistants have their own implementation of RAG through the "Retrieval" capability. Learn more about it [here.](https://platform.openai.com/docs/assistants/tools/knowledge-retrieval) 
 
-It will still be useful to implement usage of the RAG API since OpenAI charges for both file storage, and use of "Retrieval," and will be introduced in a future update.
+It will still be useful to implement usage of the RAG API with the Assistants API since OpenAI charges for both file storage, and use of "Retrieval," and will be introduced in a future update.
 
 Plugins support is not enabled as the whole "plugin/tool" framework will get a complete rework soon, making tools available to most endpoints (ETA Summer 2024).
 
