@@ -12,6 +12,7 @@ It leverages LangChain, PostgresQL + PGVector, and Python FastAPI to index and r
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/f1298f66-bf1d-4499-a582-23430b481f17)
 
+---
 
 **Currently, this feature is available to all Custom Endpoints, OpenAI, Azure OpenAi, Anthropic, and Google.**
 
