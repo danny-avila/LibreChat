@@ -20,6 +20,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
   const [tokenBalance, setTokenBalance] = useState(null);
   const [selectedTokens, setSelectedTokens] = useState(null);
   const [selectedPaymentOption, setSelectedPaymentOption] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
   const localize = useLocalize();
 
   const tokenOptions = [
@@ -67,9 +68,12 @@ export default function ErrorDialog({ open, onOpenChange }) {
   }, []);
 
   const handlePurchase = useCallback(async () => {
-    if (selectedTokens === null || selectedPaymentOption === null) {
+    if (!selectedTokens || !selectedPaymentOption) {
+      setErrorMessage('Please select a token package and a payment option.');
       return;
     }
+
+    setErrorMessage(''); // Clear the error message when the selections are valid
 
     // Find the selected token option to get its CNY amount and price ID
     const selectedOption = tokenOptions.find((option) => option.tokens === selectedTokens);
@@ -169,78 +173,77 @@ export default function ErrorDialog({ open, onOpenChange }) {
         title={localize('com_ui_payment_title')}
         className="max-w-[450px]"
         main={
-          <>
-            <div className="flex w-full flex-col items-center gap-2">
-              <div className="text-center text-sm dark:text-white">
-                Please Note! WeChat and Alipay valid only with a Chinese National ID-linked account
+          <div className="flex w-full flex-col items-center gap-2">
+            {errorMessage && (
+              <div className="mb-4 rounded bg-red-100 p-4 text-red-700">
+                <span>{errorMessage}</span>
               </div>
-              <div className="grid w-full grid-cols-2 gap-5 p-3">
-                {tokenOptions.map(({ tokens, label, price, amountCNY }) => (
-                  <button
-                    key={tokens}
-                    onClick={() => handleSelect(tokens)}
-                    className={`flex h-[100px] flex-col items-center justify-between rounded p-3 text-white ${
-                      selectedTokens === tokens
-                        ? 'border-4 border-blue-500 bg-green-500'
-                        : 'border-4-green-500 border-4 bg-green-500 hover:bg-green-600 dark:hover:bg-green-600'
-                    }`}
-                  >
-                    <div className="text-lg font-bold">{label}</div>
-                    <div>{localize('com_ui_payment_tokens')}</div>
-                    <div className="text-sm">{price}</div>
-                  </button>
-                ))}
-              </div>
-
-              <div className="my-2 flex w-full items-center">
-                <div className="flex-grow border-t border-gray-300"></div>
-                <span className="text-md mx-4 flex-shrink bg-white px-2 text-gray-700 dark:text-white">
-                  Select Payment Option
-                </span>
-                <div className="flex-grow border-t border-gray-300"></div>
-              </div>
-
-              <div className="my-4 flex justify-center space-x-4">
-                <PaymentOptionButton
-                  icon={SiWechat}
-                  isSelected={selectedPaymentOption === 'wechat'}
-                  onClick={() => setSelectedPaymentOption('wechat')}
-                />
-                <PaymentOptionButton
-                  icon={SiAlipay}
-                  isSelected={selectedPaymentOption === 'alipay'}
-                  onClick={() => setSelectedPaymentOption('alipay')}
-                />
-                <PaymentOptionButton
-                  icon={FaCreditCard}
-                  isSelected={selectedPaymentOption === 'creditCard'}
-                  onClick={() => setSelectedPaymentOption('creditCard')}
-                />
-                <PaymentOptionButton
-                  icon={FaCcPaypal}
-                  isSelected={selectedPaymentOption === 'paypal'}
-                  onClick={() => setSelectedPaymentOption('paypal')}
-                />
-                <PaymentOptionButton
-                  icon={FaBitcoin}
-                  isSelected={selectedPaymentOption === 'bitcoin'}
-                  onClick={() => setSelectedPaymentOption('bitcoin')}
-                />
-              </div>
-
-              <button
-                onClick={handlePurchase}
-                disabled={
-                  selectedTokens === null ||
-                  selectedPaymentOption === null ||
-                  processingTokenAmount !== null
-                }
-                className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"
-              >
-                {processingTokenAmount !== null ? <Spinner /> : 'Purchase - 购买'}
-              </button>
+            )}
+            <div className="text-center text-sm dark:text-white">
+              Please Note! WeChat and Alipay valid only with a Chinese National ID-linked account
             </div>
-          </>
+            <div className="grid w-full grid-cols-2 gap-5 p-3">
+              {tokenOptions.map(({ tokens, label, price, amountCNY }) => (
+                <button
+                  key={tokens}
+                  onClick={() => handleSelect(tokens)}
+                  className={`flex h-[100px] flex-col items-center justify-between rounded p-3 text-white ${
+                    selectedTokens === tokens
+                      ? 'border-4 border-blue-500 bg-green-500'
+                      : 'border-4-green-500 border-4 bg-green-500 hover:bg-green-600 dark:hover:bg-green-600'
+                  }`}
+                >
+                  <div className="text-lg font-bold">{label}</div>
+                  <div>{localize('com_ui_payment_tokens')}</div>
+                  <div className="text-sm">{price}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="my-2 flex w-full items-center">
+              <div className="flex-grow border-t border-gray-300"></div>
+              <span className="text-md mx-4 flex-shrink bg-white px-2 text-gray-700 dark:text-white">
+                Select Payment Option
+              </span>
+              <div className="flex-grow border-t border-gray-300"></div>
+            </div>
+
+            <div className="my-4 flex justify-center space-x-4">
+              <PaymentOptionButton
+                icon={SiWechat}
+                isSelected={selectedPaymentOption === 'wechat'}
+                onClick={() => setSelectedPaymentOption('wechat')}
+              />
+              <PaymentOptionButton
+                icon={SiAlipay}
+                isSelected={selectedPaymentOption === 'alipay'}
+                onClick={() => setSelectedPaymentOption('alipay')}
+              />
+              <PaymentOptionButton
+                icon={FaCreditCard}
+                isSelected={selectedPaymentOption === 'creditCard'}
+                onClick={() => setSelectedPaymentOption('creditCard')}
+              />
+              <PaymentOptionButton
+                icon={FaCcPaypal}
+                isSelected={selectedPaymentOption === 'paypal'}
+                onClick={() => setSelectedPaymentOption('paypal')}
+              />
+              <PaymentOptionButton
+                icon={FaBitcoin}
+                isSelected={selectedPaymentOption === 'bitcoin'}
+                onClick={() => setSelectedPaymentOption('bitcoin')}
+              />
+            </div>
+
+            <button
+              onClick={handlePurchase}
+              disabled={processingTokenAmount !== null}
+              className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"
+            >
+              {processingTokenAmount !== null ? <Spinner /> : 'Purchase - 购买'}
+            </button>
+          </div>
         }
       />
     </Dialog>
