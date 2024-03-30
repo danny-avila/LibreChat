@@ -1,12 +1,18 @@
+import { useCallback, useMemo } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+
 import type {
-  TSubmission,
+  Text,
   TMessage,
-  TContentData,
+  ImageFile,
+  TSubmission,
   ContentPart,
+  PartMetadata,
+  TContentData,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import { useCallback, useMemo } from 'react';
+import { addFileToCache } from '~/utils';
 
 type TUseContentHandler = {
   setMessages: (messages: TMessage[]) => void;
@@ -19,6 +25,7 @@ type TContentHandler = {
 };
 
 export default function useContentHandler({ setMessages, getMessages }: TUseContentHandler) {
+  const queryClient = useQueryClient();
   const messageMap = useMemo(() => new Map<string, TMessage>(), []);
   return useCallback(
     ({ data, submission }: TContentHandler) => {
@@ -46,9 +53,13 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       }
 
       // TODO: handle streaming for non-text
-      const part: ContentPart = data[ContentTypes.TEXT]
-        ? { value: data[ContentTypes.TEXT] }
-        : data[type];
+      const textPart: Text | string | undefined = data[ContentTypes.TEXT];
+      const part: ContentPart =
+        textPart && typeof textPart === 'string' ? { value: textPart } : data[type];
+
+      if (type === ContentTypes.IMAGE_FILE) {
+        addFileToCache(queryClient, part as ImageFile & PartMetadata);
+      }
 
       /* spreading the content array to avoid mutation */
       response.content = [...(response.content ?? [])];
@@ -67,6 +78,6 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       setMessages([...messages, response]);
     },
-    [getMessages, messageMap, setMessages],
+    [queryClient, getMessages, messageMap, setMessages],
   );
 }

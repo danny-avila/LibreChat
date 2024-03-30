@@ -1,4 +1,3 @@
-const path = require('path');
 const { klona } = require('klona');
 const {
   StepTypes,
@@ -233,14 +232,9 @@ function createInProgressHandler(openai, thread_id, messages) {
               file_id,
               basename: `${file_id}.png`,
             });
-            // toolCall.asset_pointer = file.filepath;
-            const prelimImage = {
-              file_id,
-              filename: path.basename(file.filepath),
-              filepath: file.filepath,
-              height: file.height,
-              width: file.width,
-            };
+
+            const prelimImage = file;
+
             // check if every key has a value before adding to content
             const prelimImageKeys = Object.keys(prelimImage);
             const validImageFile = prelimImageKeys.every((key) => prelimImage[key]);

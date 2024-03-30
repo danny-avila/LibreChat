@@ -6,10 +6,7 @@ import * as t from './types';
 import * as s from './schemas';
 import request from './request';
 import * as endpoints from './api-endpoints';
-
-export function getConversations(pageNumber: string): Promise<t.TGetConversationsResponse> {
-  return request.get(endpoints.conversations(pageNumber));
-}
+import type { AxiosResponse } from 'axios';
 
 export function abortRequestWithMessage(
   endpoint: string,
@@ -17,15 +14,6 @@ export function abortRequestWithMessage(
   message: string,
 ): Promise<void> {
   return request.post(endpoints.abortRequest(endpoint), { arg: { abortKey, message } });
-}
-
-export function deleteConversation(payload: t.TDeleteConversationRequest) {
-  //todo: this should be a DELETE request
-  return request.post(endpoints.deleteConversation(), { arg: payload });
-}
-
-export function clearAllConversations(): Promise<unknown> {
-  return request.post(endpoints.deleteConversation(), { arg: {} });
 }
 
 export function revokeUserKey(name: string): Promise<unknown> {
@@ -41,20 +29,6 @@ export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage
     return Promise.resolve([]);
   }
   return request.get(endpoints.messages(conversationId));
-}
-
-export function getConversationById(id: string): Promise<s.TConversation> {
-  return request.get(endpoints.conversationById(id));
-}
-
-export function updateConversation(
-  payload: t.TUpdateConversationRequest,
-): Promise<t.TUpdateConversationResponse> {
-  return request.post(endpoints.updateConversation(), { arg: payload });
-}
-
-export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
-  return request.post(endpoints.genTitle(), payload);
 }
 
 export function updateMessage(payload: t.TUpdateMessageRequest): Promise<unknown> {
@@ -102,13 +76,6 @@ export function getUser(): Promise<t.TUser> {
 export function getUserBalance(): Promise<string> {
   return request.get(endpoints.balance());
 }
-
-export const searchConversations = async (
-  q: string,
-  pageNumber: string,
-): Promise<t.TSearchResults> => {
-  return request.get(endpoints.search(q, pageNumber));
-};
 
 export const updateTokenCount = (text: string) => {
   return request.post(endpoints.tokenizer(), { arg: text });
@@ -196,6 +163,10 @@ export const listAssistants = (
   return request.get(endpoints.assistants(), { params });
 };
 
+export function getAssistantDocs(): Promise<a.AssistantDocument[]> {
+  return request.get(endpoints.assistants('documents'));
+}
+
 /* Tools */
 
 export const getAvailableTools = (): Promise<s.TPlugin[]> => {
@@ -231,18 +202,12 @@ export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise
   );
 };
 
-export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
-  const { assistant_id, ...body } = data;
-  return request.post(endpoints.assistants(`actions/${assistant_id}`), body);
+export const getFileDownload = async (userId: string, filepath: string): Promise<AxiosResponse> => {
+  const encodedFilePath = encodeURIComponent(filepath);
+  return request.getResponse(`${endpoints.files()}/download/${userId}/${encodedFilePath}`, {
+    responseType: 'blob',
+  });
 };
-
-export function getActions(): Promise<a.Action[]> {
-  return request.get(endpoints.assistants('actions'));
-}
-
-export function getAssistantDocs(): Promise<a.AssistantDocument[]> {
-  return request.get(endpoints.assistants('documents'));
-}
 
 export const deleteFiles = async (
   files: f.BatchFile[],
@@ -252,7 +217,34 @@ export const deleteFiles = async (
     data: { files, assistant_id },
   });
 
+/* actions */
+
+export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {
+  const { assistant_id, ...body } = data;
+  return request.post(endpoints.assistants(`actions/${assistant_id}`), body);
+};
+
+export function getActions(): Promise<a.Action[]> {
+  return request.get(endpoints.assistants('actions'));
+}
+
+export const deleteAction = async (
+  assistant_id: string,
+  action_id: string,
+  model: string,
+): Promise<void> =>
+  request.delete(endpoints.assistants(`actions/${assistant_id}/${action_id}/${model}`));
+
 /* conversations */
+
+export function deleteConversation(payload: t.TDeleteConversationRequest) {
+  //todo: this should be a DELETE request
+  return request.post(endpoints.deleteConversation(), { arg: payload });
+}
+
+export function clearAllConversations(): Promise<unknown> {
+  return request.post(endpoints.deleteConversation(), { arg: {} });
+}
 
 export const listConversations = (
   params?: q.ConversationListParams,
@@ -275,9 +267,27 @@ export const listConversationsByQuery = (
   }
 };
 
-export const deleteAction = async (
-  assistant_id: string,
-  action_id: string,
-  model: string,
-): Promise<void> =>
-  request.delete(endpoints.assistants(`actions/${assistant_id}/${action_id}/${model}`));
+export const searchConversations = async (
+  q: string,
+  pageNumber: string,
+): Promise<t.TSearchResults> => {
+  return request.get(endpoints.search(q, pageNumber));
+};
+
+export function getConversations(pageNumber: string): Promise<t.TGetConversationsResponse> {
+  return request.get(endpoints.conversations(pageNumber));
+}
+
+export function getConversationById(id: string): Promise<s.TConversation> {
+  return request.get(endpoints.conversationById(id));
+}
+
+export function updateConversation(
+  payload: t.TUpdateConversationRequest,
+): Promise<t.TUpdateConversationResponse> {
+  return request.post(endpoints.updateConversation(), { arg: payload });
+}
+
+export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
+  return request.post(endpoints.genTitle(), payload);
+}

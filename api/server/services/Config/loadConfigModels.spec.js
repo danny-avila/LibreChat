@@ -262,4 +262,68 @@ describe('loadConfigModels', () => {
       }),
     );
   });
+
+  it('falls back to default models if fetching returns an empty array', async () => {
+    getCustomConfig.mockResolvedValue({
+      endpoints: {
+        custom: [
+          {
+            name: 'EndpointWithSameFetchKey',
+            apiKey: 'API_KEY',
+            baseURL: 'http://example.com',
+            models: {
+              fetch: true,
+              default: ['defaultModel1'],
+            },
+          },
+          {
+            name: 'EmptyFetchModel',
+            apiKey: 'API_KEY',
+            baseURL: 'http://example.com',
+            models: {
+              fetch: true,
+              default: ['defaultModel1', 'defaultModel2'],
+            },
+          },
+        ],
+      },
+    });
+
+    fetchModels.mockResolvedValue([]);
+
+    const result = await loadConfigModels(mockRequest);
+    expect(fetchModels).toHaveBeenCalledTimes(1);
+    expect(result.EmptyFetchModel).toEqual(['defaultModel1', 'defaultModel2']);
+  });
+
+  it('falls back to default models if fetching returns a falsy value', async () => {
+    getCustomConfig.mockResolvedValue({
+      endpoints: {
+        custom: [
+          {
+            name: 'FalsyFetchModel',
+            apiKey: 'API_KEY',
+            baseURL: 'http://example.com',
+            models: {
+              fetch: true,
+              default: ['defaultModel1', 'defaultModel2'],
+            },
+          },
+        ],
+      },
+    });
+
+    fetchModels.mockResolvedValue(false);
+
+    const result = await loadConfigModels(mockRequest);
+
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'FalsyFetchModel',
+        apiKey: 'API_KEY',
+      }),
+    );
+
+    expect(result.FalsyFetchModel).toEqual(['defaultModel1', 'defaultModel2']);
+  });
 });

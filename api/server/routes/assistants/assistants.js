@@ -149,7 +149,7 @@ router.delete('/:id', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const { limit, order, after, before } = req.query;
+    const { limit = 100, order = 'desc', after, before } = req.query;
     const query = { limit, order, after, before };
 
     const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];

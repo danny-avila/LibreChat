@@ -48,11 +48,12 @@ function MultiSelectDropDown({
 
   // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
   // reset once the component is unmounted (as per a normal search)
-  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>(
-    availableValues,
-    searchPlaceholder,
-    (option) => (option.name || '').toUpperCase(),
-  );
+  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>({
+    availableOptions: availableValues,
+    placeholder: searchPlaceholder,
+    getTextKeyOverride: (option) => (option.name || '').toUpperCase(),
+  });
+
   const hasSearchRender = Boolean(searchRender);
   const options = hasSearchRender ? filteredValues : availableValues;
 
@@ -65,6 +66,7 @@ function MultiSelectDropDown({
     <div className={cn('flex items-center justify-center gap-2', containerClassName ?? '')}>
       <div className="relative w-full">
         {/* the function typing is correct but there's still an issue here */}
+        {/* @ts-ignore */}
         <Listbox value={value} onChange={handleSelect} disabled={disabled}>
           {() => (
             <>

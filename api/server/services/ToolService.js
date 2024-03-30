@@ -4,14 +4,17 @@ const { StructuredTool } = require('langchain/tools');
 const { zodToJsonSchema } = require('zod-to-json-schema');
 const { Calculator } = require('langchain/tools/calculator');
 const {
+  Tools,
   ContentTypes,
   imageGenTools,
+  actionDelimiter,
+  ImageVisionTool,
   openapiToFunction,
   validateAndParseOpenAPISpec,
-  actionDelimiter,
 } = require('librechat-data-provider');
 const { loadActionSets, createActionTool, domainParser } = require('./ActionService');
 const { processFileURL } = require('~/server/services/Files/process');
+const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
@@ -83,6 +86,8 @@ function loadAndFormatTools({ directory, filter = new Set() }) {
     tools.push(formattedTool);
   }
 
+  tools.push(ImageVisionTool);
+
   return tools.reduce((map, tool) => {
     map[tool.function.name] = tool;
     return map;
@@ -100,8 +105,8 @@ function loadAndFormatTools({ directory, filter = new Set() }) {
  */
 function formatToOpenAIAssistantTool(tool) {
   return {
-    type: 'function',
-    function: {
+    type: Tools.function,
+    [Tools.function]: {
       name: tool.name,
       description: tool.description,
       parameters: zodToJsonSchema(tool.schema),
@@ -110,12 +115,41 @@ function formatToOpenAIAssistantTool(tool) {
 }
 
 /**
+ * Processes the required actions by calling the appropriate tools and returning the outputs.
+ * @param {OpenAIClient} client - OpenAI or StreamRunManager Client.
+ * @param {RequiredAction} requiredActions - The current required action.
+ * @returns {Promise<ToolOutput>} The outputs of the tools.
+ */
+const processVisionRequest = async (client, currentAction) => {
+  if (!client.visionPromise) {
+    return {
+      tool_call_id: currentAction.toolCallId,
+      output: 'No image details found.',
+    };
+  }
+
+  /** @type {ChatCompletion | undefined} */
+  const completion = await client.visionPromise;
+  if (completion.usage) {
+    recordUsage({
+      user: client.req.user.id,
+      model: client.req.body.model,
+      conversationId: (client.responseMessage ?? client.finalMessage).conversationId,
+      ...completion.usage,
+    });
+  }
+  const output = completion?.choices?.[0]?.message?.content ?? 'No image details found.';
+  return {
+    tool_call_id: currentAction.toolCallId,
+    output,
+  };
+};
+
+/**
  * Processes return required actions from run.
- *
  * @param {OpenAIClient} client - OpenAI or StreamRunManager Client.
  * @param {RequiredAction[]} requiredActions - The required actions to submit outputs for.
  * @returns {Promise<ToolOutputs>} The outputs of the tools.
- *
  */
 async function processRequiredActions(client, requiredActions) {
   logger.debug(
@@ -152,6 +186,10 @@ async function processRequiredActions(client, requiredActions) {
 
   for (let i = 0; i < requiredActions.length; i++) {
     const currentAction = requiredActions[i];
+    if (currentAction.tool === ImageVisionTool.function.name) {
+      promises.push(processVisionRequest(client, currentAction));
+      continue;
+    }
     let tool = ToolMap[currentAction.tool] ?? ActionToolMap[currentAction.tool];
 
     const handleToolOutput = async (output) => {

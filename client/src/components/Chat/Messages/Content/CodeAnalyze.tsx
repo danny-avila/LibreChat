@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import ProgressCircle from './ProgressCircle';
 import ProgressText from './ProgressText';
 import FinishedIcon from './FinishedIcon';
 import MarkdownLite from './MarkdownLite';
 import { useProgress } from '~/hooks';
+import store from '~/store';
 
 export default function CodeAnalyze({
   initialProgress = 0.1,
@@ -14,7 +16,8 @@ export default function CodeAnalyze({
   code: string;
   outputs: Record<string, unknown>[];
 }) {
-  const [showCode, setShowCode] = useState(false);
+  const showCodeDefault = useRecoilValue(store.showCode);
+  const [showCode, setShowCode] = useState(showCodeDefault);
   const progress = useProgress(initialProgress);
   const radius = 56.08695652173913;
   const circumference = 2 * Math.PI * radius;

@@ -24,6 +24,8 @@ type SelectDropDownProps = {
   optionsClass?: string;
   subContainerClassName?: string;
   className?: string;
+  searchClassName?: string;
+  searchPlaceholder?: string;
 };
 
 function SelectDropDown({
@@ -43,6 +45,8 @@ function SelectDropDown({
   subContainerClassName,
   className,
   renderOption,
+  searchClassName,
+  searchPlaceholder,
 }: SelectDropDownProps) {
   const localize = useLocalize();
   const transitionProps = { className: 'top-full mt-3' };
@@ -61,7 +65,12 @@ function SelectDropDown({
   // Detemine if we should to convert this component into a searchable select.  If we have enough elements, a search
   // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
   // reset once the component is unmounted (as per a normal search)
-  const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>(availableValues);
+  const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>({
+    availableOptions: availableValues,
+    placeholder: searchPlaceholder,
+    getTextKeyOverride: (option) => ((option as Option)?.label || '').toUpperCase(),
+    className: searchClassName,
+  });
   const hasSearchRender = Boolean(searchRender);
   const options = hasSearchRender ? filteredValues : availableValues;
 
