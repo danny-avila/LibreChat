@@ -62,14 +62,14 @@ async function resizeImageBuffer(inputBuffer, resolution, endpoint) {
 }
 
 /**
- * Resizes an image buffer to webp format as well as reduces 150 px width.
+ * Resizes an image buffer to webp format as well as reduces by specified or default 150 px width.
  *
  * @param {Buffer} inputBuffer - The buffer of the image to be resized.
  * @returns {Promise<{ buffer: Buffer, width: number, height: number, bytes: number }>} An object containing the resized image buffer, its size and dimensions.
  * @throws Will throw an error if the resolution parameter is invalid.
  */
-async function resizeAndConvert(inputBuffer) {
-  const resizedBuffer = await sharp(inputBuffer).resize({ width: 150 }).toFormat('webp').toBuffer();
+async function resizeAndConvert(inputBuffer, width = 150) {
+  const resizedBuffer = await sharp(inputBuffer).resize({ width }).toFormat('webp').toBuffer();
   const resizedMetadata = await sharp(resizedBuffer).metadata();
   return {
     buffer: resizedBuffer,
