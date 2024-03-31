@@ -12,6 +12,8 @@ export default {
   com_ui_followers: 'Followers',
   com_ui_following: 'Following',
   com_ui_pro_member_expired_at: 'Pro Member. Expired On',
+  com_ui_become_pro_member: 'become pro member',
+  com_ui_renewal_pro_member: 'renewal pro member',
   com_ui_free_member: 'Free Member',
   com_ui_about_yourself: 'About Yourself',
   com_ui_profession: 'Profession',

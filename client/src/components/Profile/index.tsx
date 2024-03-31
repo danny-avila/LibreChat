@@ -3,7 +3,12 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/Tabs';
 import { cn } from '~/utils';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useNavigate, useParams } from 'react-router-dom';
-import { TUser, useFollowUserMutation, useGetUserByIdQuery } from 'librechat-data-provider';
+import {
+  TUser,
+  useFollowUserMutation,
+  useGetStartupConfig,
+  useGetUserByIdQuery,
+} from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import LikedConversations from './LikedConversation';
 import { useRecoilValue } from 'recoil';
@@ -39,6 +44,7 @@ function ProfileContent() {
 
   const getUserByIdQuery = useGetUserByIdQuery(userId);
   const followUserMutation = useFollowUserMutation();
+  const { data: startupConfig } = useGetStartupConfig();
 
   const defaultClasses = 'p-2 rounded-md min-w-[75px] font-normal text-xs';
   const defaultSelected = cn(
@@ -460,11 +466,27 @@ function ProfileContent() {
               <div className="pl-7">
                 {localize('com_ui_pro_member_expired_at')}: {proMemberExpiredAt.getFullYear()}-
                 {proMemberExpiredAt.getMonth() + 1}-{proMemberExpiredAt.getDate()}
+                <button
+                  type="submit"
+                  className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
+                  onClick={() => window.open(startupConfig?.proMemberPaymentURL)}
+                >
+                  {localize('com_ui_renewal_pro_member')}
+                </button>
               </div>
             </div>
           ) : (
             <div className="w-full rounded-lg p-6 dark:text-gray-200">
-              <div className="pl-7">{localize('com_ui_free_member')}</div>
+              <div className="pl-7">
+                {localize('com_ui_free_member')}
+                <button
+                  type="submit"
+                  className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
+                  onClick={() => window.open(startupConfig?.proMemberPaymentURL)}
+                >
+                  {localize('com_ui_become_pro_member')}
+                </button>
+              </div>
             </div>
           )
         ) : (

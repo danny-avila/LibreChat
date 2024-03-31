@@ -191,6 +191,8 @@ export type TStartupConfig = {
   emailEnabled: boolean;
   checkBalance: boolean;
   customFooter?: string;
+  proMemberPaymentURL: string;
+  portalWebsiteURL: string;
 };
 
 export type TRefreshTokenResponse = {

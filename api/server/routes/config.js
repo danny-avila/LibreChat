@@ -21,6 +21,8 @@ router.get('/', async function (req, res) {
       serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
       registrationEnabled: isEnabled(process.env.ALLOW_REGISTRATION),
       socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
+      proMemberPaymentURL: process.env.PRO_MEMBER_PAYMENT_URL,
+      portalWebsiteURL: process.env.PORTAL_WEBSITE_URL,
       emailEnabled:
         (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
         !!process.env.EMAIL_USERNAME &&
