@@ -1,0 +1,419 @@
+version: 1.0.5
+
+cache: true
+fileStrategy: "local"
+
+registration:
+  socialLogins: ["openid"]
+
+endpoints:
+  custom:
+
+    # Example transformation for "OpenRouter" organized by model provider groups.
+
+    # Group: openai models
+    - name: "OpenRouter-OpenAI"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: [
+          "openai/gpt-3.5-turbo",
+          "openai/gpt-3.5-turbo-0125",
+          "openai/gpt-3.5-turbo-1106",
+          "openai/gpt-3.5-turbo-16k",
+          "openai/gpt-4-turbo-preview",
+          "openai/gpt-4-1106-preview",
+          "openai/gpt-4",
+          "openai/gpt-4-32k",
+          "openai/gpt-4-vision-preview",
+          "openai/gpt-3.5-turbo-instruct"
+        ]
+      fetch: false
+      titleConvo: true
+      titleModel: "openai/gpt-4"
+      summarize: false
+      summaryModel: "openai/gpt-4"
+      forcePrompt: false
+      modelDisplayLabel: "OpenAI"
+      iconURL: "https://youriconsource.com/openai-icon.png"
+
+    # Group: google models
+    - name: "OpenRouter-Google"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: [
+          "google/palm-2-chat-bison",
+          "google/palm-2-codechat-bison",
+          "google/palm-2-chat-bison-32k",
+          "google/palm-2-codechat-bison-32k",
+          "google/gemini-pro",
+          "google/gemini-pro-vision",
+          "google/gemma-7b-it",
+          "google/gemma-7b-it:nitro"
+        ]
+      fetch: false
+      titleConvo: true
+      titleModel: "google/gemini-pro"
+      summarize: false
+      summaryModel: "google/gemini-pro"
+      forcePrompt: false
+      modelDisplayLabel: "Google"
+      iconURL: "https://youriconsource.com/google-icon.png"
+
+    # Group: anthropic models
+    - name: "OpenRouter-Anthropic"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: [
+          "anthropic/claude-3-opus",
+          "anthropic/claude-3-sonnet",
+          "anthropic/claude-3-haiku",
+          "anthropic/claude-2",
+          "anthropic/claude-2.1",
+          "anthropic/claude-2.0",
+          "anthropic/claude-1.2",
+          "anthropic/claude-1",
+          "anthropic/claude-instant-1",
+          "anthropic/claude-instant-1.0",
+          "anthropic/claude-instant-1.2",
+          "anthropic/claude-3-opus:beta",
+          "anthropic/claude-3-sonnet:beta",
+          "anthropic/claude-3-haiku:beta",
+          "anthropic/claude-2:beta",
+          "anthropic/claude-2.1:beta",
+          "anthropic/claude-2.0:beta",
+          "anthropic/claude-instant-1:beta"
+        ]
+      fetch: false
+      titleConvo: true
+      titleModel: "anthropic/claude-3-opus"
+      summarize: false
+      summaryModel: "anthropic/claude-3-opus"
+      forcePrompt: false
+      modelDisplayLabel: "Anthropic"
+      iconURL: "https://youriconsource.com/anthropic-icon.png"
+
+    # Continue with similar structures for mistralai, meta-llama, cohere, intel, nousresearch etc.
+    # Group: mistralai models
+    - name: "OpenRouter-MistralAI"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: [
+          "mistralai/mistral-7b-instruct",
+          "mistralai/mistral-7b-instruct:nitro",
+          "mistralai/mixtral-8x7b-instruct",
+          "mistralai/mixtral-8x7b-instruct:nitro",
+          "mistralai/mixtral-8x7b",
+          "mistralai/mistral-tiny",
+          "mistralai/mistral-small",
+          "mistralai/mistral-medium",
+          "mistralai/mistral-large"
+        ]
+      fetch: false
+      titleConvo: true
+      titleModel: "mistralai/mixtral-8x7b-instruct"
+      summarize: false
+      summaryModel: "mistralai/mixtral-8x7b-instruct"
+      forcePrompt: false
+      modelDisplayLabel: "MistralAI"
+      iconURL: "https://youriconsource.com/mistralai-icon.png"
+
+    # Group: nousresearch models
+    - name: "OpenRouter-NousResearch"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: [
+          "nousresearch/nous-capybara-7b",
+          "nousresearch/nous-capybara-34b",
+          "nousresearch/nous-hermes-llama2-13b",
+          "nousresearch/nous-hermes-llama2-70b",
+          "nousresearch/nous-hermes-2-mixtral-8x7b-dpo",
+          "nousresearch/nous-hermes-2-mixtral-8x7b-sft",
+          "nousresearch/nous-hermes-2-vision-7b",
+          "nousresearch/nous-hermes-yi-34b"
+        ]
+      fetch: false
+      titleConvo: true
+      titleModel: "nousresearch/nous-capybara-7b"
+      summarize: false
+      summaryModel: "nousresearch/nous-capybara-7b"
+      forcePrompt: false
+      modelDisplayLabel: "NousResearch"
+      iconURL: "https://youriconsource.com/nousresearch-icon.png"
+
+    # Group: openrouter models
+    - name: "OpenRouter-OpenRouter"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: [
+          "openrouter/auto",
+          "openrouter/cinematika-7b",
+          "openrouter/cinematika-7b:free"
+        ]
+      fetch: false
+      titleConvo: true
+      titleModel: "openrouter/cinematika-7b"
+      summarize: false
+      summaryModel: "openrouter/cinematika-7b"
+      forcePrompt: false
+      modelDisplayLabel: "OpenRouter"
+      iconURL: "https://youriconsource.com/openrouter-icon.png"
+
+    # Group: Models Containing "Llama"
+    - name: "OpenRouter-LlamaModels"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: [
+          "meta-llama/llama-2-13b-chat",
+          "meta-llama/llama-2-70b-chat",
+          "meta-llama/llama-2-70b-chat:nitro",
+          "meta-llama/codellama-34b-instruct",
+          "codellama/codellama-70b-instruct",
+          "nousresearch/nous-hermes-llama2-13b",
+          "nousresearch/nous-hermes-llama2-70b",
+          "togethercomputer/llama-2-13b-chat",
+          "togethercomputer/llama-2-70b-chat",
+          "togethercomputer/llama-2-7b-chat"
+        ]
+      fetch: false
+      titleConvo: true
+      titleModel: "meta-llama/llama-2-70b-chat"
+      summarize: false
+      summaryModel: "meta-llama/llama-2-70b-chat"
+      forcePrompt: false
+      modelDisplayLabel: "Llama Models"
+      iconURL: "https://youriconsource.com/llama-icon.png"
+
+    # Reorganized Groups Based on Writing Model Sizes
+
+    # Small Writing Models (13b and below)
+    - name: "OpenRouter-SmallWriting"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: [
+          "gryphe/mythomist-7b:free",
+          "huggingfaceh4/zephyr-7b-beta:free",
+          "openchat/openchat-7b:free",
+          "undi95/toppy-m-7b:free",
+          "intel/neural-chat-7b",
+          "huggingfaceh4/zephyr-7b-beta",
+          "openchat/openchat-7b",
+          "gryphe/mythomist-7b",
+          "undi95/toppy-m-7b",
+          "nousresearch/nous-capybara-7b:free",
+          "nousresearch/nous-capybara-7b",
+          # Individual small models outside the specified groups
+        ]
+      fetch: false
+      titleConvo: true
+      titleModel: "An Example Small Writing Model Name"
+      summarize: false
+      summaryModel: "An Example Small Summary Model Name"
+      forcePrompt: false
+      modelDisplayLabel: "Small Writing Models"
+      iconURL: "https://example.com/url-to-small-writing-icon.png"
+
+    # Medium Writing Models (Above 13b and below 70b)
+    - name: "OpenRouter-MediumWriting"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default: [
+          "codellama/CodeLlama-34b-Instruct-hf",
+          "jondurbin/airoboros-l2-70b", # Close to 70b but categorized here as an example.
+          "01-ai/yi-34b",
+          "01-ai/yi-34b-chat",
+          "nousresearch/nous-hermes-llama2-13b",
+          "nousresearch/nous-capybara-34b",
+          "jondurbin/bagel-34b",
+          "togethercomputer/stripedhyena-hessian-7b", # Although marked as 7b, grouped here based on your criteria.
+          # Add any additional medium models meeting the criteria.
+        ]
+      fetch: false
+      titleConvo: true
+      titleModel: "An Example Medium Writing Model Name"
+      summarize: false
+      summaryModel: "An Example Medium Summary Model Name"
+      forcePrompt: false
+      modelDisplayLabel: "Medium Writing Models"
+      iconURL: "https://example.com/url-to-medium-writing-icon.png"
+
+
+    # Large Writing Models (70b and above)
+    - name: "OpenRouter-LargeWriting"
+      apiKey: "${OPENROUTER_KEY}"
+      baseURL: "https://openrouter.ai/api/v1"
+      models:
+        default:
+          - "meta-llama/llama-2-70b-chat"
+          - "meta-llama/llama-2-70b-chat:nitro"
+          - "codellama/codellama-70b-instruct"
+          - "nousresearch/nous-hermes-llama2-70b"
+          - "togethercomputer/llama-2-70b-chat"
+          # Additional large models that fit the criteria.
+      fetch: false
+      titleConvo: true
+      titleModel: "An Example Large Writing Model Name"
+      summarize: false
+      summaryModel: "An Example Large Summary Model Name"
+      forcePrompt: false
+      modelDisplayLabel: "Large Writing Models"
+      iconURL: "https://example.com/url-to-large-writing-icon.png"
+
+    # Group: Codellama Models
+    - name: "TogetherAI-Codellama"
+      apiKey: "${TOGETHERAI_API_KEY}"
+      baseURL: "https://api.together.xyz"
+      models:
+        default:
+          - "codellama/CodeLlama-13b-Instruct-hf"
+          - "codellama/CodeLlama-34b-Instruct-hf"
+          - "codellama/CodeLlama-70b-Instruct-hf"
+          - "codellama/CodeLlama-7b-Instruct-hf"
+      fetch: false
+      titleConvo: true
+      titleModel: "codellama/CodeLlama-34b-Instruct-hf"
+      summarize: false
+      summaryModel: "codellama/CodeLlama-34b-Instruct-hf"
+      forcePrompt: false
+      modelDisplayLabel: "CodeLlama"
+      iconURL: "https://example.com/codellama-icon.png"
+
+    # Group: TogetherComputer Models
+    - name: "TogetherAI-TogetherComputer"
+      apiKey: "${TOGETHERAI_API_KEY}"
+      baseURL: "https://api.together.xyz"
+      models:
+        default:
+          - "togethercomputer/llama-2-13b-chat"
+          - "togethercomputer/llama-2-70b-chat"
+          - "togethercomputer/llama-2-7b-chat"
+          - "togethercomputer/Qwen-7B-Chat"
+          - "togethercomputer/alpaca-7b"
+          - "togethercomputer/falcon-40b-instruct"
+          - "togethercomputer/falcon-7b-instruct"
+          - "togethercomputer/GPT-NeoXT-Chat-Base-20B"
+          - "togethercomputer/Llama-2-7B-32K-Instruct"
+          - "togethercomputer/Pythia-Chat-Base-7B-v0.16"
+          - "togethercomputer/RedPajama-INCITE-Chat-3B-v1"
+          - "togethercomputer/RedPajama-INCITE-7B-Chat"
+          - "togethercomputer/StripedHyena-Nous-7B"
+      fetch: false
+      titleConvo: true
+      titleModel: "togethercomputer/llama-2-70b-chat"
+      summarize: false
+      summaryModel: "togethercomputer/llama-2-70b-chat"
+      forcePrompt: false
+      modelDisplayLabel: "TogetherComputer"
+      iconURL: "https://example.com/togethercomputer-icon.png"
+
+    # Group: Mistralai Models
+    - name: "TogetherAI-Mistralai"
+      apiKey: "${TOGETHERAI_API_KEY}"
+      baseURL: "https://api.together.xyz"
+      models:
+        default:
+          - "mistralai/Mistral-7B-Instruct-v0.1"
+          - "mistralai/Mistral-7B-Instruct-v0.2"
+          - "mistralai/Mixtral-8x7B-Instruct-v0.1"
+      fetch: false
+      titleConvo: true
+      titleModel: "mistralai/Mixtral-8x7B-Instruct-v0.1"
+      summarize: false
+      summaryModel: "mistralai/Mixtral-8x7B-Instruct-v0.1"
+      forcePrompt: false
+      modelDisplayLabel: "Mistralai"
+      iconURL: "https://example.com/mistralai-icon.png"
+
+    # Group: NousResearch Models
+    - name: "TogetherAI-NousResearch"
+      apiKey: "${TOGETHERAI_API_KEY}"
+      baseURL: "https://api.together.xyz"
+      models:
+        default:
+          - "NousResearch/Nous-Capybara-7B-V1p9"
+          - "NousResearch/Nous-Hermes-2-Mixtral-8x7B-DPO"
+          - "NousResearch/Nous-Hermes-2-Mixtral-8x7B-SFT"
+          - "NousResearch/Nous-Hermes-Llama2-70b"
+          - "NousResearch/Nous-Hermes-llama-2-7b"
+          - "NousResearch/Nous-Hermes-Llama2-13b"
+          - "NousResearch/Nous-Hermes-2-Yi-34B"
+      fetch: false
+      titleConvo: true
+      titleModel: "NousResearch/Nous-Hermes-Llama2-70b"
+      summarize: false
+      summaryModel: "NousResearch/Nous-Hermes-Llama2-70b"
+      forcePrompt: false
+      modelDisplayLabel: "NousResearch"
+      iconURL: "https://example.com/nousresearch-icon.png"
+
+    # Small Writing Models (Below 13b)
+    - name: "TogetherAI-SmallWriting"
+      apiKey: "${TOGETHERAI_API_KEY}"
+      baseURL: "https://api.together.xyz"
+      models:
+        default:
+          - "lmsys/vicuna-7b-v1.5"
+          - "togethercomputer/llama-2-7b-chat"
+          - "togethercomputer/alpaca-7b"
+          - "togethercomputer/GPT-NeoXT-Chat-Base-20B"
+          - "Undi95/Toppy-M-7B"
+          - "snorkelai/Snorkel-Mistral-PairRM-DPO"
+      fetch: false
+      titleConvo: true
+      titleModel: "A representative model from Small Writing"
+      summarize: false
+      summaryModel: "A representative model from Small Writing"
+      forcePrompt: false
+      modelDisplayLabel: "Small Writing Models"
+      iconURL: "https://example.com/small-writing-icon.png"
+
+    # Medium Writing Models (13b and Below 70b)
+    - name: "TogetherAI-MediumWriting"
+      apiKey: "${TOGETHERAI_API_KEY}"
+      baseURL: "https://api.together.xyz"
+      models:
+        default:
+          - "Austism/chronos-hermes-13b"
+          - "Gryphe/MythoMax-L2-13b"
+          - "lmsys/vicuna-13b-v1.5"
+          - "lmsys/vicuna-13b-v1.5-16k"
+          - "codellama/CodeLlama-34b-Instruct-hf"
+          - "NousResearch/Nous-Hermes-2-Yi-34B"
+          - "NousResearch/Nous-Hermes-Llama2-13b"
+          - "NousResearch/Nous-Hermes-llama-2-7b"
+          - "WizardLM/WizardLM-13B-V1.2"
+      fetch: false
+      titleConvo: true
+      titleModel: "A representative model from Medium Writing"
+      summarize: false
+      summaryModel: "A representative model from Medium Writing"
+      forcePrompt: false
+      modelDisplayLabel: "Medium Writing Models"
+      iconURL: "https://example.com/medium-writing-icon.png"
+
+    # Large Writing Models (70b and Above)
+    - name: "TogetherAI-LargeWriting"
+      apiKey: "${TOGETHERAI_API_KEY}"
+      baseURL: "https://api.together.xyz"
+      models:
+        default:
+          - "codellama/CodeLlama-70b-Instruct-hf"
+          - "togethercomputer/llama-2-70b-chat"
+          - "garage-bAInd/Platypus2-70B-instruct"
+          - "NousResearch/Nous-Hermes-Llama2-70b"
+      fetch: false
+      titleConvo: true
+      titleModel: "A representative model from Large Writing"
+      summarize: false
+      summaryModel: "A representative model from Large Writing"
+      forcePrompt: false
+      modelDisplayLabel: "Large Writing Models"
+      iconURL: "https://example.com/large-writing-icon.png"
