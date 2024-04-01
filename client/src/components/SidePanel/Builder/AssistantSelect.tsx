@@ -4,17 +4,24 @@ import {
   defaultAssistantFormValues,
   defaultOrderQuery,
   isImageVisionTool,
+  EModelEndpoint,
   Capabilities,
   FileSources,
 } from 'librechat-data-provider';
 import type { UseFormReset } from 'react-hook-form';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { Assistant, AssistantCreateParams } from 'librechat-data-provider';
-import type { AssistantForm, Actions, TAssistantOption, ExtendedFile } from '~/common';
+import type {
+  AssistantForm,
+  Actions,
+  TAssistantOption,
+  ExtendedFile,
+  LastSelectedModels,
+} from '~/common';
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { useListAssistantsQuery } from '~/data-provider';
+import { useLocalize, useLocalStorage } from '~/hooks';
 import { useFileMapContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);
@@ -35,6 +42,10 @@ export default function AssistantSelect({
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const lastSelectedAssistant = useRef<string | null>(null);
+  const [lastSelectedModels] = useLocalStorage<LastSelectedModels>(
+    'lastSelectedModel',
+    {} as LastSelectedModels,
+  );
 
   const assistants = useListAssistantsQuery(defaultOrderQuery, {
     select: (res) =>
@@ -79,7 +90,10 @@ export default function AssistantSelect({
       createMutation.reset();
       if (!assistant) {
         setCurrentAssistantId(undefined);
-        return reset(defaultAssistantFormValues);
+        return reset({
+          ...defaultAssistantFormValues,
+          model: lastSelectedModels?.[EModelEndpoint.assistants] ?? '',
+        });
       }
 
       const update = {
@@ -127,7 +141,7 @@ export default function AssistantSelect({
       reset(formValues);
       setCurrentAssistantId(assistant?.id);
     },
-    [assistants.data, reset, setCurrentAssistantId, createMutation],
+    [assistants.data, reset, setCurrentAssistantId, createMutation, lastSelectedModels],
   );
 
   useEffect(() => {
