@@ -3,7 +3,7 @@ name: Docker Images Build on Tag
 on:
   push:
     tags:
-      - 'v*'
+      - '*'
 
 jobs:
   build:
