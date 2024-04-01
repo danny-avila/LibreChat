@@ -103,8 +103,8 @@ class StableDiffusionAPI extends StructuredTool {
     const filepath = path.join(imageOutputPath, this.userId, imageName);
     this.relativePath = path.relative(clientPath, imageOutputPath);
 
-    if (!fs.existsSync(imageOutputPath)) {
-      fs.mkdirSync(imageOutputPath, { recursive: true });
+    if (!fs.existsSync(path.join(imageOutputPath, this.userId))) {
+      fs.mkdirSync(path.join(imageOutputPath, this.userId), { recursive: true });
     }
 
     try {
