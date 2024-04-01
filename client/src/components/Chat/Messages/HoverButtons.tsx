@@ -1,8 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useRecoilState } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import {
   Clipboard,
   CheckMark,
@@ -13,12 +12,7 @@ import {
   VolumeMuteIcon,
   Spinner,
 } from '~/components/svg';
-import {
-  useGenerationsByLatest,
-  useLocalize,
-  useTextToSpeech,
-  useTextToSpeechExternal,
-} from '~/hooks';
+import { useGenerationsByLatest, useLocalize, useTextToSpeech } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -51,29 +45,11 @@ export default function HoverButtons({
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
-  const isMouseDownRef = useRef(false);
-  const timerRef = useRef<number | undefined>(undefined);
-  const { data: startupConfig } = useGetStartupConfig();
-  const useExternalTextToSpeech = startupConfig?.textToSpeechExternal;
-
-  const {
-    generateSpeechLocal: generateSpeechLocal,
-    cancelSpeechLocal: cancelSpeechLocal,
-    isSpeaking: isSpeakingLocal,
-  } = useTextToSpeech();
-
-  const {
-    generateSpeechExternal: generateSpeechExternal,
-    cancelSpeech: cancelSpeechExternal,
-    isLoading: isLoading,
-    isSpeaking: isSpeakingExternal,
-  } = useTextToSpeechExternal();
-
-  const generateSpeech = useExternalTextToSpeech ? generateSpeechExternal : generateSpeechLocal;
-  const cancelSpeech = useExternalTextToSpeech ? cancelSpeechExternal : cancelSpeechLocal;
-  const isSpeaking = useExternalTextToSpeech ? isSpeakingExternal : isSpeakingLocal;
-
   const [TextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
+
+  const { handleMouseDown, handleMouseUp, toggleSpeech, isSpeaking, isLoading } = useTextToSpeech(
+    message?.text ?? '',
+  );
 
   const { hideEditButton, regenerateEnabled, continueSupported } = useGenerationsByLatest({
     isEditing,
@@ -93,30 +69,6 @@ export default function HoverButtons({
       return enterEdit(true);
     }
     enterEdit();
-  };
-
-  const handleMouseDown = () => {
-    isMouseDownRef.current = true;
-    timerRef.current = window.setTimeout(() => {
-      if (isMouseDownRef.current) {
-        generateSpeech(message?.text ?? '', true);
-      }
-    }, 1000);
-  };
-
-  const handleMouseUp = () => {
-    isMouseDownRef.current = false;
-    if (timerRef.current) {
-      window.clearTimeout(timerRef.current);
-    }
-  };
-
-  const toggleSpeech = () => {
-    if (isSpeaking) {
-      cancelSpeech();
-    } else {
-      generateSpeech(message?.text ?? '', false);
-    }
   };
 
   return (

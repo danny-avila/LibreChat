@@ -9,7 +9,7 @@ import {
   EModelEndpoint,
 } from 'librechat-data-provider';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import { useRequiresKey, useTextarea, useSpeechToText, useSpeechToTextExternal } from '~/hooks';
+import { useRequiresKey, useTextarea, useSpeechToText } from '~/hooks';
 import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
@@ -19,7 +19,6 @@ import SendButton from './SendButton';
 import FileRow from './Files/FileRow';
 import AudioRecorder from './AudioRecorder';
 import store from '~/store';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 const ChatForm = ({ index = 0 }) => {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
@@ -68,8 +67,6 @@ const ChatForm = ({ index = 0 }) => {
 
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
-  const { data: startupConfig } = useGetStartupConfig();
-  const useExternalSpeech = startupConfig?.speechToTextExternal;
 
   const handleTranscriptionComplete = (text: string) => {
     if (text) {
@@ -79,39 +76,15 @@ const ChatForm = ({ index = 0 }) => {
     }
   };
 
-  const {
-    isListening: speechIsListening,
-    isLoading: speechIsLoading,
-    text: speechText,
-    startRecording: startSpeechRecording,
-    stopRecording: stopSpeechRecording,
-  } = useSpeechToText();
-
-  const {
-    isListening: externalIsListening,
-    isLoading: externalIsLoading,
-    text: externalSpeechText,
-    externalStartRecording: startExternalRecording,
-    externalStopRecording: stopExternalRecording,
-    clearText,
-  } = useSpeechToTextExternal(handleTranscriptionComplete);
-
-  const isListening = useExternalSpeech ? externalIsListening : speechIsListening;
-  const isLoading = useExternalSpeech ? externalIsLoading : speechIsLoading;
-  const startRecording = useExternalSpeech ? startExternalRecording : startSpeechRecording;
-  const stopRecording = useExternalSpeech ? stopExternalRecording : stopSpeechRecording;
-  const speechTextForm = useExternalSpeech ? externalSpeechText : speechText;
-  const finalText =
-    isListening || (externalSpeechText && externalSpeechText.length > 0)
-      ? externalSpeechText
-      : speechTextForm || textAreaRef.current?.value || '';
+  const { isListening, isLoading, startRecording, stopRecording, speechText, clearText } =
+    useSpeechToText(handleTranscriptionComplete);
 
   useEffect(() => {
     if (textAreaRef.current) {
-      textAreaRef.current.value = finalText;
-      methods.setValue('text', finalText, { shouldValidate: true });
+      textAreaRef.current.value = speechText;
+      methods.setValue('text', speechText, { shouldValidate: true });
     }
-  }, [finalText, methods]);
+  }, [speechText, methods]);
 
   const { data: fileConfig = defaultFileConfig } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),

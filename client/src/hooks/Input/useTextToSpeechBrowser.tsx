@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-function useTextToSpeech() {
+function useTextToSpeechBrowser() {
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   const generateSpeechLocal = (text: string) => {
@@ -23,4 +23,4 @@ function useTextToSpeech() {
   return { generateSpeechLocal, cancelSpeechLocal, isSpeaking };
 }
 
-export default useTextToSpeech;
+export default useTextToSpeechBrowser;
