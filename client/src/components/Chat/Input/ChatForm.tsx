@@ -43,9 +43,9 @@ const ChatForm = ({ index = 0 }) => {
     setFiles,
     conversation,
     isSubmitting,
-    handleStopGenerating,
     filesLoading,
     setFilesLoading,
+    handleStopGenerating,
   } = useChatContext();
 
   const assistantMap = useAssistantsMapContext();
