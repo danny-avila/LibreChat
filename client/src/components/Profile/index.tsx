@@ -39,6 +39,8 @@ function ProfileContent() {
   const { userId = '' } = useParams();
   const { user, token } = useAuthContext();
   const localize = useLocalize();
+  let lang = localStorage.getItem('lang');
+  lang = lang ? lang.substring(0, 2) : 'en';
   const navigate = useNavigate();
   useDocumentTitle('Profile');
 
@@ -469,7 +471,11 @@ function ProfileContent() {
                 <button
                   type="submit"
                   className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
-                  onClick={() => window.open(startupConfig?.proMemberPaymentURL)}
+                  onClick={() =>
+                    window.open(
+                      `${startupConfig?.proMemberPaymentURL}?locale=${lang}&prefilled_email=${profileUser?.email}`,
+                    )
+                  }
                 >
                   {localize('com_ui_renewal_pro_member')}
                 </button>
@@ -482,7 +488,11 @@ function ProfileContent() {
                 <button
                   type="submit"
                   className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
-                  onClick={() => window.open(startupConfig?.proMemberPaymentURL)}
+                  onClick={() =>
+                    window.open(
+                      `${startupConfig?.proMemberPaymentURL}?locale=${lang}&prefilled_email=${profileUser?.email}`,
+                    )
+                  }
                 >
                   {localize('com_ui_become_pro_member')}
                 </button>
