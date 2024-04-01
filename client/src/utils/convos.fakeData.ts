@@ -1,3 +1,5 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-nocheck
 import { EModelEndpoint, ImageDetail } from 'librechat-data-provider';
 import type { ConversationData } from 'librechat-data-provider';
 
