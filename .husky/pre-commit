@@ -1,4 +1,5 @@
-#!/usr/bin/env sh
+# v0.7.0
+#!/usr/bin/env sh 
 set -e
 . "$(dirname -- "$0")/_/husky.sh"
 [ -n "$CI" ] && exit 0
