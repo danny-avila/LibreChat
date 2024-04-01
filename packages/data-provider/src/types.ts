@@ -235,7 +235,6 @@ export type TStartupConfig = {
   helpAndFaqURL: string;
   customFooter?: string;
   proMemberPaymentURL: string;
-  portalWebsiteURL: string;
 };
 
 export type TRefreshTokenResponse = {
