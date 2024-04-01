@@ -192,7 +192,6 @@ export type TStartupConfig = {
   checkBalance: boolean;
   customFooter?: string;
   proMemberPaymentURL: string;
-  portalWebsiteURL: string;
 };
 
 export type TRefreshTokenResponse = {
