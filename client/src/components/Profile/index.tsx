@@ -39,6 +39,8 @@ function ProfileContent() {
   const { userId = '' } = useParams();
   const { user, token } = useAuthContext();
   const localize = useLocalize();
+  let lang = localStorage.getItem('lang');
+  lang = lang ? lang.substring(0, 2) : 'en';
   const navigate = useNavigate();
   useDocumentTitle('Profile');
 
@@ -471,7 +473,7 @@ function ProfileContent() {
                   className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
                   onClick={() =>
                     window.open(
-                      `${startupConfig?.proMemberPaymentURL}?locale=${navigator.language}&prefilled_email=${profileUser?.email}`,
+                      `${startupConfig?.proMemberPaymentURL}?locale=${lang}&prefilled_email=${profileUser?.email}`,
                     )
                   }
                 >
@@ -488,7 +490,7 @@ function ProfileContent() {
                   className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
                   onClick={() =>
                     window.open(
-                      `${startupConfig?.proMemberPaymentURL}?locale=${navigator.language}&prefilled_email=${profileUser?.email}`,
+                      `${startupConfig?.proMemberPaymentURL}?locale=${lang}&prefilled_email=${profileUser?.email}`,
                     )
                   }
                 >
