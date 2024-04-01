@@ -128,10 +128,9 @@ router.post('/', validateEndpoint, buildEndpointOption, setHeaders, async (req, 
         ],
       });
       let dailyQuota = quota[endpointOption.modelOptions.model].toFixed(0);
-      let portalWebsiteURL = process.env.PORTAL_WEBSITE_URL;
       if (messagesCount >= dailyQuota) {
         throw new Error(
-          `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)。由于需要支付越来越多、每月上万元的API费用，如果您经常使用我们的服务，请打开“我的主页”进行购买，支持我们持续提供GPT服务。更多优惠套餐，请前往网站订购：${portalWebsiteURL}`,
+          `超出了您的使用额度(${endpointOption.modelOptions.model}模型每天${dailyQuota}条消息)。由于需要支付越来越多、每月上万元的API费用，如果您经常使用我们的服务，请打开“我的主页”进行购买，支持我们持续提供GPT服务。}`,
         );
       }
     }
