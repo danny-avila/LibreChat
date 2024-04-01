@@ -1,6 +1,20 @@
 import { defaultEndpoints } from 'librechat-data-provider';
 import type { EModelEndpoint, TEndpointsConfig, TConfig } from 'librechat-data-provider';
 
+export const getAssistantName = ({
+  name,
+  localize,
+}: {
+  name?: string;
+  localize: (phraseKey: string, ...values: string[]) => string;
+}) => {
+  if (name && name.length > 0) {
+    return name;
+  } else {
+    return localize('com_ui_assistant');
+  }
+};
+
 export const getEndpointsFilter = (endpointsConfig: TEndpointsConfig) => {
   const filter: Record<string, boolean> = {};
   if (!endpointsConfig) {
