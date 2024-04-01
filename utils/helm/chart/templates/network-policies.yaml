@@ -1,0 +1,64 @@
+{{- if .Values.networkPolicies.enabled }}
+{{- if .Values.meilisearch.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "librechat.fullname" . }}-meilisearch
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: meilisearch
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "librechat.fullname" . }}
+      ports:
+        - port: {{ .Values.meilisearch.service.port }}
+          protocol: TCP
+{{- end }}
+---
+{{- if .Values.redis.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "librechat.fullname" . }}-redis
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "librechat.fullname" . }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - port: {{ .Values.redis.service.ports.redis }}
+          protocol: TCP
+{{- end }}
+---
+{{- if .Values.mongodb.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "librechat.fullname" . }}-mongodb
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mongodb
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "librechat.fullname" . }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mongodb
+      ports:
+        - port: {{ .Values.mongodb.service.port }}
+          protocol: TCP
+{{- end }}
+{{- end }}

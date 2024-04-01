@@ -1,0 +1,347 @@
+# Default values for librechat.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/danny-avila/librechat
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+
+imagePullSecrets: [ ]
+nameOverride: ""
+fullnameOverride: "librechat"
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: { }
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: { }
+
+podLabels: { }
+
+podSecurityContext: { }
+# fsGroup: 2000
+
+securityContext: { }
+  # capabilities:
+  #   drop:
+  #   - ALL
+# readOnlyRootFilesystem: true
+# runAsNonRoot: true
+# runAsUser: 1000
+
+networkPolicies:
+  enabled: true
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: { }
+  # kubernetes.io/ingress.class: nginx
+  # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chat.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: [ ]
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: { }
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+# requests:
+#   cpu: 100m
+#   memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: { }
+
+tolerations: [ ]
+
+affinity: { }
+
+persistence:
+  # -- Enable persistence using PVC
+  enabled: false
+  # -- PVC Access Mode
+  accessMode: ReadWriteMany
+  ## Persistent Volume Storage Class
+  ## If defined, storageClassName: <storageClass>
+  ## If set to "-", storageClassName: "", which disables dynamic provisioning
+  ## If undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+  ##   GKE, AWS & OpenStack)
+  ##
+  # -- PVC Storage Class
+  storageClass: "-"
+
+  ## Data Persistent Volume existing claim name
+  ## Requires persistence.enabled: true
+  ## If defined, PVC must be created manually before volume will be bound
+  # -- Existing PVC
+  existingClaim: ""
+  # -- PVC Storage Request
+  size: 10Gi
+  # -- Additional annotations for PVC
+  annotations: { }
+
+config:
+  file:
+    # Use librechat.yaml config file
+    enabled: false
+    configMapKeyRef:
+      name: librechat-config
+      key: librechat.yaml
+
+  dotEnv:
+    # Use .env config file
+    enabled: false
+    configMapKeyRef:
+      name: librechat-dotenv
+      key: dot.env
+
+  env:
+  # Use .env file
+
+meilisearch:
+  enabled: true
+  image:
+    # -- Meilisearch image name
+    repository: getmeili/meilisearch
+    # -- Meilisearch image tag
+    tag: v1.7.0
+    # -- Meilisearch image pull policy
+    pullPolicy: IfNotPresent
+    # -- Secret to authenticate against the docker registry
+    pullSecret:
+
+  # Environment loaded into the configMap
+  environment:
+    # -- Deactivates analytics
+    MEILI_NO_ANALYTICS: true
+    # -- Sets the environment. Either **production** or **development**
+    MEILI_ENV: production
+    # For production deployment, the environment MEILI_MASTER_KEY is required.
+    # If MEILI_ENV is set to "production" without setting MEILI_MASTER_KEY, this
+    # chart will automatically create a secure MEILI_MASTER_KEY and push it as a
+    # secret. Otherwise the below value of MEILI_MASTER_KEY will be used instead.
+    # MEILI_MASTER_KEY: ""
+  # auth:
+  #   # -- Use an existing Kubernetes secret for the MEILI_MASTER_KEY
+  #   existingMasterKeySecret: "librechat"
+
+  serviceAccount:
+    # You can use a specific pre-created service account instead of
+    # the one created by this chart.
+    # Set create to false to prevent creating a service account and use your own.
+    # -- Should this chart create a service account
+    create: true
+    # -- Custom service account name, if not created by this chart
+    name: ''
+    # -- Additional annotations for created service account
+    annotations: { }
+
+  podAnnotations: { }
+
+  # -- Additional labels to add to the pod(s) only
+  podLabels: { }
+
+  # -- Additional labels to add to all resources
+  customLabels: { }
+
+  # -- Service HTTP port
+  service:
+    # -- Kubernetes Service type
+    type: ClusterIP
+    port: 7700
+    # -- Additional annotations for service
+    annotations: { }
+
+  container:
+    containerPort: 7700
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+
+  securityContext:
+    capabilities:
+      drop:
+        - ALL
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+
+  ingress:
+    # -- Enable ingress controller resource
+    enabled: false
+    # -- Ingress ingressClassName
+    className: nginx
+    # -- Ingress annotations
+    annotations: { }
+    # kubernetes.io/ingress.class: nginx
+    # -- Path within the host
+    path: /
+    # -- List of hostnames
+    hosts:
+      - meilisearch-example.local
+    # -- TLS specification
+    tls: [ ]
+    #  - secretName: chart-example-tls
+    #    hosts:
+    #      - chart-example.local
+
+  persistence:
+    # -- Enable persistence using PVC
+    enabled: true
+    # -- PVC Access Mode
+    accessMode: ReadWriteOnce
+    ## Persistent Volume Storage Class
+    ## If defined, storageClassName: <storageClass>
+    ## If set to "-", storageClassName: "", which disables dynamic provisioning
+    ## If undefined (the default) or set to null, no storageClassName spec is
+    ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    ##   GKE, AWS & OpenStack)
+    ##
+    # -- PVC Storage Class
+    storageClass: "-"
+
+    ## Data Persistent Volume existing claim name
+    ## Requires persistence.enabled: true
+    ## If defined, PVC must be created manually before volume will be bound
+    # -- Existing PVC
+    existingClaim: ""
+    # -- PVC Storage Request
+    size: 10Gi
+    # -- Additional annotations for PVC
+    annotations: { }
+    volume:
+      name: data
+      mountPath: /meili_data
+
+  # -- Resources allocation (Requests and Limits)
+  resources: { }
+    # We usually recommend not to specify default resources and to leave this as a conscious
+    # choice for the user. This also increases chances charts run on environments with little
+    # resources, such as Minikube. If you do want to specify resources, uncomment the following
+    # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+    # limits:
+    #  cpu: 100m
+    #  memory: 128Mi
+  # requests:
+  #  cpu: 100m
+  #  memory: 128Mi
+
+  # -- Additional volumes for pod
+  volumes: [ ]
+
+  # -- Additional volumes to mount on pod
+  volumeMounts: [ ]
+
+  # -- Additional containers for pod
+  containers: [ ]
+
+  # -- Node labels for pod assignment
+  nodeSelector: { }
+
+  # -- Tolerations for pod assignment
+  tolerations: [ ]
+
+  # -- Affinity for pod assignment
+  affinity: { }
+
+  # -- Pod command
+  command: [ ]
+
+  # -- Monitoring with Prometheus Operator
+  serviceMonitor:
+    # -- Enable ServiceMonitor to configure scraping
+    enabled: false
+    # -- Set of labels to transfer from the Kubernetes Service onto the target
+    additionalLabels: { }
+    # -- Set scraping frequency
+    interval: 1m
+    # -- Set scraping timeout
+    scrapeTimeout: 10s
+    # -- Set path to metrics
+    telemetryPath: /metrics
+    # -- Set of labels to transfer from the Kubernetes Service onto the target
+    targetLabels: [ ]
+    # -- MetricRelabelConfigs to apply to samples before ingestion
+    metricRelabelings: [ ]
+    # -- Set relabel_configs as per https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config
+    relabelings: [ ]
+
+redis:
+  enabled: false
+  auth:
+    enabled: true
+    password: 'changeme'
+    # name of an existing secret with Redis® credentials (instead of auth.password), must be created ahead of time
+    existingSecret: ""
+    # Password key to be retrieved from existing secret
+    existingSecretPasswordKey: ""
+
+### ref https://github.com/helm/charts/tree/master/stable/mongodb#configuration
+##
+mongodb:
+  ## Enable or disable MongoDB dependency completely.
+  enabled: false
+
+  auth:
+    # rootPassword:
+    usernames:
+      - librechat
+    # passwords:
+    databases:
+      - librechat
+
+  architecture: replicaset
+  replicaCount: 1
+  arbiter:
+    enabled: false
+    pdb:
+      minAvailable: 0
+  pdb:
+    minAvailable: 0
+
+    # key:
+
+  persistence:
+    enabled: true
+    ## mongodb data Persistent Volume Storage Class
+    ## If defined, storageClassName: <storageClass>
+    ## If set to "-", storageClassName: "", which disables dynamic provisioning
+    ## If undefined (the default) or set to null, no storageClassName spec is
+    ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+    ##   GKE, AWS & OpenStack)
+    ##
+    # storageClass: "-"
+    accessMode: ReadWriteOnce
+    size: 8Gi
+
+  volumePermissions: { enabled: true }

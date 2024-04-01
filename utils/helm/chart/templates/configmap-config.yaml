@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "librechat.fullname" . }}-config
+  labels:
+    {{- include "librechat.labels" . | nindent 4 }}
+data:
+{{ (.Files.Glob "librechat.yaml").AsConfig | indent 4 }}

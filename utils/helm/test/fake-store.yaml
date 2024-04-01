@@ -1,0 +1,26 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+  name: fake-secret-store
+spec:
+  provider:
+    fake:
+      data:
+        - key: "/librechat-test"
+          valueMap:
+            openai_api_key: "fake_openai_api_key"
+            creds_key: "fake_creds_key"
+            creds_iv: "fake_creds_iv"
+            jwt_secret: "fake_jwt_secret"
+            jwt_refresh_secret: "fake_jwt_refresh_secret"
+            mongo_uri: "fake_mongo_uri"
+            google_client_id: "fake_google_client_id"
+            google_client_secret: "fake_google_client_secret"
+            google_api_key: "fake_google_api_key"
+            google_cse_id: "fake_google_cse_id"
+            assistants_api_key: "fake_assistants_api_key"
+            meili_master_key: "fake_meili_master_key"
+            firebase_api_key: "fake_firebase_api_key"
+            mongodb_passwords: "mongodb_passwords"
+            mongodb_replica_set_key: "mongodb_replica_set_key"
+            mongodb_root_password: "mongodb_root_password"
