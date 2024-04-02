@@ -1,7 +1,7 @@
 ---
 title: Keycloak
 description: Learn how to configure LibreChat to use Keycloak for user authentication.
-weight: -10
+weight: -5
 ---
 
 # Keycloak

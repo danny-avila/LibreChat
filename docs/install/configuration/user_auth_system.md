@@ -166,15 +166,16 @@ EMAIL_FROM_NAME="My LibreChat Server"
 
 ---
 
-## Social Authentication - Setup and Configuration
+## Social Authentication
 
 ![image](https://github.com/danny-avila/LibreChat/assets/138638445/cacc2ee0-acf9-4d05-883a-ca9952de1165)
 
-- [Discord](./auth/discord.md)
-- [GitHub](./auth/github.md)
-- [Google](./auth/google.md)
-- [Facebook](./auth/facebook.md)
-- **OpenID**:
-  - [Keycloak](./auth/keycloack.md)
-  - [AWS Cognito](./auth/aws.md)
-  - [Azure Entra/AD](./auth/azure.md)
+### OAuth2
+  - [Discord](./OAuth2-and-OIDC/discord.md)
+  - [GitHub](./OAuth2-and-OIDC/github.md)
+  - [Google](./OAuth2-and-OIDC/google.md)
+  - [Facebook](./OAuth2-and-OIDC/facebook.md)
+### OpenID Connect
+  - [AWS Cognito](./OAuth2-and-OIDC/aws.md)
+  - [Azure Entra/AD](./OAuth2-and-OIDC/azure.md)
+  - [Keycloak](./OAuth2-and-OIDC/keycloak.md)

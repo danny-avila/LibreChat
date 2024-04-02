@@ -1,7 +1,7 @@
 ---
 title: AWS Cognito
 description: Learn how to configure LibreChat to use AWS Cognito for user authentication.
-weight: -10
+weight: -7
 ---
 
 # AWS Cognito

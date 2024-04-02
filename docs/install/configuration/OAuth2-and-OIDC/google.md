@@ -1,7 +1,7 @@
 ---
 title: Google
 description: Learn how to configure LibreChat to use Google for user authentication.
-weight: -10
+weight: -9
 ---
 
 # Google

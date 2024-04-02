@@ -1,7 +1,7 @@
 ---
 title: Facebook
 description: Learn how to configure LibreChat to use Facebook for user authentication.
-weight: -10
+weight: -8
 ---
 
 # Facebook - WIP

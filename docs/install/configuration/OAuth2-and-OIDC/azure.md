@@ -1,7 +1,7 @@
 ---
 title: Azure Entra
 description: Learn how to configure LibreChat to use Azure Entra for user authentication.
-weight: -10
+weight: -6
 ---
 
 # OpenID with Azure Entra

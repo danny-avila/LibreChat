@@ -1,7 +1,7 @@
 ---
 title: Discord
 description: Learn how to configure LibreChat to use Discord for user authentication.
-weight: -10
+weight: -11
 ---
 
 # Discord
