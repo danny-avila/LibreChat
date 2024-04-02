@@ -16,7 +16,7 @@ Alternatively, you can create a new file named `docker-compose.override.yml` in 
 For more info see: 
 
 - Our quick guide: 
-    - **[Docker Override](../configuration/docker_override.md)**
+    - **[Docker Override](./docker_override.md)**
 
 - The official docker documentation: 
     - **[docker docs - understanding-multiple-compose-files](https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files)**
@@ -274,7 +274,7 @@ DALLE2_API_KEY=your-azure-api-key-for-dall-e-2
 ### BingAI
 Bing, also used for Sydney, jailbreak, and Bing Image Creator, see: [Bing Access token](./ai_setup.md#bingai) and [Bing Jailbreak](../../features/bing_jailbreak.md)
 
-- Follow these instructions to get your bing access token (it's best to use the full cookie string for that purpose): **[Bing Access Token](../configuration/ai_setup.md#bingai)**  
+- Follow these instructions to get your bing access token (it's best to use the full cookie string for that purpose): **[Bing Access Token](./ai_setup.md#bingai)**  
 - Leave `BINGAI_TOKEN=` blank to disable this endpoint
 - Set `BINGAI_TOKEN=` to "user_provided" to allow users to provide their own API key from the WebUI
 
@@ -719,7 +719,7 @@ CHECK_BALANCE=false
 ```
 
 ### Registration and Login
-see: **[User/Auth System](../configuration/user_auth_system.md)**
+see: **[User/Auth System](./user_auth_system.md)**
 
 ![image](https://github.com/danny-avila/LibreChat/assets/81851188/52a37d1d-7392-4a9a-a79f-90ed2da7f841)
 
@@ -757,9 +757,9 @@ JWT_REFRESH_SECRET=eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8
 
 ### Social Logins
 
-#### [Discord Authentication](../configuration/user_auth_system.md#discord)
+#### [Discord Authentication](./OAuth2-and-OIDC/discord.md)
 
-for more information: **[Discord](../configuration/user_auth_system.md#discord)**
+for more information: **[Discord](./OAuth2-and-OIDC/discord.md)**
 
 ```bash
 # Discord
@@ -768,9 +768,9 @@ DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_CALLBACK_URL=/oauth/discord/callback
 ```
 
-#### [Facebook Authentication](../configuration/user_auth_system.md#facebook)
+#### [Facebook Authentication](./OAuth2-and-OIDC/facebook.md)
 
-for more information: **[Facebook Authentication](../configuration/user_auth_system.md#facebook)**
+for more information: **[Facebook Authentication](./OAuth2-and-OIDC/facebook.md)**
 
 ```bash
 # Facebook
@@ -779,9 +779,9 @@ FACEBOOK_CLIENT_SECRET=
 FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
 
 ```
-#### [GitHub Authentication](../configuration/user_auth_system.md#github)
+#### [GitHub Authentication](./OAuth2-and-OIDC/github.md)
 
-for more information: **[GitHub Authentication](../configuration/user_auth_system.md#github)**
+for more information: **[GitHub Authentication](./OAuth2-and-OIDC/github.md)**
 
 ```bash
 # GitHub
@@ -790,9 +790,9 @@ GITHUB_CLIENT_SECRET=your_client_secret
 GITHUB_CALLBACK_URL=/oauth/github/callback
 ```
 
-#### [Google Authentication](../configuration/user_auth_system.md#google)
+#### [Google Authentication](./OAuth2-and-OIDC/google.md)
 
-for more information: **[Google Authentication](../configuration/user_auth_system.md#google)**
+for more information: **[Google Authentication](./OAuth2-and-OIDC/google.md)**
 
 ```bash
 # Google
@@ -801,9 +801,9 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_CALLBACK_URL=/oauth/google/callback
 ```
 
-#### [OpenID Authentication](../configuration/user_auth_system.md#openid-with-aws-cognito)
+#### [OpenID Authentication](./OAuth2-and-OIDC/aws.md)
 
-for more information: **[Azure OpenID Authentication](../configuration/user_auth_system.md#openid-with-azure-ad)** or **[AWS Cognito OpenID Authentication](../configuration/user_auth_system.md#openid-with-aws-cognito)**
+for more information: **[Azure OpenID Authentication](./OAuth2-and-OIDC/azure.md)** or **[AWS Cognito OpenID Authentication](./OAuth2-and-OIDC/aws.md)**
 
 ```bash
 # OpenID
@@ -813,13 +813,15 @@ OPENID_ISSUER=
 OPENID_SESSION_SECRET=
 OPENID_SCOPE="openid profile email"
 OPENID_CALLBACK_URL=/oauth/openid/callback
-
 OPENID_BUTTON_LABEL=
 OPENID_IMAGE_URL=
+OPENID_REQUIRED_ROLE_TOKEN_KIND=
+OPENID_REQUIRED_ROLE=
+OPENID_REQUIRED_ROLE_PARAMETER_PATH=
 ```
 
 ### Email Password Reset
-Email is used for password reset. See: **[Email Password Reset](../configuration/user_auth_system.md#email-and-password-reset)**
+Email is used for password reset. See: **[Email Password Reset](./user_auth_system.md#email-and-password-reset)**
 
 - Note that all either service or host, username and password and the From address must be set for email to work.
 
