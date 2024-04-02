@@ -7,6 +7,8 @@ spec:
     fake:
       data:
         - key: "librechat-test"
+          # Do not use special characters in mongodb_replica_set_key use only charset [0-9a-zA-Z]
+          # check the issue here https://github.com/bitnami/charts/issues/10163#issuecomment-2031072300
           value: '{
             "openai_api_key": "fake_openai_api_key",
             "assistants_api_key": "fake_assistants_api_key",
