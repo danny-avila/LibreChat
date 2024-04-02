@@ -2,7 +2,7 @@ apiVersion: v2
 name: librechat
 description: Frontend for AI endpoints
 type: application
-version: 1.0.1
+version: 1.0.0
 dependencies:
   - name: meilisearch
     repository: https://meilisearch.github.io/meilisearch-kubernetes
@@ -13,6 +13,6 @@ dependencies:
     repository: oci://registry-1.docker.io/bitnamicharts
     condition: redis.enabled
   - name: mongodb
-    version: 14.13.0
+    version: 15.1.1
     repository: oci://registry-1.docker.io/bitnamicharts
     condition: mongodb.enabled

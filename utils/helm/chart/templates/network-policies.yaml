@@ -39,26 +39,4 @@ spec:
         - port: {{ .Values.redis.service.ports.redis }}
           protocol: TCP
 {{- end }}
----
-{{- if .Values.mongodb.enabled }}
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: {{ include "librechat.fullname" . }}-mongodb
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: mongodb
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: {{ include "librechat.fullname" . }}
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: mongodb
-      ports:
-        - port: {{ .Values.mongodb.service.port }}
-          protocol: TCP
-{{- end }}
 {{- end }}

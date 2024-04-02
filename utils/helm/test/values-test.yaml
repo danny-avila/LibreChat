@@ -8,11 +8,10 @@ config:
   env:
     # DO NOT USE redis it is not implemented with namespace prefix
     # and clashes with other services
-    MEILI_HOST: "http://librechat-test-meilisearch:7700"
-    MEILI_HTTP_ADDR: "librechat-test-meilisearch:7700"
+    MEILI_HOST: "http://librechat-meilisearch:7700"
+    MEILI_HTTP_ADDR: "librechat-meilisearch:7700"
     DOMAIN_CLIENT: "http://localhost"
     DOMAIN_SERVER: "http://localhost"
-    GOOGLE_CALLBACK_URL: "/oauth/google/callback"
 
   file:
     enabled: true
