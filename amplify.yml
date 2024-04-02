@@ -4,10 +4,10 @@ frontend:
     preBuild:
       commands:
         - npm ci
-        - npm run frontend:ci  # use frontend:ci for development mode
     # IMPORTANT - Please verify your build commands
     build:
-      commands: []
+      commands:
+        - npm run frontend:ci  # use frontend:ci for development mode
   artifacts:
     baseDirectory: client/dist
     files:
