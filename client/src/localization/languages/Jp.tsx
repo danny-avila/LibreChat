@@ -268,6 +268,7 @@ export default {
     '必ず「作成して続行」をクリックして、少なくとも「Vertex AI ユーザー」権限を与えてください。最後にここにインポートするJSONキーを作成してください。',
   com_nav_welcome_message: 'How can I help you today?',
   com_nav_auto_scroll: 'チャットを開いたときに最新まで自動でスクロール',
+  com_nav_hide_panel: '右側のパネルを非表示',
   com_nav_modular_chat: '会話の途中でのエンドポイント切替を有効化',
   com_nav_latex_parsing:
     'メッセージ内の LaTeX の構文解析 (パフォーマンスに影響する可能性があります。)',
@@ -295,6 +296,8 @@ export default {
   com_nav_theme_system: 'システム',
   com_nav_theme_dark: 'ダーク',
   com_nav_theme_light: 'ライト',
+  com_nav_user_name_display: 'メッセージにユーザー名を表示する',
+  com_nav_show_code: 'Code Interpreter を使用する際は常にコードを表示する',
   com_nav_clear_all_chats: 'すべてのチャットを削除する',
   com_nav_confirm_clear: '削除を確定',
   com_nav_close_sidebar: 'サイドバーを閉じる',
