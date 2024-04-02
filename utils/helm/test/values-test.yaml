@@ -7,11 +7,12 @@ secrets:
 config:
   env:
     # DO NOT USE redis it is not implemented with namespace prefix
-    # and clashes with other services
+    # and clashes with other services in K8S,
+    # also does not clear the config on redeploy
     MEILI_HOST: "http://librechat-meilisearch:7700"
     MEILI_HTTP_ADDR: "librechat-meilisearch:7700"
-    DOMAIN_CLIENT: "http://localhost"
-    DOMAIN_SERVER: "http://localhost"
+    DOMAIN_CLIENT: "http://localhost:8081/"
+    DOMAIN_SERVER: "http://localhost:8081/"
 
   file:
     enabled: true
@@ -24,6 +25,12 @@ persistence:
   storageClass: ""
   accessMode: ReadWriteOnce
   size: 8Gi
+
+ingress:
+  enabled: true
+  hosts:
+    - paths:
+        - path: /
 
 meilisearch:
   persistence:

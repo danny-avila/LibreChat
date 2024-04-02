@@ -14,14 +14,14 @@ spec:
             "creds_iv": "2a09d8e75510e904d5fa04576b4001d3%",
             "jwt_secret": "b8129051a1014ab681ee64c5fd0aa798b88e90275ae7274443566d871d1dd7e7%",
             "jwt_refresh_secret": "511e338d5ce72ab77ba79307d246f02b58c71b105dd0a66bbc7f2794075b2b86",
-            "mongo_uri": "mongodb://librechat:mongodb_passwords@librechat-mongodb-headless:27017/librechat",
+            "mongo_uri": "mongodb://librechat:yIFqXwtbbI@librechat-mongodb-headless:27017/librechat",
             "google_client_id": "fake_google_client_id",
             "google_client_secret": "fake_google_client_secret",
             "google_api_key": "fake_google_api_key",
             "google_cse_id": "fake_google_cse_id",
             "meili_master_key": "IliAry0KTrKV83cQFLAOdqPuneM9Hu6a6iJRSu2A%",
             "firebase_api_key": "fake_firebase_api_key",
-            "mongodb_passwords": "h8aNC6nMd0tEReqMg",
-            "mongodb_replica_set_key": "t4zD9qkXie0on6gCL7Ud3Q3PJN8fh1BsyGFE2OtY%",
-            "mongodb_root_password": "D1BN7hHI9aKMbTnV"
+            "mongodb_passwords": "yIFqXwtbbI",
+            "mongodb_replica_set_key": "rZiBoPAWR6I",
+            "mongodb_root_password": "dHyIk8Bxqu"
           }'

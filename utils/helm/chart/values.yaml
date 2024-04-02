@@ -123,6 +123,9 @@ config:
       key: dot.env
 
   env:
+  # DO NOT USE redis it is not implemented with namespace prefix
+  # and clashes with other services in K8S,
+  # also does not clear the config on redeploy
   # Use .env file
 
 meilisearch:
