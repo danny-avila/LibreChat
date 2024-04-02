@@ -1,11 +1,8 @@
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
-const { extractBaseURL, inputSchema, processModelData } = require('~/utils');
+const { extractBaseURL, inputSchema, processModelData, logAxiosError } = require('~/utils');
 const getLogStores = require('~/cache/getLogStores');
-const { logger } = require('~/config');
-
-// const { getAzureCredentials, genAzureChatCompletion } = require('~/utils/');
 
 const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
 
@@ -77,29 +74,7 @@ const fetchModels = async ({
     models = input.data.map((item) => item.id);
   } catch (error) {
     const logMessage = `Failed to fetch models from ${azure ? 'Azure ' : ''}${name} API`;
-    if (error.response) {
-      logger.error(
-        `${logMessage} The request was made and the server responded with a status code that falls out of the range of 2xx: ${
-          error.message ? error.message : ''
-        }`,
-        {
-          headers: error.response.headers,
-          status: error.response.status,
-          data: error.response.data,
-        },
-      );
-    } else if (error.request) {
-      logger.error(
-        `${logMessage} The request was made but no response was received: ${
-          error.message ? error.message : ''
-        }`,
-        {
-          request: error.request,
-        },
-      );
-    } else {
-      logger.error(`${logMessage} Something happened in setting up the request`, error);
-    }
+    logAxiosError({ message: logMessage, error });
   }
 
   return models;

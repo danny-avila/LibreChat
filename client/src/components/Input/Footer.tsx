@@ -1,3 +1,4 @@
+import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
 
@@ -12,7 +13,7 @@ export default function Footer() {
       ) : (
         <>
           <a href="https://aitok.ai" target="_blank" rel="noreferrer" className="underline">
-            {config?.appTitle || 'AITok'} v0.6.10
+            {config?.appTitle || 'LibreChat'} {Constants.VERSION}
           </a>
           {' - '}. {localize('com_ui_pay_per_call')}
         </>

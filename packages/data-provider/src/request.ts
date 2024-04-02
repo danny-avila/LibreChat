@@ -8,6 +8,10 @@ async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
   return response.data;
 }
 
+async function _getResponse<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
+  return await axios.get(url, { ...options });
+}
+
 async function _post(url: string, data?: any) {
   const response = await axios.post(url, JSON.stringify(data), {
     headers: { 'Content-Type': 'application/json' },
@@ -114,6 +118,7 @@ axios.interceptors.response.use(
 
 export default {
   get: _get,
+  getResponse: _getResponse,
   post: _post,
   postMultiPart: _postMultiPart,
   put: _put,

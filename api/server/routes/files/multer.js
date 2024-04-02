@@ -23,6 +23,7 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     req.file_id = crypto.randomUUID();
+    file.originalname = decodeURIComponent(file.originalname);
     cb(null, `${file.originalname}`);
   },
 });

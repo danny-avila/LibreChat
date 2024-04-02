@@ -125,7 +125,11 @@ const useFileHandling = (params?: UseFileHandling) => {
     startUploadTimer(extendedFile.file_id, extendedFile.file?.name || 'File');
 
     const formData = new FormData();
-    formData.append('file', extendedFile.file as File);
+    formData.append(
+      'file',
+      extendedFile.file as File,
+      encodeURIComponent(extendedFile.file?.name || 'File'),
+    );
     formData.append('file_id', extendedFile.file_id);
     if (extendedFile.width) {
       formData.append('width', extendedFile.width?.toString());

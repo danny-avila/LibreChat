@@ -27,6 +27,7 @@ export enum QueryKeys {
   tools = 'tools',
   actions = 'actions',
   assistantDocs = 'assistantDocs',
+  fileDownload = 'fileDownload',
 }
 
 export enum MutationKeys {

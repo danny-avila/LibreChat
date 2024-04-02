@@ -7,6 +7,7 @@ const {
   saveBufferToFirebase,
   uploadImageToFirebase,
   processFirebaseAvatar,
+  getFirebaseFileStream,
 } = require('./Firebase');
 const {
   getLocalFileURL,
@@ -16,8 +17,9 @@ const {
   uploadLocalImage,
   prepareImagesLocal,
   processLocalAvatar,
+  getLocalFileStream,
 } = require('./Local');
-const { uploadOpenAIFile, deleteOpenAIFile } = require('./OpenAI');
+const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
 
 /**
@@ -35,6 +37,7 @@ const firebaseStrategy = () => ({
   prepareImagePayload: prepareImageURL,
   processAvatar: processFirebaseAvatar,
   handleImageUpload: uploadImageToFirebase,
+  getDownloadStream: getFirebaseFileStream,
 });
 
 /**
@@ -51,6 +54,7 @@ const localStrategy = () => ({
   processAvatar: processLocalAvatar,
   handleImageUpload: uploadLocalImage,
   prepareImagePayload: prepareImagesLocal,
+  getDownloadStream: getLocalFileStream,
 });
 
 /**
@@ -70,6 +74,8 @@ const vectorStrategy = () => ({
   handleImageUpload: null,
   /** @type {typeof prepareImagesLocal | null} */
   prepareImagePayload: null,
+  /** @type {typeof getLocalFileStream | null} */
+  getDownloadStream: null,
   handleFileUpload: uploadVectors,
   deleteFile: deleteVectors,
 });
@@ -94,6 +100,7 @@ const openAIStrategy = () => ({
   prepareImagePayload: null,
   deleteFile: deleteOpenAIFile,
   handleFileUpload: uploadOpenAIFile,
+  getDownloadStream: getOpenAIFileStream,
 });
 
 // Strategy Selector
