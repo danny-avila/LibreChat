@@ -270,7 +270,6 @@ async function processRequiredActions(client, requiredActions) {
       if (!actionSets.length) {
         actionSets =
           (await loadActionSets({
-            user: client.req.user.id,
             assistant_id: client.req.body.assistant_id,
           })) ?? [];
       }
