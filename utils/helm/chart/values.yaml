@@ -4,6 +4,10 @@
 
 replicaCount: 1
 
+secrets:
+  storeRef: remote-secret-store
+  key: librechat
+
 image:
   repository: ghcr.io/danny-avila/librechat
   pullPolicy: IfNotPresent

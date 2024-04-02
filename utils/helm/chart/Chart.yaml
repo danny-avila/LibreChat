@@ -1,8 +1,10 @@
 apiVersion: v2
 name: librechat
-description: Frontend for AI endpoints
+description: LibreChat is a chat application
 type: application
 version: 1.0.0
+appVersion: 1.0.0
+icon: https://docs.librechat.ai/assets/LibreChat.svg
 dependencies:
   - name: meilisearch
     repository: https://meilisearch.github.io/meilisearch-kubernetes
