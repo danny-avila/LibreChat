@@ -124,27 +124,6 @@ export default function ErrorDialog({ open, onOpenChange }) {
     }
   };
 
-  const processPayPalPayment = async (selectedTokens, selectedOption) => {
-    console.log('Processing PayPal payment for', selectedTokens);
-    const response = await fetch('/api/payment/paypal/create-payment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId,
-        amount: selectedTokens,
-        amountCNY: selectedOption.amountCNY,
-        selectedTokens: selectedTokens,
-      }),
-    });
-    const data = await response.json();
-    console.log(data);
-    if (data && data.approvalUrl) {
-      window.location.href = data.approvalUrl;
-    } else {
-      console.error('Failed to initiate PayPal payment', data.error || 'Missing approval URL');
-    }
-  };
-
   const processStripePayment = async (selectedOption) => {
     const { priceId } = selectedOption;
     const paymentMethod = selectedPaymentOption;
@@ -237,11 +216,6 @@ export default function ErrorDialog({ open, onOpenChange }) {
                 icon={FaCreditCard}
                 isSelected={selectedPaymentOption === 'card'}
                 onClick={() => setSelectedPaymentOption('card')}
-              />
-              <PaymentOptionButton
-                icon={FaCcPaypal}
-                isSelected={selectedPaymentOption === 'paypal'}
-                onClick={() => setSelectedPaymentOption('paypal')}
               />
               <PaymentOptionButton
                 icon={FaBitcoin}
