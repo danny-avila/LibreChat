@@ -85,65 +85,11 @@ export default function ErrorDialog({ open, onOpenChange }) {
 
     try {
       if (selectedPaymentOption === 'bitcoin') {
-        console.log('Processing Bitcoin payment for', selectedTokens);
-        const description = `Purchase of ${selectedTokens} tokens`;
-        const response = await fetch('/api/payment/opennode/create-bitcoin-charge', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId,
-            amount: selectedTokens,
-            amountCNY: selectedOption.amountCNY,
-            selectedTokens: selectedTokens,
-            email: email,
-            description,
-          }),
-        });
-        const data = await response.json();
-        if (data.hosted_checkout_url) {
-          window.location.href = data.hosted_checkout_url;
-        } else {
-          console.error(
-            'Failed to initiate Bitcoin payment',
-            data.error || 'Missing hosted_checkout_url',
-          );
-        }
+        await processBitcoinPayment(selectedTokens, selectedOption);
       } else if (selectedPaymentOption === 'paypal') {
-        console.log('Processing PayPal payment for', selectedTokens);
-        const response = await fetch('/api/payment/paypal/create-payment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId,
-            amount: selectedTokens,
-            amountCNY: selectedOption.amountCNY,
-            selectedTokens: selectedTokens,
-          }),
-        });
-        const data = await response.json();
-        console.log(data);
-        if (data && data.approvalUrl) {
-          window.location.href = data.approvalUrl;
-        } else {
-          console.error('Failed to initiate PayPal payment', data.error || 'Missing approval URL');
-        }
+        await processPayPalPayment(selectedTokens, selectedOption);
       } else {
-        const { priceId } = selectedOption;
-        const paymentMethod = selectedPaymentOption;
-
-        const res = await fetch('/api/payment/stripe/create-checkout-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ priceId, userId, domain: 'gptchina.io', email, paymentMethod }),
-        });
-
-        console.log('res', res);
-        const data = await res.json();
-        const stripe = await stripePromise;
-        const { error } = await stripe.redirectToCheckout({ sessionId: data.sessionId });
-        if (error) {
-          console.error('Stripe Checkout Error:', error);
-        }
+        await processStripePayment(selectedOption);
       }
     } catch (error) {
       console.error('Payment error:', error);
@@ -151,6 +97,72 @@ export default function ErrorDialog({ open, onOpenChange }) {
       setProcessingTokenAmount(null);
     }
   }, [selectedTokens, selectedPaymentOption, userId, email, tokenOptions]);
+
+  const processBitcoinPayment = async (selectedTokens, selectedOption) => {
+    console.log('Processing Bitcoin payment for', selectedTokens);
+    const description = `Purchase of ${selectedTokens} tokens`;
+    const response = await fetch('/api/payment/opennode/create-bitcoin-charge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        amount: selectedTokens,
+        amountCNY: selectedOption.amountCNY,
+        selectedTokens: selectedTokens,
+        email: email,
+        description,
+      }),
+    });
+    const data = await response.json();
+    if (data.hosted_checkout_url) {
+      window.location.href = data.hosted_checkout_url;
+    } else {
+      console.error(
+        'Failed to initiate Bitcoin payment',
+        data.error || 'Missing hosted_checkout_url',
+      );
+    }
+  };
+
+  const processPayPalPayment = async (selectedTokens, selectedOption) => {
+    console.log('Processing PayPal payment for', selectedTokens);
+    const response = await fetch('/api/payment/paypal/create-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        amount: selectedTokens,
+        amountCNY: selectedOption.amountCNY,
+        selectedTokens: selectedTokens,
+      }),
+    });
+    const data = await response.json();
+    console.log(data);
+    if (data && data.approvalUrl) {
+      window.location.href = data.approvalUrl;
+    } else {
+      console.error('Failed to initiate PayPal payment', data.error || 'Missing approval URL');
+    }
+  };
+
+  const processStripePayment = async (selectedOption) => {
+    const { priceId } = selectedOption;
+    const paymentMethod = selectedPaymentOption;
+
+    const res = await fetch('/api/payment/stripe/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ priceId, userId, domain: 'gptchina.io', email, paymentMethod }),
+    });
+
+    console.log('res', res);
+    const data = await res.json();
+    const stripe = await stripePromise;
+    const { error } = await stripe.redirectToCheckout({ sessionId: data.sessionId });
+    if (error) {
+      console.error('Stripe Checkout Error:', error);
+    }
+  };
 
   const PaymentOptionButton = ({ icon: Icon, isSelected, onClick }) => (
     <button
@@ -226,11 +238,11 @@ export default function ErrorDialog({ open, onOpenChange }) {
                 isSelected={selectedPaymentOption === 'card'}
                 onClick={() => setSelectedPaymentOption('card')}
               />
-              {/* <PaymentOptionButton
+              <PaymentOptionButton
                 icon={FaCcPaypal}
                 isSelected={selectedPaymentOption === 'paypal'}
                 onClick={() => setSelectedPaymentOption('paypal')}
-              /> */}
+              />
               <PaymentOptionButton
                 icon={FaBitcoin}
                 isSelected={selectedPaymentOption === 'bitcoin'}
