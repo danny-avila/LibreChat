@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const passport = require('passport');
+const jwtDecode = require('jsonwebtoken/decode');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const { logger } = require('~/config');
 const User = require('~/models/User');
-const jwtDecode = require('jsonwebtoken/decode');
 
 let crypto;
 try {
