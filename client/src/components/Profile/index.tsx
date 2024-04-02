@@ -466,7 +466,7 @@ function ProfileContent() {
                 {proMemberExpiredAt.getMonth() + 1}-{proMemberExpiredAt.getDate()}
                 <button
                   type="submit"
-                  className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
+                  className="ml-2 rounded bg-blue-500 px-4 py-1 text-white hover:bg-blue-600"
                   onClick={() =>
                     window.open(
                       `${startupConfig?.proMemberPaymentURL}?locale=${lang}&prefilled_email=${profileUser?.email}`,
@@ -483,7 +483,7 @@ function ProfileContent() {
                 {localize('com_ui_free_member')}
                 <button
                   type="submit"
-                  className="rounded bg-green-500 px-4 py-1 text-white hover:bg-green-600"
+                  className="ml-2 rounded bg-blue-500 px-4 py-1 text-white hover:bg-blue-600"
                   onClick={() =>
                     window.open(
                       `${startupConfig?.proMemberPaymentURL}?locale=${lang}&prefilled_email=${profileUser?.email}`,
