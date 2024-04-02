@@ -99,8 +99,8 @@ You can now make last minute changes, click on `Create user pool` when you're do
 6. Open the `.env` file at the root of your LibreChat folder and add the following variables with the values you copied:
 
 ```bash
-DOMAIN_CLIENT=https://your-domain.com #use http://localhost:3080 if not using a custom domain
-DOMAIN_SERVER=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+DOMAIN_CLIENT=https://your-domain.com # use http://localhost:3080 if not using a custom domain
+DOMAIN_SERVER=https://your-domain.com # use http://localhost:3080 if not using a custom domain
 
 OPENID_CLIENT_ID=Your client ID
 OPENID_CLIENT_SECRET=Your client secret
@@ -111,4 +111,4 @@ OPENID_CALLBACK_URL=/oauth/openid/callback
 ```
 7. Save the .env file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes

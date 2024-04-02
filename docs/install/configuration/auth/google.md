@@ -84,8 +84,8 @@ weight: -10
 - Add them to your `.env` file:
 
 ```bash
-DOMAIN_CLIENT=https://your-domain.com #use http://localhost:3080 if not using a custom domain
-DOMAIN_SERVER=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+DOMAIN_CLIENT=https://your-domain.com # use http://localhost:3080 if not using a custom domain
+DOMAIN_SERVER=https://your-domain.com # use http://localhost:3080 if not using a custom domain
 
 GOOGLE_CLIENT_ID=your_client_id
 GOOGLE_CLIENT_SECRET=your_client_secret
@@ -94,4 +94,4 @@ GOOGLE_CALLBACK_URL=/oauth/github/callback
 
 - Save the `.env` file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes

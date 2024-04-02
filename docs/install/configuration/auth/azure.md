@@ -38,8 +38,8 @@ Token configuration and click on Add group claim. Select the groups you want to 
 10. Open the .env file in your project folder and add the following variables with the values you copied:
 
 ```bash
-DOMAIN_CLIENT=https://your-domain.com #use http://localhost:3080 if not using a custom domain
-DOMAIN_SERVER=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+DOMAIN_CLIENT=https://your-domain.com # use http://localhost:3080 if not using a custom domain
+DOMAIN_SERVER=https://your-domain.com # use http://localhost:3080 if not using a custom domain
 
 OPENID_CLIENT_ID=Your Application (client) ID
 OPENID_CLIENT_SECRET=Your client secret
@@ -50,10 +50,10 @@ OPENID_CALLBACK_URL=/oauth/openid/callback # this should be the same for everyon
 
 # If you want to restrict access by groups
 OPENID_REQUIRED_ROLE_TOKEN_KIND=id
-OPENID_REQUIRED_ROLE_PARAMETER_PATH = "roles"
-OPENID_REQUIRED_ROLE = "Your Group Name"
+OPENID_REQUIRED_ROLE_PARAMETER_PATH="roles"
+OPENID_REQUIRED_ROLE="Your Group Name"
 ```
 11. Save the .env file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
 

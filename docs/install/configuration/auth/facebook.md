@@ -70,8 +70,8 @@ weight: -10
 - Copy the `App ID` and `App Secret` and paste them into the `.env` file as follows:
 
 ```bash
-DOMAIN_CLIENT=https://your-domain.com #use http://localhost:3080 if not using a custom domain
-DOMAIN_SERVER=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+DOMAIN_CLIENT=https://your-domain.com # use http://localhost:3080 if not using a custom domain
+DOMAIN_SERVER=https://your-domain.com # use http://localhost:3080 if not using a custom domain
 
 FACEBOOK_CLIENT_ID=your_app_id
 FACEBOOK_CLIENT_SECRET=your_app_secret
@@ -80,4 +80,4 @@ FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
 
 - Save the `.env` file.
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes

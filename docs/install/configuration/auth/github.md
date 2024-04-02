@@ -52,8 +52,8 @@ weight: -10
 ![image](https://github.com/danny-avila/LibreChat/assets/138638445/aaf78840-48a9-44e1-9625-4109ed91d965)
 
 ```bash
-DOMAIN_CLIENT=https://your-domain.com #use http://localhost:3080 if not using a custom domain
-DOMAIN_SERVER=https://your-domain.com #use http://localhost:3080 if not using a custom domain
+DOMAIN_CLIENT=https://your-domain.com # use http://localhost:3080 if not using a custom domain
+DOMAIN_SERVER=https://your-domain.com # use http://localhost:3080 if not using a custom domain
 
 GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
@@ -62,4 +62,4 @@ GITHUB_CALLBACK_URL=/oauth/github/callback
 
 - Save the `.env` file
 
-> Note: If using docker, run `docker-compose up -d` to apply the .env configuration changes
+> Note: If using docker, run `docker compose up -d` to apply the .env configuration changes
