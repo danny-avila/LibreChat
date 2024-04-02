@@ -5,6 +5,7 @@ const passport = require('passport');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
 const { logger } = require('~/config');
 const User = require('~/models/User');
+const jwtDecode = require('jsonwebtoken/decode');
 
 let crypto;
 try {
@@ -44,7 +45,9 @@ async function setupOpenId() {
       client_secret: process.env.OPENID_CLIENT_SECRET,
       redirect_uris: [process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL],
     });
-
+    const requiredRole = process.env.OPENID_REQUIRED_ROLE;
+    const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
+    const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
     const openidLogin = new OpenIDStrategy(
       {
         client,
@@ -69,6 +72,36 @@ async function setupOpenId() {
             fullName = userinfo.family_name;
           } else {
             fullName = userinfo.username || userinfo.email;
+          }
+
+          if (requiredRole) {
+            let decodedToken = '';
+            if (requiredRoleTokenKind === 'access') {
+              decodedToken = jwtDecode(tokenset.access_token);
+            } else if (requiredRoleTokenKind === 'id') {
+              decodedToken = jwtDecode(tokenset.id_token);
+            }
+            const pathParts = requiredRoleParameterPath.split('.');
+            let found = true;
+            let roles = pathParts.reduce((o, key) => {
+              if (o === null || o === undefined || !(key in o)) {
+                found = false;
+                return [];
+              }
+              return o[key];
+            }, decodedToken);
+
+            if (!found) {
+              console.error(
+                `Key '${requiredRoleParameterPath}' not found in ${requiredRoleTokenKind} token!`,
+              );
+            }
+
+            if (!roles.includes(requiredRole)) {
+              return done(null, false, {
+                message: `You must have the "${requiredRole}" role to log in.`,
+              });
+            }
           }
 
           if (!user) {
