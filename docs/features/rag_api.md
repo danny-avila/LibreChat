@@ -62,7 +62,13 @@ This contrasts Docker, where is already set in the default `docker-compose.yml` 
 
 The RAG API provides several configuration options that can be set using environment variables from an `.env` file accessible to the API. Most of them are optional, asides from the credentials/paths necessary for the provider you configured. In the default setup, only OPENAI_API_KEY is required.
 
-**Important:** When using the default docker setup, the .env file is shared between LibreChat and the RAG API.
+> !!! **Important:** When using the default docker setup, the .env file is shared between LibreChat and the RAG API.
+
+> You will need to utilize the [Docker Compose Override File](../install/configuration/docker_override.md) to set a unique OPENAI_API_KEY value for RAG API, that is different from the one in your `.env` file.
+
+> This may be necessary if you wish to use OpenAI for vector embeddings, but have set `OPENAI_API_KEY=user_provided`
+
+> There is an example for this in `docker-compose.override.yml.example`
 
 Here are some notable configurations:
 

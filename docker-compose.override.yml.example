@@ -101,6 +101,16 @@ version: '3.4'
 #  rag_api:
 #    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
 
+# # USE RAG API IMAGE WITH A DIFFERENT OPENAI API KEY FROM THE ENV FILE
+#  rag_api:
+#   environment:
+#     - OPENAI_API_KEY=sk-your_openai_api_key
+
+# # OR, USE A CUSTOM ENVIRONMENT VARIABLE TO AVOID HARD-CODING IT
+#  rag_api:
+#   environment:
+#     - OPENAI_API_KEY=${OPENAI_EMBEDDINGS_API_KEY}
+
 # # ADD OLLAMA
 #  ollama:
 #    image: ollama/ollama:latest
