@@ -109,11 +109,13 @@ The npm commands for "deployed" do this for you but they do not account for over
     "stop:deployed": "docker compose -f ./deploy-compose.yml down",
 ```
 
-For example, if you use `deploy-compose.yml` as your main Docker Compose configuration and you have an override file named `deploy-compose.override.yml` (you can name the override file whatever you want), you would run Docker Compose commands like so:
+I would include the default override file in these commands, but doing so would require one to exist for every setup.
+
+If you use `deploy-compose.yml` as your main Docker Compose configuration and you have an override file named `docker-compose.override.yml` (you can name the override file whatever you want, but you may have this specific file already), you would run Docker Compose commands like so:
 
 ```bash
-docker compose -f deploy-compose.yml -f deploy-compose.override.yml pull
-docker compose -f deploy-compose.yml -f deploy-compose.override.yml up
+docker compose -f deploy-compose.yml -f docker-compose.override.yml pull
+docker compose -f deploy-compose.yml -f docker-compose.override.yml up
 ```
 
 ## MongoDB Authentication
