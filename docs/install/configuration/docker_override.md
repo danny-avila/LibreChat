@@ -96,6 +96,26 @@ After starting your services with the modified configuration, you can verify tha
 By following these steps and considerations, you can easily and safely modify your Docker Compose configuration without altering the original `docker-compose.yml` file, making it simpler to manage and maintain different environments or local customizations.
 
 
+## `deploy-compose.yml`
+
+To use an override file with a non-default Docker Compose file, such as `deploy-compose.yml`, you will have to explicitly specify both files when running Docker Compose commands.
+
+Docker Compose allows you to specify multiple `-f` or `--file` options to include multiple compose files, where settings in later files override or add to those in the first.
+
+The npm commands for "deployed" do this for you but they do not account for override files:
+
+```json
+    "start:deployed": "docker compose -f ./deploy-compose.yml up -d",
+    "stop:deployed": "docker compose -f ./deploy-compose.yml down",
+```
+
+For example, if you use `deploy-compose.yml` as your main Docker Compose configuration and you have an override file named `deploy-compose.override.yml` (you can name the override file whatever you want), you would run Docker Compose commands like so:
+
+```bash
+docker compose -f deploy-compose.yml -f deploy-compose.override.yml pull
+docker compose -f deploy-compose.yml -f deploy-compose.override.yml up
+```
+
 ## MongoDB Authentication
 
 Use of the `docker-compose.override.yml` file allows us to enable explicit authentication for MongoDB.

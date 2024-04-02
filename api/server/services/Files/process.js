@@ -223,26 +223,32 @@ const processImageFile = async ({ req, res, file, metadata }) => {
  * @param {Object} params - The parameters object.
  * @param {Express.Request} params.req - The Express request object.
  * @param {FileContext} params.context - The context of the file (e.g., 'avatar', 'image_generation', etc.)
+ * @param {boolean} [params.resize=true] - Whether to resize and convert the image to WebP. Default is `true`.
+ * @param {{ buffer: Buffer, width: number, height: number, bytes: number, filename: string, type: string, file_id: string }} [params.metadata] - Required metadata for the file if resize is false.
  * @returns {Promise<{ filepath: string, filename: string, source: string, type: 'image/webp'}>}
  */
-const uploadImageBuffer = async ({ req, context }) => {
+const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true }) => {
   const source = req.app.locals.fileStrategy;
   const { saveBuffer } = getStrategyFunctions(source);
-  const { buffer, width, height, bytes } = await resizeAndConvert(req.file.buffer);
-  const file_id = v4();
-  const fileName = `img-${file_id}.webp`;
+  let { buffer, width, height, bytes, filename, file_id, type } = metadata;
+  if (resize) {
+    file_id = v4();
+    type = 'image/webp';
+    ({ buffer, width, height, bytes } = await resizeAndConvert(req.file.buffer));
+    filename = path.basename(req.file.originalname, path.extname(req.file.originalname)) + '.webp';
+  }
 
-  const filepath = await saveBuffer({ userId: req.user.id, fileName, buffer });
+  const filepath = await saveBuffer({ userId: req.user.id, fileName: filename, buffer });
   return await createFile(
     {
       user: req.user.id,
       file_id,
       bytes,
       filepath,
-      filename: req.file.originalname,
+      filename,
       context,
       source,
-      type: 'image/webp',
+      type,
       width,
       height,
     },

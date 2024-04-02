@@ -3,9 +3,9 @@ import { useForm } from 'react-hook-form';
 import { memo, useCallback, useRef, useMemo } from 'react';
 import {
   supportsFiles,
+  EModelEndpoint,
   mergeFileConfig,
   fileConfig as defaultFileConfig,
-  EModelEndpoint,
 } from 'librechat-data-provider';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import { useRequiresKey, useTextarea } from '~/hooks';
@@ -43,9 +43,9 @@ const ChatForm = ({ index = 0 }) => {
     setFiles,
     conversation,
     isSubmitting,
-    handleStopGenerating,
     filesLoading,
     setFilesLoading,
+    handleStopGenerating,
   } = useChatContext();
 
   const assistantMap = useAssistantsMapContext();
@@ -57,7 +57,9 @@ const ChatForm = ({ index = 0 }) => {
       }
       ask({ text: data.text });
       methods.reset();
-      textAreaRef.current?.setRangeText('', 0, data.text.length, 'end');
+      if (textAreaRef.current) {
+        textAreaRef.current.value = '';
+      }
     },
     [ask, methods],
   );
