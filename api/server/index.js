@@ -82,7 +82,9 @@ const startServer = async () => {
   app.use('/api/models', routes.models);
   app.use('/api/plugins', routes.plugins);
   app.use('/api/config', routes.config);
-  app.use('/api/payment', routes.payment);
+  app.use('/api/payment/stripe', routes.payment);
+  app.use('/api/payment/opennode', routes.openNodePayment);
+  app.use('/api/payment/paypal', routes.paypalPayment);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', routes.files);
 

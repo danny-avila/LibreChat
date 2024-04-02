@@ -1,5 +1,5 @@
 const express = require('express');
-const PaymentController = require('../controllers/PaymentController'); // Ensure this path is correct
+const PaymentController = require('../controllers/PaymentController');
 const router = express.Router();
 
 function rawBodySaver(req, res, buf, encoding) {
@@ -9,21 +9,13 @@ function rawBodySaver(req, res, buf, encoding) {
 }
 
 function rawMiddleware(req, res, next) {
-  express.raw({ type: 'application/json', verify: rawBodySaver })(req, res, (err) => {
-    if (err) {
-      next(err);
-    } else {
-      next();
-    }
-  });
+  express.raw({ type: 'application/json', verify: rawBodySaver })(req, res, next);
 }
 
+// Route for creating a Stripe checkout session
 router.post('/create-checkout-session', PaymentController.createPaymentIntent);
 
-router.post(
-  '/webhook',
-  rawMiddleware, // Apply rawMiddleware only to this route
-  PaymentController.handleWebhook,
-);
+// Route for handling Stripe webhook events
+router.post('/webhook', rawMiddleware, PaymentController.handleWebhook);
 
 module.exports = router;
