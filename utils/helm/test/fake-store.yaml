@@ -9,19 +9,19 @@ spec:
         - key: "librechat-test"
           value: '{
             "openai_api_key": "fake_openai_api_key",
-            "creds_key": "fake_creds_key",
-            "creds_iv": "fake_creds_iv",
-            "jwt_secret": "fake_jwt_secret",
-            "jwt_refresh_secret": "fake_jwt_refresh_secret",
+            "assistants_api_key": "fake_assistants_api_key",
+            "creds_key": "6d15fb99bedb55d26d0a677a22c56f3c0a61342d484bf9a2572b46e55d2297ec%",
+            "creds_iv": "2a09d8e75510e904d5fa04576b4001d3%",
+            "jwt_secret": "b8129051a1014ab681ee64c5fd0aa798b88e90275ae7274443566d871d1dd7e7%",
+            "jwt_refresh_secret": "511e338d5ce72ab77ba79307d246f02b58c71b105dd0a66bbc7f2794075b2b86",
             "mongo_uri": "mongodb://librechat:mongodb_passwords@librechat-mongodb-headless:27017/librechat",
             "google_client_id": "fake_google_client_id",
             "google_client_secret": "fake_google_client_secret",
             "google_api_key": "fake_google_api_key",
             "google_cse_id": "fake_google_cse_id",
-            "assistants_api_key": "fake_assistants_api_key",
-            "meili_master_key": "fake_meili_master_key",
+            "meili_master_key": "IliAry0KTrKV83cQFLAOdqPuneM9Hu6a6iJRSu2A%",
             "firebase_api_key": "fake_firebase_api_key",
-            "mongodb_passwords": "mongodb_passwords",
-            "mongodb_replica_set_key": "mongodb_replica_set_key",
-            "mongodb_root_password": "mongodb_root_password"
+            "mongodb_passwords": "h8aNC6nMd0tEReqMg",
+            "mongodb_replica_set_key": "t4zD9qkXie0on6gCL7Ud3Q3PJN8fh1BsyGFE2OtY%",
+            "mongodb_root_password": "D1BN7hHI9aKMbTnV"
           }'

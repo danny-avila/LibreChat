@@ -23,14 +23,14 @@ persistence:
   enabled: true
   storageClass: ""
   accessMode: ReadWriteOnce
-  size: 4Gi
+  size: 8Gi
 
 meilisearch:
   persistence:
     enabled: true
     storageClass: ""
     accessMode: ReadWriteOnce
-    size: 4Gi
+    size: 8Gi
   auth:
     existingMasterKeySecret: "librechat-meili"
 
@@ -50,4 +50,4 @@ mongodb:
     enabled: true
     storageClass: ""
     accessMode: ReadWriteOnce
-    size: 4Gi
+    size: 8Gi
