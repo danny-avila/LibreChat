@@ -60,19 +60,14 @@ This contrasts Docker, where is already set in the default `docker-compose.yml` 
 
 ## Configuration
 
-The RAG API provides several configuration options that can be set using environment variables from an `.env` file accessible to the API. Most of them are optional, asides from the credentials/paths necessary for the provider you configured. In the default setup, only OPENAI_API_KEY is required.
+The RAG API provides several configuration options that can be set using environment variables from an `.env` file accessible to the API. Most of them are optional, asides from the credentials/paths necessary for the provider you configured. In the default setup, only `RAG_OPENAI_API_KEY` is required.
 
-> !!! **Important:** When using the default docker setup, the .env file is shared between LibreChat and the RAG API.
-
-> You will need to utilize the [Docker Compose Override File](../install/configuration/docker_override.md) to set a unique OPENAI_API_KEY value for RAG API, that is different from the one in your `.env` file.
-
-> This may be necessary if you wish to use OpenAI for vector embeddings, but have set `OPENAI_API_KEY=user_provided`
-
-> There is an example for this in `docker-compose.override.yml.example`
+> !!! **Important:** When using the default docker setup, the .env file is shared between LibreChat and the RAG API. For this reason, it's important to define the needed variables shown in the [RAG API readme.md](https://github.com/danny-avila/rag_api/blob/main/README.md)
 
 Here are some notable configurations:
 
-- `OPENAI_API_KEY`: The API key for OpenAI API Embeddings (if using default settings).
+- `RAG_OPENAI_API_KEY`: The API key for OpenAI API Embeddings (if using default settings).
+    - Note: `OPENAI_API_KEY` will work but `RAG_OPENAI_API_KEY` will override it in order to not conflict with the LibreChat credential.
 - `RAG_PORT`: The port number where the API server will run. Defaults to port 8000.
 - `RAG_HOST`: The hostname or IP address where the API server will run. Defaults to "0.0.0.0"
 - `COLLECTION_NAME`: The name of the collection in the vector store. Default is "testcollection".
@@ -136,7 +131,7 @@ RAG consists of two main phases: retrieval and content generation.
 
 ### Challenges and Ongoing Research
 
-While RAG is currently the best-known tool for grounding LLMs on the latest, verifiable information and lowering the costs of constant retraining and updating, it is not perfect. Some challenges include:
+While RAG is currently one of the best-known tools for grounding LLMs on the latest, verifiable information and lowering the costs of constant retraining and updating, it's not perfect. Some challenges include:
 
 1. **Recognizing unanswerable questions**: LLMs need to be explicitly trained to recognize questions they can't answer based on the available information. This may require fine-tuning on thousands of examples of answerable and unanswerable questions.
 2. **Improving retrieval and generation**: Ongoing research focuses on innovating at both ends of the RAG process: improving the retrieval of the most relevant information possible to feed the LLM, and optimizing the structure of that information to obtain the richest responses from the LLM.
