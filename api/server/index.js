@@ -77,6 +77,9 @@ const startServer = async () => {
     res.sendFile(path.join(projectPath, 'dist', 'index.html'));
   });
 
+  // Web Hooks
+  app.use('/api/webhooks', routes.webhooks);
+
   app.listen(port, host, () => {
     if (host == '0.0.0.0') {
       console.log(
