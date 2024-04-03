@@ -4,7 +4,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { UseFormSetValue } from 'react-hook-form';
 import type { KeyboardEvent } from 'react';
-import { forceResize, insertTextAtCursor, getAssistantName } from '~/utils';
+import { forceResize, insertTextAtCursor, trimUndoneRange, getAssistantName } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
@@ -157,7 +157,16 @@ export default function useTextarea({
   const handleKeyUp = (e: KeyEvent) => {
     const target = e.target as HTMLTextAreaElement;
 
-    if (e.keyCode === 8 && target.value.trim() === '') {
+    const isUndo = e.key === 'z' && (e.ctrlKey || e.metaKey);
+    if (isUndo && target.value.trim() === '') {
+      textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
+      forceResize(textAreaRef);
+    } else if (isUndo) {
+      trimUndoneRange(textAreaRef);
+      forceResize(textAreaRef);
+    }
+
+    if ((e.keyCode === 8 || e.key === 'Backspace') && target.value.trim() === '') {
       textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
     }
 

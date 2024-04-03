@@ -32,9 +32,28 @@ export function insertTextAtCursor(element: HTMLTextAreaElement, textToInsert: s
  3) Reseting back to scrollHeight reads and applies the ideal height for the current content dynamically
  */
 export const forceResize = (textAreaRef: React.RefObject<HTMLTextAreaElement>) => {
-  if (textAreaRef.current) {
-    textAreaRef.current.style.height = 'auto';
-    textAreaRef.current.offsetHeight;
-    textAreaRef.current.style.height = `${textAreaRef.current.scrollHeight}px`;
+  if (!textAreaRef.current) {
+    return;
   }
+  textAreaRef.current.style.height = 'auto';
+  textAreaRef.current.offsetHeight;
+  textAreaRef.current.style.height = `${textAreaRef.current.scrollHeight}px`;
+};
+
+/**
+ * Necessary undo event helper for edge cases where undoing pasted content leaves newlines filling the previous container height.
+ */
+export const trimUndoneRange = (textAreaRef: React.RefObject<HTMLTextAreaElement>) => {
+  if (!textAreaRef.current) {
+    return;
+  }
+  const { value, selectionStart, selectionEnd } = textAreaRef.current;
+  const afterCursor = value.substring(selectionEnd).trim();
+  if (afterCursor.length) {
+    return;
+  }
+  const beforeCursor = value.substring(0, selectionStart);
+  const newValue = beforeCursor + afterCursor;
+  textAreaRef.current.value = newValue;
+  textAreaRef.current.setSelectionRange(selectionStart, selectionStart);
 };
