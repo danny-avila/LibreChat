@@ -49,7 +49,7 @@ The "presets" feature in our app is a powerful tool that allows users to save an
 - **Custom Name:**
   - Optionally provide a custom name for your preset. This is the name that will be shown in the UI when using it.
 
-- **Prompt Prefix:**
+- **Custom Instructions:**
   - Define instructions or guidelines that will be displayed before each prompt to guide the user in providing input.
 
 - **Temperature:**
@@ -77,7 +77,7 @@ To export a preset, first go in the preset menu, then click on the button to edi
 Then in the bottom of the preset settings you'll have the option to export it.
 
 <p align="left">
-    <img src="https://github.com/danny-avila/LibreChat/assets/32828263/a624345f-e3e6-4192-8384-293ba6ce54cc" width="50%">
+    <img src="https://github.com/danny-avila/LibreChat/assets/32828263/a624345f-e3e6-4192-8384-293ba6ce54cc" width="50%"/>
 </p>
 
 ## Setting Default Preset

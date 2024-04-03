@@ -21,7 +21,7 @@ export const useScreenshot = () => {
     if (theme === 'system') {
       isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
-    const backgroundColor = isDark ? '#343541' : 'white';
+    const backgroundColor = isDark ? '#171717' : 'white';
     const canvas = await toCanvas(node);
     const croppedCanvas = document.createElement('canvas');
     const croppedCanvasContext = croppedCanvas.getContext('2d') as CanvasRenderingContext2D;

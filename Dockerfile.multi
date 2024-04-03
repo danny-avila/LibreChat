@@ -1,3 +1,5 @@
+# v0.7.0
+
 # Build API, Client and Data Provider
 FROM node:20-alpine AS base
 
@@ -24,6 +26,8 @@ FROM data-provider-build AS api-build
 WORKDIR /app/api
 COPY api/package*.json ./
 COPY api/ ./
+# Copy helper scripts
+COPY config/ ./
 # Copy data-provider to API's node_modules
 RUN mkdir -p /app/api/node_modules/librechat-data-provider/
 RUN cp -R /app/packages/data-provider/* /app/api/node_modules/librechat-data-provider/

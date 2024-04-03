@@ -1,16 +1,5 @@
 const { z } = require('zod');
 
-function errorsToString(errors) {
-  return errors
-    .map((error) => {
-      let field = error.path.join('.');
-      let message = error.message;
-
-      return `${field}: ${message}`;
-    })
-    .join(' ');
-}
-
 const allowedCharactersRegex = new RegExp(
   '^[' +
     'a-zA-Z0-9_.@#$%&*()' + // Basic Latin characters and symbols
@@ -86,5 +75,4 @@ const registerSchema = z
 module.exports = {
   loginSchema,
   registerSchema,
-  errorsToString,
 };

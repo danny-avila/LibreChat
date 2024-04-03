@@ -1,3 +1,4 @@
+import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { useLocalize } from '~/hooks';
 
@@ -12,7 +13,7 @@ export default function Footer() {
       ) : (
         <>
           <a href="https://gptchina.io" target="_blank" rel="noreferrer" className="underline">
-            {config?.appTitle || 'Gpt China'} v0.6.1
+            {config?.appTitle || 'GPT China'} {Constants.VERSION}
           </a>
           {' - '}. {localize('com_ui_pay_per_call')}
         </>

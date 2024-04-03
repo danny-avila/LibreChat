@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { registerSchema, errorsToString } = require('~/strategies/validators');
+const { errorsToString } = require('librechat-data-provider');
+const { registerSchema } = require('~/strategies/validators');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const Token = require('~/models/schema/tokenSchema');
 const { sendEmail } = require('~/server/utils');
@@ -171,8 +172,10 @@ const requestPasswordReset = async (email) => {
       user.email,
       'Password Reset Request',
       {
+        appName: process.env.APP_TITLE || 'LibreChat',
         name: user.name,
         link: link,
+        year: new Date().getFullYear(),
       },
       'requestPasswordReset.handlebars',
     );
@@ -213,7 +216,9 @@ const resetPassword = async (userId, token, password) => {
     user.email,
     'Password Reset Successfully',
     {
+      appName: process.env.APP_TITLE || 'LibreChat',
       name: user.name,
+      year: new Date().getFullYear(),
     },
     'passwordReset.handlebars',
   );

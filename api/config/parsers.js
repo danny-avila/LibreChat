@@ -33,6 +33,10 @@ function getMatchingSensitivePatterns(valueStr) {
  * @returns {string} - The redacted console message.
  */
 function redactMessage(str) {
+  if (!str) {
+    return '';
+  }
+
   const patterns = getMatchingSensitivePatterns(str);
 
   if (patterns.length === 0) {

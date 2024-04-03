@@ -195,7 +195,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
 
             <div className="my-2 flex w-full items-center">
               <div className="flex-grow border-t border-gray-300"></div>
-              <span className="text-md mx-4 flex-shrink bg-white px-2 text-gray-700 dark:bg-gray-900 dark:text-gray-300">
+              <span className="text-md mx-4 flex-shrink bg-transparent px-2 text-gray-700 dark:text-gray-300">
                 Select Payment Option
               </span>
               <div className="flex-grow border-t border-gray-300"></div>

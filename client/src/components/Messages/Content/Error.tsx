@@ -1,12 +1,8 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
-/* eslint-disable react-hooks/rules-of-hooks */
-
-import React from 'react';
+import { ViolationTypes } from 'librechat-data-provider';
 import type { TOpenAIMessage } from 'librechat-data-provider';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import CodeBlock from './CodeBlock';
-import ErrorDialog from './ErrorDialog';
-import { useLocalize } from '~/hooks';
 
 type TConcurrent = {
   limit: number;
@@ -18,7 +14,7 @@ type TMessageLimit = {
 };
 
 type TTokenBalance = {
-  type: 'token_balance';
+  type: ViolationTypes;
   balance: number;
   tokenCost: number;
   promptTokens: number;
@@ -49,12 +45,10 @@ const errorMessages = {
     }.`;
   },
   token_balance: (json: TTokenBalance) => {
-    const localize = useLocalize();
     const { balance, tokenCost, promptTokens, generations } = json;
-    const message = `${localize('com_insufficient_funds')} ${balance}.`;
+    const message = `Insufficient Funds! Balance: ${balance}. Prompt tokens: ${promptTokens}. Cost: ${tokenCost}.`;
     return (
       <>
-        <ErrorDialog message={message} />
         {message}
         {generations && (
           <>

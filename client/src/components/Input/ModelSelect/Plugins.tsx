@@ -5,7 +5,7 @@ import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import { SelectDropDown, MultiSelectDropDown, SelectDropDownPop, Button } from '~/components/ui';
-import { useSetOptions, useAuthContext, useMediaQuery } from '~/hooks';
+import { useSetOptions, useAuthContext, useMediaQuery, useLocalize } from '~/hooks';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
 
@@ -26,6 +26,7 @@ export default function Plugins({
   showAbove,
   popover = false,
 }: TModelSelectProps) {
+  const localize = useLocalize();
   const { data: allPlugins } = useAvailablePluginsQuery();
   const [visible, setVisibility] = useState<boolean>(true);
   const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
@@ -110,6 +111,7 @@ export default function Plugins({
         optionValueKey="pluginKey"
         showAbove={showAbove}
         className={cn(cardStyle, 'z-50 w-64 min-w-60 sm:w-48', visible ? '' : 'hidden')}
+        searchPlaceholder={localize('com_ui_select_search_plugin')}
       />
     </>
   );

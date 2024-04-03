@@ -1,4 +1,13 @@
-import { parseISO, isToday, isWithinInterval, subDays, getYear } from 'date-fns';
+import {
+  parseISO,
+  isToday,
+  isWithinInterval,
+  subDays,
+  getYear,
+  startOfDay,
+  startOfYear,
+  format,
+} from 'date-fns';
 import type {
   TConversation,
   ConversationData,
@@ -11,11 +20,17 @@ const getGroupName = (date: Date) => {
   if (isToday(date)) {
     return 'Today';
   }
+  if (isWithinInterval(date, { start: startOfDay(subDays(now, 1)), end: now })) {
+    return 'Yesterday';
+  }
   if (isWithinInterval(date, { start: subDays(now, 7), end: now })) {
-    return 'Last 7 days';
+    return 'Previous 7 days';
   }
   if (isWithinInterval(date, { start: subDays(now, 30), end: now })) {
-    return 'Last 30 days';
+    return 'Previous 30 days';
+  }
+  if (isWithinInterval(date, { start: startOfYear(now), end: now })) {
+    return ' ' + format(date, 'MMMM');
   }
   return ' ' + getYear(date).toString();
 };
@@ -27,6 +42,10 @@ export const groupConversationsByDate = (conversations: TConversation[]): Groupe
 
   const seenConversationIds = new Set();
   const groups = conversations.reduce((acc, conversation) => {
+    if (!conversation) {
+      return acc;
+    }
+
     if (seenConversationIds.has(conversation.conversationId)) {
       return acc;
     }
@@ -145,4 +164,21 @@ export const deleteConversation = (
   }
 
   return newData;
+};
+
+export const getConversationById = (
+  data: ConversationData | undefined,
+  conversationId: string | null,
+): TConversation | undefined => {
+  if (!data || !conversationId) {
+    return undefined;
+  }
+
+  for (const page of data.pages) {
+    const conversation = page.conversations.find((c) => c.conversationId === conversationId);
+    if (conversation) {
+      return conversation;
+    }
+  }
+  return undefined;
 };

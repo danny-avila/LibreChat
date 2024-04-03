@@ -1,7 +1,7 @@
 ---
 title: ⚙️ Environment Variables
 description: Comprehensive guide for configuring your application's environment with the `.env` file. This document is your one-stop resource for understanding and customizing the environment variables that will shape your application's behavior in different contexts.
-weight: -11
+weight: -12
 ---
 
 # .env File Configuration
@@ -16,7 +16,7 @@ Alternatively, you can create a new file named `docker-compose.override.yml` in 
 For more info see: 
 
 - Our quick guide: 
-    - **[Docker Override](../configuration/docker_override.md)**
+    - **[Docker Override](./docker_override.md)**
 
 - The official docker documentation: 
     - **[docker docs - understanding-multiple-compose-files](https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files)**
@@ -24,21 +24,11 @@ For more info see:
     - **[docker docs - specifying-multiple-compose-files](https://docs.docker.com/compose/reference/#specifying-multiple-compose-files)**
 
 - You can also view an example of an override file for LibreChat in your LibreChat folder and on GitHub: 
-    - **[docker-compose.override.example](https://github.com/danny-avila/LibreChat/blob/main/docker-compose.override.yaml.example)**
+    - **[docker-compose.override.example](https://github.com/danny-avila/LibreChat/blob/main/docker-compose.override.yml.example)**
 
 ---
 
 ## Server Configuration
-
-### Customization
-- Here you can change the app title and footer
-- Uncomment to add a custom footer.
-    - Uncomment and make empty "" to remove the footer.
-
-```bash
-APP_TITLE=LibreChat
-CUSTOM_FOOTER="My custom footer"
-```
 
 ### Port
 
@@ -86,6 +76,14 @@ NO_INDEX=true
 
 > ❗**Note:** This method is not guaranteed to work for all search engines, and some search engines may still index your website or web page for other purposes, such as caching or archiving. Therefore, you should not rely solely on this method to protect sensitive or confidential information on your website or web page.
 
+### JSON Logging
+
+When handling console logs in cloud deployments (such as GCP or AWS), enabling this will duump the logs with a UTC timestamp and format them as JSON. See: [feat: Add CONSOLE_JSON](https://github.com/danny-avila/LibreChat/pull/2146)
+
+```
+CONSOLE_JSON=false
+```
+
 ### Logging
 
 LibreChat has built-in central logging, see [Logging System](../../features/logging_system.md) for more info.
@@ -96,14 +94,25 @@ LibreChat has built-in central logging, see [Logging System](../../features/logg
 - Keep debug logs active by default or disable them by setting `DEBUG_LOGGING=false` in the environment variable.
 - For more information about this feature, read our docs: **[Logging System](../../features/logging_system.md)**
 
+- Enable verbose file logs with `DEBUG_LOGGING=TRUE`.
+- Note: can be used with either `DEBUG_CONSOLE` or `CONSOLE_JSON` but not both.
+
 ```bash
 DEBUG_LOGGING=true
 ```
 
-- Enable verbose server output in the console with `DEBUG_CONSOLE=TRUE`, though it's not recommended due to high verbosity.
+- Enable verbose console/stdout logs with `DEBUG_CONSOLE=TRUE` in the same format as file debug logs.
+- Note: can be used in conjunction with `DEBUG_LOGGING` but not `CONSOLE_JSON`.
 
 ```bash
 DEBUG_CONSOLE=false
+```
+
+- Enable verbose JSON console/stdout logs suitable for cloud deployments like GCP/AWS
+- Note: can be used in conjunction with `DEBUG_LOGGING` but not `DEBUG_CONSOLE`.
+
+```bash
+CONSOLE_JSON=false
 ```
 
 This is not recommend, however, as the outputs can be quite verbose, and so it's disabled by default.
@@ -116,6 +125,17 @@ UID=1000
 GID=1000
 ```
 
+### Configuration Path - `librechat.yaml`
+Specify an alternative location for the LibreChat configuration file. 
+You may specify an **absolute path**, a **relative path**, or a **URL**. The filename in the path is flexible and does not have to be `librechat.yaml`; any valid configuration file will work.
+
+> **Note**: If you prefer LibreChat to search for the configuration file in the root directory (which is the default behavior), simply leave this option commented out.
+
+```sh
+# To set an alternative configuration path or URL, uncomment the line below and replace it with your desired path or URL.
+# CONFIG_PATH="/your/alternative/path/to/config.yaml"
+```
+
 ## Endpoints
 In this section you can configure the endpoints and models selection, their API keys, and the proxy and reverse proxy settings for the endpoints that support it. 
 
@@ -124,8 +144,32 @@ In this section you can configure the endpoints and models selection, their API 
 - `PROXY` is to be used by all endpoints (leave blank by default)
 
 ```bash
-ENDPOINTS=openAI,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
+ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
 PROXY=
+```
+
+- Titling is enabled by default for all Endpoints when initiating a conversation (proceeding the first AI response).
+    - Set to `false` to disable this feature.
+    - Not all endpoints support titling.
+    - You can configure this feature on an Endpoint-level using [the `librechat.yaml` config file](./custom_config.md)
+
+```bash
+TITLE_CONVO=true
+```
+
+### Known Endpoints - librechat.yaml
+- see: [AI Endpoints](./ai_endpoints.md)
+- see also: [Custom Configuration](./custom_config.md)
+
+```sh
+GROQ_API_KEY=
+SHUTTLEAI_KEY=
+OPENROUTER_KEY=
+MISTRAL_API_KEY=
+ANYSCALE_API_KEY=
+FIREWORKS_API_KEY=
+PERPLEXITY_API_KEY=
+TOGETHERAI_API_KEY=
 ```
 
 ### Anthropic
@@ -138,8 +182,17 @@ see: [Anthropic Endpoint](./ai_setup.md#anthropic)
 
 ```bash
 ANTHROPIC_API_KEY=user_provided
-ANTHROPIC_MODELS=claude-1,claude-instant-1,claude-2
+ANTHROPIC_MODELS=claude-3-opus-20240229,claude-3-sonnet-20240229,claude-2.1,claude-2,claude-1.2,claude-1,claude-1-100k,claude-instant-1,claude-instant-1-100k
 ANTHROPIC_REVERSE_PROXY=
+```
+
+- Titling is enabled by default but is configured with the environment variable 
+`TITLE_CONVO` for all Endpoints. The default model used for Anthropic titling is "claude-3-haiku-20240307". You can change it by uncommenting the following and setting the desired model. **(Optional)** 
+
+> **Note:** Must be compatible with the Anthropic Endpoint. Also, Claude 2 and Claude 3 models perform best at this task, with `claude-3-haiku` models being the cheapest.
+
+```bash
+ANTHROPIC_TITLE_MODEL=claude-3-haiku-20240307
 ```
 
 ### Azure
@@ -221,7 +274,7 @@ DALLE2_API_KEY=your-azure-api-key-for-dall-e-2
 ### BingAI
 Bing, also used for Sydney, jailbreak, and Bing Image Creator, see: [Bing Access token](./ai_setup.md#bingai) and [Bing Jailbreak](../../features/bing_jailbreak.md)
 
-- Follow these instructions to get your bing access token (it's best to use the full cookie string for that purpose): **[Bing Access Token](../configuration/ai_setup.md#bingai)**  
+- Follow these instructions to get your bing access token (it's best to use the full cookie string for that purpose): **[Bing Access Token](./ai_setup.md#bingai)**  
 - Leave `BINGAI_TOKEN=` blank to disable this endpoint
 - Set `BINGAI_TOKEN=` to "user_provided" to allow users to provide their own API key from the WebUI
 
@@ -232,28 +285,6 @@ Bing, also used for Sydney, jailbreak, and Bing Image Creator, see: [Bing Access
 ```bash
 BINGAI_TOKEN=user_provided
 BINGAI_HOST=
-```
-
-### ChatGPT
-see: [ChatGPT Free Access token](../configuration/ai_setup.md#chatgptbrowser)
-
-> **Warning**: To use this endpoint you'll have to set up your own reverse proxy. Here is the installation guide to deploy your own (based on [Ninja](https://github.com/gngpp/ninja)): **[Ninja Deployment Guide](../../features/ninja.md)**
-
-```bash
-CHATGPT_REVERSE_PROXY=<YOUR-REVERSE-PROXY>
-```
-
-> **Note:** If you're a GPT plus user you can try adding `gpt-4`, `gpt-4-plugins`, `gpt-4-code-interpreter`, and `gpt-4-browsing` to the list above and use the models for these features; **however, the view/display portion of these features are not supported**, but you can use the underlying models, which have higher token context
-
-> This method **might only works** with `text-davinci-002-render-sha` and **might stop working** at any moment.
-
-- Leave `CHATGPT_TOKEN=` blank to disable this endpoint
-- Set `CHATGPT_TOKEN=` to "user_provided" to allow users to provide their own API key from the WebUI
-    - It is not recommended to provide your token in the `.env` file since it expires often and sharing it could get you banned.
-
-```bash
-CHATGPT_TOKEN=
-CHATGPT_MODELS=text-davinci-002-render-sha
 ```
 
 ### Google
@@ -309,14 +340,8 @@ DEBUG_OPENAI=false
 OPENAI_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k
 ```
 
-- Titling is enabled by default when initiating a conversation.
-    - Set to false to disable this feature.
-
-```bash
-TITLE_CONVO=true
-```
-
-- The default model used for titling by is gpt-3.5-turbo. You can change it by uncommenting the following and setting the desired model. **(Optional)** 
+- Titling is enabled by default but is configured with the environment variable 
+`TITLE_CONVO` for all Endpoints. The default model used for OpenAI titling is gpt-3.5-turbo. You can change it by uncommenting the following and setting the desired model. **(Optional)** 
 
 > **Note:** Must be compatible with the OpenAI Endpoint.
 
@@ -349,6 +374,41 @@ OPENAI_REVERSE_PROXY=
 ```bash
 OPENAI_FORCE_PROMPT=true
 ```
+
+### Assistants
+
+- The [Assistants API by OpenAI](https://platform.openai.com/docs/assistants/overview) has a dedicated endpoint.
+- To get your OpenAI API key, you need to:
+    - Go to [https://platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys)
+    - Create an account or log in with your existing one
+    - Add a payment method to your account (this is not free, sorry 😬)
+    - Copy your secret key (sk-...) to `ASSISTANTS_API_KEY`
+
+- Leave `ASSISTANTS_API_KEY=` blank to disable this endpoint
+- Set `ASSISTANTS_API_KEY=` to `user_provided` to allow users to provide their own API key from the WebUI
+
+```bash
+ASSISTANTS_API_KEY=user_provided
+```
+
+- Customize the available models, separated by commas, **without spaces**.
+    - The first will be default.
+    - Leave it blank or commented out to use internal settings:
+        - The models list will be fetched from OpenAI but only Assistants-API-compatible models will be shown; at the time of writing, they are as shown in the example below.
+
+```bash
+ASSISTANTS_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
+```
+
+- If necessary, you can also set an alternate base URL instead of the official one with `ASSISTANTS_BASE_URL`, which is similar to the OpenAI counterpart `OPENAI_REVERSE_PROXY`
+
+```bash
+ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
+```
+
+- If you have previously set the [`ENDPOINTS` value in your .env file](#endpoints), you will need to add the value `assistants`
+
+- There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, and determining which assistants can be used, that are available via the [`librechat.yaml` custom config file](./custom_config.md#assistants-endpoint-object-structure).
 
 ### OpenRouter
 See [OpenRouter](./free_ai_apis.md#openrouter-preferred) for more info.
@@ -483,6 +543,21 @@ See detailed instructions here: **[Stable Diffusion](../../features/plugins/stab
 SD_WEBUI_URL=http://host.docker.internal:7860
 ```
 
+### Tavily
+Get your API key here: [https://tavily.com/#api](https://tavily.com/#api)
+
+```bash
+TAVILY_API_KEY=
+```
+
+### Traversaal
+LLM-enhanced search tool.
+Get API key here: https://api.traversaal.ai/dashboard
+
+```bash
+TRAVERSAAL_API_KEY=
+```
+
 #### WolframAlpha
 See detailed instructions here: **[Wolfram Alpha](../../features/plugins/wolfram.md)**
 
@@ -571,7 +646,10 @@ REGISTRATION_VIOLATION_SCORE=1
 CONCURRENT_VIOLATION_SCORE=1
 MESSAGE_VIOLATION_SCORE=1
 NON_BROWSER_VIOLATION_SCORE=20
+ILLEGAL_MODEL_REQ_SCORE=5
 ```
+
+> Note: Non-browser access and Illegal model requests are almost always nefarious as it means a 3rd party is attempting to access the server through an automated script.
 
 #### Login and registration rate limiting.
 - `LOGIN_MAX`: The max amount of logins allowed per IP per `LOGIN_WINDOW`
@@ -641,7 +719,7 @@ CHECK_BALANCE=false
 ```
 
 ### Registration and Login
-see: **[User/Auth System](../configuration/user_auth_system.md)**
+see: **[User/Auth System](./user_auth_system.md)**
 
 ![image](https://github.com/danny-avila/LibreChat/assets/81851188/52a37d1d-7392-4a9a-a79f-90ed2da7f841)
 
@@ -679,9 +757,9 @@ JWT_REFRESH_SECRET=eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8
 
 ### Social Logins
 
-#### [Discord Authentication](../configuration/user_auth_system.md#discord)
+#### [Discord Authentication](./OAuth2-and-OIDC/discord.md)
 
-for more information: **[Discord](../configuration/user_auth_system.md#discord)**
+for more information: **[Discord](./OAuth2-and-OIDC/discord.md)**
 
 ```bash
 # Discord
@@ -690,9 +768,9 @@ DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_CALLBACK_URL=/oauth/discord/callback
 ```
 
-#### [Facebook Authentication](../configuration/user_auth_system.md#facebook)
+#### [Facebook Authentication](./OAuth2-and-OIDC/facebook.md)
 
-for more information: **[Facebook Authentication](../configuration/user_auth_system.md#facebook)**
+for more information: **[Facebook Authentication](./OAuth2-and-OIDC/facebook.md)**
 
 ```bash
 # Facebook
@@ -701,9 +779,9 @@ FACEBOOK_CLIENT_SECRET=
 FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
 
 ```
-#### [GitHub Authentication](../configuration/user_auth_system.md#github)
+#### [GitHub Authentication](./OAuth2-and-OIDC/github.md)
 
-for more information: **[GitHub Authentication](../configuration/user_auth_system.md#github)**
+for more information: **[GitHub Authentication](./OAuth2-and-OIDC/github.md)**
 
 ```bash
 # GitHub
@@ -712,9 +790,9 @@ GITHUB_CLIENT_SECRET=your_client_secret
 GITHUB_CALLBACK_URL=/oauth/github/callback
 ```
 
-#### [Google Authentication](../configuration/user_auth_system.md#google)
+#### [Google Authentication](./OAuth2-and-OIDC/google.md)
 
-for more information: **[Google Authentication](../configuration/user_auth_system.md#google)**
+for more information: **[Google Authentication](./OAuth2-and-OIDC/google.md)**
 
 ```bash
 # Google
@@ -723,9 +801,9 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_CALLBACK_URL=/oauth/google/callback
 ```
 
-#### [OpenID Authentication](../configuration/user_auth_system.md#openid-with-aws-cognito)
+#### [OpenID Authentication](./OAuth2-and-OIDC/aws.md)
 
-for more information: **[Azure OpenID Authentication](../configuration/user_auth_system.md#openid-with-azure-ad)** or **[AWS Cognito OpenID Authentication](../configuration/user_auth_system.md#openid-with-aws-cognito)**
+for more information: **[Azure OpenID Authentication](./OAuth2-and-OIDC/azure.md)** or **[AWS Cognito OpenID Authentication](./OAuth2-and-OIDC/aws.md)**
 
 ```bash
 # OpenID
@@ -735,13 +813,15 @@ OPENID_ISSUER=
 OPENID_SESSION_SECRET=
 OPENID_SCOPE="openid profile email"
 OPENID_CALLBACK_URL=/oauth/openid/callback
-
 OPENID_BUTTON_LABEL=
 OPENID_IMAGE_URL=
+OPENID_REQUIRED_ROLE_TOKEN_KIND=
+OPENID_REQUIRED_ROLE=
+OPENID_REQUIRED_ROLE_PARAMETER_PATH=
 ```
 
 ### Email Password Reset
-Email is used for password reset. See: **[Email Password Reset](../configuration/user_auth_system.md#email-and-password-reset)**
+Email is used for password reset. See: **[Email Password Reset](./user_auth_system.md#email-and-password-reset)**
 
 - Note that all either service or host, username and password and the From address must be set for email to work.
 
@@ -809,4 +889,51 @@ Mail address for from field. It is **REQUIRED** to set a value here (even if it'
 
 ```bash
 EMAIL_FROM=noreply@librechat.ai 
+```
+### UI
+
+- **Help and FAQ button:** 
+
+Empty or commented `HELP_AND_FAQ_URL`, button enabled
+
+`HELP_AND_FAQ_URL=https://example.com`, button enabled and goes to `https://example.com`
+
+`HELP_AND_FAQ_URL=/`, button disabled
+
+```bash
+HELP_AND_FAQ_URL=
+```
+
+- **App title and footer:**
+
+Uncomment to add a custom footer
+
+Uncomment and make empty "" to remove the footer
+
+```bash
+APP_TITLE=LibreChat
+CUSTOM_FOOTER="My custom footer"
+```
+
+- **Birthday Hat:** Give the AI Icon a Birthday Hat 🥳
+
+> Will show automatically on February 11th (LibreChat's birthday)
+ 
+> Set this to `false` to disable the birthday hat
+
+> Set to `true` to enable all the time.
+
+```bash
+SHOW_BIRTHDAY_ICON=true
+```
+
+### Other
+
+- **Redis:** Redis support is experimental, you may encounter some problems when using it. 
+
+> If using Redis, you should flush the cache after changing any LibreChat settings
+
+```bash
+REDIS_URI=
+USE_REDIS=
 ```

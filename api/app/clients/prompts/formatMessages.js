@@ -1,3 +1,4 @@
+const { EModelEndpoint } = require('librechat-data-provider');
 const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
 
 /**
@@ -7,10 +8,16 @@ const { HumanMessage, AIMessage, SystemMessage } = require('langchain/schema');
  * @param {Object} params.message - The message object to format.
  * @param {string} [params.message.role] - The role of the message sender (must be 'user').
  * @param {string} [params.message.content] - The text content of the message.
+ * @param {EModelEndpoint} [params.endpoint] - Identifier for specific endpoint handling
  * @param {Array<string>} [params.image_urls] - The image_urls to attach to the message.
  * @returns {(Object)} - The formatted message.
  */
-const formatVisionMessage = ({ message, image_urls }) => {
+const formatVisionMessage = ({ message, image_urls, endpoint }) => {
+  if (endpoint === EModelEndpoint.anthropic) {
+    message.content = [...image_urls, { type: 'text', text: message.content }];
+    return message;
+  }
+
   message.content = [{ type: 'text', text: message.content }, ...image_urls];
 
   return message;
@@ -29,10 +36,11 @@ const formatVisionMessage = ({ message, image_urls }) => {
  * @param {Array<string>} [params.message.image_urls] - The image_urls attached to the message for Vision API.
  * @param {string} [params.userName] - The name of the user.
  * @param {string} [params.assistantName] - The name of the assistant.
+ * @param {string} [params.endpoint] - Identifier for specific endpoint handling
  * @param {boolean} [params.langChain=false] - Whether to return a LangChain message object.
  * @returns {(Object|HumanMessage|AIMessage|SystemMessage)} - The formatted message.
  */
-const formatMessage = ({ message, userName, assistantName, langChain = false }) => {
+const formatMessage = ({ message, userName, assistantName, endpoint, langChain = false }) => {
   let { role: _role, _name, sender, text, content: _content, lc_id } = message;
   if (lc_id && lc_id[2] && !langChain) {
     const roleMapping = {
@@ -51,7 +59,11 @@ const formatMessage = ({ message, userName, assistantName, langChain = false }) 
 
   const { image_urls } = message;
   if (Array.isArray(image_urls) && image_urls.length > 0 && role === 'user') {
-    return formatVisionMessage({ message: formattedMessage, image_urls: message.image_urls });
+    return formatVisionMessage({
+      message: formattedMessage,
+      image_urls: message.image_urls,
+      endpoint,
+    });
   }
 
   if (_name) {

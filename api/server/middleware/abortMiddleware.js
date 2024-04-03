@@ -1,16 +1,22 @@
+const { EModelEndpoint } = require('librechat-data-provider');
 const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/utils');
 const { saveMessage, getConvo, getConvoTitle } = require('~/models');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const abortControllers = require('./abortControllers');
 const { redactMessage } = require('~/config/parsers');
 const spendTokens = require('~/models/spendTokens');
+const { abortRun } = require('./abortRun');
 const { logger } = require('~/config');
 
 async function abortMessage(req, res) {
-  let { abortKey, conversationId } = req.body;
+  let { abortKey, conversationId, endpoint } = req.body;
 
   if (!abortKey && conversationId) {
     abortKey = conversationId;
+  }
+
+  if (endpoint === EModelEndpoint.assistants) {
+    return await abortRun(req, res);
   }
 
   if (!abortControllers.has(abortKey) && !res.headersSent) {
@@ -104,7 +110,7 @@ const handleAbortError = async (res, req, error, data) => {
   }
 
   const respondWithError = async (partialText) => {
-    const options = {
+    let options = {
       sender,
       messageId,
       conversationId,
@@ -115,7 +121,8 @@ const handleAbortError = async (res, req, error, data) => {
     };
 
     if (partialText) {
-      options.overrideProps = {
+      options = {
+        ...options,
         error: false,
         unfinished: true,
         text: partialText,

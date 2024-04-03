@@ -23,6 +23,8 @@ async function fetchImageToBase64(url) {
   }
 }
 
+const base64Only = new Set([EModelEndpoint.google, EModelEndpoint.anthropic]);
+
 /**
  * Encodes and formats the given files.
  * @param {Express.Request} req - The request object.
@@ -37,25 +39,29 @@ async function encodeAndFormat(req, files, endpoint) {
   for (let file of files) {
     const source = file.source ?? FileSources.local;
 
-    if (encodingMethods[source]) {
-      promises.push(encodingMethods[source](req, file));
+    if (!file.height) {
+      promises.push([file, null]);
       continue;
     }
 
-    const { prepareImagePayload } = getStrategyFunctions(source);
-    if (!prepareImagePayload) {
-      throw new Error(`Encoding function not implemented for ${source}`);
+    if (!encodingMethods[source]) {
+      const { prepareImagePayload } = getStrategyFunctions(source);
+      if (!prepareImagePayload) {
+        throw new Error(`Encoding function not implemented for ${source}`);
+      }
+
+      encodingMethods[source] = prepareImagePayload;
     }
 
-    encodingMethods[source] = prepareImagePayload;
+    const preparePayload = encodingMethods[source];
 
-    /* Google doesn't support passing URLs to payload */
-    if (source !== FileSources.local && endpoint === EModelEndpoint.google) {
-      const [_file, imageURL] = await prepareImagePayload(req, file);
+    /* Google & Anthropic don't support passing URLs to payload */
+    if (source !== FileSources.local && base64Only.has(endpoint)) {
+      const [_file, imageURL] = await preparePayload(req, file);
       promises.push([_file, await fetchImageToBase64(imageURL)]);
       continue;
     }
-    promises.push(prepareImagePayload(req, file));
+    promises.push(preparePayload(req, file));
   }
 
   const detail = req.body.imageDetail ?? 'auto';
@@ -69,6 +75,24 @@ async function encodeAndFormat(req, files, endpoint) {
   };
 
   for (const [file, imageContent] of formattedImages) {
+    const fileMetadata = {
+      type: file.type,
+      file_id: file.file_id,
+      filepath: file.filepath,
+      filename: file.filename,
+      embedded: !!file.embedded,
+    };
+
+    if (file.height && file.width) {
+      fileMetadata.height = file.height;
+      fileMetadata.width = file.width;
+    }
+
+    if (!imageContent) {
+      result.files.push(fileMetadata);
+      continue;
+    }
+
     const imagePart = {
       type: 'image_url',
       image_url: {
@@ -81,18 +105,18 @@ async function encodeAndFormat(req, files, endpoint) {
 
     if (endpoint && endpoint === EModelEndpoint.google) {
       imagePart.image_url = imagePart.image_url.url;
+    } else if (endpoint && endpoint === EModelEndpoint.anthropic) {
+      imagePart.type = 'image';
+      imagePart.source = {
+        type: 'base64',
+        media_type: file.type,
+        data: imageContent,
+      };
+      delete imagePart.image_url;
     }
 
     result.image_urls.push(imagePart);
-
-    result.files.push({
-      file_id: file.file_id,
-      // filepath: file.filepath,
-      // filename: file.filename,
-      // type: file.type,
-      // height: file.height,
-      // width: file.width,
-    });
+    result.files.push(fileMetadata);
   }
   return result;
 }

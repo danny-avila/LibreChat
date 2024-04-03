@@ -19,6 +19,10 @@ module.exports = {
     'e2e/playwright-report/**/*',
     'packages/data-provider/types/**/*',
     'packages/data-provider/dist/**/*',
+    'packages/data-provider/test_bundle/**/*',
+    'data-node/**/*',
+    'meili_data/**/*',
+    'node_modules/**/*',
   ],
   parser: '@typescript-eslint/parser',
   parserOptions: {
@@ -127,6 +131,12 @@ module.exports = {
           },
         },
       ],
+    },
+    {
+      files: ['./packages/data-provider/specs/**/*.ts'],
+      parserOptions: {
+        project: './packages/data-provider/tsconfig.spec.json',
+      },
     },
   ],
   settings: {

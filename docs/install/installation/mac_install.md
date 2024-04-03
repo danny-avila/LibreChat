@@ -54,8 +54,10 @@ weight: 0
 - Remember to include the MeiliSearch URL and Master Key in your .env file. Your .env file should include the following lines:
 
 ```
-MEILISEARCH_URL=http://127.0.0.1:7700
-MEILISEARCH_KEY=your_master_key_goes_here
+SEARCH=true
+MEILI_NO_ANALYTICS=true
+MEILI_HOST=http://0.0.0.0:7700
+MEILI_MASTER_KEY=your_master_key_goes_here
 ```
 
 >  **Important:** use the same master key here and in your .env file.
@@ -140,4 +142,4 @@ The above assumes that you're using the default Terminal application on macOS an
 
 ---
 
->⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+>⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

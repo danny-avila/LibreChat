@@ -1,26 +1,25 @@
 import { Fragment, Suspense } from 'react';
-import type { TResPlugin } from 'librechat-data-provider';
-import type { TMessageContent, TText, TDisplayProps } from '~/common';
+import type { TResPlugin, TFile } from 'librechat-data-provider';
+import type { TMessageContentProps, TText, TDisplayProps } from '~/common';
+import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
 import { DelayedRender } from '~/components/ui';
-import { useAuthContext } from '~/hooks';
 import EditMessage from './EditMessage';
 import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
 import Image from './Image';
 
-const ErrorMessage = ({ text }: TText) => {
-  const { logout } = useAuthContext();
-
-  if (text.includes('ban')) {
-    logout();
-    return null;
-  }
+export const ErrorMessage = ({ text, className = '' }: TText) => {
   return (
     <Container>
-      <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
+      <div
+        className={cn(
+          'rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+          className,
+        )}
+      >
         <Error text={text} />
       </div>
     </Container>
@@ -29,16 +28,24 @@ const ErrorMessage = ({ text }: TText) => {
 
 // Display Message Component
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
+  const files: TFile[] = [];
   const imageFiles = message?.files
-    ? message.files.filter((file) => file.type && file.type.startsWith('image/'))
+    ? message.files.filter((file) => {
+      if (file.type && file.type.startsWith('image/')) {
+        return true;
+      }
+
+      files.push(file);
+    })
     : null;
   return (
     <Container>
+      {files.length > 0 && files.map((file) => <FileContainer key={file.file_id} file={file} />)}
       {imageFiles &&
         imageFiles.map((file) => (
           <Image
             key={file.file_id}
-            imagePath={file.preview ?? file.filepath ?? ''}
+            imagePath={file?.preview ?? file.filepath ?? ''}
             height={file.height ?? 1920}
             width={file.width ?? 1080}
             altText={file.filename ?? 'Uploaded Image'}
@@ -48,8 +55,9 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
         ))}
       <div
         className={cn(
+          showCursor && !!text?.length ? 'result-streaming' : '',
           'markdown prose dark:prose-invert light w-full break-words',
-          isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
+          isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-100',
         )}
       >
         {!isCreatedByUser ? (
@@ -63,7 +71,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 };
 
 // Unfinished Message Component
-const UnfinishedMessage = () => (
+export const UnfinishedMessage = () => (
   <ErrorMessage text="The response is incomplete; it's either still processing, was cancelled, or censored. Refresh or try a different prompt." />
 );
 
@@ -76,7 +84,7 @@ const MessageContent = ({
   isSubmitting,
   isLast,
   ...props
-}: TMessageContent) => {
+}: TMessageContentProps) => {
   if (error) {
     return <ErrorMessage text={text} />;
   } else if (edit) {

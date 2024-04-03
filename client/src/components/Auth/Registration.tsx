@@ -1,19 +1,16 @@
-import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import { useRegisterUserMutation, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TRegisterUser } from 'librechat-data-provider';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
-import { useLocalize } from '~/hooks';
+import { ThemeSelector } from '~/components/ui';
 import SocialButton from './SocialButton';
+import { useLocalize } from '~/hooks';
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
   const { data: startupConfig } = useGetStartupConfig();
-
-  const [logoSrc, setLogoSrc] = useState('');
-  const [altText, setAltText] = useState('');
-
   const localize = useLocalize();
 
   const {
@@ -43,37 +40,6 @@ const Registration: React.FC = () => {
   };
 
   useEffect(() => {
-    const host = window.location.hostname;
-    let logoPath = '';
-    let alt = '';
-
-    switch (host) {
-      case 'gptglobal.io':
-        logoPath = '/assets/logo-global.png';
-        alt = 'GPT Global Logo';
-        break;
-      case 'gptchina.io':
-        logoPath = '/assets/logo-china.png';
-        alt = 'GPT China';
-        break;
-      case 'gptusa.io':
-        logoPath = '/assets/logo-usa.png';
-        alt = 'GPT USA';
-        break;
-      case 'gptrussia.io':
-        logoPath = '/assets/logo-russia.png';
-        alt = 'GPT Russia';
-        break;
-      default:
-        logoPath = '/assets/logo-china.png';
-        alt = 'GPT Global';
-    }
-
-    setLogoSrc(logoPath);
-    setAltText(alt);
-  }, []);
-
-  useEffect(() => {
     if (startupConfig?.registrationEnabled === false) {
       navigate('/login');
     }
@@ -98,19 +64,19 @@ const Registration: React.FC = () => {
             validation,
           )}
           aria-invalid={!!errors[id]}
-          className="peer block w-full appearance-none rounded-md border border-gray-300 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0"
+          className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-black/10 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none dark:border-white/20 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
           placeholder=" "
           data-testid={id}
         ></input>
         <label
           htmlFor={id}
-          className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500"
+          className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500 dark:text-gray-200"
         >
           {localize(label)}
         </label>
       </div>
       {errors[id] && (
-        <span role="alert" className="mt-1 text-sm text-black">
+        <span role="alert" className="mt-1 text-sm text-black dark:text-white">
           {String(errors[id]?.message) ?? ''}
         </span>
       )}
@@ -182,97 +148,117 @@ const Registration: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen flex-col justify-center bg-gray-50 py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <img src={logoSrc} alt={altText} className="mx-auto mb-6 h-16 w-auto" />
-        <h1 className="text-center text-3xl font-extrabold text-gray-900">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
+      <div className="absolute bottom-0 left-0 m-4">
+        <ThemeSelector />
+      </div>
+      <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
+        <img src="/assets/logo-china.png" className="mx-auto mb-6 h-16 w-auto" />
+        <h1
+          className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
+          style={{ userSelect: 'none' }}
+        >
           {localize('com_auth_create_account')}
         </h1>
         {error && (
           <div
-            className="relative mb-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
+            className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
             role="alert"
             data-testid="registration-error"
           >
             {localize('com_auth_error_create')} {errorMessage}
           </div>
         )}
-      </div>
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white px-4 py-8 shadow sm:rounded-lg sm:px-10">
-          <form
-            className="space-y-6"
-            aria-label="Registration form"
-            method="POST"
-            onSubmit={handleSubmit(onRegisterUserFormSubmit)}
-          >
-            {renderInput('name', 'com_auth_full_name', 'text', {
-              required: localize('com_auth_name_required'),
-              minLength: {
-                value: 1,
-                message: localize('com_auth_name_min_length'),
-              },
-              maxLength: {
-                value: 80,
-                message: localize('com_auth_name_max_length'),
-              },
-            })}
-            {renderInput('username', 'com_auth_username', 'text', {
-              minLength: {
-                value: 1,
-                message: localize('com_auth_username_min_length'),
-              },
-              maxLength: {
-                value: 80,
-                message: localize('com_auth_username_max_length'),
-              },
-            })}
-            {renderInput('email', 'com_auth_email', 'email', {
-              required: localize('com_auth_email_required'),
-              minLength: {
-                value: 3,
-                message: localize('com_auth_email_min_length'),
-              },
-              maxLength: {
-                value: 120,
-                message: localize('com_auth_email_max_length'),
-              },
-              pattern: {
-                value: /\S+@\S+\.\S+/,
-                message: localize('com_auth_email_pattern'),
-              },
-            })}
-            {renderInput('password', 'com_auth_password', 'password', {
-              required: localize('com_auth_password_required'),
-              minLength: {
-                value: 8,
-                message: localize('com_auth_password_min_length'),
-              },
-              maxLength: {
-                value: 128,
-                message: localize('com_auth_password_max_length'),
-              },
-            })}
-            {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
-              validate: (value) => value === password || localize('com_auth_password_not_match'),
-            })}
-            <div>
-              <button
-                disabled={Object.keys(errors).length > 0}
-                type="submit"
-                className="flex w-full justify-center rounded-md border border-transparent bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-              >
-                {localize('com_auth_continue')}
-              </button>
+        <form
+          className="mt-6"
+          aria-label="Registration form"
+          method="POST"
+          onSubmit={handleSubmit(onRegisterUserFormSubmit)}
+        >
+          {renderInput('name', 'com_auth_full_name', 'text', {
+            required: localize('com_auth_name_required'),
+            minLength: {
+              value: 3,
+              message: localize('com_auth_name_min_length'),
+            },
+            maxLength: {
+              value: 80,
+              message: localize('com_auth_name_max_length'),
+            },
+          })}
+          {renderInput('username', 'com_auth_username', 'text', {
+            minLength: {
+              value: 2,
+              message: localize('com_auth_username_min_length'),
+            },
+            maxLength: {
+              value: 80,
+              message: localize('com_auth_username_max_length'),
+            },
+          })}
+          {renderInput('email', 'com_auth_email', 'email', {
+            required: localize('com_auth_email_required'),
+            minLength: {
+              value: 1,
+              message: localize('com_auth_email_min_length'),
+            },
+            maxLength: {
+              value: 120,
+              message: localize('com_auth_email_max_length'),
+            },
+            pattern: {
+              value: /\S+@\S+\.\S+/,
+              message: localize('com_auth_email_pattern'),
+            },
+          })}
+          {renderInput('password', 'com_auth_password', 'password', {
+            required: localize('com_auth_password_required'),
+            minLength: {
+              value: 8,
+              message: localize('com_auth_password_min_length'),
+            },
+            maxLength: {
+              value: 128,
+              message: localize('com_auth_password_max_length'),
+            },
+          })}
+          {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
+            validate: (value) => value === password || localize('com_auth_password_not_match'),
+          })}
+          <div className="mt-6">
+            <button
+              disabled={Object.keys(errors).length > 0}
+              type="submit"
+              aria-label="Submit registration"
+              className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-550 focus:bg-green-550 focus:outline-none disabled:cursor-not-allowed disabled:hover:bg-green-500"
+            >
+              {localize('com_auth_continue')}
+            </button>
+          </div>
+        </form>
+        <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
+          {localize('com_auth_already_have_account')}{' '}
+          <a href="/login" aria-label="Login" className="p-1 font-medium text-green-500">
+            {localize('com_auth_login')}
+          </a>
+        </p>
+        {startupConfig.socialLoginEnabled && (
+          <>
+            {startupConfig.emailLoginEnabled && (
+              <>
+                <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+                  <div className="absolute bg-white px-3 text-xs text-black dark:bg-gray-900 dark:text-white">
+                    Or
+                  </div>
+                </div>
+                <div className="mt-8" />
+              </>
+            )}
+            <div className="mt-2">
+              {socialLogins.map((provider) => providerComponents[provider] || null)}
             </div>
-          </form>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            {localize('com_auth_already_have_account')}{' '}
-            <a href="/login" className="font-medium text-green-600 hover:text-green-500">
-              {localize('com_auth_login')}
-            </a>
-          </p>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );

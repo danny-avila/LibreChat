@@ -1,80 +1,106 @@
-import { useEffect, useState } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useMultipleKeys } from '~/hooks/Input';
+import { useFormContext, Controller } from 'react-hook-form';
 import InputWithLabel from './InputWithLabel';
-import type { TConfigProps } from '~/common';
-import { isJson } from '~/utils/json';
 
-const OpenAIConfig = ({ userKey, setUserKey, endpoint }: TConfigProps) => {
-  const [showPanel, setShowPanel] = useState(endpoint === EModelEndpoint.azureOpenAI);
-  const { getMultiKey: getAzure, setMultiKey: setAzure } = useMultipleKeys(setUserKey);
-
-  useEffect(() => {
-    if (isJson(userKey)) {
-      setShowPanel(true);
-    }
-    setUserKey('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!showPanel && isJson(userKey)) {
-      setUserKey('');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPanel]);
-
+const OpenAIConfig = ({
+  endpoint,
+  userProvideURL,
+}: {
+  endpoint: EModelEndpoint | string;
+  userProvideURL?: boolean | null;
+}) => {
+  const { control } = useFormContext();
+  const isAzure = endpoint === EModelEndpoint.azureOpenAI;
   return (
-    <>
-      {!showPanel ? (
+    <form className="flex-wrap">
+      {!isAzure && (
+        <Controller
+          name="apiKey"
+          control={control}
+          render={({ field }) => (
+            <InputWithLabel
+              id="apiKey"
+              {...field}
+              label={`${isAzure ? 'Azure q' : ''}OpenAI API Key`}
+              labelClassName="mb-1"
+              inputClassName="mb-2"
+            />
+          )}
+        />
+      )}
+      {isAzure && (
         <>
-          <InputWithLabel
-            id={endpoint}
-            value={userKey ?? ''}
-            onChange={(e: { target: { value: string } }) => setUserKey(e.target.value ?? '')}
-            label={'OpenAI API Key'}
+          <Controller
+            name="azureOpenAIApiKey"
+            control={control}
+            render={({ field }) => (
+              <InputWithLabel
+                id="azureOpenAIApiKey"
+                {...field}
+                label={'Azure OpenAI API Key'}
+                labelClassName="mb-1"
+              />
+            )}
           />
-        </>
-      ) : (
-        <>
-          <InputWithLabel
-            id={'instanceNameLabel'}
-            value={getAzure('azureOpenAIApiInstanceName', userKey) ?? ''}
-            onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiInstanceName', e.target.value ?? '', userKey)
-            }
-            label={'Azure OpenAI Instance Name'}
+          <div className="mt-3"></div>
+          <Controller
+            name="azureOpenAIApiInstanceName"
+            control={control}
+            render={({ field }) => (
+              <InputWithLabel
+                id="azureOpenAIApiInstanceName"
+                {...field}
+                label={'Azure OpenAI Instance Name'}
+                labelClassName="mb-1"
+              />
+            )}
           />
-
-          <InputWithLabel
-            id={'deploymentNameLabel'}
-            value={getAzure('azureOpenAIApiDeploymentName', userKey) ?? ''}
-            onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiDeploymentName', e.target.value ?? '', userKey)
-            }
-            label={'Azure OpenAI Deployment Name'}
+          <div className="mt-3"></div>
+          <Controller
+            name="azureOpenAIApiDeploymentName"
+            control={control}
+            render={({ field }) => (
+              <InputWithLabel
+                id="azureOpenAIApiDeploymentName"
+                {...field}
+                label={'Azure OpenAI Deployment Name'}
+                labelClassName="mb-1"
+              />
+            )}
           />
-
-          <InputWithLabel
-            id={'versionLabel'}
-            value={getAzure('azureOpenAIApiVersion', userKey) ?? ''}
-            onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiVersion', e.target.value ?? '', userKey)
-            }
-            label={'Azure OpenAI API Version'}
-          />
-
-          <InputWithLabel
-            id={'apiKeyLabel'}
-            value={getAzure('azureOpenAIApiKey', userKey) ?? ''}
-            onChange={(e: { target: { value: string } }) =>
-              setAzure('azureOpenAIApiKey', e.target.value ?? '', userKey)
-            }
-            label={'Azure OpenAI API Key'}
+          <div className="mt-3"></div>
+          <Controller
+            name="azureOpenAIApiVersion"
+            control={control}
+            render={({ field }) => (
+              <InputWithLabel
+                id="azureOpenAIApiVersion"
+                {...field}
+                label={'Azure OpenAI API Version'}
+                labelClassName="mb-1"
+              />
+            )}
           />
         </>
       )}
-    </>
+      {userProvideURL && (
+        <div className="mt-3">
+          <Controller
+            name="baseURL"
+            control={control}
+            render={({ field }) => (
+              <InputWithLabel
+                id="baseURL"
+                {...field}
+                label={'API Base URL'}
+                subLabel={'(Optional)'}
+                labelClassName="mb-1"
+              />
+            )}
+          />
+        </div>
+      )}
+    </form>
   );
 };
 

@@ -1,7 +1,7 @@
 ---
 title: 🔨 Automated Moderation
 description: The Automated Moderation System uses a scoring mechanism to track user violations. As users commit actions like excessive logins, registrations, or messaging, they accumulate violation scores. Upon reaching a set threshold, the user and their IP are temporarily banned. This system ensures platform security by monitoring and penalizing rapid or suspicious activities.
-weight: -8
+weight: -7
 ---
 ## Automated Moderation System (optional)
 The Automated Moderation System uses a scoring mechanism to track user violations. As users commit actions like excessive logins, registrations, or messaging, they accumulate violation scores. Upon reaching a set threshold, the user and their IP are temporarily banned. This system ensures platform security by monitoring and penalizing rapid or suspicious activities.
@@ -31,10 +31,13 @@ The project's current rate limiters are as follows (see below under setup for de
 - Login and registration rate limiting
 - [optional] Concurrent Message limiting (only X messages at a time per user)
 - [optional] Message limiting (how often a user can send a message, configurable by IP and User)
+- [optional] File Upload limiting: configurable through [`librechat.yaml` config file](https://docs.librechat.ai/install/configuration/custom_config.html#rate-limiting).
 
 ### Setup
 
 The following are all of the related env variables to make use of and configure the mod system. Note this is also found in the [/.env.example](https://github.com/danny-avila/LibreChat/blob/main/.env.example) file, to be set in your own `.env` file.
+
+**Note:** currently, most of these values are configured through the .env file, but they may soon migrate to be exclusively configured from the [`librechat.yaml` config file](https://docs.librechat.ai/install/configuration/custom_config.html#rate-limiting).
 
 ```bash
 BAN_VIOLATIONS=true # Whether or not to enable banning users for violations (they will still be logged)
@@ -69,7 +72,12 @@ MESSAGE_IP_WINDOW=1 # in minutes, determines the window of time for MESSAGE_IP_M
 LIMIT_MESSAGE_USER=false # Whether to limit the amount of messages an IP can send per MESSAGE_USER_WINDOW
 MESSAGE_USER_MAX=40 # The max amount of messages an IP can send per MESSAGE_USER_WINDOW
 MESSAGE_USER_WINDOW=1 # in minutes, determines the window of time for MESSAGE_USER_MAX messages
+
+ILLEGAL_MODEL_REQ_SCORE=5 #Violation score to accrue if a user attempts to use an unlisted model.
+
 ```
+
+> Note: Illegal model requests are almost always nefarious as it means a 3rd party is attempting to access the server through an automated script. For this, I recommend a relatively high score, no less than 5.
 
 ## OpenAI moderation text
 
