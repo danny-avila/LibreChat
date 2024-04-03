@@ -25,6 +25,9 @@ const startServer = async () => {
   const app = express();
   app.locals.config = config;
 
+  // Web Hooks, note that is has to be ahead of the express.json() call since webhooks uses RAW
+  app.use('/api/webhooks', routes.webhooks);
+
   // Middleware
   app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
@@ -76,9 +79,6 @@ const startServer = async () => {
   app.get('/*', function (req, res) {
     res.sendFile(path.join(projectPath, 'dist', 'index.html'));
   });
-
-  // Web Hooks
-  app.use('/api/webhooks', routes.webhooks);
 
   app.listen(port, host, () => {
     if (host == '0.0.0.0') {
