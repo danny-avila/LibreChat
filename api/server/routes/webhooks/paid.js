@@ -37,7 +37,7 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
       return res.status(500).send('Internal Server Error');
     }
   } else {
-    console.log('Skipping /paid webhook on type=:', event.type);
+    console.log('Skipping /paid webhook on type:', event.type);
     return res.status(200).send(`Unhandled event type ${event.type}`);
   }
 });
@@ -49,15 +49,16 @@ async function updateUserOnPaymentSuccess(paymentIntent) {
     try {
       const user = await User.findOne({ email: paymentIntent.receipt_email });
       if (user) {
-        console.log(
-          'updating user _id=',
-          user._id.toString(),
-          ' with additional 30 days professional subscription',
-        );
         // update proMemberExpiredAt based on the max of current time and proMemberExpiredAt
         user.proMemberExpiredAt =
           Math.max(user.proMemberExpiredAt, Date.now()) + 31 * 24 * 60 * 60 * 1000;
         await user.save(); // Assuming this also returns a Promise, so it should be awaited.
+        console.log(
+          'updating user _id',
+          user._id.toString(),
+          ' with additional 30 days professional subscription:',
+          user.proMemberExpiredAt.toDateString(),
+        );
         return user.email;
       } else {
         console.log('User not found for email:', paymentIntent.receipt_email);
