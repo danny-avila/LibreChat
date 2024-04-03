@@ -1,5 +1,5 @@
 const User = require('@librechat/backend/models/User');
-const Transaction = require('@librechat/backend/models/Transaction');
+const { Transaction } = require('@librechat/backend/models/Transaction');
 
 async function addTokensByUserId(userId, amount) {
   // Validate the user
@@ -17,11 +17,11 @@ async function addTokensByUserId(userId, amount) {
   });
 
   // Check the result
-  if (!result.tokenCredits) {
+  if (!result.balance) {
     throw new Error('Something went wrong while updating the balance!');
   }
 
-  return result.tokenCredits; // Return the new balance
+  return result.balance; // Return the new balance
 }
 
 module.exports = addTokensByUserId;
