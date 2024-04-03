@@ -27,6 +27,7 @@ const { validateTools, loadTools, loadToolWithAuth } = require('./handleTools');
 const {
   availableTools,
   OpenAICreateImage,
+  BingSearch,
   GoogleSearchAPI,
   StructuredSD,
   WolframAlphaAPI,
@@ -263,6 +264,23 @@ describe('Tool Handlers', () => {
     it('should initialize an authenticated tool through Environment Variables', async () => {
       let testPluginKey = 'google';
       let TestClass = GoogleSearchAPI;
+      const plugin = availableTools.find((tool) => tool.pluginKey === testPluginKey);
+      const authConfigs = plugin.authConfig;
+      for (const authConfig of authConfigs) {
+        process.env[authConfig.authField] = mockCredential;
+      }
+      toolFunctions = await loadTools({
+        user: fakeUser._id,
+        model: BaseChatModel,
+        tools: [testPluginKey],
+        returnMap: true,
+      });
+      const Tool = await toolFunctions[testPluginKey]();
+      expect(Tool).toBeInstanceOf(TestClass);
+    });
+    it('should initialize an authenticated tool through Environment Variables for bing', async () => {
+      let testPluginKey = 'bing';
+      let TestClass = BingSearch;
       const plugin = availableTools.find((tool) => tool.pluginKey === testPluginKey);
       const authConfigs = plugin.authConfig;
       for (const authConfig of authConfigs) {

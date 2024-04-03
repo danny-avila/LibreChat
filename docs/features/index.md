@@ -16,6 +16,7 @@ weight: 2
     * 🛠️ [Make Your Own](./plugins/make_your_own.md)
     * 🧑‍💼 [Official ChatGPT Plugins](./plugins/chatgpt_plugins_openapi.md)
     * 🔎 [Google Search](./plugins/google_search.md)
+    * 🔎 [Bing Search](./plugins/bing_search.md)
     * 🖌️ [Stable Diffusion](./plugins/stable_diffusion.md)
     * 🧠 [Wolfram|Alpha](./plugins/wolfram.md)
     * ⚡ [Azure AI Search](./plugins/azure_ai_search.md)

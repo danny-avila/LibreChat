@@ -31,6 +31,19 @@
     ]
   },
   {
+    "name": "Bing",
+    "pluginKey": "bing",
+    "description": "Use Bing Search to find information about the weather, news, sports, and more.",
+    "icon": "https://i.imgur.com/0Ly2bcl.png",
+    "authConfig": [
+      {
+        "authField": "BING_SEARCH_API_KEY",
+        "label": "Bing Search API Key",
+        "description": "This is your Bing Search API Key. For instructions on how to obtain this, see <a href='https://github.com/danny-avila/LibreChat/blob/main/docs/features/plugins/bing_search.md'>Our Docs</a>."
+      }
+    ]
+  },
+  {
     "name": "Wolfram",
     "pluginKey": "wolfram",
     "description": "Access computation, math, curated knowledge & real-time data through Wolfram|Alpha and Wolfram Language.",

@@ -9,7 +9,6 @@ const {
   // Basic Tools
   CodeBrew,
   AzureAISearch,
-  GoogleSearchAPI,
   WolframAlphaAPI,
   OpenAICreateImage,
   StableDiffusionAPI,
@@ -20,6 +19,8 @@ const {
   StructuredSD,
   StructuredACS,
   CodeSherpaTools,
+  BingSearch,
+  GoogleSearchAPI,
   TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
@@ -160,6 +161,7 @@ const loadTools = async ({
   const toolConstructors = {
     tavily_search_results_json: TavilySearchResults,
     calculator: Calculator,
+    bing: BingSearch,
     google: GoogleSearchAPI,
     wolfram: functions ? StructuredWolfram : WolframAlphaAPI,
     'dall-e': OpenAICreateImage,

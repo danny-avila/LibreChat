@@ -50,6 +50,7 @@ Clicking on **"Show Agent Settings"** will allow you to modify parameters for th
 
 ### Plugins Setup Instructions
 - **[Google Search](./google_search.md)**
+- **[Bing Search](./bing_search.md)**
 - **[Stable Diffusion](./stable_diffusion.md)**
 - **[Wolfram](./wolfram.md)**
 - **DALL-E** - same setup as above, you just need an OpenAI key, and it's made distinct from your main API key to make Chats but it can be the same one

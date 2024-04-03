@@ -527,6 +527,13 @@ GOOGLE_API_KEY=
 GOOGLE_CSE_ID=
 ```
 
+#### Bing Search
+See detailed instructions here: [Bing Search](../../features/plugins/bing_search.md)
+
+```bash
+BING_SEARCH_API_KEY=
+```
+
 #### SerpAPI
 SerpApi is a real-time API to access Google search results (not as performant)
 
