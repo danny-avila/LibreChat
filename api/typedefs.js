@@ -387,6 +387,18 @@
  */
 
 /**
+ * @exports uploadImageBuffer
+ * @typedef {import('~/server/services/Files/process').uploadImageBuffer} uploadImageBuffer
+ * @memberof typedefs
+ */
+
+/**
+ * @exports processFileURL
+ * @typedef {import('~/server/services/Files/process').processFileURL} processFileURL
+ * @memberof typedefs
+ */
+
+/**
  * @exports AssistantCreateParams
  * @typedef {import('librechat-data-provider').AssistantCreateParams} AssistantCreateParams
  * @memberof typedefs
