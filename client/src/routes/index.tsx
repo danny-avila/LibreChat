@@ -1,7 +1,6 @@
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
 import Root from './Root';
 import ChatRoute from './ChatRoute';
-// import Search from './Search';
 import {
   Login,
   Registration,
@@ -9,6 +8,8 @@ import {
   ResetPassword,
   ApiErrorWatcher,
 } from '~/components/Auth';
+import TermsOfService from '~/components/TermsOfService/TermsOfService';
+import PrivacyPolicy from '~/components/PrivacyPolicy/PrivacyPolicy';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 
 const AuthLayout = () => (
@@ -57,5 +58,13 @@ export const router = createBrowserRouter([
         ],
       },
     ],
+  },
+  {
+    path: 'terms-of-service',
+    element: <TermsOfService />,
+  },
+  {
+    path: 'privacy-policy',
+    element: <PrivacyPolicy />,
   },
 ]);

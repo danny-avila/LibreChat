@@ -94,28 +94,27 @@ function Login() {
   const privacyPolicy = startupConfig.interface?.privacyPolicy;
   const termsOfService = startupConfig.interface?.termsOfService;
 
-  const privacyPolicyRender = privacyPolicy?.externalUrl && (
+  const privacyPolicyRender = (
     <a
       className="text-xs font-medium text-green-500"
-      href={privacyPolicy.externalUrl}
-      target={privacyPolicy.openNewTab ? '_blank' : undefined}
+      href={privacyPolicy?.externalUrl || 'privacy-policy'}
+      target="_blank"
       rel="noreferrer"
     >
-      {localize('com_ui_privacy_policy')}
+      {privacyPolicy?.externalUrl ? localize('com_ui_privacy_policy') : 'Privacy Policy'}
     </a>
   );
 
-  const termsOfServiceRender = termsOfService?.externalUrl && (
+  const termsOfServiceRender = (
     <a
       className="text-xs font-medium text-green-500"
-      href={termsOfService.externalUrl}
-      target={termsOfService.openNewTab ? '_blank' : undefined}
+      href={termsOfService?.externalUrl || 'terms-of-service'}
+      target="_blank"
       rel="noreferrer"
     >
-      {localize('com_ui_terms_of_service')}
+      {termsOfService?.externalUrl ? localize('com_ui_terms_of_service') : 'Terms of Service'}
     </a>
   );
-
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
       <div className="absolute bottom-0 left-0 m-4">

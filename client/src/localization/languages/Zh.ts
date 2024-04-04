@@ -317,4 +317,67 @@ export default {
   com_nav_user_name_display: '在消息中显示用户名',
   com_endpoint_plug_resend_images: '重新发送图像',
   com_endpoint_plug_image_detail: '图像细节',
+  com_privacy_policy_title: 'GPT China 隐私政策',
+  com_privacy_policy_last_updated: '最后更新：2024年4月4日',
+  com_privacy_policy_intro:
+    '欢迎来到 GPT China，Badger Tech LLC 拥有并运营。您的隐私对我们至关重要，本隐私政策概述了我们收集的个人信息类型、使用方式以及我们采取的措施以确保您的数据得到保护。',
+  com_privacy_policy_info_collection_title: '1. 信息收集与使用',
+  com_privacy_policy_info_collection_text1:
+    '我们通过注册页面收集您的姓名和电子邮件。此信息用于通知您系统/网站更新和通知。',
+  com_privacy_policy_info_collection_text2:
+    '对于支付处理，我们使用 Stripe 处理微信、信用卡和支付宝支付，以及使用 OpenNode 处理比特币交易。我们不在我们的网站上存储任何支付信息；所有支付数据均由 Stripe 和 OpenNode 直接处理。',
+  com_privacy_policy_info_sharing_title: '2. 信息共享与披露',
+  com_privacy_policy_info_sharing_text:
+    '除了通过 Stripe 和 OpenNode 处理支付所需的信息外，我们不与第三方分享任何收集的信息。在没有得到您明确同意的情况下，我们绝不会披露用户信息。',
+  com_privacy_policy_user_rights_title: '3. 用户权利',
+  com_privacy_policy_user_rights_text:
+    '您有权要求删除您的数据和账户。要行使此权利，请通过 hello@gptchina.io 与我们联系。',
+  com_privacy_policy_data_security_title: '4. 数据安全',
+  com_privacy_policy_data_security_text:
+    '我们致力于通过使用 SSL 加密来保护您的个人信息，确保在我们平台上数据的安全传输。',
+  com_privacy_policy_third_party_title: '5. 第三方服务',
+  com_privacy_policy_third_party_text:
+    '我们的网站使用支付重定向至 Stripe 和 OpenNode 以处理支付。除这些支付网关外，我们的平台不托管第三方链接或服务。',
+  com_privacy_policy_children_title: '6. 儿童隐私',
+  com_privacy_policy_children_text:
+    'GPT China 不会有意收集儿童的个人信息。如果您未满18岁，请不要通过我们的网站提交任何个人信息。',
+  com_privacy_policy_changes_title: '7. 本隐私政策的更改',
+  com_privacy_policy_changes_text:
+    '我们保留随时更新或更改我们的隐私政策的权利。我们将通过电子邮件通知您任何更改。',
+  com_privacy_policy_contact_title: '8. 联系我们',
+  com_privacy_policy_contact_text:
+    '如果您对本隐私政策有任何疑问，请通过电子邮件 hello@gptchina.io 与我们联系。',
+  com_terms_title: 'GPT China 服务条款',
+  com_terms_effective_date: '生效日期：2024年4月4日',
+  com_terms_intro:
+    '欢迎使用 GPT China。通过访问我们的服务，您同意受这些服务条款的约束。请仔细阅读。',
+  com_terms_service_description_title: '1. 服务描述',
+  com_terms_service_description_text:
+    'GPT China 为用户提供访问多个大型语言模型（LLMs），如 OpenAI 的 ChatGPT、Gemini Pro、Anthropic 等，通过他们的 API。我们的服务旨在促进与这些 LLM 的无缝互动，并计划未来包含更多模型。使用我们的服务没有年龄限制。',
+  com_terms_user_responsibilities_title: '2. 用户责任',
+  com_terms_user_responsibilities_text:
+    '用户在与我们的服务互动时，预期将遵守 LLMs 建立的防护措施，以防止有害或仇恨内容。用户负责保持其账户密码的机密性以及在其账户下发生的所有活动。',
+  com_terms_intellectual_property_title: '3. 知识产权',
+  com_terms_intellectual_property_text:
+    '通过 GPT China 提供的内容由相应的 LLM 提供商（OpenAI、谷歌的 Gemini、Anthropic）拥有。用户保留与这些 LLM 互动产生的数据的所有权。GPT China 不声称拥有用户生成内容的所有权。',
+  com_terms_user_generated_content_title: '4. 用户生成内容',
+  com_terms_user_generated_content_text:
+    '用户可以上传照片/文档并通过插件如 Dall-E 3 创建 AI 生成的图像。上传内容和 AI 生成的内容的使用受相应 LLM 提供商的条款的约束。',
+  com_terms_service_availability_title: '5. 服务可用性',
+  com_terms_service_availability_text:
+    'GPT China 力求保持服务的正常运行时间。在服务停机时，用户将通过电子邮件或我们网站上的维护页面被通知。',
+  com_terms_termination_title: '6. 终止',
+  com_terms_termination_text:
+    'GPT China 保留因非法活动、作弊或尝试破坏我们的系统而终止用户账户的权利。终止后，将删除用户的数据。',
+  com_terms_disclaimer_liability_title: '7. 免责声明',
+  com_terms_disclaimer_liability_text:
+    'GPT China 对使用服务相关的所有责任免责。与 LLMs 的互动产生的任何问题的责任由用户或相应的 LLM 提供商承担。',
+  com_terms_dispute_resolution_title: '8. 争议解决',
+  com_terms_dispute_resolution_text:
+    '根据美国仲裁协会的规则，在美国通过仲裁解决这些条款下产生的任何争议。',
+  com_terms_changes_title: '9. 更改服务条款',
+  com_terms_changes_text:
+    'GPT China 保留随时修改这些条款的权利。用户将通过电子邮件被通知任何更改。',
+  com_terms_contact_title: '10. 联系信息',
+  com_terms_contact_text: '如有任何关于这些条款的问题或担忧，请通过 hello@gptchina.io 与我们联系。',
 };

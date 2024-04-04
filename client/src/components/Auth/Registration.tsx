@@ -147,6 +147,31 @@ const Registration: React.FC = () => {
     ),
   };
 
+  const privacyPolicy = startupConfig.interface?.privacyPolicy;
+  const termsOfService = startupConfig.interface?.termsOfService;
+
+  const privacyPolicyRender = (
+    <a
+      className="text-xs font-medium text-green-500"
+      href={privacyPolicy?.externalUrl || 'privacy-policy'}
+      target="_blank"
+      rel="noreferrer"
+    >
+      {privacyPolicy?.externalUrl ? localize('com_ui_privacy_policy') : 'Privacy Policy'}
+    </a>
+  );
+
+  const termsOfServiceRender = (
+    <a
+      className="text-xs font-medium text-green-500"
+      href={termsOfService?.externalUrl || 'terms-of-service'}
+      target="_blank"
+      rel="noreferrer"
+    >
+      {termsOfService?.externalUrl ? localize('com_ui_terms_of_service') : 'Terms of Service'}
+    </a>
+  );
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
       <div className="absolute bottom-0 left-0 m-4">
@@ -259,6 +284,13 @@ const Registration: React.FC = () => {
             </div>
           </>
         )}
+      </div>
+      <div className="flex justify-center gap-4 align-middle">
+        {privacyPolicyRender}
+        {privacyPolicyRender && termsOfServiceRender && (
+          <div className="border-r-[1px] border-gray-300" />
+        )}
+        {termsOfServiceRender}
       </div>
     </div>
   );
