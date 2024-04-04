@@ -6,6 +6,7 @@ import * as t from './types';
 import * as s from './schemas';
 import request from './request';
 import * as endpoints from './api-endpoints';
+import type { AxiosResponse } from 'axios';
 
 export function abortRequestWithMessage(
   endpoint: string,
@@ -201,9 +202,9 @@ export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise
   );
 };
 
-export const getFileDownload = async (userId: string, filepath: string): Promise<Blob> => {
+export const getFileDownload = async (userId: string, filepath: string): Promise<AxiosResponse> => {
   const encodedFilePath = encodeURIComponent(filepath);
-  return request.get(`${endpoints.files()}/download/${userId}/${encodedFilePath}`, {
+  return request.getResponse(`${endpoints.files()}/download/${userId}/${encodedFilePath}`, {
     responseType: 'blob',
   });
 };

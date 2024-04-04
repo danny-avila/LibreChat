@@ -12,14 +12,15 @@ const { logger } = require('~/config');
 class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
-    /* Used to initialize the Tool without necessary variables. */
+    /** @type {boolean} Used to initialize the Tool without necessary variables. */
     this.override = fields.override ?? false;
-    /* Necessary for output to contain all image metadata. */
+    /** @type {boolean} Necessary for output to contain all image metadata. */
     this.returnMetadata = fields.returnMetadata ?? false;
 
     this.userId = fields.userId;
     this.fileStrategy = fields.fileStrategy;
     if (fields.processFileURL) {
+      /** @type {processFileURL} Necessary for output to contain all image metadata. */
       this.processFileURL = fields.processFileURL.bind(this);
     }
 
@@ -165,13 +166,7 @@ Error Message: ${error.message}`;
       });
 
       if (this.returnMetadata) {
-        this.result = {
-          file_id: result.file_id,
-          filename: result.filename,
-          filepath: result.filepath,
-          height: result.height,
-          width: result.width,
-        };
+        this.result = result;
       } else {
         this.result = this.wrapInMarkdown(result.filepath);
       }

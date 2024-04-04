@@ -156,6 +156,17 @@ const AppService = async (app) => {
     };
   }
 
+  try {
+    const response = await fetch(`${process.env.RAG_API_URL}/health`);
+    if (response?.ok && response?.status === 200) {
+      logger.info(`RAG API is running and reachable at ${process.env.RAG_API_URL}.`);
+    }
+  } catch (error) {
+    logger.warn(
+      `RAG API is either not running or not reachable at ${process.env.RAG_API_URL}, you may experience errors with file uploads.`,
+    );
+  }
+
   app.locals = {
     socialLogins,
     availableTools,

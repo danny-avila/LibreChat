@@ -104,6 +104,7 @@ router.get('/download/:userId/:filepath', async (req, res) => {
     const setHeaders = () => {
       res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
       res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('X-File-Metadata', JSON.stringify(file));
     };
 
     /** @type {{ body: import('stream').PassThrough } | undefined} */
