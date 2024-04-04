@@ -80,6 +80,7 @@ function NavLinks() {
                   <span
                     data-tooltip-id="token-explain"
                     data-tooltip-html={localize('gpt4_token_burn_rate')}
+                    className="text-gray-800 dark:text-gray-200"
                   >
                     {`${localize('com_tokens_remaining')} ${formatTokenCount(balanceQuery.data)}`}
 
