@@ -33,7 +33,7 @@ function ChatView({ index = 0 }: { index?: number }) {
 
   return (
     <ChatContext.Provider value={chatHelpers}>
-      <Presentation useSidePanel={true}>
+      <Presentation useSidePanel={false}>
         {isLoading && conversationId !== 'new' ? (
           <div className="flex h-screen items-center justify-center">
             <Spinner className="opacity-0" />
