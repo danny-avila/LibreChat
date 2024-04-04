@@ -122,6 +122,7 @@ version: '3.4'
 #      - ./litellm/litellm-config.yaml:/app/config.yaml
 #    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
 #    environment:
+#      OPENAI_API_KEY: none ## needs to be set if ollama's openai api compatibility is used
 #      REDIS_HOST: redis
 #      REDIS_PORT: 6379
 #      REDIS_PASSWORD: RedisChangeMe
