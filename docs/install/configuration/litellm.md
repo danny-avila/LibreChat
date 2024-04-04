@@ -48,13 +48,13 @@ model_list:
       rpm: 1440
   - model_name: mixtral
     litellm_params:
-      model: ollama/mixtral:8x7b-instruct-v0.1-q5_K_M
-      api_base: http://ollama:11434
+      model: openai/mixtral:8x7b-instruct-v0.1-q5_K_M      # use openai/* for ollama's openai api compatibility
+      api_base: http://ollama:11434/v1
       stream: True
   - model_name: mistral
     litellm_params:
-      model: ollama/mistral
-      api_base: http://ollama:11434
+      model: openai/mistral                                # use openai/* for ollama's openai api compatibility
+      api_base: http://ollama:11434/v1
       stream: True
 litellm_settings:
   success_callback: ["langfuse"]
