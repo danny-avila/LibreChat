@@ -23,13 +23,13 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 - Experimental: does not follow OpenAI-spec, uses a new method for endpoint compatibility, shares some similarities and parameters.
 - For a full list of Cohere-specific parameters, see the [Cohere API documentation](https://docs.cohere.com/reference/chat).
 - Note: The following parameters are recognized between OpenAI and Cohere. Most are removed in the example config below to prefer Cohere's default settings:
-    - `stop`: mapped to `stop_sequences`
+    - `stop`: mapped to `stopSequences`
     - `top_p`: mapped to `p`, different min/max values
-    - `frequency_penalty`: different min/max values
-    - `presence_penalty`: different min/max values
+    - `frequency_penalty`: mapped to `frequencyPenalty`, different min/max values
+    - `presence_penalty`: mapped to `presencePenalty`, different min/max values
     - `model`: shared, included by default.
     - `stream`: shared, included by default.
-    - `max_tokens`: shared, not included by default.
+    - `max_tokens`: shared, mapped to `maxTokens`, not included by default.
 
 
 ```yaml
