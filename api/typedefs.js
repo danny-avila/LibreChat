@@ -57,8 +57,14 @@
  */
 
 /**
- * @exports CohereChatPayload
- * @typedef {import('cohere-ai').Cohere.ChatStreamRequest} CohereChatPayload
+ * @exports CohereChatStreamRequest
+ * @typedef {import('cohere-ai').Cohere.ChatStreamRequest} CohereChatStreamRequest
+ * @memberof typedefs
+ */
+
+/**
+ * @exports CohereChatRequest
+ * @typedef {import('cohere-ai').Cohere.ChatRequest} CohereChatRequest
  * @memberof typedefs
  */
 
@@ -1117,7 +1123,7 @@
  * Cohere Stream handling. Note: abortController is not supported here.
  * @callback cohereChatCompletion
  * @param {object} params
- * @param {CohereChatPayload} params.payload
+ * @param {CohereChatStreamRequest | CohereChatRequest} params.payload
  * @param {onTokenProgress} params.onTokenProgress
  * @memberof typedefs
  */

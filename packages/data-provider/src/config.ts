@@ -532,6 +532,32 @@ export enum Constants {
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
 }
 
+/**
+ * Enum for Cohere related constants
+ */
+export enum CohereConstants {
+  /**
+   * Cohere API Endpoint, for special handling
+   */
+  API_URL = 'https://api.cohere.ai/v1',
+  /**
+   * Role for "USER" messages
+   */
+  ROLE_USER = 'USER',
+  /**
+   * Role for "SYSTEM" messages
+   */
+  ROLE_SYSTEM = 'SYSTEM',
+  /**
+   * Role for "CHATBOT" messages
+   */
+  ROLE_CHATBOT = 'CHATBOT',
+  /**
+   * Title message as required by Cohere
+   */
+  TITLE_MESSAGE = 'TITLE:',
+}
+
 export const defaultOrderQuery: {
   order: 'desc';
   limit: 100;
