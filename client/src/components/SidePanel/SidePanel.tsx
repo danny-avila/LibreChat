@@ -1,18 +1,14 @@
 import throttle from 'lodash/throttle';
-import { ArrowRightToLine } from 'lucide-react';
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import { useGetEndpointsQuery, useUserKeyQuery } from 'librechat-data-provider/react-query';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { EModelEndpoint, type TEndpointsConfig } from 'librechat-data-provider';
-import type { NavLink } from '~/common';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
-import { Blocks, AttachmentIcon } from '~/components/svg';
+import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useMediaQuery, useLocalStorage } from '~/hooks';
 import { Separator } from '~/components/ui/Separator';
 import NavToggle from '~/components/Nav/NavToggle';
-import PanelSwitch from './Builder/PanelSwitch';
-import FilesPanel from './Files/Panel';
 import Switcher from './Switcher';
 import { cn } from '~/utils';
 import Nav from './Nav';
@@ -58,43 +54,16 @@ const SidePanel = ({
     [keyExpiry?.expiresAt, userProvidesKey],
   );
 
-  const Links = useMemo(() => {
-    const links: NavLink[] = [];
-    if (assistants && assistants.disableBuilder !== true && keyProvided) {
-      links.push({
-        title: 'com_sidepanel_assistant_builder',
-        label: '',
-        icon: Blocks,
-        id: 'assistants',
-        Component: PanelSwitch,
-      });
-    }
+  const hidePanel = useCallback(() => {
+    setIsCollapsed(true);
+    setCollapsedSize(0);
+    setMinSize(defaultMinSize);
+    setFullCollapse(true);
+    localStorage.setItem('fullPanelCollapse', 'true');
+    panelRef.current?.collapse();
+  }, []);
 
-    links.push({
-      title: 'com_sidepanel_attach_files',
-      label: '',
-      icon: AttachmentIcon,
-      id: 'files',
-      Component: FilesPanel,
-    });
-
-    links.push({
-      title: 'com_sidepanel_hide_panel',
-      label: '',
-      icon: ArrowRightToLine,
-      onClick: () => {
-        setIsCollapsed(true);
-        setCollapsedSize(0);
-        setMinSize(defaultMinSize);
-        setFullCollapse(true);
-        localStorage.setItem('fullPanelCollapse', 'true');
-        panelRef.current?.collapse();
-      },
-      id: 'hide-panel',
-    });
-
-    return links;
-  }, [assistants, keyProvided]);
+  const Links = useSideNavLinks({ hidePanel, assistants, keyProvided });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
