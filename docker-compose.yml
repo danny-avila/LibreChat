@@ -17,7 +17,7 @@ services:
         target: /app/.env
       - ./images:/app/client/public/images
       - ./logs:/app/api/logs
-      - ./uploads:/uploads
+      - ./uploads:/app/uploads/sdimages
   nginx:
     container_name: chatg-nginx
     image: nginx:alpine
