@@ -238,6 +238,7 @@ export enum KnownEndpoints {
   ollama = 'ollama',
   perplexity = 'perplexity',
   'together.ai' = 'together.ai',
+  cohere = 'cohere',
 }
 
 export enum FetchTokenConfig {
