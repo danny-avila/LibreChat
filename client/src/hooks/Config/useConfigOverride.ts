@@ -14,7 +14,6 @@ type TempOverrideType = Record<string, unknown> & {
 };
 
 export default function useConfigOverride() {
-  const setModelsConfig = useSetRecoilState(store.modelsConfig);
   const setEndpointsQueryEnabled = useSetRecoilState(store.endpointsQueryEnabled);
   const overrideQuery = useGetEndpointsConfigOverride({
     staleTime: Infinity,
@@ -33,10 +32,9 @@ export default function useConfigOverride() {
       if (modelsConfig) {
         await queryClient.cancelQueries([QueryKeys.models]);
         queryClient.setQueryData([QueryKeys.models], modelsConfig);
-        setModelsConfig(modelsConfig);
       }
     },
-    [queryClient, setEndpointsQueryEnabled, setModelsConfig],
+    [queryClient, setEndpointsQueryEnabled],
   );
 
   useEffect(() => {
