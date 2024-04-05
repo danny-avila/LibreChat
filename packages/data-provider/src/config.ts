@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
+import { TModelsConfig } from './types';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
 
@@ -330,6 +331,24 @@ export const defaultModels = {
     'text-davinci-003',
     'gpt-4-0314',
   ],
+};
+
+const fitlerAssistantModels = (str: string) => {
+  return /gpt-4|gpt-3\\.5/i.test(str) && !/vision|instruct/i.test(str);
+};
+
+const openAIModels = defaultModels[EModelEndpoint.openAI];
+
+export const initialModelsConfig: TModelsConfig = {
+  initial: [],
+  [EModelEndpoint.openAI]: openAIModels,
+  [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
+  [EModelEndpoint.gptPlugins]: openAIModels,
+  [EModelEndpoint.azureOpenAI]: openAIModels,
+  [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
+  [EModelEndpoint.chatGPTBrowser]: ['text-davinci-002-render-sha'],
+  [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
+  [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
 };
 
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
