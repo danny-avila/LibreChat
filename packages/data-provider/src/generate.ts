@@ -29,6 +29,8 @@ export interface SettingDefinition {
   includeInput?: boolean; // Specific to slider component
 }
 
+const requiredSettingFields = ['key', 'type', 'component'];
+
 export interface SettingRange {
   min: number;
   max: number;
@@ -135,6 +137,25 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
   const columns = columnsSet.size === 1 ? columnsSet.values().next().value : 2;
 
   for (const setting of settings) {
+    for (const field of requiredSettingFields) {
+      if (setting[field as keyof SettingDefinition] === undefined) {
+        errors.push({
+          code: ZodIssueCode.custom,
+          message: `Missing required field ${field} for setting ${setting.key}.`,
+          path: [field],
+        });
+      }
+    }
+
+    // check accepted types
+    if (!['number', 'boolean', 'string', 'enum'].includes(setting.type)) {
+      errors.push({
+        code: ZodIssueCode.custom,
+        message: `Invalid type for setting ${setting.key}. Must be one of 'number', 'boolean', 'string', 'enum'.`,
+        path: ['type'],
+      });
+    }
+
     // Predefined constraints based on components
     if (setting.component === 'input' || setting.component === 'textarea') {
       if (setting.type === 'number' && setting.component === 'textarea') {
@@ -143,7 +164,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
           message: `Textarea component for setting ${setting.key} must have type string.`,
           path: ['type'],
         });
-        continue;
+        // continue;
       }
 
       if (
@@ -156,7 +177,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
           message: `For setting ${setting.key}, minText cannot be greater than maxText.`,
           path: [setting.key, 'minText', 'maxText'],
         });
-        continue;
+        // continue;
       }
       if (!setting.placeholder) {
         setting.placeholder = '';
@@ -170,7 +191,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
           message: `Slider component for setting ${setting.key} must have a range if type is number.`,
           path: ['range'],
         });
-        continue;
+        // continue;
       }
       if (setting.type === 'enum' && (!setting.options || setting.options.length < 2)) {
         errors.push({
@@ -178,7 +199,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
           message: `Slider component for setting ${setting.key} requires at least 2 options for enum type.`,
           path: ['options'],
         });
-        continue;
+        // continue;
       }
       setting.includeInput = setting.type === 'number' ? setting.includeInput ?? true : false; // Default to true if type is number
     }
@@ -197,7 +218,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
           message: `Checkbox/Switch component for setting ${setting.key} must have 1-2 options.`,
           path: ['options'],
         });
-        continue;
+        // continue;
       }
       if (!setting.default && setting.type === 'boolean') {
         setting.default = false; // Default to false if type is boolean
@@ -211,9 +232,9 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
           message: `Dropdown component for setting ${setting.key} requires at least 2 options.`,
           path: ['options'],
         });
-        continue;
+        // continue;
       }
-      if (!setting.default) {
+      if (!setting.default && setting.options && setting.options.length > 0) {
         setting.default = setting.options[0]; // Default to first option if not specified
       }
     }
@@ -266,6 +287,61 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
           });
         }
       }
+    }
+
+    /* Default value checks */
+    if (setting.type === 'number' && isNaN(setting.default as number)) {
+      errors.push({
+        code: ZodIssueCode.custom,
+        message: `Invalid default value for setting ${setting.key}. Must be a number.`,
+        path: ['default'],
+      });
+    }
+
+    if (setting.type === 'boolean' && typeof setting.default !== 'boolean') {
+      errors.push({
+        code: ZodIssueCode.custom,
+        message: `Invalid default value for setting ${setting.key}. Must be a boolean.`,
+        path: ['default'],
+      });
+    }
+
+    if (
+      (setting.type === 'string' || setting.type === 'enum') &&
+      typeof setting.default !== 'string'
+    ) {
+      errors.push({
+        code: ZodIssueCode.custom,
+        message: `Invalid default value for setting ${setting.key}. Must be a string.`,
+        path: ['default'],
+      });
+    }
+
+    if (
+      setting.type === 'enum' &&
+      setting.options &&
+      !setting.options.includes(setting.default as string)
+    ) {
+      errors.push({
+        code: ZodIssueCode.custom,
+        message: `Invalid default value for setting ${
+          setting.key
+        }. Must be one of the options: [${setting.options.join(', ')}].`,
+        path: ['default'],
+      });
+    }
+
+    if (
+      setting.type === 'number' &&
+      setting.range &&
+      typeof setting.default === 'number' &&
+      (setting.default < setting.range.min || setting.default > setting.range.max)
+    ) {
+      errors.push({
+        code: ZodIssueCode.custom,
+        message: `Invalid default value for setting ${setting.key}. Must be within the range [${setting.range.min}, ${setting.range.max}].`,
+        path: ['default'],
+      });
     }
   }
 

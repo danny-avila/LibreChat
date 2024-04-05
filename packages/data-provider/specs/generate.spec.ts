@@ -1,4 +1,5 @@
-import { ZodError } from 'zod';
+/* eslint-disable jest/no-conditional-expect */
+import { ZodError, z } from 'zod';
 import { generateDynamicSchema, validateSettingDefinitions } from '../src/generate';
 import type { SettingsConfiguration } from '../src/generate';
 
@@ -313,5 +314,212 @@ describe('validateSettingDefinitions', () => {
     validateSettingDefinitions(settings); // This would populate default values where missing
 
     expect(settings[0].default).toBe(50); // Expects default to be midpoint of range
+  });
+});
+
+const settingsConfiguration: SettingsConfiguration = [
+  {
+    key: 'temperature',
+    description:
+      'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
+    type: 'number',
+    default: 1,
+    range: {
+      min: 0,
+      max: 2,
+      step: 0.01,
+    },
+    component: 'slider',
+  },
+  {
+    key: 'top_p',
+    description:
+      'An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered. We recommend altering this or temperature but not both.',
+    type: 'number',
+    default: 1,
+    range: {
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    component: 'slider',
+  },
+  {
+    key: 'presence_penalty',
+    description:
+      'Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model\'s likelihood to talk about new topics.',
+    type: 'number',
+    default: 0,
+    range: {
+      min: -2,
+      max: 2,
+      step: 0.01,
+    },
+    component: 'slider',
+  },
+  {
+    key: 'frequency_penalty',
+    description:
+      'Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model\'s likelihood to repeat the same line verbatim.',
+    type: 'number',
+    default: 0,
+    range: {
+      min: -2,
+      max: 2,
+      step: 0.01,
+    },
+    component: 'slider',
+  },
+  {
+    key: 'resendFiles',
+    description:
+      'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
+    type: 'boolean',
+    default: true,
+    component: 'switch',
+  },
+  {
+    key: 'imageDetail',
+    description:
+      'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
+    type: 'enum',
+    default: 'auto',
+    options: ['low', 'high', 'auto'],
+    component: 'slider',
+  },
+  {
+    key: 'promptPrefix',
+    type: 'string',
+    default: '',
+    component: 'input',
+    placeholder: 'Set custom instructions to include in System Message. Default: none',
+  },
+  {
+    key: 'chatGptLabel',
+    type: 'string',
+    default: '',
+    component: 'input',
+    placeholder: 'Set a custom name for your AI',
+  },
+];
+
+describe('Settings Validation and Schema Generation', () => {
+  // Test 1: Validate settings definitions do not throw for valid configuration
+  test('validateSettingDefinitions does not throw for valid configuration', () => {
+    expect(() => validateSettingDefinitions(settingsConfiguration)).not.toThrow();
+  });
+
+  test('validateSettingDefinitions throws for invalid type in settings', () => {
+    const settingsWithInvalidType = [
+      ...settingsConfiguration,
+      {
+        key: 'newSetting',
+        description: 'A setting with an unsupported type',
+        type: 'unsupportedType', // Assuming 'unsupportedType' is not supported
+        component: 'input',
+      },
+    ];
+
+    expect(() =>
+      validateSettingDefinitions(settingsWithInvalidType as SettingsConfiguration),
+    ).toThrow();
+  });
+
+  test('validateSettingDefinitions throws for missing required fields', () => {
+    const settingsMissingRequiredField = [
+      ...settingsConfiguration,
+      {
+        key: 'incompleteSetting',
+        type: 'number',
+        // Missing 'component',
+      },
+    ];
+
+    expect(() =>
+      validateSettingDefinitions(settingsMissingRequiredField as SettingsConfiguration),
+    ).toThrow();
+  });
+
+  test('validateSettingDefinitions throws for default value out of range', () => {
+    const settingsOutOfRange = [
+      ...settingsConfiguration,
+      {
+        key: 'rangeTestSetting',
+        description: 'A setting with default value out of specified range',
+        type: 'number',
+        default: 5,
+        range: {
+          min: 0,
+          max: 1,
+        },
+        component: 'slider',
+      },
+    ];
+
+    expect(() => validateSettingDefinitions(settingsOutOfRange as SettingsConfiguration)).toThrow();
+  });
+
+  test('validateSettingDefinitions throws for enum setting with incorrect default', () => {
+    const settingsWithIncorrectEnumDefault = [
+      ...settingsConfiguration,
+      {
+        key: 'enumSetting',
+        description: 'Enum setting with a default not in options',
+        type: 'enum',
+        default: 'unlistedOption',
+        options: ['option1', 'option2'],
+        component: 'dropdown',
+      },
+    ];
+
+    expect(() =>
+      validateSettingDefinitions(settingsWithIncorrectEnumDefault as SettingsConfiguration),
+    ).toThrow();
+  });
+
+  // Test 2: Generate dynamic schema and validate correct input
+  test('generateDynamicSchema generates a schema that validates correct input', () => {
+    const schema = generateDynamicSchema(settingsConfiguration);
+    const validInput = {
+      temperature: 0.5,
+      top_p: 0.8,
+      presence_penalty: 1,
+      frequency_penalty: -1,
+      resendFiles: true,
+      imageDetail: 'high',
+      promptPrefix: 'Hello, AI.',
+      chatGptLabel: 'My Custom AI',
+    };
+
+    expect(schema.parse(validInput)).toEqual(validInput);
+  });
+
+  // Test 3: Generate dynamic schema and catch invalid input
+  test('generateDynamicSchema generates a schema that catches invalid input and provides detailed errors', async () => {
+    const schema = generateDynamicSchema(settingsConfiguration);
+    const invalidInput: z.infer<typeof schema> = {
+      temperature: 2.5, // Out of range
+      top_p: -0.5, // Out of range
+      presence_penalty: 3, // Out of range
+      frequency_penalty: -3, // Out of range
+      resendFiles: 'yes', // Wrong type
+      imageDetail: 'ultra', // Invalid option
+      promptPrefix: 123, // Wrong type
+      chatGptLabel: true, // Wrong type
+    };
+
+    const result = schema.safeParse(invalidInput);
+    expect(result.success).toBeFalsy();
+    if (!result.success) {
+      const errorPaths = result.error.issues.map((issue) => issue.path.join('.'));
+      expect(errorPaths).toContain('temperature');
+      expect(errorPaths).toContain('top_p');
+      expect(errorPaths).toContain('presence_penalty');
+      expect(errorPaths).toContain('frequency_penalty');
+      expect(errorPaths).toContain('resendFiles');
+      expect(errorPaths).toContain('imageDetail');
+      expect(errorPaths).toContain('promptPrefix');
+      expect(errorPaths).toContain('chatGptLabel');
+    }
   });
 });
