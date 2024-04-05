@@ -37,7 +37,6 @@ services:
        - "traefik.http.routers.librechat.tls.certresolver=leresolver"
        - "traefik.http.services.librechat.loadbalancer.server.port=3080"
      networks:
-       - web
        - librechat_default
      volumes:
        - ./librechat.yaml:/app/librechat.yaml
@@ -51,7 +50,7 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./letsencrypt:/letsencrypt"
      networks:
-      - web
+      - librechat_default
      command:
       - "--log.level=DEBUG"
       - "--api.insecure=true"
