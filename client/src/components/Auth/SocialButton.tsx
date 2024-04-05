@@ -42,7 +42,7 @@ const SocialButton = ({ id, enabled, serverDomain, oauthPath, Icon, label }) => 
     <div className="mt-2 flex gap-x-2">
       <a
         aria-label={`${label}`}
-        className={`${getButtonStyles()} flex w-full items-center space-x-3 rounded-md px-5 py-3 text-black transition-colors dark:text-white`}
+        className={`${getButtonStyles()} flex w-full items-center justify-center space-x-3 rounded-md px-5 py-3 text-center text-black transition-colors dark:text-white`}
         href={`${serverDomain}/oauth/${oauthPath}`}
         data-testid={id}
         onMouseEnter={handleMouseEnter}

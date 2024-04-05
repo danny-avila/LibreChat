@@ -14,6 +14,7 @@ const useDefaultConvo = () => {
   const { data: modelsConfig = {} as TModelsConfig } = useGetModelsQuery();
 
   const getDefaultConversation = ({ conversation, preset }: TDefaultConvo) => {
+    // console.log('--- useDefaultConfo ---', endpointsConfig);
     const endpoint = getDefaultEndpoint({
       convoSetup: preset as TPreset,
       endpointsConfig,

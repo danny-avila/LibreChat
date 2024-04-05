@@ -1,9 +1,10 @@
-const throttle = require('lodash/throttle');
 const { getResponseSender, Constants } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
-const { sendMessage, createOnProgress } = require('~/server/utils');
-const { saveMessage, getConvo } = require('~/models');
+const { sendMessage, createOnProgress, countTokens } = require('~/server/utils');
+const { saveMessage, getConvo, User, ConvoToken } = require('~/models');
 const { logger } = require('~/config');
+const { isPremiumModel } = require('~/config/premiumModels');
+const { decreaseUnpremiumUserCredit } = require('~/utils/creditCheck');
 
 const AskController = async (req, res, next, initializeClient, addTitle) => {
   let {
@@ -16,18 +17,26 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   } = req.body;
 
   logger.debug('[AskController]', { text, conversationId, ...endpointOption });
+  const user = req.user.id;
 
+  const credits = (await User.findById(user)).credits;
+
+  let metadata;
   let userMessage;
   let promptTokens;
   let userMessageId;
   let responseMessageId;
+  let lastSavedTimestamp = 0;
+  let saveDelay = 100;
   const sender = getResponseSender({
     ...endpointOption,
     model: endpointOption.modelOptions.model,
     modelDisplayLabel,
   });
+
   const newConvo = !conversationId;
-  const user = req.user.id;
+
+  const addMetadata = (data) => (metadata = data);
 
   const getReqData = (data = {}) => {
     for (let key in data) {
@@ -47,11 +56,19 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   let getText;
 
   try {
+    if (isPremiumModel(endpointOption.modelOptions.model) && credits <= 0) {
+      throw new Error(
+        'You do not have enough credits. You should buy Credits to continue chat with premium models with Top-up Subscription',
+      );
+    }
     const { client } = await initializeClient({ req, res, endpointOption });
 
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
-      onProgress: throttle(
-        ({ text: partialText }) => {
+      onProgress: ({ text: partialText }) => {
+        const currentTimestamp = Date.now();
+
+        if (currentTimestamp - lastSavedTimestamp > saveDelay) {
+          lastSavedTimestamp = currentTimestamp;
           saveMessage({
             messageId: responseMessageId,
             sender,
@@ -63,10 +80,12 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
             error: false,
             user,
           });
-        },
-        3000,
-        { trailing: false },
-      ),
+        }
+
+        if (saveDelay < 500) {
+          saveDelay = 500;
+        }
+      },
     });
 
     getText = getPartialText;
@@ -104,6 +123,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       overrideParentMessageId,
       getReqData,
       onStart,
+      addMetadata,
       abortController,
       onProgress: progressCallback.call(null, {
         res,
@@ -118,7 +138,12 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       response.parentMessageId = overrideParentMessageId;
     }
 
+    if (metadata) {
+      response = { ...response, ...metadata };
+    }
+
     response.endpoint = endpointOption.endpoint;
+    // console.log('--- AskController -> response ---', response);
 
     const conversation = await getConvo(user, conversationId);
     conversation.title =
@@ -141,6 +166,18 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       res.end();
 
       await saveMessage({ ...response, user });
+      const inputTokens = await countTokens(text);
+      const outputTokens = await countTokens(response.text);
+      await decreaseUnpremiumUserCredit(req.user, endpointOption.modelOptions.model);
+
+      const newConvoToken = new ConvoToken({
+        inputTokens: inputTokens,
+        outputTokens: outputTokens,
+        endpoint: endpointOption.endpoint,
+        model: endpointOption.modelOptions.model,
+        user: req.user.id,
+      });
+      await newConvoToken.save();
     }
 
     await saveMessage(userMessage);

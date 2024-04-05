@@ -7,6 +7,7 @@ const anthropic = require('~/server/services/Endpoints/anthropic');
 const openAI = require('~/server/services/Endpoints/openAI');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
+const sdImage = require('~/server/services/Endpoints/sdImage');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
@@ -16,6 +17,7 @@ const buildFunction = {
   [EModelEndpoint.anthropic]: anthropic.buildOptions,
   [EModelEndpoint.gptPlugins]: gptPlugins.buildOptions,
   [EModelEndpoint.assistants]: assistants.buildOptions,
+  [EModelEndpoint.sdImage]: sdImage.buildOptions,
 };
 
 async function buildEndpointOption(req, res, next) {

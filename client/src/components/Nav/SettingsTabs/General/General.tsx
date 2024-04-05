@@ -14,7 +14,6 @@ import {
 import type { TDangerButtonProps } from '~/common';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
 import AutoScrollSwitch from './AutoScrollSwitch';
-import ShowCodeSwitch from './ShowCodeSwitch';
 import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
 import store from '~/store';
@@ -172,7 +171,7 @@ function General() {
     <Tabs.Content
       value={SettingsTabValues.GENERAL}
       role="tabpanel"
-      className="w-full md:min-h-[300px]"
+      className="w-full outline-none md:min-h-[300px]"
       ref={contentRef}
     >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
@@ -182,17 +181,6 @@ function General() {
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <LangSelector langcode={selectedLang} onChange={changeLang} />
         </div>
-
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <AutoScrollSwitch />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <ShowCodeSwitch />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <HideSidePanelSwitch />
-        </div>
-        {/* Clear Chats should be last */}
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <ClearChatsButton
             confirmClear={confirmClear}
@@ -200,6 +188,12 @@ function General() {
             showText={true}
             mutation={clearConvosMutation}
           />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <AutoScrollSwitch />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <HideSidePanelSwitch />
         </div>
       </div>
     </Tabs.Content>

@@ -12,15 +12,14 @@ const { logger } = require('~/config');
 class DALLE3 extends Tool {
   constructor(fields = {}) {
     super();
-    /** @type {boolean} Used to initialize the Tool without necessary variables. */
+    /* Used to initialize the Tool without necessary variables. */
     this.override = fields.override ?? false;
-    /** @type {boolean} Necessary for output to contain all image metadata. */
+    /* Necessary for output to contain all image metadata. */
     this.returnMetadata = fields.returnMetadata ?? false;
 
     this.userId = fields.userId;
     this.fileStrategy = fields.fileStrategy;
     if (fields.processFileURL) {
-      /** @type {processFileURL} Necessary for output to contain all image metadata. */
       this.processFileURL = fields.processFileURL.bind(this);
     }
 
@@ -44,7 +43,6 @@ class DALLE3 extends Tool {
       config.httpAgent = new HttpsProxyAgent(process.env.PROXY);
     }
 
-    /** @type {OpenAI} */
     this.openai = new OpenAI(config);
     this.name = 'dalle';
     this.description = `Use DALLE to create images from text descriptions.
@@ -166,7 +164,13 @@ Error Message: ${error.message}`;
       });
 
       if (this.returnMetadata) {
-        this.result = result;
+        this.result = {
+          file_id: result.file_id,
+          filename: result.filename,
+          filepath: result.filepath,
+          height: result.height,
+          width: result.width,
+        };
       } else {
         this.result = this.wrapInMarkdown(result.filepath);
       }

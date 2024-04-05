@@ -225,10 +225,20 @@ const getGoogleModels = () => {
   return models;
 };
 
+const getSdImageModels = () => {
+  let models = defaultModels[EModelEndpoint.sdImage];
+  if (process.env.SDIMAGE_MODELS) {
+    models = String(process.env.SDIMAGE_MODELS).split(',');
+  }
+
+  return models;
+};
+
 module.exports = {
   fetchModels,
   getOpenAIModels,
   getChatGPTBrowserModels,
   getAnthropicModels,
   getGoogleModels,
+  getSdImageModels,
 };

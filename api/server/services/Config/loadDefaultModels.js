@@ -5,6 +5,7 @@ const {
   getGoogleModels,
   getAnthropicModels,
   getChatGPTBrowserModels,
+  getSdImageModels,
 } = require('~/server/services/ModelService');
 
 /**
@@ -25,6 +26,7 @@ async function loadDefaultModels(req) {
     plugins: true,
   });
   const assistants = await getOpenAIModels({ assistants: true });
+  const sdImages = await getSdImageModels();
 
   return {
     [EModelEndpoint.openAI]: openAI,
@@ -35,6 +37,7 @@ async function loadDefaultModels(req) {
     [EModelEndpoint.bingAI]: ['BingAI', 'Sydney'],
     [EModelEndpoint.chatGPTBrowser]: chatGPTBrowser,
     [EModelEndpoint.assistants]: assistants,
+    [EModelEndpoint.sdImage]: sdImages,
   };
 }
 

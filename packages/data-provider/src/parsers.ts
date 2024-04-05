@@ -10,11 +10,13 @@ import {
   chatGPTBrowserSchema,
   gptPluginsSchema,
   assistantSchema,
+  sdImageSchema,
   compactOpenAISchema,
   compactGoogleSchema,
   compactAnthropicSchema,
   compactChatGPTSchema,
   compactPluginsSchema,
+  compactSdImageSchema,
 } from './schemas';
 import { alternateName } from './config';
 
@@ -25,7 +27,8 @@ type EndpointSchema =
   | typeof anthropicSchema
   | typeof chatGPTBrowserSchema
   | typeof gptPluginsSchema
-  | typeof assistantSchema;
+  | typeof assistantSchema
+  | typeof sdImageSchema;
 
 const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
@@ -37,6 +40,7 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
   [EModelEndpoint.chatGPTBrowser]: chatGPTBrowserSchema,
   [EModelEndpoint.gptPlugins]: gptPluginsSchema,
   [EModelEndpoint.assistants]: assistantSchema,
+  [EModelEndpoint.sdImage]: sdImageSchema,
 };
 
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
@@ -54,6 +58,7 @@ export function getEnabledEndpoints() {
     EModelEndpoint.chatGPTBrowser,
     EModelEndpoint.gptPlugins,
     EModelEndpoint.anthropic,
+    EModelEndpoint.sdImage,
   ];
 
   const endpointsEnv = process.env.ENDPOINTS || '';
@@ -255,6 +260,10 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
     return 'AI';
   }
 
+  if (endpoint === EModelEndpoint.sdImage) {
+    return 'Sd Image';
+  }
+
   return '';
 };
 
@@ -278,6 +287,7 @@ const compactEndpointSchemas: Record<string, CompactEndpointSchema> = {
   [EModelEndpoint.anthropic]: compactAnthropicSchema,
   [EModelEndpoint.chatGPTBrowser]: compactChatGPTSchema,
   [EModelEndpoint.gptPlugins]: compactPluginsSchema,
+  [EModelEndpoint.sdImage]: compactSdImageSchema,
 };
 
 export const parseCompactConvo = ({

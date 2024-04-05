@@ -1,13 +1,12 @@
+const axios = require('axios');
 const fs = require('fs').promises;
 const express = require('express');
-const { isUUID, FileSources } = require('librechat-data-provider');
+const { isUUID } = require('librechat-data-provider');
 const {
   filterFile,
   processFileUpload,
   processDeleteRequest,
 } = require('~/server/services/Files/process');
-const { initializeClient } = require('~/server/services/Endpoints/assistants');
-const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models/File');
 const { logger } = require('~/config');
 
@@ -45,7 +44,7 @@ router.delete('/', async (req, res) => {
         return false;
       }
 
-      if (/^(file|assistant)-/.test(file.file_id)) {
+      if (/^file-/.test(file.file_id)) {
         return true;
       }
 
@@ -66,64 +65,28 @@ router.delete('/', async (req, res) => {
   }
 });
 
-router.get('/download/:userId/:filepath', async (req, res) => {
+router.get('/download/:fileId', async (req, res) => {
   try {
-    const { userId, filepath } = req.params;
+    const { fileId } = req.params;
 
-    if (userId !== req.user.id) {
-      logger.warn(`${errorPrefix} forbidden: ${file_id}`);
-      return res.status(403).send('Forbidden');
-    }
-
-    const parts = filepath.split('/');
-    const file_id = parts[2];
-    const [file] = await getFiles({ file_id });
-    const errorPrefix = `File download requested by user ${userId}`;
-
-    if (!file) {
-      logger.warn(`${errorPrefix} not found: ${file_id}`);
-      return res.status(404).send('File not found');
-    }
-
-    if (!file.filepath.includes(userId)) {
-      logger.warn(`${errorPrefix} forbidden: ${file_id}`);
-      return res.status(403).send('Forbidden');
-    }
-
-    if (file.source === FileSources.openai && !file.model) {
-      logger.warn(`${errorPrefix} has no associated model: ${file_id}`);
-      return res.status(400).send('The model used when creating this file is not available');
-    }
-
-    const { getDownloadStream } = getStrategyFunctions(file.source);
-    if (!getDownloadStream) {
-      logger.warn(`${errorPrefix} has no stream method implemented: ${file.source}`);
-      return res.status(501).send('Not Implemented');
-    }
-
-    const setHeaders = () => {
-      res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
-      res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('X-File-Metadata', JSON.stringify(file));
+    const options = {
+      headers: {
+        // TODO: Client initialization for OpenAI API Authentication
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      responseType: 'stream',
     };
 
-    /** @type {{ body: import('stream').PassThrough } | undefined} */
-    let passThrough;
-    /** @type {ReadableStream | undefined} */
-    let fileStream;
-    if (file.source === FileSources.openai) {
-      req.body = { model: file.model };
-      const { openai } = await initializeClient({ req, res });
-      passThrough = await getDownloadStream(file_id, openai);
-      setHeaders();
-      passThrough.body.pipe(res);
-    } else {
-      fileStream = getDownloadStream(file_id);
-      setHeaders();
-      fileStream.pipe(res);
-    }
+    const fileResponse = await axios.get(`https://api.openai.com/v1/files/${fileId}`, {
+      headers: options.headers,
+    });
+    const { filename } = fileResponse.data;
+
+    const response = await axios.get(`https://api.openai.com/v1/files/${fileId}/content`, options);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    response.data.pipe(res);
   } catch (error) {
-    logger.error('Error downloading file:', error);
+    console.error('Error downloading file:', error);
     res.status(500).send('Error downloading file');
   }
 });

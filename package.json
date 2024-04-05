@@ -1,6 +1,6 @@
 {
-  "name": "LibreChat",
-  "version": "0.7.0",
+  "name": "chatg",
+  "version": "0.6.10",
   "description": "",
   "workspaces": [
     "api",
@@ -11,7 +11,6 @@
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",
     "list-balances": "node config/list-balances.js",
-    "user-stats": "node config/user-stats.js",
     "rebuild:package-lock": "node config/packages",
     "reinstall": "node config/update.js -l -g",
     "b:reinstall": "bun config/update.js -b -l -g",
@@ -58,7 +57,9 @@
     "b:test:client": "cd client && bun run b:test",
     "b:test:api": "cd api && bun run b:test",
     "b:balance": "bun config/add-balance.js",
-    "b:list-balances": "bun config/list-balances.js"
+    "b:list-balances": "bun config/list-balances.js",
+    "build": "npm run build:data-provider && cd client && npm run build",
+    "start": "cross-env NODE_ENV=production node api/server/index.js"
   },
   "repository": {
     "type": "git",
@@ -69,7 +70,7 @@
   "bugs": {
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
-  "homepage": "https://librechat.ai/",
+  "homepage": "https://app.chatg.com",
   "devDependencies": {
     "@playwright/test": "^1.38.1",
     "@typescript-eslint/eslint-plugin": "^5.62.0",

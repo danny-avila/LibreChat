@@ -12,6 +12,7 @@ const defaultConfig: TEndpointsConfig = {
   [EModelEndpoint.google]: null,
   [EModelEndpoint.anthropic]: null,
   [EModelEndpoint.custom]: null,
+  [EModelEndpoint.sdImage]: null,
 };
 
 const endpointsConfig = atom<TEndpointsConfig>({

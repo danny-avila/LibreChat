@@ -25,10 +25,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   const credentials = isUserProvided
     ? userKey
-    : {
-      [AuthKeys.GOOGLE_SERVICE_KEY]: serviceKey,
-      [AuthKeys.GOOGLE_API_KEY]: GOOGLE_KEY,
-    };
+    : { [AuthKeys.GOOGLE_SERVICE_KEY]: serviceKey, [AuthKeys.GOOGLE_API_KEY]: GOOGLE_KEY };
 
   const client = new GoogleClient(credentials, {
     req,

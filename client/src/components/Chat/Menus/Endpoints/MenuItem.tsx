@@ -11,6 +11,9 @@ import { cn, getEndpointField } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { icons } from './Icons';
 import store from '~/store';
+import { useToastContext } from '~/Providers';
+import { isPast } from 'date-fns';
+import isEmpty from 'is-empty';
 
 type MenuItemProps = {
   title: string;
@@ -31,6 +34,9 @@ const MenuItem: FC<MenuItemProps> = ({
   ...rest
 }) => {
   const modularChat = useRecoilValue(store.modularChat);
+  const user = useRecoilValue(store.user);
+
+  const { showToast } = useToastContext();
   const [isDialogOpen, setDialogOpen] = useState(false);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { conversation, newConversation } = useChatContext();
@@ -101,10 +107,28 @@ const MenuItem: FC<MenuItemProps> = ({
     <>
       <div
         role="menuitem"
-        className="group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600"
+        className="group m-1.5 flex max-h-[40px] cursor-pointer gap-2 rounded px-5 py-2.5 !pr-3 text-sm !opacity-100 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
         tabIndex={-1}
         {...rest}
-        onClick={() => onSelectEndpoint(endpoint)}
+        onClick={() => {
+          if (
+            (endpoint === EModelEndpoint.google ||
+              endpoint === EModelEndpoint.assistants ||
+              endpoint === EModelEndpoint.sdImage) &&
+            !(
+              user?.subscription.active ||
+              (!isEmpty(user?.subscription.renewalDate) &&
+                !isPast(user?.subscription.renewalDate as Date))
+            )
+          ) {
+            showToast({
+              message: 'This is premium AI provider ' + localize('com_premium_warning'),
+              status: 'info',
+            });
+            return;
+          }
+          onSelectEndpoint(endpoint);
+        }}
       >
         <div className="flex grow items-center justify-between gap-2">
           <div>
@@ -118,8 +142,13 @@ const MenuItem: FC<MenuItemProps> = ({
                   iconURL={getEndpointField(endpointsConfig, endpoint, 'iconURL')}
                 />
               )}
-              <div>
+              <div className="flex items-center gap-3">
                 {title}
+                {(endpoint === EModelEndpoint.google ||
+                  endpoint === EModelEndpoint.assistants ||
+                  endpoint === EModelEndpoint.sdImage) && (
+                  <img src="/assets/premium.png" alt="premium" className="h-4 w-4" />
+                )}
                 <div className="text-token-text-tertiary">{description}</div>
               </div>
             </div>
@@ -132,7 +161,7 @@ const MenuItem: FC<MenuItemProps> = ({
                     'invisible flex gap-x-1 group-hover:visible',
                     selected ? 'visible' : '',
                     expiryTime
-                      ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      ? 'w-full rounded-lg p-2 hover:bg-gray-200 dark:hover:bg-gray-800'
                       : '',
                   )}
                   onClick={(e) => {

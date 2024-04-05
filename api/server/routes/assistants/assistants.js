@@ -1,14 +1,10 @@
 const multer = require('multer');
 const express = require('express');
 const { FileContext, EModelEndpoint } = require('librechat-data-provider');
-const {
-  initializeClient,
-  listAssistantsForAzure,
-  listAssistants,
-} = require('~/server/services/Endpoints/assistants');
+const { updateAssistant, getAssistants } = require('~/models/Assistant');
+const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadImageBuffer } = require('~/server/services/Files/process');
-const { updateAssistant, getAssistants } = require('~/models/Assistant');
 const { deleteFileByFilter } = require('~/models/File');
 const { logger } = require('~/config');
 const actions = require('./actions');
@@ -51,10 +47,6 @@ router.post('/', async (req, res) => {
         return req.app.locals.availableTools[tool];
       })
       .filter((tool) => tool);
-
-    if (openai.locals?.azureOptions) {
-      assistantData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;
-    }
 
     const assistant = await openai.beta.assistants.create(assistantData);
     logger.debug('/assistants/', assistant);
@@ -109,10 +101,6 @@ router.patch('/:id', async (req, res) => {
       })
       .filter((tool) => tool);
 
-    if (openai.locals?.azureOptions && updateData.model) {
-      updateData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;
-    }
-
     const updatedAssistant = await openai.beta.assistants.update(assistant_id, updateData);
     res.json(updatedAssistant);
   } catch (error) {
@@ -149,18 +137,19 @@ router.delete('/:id', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const { limit = 100, order = 'desc', after, before } = req.query;
-    const query = { limit, order, after, before };
+    /** @type {{ openai: OpenAI }} */
+    const { openai } = await initializeClient({ req, res });
 
-    const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
+    const { limit, order, after, before } = req.query;
+    const response = await openai.beta.assistants.list({
+      limit,
+      order,
+      after,
+      before,
+    });
+
     /** @type {AssistantListResponse} */
-    let body;
-
-    if (azureConfig?.assistants) {
-      body = await listAssistantsForAzure({ req, res, azureConfig, query });
-    } else {
-      ({ body } = await listAssistants({ req, res, query }));
-    }
+    let body = response.body;
 
     if (req.app.locals?.[EModelEndpoint.assistants]) {
       /** @type {Partial<TAssistantEndpoint>} */
@@ -176,7 +165,7 @@ router.get('/', async (req, res) => {
     res.json(body);
   } catch (error) {
     logger.error('[/assistants] Error listing assistants', error);
-    res.status(500).json({ message: 'Error listing assistants' });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -241,13 +230,12 @@ router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => 
     const promises = [];
     promises.push(
       updateAssistant(
-        { assistant_id },
+        { assistant_id, user: req.user.id },
         {
           avatar: {
             filepath: image.filepath,
             source: req.app.locals.fileStrategy,
           },
-          user: req.user.id,
         },
       ),
     );

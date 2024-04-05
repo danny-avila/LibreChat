@@ -50,7 +50,6 @@ bower_components/
 
 #config file
 librechat.yaml
-librechat.yml
 
 # Environment
 .npmrc
@@ -75,7 +74,6 @@ src/style - official.css
 config.local.ts
 **/storageState.json
 junit.xml
-**/.venv/
 
 # docker override file
 docker-compose.override.yaml
@@ -94,6 +92,3 @@ auth.json
 
 # User uploads
 uploads/
-
-# owner
-release/

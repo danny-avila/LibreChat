@@ -23,6 +23,18 @@ export const icons = {
   [EModelEndpoint.google]: GoogleMinimalIcon,
   [EModelEndpoint.bingAI]: BingAIMinimalIcon,
   [EModelEndpoint.custom]: CustomMinimalIcon,
+  [EModelEndpoint.sdImage]: () => {
+    return (
+      <img
+        src={'/assets/sdimage.png'}
+        className="bg-token-surface-secondary dark:bg-token-surface-tertiary"
+        alt="sdimage"
+        width="20"
+        height="20"
+      />
+    );
+  },
+
   [EModelEndpoint.assistants]: ({
     className = '',
     assistantName,
@@ -48,7 +60,7 @@ export const icons = {
       return <AssistantIcon className={cn('text-token-secondary', className)} size={size} />;
     }
 
-    return <Sparkles className={cn(assistantName === '' ? 'icon-2xl' : '', className)} />;
+    return <Sparkles className={className} />;
   },
   unknown: UnknownIcon,
 };

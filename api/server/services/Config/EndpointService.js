@@ -13,6 +13,7 @@ const {
   OPENAI_REVERSE_PROXY,
   AZURE_OPENAI_BASEURL,
   ASSISTANTS_BASE_URL,
+  SDIMAGE_API_KEY,
 } = process.env ?? {};
 
 const useAzurePlugins = !!PLUGINS_USE_AZURE;
@@ -34,5 +35,6 @@ module.exports = {
     [EModelEndpoint.chatGPTBrowser]: generateConfig(chatGPTToken),
     [EModelEndpoint.anthropic]: generateConfig(anthropicApiKey),
     [EModelEndpoint.bingAI]: generateConfig(bingToken),
+    [EModelEndpoint.sdImage]: generateConfig(SDIMAGE_API_KEY),
   },
 };

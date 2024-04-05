@@ -1,5 +1,6 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
-import { ViolationTypes } from 'librechat-data-provider';
+
+import React from 'react';
 import type { TOpenAIMessage } from 'librechat-data-provider';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import CodeBlock from './CodeBlock';
@@ -14,7 +15,7 @@ type TMessageLimit = {
 };
 
 type TTokenBalance = {
-  type: ViolationTypes;
+  type: 'token_balance';
   balance: number;
   tokenCost: number;
   promptTokens: number;

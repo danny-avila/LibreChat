@@ -11,6 +11,7 @@ const EndpointItems: FC<{
   selected: EModelEndpoint | '';
 }> = ({ endpoints, selected }) => {
   const { data: endpointsConfig } = useGetEndpointsQuery();
+
   return (
     <>
       {endpoints &&

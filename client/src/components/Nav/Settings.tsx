@@ -1,21 +1,31 @@
+/* eslint-disable indent */
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
-import { GearIcon, DataIcon, UserIcon, ExperimentIcon } from '~/components/svg';
+import { GearIcon, DataIcon, UserIcon, ExperimentIcon, ChartBarIcon } from '~/components/svg';
 import { General, Beta, Data, Account } from './SettingsTabs';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import Credits from './SettingsTabs/Credits/Credits';
+import SettingsTab from './SettingsTab';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import { useSearchParams } from 'react-router-dom';
+import isEmpty from 'is-empty';
+import { isPast } from 'date-fns';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
+  const user = useRecoilValue(store.user);
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const localize = useLocalize();
+  const [searchParams] = useSearchParams();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          'shadow-2xl md:min-h-[373px] md:w-[680px]',
+          'shadow-2xl dark:bg-gray-800 dark:text-white md:min-h-[373px] md:w-[680px]',
           isSmallScreen ? 'top-20 -translate-y-0' : '',
         )}
       >
@@ -24,9 +34,16 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
             {localize('com_nav_settings')}
           </DialogTitle>
         </DialogHeader>
-        <div className="px-6">
+        <div className="w-full overflow-auto px-6">
           <Tabs.Root
-            defaultValue={SettingsTabValues.GENERAL}
+            defaultValue={
+              searchParams.get('tab') !== null
+                ? SettingsTabValues[(searchParams.get('tab') as string).toUpperCase()]
+                : SettingsTabValues.GENERAL
+            }
+            onValueChange={(e) => {
+              console.log(e);
+            }}
             className="flex flex-col gap-10 md:flex-row"
             orientation="vertical"
           >
@@ -36,71 +53,40 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               aria-orientation="vertical"
               className={cn(
                 'min-w-auto -ml-[8px] flex flex-shrink-0 flex-col',
-                isSmallScreen ? 'flex-row rounded-lg bg-gray-200 p-1 dark:bg-gray-700' : '',
+                isSmallScreen ? 'flex-row rounded-lg bg-gray-200 p-1 dark:bg-gray-800/30' : '',
               )}
               style={{ outline: 'none' }}
             >
-              <Tabs.Trigger
-                className={cn(
-                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
-                  isSmallScreen
-                    ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                    : 'bg-white radix-state-active:bg-gray-200',
-                  isSmallScreen ? '' : 'dark:bg-gray-700',
-                )}
-                value={SettingsTabValues.GENERAL}
-                style={{ userSelect: 'none' }}
-              >
+              <SettingsTab value={SettingsTabValues.GENERAL}>
                 <GearIcon />
                 {localize('com_nav_setting_general')}
-              </Tabs.Trigger>
-              <Tabs.Trigger
-                className={cn(
-                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
-                  isSmallScreen
-                    ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                    : 'bg-white radix-state-active:bg-gray-200',
-                  isSmallScreen ? '' : 'dark:bg-gray-700',
-                )}
-                value={SettingsTabValues.BETA}
-                style={{ userSelect: 'none' }}
-              >
+              </SettingsTab>
+              <SettingsTab value={SettingsTabValues.BETA}>
                 <ExperimentIcon />
                 {localize('com_nav_setting_beta')}
-              </Tabs.Trigger>
-              <Tabs.Trigger
-                className={cn(
-                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
-                  isSmallScreen
-                    ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                    : 'bg-white radix-state-active:bg-gray-200',
-                  isSmallScreen ? '' : 'dark:bg-gray-700',
-                )}
-                value={SettingsTabValues.DATA}
-                style={{ userSelect: 'none' }}
-              >
+              </SettingsTab>
+              <SettingsTab value={SettingsTabValues.DATA}>
                 <DataIcon />
                 {localize('com_nav_setting_data')}
-              </Tabs.Trigger>
-              <Tabs.Trigger
-                className={cn(
-                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
-                  isSmallScreen
-                    ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
-                    : 'bg-white radix-state-active:bg-gray-200',
-                  isSmallScreen ? '' : 'dark:bg-gray-700',
-                )}
-                value={SettingsTabValues.ACCOUNT}
-                style={{ userSelect: 'none' }}
-              >
+              </SettingsTab>
+              <SettingsTab value={SettingsTabValues.ACCOUNT}>
                 <UserIcon />
                 {localize('com_nav_setting_account')}
-              </Tabs.Trigger>
+              </SettingsTab>
+              {(user?.subscription.active ||
+                (!isEmpty(user?.subscription.renewalDate) &&
+                  !isPast(user?.subscription.renewalDate as Date))) && (
+                <SettingsTab value={SettingsTabValues.CREDITS}>
+                  <ChartBarIcon />
+                  {localize('com_nav_setting_credits')}
+                </SettingsTab>
+              )}
             </Tabs.List>
             <General />
             <Beta />
             <Data />
             <Account />
+            <Credits />
           </Tabs.Root>
         </div>
       </DialogContent>

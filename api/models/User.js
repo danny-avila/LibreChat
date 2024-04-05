@@ -18,6 +18,8 @@ userSchema.methods.toJSON = function () {
     plugins: this.plugins,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
+    subscription: this.subscription,
+    credits: this.credits,
   };
 };
 

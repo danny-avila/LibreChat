@@ -81,6 +81,14 @@ export type TUser = {
   plugins: string[];
   createdAt: string;
   updatedAt: string;
+  subscription: {
+    subType?: 'MONTHLY' | 'YEARLY';
+    active: boolean;
+    customerId?: string;
+    renewalDate?: Date | string;
+    subscriptionId?: string;
+  };
+  credits: number;
 };
 
 export type TGetConversationsResponse = {

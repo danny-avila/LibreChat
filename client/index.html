@@ -2,46 +2,42 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <meta name="theme-color" content="#171717">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>LibreChat</title>
-    <link
-      rel="shortcut icon"
-      href="#"
-    />
-    <link
-      rel="icon"
-      type="image/png"
-      sizes="32x32"
-      href="/assets/favicon-32x32.png"
-    />
-    <link
-      rel="icon"
-      type="image/png"
-      sizes="16x16"
-      href="/assets/favicon-16x16.png"
-      />
-    <link
-      rel="apple-touch-icon"
-      href="/assets/apple-touch-icon-180x180.png"
-    />
+    <meta property="og:title" content="ChatG App" />
     <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1"
+      property="og:description"
+      content="Free ChatGPT Alternative - Easily ask questions and receive instant answers. Utilize Google Gemini, Bing Copilot, GPT-4, GPT-3.5-turbo and Claude by Anthropic"
     />
-    <script
-      defer
-      type="module"
-      src="/src/main.jsx"
-    ></script>
+    <meta property="og:image" content="/assets/logo.png" />
+    <meta property="og:url" content="https://app.chatg.com" />
+    <meta name="theme-color" content="#171717" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>ChatG App</title>
+    <meta
+      name="description"
+      content="Free ChatGPT Alternative - Easily ask questions and receive instant answers. Utilize Google Gemini, Bing Copilot, GPT-4, GPT-3.5-turbo and Claude by Anthropic"
+    />
+    <meta name="keywords" content="ChatG, ChatGPT Alternative" />
+    <link rel="shortcut icon" type="image/x-icon" href="/assets/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/logo.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/logo.png" />
+    <link rel="apple-touch-icon" href="/assets/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script defer type="module" src="/src/main.jsx"></script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-KKM383J6T2"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+
+      gtag('config', 'G-KKM383J6T2');
+    </script>
   </head>
   <body>
     <div id="root"></div>
 
-    <script
-      type="module"
-      src="/src/main.jsx"
-    ></script>
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

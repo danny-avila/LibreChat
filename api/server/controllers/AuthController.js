@@ -10,6 +10,9 @@ const {
 } = require('~/server/services/AuthService');
 const { logger } = require('~/config');
 
+const sendEmail = require('~/server/utils/sendEmail');
+const emailTemplates = require('~/server/utils/emailTemplates');
+
 const registrationController = async (req, res) => {
   try {
     const response = await registerUser(req.body);
@@ -19,9 +22,21 @@ const registrationController = async (req, res) => {
       if (!newUser) {
         newUser = new User(user);
         await newUser.save();
+        await sendEmail(
+          user.email,
+          'Welcome to ChatG!',
+          {
+            appName: process.env.APP_TITLE || 'ChatG App',
+            name: user.name,
+            year: new Date().getFullYear(),
+          },
+          'requestPasswordReset.handlebars',
+          emailTemplates.welcomeEmail(user.name),
+        );
       }
       const token = await setAuthTokens(user._id, res);
       res.setHeader('Authorization', `Bearer ${token}`);
+
       res.status(status).send({ user });
     } else {
       const { status, message } = response;

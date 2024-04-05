@@ -1,4 +1,6 @@
 import type { FC } from 'react';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
 import { cn } from '~/utils';
 
 type MenuItemProps = {
@@ -18,7 +20,7 @@ type MenuItemProps = {
 
 const MenuItem: FC<MenuItemProps> = ({
   title,
-  // value,
+  value,
   description,
   selected,
   // hoverCondition = true,
@@ -30,6 +32,8 @@ const MenuItem: FC<MenuItemProps> = ({
   onClick,
   ...rest
 }) => {
+  const premiumModels = useRecoilValue(store.premiumModelsConfig);
+
   return (
     <div
       role="menuitem"
@@ -53,6 +57,7 @@ const MenuItem: FC<MenuItemProps> = ({
         </div>
         <div className="flex items-center gap-2">
           {children}
+
           {selected && (
             <svg
               width="24"
@@ -60,7 +65,7 @@ const MenuItem: FC<MenuItemProps> = ({
               viewBox="0 0 24 24"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
-              className="icon-md block "
+              className="icon-md block"
             >
               <path
                 fillRule="evenodd"
@@ -69,6 +74,9 @@ const MenuItem: FC<MenuItemProps> = ({
                 fill="currentColor"
               />
             </svg>
+          )}
+          {premiumModels.indexOf(value as string) > -1 && (
+            <img src="/assets/premium.png" alt="premium" className="h-4 w-4" />
           )}
         </div>
       </div>

@@ -3,7 +3,6 @@ const path = require('path');
 const sharp = require('sharp');
 const { resizeImageBuffer } = require('./resize');
 const { getStrategyFunctions } = require('../strategies');
-const { logger } = require('~/config');
 
 /**
  * Converts an image file or buffer to WebP format with specified resolution.
@@ -62,7 +61,7 @@ async function convertToWebP(req, file, resolution = 'high', basename = '') {
     const bytes = Buffer.byteLength(outputBuffer);
     return { filepath: savedFilePath, bytes, width, height };
   } catch (err) {
-    logger.error(err);
+    console.error(err);
     throw err;
   }
 }

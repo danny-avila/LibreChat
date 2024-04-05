@@ -197,7 +197,9 @@ export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> =>
 
 export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise<a.Assistant> => {
   return request.postMultiPart(
-    endpoints.assistants(`avatar/${data.assistant_id}`, { model: data.model }),
+    // Unknown Bug
+    // endpoints.assistants(`avatar/${data.assistant_id}`, { model: data.model }),
+    endpoints.assistants(`avatar/${data.assistant_id}`),
     data.formData,
   );
 };

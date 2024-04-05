@@ -147,6 +147,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
+    console.log('===== hello ----', endpoint);
 
     // set the endpoint option
     const convo = parseCompactConvo({

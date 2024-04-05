@@ -9,6 +9,7 @@ import Plugins from './Plugins';
 import ChatGPT from './ChatGPT';
 import Anthropic from './Anthropic';
 import PluginsByIndex from './PluginsByIndex';
+import SdImage from './SdImage';
 
 export const options: { [key: string]: FC<TModelSelectProps> } = {
   [EModelEndpoint.openAI]: OpenAI,
@@ -19,6 +20,7 @@ export const options: { [key: string]: FC<TModelSelectProps> } = {
   [EModelEndpoint.gptPlugins]: Plugins,
   [EModelEndpoint.anthropic]: Anthropic,
   [EModelEndpoint.chatGPTBrowser]: ChatGPT,
+  [EModelEndpoint.sdImage]: SdImage,
 };
 
 export const multiChatOptions = {

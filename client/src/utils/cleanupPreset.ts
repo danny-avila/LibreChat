@@ -18,6 +18,7 @@ const cleanupPreset = ({ preset: _preset }: TCleanupPreset): TPreset => {
 
   const { presetOverride = {}, ...rest } = _preset;
   const preset = { ...rest, ...presetOverride };
+  console.log('--- hello  ---', endpoint);
 
   /* @ts-ignore: endpoint can be a custom defined name */
   const parsedPreset = parseConvo({ endpoint, endpointType, conversation: preset });

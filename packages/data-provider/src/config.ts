@@ -254,6 +254,7 @@ export const defaultEndpoints: EModelEndpoint[] = [
   EModelEndpoint.google,
   EModelEndpoint.anthropic,
   EModelEndpoint.custom,
+  EModelEndpoint.sdImage,
 ];
 
 export const alternateName = {
@@ -266,6 +267,7 @@ export const alternateName = {
   [EModelEndpoint.google]: 'Google',
   [EModelEndpoint.anthropic]: 'Anthropic',
   [EModelEndpoint.custom]: 'Custom',
+  [EModelEndpoint.sdImage]: 'Images',
 };
 
 export const defaultModels = {
@@ -329,6 +331,12 @@ export const defaultModels = {
     'text-davinci-003',
     'gpt-4-0314',
   ],
+  [EModelEndpoint.sdImage]: [
+    'Stable Diffusion XL',
+    'SD Open Journey',
+    'SD Anything V5',
+    'SD Realistic Vision',
+  ],
 };
 
 export const EndpointURLs: { [key in EModelEndpoint]: string } = {
@@ -341,6 +349,7 @@ export const EndpointURLs: { [key in EModelEndpoint]: string } = {
   [EModelEndpoint.azureOpenAI]: `/api/ask/${EModelEndpoint.azureOpenAI}`,
   [EModelEndpoint.chatGPTBrowser]: `/api/ask/${EModelEndpoint.chatGPTBrowser}`,
   [EModelEndpoint.assistants]: '/api/assistants/chat',
+  [EModelEndpoint.sdImage]: `/api/ask/${EModelEndpoint.sdImage}`,
 };
 
 export const modularEndpoints = new Set<EModelEndpoint | string>([
@@ -350,6 +359,7 @@ export const modularEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.openAI,
   EModelEndpoint.azureOpenAI,
   EModelEndpoint.custom,
+  EModelEndpoint.sdImage,
 ]);
 
 export const supportsBalanceCheck = {
@@ -512,6 +522,10 @@ export enum SettingsTabValues {
    * Tab for Account Settings
    */
   ACCOUNT = 'account',
+  /**
+   * Tab for Credit Settings
+   */
+  CREDITS = 'credits',
 }
 
 /**

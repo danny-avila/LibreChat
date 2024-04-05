@@ -81,6 +81,32 @@ const userSchema = mongoose.Schema(
     refreshToken: {
       type: [Session],
     },
+    subscription: {
+      active: {
+        type: Boolean,
+        default: false,
+      },
+      customerId: {
+        type: String,
+        default: '',
+      },
+      subscriptionId: {
+        type: String,
+        default: '',
+      },
+      subType: {
+        type: String,
+        enum: ['MONTHLY', 'YEARLY'],
+        default: 'MONTHLY',
+      },
+      renewalDate: {
+        type: Date,
+      },
+    },
+    credits: {
+      type: Number,
+      default: 2000,
+    },
   },
   { timestamps: true },
 );

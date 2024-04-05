@@ -22,6 +22,7 @@ export { default as OpenIDIcon } from './OpenIDIcon';
 export { default as GithubIcon } from './GithubIcon';
 export { default as DiscordIcon } from './DiscordIcon';
 export { default as AnthropicIcon } from './AnthropicIcon';
+export { default as RenameIcon } from './RenameIcon';
 export { default as SendIcon } from './SendIcon';
 export { default as LinkIcon } from './LinkIcon';
 export { default as DotsIcon } from './DotsIcon';
@@ -48,3 +49,6 @@ export { default as GoogleIconChat } from './GoogleIconChat';
 export { default as BirthdayIcon } from './BirthdayIcon';
 export { default as AssistantIcon } from './AssistantIcon';
 export { default as Sparkles } from './Sparkles';
+
+export { default as ChartBarIcon } from './ChartBarIcon';
+export { default as LoadingIcon } from './LoadingIcon';

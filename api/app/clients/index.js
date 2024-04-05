@@ -6,6 +6,8 @@ const TextStream = require('./TextStream');
 const AnthropicClient = require('./AnthropicClient');
 const toolUtils = require('./tools/util');
 
+const SdImageClient = require('./SdImageClient');
+
 module.exports = {
   ChatGPTClient,
   OpenAIClient,
@@ -13,5 +15,6 @@ module.exports = {
   GoogleClient,
   TextStream,
   AnthropicClient,
+  SdImageClient,
   ...toolUtils,
 };

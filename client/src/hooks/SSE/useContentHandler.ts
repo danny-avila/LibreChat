@@ -1,18 +1,12 @@
-import { useCallback, useMemo } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
-import { useQueryClient } from '@tanstack/react-query';
-
 import type {
-  Text,
-  TMessage,
-  ImageFile,
   TSubmission,
-  ContentPart,
-  PartMetadata,
+  TMessage,
   TContentData,
+  ContentPart,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import { addFileToCache } from '~/utils';
+import { useCallback, useMemo } from 'react';
 
 type TUseContentHandler = {
   setMessages: (messages: TMessage[]) => void;
@@ -25,11 +19,10 @@ type TContentHandler = {
 };
 
 export default function useContentHandler({ setMessages, getMessages }: TUseContentHandler) {
-  const queryClient = useQueryClient();
   const messageMap = useMemo(() => new Map<string, TMessage>(), []);
   return useCallback(
     ({ data, submission }: TContentHandler) => {
-      const { type, messageId, thread_id, conversationId, index } = data;
+      const { type, messageId, thread_id, conversationId, index, stream } = data;
 
       const _messages = getMessages();
       const messages =
@@ -53,13 +46,8 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       }
 
       // TODO: handle streaming for non-text
-      const textPart: Text | string | undefined = data[ContentTypes.TEXT];
       const part: ContentPart =
-        textPart && typeof textPart === 'string' ? { value: textPart } : data[type];
-
-      if (type === ContentTypes.IMAGE_FILE) {
-        addFileToCache(queryClient, part as ImageFile & PartMetadata);
-      }
+        stream && data[ContentTypes.TEXT] ? { value: data[ContentTypes.TEXT] } : data[type];
 
       /* spreading the content array to avoid mutation */
       response.content = [...(response.content ?? [])];
@@ -78,6 +66,6 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       setMessages([...messages, response]);
     },
-    [queryClient, getMessages, messageMap, setMessages],
+    [getMessages, messageMap, setMessages],
   );
 }

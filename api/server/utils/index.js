@@ -8,6 +8,7 @@ const sendEmail = require('./sendEmail');
 const queue = require('./queue');
 const files = require('./files');
 const math = require('./math');
+const emailTemplates = require('./emailTemplates');
 
 module.exports = {
   ...streamResponse,
@@ -20,4 +21,5 @@ module.exports = {
   ...files,
   ...queue,
   math,
+  ...emailTemplates,
 };

@@ -1,5 +1,5 @@
-import { useLocation } from 'react-router-dom';
-import { Fragment, useState, memo } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { Fragment, useState, memo, useEffect } from 'react';
 import { Download, FileText } from 'lucide-react';
 import { Menu, Transition } from '@headlessui/react';
 import { useRecoilValue, useRecoilState } from 'recoil';
@@ -21,6 +21,7 @@ import store from '~/store';
 function NavLinks() {
   const localize = useLocalize();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
@@ -34,6 +35,18 @@ function NavLinks() {
   const globalConvo = useRecoilValue(store.conversation) ?? ({} as TConversation);
 
   const avatarSrc = useAvatar(user);
+
+  // useEffect(() => {
+  //   if (!showSettings) {
+  //     setSearchParams({ settings: showSettings });
+  //   }
+  // }, [showSettings]);
+
+  useEffect(() => {
+    if (searchParams.get('settings') === 'open') {
+      setShowSettings(true);
+    }
+  }, [searchParams]);
 
   let conversation: TConversation | null | undefined;
   if (location.state?.from?.pathname.includes('/chat')) {
@@ -66,12 +79,12 @@ function NavLinks() {
             )}
             <Menu.Button
               className={cn(
-                'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm mb-1 flex h-11 w-full items-center gap-2 rounded-lg px-3 py-3 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700',
+                'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm mb-1 flex w-full items-center gap-3 rounded-md px-3 py-3 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700',
                 open ? 'bg-gray-100 dark:bg-gray-700' : '',
               )}
               data-testid="nav-user"
             >
-              <div className="-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
+              <div className="-ml-0.9 -mt-0.8 h-5 w-5 flex-shrink-0">
                 <div className="relative flex">
                   {!user?.avatar && !user?.username ? (
                     <div
@@ -81,7 +94,7 @@ function NavLinks() {
                         height: '20px',
                         boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
                       }}
-                      className="relative flex h-8 w-8 items-center justify-center rounded-full p-1 text-white"
+                      className="relative flex h-9 w-9 items-center justify-center rounded-full p-1 text-white"
                     >
                       <UserIcon />
                     </div>
@@ -91,7 +104,7 @@ function NavLinks() {
                 </div>
               </div>
               <div
-                className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-black dark:text-white"
+                className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left font-bold text-black dark:text-white"
                 style={{ marginTop: '0', marginLeft: '0' }}
               >
                 {user?.name || localize('com_nav_user')}
@@ -145,10 +158,13 @@ function NavLinks() {
                     className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                     svg={() => <GearIcon className="icon-md" />}
                     text={localize('com_nav_settings')}
-                    clickHandler={() => setShowSettings(true)}
+                    clickHandler={() => {
+                      setSearchParams({ settings: 'open' });
+                      setShowSettings(true);
+                    }}
                   />
                 </Menu.Item>
-                <div className="my-1 h-px bg-black/20 bg-white/20" role="none" />
+                <div className="my-1 h-px bg-white/20" role="none" />
                 <Menu.Item as="div">
                   <Logout />
                 </Menu.Item>
@@ -161,7 +177,15 @@ function NavLinks() {
         <ExportModal open={showExports} onOpenChange={setShowExports} conversation={conversation} />
       )}
       {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
-      {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
+      {showSettings && (
+        <Settings
+          open={showSettings}
+          onOpenChange={(e) => {
+            setShowSettings(e);
+            setSearchParams({ settings: e ? 'open' : 'close' });
+          }}
+        />
+      )}
     </>
   );
 }

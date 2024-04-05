@@ -15,6 +15,7 @@ export enum EModelEndpoint {
   anthropic = 'anthropic',
   assistants = 'assistants',
   custom = 'custom',
+  sdImage = 'sdImage',
 }
 
 export const defaultAssistantFormValues = {
@@ -515,6 +516,13 @@ export const assistantSchema = tConversationSchema
   .transform(removeNullishValues)
   .catch(() => ({}));
 
+export const sdImageSchema = tConversationSchema
+  .pick({
+    model: true,
+  })
+  .transform(removeNullishValues)
+  .catch(() => ({}));
+
 export const compactOpenAISchema = tConversationSchema
   .pick({
     model: true,
@@ -670,6 +678,16 @@ export const compactPluginsSchema = tConversationSchema
     ) {
       delete newObj.agentOptions;
     }
+
+    return removeNullishValues(newObj);
+  })
+  .catch(() => ({}));
+export const compactSdImageSchema = tConversationSchema
+  .pick({
+    model: true,
+  })
+  .transform((obj) => {
+    const newObj: Partial<TConversation> = { ...obj };
 
     return removeNullishValues(newObj);
   })

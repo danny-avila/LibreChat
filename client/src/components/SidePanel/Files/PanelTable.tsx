@@ -74,7 +74,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
     <>
       <div className="flex items-center gap-4 px-2 py-4">
         <Input
-          placeholder={localize('com_files_filter')}
+          placeholder="Filter files..."
           value={(table.getColumn('filename')?.getFilterValue() as string) ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
           className="max-w-xs dark:border-gray-700"
@@ -126,7 +126,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-24 text-center">
-                  {localize('com_files_no_results')}
+                  No results.
                 </TableCell>
               </TableRow>
             )}
@@ -150,7 +150,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
           >
-            {localize('com_ui_prev')}
+            Previous
           </Button>
           <Button
             variant="outline"
@@ -158,7 +158,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
           >
-            {localize('com_ui_next')}
+            Next
           </Button>
         </div>
       </div>

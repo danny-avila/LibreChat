@@ -19,6 +19,7 @@ const modelsConfig = atom<TModelsConfig>({
     [EModelEndpoint.chatGPTBrowser]: ['text-davinci-002-render-sha'],
     [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],
     [EModelEndpoint.anthropic]: defaultModels[EModelEndpoint.anthropic],
+    [EModelEndpoint.sdImage]: [EModelEndpoint.sdImage],
   },
 });
 

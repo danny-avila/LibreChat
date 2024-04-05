@@ -1,6 +1,5 @@
 const axios = require('axios');
-const { EModelEndpoint } = require('librechat-data-provider');
-const { logAxiosError } = require('~/utils');
+const { logger } = require('~/config');
 
 /**
  * @typedef {Object} RetrieveOptions
@@ -19,25 +18,15 @@ const { logAxiosError } = require('~/utils');
  */
 async function retrieveRun({ thread_id, run_id, timeout, openai }) {
   const { apiKey, baseURL, httpAgent, organization } = openai;
-  let url = `${baseURL}/threads/${thread_id}/runs/${run_id}`;
+  const url = `${baseURL}/threads/${thread_id}/runs/${run_id}`;
 
-  let headers = {
+  const headers = {
     Authorization: `Bearer ${apiKey}`,
     'OpenAI-Beta': 'assistants=v1',
   };
 
   if (organization) {
     headers['OpenAI-Organization'] = organization;
-  }
-
-  /** @type {TAzureConfig | undefined} */
-  const azureConfig = openai.req.app.locals[EModelEndpoint.azureOpenAI];
-
-  if (azureConfig && azureConfig.assistants) {
-    delete headers.Authorization;
-    headers = { ...headers, ...openai._options.defaultHeaders };
-    const queryParams = new URLSearchParams(openai._options.defaultQuery).toString();
-    url = `${url}?${queryParams}`;
   }
 
   try {
@@ -54,8 +43,33 @@ async function retrieveRun({ thread_id, run_id, timeout, openai }) {
     const response = await axios.get(url, axiosConfig);
     return response.data;
   } catch (error) {
-    const message = '[retrieveRun] Failed to retrieve run data:';
-    logAxiosError({ message, error });
+    const logMessage = '[retrieveRun] Failed to retrieve run data:';
+    const timedOutMessage = 'Cannot read properties of undefined (reading \'status\')';
+    if (error?.response && error?.response?.status) {
+      logger.error(
+        `${logMessage} The request was made and the server responded with a status code that falls out of the range of 2xx: ${
+          error.message ? error.message : ''
+        }`,
+        {
+          headers: error.response.headers,
+          status: error.response.status,
+          data: error.response.data,
+        },
+      );
+    } else if (error.request) {
+      logger.error(
+        `${logMessage} The request was made but no response was received: ${
+          error.message ? error.message : ''
+        }`,
+        {
+          request: error.request,
+        },
+      );
+    } else if (error?.message && !error?.message?.includes(timedOutMessage)) {
+      logger.error(`${logMessage} Something happened in setting up the request`, {
+        message: error.message,
+      });
+    }
     throw error;
   }
 }

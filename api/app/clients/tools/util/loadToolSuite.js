@@ -1,6 +1,5 @@
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { availableTools } = require('../');
-const { logger } = require('~/config');
 
 /**
  * Loads a suite of tools with authentication values for a given user, supporting alternate authentication fields.
@@ -31,7 +30,7 @@ const loadToolSuite = async ({ pluginKey, tools, user, options = {} }) => {
           return value;
         }
       } catch (err) {
-        logger.error(`Error fetching plugin auth value for ${field}: ${err.message}`);
+        console.error(`Error fetching plugin auth value for ${field}: ${err.message}`);
       }
     }
     return null;
@@ -42,7 +41,7 @@ const loadToolSuite = async ({ pluginKey, tools, user, options = {} }) => {
     if (authValue !== null) {
       authValues[auth.authField] = authValue;
     } else {
-      logger.warn(`[loadToolSuite] No auth value found for ${auth.authField}`);
+      console.warn(`No auth value found for ${auth.authField}`);
     }
   }
 

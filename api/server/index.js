@@ -6,6 +6,8 @@ const axios = require('axios');
 const express = require('express');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
 const errorController = require('./controllers/ErrorController');
 const { jwtLogin, passportLogin } = require('~/strategies');
 const configureSocialLogins = require('./socialLogins');
@@ -31,6 +33,14 @@ const startServer = async () => {
   await indexSync();
 
   const app = express();
+
+  const server = createServer(app);
+  const io = new Server(server, { cors: [process.env.DOMAIN_CLIENT] });
+
+  io.on('connection', () => {
+    // console.log('a user connected => ', socket);
+  });
+
   app.disable('x-powered-by');
   await AppService(app);
 
@@ -82,12 +92,17 @@ const startServer = async () => {
   app.use('/api/config', routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
+  // Customize
+  app.use('/api/subscribe', routes.subscribe);
+  app.use('/api/credits', routes.credits);
 
   app.use((req, res) => {
     res.status(404).sendFile(path.join(app.locals.paths.dist, 'index.html'));
   });
 
-  app.listen(port, host, () => {
+  // setInterval(checkIfNewMonth, 1000 * 60 * 60);
+
+  server.listen(port, host, () => {
     if (host == '0.0.0.0') {
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,

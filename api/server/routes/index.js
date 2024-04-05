@@ -18,6 +18,10 @@ const config = require('./config');
 const assistants = require('./assistants');
 const files = require('./files');
 
+// Customize
+const subscribe = require('./subscribe');
+const credits = require('./credits');
+
 module.exports = {
   search,
   ask,
@@ -38,4 +42,6 @@ module.exports = {
   config,
   assistants,
   files,
+  subscribe,
+  credits,
 };
