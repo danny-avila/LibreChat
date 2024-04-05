@@ -1,7 +1,7 @@
 # v0.7.0
 
 # Base node image
-FROM alpine:3.18 AS node
+FROM alpine:3.18 AS base
 
 RUN apk add g++ make py3-pip
 RUN npm install -g node-gyp
@@ -10,7 +10,7 @@ RUN apk --no-cache add curl
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
 
-USER ubuntu
+USER node
 
 COPY --chown=node:node . .
 
