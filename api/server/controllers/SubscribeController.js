@@ -1,23 +1,14 @@
 // Customize
 const Stripe = require('stripe');
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '');
-const jwt = require('jsonwebtoken');
 const User = require('~/models/User');
-const signPayload = require('../services/signPayload');
 const StripeCheckout = require('~/models/StripeCheckout');
 const sendEmail = require('~/server/utils/sendEmail');
-const { unSubscribeEmail, topupSubscribeEmail } = require('~/server/utils/emailTemplates');
+const { unSubscribeEmail } = require('~/server/utils/emailTemplates');
 
 const subscribeInStripeController = async (req, res) => {
   const { callback, plan } = req.body;
   try {
-    const refreshToken = await signPayload({
-      payload: { user: req.user._id, callback },
-      secret: process.env.JWT_REFRESH_SECRET,
-      expirationTime: 1000 * 60 * 15,
-      plan,
-    });
-
     const stripeSession = await stripe.checkout.sessions.create({
       line_items: [
         {
@@ -29,8 +20,8 @@ const subscribeInStripeController = async (req, res) => {
         },
       ],
       mode: 'subscription',
-      success_url: `${process.env.DOMAIN_SERVER}/api/subscribe/premium?success=true&refreshToken=${refreshToken}`,
-      cancel_url: `${process.env.DOMAIN_SERVER}/api/subscribe/premium?success=false&refreshToken=${refreshToken}`,
+      success_url: `${process.env.DOMAIN_CLIENT}/${callback}`,
+      cancel_url: `${process.env.DOMAIN_CLIENT}/${callback}`,
     });
 
     // Create new Stripe Checkout Session
@@ -54,13 +45,8 @@ const subscribeInStripeController = async (req, res) => {
 
 const topupStripeController = async (req, res) => {
   const { callback } = req.body;
-  try {
-    const refreshToken = await signPayload({
-      payload: { user: req.user._id, callback, plan: 'TOPUP' },
-      secret: process.env.JWT_REFRESH_SECRET,
-      expirationTime: 1000 * 60 * 15,
-    });
 
+  try {
     const stripeSession = await stripe.checkout.sessions.create({
       line_items: [
         {
@@ -69,9 +55,21 @@ const topupStripeController = async (req, res) => {
         },
       ],
       mode: 'payment',
-      success_url: `${process.env.DOMAIN_SERVER}/api/subscribe/result?success=true&refreshToken=${refreshToken}`,
-      cancel_url: `${process.env.DOMAIN_SERVER}/api/subscribe/result?success=false&refreshToken=${refreshToken}`,
+      success_url: `${process.env.DOMAIN_CLIENT}/${callback}`,
+      cancel_url: `${process.env.DOMAIN_CLIENT}/${callback}`,
     });
+
+    const newCheckoutSession = new StripeCheckout({
+      _id: stripeSession.id,
+      user: req.user._id,
+      mode: stripeSession.mode,
+      currency: stripeSession.currency,
+      successUrl: stripeSession.success_url,
+      cancelUrl: stripeSession.cancel_url,
+      plan: 'TOPUP',
+    });
+
+    await newCheckoutSession.save();
 
     res.json({ session: stripeSession });
   } catch (err) {
@@ -79,40 +77,20 @@ const topupStripeController = async (req, res) => {
   }
 };
 
-const subscribeResultController = async (req, res) => {
-  const { success, refreshToken } = req.query;
+// const subscribeResultController = async (req, res) => {
+//   const { success, refreshToken } = req.query;
 
-  const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-  try {
-    if (success === 'false') {
-      return res.redirect(`${process.env.DOMAIN_CLIENT}${payload.callback}`);
-    }
-
-    if (payload.plan === 'TOPUP') {
-      console.log('topup subscribe');
-      const updatedUser = await User.findByIdAndUpdate(
-        payload.user,
-        { $inc: { credits: Number(process.env.TOPUP_CREDITS) } },
-        { new: true },
-      );
-      await sendEmail(
-        updatedUser.email,
-        'Successfull Topup Subscription!',
-        {
-          appName: process.env.APP_TITLE || 'ChatG App',
-          name: updatedUser.name,
-          year: new Date().getFullYear(),
-        },
-        'requestPasswordReset.handlebars',
-        topupSubscribeEmail(updatedUser.name, updatedUser.credits),
-      );
-    }
-    res.redirect(`${process.env.DOMAIN_CLIENT}${payload.callback}?subscribe=topup-welcome`);
-  } catch (err) {
-    console.error(err);
-    res.redirect(`${process.env.DOMAIN_CLIENT}${payload.callback}?subscribe=topup-failed`);
-  }
-};
+//   const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+//   try {
+//     if (success === 'false') {
+//       return res.redirect(`${process.env.DOMAIN_CLIENT}${payload.callback}`);
+//     }
+//     res.redirect(`${process.env.DOMAIN_CLIENT}${payload.callback}?subscribe=topup-welcome`);
+//   } catch (err) {
+//     console.error(err);
+//     res.redirect(`${process.env.DOMAIN_CLIENT}${payload.callback}?subscribe=topup-failed`);
+//   }
+// };
 
 const unSubscribeInStripeController = async (req, res) => {
   const renewalDate = req.body.renewalDate;
@@ -156,7 +134,6 @@ const reactiveSubscriptionInStripeController = async (req, res) => {
 
 module.exports = {
   subscribeInStripeController,
-  subscribeResultController,
   unSubscribeInStripeController,
   reactiveSubscriptionInStripeController,
   topupStripeController,

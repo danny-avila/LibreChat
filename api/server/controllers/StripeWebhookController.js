@@ -19,31 +19,51 @@ const stripeWebhookController = async (req, res) => {
       const renewalDate = new Date(Number(subscriptionDetail.current_period_end) * 1000);
 
       if (checkoutSession) {
-        const user = await User.findByIdAndUpdate(
-          checkoutSession.user,
-          {
-            subscription: {
-              active: true,
-              customerId: customer,
-              subscriptionId: subscriptionDetail.id,
-              renewalDate,
-              subType: checkoutSession.plan,
+        let user;
+        if (checkoutSession.plan === 'TOPUP') {
+          user = await User.findByIdAndUpdate(
+            checkoutSession.user,
+            {
+              subscription: {
+                active: true,
+                customerId: customer,
+                subscriptionId: subscriptionDetail.id,
+                renewalDate,
+                subType: checkoutSession.plan,
+              },
             },
-          },
-          { new: true },
-        );
+            { new: true },
+          );
 
-        await sendEmail(
-          user.email,
-          'Subscription successful!',
-          {
-            appName: process.env.APP_TITLE || 'ChatG App',
-            name: user.name,
-            year: new Date().getFullYear(),
-          },
-          'requestPasswordReset.handlebars',
-          emailTemplates.subscribeEmail(user.name, new Date(renewalDate).toLocaleDateString()),
-        );
+          await sendEmail(
+            user.email,
+            'Subscription successful!',
+            {
+              appName: process.env.APP_TITLE || 'ChatG App',
+              name: user.name,
+              year: new Date().getFullYear(),
+            },
+            'requestPasswordReset.handlebars',
+            emailTemplates.subscribeEmail(user.name, new Date(renewalDate).toLocaleDateString()),
+          );
+        } else {
+          user = await User.findByIdAndUpdate(
+            checkoutSession.user,
+            { $inc: { credits: Number(process.env.TOPUP_CREDITS) } },
+            { new: true },
+          );
+          await sendEmail(
+            user.email,
+            'Successfull Topup Subscription!',
+            {
+              appName: process.env.APP_TITLE || 'ChatG App',
+              name: user.name,
+              year: new Date().getFullYear(),
+            },
+            'requestPasswordReset.handlebars',
+            emailTemplates.topupSubscribeEmail(user.name, user.credits),
+          );
+        }
 
         return res.json({ message: 'Subscription updated successfully', user });
       }

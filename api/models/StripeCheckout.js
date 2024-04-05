@@ -15,7 +15,7 @@ const stripeCheckoutSchema = mongoose.Schema({
   cancelUrl: String,
   plan: {
     type: String,
-    enum: ['MONTHLY', 'YEARLY'],
+    enum: ['MONTHLY', 'YEARLY', 'TOPUP'],
   },
   createdAt: {
     type: Date,
