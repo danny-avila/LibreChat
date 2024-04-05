@@ -27,6 +27,8 @@ ${convo}`,
   return titlePrompt;
 };
 
+const titleInstruction =
+  'a concise, 5-word-or-less title for the conversation, using its same language, with no punctuation. Apply title case conventions appropriate for the language. For English, use AP Stylebook Title Case. Never directly mention the language name or the word "title"';
 const titleFunctionPrompt = `In this environment you have access to a set of tools you can use to generate the conversation title.
   
 You may call them like this:
@@ -51,7 +53,7 @@ Submit a brief title in the conversation's language, following the parameter des
 <parameter>
 <name>title</name>
 <type>string</type>
-<description>A concise, 5-word-or-less title for the conversation, using its same language, with no punctuation. Apply title case conventions appropriate for the language. For English, use AP Stylebook Title Case. Never directly mention the language name or the word "title"</description>
+<description>${titleInstruction}</description>
 </parameter>
 </parameters>
 </tool_description>
@@ -80,6 +82,7 @@ function parseTitleFromPrompt(prompt) {
 
 module.exports = {
   langPrompt,
+  titleInstruction,
   createTitlePrompt,
   titleFunctionPrompt,
   parseTitleFromPrompt,

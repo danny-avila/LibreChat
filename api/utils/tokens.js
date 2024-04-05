@@ -59,6 +59,15 @@ const openAIModels = {
   'mistral-': 31990, // -10 from max
 };
 
+const cohereModels = {
+  'command-light': 4086, // -10 from max
+  'command-light-nightly': 8182, // -10 from max
+  command: 4086, // -10 from max
+  'command-nightly': 8182, // -10 from max
+  'command-r': 127500, // -500 from max
+  'command-r-plus:': 127500, // -500 from max
+};
+
 const googleModels = {
   /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
   gemini: 32750, // -10 from max
@@ -83,11 +92,13 @@ const anthropicModels = {
   'claude-3-opus': 200000,
 };
 
+const aggregateModels = { ...openAIModels, ...googleModels, ...anthropicModels, ...cohereModels };
+
 // Order is important here: by model series and context size (gpt-4 then gpt-3, ascending)
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
-  [EModelEndpoint.openAI]: { ...openAIModels, ...googleModels, ...anthropicModels },
-  [EModelEndpoint.custom]: { ...openAIModels, ...googleModels, ...anthropicModels },
+  [EModelEndpoint.openAI]: aggregateModels,
+  [EModelEndpoint.custom]: aggregateModels,
   [EModelEndpoint.google]: googleModels,
   [EModelEndpoint.anthropic]: anthropicModels,
 };
