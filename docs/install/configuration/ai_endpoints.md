@@ -44,6 +44,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       dropParams: ["stop", "user", "frequency_penalty", "presence_penalty", "temperature", "top_p"]
 ```
 
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/03549e00-243c-4539-ac9a-0d782af7cd6c)
+
+
 ## Groq
 > groq API key: [wow.groq.com](https://wow.groq.com/)
 
