@@ -12,17 +12,16 @@ const stripeWebhookController = async (req, res) => {
   try {
     if (requestType === 'checkout.session.completed') {
       const { customer, subscription, id } = req.body.data.object;
-      const subscriptionDetail = await stripe.subscriptions.retrieve(subscription);
 
       console.log('=== new stripe webhook income ===', customer, subscription, id);
 
       const checkoutSession = await StripeCheckout.findById(id);
 
-      const renewalDate = new Date(Number(subscriptionDetail.current_period_end) * 1000);
-
       if (checkoutSession) {
         let user;
         if (checkoutSession.plan !== 'TOPUP') {
+          const subscriptionDetail = await stripe.subscriptions.retrieve(subscription);
+          const renewalDate = new Date(Number(subscriptionDetail.current_period_end) * 1000);
           user = await User.findByIdAndUpdate(
             checkoutSession.user,
             {

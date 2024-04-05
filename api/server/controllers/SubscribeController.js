@@ -55,8 +55,8 @@ const topupStripeController = async (req, res) => {
         },
       ],
       mode: 'payment',
-      success_url: `${process.env.DOMAIN_CLIENT}/${callback}`,
-      cancel_url: `${process.env.DOMAIN_CLIENT}/${callback}`,
+      success_url: `${process.env.DOMAIN_CLIENT}${callback}`,
+      cancel_url: `${process.env.DOMAIN_CLIENT}${callback}`,
     });
 
     const newCheckoutSession = new StripeCheckout({
