@@ -9,10 +9,7 @@ services:
     build:
       context: .
     ports:
-      - "${PORT}:${PORT}"
-    depends_on:
-      - mongodb
-      - rag_api
+      - "3080:3080"
     restart: always
     volumes:
       - type: bind
@@ -30,4 +27,4 @@ services:
     volumes:
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:
-      - main
+      - ChatG
