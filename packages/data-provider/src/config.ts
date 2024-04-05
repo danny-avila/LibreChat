@@ -238,6 +238,7 @@ export enum KnownEndpoints {
   ollama = 'ollama',
   perplexity = 'perplexity',
   'together.ai' = 'together.ai',
+  cohere = 'cohere',
 }
 
 export enum FetchTokenConfig {
@@ -530,6 +531,32 @@ export enum Constants {
    * Standard value for the first message's `parentMessageId` value, to indicate no parent exists.
    */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
+}
+
+/**
+ * Enum for Cohere related constants
+ */
+export enum CohereConstants {
+  /**
+   * Cohere API Endpoint, for special handling
+   */
+  API_URL = 'https://api.cohere.ai/v1',
+  /**
+   * Role for "USER" messages
+   */
+  ROLE_USER = 'USER',
+  /**
+   * Role for "SYSTEM" messages
+   */
+  ROLE_SYSTEM = 'SYSTEM',
+  /**
+   * Role for "CHATBOT" messages
+   */
+  ROLE_CHATBOT = 'CHATBOT',
+  /**
+   * Title message as required by Cohere
+   */
+  TITLE_MESSAGE = 'TITLE:',
 }
 
 export const defaultOrderQuery: {

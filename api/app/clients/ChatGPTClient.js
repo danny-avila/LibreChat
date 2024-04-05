@@ -3,10 +3,13 @@ const crypto = require('crypto');
 const {
   EModelEndpoint,
   resolveHeaders,
+  CohereConstants,
   mapModelToAzureConfig,
 } = require('librechat-data-provider');
+const { CohereClient } = require('cohere-ai');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
+const { createCoherePayload } = require('./llm');
 const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
 const { logger } = require('~/config');
@@ -147,7 +150,8 @@ class ChatGPTClient extends BaseClient {
     return tokenizer;
   }
 
-  async getCompletion(input, onProgress, abortController = null) {
+  /** @type {getCompletion} */
+  async getCompletion(input, onProgress, onTokenProgress, abortController = null) {
     if (!abortController) {
       abortController = new AbortController();
     }
@@ -305,6 +309,11 @@ class ChatGPTClient extends BaseClient {
       });
     }
 
+    if (baseURL.startsWith(CohereConstants.API_URL)) {
+      const payload = createCoherePayload({ modelOptions });
+      return await this.cohereChatCompletion({ payload, onTokenProgress });
+    }
+
     if (baseURL.includes('v1') && !baseURL.includes('/completions') && !this.isChatCompletion) {
       baseURL = baseURL.split('v1')[0] + 'v1/completions';
     } else if (
@@ -406,6 +415,35 @@ class ChatGPTClient extends BaseClient {
       throw error;
     }
     return response.json();
+  }
+
+  /** @type {cohereChatCompletion} */
+  async cohereChatCompletion({ payload, onTokenProgress }) {
+    const cohere = new CohereClient({
+      token: this.apiKey,
+      environment: this.completionsUrl,
+    });
+
+    if (!payload.stream) {
+      const chatResponse = await cohere.chat(payload);
+      return chatResponse.text;
+    }
+
+    const chatStream = await cohere.chatStream(payload);
+    let reply = '';
+    for await (const message of chatStream) {
+      if (!message) {
+        continue;
+      }
+
+      if (message.eventType === 'text-generation' && message.text) {
+        onTokenProgress(message.text);
+      } else if (message.eventType === 'stream-end' && message.response) {
+        reply = message.response.text;
+      }
+    }
+
+    return reply;
   }
 
   async generateTitle(userMessage, botMessage) {

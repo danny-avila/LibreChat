@@ -14,6 +14,39 @@ In all of the examples, arbitrary environment variable names are defined but you
 
 Some of the endpoints are marked as **Known,** which means they might have special handling and/or an icon already provided in the app for you.
 
+## Cohere
+> Cohere API key: [dashboard.cohere.com](https://dashboard.cohere.com/)
+
+**Notes:**
+
+- **Known:** icon provided.
+- Experimental: does not follow OpenAI-spec, uses a new method for endpoint compatibility, shares some similarities and parameters.
+- For a full list of Cohere-specific parameters, see the [Cohere API documentation](https://docs.cohere.com/reference/chat).
+- Note: The following parameters are recognized between OpenAI and Cohere. Most are removed in the example config below to prefer Cohere's default settings:
+    - `stop`: mapped to `stop_sequences`
+    - `top_p`: mapped to `p`, different min/max values
+    - `frequency_penalty`: different min/max values
+    - `presence_penalty`: different min/max values
+    - `model`: shared, included by default.
+    - `stream`: shared, included by default.
+    - `max_tokens`: shared, not included by default.
+
+
+```yaml
+    - name: "cohere"
+      apiKey: "${COHERE_API_KEY}"
+      baseURL: "https://api.cohere.ai/v1"
+      models:
+        default: ["command-r","command-r-plus","command-light","command-light-nightly","command","command-nightly"]
+        fetch: false
+      modelDisplayLabel: "cohere"
+      titleModel: "command"
+      dropParams: ["stop", "user", "frequency_penalty", "presence_penalty", "temperature", "top_p"]
+```
+
+![image](https://github.com/danny-avila/LibreChat/assets/110412045/03549e00-243c-4539-ac9a-0d782af7cd6c)
+
+
 ## Groq
 > groq API key: [wow.groq.com](https://wow.groq.com/)
 
