@@ -62,7 +62,7 @@ const useConversation = () => {
           navigate('new');
         }
       },
-    [endpointsConfig],
+    [endpointsConfig, modelsQuery.data],
   );
 
   const newConversation = useCallback(
