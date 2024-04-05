@@ -20,8 +20,8 @@ const subscribeInStripeController = async (req, res) => {
         },
       ],
       mode: 'subscription',
-      success_url: `${process.env.DOMAIN_CLIENT}/${callback}`,
-      cancel_url: `${process.env.DOMAIN_CLIENT}/${callback}`,
+      success_url: `${process.env.DOMAIN_CLIENT}${callback}`,
+      cancel_url: `${process.env.DOMAIN_CLIENT}${callback}`,
     });
 
     // Create new Stripe Checkout Session
