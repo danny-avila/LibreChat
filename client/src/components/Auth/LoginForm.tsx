@@ -2,6 +2,7 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { useLocalize } from '~/hooks';
 import { TLoginUser } from 'librechat-data-provider';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 
 type TLoginFormProps = {
   onSubmit: (data: TLoginUser) => void;
@@ -14,6 +15,10 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
     handleSubmit,
     formState: { errors },
   } = useForm<TLoginUser>();
+  const { data: startupConfig } = useGetStartupConfig();
+  if (!startupConfig) {
+    return null;
+  }
 
   const renderError = (fieldName: string) => {
     const errorMessage = errors[fieldName]?.message;
@@ -81,9 +86,11 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
         </div>
         {renderError('password')}
       </div>
-      <a href="/forgot-password" className="text-sm text-green-500">
-        {localize('com_auth_password_forgot')}
-      </a>
+      {startupConfig.passwordResetEnabled && (
+        <a href="/forgot-password" className="text-sm text-green-500">
+          {localize('com_auth_password_forgot')}
+        </a>
+      )}
       <div className="mt-6">
         <button
           aria-label="Sign in"

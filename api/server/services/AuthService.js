@@ -120,8 +120,20 @@ const registerUser = async (user) => {
  */
 const requestPasswordReset = async (email) => {
   const user = await User.findOne({ email }).lean();
+
+  const emailEnabled =
+    (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
+    !!process.env.EMAIL_USERNAME &&
+    !!process.env.EMAIL_PASSWORD &&
+    !!process.env.EMAIL_FROM;
+
+  if (!user && emailEnabled) {
+    logger.error(`[requestPasswordReset] [Email not found] [Email: ${email}]`);
+    return { link: '' };
+  }
+
   if (!user) {
-    return new Error('Email does not exist');
+    return new Error('User not found');
   }
 
   let token = await Token.findOne({ userId: user._id });
@@ -139,12 +151,6 @@ const requestPasswordReset = async (email) => {
   }).save();
 
   const link = `${domains.client}/reset-password?token=${resetToken}&userId=${user._id}`;
-
-  const emailEnabled =
-    (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
-    !!process.env.EMAIL_USERNAME &&
-    !!process.env.EMAIL_PASSWORD &&
-    !!process.env.EMAIL_FROM;
 
   if (emailEnabled) {
     sendEmail(

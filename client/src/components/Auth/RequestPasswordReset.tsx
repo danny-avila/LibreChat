@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ReactNode } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useRequestPasswordResetMutation } from 'librechat-data-provider/react-query';
 import type { TRequestPasswordReset, TRequestPasswordResetResponse } from 'librechat-data-provider';
@@ -14,7 +14,7 @@ function RequestPasswordReset() {
     formState: { errors },
   } = useForm<TRequestPasswordReset>();
   const [resetLink, setResetLink] = useState<string | undefined>(undefined);
-  const [bodyText, setBodyText] = useState<React.ReactNode | undefined>(undefined);
+  const [bodyText, setBodyText] = useState<ReactNode | undefined>(undefined);
   const { startupConfig, setError, setHeaderText } = useOutletContext<TLoginLayoutContext>();
 
   const requestPasswordReset = useRequestPasswordResetMutation();
@@ -22,6 +22,11 @@ function RequestPasswordReset() {
   const onSubmit = (data: TRequestPasswordReset) => {
     requestPasswordReset.mutate(data, {
       onSuccess: (data: TRequestPasswordResetResponse) => {
+        if (data.link === 'User not found') {
+          setResetLink('User not found');
+          return;
+        }
+
         if (!startupConfig?.emailEnabled) {
           setResetLink(data.link);
         }
@@ -39,6 +44,7 @@ function RequestPasswordReset() {
     if (bodyText) {
       return;
     }
+
     if (!requestPasswordReset.isSuccess) {
       setHeaderText('com_auth_reset_password');
       setBodyText(undefined);
@@ -48,6 +54,11 @@ function RequestPasswordReset() {
     if (startupConfig?.emailEnabled) {
       setHeaderText('com_auth_reset_password_link_sent');
       setBodyText(localize('com_auth_reset_password_email_sent'));
+      return;
+    }
+
+    if (resetLink === 'User not found') {
+      setError('com_auth_error_reset_password');
       return;
     }
 
@@ -68,6 +79,7 @@ function RequestPasswordReset() {
     localize,
     setHeaderText,
     bodyText,
+    setError,
   ]);
 
   if (bodyText) {
