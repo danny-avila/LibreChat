@@ -160,9 +160,11 @@ export default function useTextarea({
     const isUndo = e.key === 'z' && (e.ctrlKey || e.metaKey);
     if (isUndo && target.value.trim() === '') {
       textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
+      setValue('text', '', { shouldValidate: true });
       forceResize(textAreaRef);
     } else if (isUndo) {
       trimUndoneRange(textAreaRef);
+      setValue('text', '', { shouldValidate: true });
       forceResize(textAreaRef);
     }
 

@@ -90,13 +90,7 @@ export default function ChatRoute() {
     }
     /* Creates infinite render if all dependencies included */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    initialConvoQuery.data,
-    modelsQuery.data,
-    endpointsQuery.data,
-    assistants,
-    conversation?.model,
-  ]);
+  }, [initialConvoQuery.data, endpointsQuery.data, modelsQuery.data, assistants]);
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
     return <Spinner className="m-auto text-black dark:text-white" />;
