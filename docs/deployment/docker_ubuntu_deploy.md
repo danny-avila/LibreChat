@@ -10,7 +10,7 @@ In order to use this guide you need a remote computer or VM deployed. While you 
 
 > ⚠️ This guide was originally designed for [Digital Ocean](./digitalocean.md), so you may have to modify the instruction for other platforms, but the main idea remains unchanged.
 
-### Part I: Installing Docker and Other Dependencies:
+## Part I: Installing Docker and Other Dependencies:
 
 There are many ways to setup Docker on Debian systems. I'll walk you through the best and the recommended way [based on this guide](https://www.smarthomebeginner.com/install-docker-on-ubuntu-22-04/).
 
@@ -30,7 +30,7 @@ Then, use the following command to install the dependencies or pre-requisite pac
 sudo apt install apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
 ```
 
-### **Notes:**
+#### **Installation Notes**
 
 - Input "Y" for all [Y/n] (yes/no) terminal prompts throughout this entire guide.
 - After the first [Y/n] prompt, you will get the first of a few **purple screens** asking to restart services.
@@ -118,14 +118,14 @@ Exit this log by pressing CTRL (or CMD) + C.
 
 The version of docker-compose packaged with the Linux distribution is probably old and will not work for us.
 
-Checking the releases on the [Docker Compose GitHub](https://github.com/docker/compose/releases), the last release is v2.20.2 (as of 8/9/23).
+Checking the releases on the [Docker Compose GitHub](https://github.com/docker/compose/releases), the last release is v2.26.1 (as of 4/6/24).
 
 You will have to manually download and install it. But fear not, it is quite easy.
 
 First, download the latest version of Docker Compose using the following command:
 
 ```bash
-sudo curl -L https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
+sudo curl -L https://github.com/docker/compose/releases/download/v2.26.1/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
 ```
 
 Next, make it executable using the following command:
@@ -142,6 +142,10 @@ docker-compose -v
 ```
 
 If you get a permission denied error, like I did, reboot/switch to your created user again, and run `sudo chmod +x /usr/local/bin/docker-compose` again
+
+#### Note on Docker Compose Commands
+
+As of Docker Compose v2, `docker-compose` is now `docker compose`. This guide will use the old commands for now, but you should be aware of this change and that `docker compose` is often preferred.
 
 ### **6. As part of this guide, I will recommend you have git and npm installed:**
 
@@ -183,7 +187,33 @@ git clone https://github.com/danny-avila/LibreChat.git
 cd LibreChat/
 ```
 
-### **2. Create a global environment file.**
+### **2. Create LibreChat Config and Environment files**
+
+#### Config (librechat.yaml) File
+
+Next, we create the [LibreChat Config file](../install/configuration/custom_config.md), AKA `librechat.yaml`, allowing for customization of the app's settings as well as [custom endpoints](../install/configuration/ai_endpoints.md).
+
+Whether or not you want to customize the app further, it's required for the `deploy-compose.yml` file we are using, so we can create one with the bare-minimum value to start:
+
+```bash
+nano librechat.yaml
+```
+
+You will enter the editor screen, and you can paste the following:
+
+```yaml
+# For more information, see the Configuration Guide:
+# https://docs.librechat.ai/install/configuration/custom_config.html
+
+# Configuration version (required)
+version: 1.0.5
+# This setting caches the config file for faster loading across app lifecycle
+cache: true
+```
+
+Exit the editor with `CTRL + X`, then `Y` to save, and `ENTER` to confirm.
+
+#### Environment (.env) File
 
 The default values are enough to get you started and running the app, allowing you to provide your credentials from the web app.
 
@@ -192,14 +222,35 @@ The default values are enough to get you started and running the app, allowing y
 cp .env.example .env
 ```
 
-However, if you'd like to provide any credentials for all users of your instance to consume, you can add them to the .env file as follows:
+However, it's **highly recommended** you adjust the "secret" values from their default values for added security. The API startup logs will warn you if you don't.
+
+For conveninence, you can fork & run this replit to generate your own values:
+
+[https://replit.com/@daavila/crypto#index.js](https://replit.com/@daavila/crypto#index.js)
 
 ```bash
 nano .env
 
-# then, add your credentials
+# FIND THESE VARIABLES AND REPLACE THEIR DEFAULT VALUES!
+
+# Must be a 16-byte IV (32 characters in hex)
+
+CREDS_IV=e2341419ec3dd3d19b13a1a87fafcbfb
+
+# Must be 32-byte keys (64 characters in hex)
+
+CREDS_KEY=f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0
+JWT_SECRET=16f8c0ef4a5d391b26034086c628469d3f9f497f08163ab9b40137092f2909ef
+JWT_REFRESH_SECRET=eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8418
+```
+
+If you'd like to provide any credentials for all users of your instance to consume, you should add them while you're still editing this file:
+
+```bash
 OPENAI_API_KEY=sk-yourKey
 ```
+
+As before, exit the editor with `CTRL + X`, then `Y` to save, and `ENTER` to confirm.
 
 **That's it!**
 
@@ -221,7 +272,7 @@ ALLOW_REGISTRATION=false
 - [Tokens/Apis/etc](../install/configuration/ai_setup.md)
 - [User/Auth System](../install/configuration/user_auth_system.md)
 
-### **3. Start docker, and then run the installation/update script**
+### **3. Start docker**
 
 ```bash
 # should already be running, but just to be safe
@@ -247,11 +298,11 @@ It's safe to close the terminal if you wish -- the docker app will continue to r
 
 ### **4. Once the app is running, you can access it at `http://yourserverip`**
 
-### Go back to the droplet page to get your server ip, copy it, and paste it into your browser!
+#### Go back to the droplet page to get your server ip, copy it, and paste it into your browser!
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/d8bbad29-6015-46ec-88ce-a72a43d8a313)
 
-### Sign up, log in, and enjoy your own privately hosted, remote LibreChat :)
+#### Sign up, log in, and enjoy your own privately hosted, remote LibreChat :)
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/85070a54-eb57-479f-8011-f63c14116ee3)
 
@@ -289,6 +340,24 @@ npm run start:deployed
 
 ```bash
 docker ps
+```
+
+You can update manually without the scripts if you encounter issues, refer to the [Docker Compose Guide](../install/installation/docker_compose_install.md)
+
+The commands are the same, except you append the `-f ./deploy-compose.yml` flag to the docker compose commands.
+
+```bash
+# Stop the running container(s)
+docker compose -f ./deploy-compose.yml down
+
+# Pull latest project changes
+git pull
+
+# Pull the latest LibreChat image (default setup)
+docker compose -f ./deploy-compose.yml pull
+
+# Start LibreChat
+docker compose -f ./deploy-compose.yml up
 ```
 
 ## Part IV: Editing the NGINX file (for custom domains and advanced configs)
@@ -375,4 +444,6 @@ Stage and commit as in Part V, and you're all set!
 
 ---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+## Final Notes
+
+ If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
