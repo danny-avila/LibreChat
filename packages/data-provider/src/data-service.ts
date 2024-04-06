@@ -110,6 +110,10 @@ export const resetPassword = (payload: t.TResetPassword) => {
   return request.post(endpoints.resetPassword(), payload);
 };
 
+export const verifyEmail = (payload: t.TVerifyEmail) => {
+  return request.post(endpoints.verifyEmail(), payload);
+};
+
 export const getAvailablePlugins = (): Promise<s.TPlugin[]> => {
   return request.get(endpoints.plugins());
 };

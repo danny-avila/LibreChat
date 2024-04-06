@@ -65,6 +65,59 @@ const logoutUser = async (userId, refreshToken) => {
   }
 };
 
+const sendVerificationEmail = async (user) => {
+  let verifyToken = crypto.randomBytes(32).toString('hex');
+  const hash = bcrypt.hashSync(verifyToken, 10);
+
+  await new Token({
+    userId: user._id,
+    token: hash,
+    createdAt: Date.now(),
+  }).save();
+
+  const verificationLink = `${domains.client}/verify?token=${verifyToken}&userId=${user._id}`;
+
+  sendEmail(
+    user.email,
+    'Verify your email',
+    {
+      appName: process.env.APP_TITLE || 'LibreChat',
+      name: user.name,
+      verificationLink: verificationLink,
+      year: new Date().getFullYear(),
+    },
+    'verifyEmail.handlebars',
+  );
+  return;
+};
+
+/**
+ * Verify Email
+ *
+ * @param {*} userId
+ * @param {String} token
+ * @returns
+ */
+const verifyEmail = async (userId, token) => {
+  let emailVerificationToken = await Token.findOne({ userId });
+
+  if (!emailVerificationToken) {
+    return new Error('Invalid or expired password reset token');
+  }
+
+  const isValid = bcrypt.compareSync(token, emailVerificationToken.token);
+
+  if (!isValid) {
+    return new Error('Invalid or expired email verification token');
+  }
+
+  await User.updateOne({ _id: userId }, { $set: { emailVerified: true } }, { new: true });
+
+  await emailVerificationToken.deleteOne();
+
+  return { message: 'Email verification was successful' };
+};
+
 /**
  * Register a new user
  *
@@ -126,6 +179,23 @@ const registerUser = async (user) => {
     const hash = bcrypt.hashSync(newUser.password, salt);
     newUser.password = hash;
     await newUser.save();
+
+    console.log('userId', newUser._id);
+
+    const emailEnabled =
+      (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
+      !!process.env.EMAIL_USERNAME &&
+      !!process.env.EMAIL_PASSWORD &&
+      !!process.env.EMAIL_FROM;
+
+    if (emailEnabled) {
+      await sendVerificationEmail(newUser);
+    }
+
+    if (!emailEnabled) {
+      newUser.emailVerified = true;
+      await newUser.save();
+    }
 
     return { status: 200, user: newUser };
   } catch (err) {
@@ -272,6 +342,7 @@ const setAuthTokens = async (userId, res, sessionId = null) => {
 module.exports = {
   registerUser,
   logoutUser,
+  verifyEmail,
   isDomainAllowed,
   requestPasswordReset,
   resetPassword,
