@@ -307,6 +307,7 @@ export default {
   com_auth_back_to_login: 'Back to Login',
   com_auth_email_verification_success: 'Email verification successful',
   com_auth_email_verification_failed: 'Email verification failed',
+  com_auth_email_verification_invalid: 'Invalid email verification token',
   com_auth_email_verification_in_progress: 'Email verification in progress',
   com_endpoint_open_menu: 'Open Menu',
   com_endpoint_bing_enable_sydney: 'Enable Sydney',
