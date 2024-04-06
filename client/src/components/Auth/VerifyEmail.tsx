@@ -21,22 +21,29 @@ function RequestPasswordReset() {
   const onSubmit = (data: TVerifyEmail) => {
     verifyEmail.mutate(data, {
       onSuccess: () => {
-        setHeaderText(localize('com_auth_email_verification_success'), ' 🎉');
+        setHeaderText(localize('com_auth_email_verification_success') + ' 🎉');
         setVerificationStatus(true);
       },
       onError: () => {
         setVerificationStatus(true);
-        setHeaderText(localize('com_auth_email_verification_failed'), ' 😢');
+        setHeaderText(localize('com_auth_email_verification_failed') + ' 😢');
       },
     });
   };
 
   useEffect(() => {
-    if (verificationInProgress !== true) {
+    if (verificationInProgress === true) {
+      return;
+    }
+
+    if (data.token && data.userId) {
       onSubmit(data);
       setVerificationInProgress(true);
+    } else {
+      setHeaderText(localize('com_auth_email_verification_invalid') + ' 🤨');
+      setVerificationStatus(true);
     }
-  }, [verificationInProgress]);
+  }, []);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
