@@ -392,6 +392,15 @@ export const useResetPasswordMutation = (): UseMutationResult<
   return useMutation((payload: t.TResetPassword) => dataService.resetPassword(payload));
 };
 
+export const useVerifyEmailMutation = (): UseMutationResult<
+  unknown,
+  unknown,
+  t.TVerifyEmail,
+  unknown
+> => {
+  return useMutation((payload: t.TVerifyEmail) => dataService.verifyEmail(payload));
+};
+
 export const useAvailablePluginsQuery = <TData = s.TPlugin[]>(
   config?: UseQueryOptions<s.TPlugin[], unknown, TData>,
 ): QueryObserverResult<TData> => {

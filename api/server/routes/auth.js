@@ -2,6 +2,7 @@ const express = require('express');
 const {
   resetPasswordRequestController,
   resetPasswordController,
+  verifyEmailController,
   refreshController,
   registrationController,
 } = require('../controllers/AuthController');
@@ -40,5 +41,6 @@ router.post(
   resetPasswordRequestController,
 );
 router.post('/resetPassword', checkBan, validatePasswordReset, resetPasswordController);
+router.post('/verify', verifyEmailController);
 
 module.exports = router;

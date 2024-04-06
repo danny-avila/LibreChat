@@ -5,6 +5,7 @@ const { Session, User } = require('~/models');
 const {
   registerUser,
   resetPassword,
+  verifyEmail,
   setAuthTokens,
   requestPasswordReset,
 } = require('~/server/services/AuthService');
@@ -69,6 +70,20 @@ const resetPasswordController = async (req, res) => {
   }
 };
 
+const verifyEmailController = async (req, res) => {
+  try {
+    const verifyEmailService = await verifyEmail(req.body.userId, req.body.token);
+    if (verifyEmailService instanceof Error) {
+      return res.status(400).json(verifyEmailService);
+    } else {
+      return res.status(200).json(verifyEmailService);
+    }
+  } catch (e) {
+    logger.error('[verifyEmailController]', e);
+    return res.status(400).json({ message: e.message });
+  }
+};
+
 const refreshController = async (req, res) => {
   const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
   if (!refreshToken) {
@@ -119,5 +134,9 @@ module.exports = {
   refreshController,
   registrationController,
   resetPasswordController,
+<<<<<<< HEAD
   resetPasswordRequestController,
+=======
+  verifyEmailController,
+>>>>>>> ff99c713 (feat: verification email)
 };
