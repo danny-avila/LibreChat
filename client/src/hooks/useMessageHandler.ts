@@ -51,7 +51,6 @@ const useMessageHandler = () => {
     }
 
     const isEditOrContinue = isEdited || isContinued;
-    console.log('=== hello ===', endpoint);
 
     // set the endpoint option
     const convo = parseConvo(endpoint, currentConversation);

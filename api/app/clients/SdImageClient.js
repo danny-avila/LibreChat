@@ -78,7 +78,11 @@ class SdImageClient extends BaseClient {
   async getCompletion(text) {
     this.checkAndCreateFolder(this.options.filePath);
 
-    const imageData = await this.generateSdImage(this.options.modelOptions.model, text);
+    const { prompt, negative_prompt } = this.splitPrompt(text);
+    const imageData = await this.generateSdImageSync(this.options.modelOptions.model, {
+      prompt,
+      negative_prompt,
+    });
     const imageBuffer = Buffer.from(imageData, 'base64');
     const filename = `sdimage-${uuid.v4()}.png`;
     const filePath = `${this.options.filePath}/${filename}`;
@@ -113,13 +117,73 @@ class SdImageClient extends BaseClient {
   /**
    *
    * @param {string} model
+   * @param {Axios Response Data} response
+   * @returns Image String Data
+   */
+  getImageFromResponseData(model, response) {
+    let result = '';
+    switch (model) {
+      case 'Stable Diffusion XL':
+        result = response.output.image_url.replace('data:image/png;base64,', '');
+        break;
+      case 'AUTOMATIC1111':
+        result = response.output.image[0];
+        break;
+      case 'SD Open Journey':
+        result = response.output[0].image;
+        break;
+      case 'SD Anything V5':
+        result = response.output[0].image;
+        break;
+      case 'SD Realistic Vision':
+        result = response.output[0].image;
+        break;
+      default:
+        throw new Error('[SD Image] Unregistered Model');
+    }
+    return result;
+  }
+
+  /**
+   *
+   * @param {string} model
    * @param {string} text
    * @description Generate the image using runpod with async
    * @returns
    */
-  async generateSdImage(model, message) {
-    const { prompt, negative_prompt } = this.splitPrompt(message);
-    console.log('=== SdImageClient - generateSdImage ===', prompt, negative_prompt);
+  async generateSdImageSync(model, { prompt, negative_prompt }) {
+    try {
+      const responseData = (
+        await SdImageClient.runpodApi({
+          url: `/${SdImageClient.getSdApiId(model)}/runsync`,
+          data: {
+            input: {
+              // ...this.options.inputOptions,
+              prompt,
+              negative_prompt,
+            },
+          },
+        })
+      ).data;
+
+      if (responseData.status === 'COMPLETED') {
+        const imageData = this.getImageFromResponseData(model, responseData);
+        return imageData;
+      }
+      throw new Error(`[${model} Error] The response generation is not completed!`);
+    } catch (error) {
+      throw new Error(`[SdImage Error] ${error}`);
+    }
+  }
+
+  /**
+   *
+   * @param {string} model
+   * @param {string} text
+   * @description Generate the image using runpod with async
+   * @returns
+   */
+  async generateSdImage(model, { prompt, negative_prompt }) {
     let intervalId;
 
     try {
@@ -171,7 +235,7 @@ class SdImageClient extends BaseClient {
   static getSdApiId(model) {
     let apiId = '';
     switch (model) {
-      case 'Automatic1111':
+      case 'AUTOMATIC1111':
         apiId = process.env.SD_AUTOMATIC1111_ID;
         break;
       case 'Stable Diffusion XL':

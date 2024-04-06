@@ -15,7 +15,7 @@ const runpodApi = axios.create({
 const getSdApiId = (model) => {
   let apiId = '';
   switch (model) {
-    case 'Automatic1111':
+    case 'AUTOMATIC1111':
       apiId = process.env.SD_AUTOMATIC1111_ID;
       break;
     case 'Stable Diffusion XL':

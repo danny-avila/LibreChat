@@ -35,7 +35,7 @@ const premiumModelsConfig = atom<string[]>({
     'text-unicorn',
     'code-gecko',
     // SdImage Premium Models
-    'Automatic1111',
+    'AUTOMATIC1111',
     'Stable Diffusion XL',
     'SD Open Journey',
     'SD Anything V5',

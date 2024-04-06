@@ -46,6 +46,7 @@ export default function useGenerationsByLatest({
       EModelEndpoint.bingAI,
       EModelEndpoint.gptPlugins,
       EModelEndpoint.anthropic,
+      EModelEndpoint.sdImage,
     ].find((e) => e === endpoint);
 
   const regenerateEnabled =

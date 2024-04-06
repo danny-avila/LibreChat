@@ -29,6 +29,9 @@ export default function Message(props: TMessageProps) {
     handleContinue,
     copyToClipboard,
     regenerateMessage,
+    isImage,
+    downloadImage,
+    copyDisabled,
   } = useMessageHelpers(props);
 
   const { message, siblingIdx, siblingCount, setSiblingIdx, currentEditId, setCurrentEditId } =
@@ -116,6 +119,9 @@ export default function Message(props: TMessageProps) {
                     handleContinue={handleContinue}
                     latestMessage={latestMessage}
                     isLast={isLast}
+                    isImage={isImage}
+                    downloadImage={downloadImage}
+                    copyDisabled={copyDisabled}
                   />
                 </SubRow>
               )}

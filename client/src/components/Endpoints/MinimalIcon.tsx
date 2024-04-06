@@ -42,6 +42,9 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.bingAI]: { icon: <BingAIMinimalIcon />, name: 'BingAI' },
     [EModelEndpoint.chatGPTBrowser]: { icon: <LightningIcon />, name: 'ChatGPT' },
     [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
+    [EModelEndpoint.sdImage]: {
+      icon: <img src="/assets/sdimage.png" alt="SD Image Icon" width={35} height={35} />,
+    },
     default: {
       icon: (
         <UnknownIcon

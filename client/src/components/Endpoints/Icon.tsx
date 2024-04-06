@@ -147,6 +147,9 @@ const Icon: React.FC<IconProps> = (props) => {
       icon: <CustomMinimalIcon size={size * 0.7} />,
       name: 'Custom',
     },
+    [EModelEndpoint.sdImage]: {
+      icon: <img src="/assets/sdimage.png" alt="SdImage Icon" width={35} height={35} />,
+    },
     null: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'N/A' },
     default: {
       icon: (

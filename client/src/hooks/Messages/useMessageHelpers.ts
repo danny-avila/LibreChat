@@ -1,4 +1,5 @@
 import copy from 'copy-to-clipboard';
+import { saveAs } from 'file-saver';
 import { useEffect, useRef, useCallback } from 'react';
 import { EModelEndpoint, ContentTypes } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
@@ -102,6 +103,22 @@ export default function useMessageHelpers(props: TMessageProps) {
     [text, content],
   );
 
+  const copyDisabled = conversation?.endpoint === EModelEndpoint.sdImage && !isCreatedByUser;
+  const isImage = conversation?.endpoint === EModelEndpoint.sdImage && !isCreatedByUser;
+
+  const downloadImage = () => {
+    if (text) {
+      if (text !== '' && text.indexOf('![generated image]') > -1) {
+        const match = text?.match(/\((.*?)\)/);
+        if (match) {
+          const link = match[1];
+          saveAs(link, 'image.png');
+        }
+      }
+    }
+    console.error('[Download Image] The text you provided is not an Image');
+  };
+
   return {
     ask,
     icon,
@@ -116,5 +133,8 @@ export default function useMessageHelpers(props: TMessageProps) {
     handleContinue,
     copyToClipboard,
     regenerateMessage,
+    downloadImage,
+    isImage,
+    copyDisabled,
   };
 }

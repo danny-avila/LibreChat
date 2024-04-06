@@ -241,6 +241,14 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
 
     return 'PaLM2';
   }
+  if (endpoint === EModelEndpoint.sdImage) {
+    if (modelLabel) {
+      return modelLabel;
+    } else if (model) {
+      return model;
+    }
+    return 'SD Image';
+  }
 
   if (endpoint === EModelEndpoint.custom || endpointType === EModelEndpoint.custom) {
     if (modelLabel) {
@@ -260,11 +268,7 @@ export const getResponseSender = (endpointOption: TEndpointOption): string => {
     return 'AI';
   }
 
-  if (endpoint === EModelEndpoint.sdImage) {
-    return 'Sd Image';
-  }
-
-  return '';
+  return 'AI';
 };
 
 type CompactEndpointSchema =

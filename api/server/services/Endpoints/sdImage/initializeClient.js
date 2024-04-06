@@ -11,6 +11,7 @@ const initializeClient = async ({ req, res }) => {
       model: modelName,
       endpoint: EModelEndpoint.sdImage,
     },
+    sender: modelName,
     fileLinkPrefix,
     req,
     res,
