@@ -111,7 +111,7 @@ const verifyEmail = async (userId, token) => {
     return new Error('Invalid or expired email verification token');
   }
 
-  await User.updateOne({ _id: userId }, { $set: { emailVerified: true } }, { new: true });
+  await User.updateOne({ _id: userId }, { $set: { emailVerified: true } });
 
   await emailVerificationToken.deleteOne();
 

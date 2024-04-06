@@ -21,9 +21,10 @@ const registrationController = async (req, res) => {
         newUser = new User(user);
         await newUser.save();
       }
-      const token = await setAuthTokens(user._id, res);
-      res.setHeader('Authorization', `Bearer ${token}`);
-      res.status(status).send({ user });
+      // Do not set the authorization header or send the user object in the response
+      res.status(status).send({
+        message: 'Registration successful. Please check your email to verify your email address.',
+      });
     } else {
       const { status, message } = response;
       res.status(status).send({ message });
