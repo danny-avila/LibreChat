@@ -3,10 +3,10 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
-import Container from '~/components/Messages/Content/Container';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import Container from './Container';
 
 const EditMessage = ({
   text,
@@ -105,7 +105,7 @@ const EditMessage = ({
   );
 
   return (
-    <Container>
+    <Container message={message}>
       <TextareaAutosize
         ref={textAreaRef}
         onChange={(e) => {
