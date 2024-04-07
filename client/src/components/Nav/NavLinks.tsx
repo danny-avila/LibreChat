@@ -59,7 +59,7 @@ function NavLinks() {
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
-            {startupConfig?.checkBalance && balanceQuery.data && (
+            {startupConfig?.checkBalance && typeof balanceQuery.data !== 'undefined' && (
               <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-black dark:text-gray-200">
                 {`Balance: ${balanceQuery.data}`}
               </div>
