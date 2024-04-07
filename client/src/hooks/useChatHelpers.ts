@@ -94,6 +94,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     {
       editedText = null,
       editedMessageId = null,
+      resubmitFiles = false,
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
@@ -177,7 +178,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       error: false,
     };
 
-    const reuseFiles = isRegenerate && parentMessage?.files;
+    const reuseFiles = (isRegenerate || resubmitFiles) && parentMessage?.files;
     if (reuseFiles && parentMessage.files?.length) {
       currentMsg.files = parentMessage.files;
       setFiles(new Map());
