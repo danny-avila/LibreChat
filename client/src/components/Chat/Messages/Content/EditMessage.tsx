@@ -39,11 +39,16 @@ const EditMessage = ({
 
   const resubmitMessage = () => {
     if (message.isCreatedByUser) {
-      ask({
-        text: editedText,
-        parentMessageId,
-        conversationId,
-      });
+      ask(
+        {
+          text: editedText,
+          parentMessageId,
+          conversationId,
+        },
+        {
+          resubmitFiles: true,
+        },
+      );
 
       setSiblingIdx((siblingIdx ?? 0) - 1);
     } else {
