@@ -101,7 +101,10 @@ const CodeInProgress = ({
             </clipPath>
           </defs>
           <g clipPath="url(#__lottie_element_11)">
-            <g style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}>
+            <g
+              style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}
+              className="slide-from-left"
+            >
               <g opacity="1" transform="matrix(1,0,0,1,7.026679992675781,8.834091186523438)">
                 <path
                   fill="rgb(177,98,253)"
@@ -119,7 +122,10 @@ const CodeInProgress = ({
                 />
               </g>
             </g>
-            <g style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}>
+            <g
+              style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}
+              className="slide-to-down"
+            >
               <g opacity="1" transform="matrix(1,0,0,1,11.79640007019043,13.512199401855469)">
                 <path
                   fill="rgb(177,98,253)"
