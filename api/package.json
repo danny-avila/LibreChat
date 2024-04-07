@@ -85,6 +85,7 @@
     "passport-local": "^1.0.0",
     "pino": "^8.12.1",
     "sharp": "^0.32.6",
+    "stripe": "^14.23.0",
     "tiktoken": "^1.0.10",
     "traverse": "^0.6.7",
     "ua-parser-js": "^1.0.36",

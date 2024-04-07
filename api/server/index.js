@@ -36,6 +36,9 @@ const startServer = async () => {
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
+  // Web Hooks, note that is has to be ahead of the express.json() call since webhooks uses RAW
+  app.use('/api/webhooks', routes.webhooks);
+
   // Middleware
   app.use(noIndex);
   app.use(errorController);

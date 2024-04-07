@@ -18,6 +18,7 @@ const config = require('./config');
 const leaderboard = require('./leaderboard');
 const assistants = require('./assistants');
 const files = require('./files');
+const webhooks = require('./webhooks');
 
 module.exports = {
   search,
@@ -40,4 +41,5 @@ module.exports = {
   leaderboard,
   assistants,
   files,
+  webhooks,
 };

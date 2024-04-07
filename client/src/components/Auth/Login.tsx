@@ -138,7 +138,8 @@ function Login() {
           </div>
         )}
         {startupConfig.emailLoginEnabled && <LoginForm onSubmit={login} />}
-        {startupConfig.registrationEnabled && window.location.hostname !== 'drhu.aitok.ai' && (
+        {startupConfig.registrationEnabled &&
+          !window.location.hostname.match(/^(.*\.)?toatu\.com$/) && (
           <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
             {' '}
             {localize('com_auth_no_account')}{' '}
@@ -147,13 +148,15 @@ function Login() {
             </a>
           </p>
         )}
-        {startupConfig.socialLoginEnabled && (
+        {startupConfig.socialLoginEnabled &&
+          !window.location.hostname.match(/^(.*\.)?toatu\.com$/) && (
           <>
-            {startupConfig.emailLoginEnabled && (
+            {startupConfig.emailLoginEnabled &&
+                !window.location.hostname.match(/^(.*\.)?toatu\.com$/) && (
               <>
                 <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
                   <div className="absolute bg-white px-3 text-xs text-black dark:bg-gray-900 dark:text-white">
-                    Or
+                        Or
                   </div>
                 </div>
                 <div className="mt-8" />
