@@ -18,9 +18,12 @@ const { logger } = require('~/config');
  *          file path is invalid or if there is an error in deletion.
  */
 const deleteVectors = async (req, file) => {
-  if (file.embedded && process.env.RAG_API_URL) {
+  if (!file.embedded || !process.env.RAG_API_URL) {
+    return;
+  }
+  try {
     const jwtToken = req.headers.authorization.split(' ')[1];
-    axios.delete(`${process.env.RAG_API_URL}/documents`, {
+    return await axios.delete(`${process.env.RAG_API_URL}/documents`, {
       headers: {
         Authorization: `Bearer ${jwtToken}`,
         'Content-Type': 'application/json',
@@ -28,6 +31,9 @@ const deleteVectors = async (req, file) => {
       },
       data: [file.file_id],
     });
+  } catch (error) {
+    logger.error('Error deleting vectors', error);
+    throw new Error(error.message || 'An error occurred during file deletion.');
   }
 };
 

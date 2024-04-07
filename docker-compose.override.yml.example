@@ -101,16 +101,6 @@ version: '3.4'
 #  rag_api:
 #    image: ghcr.io/danny-avila/librechat-rag-api-dev:latest
 
-# # USE RAG API IMAGE WITH A DIFFERENT OPENAI API KEY FROM THE ENV FILE
-#  rag_api:
-#   environment:
-#     - OPENAI_API_KEY=sk-your_openai_api_key
-
-# # OR, USE A CUSTOM ENVIRONMENT VARIABLE TO AVOID HARD-CODING IT
-#  rag_api:
-#   environment:
-#     - OPENAI_API_KEY=${OPENAI_EMBEDDINGS_API_KEY}
-
 # # ADD OLLAMA
 #  ollama:
 #    image: ollama/ollama:latest
@@ -132,6 +122,7 @@ version: '3.4'
 #      - ./litellm/litellm-config.yaml:/app/config.yaml
 #    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
 #    environment:
+#      OPENAI_API_KEY: none ## needs to be set if ollama's openai api compatibility is used
 #      REDIS_HOST: redis
 #      REDIS_PORT: 6379
 #      REDIS_PASSWORD: RedisChangeMe

@@ -2,7 +2,6 @@ import conversation from './conversation';
 import conversations from './conversations';
 import families from './families';
 import endpoints from './endpoints';
-import models from './models';
 import user from './user';
 import text from './text';
 import toast from './toast';
@@ -19,7 +18,6 @@ export default {
   ...conversation,
   ...conversations,
   ...endpoints,
-  ...models,
   ...user,
   ...text,
   ...toast,

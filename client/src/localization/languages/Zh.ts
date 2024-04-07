@@ -74,6 +74,7 @@ export default {
   com_files_number_selected: '已选中 {0} 个文件中的 {1} 个',
   com_sidepanel_select_assistant: '选择助手',
   com_sidepanel_assistant_builder: '助手构建器',
+  com_sidepanel_hide_panel: '隐藏面板',
   com_sidepanel_attach_files: '附加文件',
   com_sidepanel_manage_files: '管理文件',
   com_assistants_capabilities: '功能',

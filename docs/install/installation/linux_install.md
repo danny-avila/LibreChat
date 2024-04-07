@@ -34,12 +34,19 @@ In this video, you will learn how to install and run LibreChat, using Docker on 
 - Build the Docker image: `docker compose build`
 - Start LibreChat: `docker compose up -d`
 
-Note: If you run the command on the same computer and want to access it, navigate to `localhost:3080`. You should see a login page where you can create or sign in to your account. Then you can choose an AI model and start chatting.
+#### Notes
+
+- As of Docker Compose v2, `docker-compose` is now `docker compose`
+    - Your linux distribution may not have the latest version of Docker Compose, so you may need to use `docker-compose` instead of `docker compose`
+    - You can also see our guide on installing the latest versions of Docker & Docker Compose here: [Docker Ubuntu Deployment Guide](../../deployment/docker_ubuntu_deploy.md#part-i-installing-docker-and-other-dependencies)
+    - The guide is specific to Ubuntu but may be applicable to other Linux distributions as well
+
+- If you run the command on the same computer and want to access it, navigate to `localhost:3080`. You should see a login page where you can create or sign in to your account. Then you can choose an AI model and start chatting.
 
 - [Manage Your MongoDB Database (optional)](../../features/manage_your_database.md)
 Safely access and manage your MongoDB database using Mongo Express
 
-Have fun!
+#### Have fun!
 
 > Note: See the [Docker Compose Install Guide](./docker_compose_install.md) for more details 
 - 👆 Docker Compose installation is recommended for most use cases. It's the easiest, simplest, and most reliable method to get started.
