@@ -317,6 +317,10 @@ export const tPresetUpdateSchema = tConversationSchema.merge(
 
 export type TPreset = z.infer<typeof tPresetSchema>;
 
+export type TSetOption = (
+  param: number | string,
+) => (newValue: number | string | boolean | Partial<TPreset>) => void;
+
 export type TConversation = z.infer<typeof tConversationSchema> & {
   presetOverride?: Partial<TPreset>;
 };

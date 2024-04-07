@@ -2,6 +2,7 @@ import { FileSources } from 'librechat-data-provider';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
 import type {
+  TSetOption as SetOption,
   TConversation,
   TMessage,
   TPreset,
@@ -89,9 +90,8 @@ export type AssistantPanelProps = {
 
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
 
-export type TSetOption = (
-  param: number | string,
-) => (newValue: number | string | boolean | Partial<TPreset>) => void;
+export type TSetOption = SetOption;
+
 export type TSetExample = (
   i: number,
   type: string,

@@ -1,7 +1,7 @@
 import { z, ZodError, ZodIssueCode } from 'zod';
 import { tConversationSchema, googleSettings as google, openAISettings as openAI } from './schemas';
 import type { ZodIssue } from 'zod';
-import type { TConversation } from './schemas';
+import type { TConversation, TSetOption } from './schemas';
 
 export type GoogleSettings = Partial<typeof google>;
 export type OpenAISettings = Partial<typeof google>;
@@ -10,6 +10,19 @@ export type ComponentType = 'input' | 'textarea' | 'slider' | 'checkbox' | 'swit
 
 export type OptionType = 'conversation' | 'model';
 
+export enum ComponentTypes {
+  Input = 'input',
+  Textarea = 'textarea',
+  Slider = 'slider',
+  Checkbox = 'checkbox',
+  Switch = 'switch',
+  Dropdown = 'dropdown',
+}
+
+export enum OptionTypes {
+  Conversation = 'conversation',
+  Model = 'model',
+}
 export interface SettingDefinition {
   key: string;
   description?: string;
@@ -28,6 +41,13 @@ export interface SettingDefinition {
   maxText?: number;
   includeInput?: boolean; // Specific to slider component
 }
+
+export type DynamicSettingProps = Partial<SettingDefinition> & {
+  readonly?: boolean;
+  settingKey: string;
+  setOption: TSetOption;
+  defaultValue?: number | boolean | string;
+};
 
 const requiredSettingFields = ['key', 'type', 'component'];
 
