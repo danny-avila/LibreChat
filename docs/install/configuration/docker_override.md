@@ -96,6 +96,28 @@ After starting your services with the modified configuration, you can verify tha
 By following these steps and considerations, you can easily and safely modify your Docker Compose configuration without altering the original `docker-compose.yml` file, making it simpler to manage and maintain different environments or local customizations.
 
 
+## `deploy-compose.yml`
+
+To use an override file with a non-default Docker Compose file, such as `deploy-compose.yml`, you will have to explicitly specify both files when running Docker Compose commands.
+
+Docker Compose allows you to specify multiple `-f` or `--file` options to include multiple compose files, where settings in later files override or add to those in the first.
+
+The npm commands for "deployed" do this for you but they do not account for override files:
+
+```json
+    "start:deployed": "docker compose -f ./deploy-compose.yml up -d",
+    "stop:deployed": "docker compose -f ./deploy-compose.yml down",
+```
+
+I would include the default override file in these commands, but doing so would require one to exist for every setup.
+
+If you use `deploy-compose.yml` as your main Docker Compose configuration and you have an override file named `docker-compose.override.yml` (you can name the override file whatever you want, but you may have this specific file already), you would run Docker Compose commands like so:
+
+```bash
+docker compose -f deploy-compose.yml -f docker-compose.override.yml pull
+docker compose -f deploy-compose.yml -f docker-compose.override.yml up
+```
+
 ## MongoDB Authentication
 
 Use of the `docker-compose.override.yml` file allows us to enable explicit authentication for MongoDB.
@@ -173,14 +195,13 @@ use admin
 Replace the credentials as desired and keep in your secure records for the rest of the guide.
 
 Run command to create the admin user:
-```bash
-db.createUser({ user: "adminUser", pwd: "securePassword", roles: ["userAdminAnyDatabase", "readWriteAnyDatabase"] })
-```
 
-You should see an "ok" output:
-> { ok: 1 }
+`db.createUser({ user: "adminUser", pwd: "securePassword", roles: ["userAdminAnyDatabase", "readWriteAnyDatabase"] })`
+
+You should see an "ok" output.
 
 You can also confirm the admin was created by running `show users`:
+
 ```bash
 # example input/output
 admin> show users
@@ -273,12 +294,10 @@ use LibreChat
 ```
 
 Now we'll create the actual credentials to be used by our Mongo connection string, which will be limited to read/write access of the "LibreChat" database. As before, replace the example with your desired credentials:
-```bash
-db.createUser({ user: 'user', pwd: 'userpasswd', roles: [ { role: "readWrite", db: "LibreChat" } ] });
-```
 
-You should see an "ok" output again:
-> { ok: 1 }
+`db.createUser({ user: 'user', pwd: 'userpasswd', roles: [ { role: "readWrite", db: "LibreChat" } ] });`
+
+You should see an "ok" output again.
 
 You can verify the user creation with the `show users` command.
 

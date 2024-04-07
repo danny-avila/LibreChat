@@ -16,7 +16,7 @@ Alternatively, you can create a new file named `docker-compose.override.yml` in 
 For more info see: 
 
 - Our quick guide: 
-    - **[Docker Override](../configuration/docker_override.md)**
+    - **[Docker Override](./docker_override.md)**
 
 - The official docker documentation: 
     - **[docker docs - understanding-multiple-compose-files](https://docs.docker.com/compose/multiple-compose-files/extends/#understanding-multiple-compose-files)**
@@ -24,7 +24,7 @@ For more info see:
     - **[docker docs - specifying-multiple-compose-files](https://docs.docker.com/compose/reference/#specifying-multiple-compose-files)**
 
 - You can also view an example of an override file for LibreChat in your LibreChat folder and on GitHub: 
-    - **[docker-compose.override.example](https://github.com/danny-avila/LibreChat/blob/main/docker-compose.override.yaml.example)**
+    - **[docker-compose.override.example](https://github.com/danny-avila/LibreChat/blob/main/docker-compose.override.yml.example)**
 
 ---
 
@@ -76,6 +76,14 @@ NO_INDEX=true
 
 > ❗**Note:** This method is not guaranteed to work for all search engines, and some search engines may still index your website or web page for other purposes, such as caching or archiving. Therefore, you should not rely solely on this method to protect sensitive or confidential information on your website or web page.
 
+### JSON Logging
+
+When handling console logs in cloud deployments (such as GCP or AWS), enabling this will duump the logs with a UTC timestamp and format them as JSON. See: [feat: Add CONSOLE_JSON](https://github.com/danny-avila/LibreChat/pull/2146)
+
+```
+CONSOLE_JSON=false
+```
+
 ### Logging
 
 LibreChat has built-in central logging, see [Logging System](../../features/logging_system.md) for more info.
@@ -86,14 +94,25 @@ LibreChat has built-in central logging, see [Logging System](../../features/logg
 - Keep debug logs active by default or disable them by setting `DEBUG_LOGGING=false` in the environment variable.
 - For more information about this feature, read our docs: **[Logging System](../../features/logging_system.md)**
 
+- Enable verbose file logs with `DEBUG_LOGGING=TRUE`.
+- Note: can be used with either `DEBUG_CONSOLE` or `CONSOLE_JSON` but not both.
+
 ```bash
 DEBUG_LOGGING=true
 ```
 
-- Enable verbose server output in the console with `DEBUG_CONSOLE=TRUE`, though it's not recommended due to high verbosity.
+- Enable verbose console/stdout logs with `DEBUG_CONSOLE=TRUE` in the same format as file debug logs.
+- Note: can be used in conjunction with `DEBUG_LOGGING` but not `CONSOLE_JSON`.
 
 ```bash
 DEBUG_CONSOLE=false
+```
+
+- Enable verbose JSON console/stdout logs suitable for cloud deployments like GCP/AWS
+- Note: can be used in conjunction with `DEBUG_LOGGING` but not `DEBUG_CONSOLE`.
+
+```bash
+CONSOLE_JSON=false
 ```
 
 This is not recommend, however, as the outputs can be quite verbose, and so it's disabled by default.
@@ -129,14 +148,24 @@ ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,
 PROXY=
 ```
 
+- Titling is enabled by default for all Endpoints when initiating a conversation (proceeding the first AI response).
+    - Set to `false` to disable this feature.
+    - Not all endpoints support titling.
+    - You can configure this feature on an Endpoint-level using [the `librechat.yaml` config file](./custom_config.md)
+
+```bash
+TITLE_CONVO=true
+```
+
 ### Known Endpoints - librechat.yaml
 - see: [AI Endpoints](./ai_endpoints.md)
 - see also: [Custom Configuration](./custom_config.md)
 
 ```sh
 GROQ_API_KEY=
-MISTRAL_API_KEY=
+SHUTTLEAI_KEY=
 OPENROUTER_KEY=
+MISTRAL_API_KEY=
 ANYSCALE_API_KEY=
 FIREWORKS_API_KEY=
 PERPLEXITY_API_KEY=
@@ -155,6 +184,15 @@ see: [Anthropic Endpoint](./ai_setup.md#anthropic)
 ANTHROPIC_API_KEY=user_provided
 ANTHROPIC_MODELS=claude-3-opus-20240229,claude-3-sonnet-20240229,claude-2.1,claude-2,claude-1.2,claude-1,claude-1-100k,claude-instant-1,claude-instant-1-100k
 ANTHROPIC_REVERSE_PROXY=
+```
+
+- Titling is enabled by default but is configured with the environment variable 
+`TITLE_CONVO` for all Endpoints. The default model used for Anthropic titling is "claude-3-haiku-20240307". You can change it by uncommenting the following and setting the desired model. **(Optional)** 
+
+> **Note:** Must be compatible with the Anthropic Endpoint. Also, Claude 2 and Claude 3 models perform best at this task, with `claude-3-haiku` models being the cheapest.
+
+```bash
+ANTHROPIC_TITLE_MODEL=claude-3-haiku-20240307
 ```
 
 ### Azure
@@ -236,7 +274,7 @@ DALLE2_API_KEY=your-azure-api-key-for-dall-e-2
 ### BingAI
 Bing, also used for Sydney, jailbreak, and Bing Image Creator, see: [Bing Access token](./ai_setup.md#bingai) and [Bing Jailbreak](../../features/bing_jailbreak.md)
 
-- Follow these instructions to get your bing access token (it's best to use the full cookie string for that purpose): **[Bing Access Token](../configuration/ai_setup.md#bingai)**  
+- Follow these instructions to get your bing access token (it's best to use the full cookie string for that purpose): **[Bing Access Token](./ai_setup.md#bingai)**  
 - Leave `BINGAI_TOKEN=` blank to disable this endpoint
 - Set `BINGAI_TOKEN=` to "user_provided" to allow users to provide their own API key from the WebUI
 
@@ -248,28 +286,6 @@ Bing, also used for Sydney, jailbreak, and Bing Image Creator, see: [Bing Access
 BINGAI_TOKEN=user_provided
 BINGAI_HOST=
 ```
-
-<!-- ### ChatGPT
-see: [ChatGPT Free Access token](../configuration/ai_setup.md#chatgptbrowser)
-
-> **Warning**: To use this endpoint you'll have to set up your own reverse proxy.
-
-```bash
-CHATGPT_REVERSE_PROXY=<YOUR-REVERSE-PROXY>
-```
-
-> **Note:** If you're a GPT plus user you can try adding `gpt-4`, `gpt-4-plugins`, `gpt-4-code-interpreter`, and `gpt-4-browsing` to the list above and use the models for these features; **however, the view/display portion of these features are not supported**, but you can use the underlying models, which have higher token context
-
-> This method **might only works** with `text-davinci-002-render-sha` and **might stop working** at any moment.
-
-- Leave `CHATGPT_TOKEN=` blank to disable this endpoint
-- Set `CHATGPT_TOKEN=` to "user_provided" to allow users to provide their own API key from the WebUI
-    - It is not recommended to provide your token in the `.env` file since it expires often and sharing it could get you banned.
-
-```bash
-CHATGPT_TOKEN=
-CHATGPT_MODELS=text-davinci-002-render-sha
-``` -->
 
 ### Google
 Follow these instructions to setup the [Google Endpoint](./ai_setup.md#google)
@@ -324,14 +340,8 @@ DEBUG_OPENAI=false
 OPENAI_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k
 ```
 
-- Titling is enabled by default when initiating a conversation.
-    - Set to false to disable this feature.
-
-```bash
-TITLE_CONVO=true
-```
-
-- The default model used for titling by is gpt-3.5-turbo. You can change it by uncommenting the following and setting the desired model. **(Optional)** 
+- Titling is enabled by default but is configured with the environment variable 
+`TITLE_CONVO` for all Endpoints. The default model used for OpenAI titling is gpt-3.5-turbo. You can change it by uncommenting the following and setting the desired model. **(Optional)** 
 
 > **Note:** Must be compatible with the OpenAI Endpoint.
 
@@ -709,7 +719,7 @@ CHECK_BALANCE=false
 ```
 
 ### Registration and Login
-see: **[User/Auth System](../configuration/user_auth_system.md)**
+see: **[User/Auth System](./user_auth_system.md)**
 
 ![image](https://github.com/danny-avila/LibreChat/assets/81851188/52a37d1d-7392-4a9a-a79f-90ed2da7f841)
 
@@ -747,9 +757,9 @@ JWT_REFRESH_SECRET=eaa5191f2914e30b9387fd84e254e4ba6fc51b4654968a9b0803b456a54b8
 
 ### Social Logins
 
-#### [Discord Authentication](../configuration/user_auth_system.md#discord)
+#### [Discord Authentication](./OAuth2-and-OIDC/discord.md)
 
-for more information: **[Discord](../configuration/user_auth_system.md#discord)**
+for more information: **[Discord](./OAuth2-and-OIDC/discord.md)**
 
 ```bash
 # Discord
@@ -758,9 +768,9 @@ DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_CALLBACK_URL=/oauth/discord/callback
 ```
 
-#### [Facebook Authentication](../configuration/user_auth_system.md#facebook)
+#### [Facebook Authentication](./OAuth2-and-OIDC/facebook.md)
 
-for more information: **[Facebook Authentication](../configuration/user_auth_system.md#facebook)**
+for more information: **[Facebook Authentication](./OAuth2-and-OIDC/facebook.md)**
 
 ```bash
 # Facebook
@@ -769,9 +779,9 @@ FACEBOOK_CLIENT_SECRET=
 FACEBOOK_CALLBACK_URL=/oauth/facebook/callback
 
 ```
-#### [GitHub Authentication](../configuration/user_auth_system.md#github)
+#### [GitHub Authentication](./OAuth2-and-OIDC/github.md)
 
-for more information: **[GitHub Authentication](../configuration/user_auth_system.md#github)**
+for more information: **[GitHub Authentication](./OAuth2-and-OIDC/github.md)**
 
 ```bash
 # GitHub
@@ -780,9 +790,9 @@ GITHUB_CLIENT_SECRET=your_client_secret
 GITHUB_CALLBACK_URL=/oauth/github/callback
 ```
 
-#### [Google Authentication](../configuration/user_auth_system.md#google)
+#### [Google Authentication](./OAuth2-and-OIDC/google.md)
 
-for more information: **[Google Authentication](../configuration/user_auth_system.md#google)**
+for more information: **[Google Authentication](./OAuth2-and-OIDC/google.md)**
 
 ```bash
 # Google
@@ -791,9 +801,9 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_CALLBACK_URL=/oauth/google/callback
 ```
 
-#### [OpenID Authentication](../configuration/user_auth_system.md#openid-with-aws-cognito)
+#### [OpenID Authentication](./OAuth2-and-OIDC/aws.md)
 
-for more information: **[Azure OpenID Authentication](../configuration/user_auth_system.md#openid-with-azure-ad)** or **[AWS Cognito OpenID Authentication](../configuration/user_auth_system.md#openid-with-aws-cognito)**
+for more information: **[Azure OpenID Authentication](./OAuth2-and-OIDC/azure.md)** or **[AWS Cognito OpenID Authentication](./OAuth2-and-OIDC/aws.md)**
 
 ```bash
 # OpenID
@@ -803,13 +813,15 @@ OPENID_ISSUER=
 OPENID_SESSION_SECRET=
 OPENID_SCOPE="openid profile email"
 OPENID_CALLBACK_URL=/oauth/openid/callback
-
 OPENID_BUTTON_LABEL=
 OPENID_IMAGE_URL=
+OPENID_REQUIRED_ROLE_TOKEN_KIND=
+OPENID_REQUIRED_ROLE=
+OPENID_REQUIRED_ROLE_PARAMETER_PATH=
 ```
 
 ### Email Password Reset
-Email is used for password reset. See: **[Email Password Reset](../configuration/user_auth_system.md#email-and-password-reset)**
+Email is used for password reset. See: **[Email Password Reset](./user_auth_system.md#email-and-password-reset)**
 
 - Note that all either service or host, username and password and the From address must be set for email to work.
 

@@ -2,7 +2,9 @@ import debounce from 'lodash/debounce';
 import React, { useEffect, useRef, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
+import type { UseFormSetValue } from 'react-hook-form';
 import type { KeyboardEvent } from 'react';
+import { forceResize, insertTextAtCursor, trimUndoneRange, getAssistantName } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
@@ -11,47 +13,17 @@ import useLocalize from '~/hooks/useLocalize';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
-function insertTextAtCursor(element: HTMLTextAreaElement, textToInsert: string) {
-  // Focus the element to ensure the insertion point is updated
-  element.focus();
-
-  // Use the browser's built-in undoable actions if possible
-  if (window.getSelection() && document.queryCommandSupported('insertText')) {
-    document.execCommand('insertText', false, textToInsert);
-  } else {
-    console.warn('insertTextAtCursor: document.execCommand is not supported');
-    const startPos = element.selectionStart;
-    const endPos = element.selectionEnd;
-    const beforeText = element.value.substring(0, startPos);
-    const afterText = element.value.substring(endPos);
-    element.value = beforeText + textToInsert + afterText;
-    element.selectionStart = element.selectionEnd = startPos + textToInsert.length;
-    const event = new Event('input', { bubbles: true });
-    element.dispatchEvent(event);
-  }
-}
-
-const getAssistantName = ({
-  name,
-  localize,
-}: {
-  name?: string;
-  localize: (phraseKey: string, ...values: string[]) => string;
-}) => {
-  if (name && name.length > 0) {
-    return name;
-  } else {
-    return localize('com_ui_assistant');
-  }
-};
-
 export default function useTextarea({
   textAreaRef,
   submitButtonRef,
+  setValue,
+  getValues,
   disabled = false,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
+  setValue: UseFormSetValue<{ text: string }>;
+  getValues: (field: string) => string;
   disabled?: boolean;
 }) {
   const assistantMap = useAssistantsMapContext();
@@ -142,6 +114,7 @@ export default function useTextarea({
 
       if (textAreaRef.current?.getAttribute('placeholder') !== placeholder) {
         textAreaRef.current?.setAttribute('placeholder', placeholder);
+        forceResize(textAreaRef);
       }
     };
 
@@ -184,7 +157,18 @@ export default function useTextarea({
   const handleKeyUp = (e: KeyEvent) => {
     const target = e.target as HTMLTextAreaElement;
 
-    if (e.keyCode === 8 && target.value.trim() === '') {
+    const isUndo = e.key === 'z' && (e.ctrlKey || e.metaKey);
+    if (isUndo && target.value.trim() === '') {
+      textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
+      setValue('text', '', { shouldValidate: true });
+      forceResize(textAreaRef);
+    } else if (isUndo) {
+      trimUndoneRange(textAreaRef);
+      setValue('text', '', { shouldValidate: true });
+      forceResize(textAreaRef);
+    }
+
+    if ((e.keyCode === 8 || e.key === 'Backspace') && target.value.trim() === '') {
       textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
     }
 
@@ -205,6 +189,21 @@ export default function useTextarea({
     isComposing.current = false;
   };
 
+  /** Necessary handler to update form state when paste doesn't fire textArea input event */
+  const setPastedValue = useCallback(
+    (textArea: HTMLTextAreaElement, pastedData: string) => {
+      const currentTextValue = getValues('text') || '';
+      const { selectionStart, selectionEnd } = textArea;
+      const newValue =
+        currentTextValue.substring(0, selectionStart) +
+        pastedData +
+        currentTextValue.substring(selectionEnd);
+
+      setValue('text', newValue, { shouldValidate: true });
+    },
+    [getValues, setValue],
+  );
+
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       e.preventDefault();
@@ -214,7 +213,9 @@ export default function useTextarea({
       }
 
       const pastedData = e.clipboardData.getData('text/plain');
+      setPastedValue(textArea, pastedData);
       insertTextAtCursor(textArea, pastedData);
+      forceResize(textAreaRef);
 
       if (e.clipboardData && e.clipboardData.files.length > 0) {
         e.preventDefault();
@@ -229,7 +230,7 @@ export default function useTextarea({
         handleFiles(timestampedFiles);
       }
     },
-    [handleFiles, setFilesLoading, textAreaRef],
+    [handleFiles, setFilesLoading, setPastedValue, textAreaRef],
   );
 
   return {

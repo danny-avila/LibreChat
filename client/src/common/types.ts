@@ -18,11 +18,21 @@ import type { LucideIcon } from 'lucide-react';
 
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
+export type LastSelectedModels = Record<EModelEndpoint, string>;
+
+export enum IconContext {
+  landing = 'landing',
+  menuItem = 'menu-item',
+  nav = 'nav',
+  message = 'message',
+}
+
 export type NavLink = {
   title: string;
   label?: string;
   icon: LucideIcon;
   Component?: React.ComponentType;
+  onClick?: () => void;
   variant?: 'default' | 'ghost';
   id: string;
 };
@@ -210,7 +220,7 @@ export type TAdditionalProps = {
 
 export type TMessageContentProps = TInitialProps & TAdditionalProps;
 
-export type TText = Pick<TInitialProps, 'text'>;
+export type TText = Pick<TInitialProps, 'text'> & { className?: string };
 export type TEditProps = Pick<TInitialProps, 'text' | 'isSubmitting'> &
   Omit<TAdditionalProps, 'isCreatedByUser'>;
 export type TDisplayProps = TText &
@@ -312,6 +322,7 @@ export interface ExtendedFile {
   progress: number;
   source?: FileSources;
   attached?: boolean;
+  embedded?: boolean;
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };

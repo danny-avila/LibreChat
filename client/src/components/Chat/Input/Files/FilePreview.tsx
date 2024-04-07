@@ -2,6 +2,7 @@ import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import FileIcon from '~/components/svg/Files/FileIcon';
 import ProgressCircle from './ProgressCircle';
+import { useProgress } from '~/hooks';
 import { cn } from '~/utils';
 
 const FilePreview = ({
@@ -19,7 +20,7 @@ const FilePreview = ({
 }) => {
   const radius = 55; // Radius of the SVG circle
   const circumference = 2 * Math.PI * radius;
-  const progress = file?.['progress'] ?? 1;
+  const progress = useProgress(file?.['progress'] ?? 1, 0.001);
 
   // Calculate the offset based on the loading progress
   const offset = circumference - progress * circumference;

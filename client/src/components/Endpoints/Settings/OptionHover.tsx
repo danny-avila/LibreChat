@@ -15,7 +15,7 @@ const openAI = {
   topp: 'com_endpoint_openai_topp',
   freq: 'com_endpoint_openai_freq',
   pres: 'com_endpoint_openai_pres',
-  resend: 'com_endpoint_openai_resend',
+  resend: 'com_endpoint_openai_resend_files',
   detail: 'com_endpoint_openai_detail',
 };
 

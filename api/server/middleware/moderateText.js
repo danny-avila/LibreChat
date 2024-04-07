@@ -1,5 +1,6 @@
 const axios = require('axios');
 const denyRequest = require('./denyRequest');
+const { logger } = require('~/config');
 
 async function moderateText(req, res, next) {
   if (process.env.OPENAI_MODERATION === 'true') {
@@ -28,7 +29,7 @@ async function moderateText(req, res, next) {
         return await denyRequest(req, res, errorMessage);
       }
     } catch (error) {
-      console.error('Error in moderateText:', error);
+      logger.error('Error in moderateText:', error);
       const errorMessage = 'error in moderation check';
       return await denyRequest(req, res, errorMessage);
     }

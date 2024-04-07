@@ -108,7 +108,8 @@ These settings apply globally to all Azure models and groups within the endpoint
 
 8. **groups** (Array/List, Required): Specifies the list of Azure OpenAI model groups. Each group represents a set of models with shared configurations. The groups field is an array of objects, where each object defines the settings for a specific group. This is a required field at the endpoint level, and at least one group must be defined. The group-level configurations are detailed in the Group-Level Configuration section.
 
-<!-- 9. **customOrder** (Number, Optional): Allows you to specify a custom order for the Azure endpoint in the user interface. Higher numbers will appear lower in the list. If not provided, the default order is determined by the order in which the endpoints are defined in the `librechat.yaml` file. -->
+[ 9. **customOrder** (Number, Optional): Allows you to specify a custom order for the Azure endpoint in the user interface. Higher numbers will appear lower in the list. If not provided, the default order is determined by the order in which the endpoints are defined in the `librechat.yaml` file.
+]: # 
 
 Here's an example of how you can configure these endpoint-level settings in your `librechat.yaml` file:
 
@@ -309,6 +310,7 @@ endpoints:
     - For this reason, it's recommended you use only one region or resource group for Azure OpenAI Assistants, or you will experience an error.
     - Uploading to "OpenAI" is the default behavior for official `code_interpeter` and `retrieval` capabilities.
 - Downloading files that assistants generate will soon be supported.
+- If the `ASSISTANTS_API_KEY` is still set to `user_provided` in your environment file `.env`, comment it out.
 - As of March 14th 2024, retrieval and streaming are not supported through Azure OpenAI.
     - To avoid any errors with retrieval while it's not supported, it's recommended to disable the capability altogether through the `assistants` endpoint config:
 

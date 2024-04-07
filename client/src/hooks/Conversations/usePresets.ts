@@ -2,9 +2,9 @@ import filenamify from 'filenamify';
 import exportFromJSON from 'export-from-json';
 import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, modularEndpoints, EModelEndpoint } from 'librechat-data-provider';
 import { useRecoilState, useSetRecoilState, useRecoilValue } from 'recoil';
-import { useCreatePresetMutation } from 'librechat-data-provider/react-query';
+import { QueryKeys, modularEndpoints, EModelEndpoint } from 'librechat-data-provider';
+import { useCreatePresetMutation, useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset, TEndpointsConfig } from 'librechat-data-provider';
 import {
   useUpdatePresetMutation,
@@ -17,6 +17,7 @@ import useDefaultConvo from '~/hooks/useDefaultConvo';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { NotificationSeverity } from '~/common';
 import useLocalize from '~/hooks/useLocalize';
+import useNewConvo from '~/hooks/useNewConvo';
 import store from '~/store';
 
 export default function usePresets() {
@@ -27,12 +28,18 @@ export default function usePresets() {
   const { user, isAuthenticated } = useAuthContext();
 
   const modularChat = useRecoilValue(store.modularChat);
-  const [_defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
   const setPresetModalVisible = useSetRecoilState(store.presetModalVisible);
-  const { preset, conversation, newConversation, setPreset } = useChatContext();
+  const [_defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
   const presetsQuery = useGetPresetsQuery({ enabled: !!user && isAuthenticated });
+  const { preset, conversation, index, setPreset } = useChatContext();
+  const { data: modelsData } = useGetModelsQuery();
+  const { newConversation } = useNewConvo(index);
 
   useEffect(() => {
+    if (modelsData?.initial) {
+      return;
+    }
+
     const { data: presets } = presetsQuery;
     if (_defaultPreset || !presets || hasLoaded.current) {
       return;
@@ -50,12 +57,12 @@ export default function usePresets() {
     }
     setDefaultPreset(defaultPreset);
     if (!conversation?.conversationId || conversation.conversationId === 'new') {
-      newConversation({ preset: defaultPreset });
+      newConversation({ preset: defaultPreset, modelsData });
     }
     hasLoaded.current = true;
     // dependencies are stable and only needed once
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetsQuery.data, user]);
+  }, [presetsQuery.data, user, modelsData]);
 
   const setPresets = useCallback(
     (presets: TPreset[]) => {

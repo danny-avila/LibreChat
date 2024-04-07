@@ -42,9 +42,11 @@
 
 - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and latest updates
 - 💬 Multimodal Chat:
-  - Upload and analyze images with GPT-4 and Gemini Vision 📸
-  - General file support now available through the Assistants API integration. 🗃️
-  - Local RAG in Active Development 🚧
+    - Upload and analyze images with Claude 3, GPT-4, and Gemini Vision 📸
+    - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, & Google. 🗃️
+    - Advanced Agents with Files, Code Interpreter, Tools, and API Actions 🔦
+      - Available through the [OpenAI Assistants API](https://platform.openai.com/docs/assistants/overview) 🌤️
+      - Non-OpenAI Agents in Active Development 🚧
 - 🌎 Multilingual UI:
   - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro,
   - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
@@ -55,7 +57,9 @@
 - 🔍 Search all messages/conversations
 - 🔌 Plugins, including web access, image generation with DALL-E-3 and more
 - 👥 Multi-User, Secure Authentication with Moderation and Token spend tools
-- ⚙️ Configure Proxy, Reverse Proxy, Docker, many Deployment options, and completely Open-Source
+- ⚙️ Configure Proxy, Reverse Proxy, Docker, & many Deployment options
+- 📖 Completely Open-Source & Built in Public
+- 🧑‍🤝‍🧑 Community-driven development, support, and feedback
 
 [For a thorough review of our features, see our docs here](https://docs.librechat.ai/features/plugins/introduction.html) 📚
 

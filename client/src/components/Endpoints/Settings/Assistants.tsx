@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { TPreset, defaultOrderQuery } from 'librechat-data-provider';
+import { defaultOrderQuery } from 'librechat-data-provider';
+import type { TPreset } from 'librechat-data-provider';
 import type { TModelSelectProps, Option } from '~/common';
 import { Label, HoverCard, SelectDropDown, HoverCardTrigger } from '~/components/ui';
 import { cn, defaultTextProps, removeFocusOutlines, mapAssistants } from '~/utils';
@@ -149,7 +150,6 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             placeholder={localize('com_endpoint_prompt_prefix_assistants_placeholder')}
             className={cn(
               defaultTextProps,
-              'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
               'flex max-h-[240px] min-h-[80px] w-full resize-none px-3 py-2 ',
             )}
           />
@@ -167,7 +167,6 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             placeholder={localize('com_endpoint_instructions_assistants_placeholder')}
             className={cn(
               defaultTextProps,
-              'dark:bg-gray-700 dark:hover:bg-gray-700/60 dark:focus:bg-gray-700',
               'flex max-h-[240px] min-h-[80px] w-full resize-none px-3 py-2 ',
             )}
           />

@@ -14,7 +14,7 @@ Here is a well-maintained public list of **[Free AI APIs](https://github.com/zuk
 
 ### NagaAI
 
-Since NagaAI works with LibreChat, and offers Llama2 along with OpenAI models, let's start with that one: **[NagaAI](https://t.me/chimera_ai)**
+Since NagaAI works with LibreChat, and offers Claude, Mistral along with OpenAI models, let's start with that one: **[NagaAI](https://naga.ac)**
 
 > ⚠️ Never trust 3rd parties. Use at your own risk of privacy loss. Your data may be used for AI training at best or for nefarious reasons at worst; this is true in all cases, even with official endpoints: never give an LLM sensitive/identifying information. If something is free, you are the product. If errors arise, they are more likely to be due to the 3rd party, and not this project, as I test the official endpoints first and foremost.
 
