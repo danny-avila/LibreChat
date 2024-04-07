@@ -89,6 +89,7 @@ export type TUser = {
     subscriptionId?: string;
   };
   credits: number;
+  active: boolean;
 };
 
 export type TGetConversationsResponse = {

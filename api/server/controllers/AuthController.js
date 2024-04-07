@@ -49,6 +49,7 @@ const registrationController = async (req, res) => {
 };
 
 const getUserController = async (req, res) => {
+  // If user is suspended, return error
   return res.status(200).send(req.user);
 };
 
@@ -95,6 +96,14 @@ const refreshController = async (req, res) => {
     payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
     const userId = payload.id;
     const user = await User.findOne({ _id: userId });
+
+    // Remove user cookie and redirect to /login if the user is suspended
+    if (process.env.BAN_VIOLATIONS === 'true') {
+      if (typeof user.active === 'boolean' && !user.active) {
+        return res.status(401).redirect('/login');
+      }
+    }
+
     if (!user) {
       return res.status(401).redirect('/login');
     }

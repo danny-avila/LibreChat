@@ -58,6 +58,16 @@ const checkBan = async (req, res, next = () => {}) => {
   if (!userId && req?.body?.email) {
     const user = await User.findOne({ email: req.body.email }, '_id').lean();
     userId = user?._id ? user._id.toString() : userId;
+
+    if (user && typeof user.active == 'boolean' && !user.active) {
+      return await banResponse(req, res);
+    }
+  }
+
+  if (req.user) {
+    if (typeof req.user.active == 'boolean' && !req.user.active) {
+      return await banResponse(req, res);
+    }
   }
 
   if (!userId && !req.ip) {

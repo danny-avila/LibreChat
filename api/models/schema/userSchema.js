@@ -81,6 +81,10 @@ const userSchema = mongoose.Schema(
     refreshToken: {
       type: [Session],
     },
+    active: {
+      type: Boolean,
+      default: true,
+    },
     subscription: {
       active: {
         type: Boolean,
