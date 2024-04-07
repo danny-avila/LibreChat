@@ -12,7 +12,7 @@ const loginController = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    if (user.emailVerified === false && process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN !== true) {
+    if (user.emailVerified === false && process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN === false) {
       return res.status(400).json({ message: 'Email not verified' });
     }
 
