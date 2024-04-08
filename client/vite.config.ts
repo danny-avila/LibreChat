@@ -60,6 +60,7 @@ export default defineConfig({
     alias: {
       '~': path.join(__dirname, 'src/'),
       $fonts: resolve('public/fonts'),
+      'librechat-data-provider': resolve('../packages/data-provider'),
     },
   },
 });

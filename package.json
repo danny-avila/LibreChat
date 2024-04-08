@@ -5,6 +5,7 @@
   "workspaces": [
     "api",
     "client",
+    "librechat",
     "packages/*"
   ],
   "scripts": {
