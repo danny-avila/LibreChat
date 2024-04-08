@@ -26,22 +26,21 @@ class ConversationBuilder {
     return message;
   }
 
-  async finishConversation(title) {
+  async finishConversation(title, createdAt) {
     const saveConvoResp = await saveConvo(this.requestUserId, {
       newConversationId: this.conversationId,
       messages: this.messages,
       user: this.requestUserId,
       title: title || 'Imported Chat',
       model: this.model,
+      createdAt: new Date(createdAt * 1000),
+      overrideTimestamp: true,
     });
     logger.debug(`Conversation created id: ${saveConvoResp.conversationId}`);
   }
 
   async saveMessage(text, sender, isCreatedByUser) {
-    logger.debug('Last message id', this.lastMessageId);
     const newMessageId = uuidv4();
-    logger.debug('Adding message id: ', newMessageId, ' text: ', text.substring(0, 60));
-
     const message = {
       messageId: newMessageId,
       parentMessageId: this.lastMessageId,

@@ -13,7 +13,10 @@ const getConvo = async (user, conversationId) => {
 
 module.exports = {
   Conversation,
-  saveConvo: async (user, { conversationId, newConversationId, ...convo }) => {
+  saveConvo: async (
+    user,
+    { conversationId, newConversationId, overrideTimestamp: overrideTimestamp = false, ...convo },
+  ) => {
     try {
       const messages = await getMessages({ conversationId });
       const update = { ...convo, messages, user };
@@ -24,6 +27,7 @@ module.exports = {
       return await Conversation.findOneAndUpdate({ conversationId: conversationId, user }, update, {
         new: true,
         upsert: true,
+        timestamps: !overrideTimestamp,
       });
     } catch (error) {
       logger.error('[saveConvo] Error saving conversation', error);

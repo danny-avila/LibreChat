@@ -41,7 +41,7 @@ async function importChatGtpConvo(data, requestUserId) {
         }
       }
 
-      await convoBuilder.finishConversation(conv.title);
+      await convoBuilder.finishConversation(conv.title, conv.create_time);
       logger.info(`Conversation ${conv.title} imported`);
     }
   } catch (error) {
