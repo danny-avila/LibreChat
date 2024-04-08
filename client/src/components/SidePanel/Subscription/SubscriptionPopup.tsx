@@ -71,7 +71,9 @@ export default function SubscriptionPopup({
                 setIsSelected={() => setSelectedPlan('YEARLY')}
                 title={
                   <div className="flex w-full items-center justify-between">
-                    <p>Yearly</p>
+                    <p className={`${selectedPlan === 'YEARLY' ? 'dark:text-black' : ''}`}>
+                      Yearly
+                    </p>
                     <p
                       className={`rounded-xl border-[1px] border-solid p-1 px-2 text-[10px] ${
                         selectedPlan === 'MONTHLY'
@@ -99,7 +101,13 @@ export default function SubscriptionPopup({
               <SubTab
                 isSelected={selectedPlan === 'MONTHLY'}
                 setIsSelected={() => setSelectedPlan('MONTHLY')}
-                title="Monthly"
+                title={
+                  <p
+                    className={`${selectedPlan === 'MONTHLY' ? 'text-black dark:text-black' : ''} `}
+                  >
+                    Monthly
+                  </p>
+                }
                 desc={
                   <>
                     <p className="text-[16px] font-bold">USD $14.99/mo</p>

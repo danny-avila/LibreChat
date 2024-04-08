@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function ArrowDownIcon() {
+export default function ArrowDownIcon({ className = '' }: { className?: string }) {
   return (
     <svg
       version="1.1"
@@ -14,6 +14,7 @@ export default function ArrowDownIcon() {
       viewBox="0 0 960 560"
       enableBackground="new 0 0 960 560"
       xmlSpace="preserve"
+      className={`${className}`}
     >
       <g id="Rounded_Rectangle_33_copy_4_1_">
         <path

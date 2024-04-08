@@ -43,7 +43,18 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.chatGPTBrowser]: { icon: <LightningIcon />, name: 'ChatGPT' },
     [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     [EModelEndpoint.sdImage]: {
-      icon: <img src="/assets/sdimage.png" alt="SD Image Icon" width={35} height={35} />,
+      icon: (
+        <img
+          src={
+            window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? '/assets/image-gallery-dark.png'
+              : '/assets/sdimage.png'
+          }
+          alt="SD Image Icon"
+          width={35}
+          height={35}
+        />
+      ),
     },
     default: {
       icon: (

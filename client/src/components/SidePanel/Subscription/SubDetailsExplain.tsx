@@ -5,10 +5,14 @@ import ArrowUpIcon from '~/components/svg/ArrowUpIcon';
 export default function SubDetailsExplain() {
   const [open, setOpen] = useState<boolean>(false);
   return (
-    <div className="rounded-md bg-gray-100 p-5">
+    <div className="rounded-md bg-gray-100 p-5 dark:bg-gray-700">
       <button className="flex items-center gap-3" onClick={() => setOpen(!open)}>
         <p className="text-[18px] font-bold">What&apos;s included</p>
-        {open ? <ArrowUpIcon /> : <ArrowDownIcon />}
+        {open ? (
+          <ArrowUpIcon className="dark:fill-white" />
+        ) : (
+          <ArrowDownIcon className="dark:fill-white" />
+        )}
       </button>
       {open && (
         <div className="pl-4 transition">

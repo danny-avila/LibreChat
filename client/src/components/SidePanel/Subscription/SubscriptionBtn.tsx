@@ -38,6 +38,7 @@ export default function SubscriptionBtn() {
           ) {
             setPopupOpen(true);
           }
+          setPopupOpen(true);
         }}
         data-tooltip-id="subscribe-tooltip"
         className="duration-350 mt-text-sm mb-1 flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -46,7 +47,7 @@ export default function SubscriptionBtn() {
         <span className="border-token-border-light flex h-7 w-7 items-center justify-center rounded-full border bg-white">
           <img src="/assets/premium.png" alt="premium-icon" />
         </span>
-        <p className="font-bold">
+        <p className="font-bold text-black dark:text-white">
           {localize(
             user?.subscription.active ||
               (!isEmpty(user?.subscription.renewalDate) &&
@@ -77,7 +78,7 @@ export default function SubscriptionBtn() {
             + Add Credits
           </button>
           <button
-            className="flex w-full cursor-pointer items-center gap-3 rounded-md p-[8px] text-sm font-bold hover:bg-gray-100"
+            className="flex w-full cursor-pointer items-center gap-3 rounded-md p-[8px] text-sm font-bold text-black hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
             onClick={() => setSearchParams({ settings: 'open', tab: 'credits' })}
           >
             <img src="/assets/ChatGCreditsIcon.png" width={30} height={10} />

@@ -14,11 +14,17 @@ export default function SubTab({
   return (
     <button
       className={`flex w-full flex-col gap-3 rounded-md border-2 p-5 transition ${
-        isSelected ? 'border-green-500 bg-green-200' : 'border-gray-300'
+        isSelected ? 'border-green-500 bg-green-200 dark:text-black' : 'border-gray-300'
       }`}
       onClick={() => setIsSelected()}
     >
-      <div className="w-full text-left text-[20px] font-extrabold">{title}</div>
+      <div
+        className={`dark:text-gray w-full text-left text-[20px] font-extrabold text-black ${
+          isSelected ? '' : 'dark:text-gray-200'
+        }`}
+      >
+        {title}
+      </div>
       <div className={`text-left ${!isSelected && 'text-gray-400'}`}>{desc}</div>
     </button>
   );

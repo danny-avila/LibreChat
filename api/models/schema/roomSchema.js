@@ -11,7 +11,7 @@ const roomSchema = mongoose.Schema(
     },
     title: {
       type: String,
-      default: 'New Chat',
+      default: 'New Chat Room',
       meiliIndex: true,
     },
     users: [

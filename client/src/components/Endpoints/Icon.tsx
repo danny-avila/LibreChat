@@ -148,7 +148,18 @@ const Icon: React.FC<IconProps> = (props) => {
       name: 'Custom',
     },
     [EModelEndpoint.sdImage]: {
-      icon: <img src="/assets/sdimage.png" alt="SdImage Icon" width={35} height={35} />,
+      icon: (
+        <img
+          src={
+            window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? '/assets/image-gallery-dark.png'
+              : '/assets/sdimage.png'
+          }
+          alt="SdImage Icon"
+          width={35}
+          height={35}
+        />
+      ),
     },
     null: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'N/A' },
     default: {

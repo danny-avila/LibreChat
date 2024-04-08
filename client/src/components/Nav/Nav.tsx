@@ -21,6 +21,7 @@ import NewChat from './NewChat';
 import { cn } from '~/utils';
 import store from '~/store';
 import SubscriptionBtn from '../SidePanel/Subscription/SubscriptionBtn';
+import NewRoom from './NewRoom';
 
 const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
@@ -153,6 +154,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         toggleNav={itemToggleNav}
                         subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                       />
+                      <NewRoom toggleNav={itemToggleNav} />
                       <Conversations
                         conversations={conversations}
                         moveToTop={moveToTop}

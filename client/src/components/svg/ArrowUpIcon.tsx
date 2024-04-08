@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function ArrowUpIcon() {
+export default function ArrowUpIcon({ className = '' }: { className?: string }) {
   return (
     <svg
       fill="#000000"
@@ -12,6 +12,7 @@ export default function ArrowUpIcon() {
       xmlnsXlink="http://www.w3.org/1999/xlink"
       viewBox="0 0 330 330"
       xmlSpace="preserve"
+      className={`${className}`}
     >
       <path
         id="XMLID_224_"

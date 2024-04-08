@@ -34,7 +34,6 @@ export default function NewChat({
       toggleNav();
     }
   };
-
   return (
     <TooltipProvider delayDuration={250}>
       <Tooltip>
@@ -49,6 +48,7 @@ export default function NewChat({
               <div className="h-7 w-7 flex-shrink-0">
                 <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black dark:bg-white">
                   {endpoint &&
+                    endpoint !== EModelEndpoint.sdImage &&
                     Icon &&
                     Icon({
                       size: 41,
@@ -57,6 +57,22 @@ export default function NewChat({
                       endpoint: endpoint,
                       iconURL: iconURL,
                     })}
+                  {
+                    (endpoint && endpoint === EModelEndpoint.sdImage,
+                    (
+                      <img
+                        src={
+                          window.matchMedia &&
+                          window.matchMedia('(prefers-color-scheme: dark)').matches
+                            ? '/assets/sdimage.png'
+                            : '/assets/sdimage.png'
+                        }
+                        alt="sdimage"
+                        width="20"
+                        height="20"
+                      />
+                    ))
+                  }
                 </div>
               </div>
               <div className="text-token-text-primary grow overflow-hidden text-ellipsis whitespace-nowrap text-sm">

@@ -26,8 +26,11 @@ export const icons = {
   [EModelEndpoint.sdImage]: () => {
     return (
       <img
-        src={'/assets/sdimage.png'}
-        className="bg-token-surface-secondary dark:bg-token-surface-tertiary"
+        src={
+          window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? '/assets/image-gallery-dark.png'
+            : '/assets/sdimage.png'
+        }
         alt="sdimage"
         width="20"
         height="20"
