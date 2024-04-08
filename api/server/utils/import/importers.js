@@ -14,10 +14,24 @@ async function importChatGtpConvo(data, requestUserId) {
         if (messageData && messageData.content?.content_type === 'text') {
           // Determine sender based on author role
           if (messageData.author && messageData.author.role === 'assistant') {
-            await convoBuilder.addGptMessage(
-              messageData.content.parts.join(' '),
-              messageData.metadata.model_slug,
-            );
+            let messageText = messageData.content.parts.join(' ');
+
+            // Insert citation links
+            messageData.metadata.citations?.forEach((citation) => {
+              const { metadata } = citation;
+              if (metadata.type !== 'webpage') {
+                return;
+              }
+              const pattern = new RegExp(
+                `\\u3010${metadata.extra.cited_message_idx}\\u2020.+?\\u3011`,
+                'g',
+              );
+              //const replacement = `<a href="${metadata.url}" target="_blank">${messageText.substring(start_ix, end_ix)}</a>`;
+              const replacement = ` ([${metadata.title}](${metadata.url}))`;
+              messageText = messageText.replace(pattern, replacement);
+            });
+
+            await convoBuilder.addGptMessage(messageText, messageData.metadata.model_slug);
           } else if (messageData.author && messageData.author.role === 'system') {
             // TODO: Determine if we can handle system messages
             continue;
