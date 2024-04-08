@@ -132,6 +132,8 @@ export default {
   com_ui_clear: 'Clear',
   com_ui_revoke: 'Revoke',
   com_ui_revoke_info: 'Revoke all user provided credentials',
+  com_ui_import_conversation: 'Import',
+  com_ui_import_conversation_info: 'Import conversations from a JSON file',
   com_ui_confirm_action: 'Confirm Action',
   com_ui_chats: 'chats',
   com_ui_avatar: 'Avatar',

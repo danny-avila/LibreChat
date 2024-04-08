@@ -6,9 +6,12 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
+const multer = require('multer');
+const { importChatGtpConvo } = require('~/server/utils/import');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+router.use(multer().single('file'));
 
 router.get('/', async (req, res) => {
   let pageNumber = req.query.pageNumber || 1;
@@ -96,6 +99,23 @@ router.post('/update', async (req, res) => {
   } catch (error) {
     logger.error('Error updating conversation', error);
     res.status(500).send('Error updating conversation');
+  }
+});
+
+// imports Json with conversation data and saves it to the database
+router.post('/', async (req, res) => {
+  // Read the content from formdata file and output to log
+  try {
+    // req.file is the 'file' file
+    // Convert buffer to string then parse it as JSON
+    const content = req.file.buffer.toString();
+    const importResp = await importChatGtpConvo(content, req.user.id);
+
+    // Send the parsed JSON back in the response
+    res.status(200).json(importResp);
+  } catch (error) {
+    console.error('Error processing file', error);
+    res.status(500).send('Error processing file');
   }
 });
 

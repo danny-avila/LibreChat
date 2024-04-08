@@ -130,6 +130,26 @@ export const useDeleteConversationMutation = (
   );
 };
 
+export const useUploadConversationsMutation = (
+  _options?: UploadMutationOptions,
+): UseMutationResult<
+  TFileUpload, // response data
+  unknown, // error
+  FormData, // request
+  unknown // context
+> => {
+  const { onSuccess, ...options } = _options || {};
+  return useMutation([MutationKeys.fileUpload], {
+    mutationFn: (body: FormData) => {
+      return dataService.importConversationsFile(body);
+    },
+    ...(options || {}),
+    onSuccess: (data, formData, context) => {
+      onSuccess?.(data, formData, context);
+    },
+  });
+};
+
 export const useUploadFileMutation = (
   _options?: UploadMutationOptions,
 ): UseMutationResult<

@@ -104,8 +104,8 @@ async function loadSpecs({ llm, user, message, tools = [], map = false, memory, 
 
   const plugins = (await Promise.all(validJsons)).filter((plugin) => plugin);
 
-  //   logger.debug('[validateJson] plugins', plugins);
-  //   logger.debug(plugins[0].name);
+  logger.debug('[validateJson] plugins', plugins);
+  logger.debug(plugins[0].name);
 
   return plugins;
 }

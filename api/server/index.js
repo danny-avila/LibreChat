@@ -92,6 +92,7 @@ const startServer = async () => {
 
   app.listen(port, host, () => {
     if (host == '0.0.0.0') {
+      logger.info('!!!!!!!!!!!! FFFFFF');
       logger.info(
         `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
       );
