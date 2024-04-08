@@ -154,7 +154,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         toggleNav={itemToggleNav}
                         subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                       />
-                      <NewRoom toggleNav={itemToggleNav} />
+                      {/* <NewRoom toggleNav={itemToggleNav} /> */}
                       <Conversations
                         conversations={conversations}
                         moveToTop={moveToTop}
