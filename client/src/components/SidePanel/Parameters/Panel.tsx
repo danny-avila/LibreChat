@@ -1,6 +1,11 @@
 import { ComponentTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps, SettingsConfiguration } from 'librechat-data-provider';
+import type {
+  DynamicSettingProps,
+  SettingDefinition,
+  SettingsConfiguration,
+} from 'librechat-data-provider';
 import { useSetIndexOptions } from '~/hooks';
+import DynamicDropdown from './DynamicDropdown';
 import DynamicSlider from './DynamicSlider';
 
 const settingsConfiguration: SettingsConfiguration = [
@@ -16,7 +21,7 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
-    optionType: 'conversation',
+    optionType: 'model',
     // columnSpan: 2,
     // includeInput: false,
   },
@@ -32,6 +37,7 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
+    optionType: 'model',
   },
   {
     key: 'presence_penalty',
@@ -45,6 +51,7 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
+    optionType: 'model',
   },
   {
     key: 'frequency_penalty',
@@ -58,6 +65,23 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
+    optionType: 'model',
+  },
+  {
+    key: 'promptPrefix',
+    type: 'string',
+    default: '',
+    component: 'input',
+    placeholder: 'Set custom instructions to include in System Message. Default: none',
+    optionType: 'conversation',
+  },
+  {
+    key: 'chatGptLabel',
+    type: 'string',
+    default: '',
+    component: 'input',
+    placeholder: 'Set a custom name for your AI',
+    optionType: 'conversation',
   },
   {
     key: 'resendFiles',
@@ -66,57 +90,84 @@ const settingsConfiguration: SettingsConfiguration = [
     type: 'boolean',
     default: true,
     component: 'switch',
+    optionType: 'conversation',
+    columnSpan: 2,
   },
   {
     key: 'imageDetail',
+    label: 'Image Detail',
     description:
       'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
     type: 'enum',
     default: 'auto',
-    options: ['low', 'high', 'auto'],
+    options: ['low', 'auto', 'high'],
+    optionType: 'conversation',
     component: 'slider',
+    // columnSpan: 2,
   },
   {
-    key: 'promptPrefix',
-    type: 'string',
-    default: '',
-    component: 'input',
-    placeholder: 'Set custom instructions to include in System Message. Default: none',
-  },
-  {
-    key: 'chatGptLabel',
-    type: 'string',
-    default: '',
-    component: 'input',
-    placeholder: 'Set a custom name for your AI',
+    key: 'imageDetail',
+    label: 'Detail Dropdown',
+    description:
+      'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
+    type: 'enum',
+    default: 'auto',
+    options: ['low', 'auto', 'high'],
+    optionType: 'conversation',
+    component: 'dropdown',
+    // columnSpan: 2,
   },
 ];
 
-const componentMapping: Record<string, React.ComponentType<DynamicSettingProps>> = {
+const componentMapping: Record<ComponentTypes, React.ComponentType<DynamicSettingProps>> = {
   [ComponentTypes.Slider]: DynamicSlider,
+  [ComponentTypes.Dropdown]: DynamicDropdown,
   // input: DynamicInput,
   // textarea: DynamicTextarea,
   // checkbox: DynamicCheckbox,
   // switch: DynamicSwitch,
-  // dropdown: DynamicDropdown,
 };
 
 export default function Parameters() {
   const { setOption } = useSetIndexOptions();
-  const testSetting = settingsConfiguration[0];
-  const Component = componentMapping[testSetting.component];
-  const { key: settingKey, default: defaultValue, ...settings } = testSetting;
+  const temperature = settingsConfiguration.find(
+    (setting) => setting.key === 'temperature',
+  ) as SettingDefinition;
+  const imageDetail = settingsConfiguration.find(
+    (setting) => setting.label === 'Image Detail',
+  ) as SettingDefinition;
+  const testDropdown = settingsConfiguration.find(
+    (setting) => setting.label === 'Detail Dropdown',
+  ) as SettingDefinition;
+  const TempComponent = componentMapping[temperature.component];
+  const DetailComponent = componentMapping[imageDetail.component];
+  const Dropdown = componentMapping[testDropdown.component];
+  const { key: temp, default: tempDefault, ...tempSettings } = temperature;
+  const { key: detail, default: detailDefault, ...detailSettings } = imageDetail;
+  const { key: dropdown, default: dropdownDefault, ...dropdownSettings } = testDropdown;
 
   return (
     <div className="h-auto max-w-full overflow-x-hidden p-3">
-      <div className="grid grid-cols-5 gap-6">
+      <div className="grid grid-cols-4 gap-6">
         {' '}
         {/* This is the parent element containing all settings */}
         {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}
-        <Component
-          settingKey={settingKey}
-          defaultValue={defaultValue}
-          {...settings}
+        <TempComponent
+          settingKey={temp}
+          defaultValue={tempDefault}
+          {...tempSettings}
+          setOption={setOption}
+        />
+        <DetailComponent
+          settingKey={detail}
+          defaultValue={detailDefault}
+          {...detailSettings}
+          setOption={setOption}
+        />
+        <Dropdown
+          settingKey={dropdown}
+          defaultValue={dropdownDefault}
+          {...dropdownSettings}
           setOption={setOption}
         />
       </div>
