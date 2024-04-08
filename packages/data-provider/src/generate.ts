@@ -8,7 +8,7 @@ export type OpenAISettings = Partial<typeof google>;
 
 export type ComponentType = 'input' | 'textarea' | 'slider' | 'checkbox' | 'switch' | 'dropdown';
 
-export type OptionType = 'conversation' | 'model';
+export type OptionType = 'conversation' | 'model' | 'custom';
 
 export enum ComponentTypes {
   Input = 'input',
@@ -22,6 +22,7 @@ export enum ComponentTypes {
 export enum OptionTypes {
   Conversation = 'conversation',
   Model = 'model',
+  Custom = 'custom',
 }
 export interface SettingDefinition {
   key: string;
@@ -132,6 +133,11 @@ const ZodTypeToSettingType: Record<string, string | undefined> = {
   ZodBoolean: 'boolean',
 };
 
+const minColumns = 1;
+const maxColumns = 4;
+const minSliderOptions = 2;
+const minDropdownOptions = 2;
+
 /**
  * Validates the provided setting using the constraints unique to each component type.
  * @throws {ZodError} Throws a ZodError if any validation fails.
@@ -142,10 +148,10 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
   const columnsSet = new Set<number>();
   for (const setting of settings) {
     if (setting.columns !== undefined) {
-      if (setting.columns < 1 || setting.columns > 4) {
+      if (setting.columns < minColumns || setting.columns > maxColumns) {
         errors.push({
           code: ZodIssueCode.custom,
-          message: `Invalid columns value for setting ${setting.key}. Must be between 1 and 4.`,
+          message: `Invalid columns value for setting ${setting.key}. Must be between ${minColumns} and ${maxColumns}.`,
           path: ['columns'],
         });
       } else {
@@ -213,10 +219,13 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
         });
         // continue;
       }
-      if (setting.type === 'enum' && (!setting.options || setting.options.length < 2)) {
+      if (
+        setting.type === 'enum' &&
+        (!setting.options || setting.options.length < minSliderOptions)
+      ) {
         errors.push({
           code: ZodIssueCode.custom,
-          message: `Slider component for setting ${setting.key} requires at least 2 options for enum type.`,
+          message: `Slider component for setting ${setting.key} requires at least ${minSliderOptions} options for enum type.`,
           path: ['options'],
         });
         // continue;
@@ -246,10 +255,10 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     }
 
     if (setting.component === 'dropdown') {
-      if (!setting.options || setting.options.length < 2) {
+      if (!setting.options || setting.options.length < minDropdownOptions) {
         errors.push({
           code: ZodIssueCode.custom,
-          message: `Dropdown component for setting ${setting.key} requires at least 2 options.`,
+          message: `Dropdown component for setting ${setting.key} requires at least ${minDropdownOptions} options.`,
           path: ['options'],
         });
         // continue;
@@ -288,12 +297,12 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     }
 
     // Validate optionType and conversation schema
-    if (setting.optionType === 'conversation') {
+    if (setting.optionType !== OptionTypes.Custom) {
       const conversationSchema = tConversationSchema.shape[setting.key as keyof TConversation];
       if (!conversationSchema) {
         errors.push({
           code: ZodIssueCode.custom,
-          message: `Setting ${setting.key} with optionType "conversation" must be defined in tConversationSchema.`,
+          message: `Setting ${setting.key} with optionType "${setting.optionType}" must be defined in tConversationSchema.`,
           path: ['optionType'],
         });
       } else {
@@ -302,7 +311,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
         if (settingTypeEquivalent !== setting.type) {
           errors.push({
             code: ZodIssueCode.custom,
-            message: `Setting ${setting.key} with optionType "conversation" must match the type defined in tConversationSchema.`,
+            message: `Setting ${setting.key} with optionType "${setting.optionType}" must match the type defined in tConversationSchema.`,
             path: ['optionType'],
           });
         }
