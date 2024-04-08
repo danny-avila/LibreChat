@@ -44,6 +44,7 @@ function DynamicSlider({
     return inputValue;
   }, [conversation, defaultValue, settingKey, inputValue, isEnum]);
 
+  /** Updates the local state value if global (conversation) is updated elsewhere */
   useEffect(() => {
     if (isEnum) {
       return;
