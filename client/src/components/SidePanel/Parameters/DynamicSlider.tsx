@@ -1,12 +1,14 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useEffect, useCallback } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
-import { Label, Slider, HoverCard, InputNumber, HoverCardTrigger } from '~/components/ui';
+import { Label, Slider, HoverCard, Input, InputNumber, HoverCardTrigger } from '~/components/ui';
 import { cn, defaultTextProps, optionText, capitalizeFirstLetter } from '~/utils';
 import { useLocalize, useDebouncedInput } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
+
+const defaultDebouncedDelay = 450;
 
 function DynamicSlider({
   label,
@@ -25,13 +27,38 @@ function DynamicSlider({
   const isEnum = useMemo(() => !range && options && options.length > 0, [options, range]);
   const { conversation = {} } = useChatContext();
 
-  const [setInputValue, inputValue] = useDebouncedInput({
-    optionKey: optionType === OptionTypes.Conversation ? settingKey : undefined,
-    initialValue:
-      optionType === OptionTypes.Conversation ? conversation?.[settingKey] : defaultValue,
+  const [setInputValue, inputValue] = useDebouncedInput<string | number>({
+    optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
+    initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] : defaultValue,
     setter: () => ({}),
     setOption,
+    delay: isEnum ? 0 : defaultDebouncedDelay,
   });
+
+  const selectedValue = useMemo(() => {
+    if (isEnum) {
+      return conversation?.[settingKey] ?? defaultValue;
+    }
+    // TODO: custom logic, add to payload but not to conversation
+
+    return inputValue;
+  }, [conversation, defaultValue, settingKey, inputValue, isEnum]);
+
+  useEffect(() => {
+    if (isEnum) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      if (conversation?.[settingKey] === inputValue) {
+        return;
+      }
+
+      setInputValue(conversation?.[settingKey]);
+    }, defaultDebouncedDelay * 1.5);
+
+    return () => clearTimeout(timeout);
+  }, [setInputValue, isEnum, conversation, inputValue, settingKey]);
 
   const enumToNumeric = useMemo(() => {
     if (isEnum && options) {
@@ -87,16 +114,30 @@ function DynamicSlider({
                 ({localize('com_endpoint_default')}: {defaultValue})
               </small>
             </Label>
-            {includeInput && !isEnum && (
+            {includeInput && !isEnum ? (
               <InputNumber
                 id={`${settingKey}-dynamic-setting-input-number`}
                 disabled={readonly}
-                value={(inputValue as number) ?? (defaultValue as number)}
+                value={inputValue ?? defaultValue}
                 onChange={(value) => setInputValue(Number(value))}
                 max={range ? range.max : (options?.length ?? 0) - 1}
                 min={range ? range.min : 0}
                 step={range ? range.step ?? 1 : 1}
                 controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                  ),
+                )}
+              />
+            ) : (
+              <Input
+                id={`${settingKey}-dynamic-setting-input`}
+                disabled={readonly}
+                value={selectedValue ?? defaultValue}
+                onChange={() => ({})}
                 className={cn(
                   defaultTextProps,
                   cn(
@@ -112,11 +153,11 @@ function DynamicSlider({
             disabled={readonly}
             value={[
               isEnum
-                ? enumToNumeric[(inputValue as number) ?? '']
+                ? enumToNumeric[(selectedValue as number) ?? '']
                 : (inputValue as number) ?? (defaultValue as number),
             ]}
             onValueChange={(value) => handleValueChange(value[0])}
-            doubleClickHandler={() => setInputValue(defaultValue)}
+            doubleClickHandler={() => setInputValue(defaultValue as string | number)}
             max={isEnum && options ? options.length - 1 : range ? range.max : 0}
             min={range ? range.min : 0}
             step={range ? range.step ?? 1 : 1}
