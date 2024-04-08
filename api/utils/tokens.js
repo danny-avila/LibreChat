@@ -215,6 +215,12 @@ function processModelData(input) {
 
   for (const model of data) {
     const modelKey = model.id;
+    if (modelKey === 'openrouter/auto') {
+      model.pricing = {
+        prompt: '0.00001',
+        completion: '0.00003',
+      };
+    }
     const prompt = parseFloat(model.pricing.prompt) * 1000000;
     const completion = parseFloat(model.pricing.completion) * 1000000;
 
