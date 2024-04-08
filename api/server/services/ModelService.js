@@ -194,6 +194,7 @@ const getOpenAIModels = async (opts) => {
   if (opts.assistants) {
     return models;
   }
+
   return await fetchOpenAIModels(opts, models);
 };
 
