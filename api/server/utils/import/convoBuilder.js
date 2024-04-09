@@ -6,6 +6,11 @@ const logger = require('~/config/winston');
 
 const defaultModel = 'gpt-3.5-turbo';
 
+// Factory function for creating ConversationBuilder instances
+function createConversationBuilder(requestUserId, endpoint = 'openAI') {
+  return new ConversationBuilder(requestUserId, endpoint);
+}
+
 class ConversationBuilder {
   constructor(requestUserId, endpoint) {
     this.requestUserId = requestUserId;
@@ -21,8 +26,8 @@ class ConversationBuilder {
     return message;
   }
 
-  async addGptMessage(text, model) {
-    const message = await this.saveMessage(text, 'GPT-3.5', false, model || defaultModel);
+  async addGptMessage(text, model, sender = 'GPT-3.5') {
+    const message = await this.saveMessage(text, sender, false, model || defaultModel);
     return message;
   }
 
@@ -39,6 +44,7 @@ class ConversationBuilder {
       model: defaultModel,
     });
     logger.debug(`Conversation created id: ${saveConvoResp.conversationId}`);
+    return saveConvoResp;
   }
 
   async saveMessage(text, sender, isCreatedByUser) {
@@ -65,4 +71,4 @@ class ConversationBuilder {
   }
 }
 
-module.exports = { ConversationBuilder };
+module.exports = { ConversationBuilder, createConversationBuilder };

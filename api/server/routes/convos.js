@@ -7,7 +7,7 @@ const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 const multer = require('multer');
-const { importChatGtpConvo } = require('~/server/utils/import');
+const agenda = require('~/server/utils/import/jobScheduler');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -106,13 +106,13 @@ router.post('/update', async (req, res) => {
 router.post('/', async (req, res) => {
   // Read the content from formdata file and output to log
   try {
-    // req.file is the 'file' file
-    // Convert buffer to string then parse it as JSON
     const content = req.file.buffer.toString();
-    const importResp = await importChatGtpConvo(content, req.user.id);
+    const job = await agenda.now('import conversation', {
+      data: content,
+      requestUserId: req.user.id,
+    });
 
-    // Send the parsed JSON back in the response
-    res.status(200).json(importResp);
+    res.status(200).json({ message: 'Import started', jobId: job.attrs._id });
   } catch (error) {
     console.error('Error processing file', error);
     res.status(500).send('Error processing file');
