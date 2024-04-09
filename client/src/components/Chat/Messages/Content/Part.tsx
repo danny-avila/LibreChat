@@ -53,11 +53,11 @@ export default function Part({
   }
 
   if (part.type === ContentTypes.ERROR) {
-    return <ErrorMessage text={part[ContentTypes.TEXT].value} className="my-2" />;
+    return <ErrorMessage message={message} text={part[ContentTypes.TEXT].value} className="my-2" />;
   } else if (part.type === ContentTypes.TEXT) {
     // Access the value property
     return (
-      <Container>
+      <Container message={message}>
         <div className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words">
           <DisplayMessage
             text={part[ContentTypes.TEXT].value}
@@ -104,7 +104,7 @@ export default function Part({
     if (isImageVisionTool(toolCall)) {
       if (isSubmitting && showCursor) {
         return (
-          <Container>
+          <Container message={message}>
             <div className="markdown prose dark:prose-invert light dark:text-gray-70 my-1 w-full break-words">
               <DisplayMessage
                 text={''}

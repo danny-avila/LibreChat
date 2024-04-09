@@ -12,7 +12,7 @@ transactionSchema.methods.calculateTokenValue = function () {
     this.tokenValue = this.rawAmount;
   }
   const { valueKey, tokenType, model, endpointTokenConfig } = this;
-  const multiplier = getMultiplier({ valueKey, tokenType, model, endpointTokenConfig });
+  const multiplier = Math.abs(getMultiplier({ valueKey, tokenType, model, endpointTokenConfig }));
   this.rate = multiplier;
   this.tokenValue = this.rawAmount * multiplier;
   if (this.context && this.tokenType === 'completion' && this.context === 'incomplete') {
@@ -36,18 +36,24 @@ transactionSchema.statics.create = async function (transactionData) {
     return;
   }
 
-  // Adjust the user's balance
-  const updatedBalance = await Balance.findOneAndUpdate(
+  let balance = await Balance.findOne({ user: transaction.user }).lean();
+  let incrementValue = transaction.tokenValue;
+
+  if (balance && balance?.tokenCredits + incrementValue < 0) {
+    incrementValue = -balance.tokenCredits;
+  }
+
+  balance = await Balance.findOneAndUpdate(
     { user: transaction.user },
-    { $inc: { tokenCredits: transaction.tokenValue } },
+    { $inc: { tokenCredits: incrementValue } },
     { upsert: true, new: true },
   ).lean();
 
   return {
     rate: transaction.rate,
     user: transaction.user.toString(),
-    balance: updatedBalance.tokenCredits,
-    [transaction.tokenType]: transaction.tokenValue,
+    balance: balance.tokenCredits,
+    [transaction.tokenType]: incrementValue,
   };
 };
 

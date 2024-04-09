@@ -20,6 +20,13 @@ export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
 export type LastSelectedModels = Record<EModelEndpoint, string>;
 
+export enum IconContext {
+  landing = 'landing',
+  menuItem = 'menu-item',
+  nav = 'nav',
+  message = 'message',
+}
+
 export type NavLink = {
   title: string;
   label?: string;
@@ -174,6 +181,7 @@ export type TAskProps = {
 export type TOptions = {
   editedMessageId?: string | null;
   editedText?: string | null;
+  resubmitFiles?: boolean;
   isRegenerate?: boolean;
   isContinued?: boolean;
   isEdited?: boolean;

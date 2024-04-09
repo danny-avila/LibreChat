@@ -15,18 +15,193 @@ Use **[LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy)** for:
 ### 1. Uncomment desired sections in docker-compose.override.yml
 The override file contains sections for the below LiteLLM features
 
+Minimum working `docker-compose.override.yml` Example:
+```
+litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    volumes:
+      - ./litellm/litellm-config.yaml:/app/config.yaml
+      # NOTE: For Google - required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
+      # This also means you need to add the `application_default_credentaials.json` file within ~/litellm
+      - ./litellm/application_default_credentials.json:/app/application_default_credentials.json
+    ports:
+      - "4000:8000"
+    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
+    For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /app/application_default_credentials.json
+```
+
 #### Caching with Redis
 Litellm supports in-memory, redis, and s3 caching. Note: Caching currently only works with exact matching.
 
 #### Performance Monitoring with Langfuse
 Litellm supports various logging and observability options.  The settings below will enable Langfuse which will provide a cache_hit tag showing which conversations used cache.
 
-### 2. Create a config.yaml for LiteLLM proxy 
-LiteLLM requires a configuration file in addition to the override file. The file 
+### 2. Create a Config for LiteLLM proxy 
+LiteLLM requires a configuration file in addition to the override file. Within LibreChat, this will be `litellm/litellm-config.yml`. The file 
 below has the options to enable llm proxy to various providers, load balancing, Redis caching, and Langfuse monitoring. Review documentation for other configuration options.
 More information on LiteLLM configurations here: **[docs.litellm.ai/docs/simple_proxy](https://docs.litellm.ai/docs/simple_proxy)**
 
+#### Working Example of incorporating OpenAI, Azure OpenAI, AWS Bedrock, and GCP
+
+Please note the `...` being a secret or a value you should not share (API key, custom tenant endpoint, etc)
+You can potentially use env variables for these too, ex: `api_key: "os.environ/AZURE_API_KEY" # does os.getenv("AZURE_API_KEY")`
 ```yaml
+model_list:
+  # https://litellm.vercel.app/docs/proxy/quick_start
+  - model_name: claude-3-haiku
+    litellm_params:
+      model: bedrock/anthropic.claude-3-haiku-20240307-v1:0
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: claude-3-sonnet
+    litellm_params:
+      model: bedrock/anthropic.claude-3-sonnet-20240229-v1:0
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: claude-v2
+    litellm_params:
+      model: bedrock/anthropic.claude-v2:1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: claude-instant
+    litellm_params:
+      model: bedrock/anthropic.claude-instant-v1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: llama2-13b
+    litellm_params:
+      model: bedrock/meta.llama2-13b-chat-v1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: llama2-70b
+    litellm_params:
+      model: bedrock/meta.llama2-70b-chat-v1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: mistral-7b-instruct
+    litellm_params:
+      model: bedrock/mistral.mistral-7b-instruct-v0:2
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: mixtral-8x7b-instruct
+    litellm_params:
+      model: bedrock/mistral.mixtral-8x7b-instruct-v0:1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+
+  - model_name: azure-gpt-4-turbo-preview
+    litellm_params:
+      model: azure/gpt-4-turbo-preview
+      api_base: https://tenant.openai.azure.com/
+      api_key: ...
+
+  - model_name: azure-gpt-3.5-turbo
+    litellm_params:
+      model: azure/gpt-35-turbo
+      api_base: https://tenant.openai.azure.com/
+      api_key: ...
+
+  - model_name: azure-gpt-4
+    litellm_params:
+      model: azure/gpt-4
+      api_base: https://tenant.openai.azure.com/
+      api_key: ...
+
+  - model_name: azure-gpt-3.5-turbo-16k
+    litellm_params:
+      model: azure/gpt-35-turbo-16k
+      api_base: https://tenant.openai.azure.com/
+      api_key: ...
+
+  - model_name: azure-gpt-4-32k
+    litellm_params:
+      model: azure/gpt-4-32k
+      api_base: https://tenant.openai.azure.com/
+      api_key: ...
+
+
+  - model_name: openai-gpt-4-turbo-preview
+    litellm_params:
+      model: gpt-4-turbo-preview
+      api_key: sk-...
+
+  - model_name: openai-gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
+      api_key: sk-...
+
+  - model_name: openai-gpt-4
+    litellm_params:
+      model: gpt-4
+      api_key: sk-...
+
+  - model_name: openai-gpt-3.5-turbo-16k
+    litellm_params:
+      model: gpt-3.5-turbo-16k
+      api_key: sk-...
+
+  - model_name: openai-gpt-4-32k
+    litellm_params:
+      model: gpt-4-32k
+      api_key: sk-...
+
+  - model_name: openai-gpt-4-vision-preview
+    litellm_params:
+      model: gpt-4-vision-preview
+      api_key: sk-...
+
+  # NOTE: For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
+  - model_name: google-chat-bison
+    litellm_params:
+      model: vertex_ai/chat-bison
+      vertex_project: ...
+      vertex_location: us-central1
+
+  # NOTE: For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
+  - model_name: google-chat-bison-32k
+    litellm_params:
+      model: vertex_ai/chat-bison-32k
+      vertex_project: ...
+      vertex_location: us-central1
+
+  # NOTE: For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
+  - model_name: google-gemini-pro
+    litellm_params:
+      model: vertex_ai/gemini-pro
+      vertex_project: ...
+      vertex_location: us-central1
+
+litellm_settings:
+  success_callback: ["langfuse"]
+  cache: True
+  cache_params:
+    type: "redis"
+    supported_call_types: ["acompletion", "completion", "embedding", "aembedding"]
+general_settings:
+  master_key: sk_live_SetToRandomValue
+```
+
+#### Example of a few Different Options (ex: rpm, stream, ollama)
+```yaml
+
 model_list:
   - model_name: gpt-3.5-turbo
     litellm_params:
@@ -48,13 +223,13 @@ model_list:
       rpm: 1440
   - model_name: mixtral
     litellm_params:
-      model: ollama/mixtral:8x7b-instruct-v0.1-q5_K_M
-      api_base: http://ollama:11434
+      model: openai/mixtral:8x7b-instruct-v0.1-q5_K_M      # use openai/* for ollama's openai api compatibility
+      api_base: http://ollama:11434/v1
       stream: True
   - model_name: mistral
     litellm_params:
-      model: ollama/mistral
-      api_base: http://ollama:11434
+      model: openai/mistral                                # use openai/* for ollama's openai api compatibility
+      api_base: http://ollama:11434/v1
       stream: True
 litellm_settings:
   success_callback: ["langfuse"]
@@ -66,10 +241,34 @@ general_settings:
   master_key: sk_live_SetToRandomValue
 ```
 
+
+
 ### 3. Configure LibreChat
 
 Use `librechat.yaml` [Configuration file (guide here)](./ai_endpoints.md) to add Reverse Proxies as separate endpoints.
 
+Here is an example config:
+
+```
+custom:
+    - name: "Lite LLM"
+      # A place holder - otherwise it becomes the default (OpenAI) key
+      # Provide the key instead in each "model" block within "litellm/litellm-config.yaml"
+      apiKey: "sk-from-config-file"
+      # See the required changes above in "Start LiteLLM Proxy Server" step.
+      baseURL: "http://host.docker.internal:4000"
+      # A "default" model to start new users with. The "fetch" will pull the rest of the available models from LiteLLM
+      # More or less this is "irrelevant", you can pick any model. Just pick one you have defined in LiteLLM.
+      models:
+        default: ["gpt-3.5-turbo"]
+        fetch: true
+      titleConvo: true
+      titleModel: "gpt-3.5-turbo"
+      summarize: false
+      summaryModel: "gpt-3.5-turbo"
+      forcePrompt: false
+      modelDisplayLabel: "Lite LLM"
+```
 ---
 
 ### Why use LiteLLM?
