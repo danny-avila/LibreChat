@@ -64,7 +64,7 @@ const setup = ({
   const mockUseGetStartupConfig = jest
     .spyOn(mockDataProvider, 'useGetStartupConfig')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
-    .mockReturnValue(useGetStartupCongfigReturnValue);
+    .mockReturnValue(useGetStartupConfigReturnValue);
   const mockUseRefreshTokenMutation = jest
     .spyOn(mockDataProvider, 'useRefreshTokenMutation')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
