@@ -792,14 +792,18 @@ ${convo}
         },
       ];
 
+      const promptTokens = this.getTokenCountForMessage(instructionsPayload[0]);
+
       try {
         let useChatCompletion = true;
-        if (CohereConstants.API_URL) {
+        if (this.options.reverseProxyUrl === CohereConstants.API_URL) {
           useChatCompletion = false;
         }
         title = (
           await this.sendPayload(instructionsPayload, { modelOptions, useChatCompletion })
         ).replaceAll('"', '');
+        const completionTokens = this.getTokenCount(title);
+        this.recordTokenUsage({ promptTokens, completionTokens, context: 'title' });
       } catch (e) {
         logger.error(
           '[OpenAIClient] There was an issue generating the title with the completion method',
@@ -951,12 +955,12 @@ ${convo}
     }
   }
 
-  async recordTokenUsage({ promptTokens, completionTokens }) {
+  async recordTokenUsage({ promptTokens, completionTokens, context = 'message' }) {
     await spendTokens(
       {
+        context,
         user: this.user,
         model: this.modelOptions.model,
-        context: 'message',
         conversationId: this.conversationId,
         endpointTokenConfig: this.options.endpointTokenConfig,
       },
