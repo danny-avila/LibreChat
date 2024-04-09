@@ -8,6 +8,7 @@ const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 const multer = require('multer');
 const agenda = require('~/server/utils/import/jobScheduler');
+const mongodb = require('mongodb');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -116,6 +117,42 @@ router.post('/', async (req, res) => {
   } catch (error) {
     console.error('Error processing file', error);
     res.status(500).send('Error processing file');
+  }
+});
+
+// Get the status of an import job for polling
+router.get('/import/jobs/:jobId', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const job = await agenda.jobs({ _id: new mongodb.ObjectId(jobId) });
+    if (!job || job.length === 0) {
+      return res.status(404).json({ message: 'Job not found.' });
+    }
+
+    if (job.length > 1) {
+      // This should never happen
+      return res.status(500).json({ message: 'Multiple jobs found.' });
+    }
+    if (job[0].attrs.data.requestUserId !== req.user.id) {
+      return res.status(403).json({ message: 'Unauthorized' });
+    }
+
+    const jobDetails = {
+      id: job[0]._id,
+      name: job[0].attrs.name,
+      status: !job[0].attrs.lastRunAt
+        ? 'scheduled'
+        : job[0].attrs.failedAt
+          ? 'failed'
+          : job[0].attrs.lastFinishedAt
+            ? 'completed'
+            : 'running',
+    };
+
+    res.json(jobDetails);
+  } catch (error) {
+    console.error('Error getting job details', error);
+    res.status(500).send('Error getting job details');
   }
 });
 
