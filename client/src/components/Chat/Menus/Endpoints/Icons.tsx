@@ -10,6 +10,7 @@ import {
   AssistantIcon,
   LightningIcon,
   Sparkles,
+  SdImageIcon,
 } from '~/components/svg';
 import UnknownIcon from './UnknownIcon';
 import { cn } from '~/utils';
@@ -23,20 +24,7 @@ export const icons = {
   [EModelEndpoint.google]: GoogleMinimalIcon,
   [EModelEndpoint.bingAI]: BingAIMinimalIcon,
   [EModelEndpoint.custom]: CustomMinimalIcon,
-  [EModelEndpoint.sdImage]: () => {
-    return (
-      <img
-        src={
-          window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-            ? '/assets/image-gallery-dark.png'
-            : '/assets/sdimage.png'
-        }
-        alt="sdimage"
-        width="20"
-        height="20"
-      />
-    );
-  },
+  [EModelEndpoint.sdImage]: SdImageIcon,
 
   [EModelEndpoint.assistants]: ({
     className = '',

@@ -16,9 +16,12 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
+import { useContext } from 'react';
+import { ThemeContext } from '~/hooks';
 
 const Icon: React.FC<IconProps> = (props) => {
   const { user } = useAuthContext();
+  const { theme } = useContext(ThemeContext);
   const {
     size = 30,
     isCreatedByUser,
@@ -119,8 +122,8 @@ const Icon: React.FC<IconProps> = (props) => {
       name: model?.toLowerCase()?.includes('code')
         ? 'Codey'
         : model?.toLowerCase()?.includes('gemini')
-          ? 'Gemini'
-          : 'PaLM2',
+        ? 'Gemini'
+        : 'PaLM2',
     },
     [EModelEndpoint.anthropic]: {
       icon: <AnthropicIcon size={size * 0.5555555555555556} />,
@@ -150,11 +153,7 @@ const Icon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.sdImage]: {
       icon: (
         <img
-          src={
-            window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-              ? '/assets/image-gallery-dark.png'
-              : '/assets/sdimage.png'
-          }
+          src={theme === 'dark' ? '/assets/image-gallery-dark.png' : '/assets/sdimage.png'}
           alt="SdImage Icon"
           width={35}
           height={35}

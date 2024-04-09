@@ -13,8 +13,11 @@ import {
 } from '~/components/svg';
 import { cn } from '~/utils';
 import { IconProps } from '~/common';
+import { useContext } from 'react';
+import { ThemeContext } from '~/hooks';
 
 const MinimalIcon: React.FC<IconProps> = (props) => {
+  const { theme } = useContext(ThemeContext);
   const { size = 30, error } = props;
 
   let endpoint = 'default'; // Default value for endpoint
@@ -45,11 +48,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.sdImage]: {
       icon: (
         <img
-          src={
-            window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-              ? '/assets/image-gallery-dark.png'
-              : '/assets/sdimage.png'
-          }
+          src={theme === 'dark' ? '/assets/image-gallery-dark.png' : '/assets/sdimage.png'}
           alt="SD Image Icon"
           width={35}
           height={35}

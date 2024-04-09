@@ -52,3 +52,4 @@ export { default as Sparkles } from './Sparkles';
 
 export { default as ChartBarIcon } from './ChartBarIcon';
 export { default as LoadingIcon } from './LoadingIcon';
+export { default as SdImageIcon } from './SdImageIcon';
