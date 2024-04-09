@@ -325,15 +325,16 @@ export const useGetAssistantDocsQuery = (
   );
 };
 
-export const useFileDownload = (userId: string, filepath: string): QueryObserverResult<string> => {
+export const useFileDownload = (userId?: string, file_id?: string): QueryObserverResult<string> => {
   const queryClient = useQueryClient();
   return useQuery(
-    [QueryKeys.fileDownload, filepath],
+    [QueryKeys.fileDownload, file_id],
     async () => {
-      if (!userId) {
+      if (!userId || !file_id) {
         console.warn('No user ID provided for file download');
+        return;
       }
-      const response = await dataService.getFileDownload(userId, filepath);
+      const response = await dataService.getFileDownload(userId, file_id);
       const blob = response.data;
       const downloadURL = window.URL.createObjectURL(blob);
       try {

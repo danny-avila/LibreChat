@@ -66,18 +66,16 @@ router.delete('/', async (req, res) => {
   }
 });
 
-router.get('/download/:userId/:filepath', async (req, res) => {
+router.get('/download/:userId/:file_id', async (req, res) => {
   try {
-    const { userId, filepath } = req.params;
-    logger.debug(`File download requested by user ${userId}: ${filepath}`);
+    const { userId, file_id } = req.params;
+    logger.debug(`File download requested by user ${userId}: ${file_id}`);
 
     if (userId !== req.user.id) {
       logger.warn(`${errorPrefix} forbidden: ${file_id}`);
       return res.status(403).send('Forbidden');
     }
 
-    const parts = filepath.split('/');
-    const file_id = parts[2];
     const [file] = await getFiles({ file_id });
     const errorPrefix = `File download requested by user ${userId}`;
 
