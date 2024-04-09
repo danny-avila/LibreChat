@@ -206,6 +206,9 @@ export const getFileDownload = async (userId: string, filepath: string): Promise
   const encodedFilePath = encodeURIComponent(filepath);
   return request.getResponse(`${endpoints.files()}/download/${userId}/${encodedFilePath}`, {
     responseType: 'blob',
+    headers: {
+      Accept: 'application/octet-stream',
+    },
   });
 };
 
