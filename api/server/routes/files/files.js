@@ -69,6 +69,7 @@ router.delete('/', async (req, res) => {
 router.get('/download/:userId/:filepath', async (req, res) => {
   try {
     const { userId, filepath } = req.params;
+    logger.debug(`File download requested by user ${userId}: ${filepath}`);
 
     if (userId !== req.user.id) {
       logger.warn(`${errorPrefix} forbidden: ${file_id}`);
@@ -114,8 +115,10 @@ router.get('/download/:userId/:filepath', async (req, res) => {
     if (file.source === FileSources.openai) {
       req.body = { model: file.model };
       const { openai } = await initializeClient({ req, res });
+      logger.debug(`Downloading file ${file_id} from OpenAI`);
       passThrough = await getDownloadStream(file_id, openai);
       setHeaders();
+      logger.debug(`File ${file_id} downloaded from OpenAI`);
       passThrough.body.pipe(res);
     } else {
       fileStream = getDownloadStream(file_id);
