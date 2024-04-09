@@ -3,6 +3,7 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path, { resolve } from 'path';
 import type { Plugin } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -27,7 +28,52 @@ export default defineConfig({
   // All other env variables are filtered out
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
-  plugins: [react(), nodePolyfills(), sourcemapExclude({ excludeNodeModules: true })],
+  plugins: [
+    react(),
+    nodePolyfills(),
+    VitePWA({
+      injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
+      registerType: 'prompt', // 'prompt' | 'auto' | 'disabled'
+      devOptions: {
+        enabled: false, // enable/disable registering SW in development mode
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}'], // glob patterns to pre-cache
+      },
+      manifest: {
+        name: 'LibreChat',
+        short_name: 'LibreChat',
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#000000',
+        theme_color: '#009688',
+        icons: [
+          {
+            src: '/assets/favicon-32x32.png',
+            sizes: '32x32',
+            type: 'image/png'
+          },
+          {
+            src: '/assets/favicon-16x16.png',
+            sizes: '16x16',
+            type: 'image/png'
+          },
+          {
+            src: '/assets/apple-touch-icon-180x180.png',
+            sizes: '180x180',
+            type: 'image/png'
+          },
+          {
+            src: '/assets/maskable-icon.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
+          }
+        ],
+      },
+    }),
+    sourcemapExclude({ excludeNodeModules: true }),
+  ],
   publicDir: './public',
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
