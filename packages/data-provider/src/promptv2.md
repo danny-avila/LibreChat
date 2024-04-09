@@ -738,9 +738,16 @@ Note, we might be missing some things and it's your job to build out exhaustive 
 ```tsx
 //client/src/components/SidePanel/Parameters/Panel.tsx
 import { ComponentTypes } from 'librechat-data-provider';
-import type { DynamicSettingProps, SettingsConfiguration } from 'librechat-data-provider';
+import type {
+  DynamicSettingProps,
+  SettingDefinition,
+  SettingsConfiguration,
+} from 'librechat-data-provider';
 import { useSetIndexOptions } from '~/hooks';
+import DynamicDropdown from './DynamicDropdown';
+import DynamicTextarea from './DynamicTextarea';
 import DynamicSlider from './DynamicSlider';
+import DynamicSwitch from './DynamicSwitch';
 
 const settingsConfiguration: SettingsConfiguration = [
   {
@@ -755,7 +762,8 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
-    columnSpan: 2,
+    optionType: 'model',
+    // columnSpan: 2,
     // includeInput: false,
   },
   {
@@ -770,6 +778,7 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
+    optionType: 'model',
   },
   {
     key: 'presence_penalty',
@@ -783,6 +792,7 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
+    optionType: 'model',
   },
   {
     key: 'frequency_penalty',
@@ -796,30 +806,7 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
-  },
-  {
-    key: 'resendFiles',
-    description:
-      'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
-    type: 'boolean',
-    default: true,
-    component: 'switch',
-  },
-  {
-    key: 'imageDetail',
-    description:
-      'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
-    type: 'enum',
-    default: 'auto',
-    options: ['low', 'high', 'auto'],
-    component: 'slider',
-  },
-  {
-    key: 'promptPrefix',
-    type: 'string',
-    default: '',
-    component: 'input',
-    placeholder: 'Set custom instructions to include in System Message. Default: none',
+    optionType: 'model',
   },
   {
     key: 'chatGptLabel',
@@ -827,58 +814,160 @@ const settingsConfiguration: SettingsConfiguration = [
     default: '',
     component: 'input',
     placeholder: 'Set a custom name for your AI',
+    optionType: 'conversation',
+  },
+  {
+    key: 'promptPrefix',
+    label: 'Custom Instructions',
+    type: 'string',
+    default: '',
+    component: 'textarea',
+    placeholder: 'Set custom instructions to include in System Message. Default: none',
+    optionType: 'conversation',
+    // columnSpan: 2,
+  },
+  {
+    key: 'resendFiles',
+    label: 'Resend Files',
+    description:
+      'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
+    type: 'boolean',
+    default: true,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  {
+    key: 'imageDetail',
+    label: 'Image Detail',
+    description:
+      'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
+    type: 'enum',
+    default: 'auto',
+    options: ['low', 'auto', 'high'],
+    optionType: 'conversation',
+    component: 'slider',
+    showDefault: false,
+    // columnSpan: 2,
+  },
+  {
+    key: 'imageDetail',
+    label: 'Detail Dropdown',
+    description:
+      'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
+    type: 'enum',
+    default: 'auto',
+    options: ['low', 'auto', 'high'],
+    optionType: 'conversation',
+    component: 'dropdown',
+    showDefault: false,
+    // columnSpan: 2,
   },
 ];
 
 const componentMapping: Record<ComponentTypes, React.ComponentType<DynamicSettingProps>> = {
   [ComponentTypes.Slider]: DynamicSlider,
+  [ComponentTypes.Dropdown]: DynamicDropdown,
+  [ComponentTypes.Switch]: DynamicSwitch,
+  [ComponentTypes.Textarea]: DynamicTextarea,
   // input: DynamicInput,
-  // textarea: DynamicTextarea,
   // checkbox: DynamicCheckbox,
-  // switch: DynamicSwitch,
-  // dropdown: DynamicDropdown,
 };
 
 export default function Parameters() {
   const { setOption } = useSetIndexOptions();
-  const testSetting = settingsConfiguration[0];
-  const Component = componentMapping[testSetting.component];
+
+  const temperature = settingsConfiguration.find(
+    (setting) => setting.key === 'temperature',
+  ) as SettingDefinition;
+  const TempComponent = componentMapping[temperature.component];
+  const { key: temp, default: tempDefault, ...tempSettings } = temperature;
+
+  const imageDetail = settingsConfiguration.find(
+    (setting) => setting.label === 'Image Detail',
+  ) as SettingDefinition;
+  const DetailComponent = componentMapping[imageDetail.component];
+  const { key: detail, default: detailDefault, ...detailSettings } = imageDetail;
+
+  const testDropdown = settingsConfiguration.find(
+    (setting) => setting.label === 'Detail Dropdown',
+  ) as SettingDefinition;
+  const Dropdown = componentMapping[testDropdown.component];
+  const { key: dropdown, default: dropdownDefault, ...dropdownSettings } = testDropdown;
+
+  const resendFiles = settingsConfiguration.find(
+    (setting) => setting.key === 'resendFiles',
+  ) as SettingDefinition;
+  const Switch = componentMapping[resendFiles.component];
+  const { key: switchKey, default: switchDefault, ...switchSettings } = resendFiles;
+
+  const promptPrefix = settingsConfiguration.find(
+    (setting) => setting.key === 'promptPrefix',
+  ) as SettingDefinition;
+  const Textarea = componentMapping[promptPrefix.component];
+  const { key: textareaKey, default: textareaDefault, ...textareaSettings } = promptPrefix;
 
   return (
     <div className="h-auto max-w-full overflow-x-hidden p-3">
-      <div className="grid grid-cols-5 gap-6"> {/* This is the parent element containing all settings */}
+      <div className="grid grid-cols-4 gap-6">
+        {' '}
+        {/* This is the parent element containing all settings */}
         {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}
-        <Component
-          settingKey={testSetting.key}
-          defaultValue={testSetting.default as number}
-          description={testSetting.description}
-          range={testSetting.range}
+        <TempComponent
+          settingKey={temp}
+          defaultValue={tempDefault}
+          {...tempSettings}
+          setOption={setOption}
+        />
+        <Dropdown
+          settingKey={dropdown}
+          defaultValue={dropdownDefault}
+          {...dropdownSettings}
+          setOption={setOption}
+        />
+        <Switch
+          settingKey={switchKey}
+          defaultValue={switchDefault}
+          {...switchSettings}
+          columnSpan={2}
+          setOption={setOption}
+        />
+        <DetailComponent
+          settingKey={detail}
+          defaultValue={detailDefault}
+          {...detailSettings}
+          columnSpan={2}
+          setOption={setOption}
+        />
+        <Textarea
+          settingKey={textareaKey}
+          defaultValue={textareaDefault}
+          {...textareaSettings}
           setOption={setOption}
         />
       </div>
     </div>
   );
 }
+
+
 ```
 
 ```tsx
 //client/src/components/SidePanel/Parameters/DynamicSlider.tsx
-import React from 'react';
+import { useMemo, useEffect, useCallback } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
-import {
-  Label,
-  Slider,
-  HoverCard,
-  InputNumber,
-  HoverCardTrigger,
-} from '~/components/ui';
+import { Label, Slider, HoverCard, Input, InputNumber, HoverCardTrigger } from '~/components/ui';
 import { cn, defaultTextProps, optionText, capitalizeFirstLetter } from '~/utils';
 import { useLocalize, useDebouncedInput } from '~/hooks';
+import { ESide, defaultDebouncedDelay } from '~/common';
+import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
-import { ESide } from '~/common';
 
 function DynamicSlider({
+  label,
   settingKey,
   defaultValue,
   range,
@@ -886,57 +975,150 @@ function DynamicSlider({
   columnSpan,
   setOption,
   optionType,
+  options,
   readonly = false,
+  showDefault = true,
   includeInput = true,
-} : DynamicSettingProps) {
+}: DynamicSettingProps) {
   const localize = useLocalize();
-  const [setInputValue, inputValue] = useDebouncedInput({
-    optionKey: optionType === OptionTypes.Conversation ? settingKey : undefined,
-    initialValue: defaultValue,
+  const isEnum = useMemo(() => !range && options && options.length > 0, [options, range]);
+  const { conversation = {} } = useChatContext();
+
+  const [setInputValue, inputValue] = useDebouncedInput<string | number>({
+    optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
+    initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] : defaultValue,
     setter: () => ({}),
     setOption,
+    delay: isEnum ? 0 : defaultDebouncedDelay,
   });
 
-  if (!range) {
+  const selectedValue = useMemo(() => {
+    if (isEnum) {
+      return conversation?.[settingKey] ?? defaultValue;
+    }
+    // TODO: custom logic, add to payload but not to conversation
+
+    return inputValue;
+  }, [conversation, defaultValue, settingKey, inputValue, isEnum]);
+
+  /** Updates the local state value if global (conversation) is updated elsewhere */
+  useEffect(() => {
+    if (isEnum) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      if (conversation?.[settingKey] === inputValue) {
+        return;
+      }
+
+      setInputValue(conversation?.[settingKey]);
+    }, defaultDebouncedDelay * 1.5);
+
+    return () => clearTimeout(timeout);
+  }, [setInputValue, isEnum, conversation, inputValue, settingKey]);
+
+  const enumToNumeric = useMemo(() => {
+    if (isEnum && options) {
+      return options.reduce((acc, mapping, index) => {
+        acc[mapping] = index;
+        return acc;
+      }, {} as Record<string, number>);
+    }
+    return {};
+  }, [isEnum, options]);
+
+  const valueToEnumOption = useMemo(() => {
+    if (isEnum && options) {
+      return options.reduce((acc, option, index) => {
+        acc[index] = option;
+        return acc;
+      }, {} as Record<number, string>);
+    }
+    return {};
+  }, [isEnum, options]);
+
+  const handleValueChange = useCallback(
+    (value: number) => {
+      if (isEnum) {
+        setInputValue(valueToEnumOption[value]);
+      } else {
+        setInputValue(value);
+      }
+    },
+    [isEnum, setInputValue, valueToEnumOption],
+  );
+
+  if (!range && !isEnum) {
     return null;
   }
 
   return (
-    <div className={cn('flex flex-col items-center justify-start gap-6',
-      columnSpan ? `col-span-${columnSpan}` : 'col-span-full',
-    )}>
+    <div
+      className={cn(
+        'flex flex-col items-center justify-start gap-6',
+        columnSpan ? `col-span-${columnSpan}` : 'col-span-full',
+      )}
+    >
       <HoverCard openDelay={300}>
         <HoverCardTrigger className="grid w-full items-center gap-2">
           <div className="flex justify-between">
-            <Label htmlFor={`${settingKey}-dynamic-setting`} className="text-left text-sm font-medium">
-              {capitalizeFirstLetter(settingKey)} <small className="opacity-40">({localize('com_endpoint_default')}: {defaultValue})</small>
+            <Label
+              htmlFor={`${settingKey}-dynamic-setting`}
+              className="text-left text-sm font-medium"
+            >
+              {capitalizeFirstLetter(label ?? settingKey)}{' '}
+              {showDefault && (<small className="opacity-40">
+                ({localize('com_endpoint_default')}: {defaultValue})
+              </small>)}
             </Label>
-            { includeInput && (<InputNumber
-              id={`${settingKey}-dynamic-setting`}
-              disabled={readonly}
-              value={inputValue as number}
-              onChange={(value) => setInputValue(Number(value))}
-              max={range.max}
-              min={range.min}
-              step={range.step ?? 1}
-              controls={false}
-              className={cn(
-                defaultTextProps,
-                cn(
-                  optionText,
-                  'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
-                ),
-              )}
-            />)}
+            {includeInput && !isEnum ? (
+              <InputNumber
+                id={`${settingKey}-dynamic-setting-input-number`}
+                disabled={readonly}
+                value={inputValue ?? defaultValue}
+                onChange={(value) => setInputValue(Number(value))}
+                max={range ? range.max : (options?.length ?? 0) - 1}
+                min={range ? range.min : 0}
+                step={range ? range.step ?? 1 : 1}
+                controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                  ),
+                )}
+              />
+            ) : (
+              <Input
+                id={`${settingKey}-dynamic-setting-input`}
+                disabled={readonly}
+                value={selectedValue ?? defaultValue}
+                onChange={() => ({})}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                  ),
+                )}
+              />
+            )}
           </div>
           <Slider
+            id={`${settingKey}-dynamic-setting-slider`}
             disabled={readonly}
-            value={[(inputValue as number) ?? defaultValue]}
-            onValueChange={(value) => setInputValue(value[0])}
-            doubleClickHandler={() => setInputValue(defaultValue)}
-            max={range.max}
-            min={range.min}
-            step={range.step ?? 1}
+            value={[
+              isEnum
+                ? enumToNumeric[(selectedValue as number) ?? '']
+                : (inputValue as number) ?? (defaultValue as number),
+            ]}
+            onValueChange={(value) => handleValueChange(value[0])}
+            doubleClickHandler={() => setInputValue(defaultValue as string | number)}
+            max={isEnum && options ? options.length - 1 : range ? range.max : 0}
+            min={range ? range.min : 0}
+            step={range ? range.step ?? 1 : 1}
             className="flex h-4 w-full"
           />
         </HoverCardTrigger>
@@ -947,52 +1129,420 @@ function DynamicSlider({
 }
 
 export default DynamicSlider;
-```
 
-For now, you must focus on making sure all conditions, types, option handling is done for DynamicSlider. We will work iteratively, by first ensuring DynamicSlider is fully functional and then moving on to the other components.
+// client/src/components/SidePanel/Parameters/DynamicDropdown.tsx
+import { useMemo, useState } from 'react';
+import { OptionTypes } from 'librechat-data-provider';
+import type { DynamicSettingProps } from 'librechat-data-provider';
+import { Label, HoverCard, HoverCardTrigger, SelectDropDown } from '~/components/ui';
+import { cn, capitalizeFirstLetter } from '~/utils';
+import { useChatContext } from '~/Providers';
+import OptionHover from './OptionHover';
+import { useLocalize } from '~/hooks';
+import { ESide } from '~/common';
 
-Begin your work on the DynamicSlider component. Remember to follow the coding guidelines and only write the new code. Do not repeat any existing code.
+function DynamicDropdown({
+  label,
+  settingKey,
+  defaultValue,
+  description,
+  columnSpan,
+  setOption,
+  optionType,
+  options,
+  // type: _type,
+  readonly = false,
+  showDefault = true,
+}: DynamicSettingProps) {
+  const localize = useLocalize();
+  const { conversation = {} } = useChatContext();
+  const [customValue, setCustomValue] = useState<string | null>(null);
 
-Principally, we are missing the handling for options. in which case, it's ok if a slider has no defined ranged. also we are missing validation on the "type" property according to what sliders allow.
+  const selectedValue = useMemo(() => {
+    if (optionType === OptionTypes.Custom) {
+      // TODO: custom logic, add to payload but not to conversation
+      return customValue;
+    }
 
-For your convenience, here's a hardcoded example where non-numeric options are being used for a slider elsewhere in the project, outside of the scope of dynamic settings:
+    return conversation?.[settingKey] ?? defaultValue;
+  }, [conversation, defaultValue, optionType, settingKey, customValue]);
 
-```tsx
-export declare enum ImageDetail {
-    low = "low",
-    auto = "auto",
-    high = "high"
+  const handleChange = (value: string) => {
+    if (optionType === OptionTypes.Custom) {
+      // TODO: custom logic, add to payload but not to conversation
+      setCustomValue(value);
+      return;
+    }
+    setOption(settingKey)(value);
+  };
+
+  if (!options || options.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className={cn(
+        'flex flex-col items-center justify-start gap-6',
+        columnSpan ? `col-span-${columnSpan}` : 'col-span-full',
+      )}
+    >
+      <HoverCard openDelay={300}>
+        <HoverCardTrigger className="grid w-full items-center gap-2">
+          <div className="flex w-full justify-between">
+            <Label
+              htmlFor={`${settingKey}-dynamic-dropdown`}
+              className="text-left text-sm font-medium"
+            >
+              {capitalizeFirstLetter(label ?? settingKey)}
+              { showDefault && (<small className="opacity-40">
+                ({localize('com_endpoint_default')}: {defaultValue})
+              </small> )}
+            </Label>
+          </div>
+          <SelectDropDown
+            showLabel={false}
+            emptyTitle={true}
+            disabled={readonly}
+            value={selectedValue}
+            setValue={handleChange}
+            availableValues={options}
+            containerClassName="w-full"
+            id={`${settingKey}-dynamic-dropdown`}
+          />
+        </HoverCardTrigger>
+        {description && <OptionHover description={description} side={ESide.Left} />}
+      </HoverCard>
+    </div>
+  );
 }
-export declare const imageDetailNumeric: {
-    low: number;
-    auto: number;
-    high: number;
-};
-export declare const imageDetailValue: {
-    0: ImageDetail;
-    1: ImageDetail;
-    2: ImageDetail;
-};
-/* and applied here */
-            <HoverCard openDelay={500}>
-              <HoverCardTrigger className="flex w-[52%] md:w-[125px]">
-                <Slider
-                  id="image-detail-slider"
-                  disabled={readonly}
-                  value={[
-                    imageDetailNumeric[imageDetail ?? ''] ?? imageDetailNumeric[ImageDetail.auto],
-                  ]}
-                  onValueChange={(value) => setImageDetail(imageDetailValue[value[0]])}
-                  doubleClickHandler={() => setImageDetail(ImageDetail.auto)}
-                  max={2}
-                  min={0}
-                  step={1}
-                />
-                <OptionHover endpoint={optionEndpoint ?? ''} type="detail" side={ESide.Bottom} />
-              </HoverCardTrigger>
-            </HoverCard>
+
+export default DynamicDropdown;
+
+// client/src/components/SidePanel/Parameters/DynamicSwitch.tsx
+import { useState, useMemo } from 'react';
+import { OptionTypes } from 'librechat-data-provider';
+import type { DynamicSettingProps } from 'librechat-data-provider';
+import { Label, Switch, HoverCard, HoverCardTrigger } from '~/components/ui';
+import { useChatContext } from '~/Providers';
+import OptionHover from './OptionHover';
+import { useLocalize } from '~/hooks';
+import { ESide } from '~/common';
+
+function DynamicSwitch({
+  label,
+  settingKey,
+  defaultValue,
+  description,
+  columnSpan,
+  setOption,
+  optionType,
+  readonly = false,
+  showDefault = true,
+}: DynamicSettingProps) {
+  const localize = useLocalize();
+  const { conversation = {} } = useChatContext();
+  const [customValue, setCustomValue] = useState<boolean>(!!(defaultValue as boolean | undefined));
+
+  const selectedValue = useMemo(() => {
+    if (optionType === OptionTypes.Custom) {
+      // TODO: custom logic, add to payload but not to conversation
+      return customValue;
+    }
+
+    return conversation?.[settingKey] ?? defaultValue;
+  }, [conversation, defaultValue, optionType, settingKey, customValue]);
+
+  const handleCheckedChange = (checked: boolean) => {
+    if (optionType === OptionTypes.Custom) {
+      // TODO: custom logic, add to payload but not to conversation
+      setCustomValue(checked);
+      return;
+    }
+    setOption(settingKey)(checked);
+  };
+
+  return (
+    <div
+      className={`flex flex-col items-center justify-start gap-6 ${columnSpan ? `col-span-${columnSpan}` : 'col-span-full'}`}
+    >
+      <HoverCard openDelay={300}>
+        <HoverCardTrigger className="grid w-full items-center gap-2">
+          <div className="flex justify-between">
+            <Label
+              htmlFor={`${settingKey}-dynamic-switch`}
+              className="text-left text-sm font-medium"
+            >
+              {label ?? settingKey} { showDefault && (<small className="opacity-40">({localize('com_endpoint_default')}: {defaultValue ? 'On' : 'Off'})</small> )}
+            </Label>
+          </div>
+          <Switch
+            id={`${settingKey}-dynamic-switch`}
+            checked={selectedValue}
+            onCheckedChange={handleCheckedChange}
+            disabled={readonly}
+            className="flex"
+          />
+        </HoverCardTrigger>
+        {description && <OptionHover description={description} side={ESide.Left} />}
+      </HoverCard>
+    </div>
+  );
+}
+
+export default DynamicSwitch;
+
+// client/src/components/SidePanel/Parameters/DynamicTextarea.tsx
+import { useEffect } from 'react';
+import { OptionTypes } from 'librechat-data-provider';
+import type { DynamicSettingProps } from 'librechat-data-provider';
+import { Label, TextareaAutosize, HoverCard, HoverCardTrigger } from '~/components/ui';
+import { cn, defaultTextProps, capitalizeFirstLetter } from '~/utils';
+import { useLocalize, useDebouncedInput } from '~/hooks';
+import { ESide, defaultDebouncedDelay } from '~/common';
+import { useChatContext } from '~/Providers';
+import OptionHover from './OptionHover';
+
+function DynamicTextarea({
+  label,
+  settingKey,
+  defaultValue,
+  description,
+  columnSpan,
+  setOption,
+  optionType,
+  placeholder,
+  readonly = false,
+  showDefault = true,
+}: DynamicSettingProps) {
+  const localize = useLocalize();
+  const { conversation = {} } = useChatContext();
+
+  const [setInputValue, inputValue] = useDebouncedInput<string>({
+    optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
+    initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] as string : defaultValue as string,
+    setter: () => ({}),
+    setOption,
+  });
+
+  /** Updates the local state value if global (conversation) is updated elsewhere */
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (conversation?.[settingKey] === inputValue) {
+        return;
+      }
+
+      setInputValue(conversation?.[settingKey]);
+    }, defaultDebouncedDelay * 1.5);
+
+    return () => clearTimeout(timeout);
+  }, [setInputValue, conversation, inputValue, settingKey]);
+
+  return (
+    <div
+      className={`flex flex-col items-center justify-start gap-6 ${columnSpan ? `col-span-${columnSpan}` : 'col-span-full'}`}
+    >
+      <HoverCard openDelay={300}>
+        <HoverCardTrigger className="grid w-full items-center gap-2">
+          <div className="flex w-full justify-between">
+            <Label
+              htmlFor={`${settingKey}-dynamic-textarea`}
+              className="text-left text-sm font-medium"
+            >
+              {capitalizeFirstLetter(label ?? settingKey)} { showDefault && (
+                <small className="opacity-40">
+                ({typeof defaultValue === 'undefined' || !((defaultValue as string)?.length)
+                    ? localize('com_endpoint_default_blank')
+                    : `${localize('com_endpoint_default')}: ${defaultValue}`
+                  })
+                </small> )}
+            </Label>
+          </div>
+          <TextareaAutosize
+            id={`${settingKey}-dynamic-textarea`}
+            disabled={readonly}
+            value={inputValue}
+            onChange={setInputValue}
+            placeholder={placeholder || localize('com_endpoint_openai_prompt_prefix_placeholder')}
+            className={cn(
+              defaultTextProps,
+              // TODO: configurable max height
+              'flex max-h-[138px] min-h-[100px] w-full resize-none px-3 py-2',
+            )}
+          />
+        </HoverCardTrigger>
+        {description && <OptionHover description={description} side={ESide.Left} />}
+      </HoverCard>
+    </div>
+  );
+}
+
+export default DynamicTextarea;
+
+// client/src/components/SidePanel/Parameters/DynamicInput.tsx
+import { useEffect } from 'react';
+import { OptionTypes } from 'librechat-data-provider';
+import type { DynamicSettingProps } from 'librechat-data-provider';
+import { Label, Input, HoverCard, HoverCardTrigger } from '~/components/ui';
+import { cn, defaultTextProps, capitalizeFirstLetter } from '~/utils';
+import { useLocalize, useDebouncedInput } from '~/hooks';
+import { ESide, defaultDebouncedDelay } from '~/common';
+import { useChatContext } from '~/Providers';
+import OptionHover from './OptionHover';
+
+function DynamicInput({
+  label,
+  settingKey,
+  defaultValue,
+  description,
+  columnSpan,
+  setOption,
+  optionType,
+  placeholder,
+  readonly = false,
+  showDefault = true,
+}: DynamicSettingProps) {
+  const localize = useLocalize();
+  const { conversation = {} } = useChatContext();
+
+  const [setInputValue, inputValue] = useDebouncedInput<string>({
+    optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
+    initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] as string : defaultValue as string,
+    setter: () => ({}),
+    setOption,
+  });
+
+  /** Updates the local state value if global (conversation) is updated elsewhere */
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (conversation?.[settingKey] === inputValue) {
+        return;
+      }
+      setInputValue(conversation?.[settingKey]);
+    }, defaultDebouncedDelay * 1.5);
+
+    return () => clearTimeout(timeout);
+  }, [setInputValue, conversation, inputValue, settingKey]);
+
+  return (
+    <div
+      className={`flex flex-col items-center justify-start gap-6 ${columnSpan ? `col-span-${columnSpan}` : 'col-span-full'}`}
+    >
+      <HoverCard openDelay={300}>
+        <HoverCardTrigger className="grid w-full items-center gap-2">
+          <div className="flex w-full justify-between">
+            <Label
+              htmlFor={`${settingKey}-dynamic-input`}
+              className="text-left text-sm font-medium"
+            >
+              {capitalizeFirstLetter(label ?? settingKey)} { showDefault && (
+                <small className="opacity-40">
+                  ({typeof defaultValue === 'undefined' || !((defaultValue as string)?.length)
+                    ? localize('com_endpoint_default_blank')
+                    : `${localize('com_endpoint_default')}: ${defaultValue}`
+                  })
+                </small> )}
+            </Label>
+          </div>
+          <Input
+            id={`${settingKey}-dynamic-input`}
+            disabled={readonly}
+            value={inputValue}
+            onChange={setInputValue}
+            placeholder={placeholder}
+            className={cn(
+              defaultTextProps,
+              'flex h-10 max-h-10 w-full resize-none px-3 py-2',
+            )}
+          />
+        </HoverCardTrigger>
+        {description && <OptionHover description={description} side={ESide.Left} />}
+      </HoverCard>
+    </div>
+  );
+}
+
+export default DynamicInput;
+
+// client/src/components/SidePanel/Parameters/DynamicCheckbox.tsx
+import { useMemo, useState } from 'react';
+import { OptionTypes } from 'librechat-data-provider';
+import type { DynamicSettingProps } from 'librechat-data-provider';
+import { Label, Checkbox, HoverCard, HoverCardTrigger } from '~/components/ui';
+import { useChatContext } from '~/Providers';
+import OptionHover from './OptionHover';
+import { useLocalize } from '~/hooks';
+import { ESide } from '~/common';
+
+function DynamicCheckbox({
+  label,
+  settingKey,
+  defaultValue,
+  description,
+  columnSpan,
+  setOption,
+  optionType,
+  readonly = false,
+  showDefault = true,
+}: DynamicSettingProps) {
+  const localize = useLocalize();
+  const { conversation = {} } = useChatContext();
+  const [customValue, setCustomValue] = useState<boolean>(!!(defaultValue as boolean | undefined));
+
+  const selectedValue = useMemo(() => {
+    if (optionType === OptionTypes.Custom) {
+      // TODO: custom logic, add to payload but not to conversation
+      return customValue;
+    }
+
+    return conversation?.[settingKey] ?? defaultValue;
+  }, [conversation, defaultValue, optionType, settingKey, customValue]);
+
+  const handleCheckedChange = (checked: boolean) => {
+    if (optionType === OptionTypes.Custom) {
+      // TODO: custom logic, add to payload but not to conversation
+      setCustomValue(checked);
+      return;
+    }
+    setOption(settingKey)(checked);
+  };
+
+  return (
+    <div
+      className={`flex flex-col items-center justify-start gap-6 ${columnSpan ? `col-span-${columnSpan}` : 'col-span-full'}`}
+    >
+      <HoverCard openDelay={300}>
+        <HoverCardTrigger className="grid w-full items-center">
+          <div className="flex justify-start gap-4">
+            <Label
+              htmlFor={`${settingKey}-dynamic-checkbox`}
+              className="text-left text-sm font-medium"
+            >
+              {label ?? settingKey} { showDefault && (<small className="opacity-40">({localize('com_endpoint_default')}: {defaultValue ? localize('com_ui_yes') : localize('com_ui_no')})</small> )}
+            </Label>
+            <Checkbox
+              id={`${settingKey}-dynamic-checkbox`}
+              disabled={readonly}
+              checked={selectedValue}
+              onCheckedChange={handleCheckedChange}
+              className="mt-[2px] focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
+            />
+          </div>
+        </HoverCardTrigger>
+        {description && <OptionHover description={description} side={ESide.Left} />}
+      </HoverCard>
+    </div>
+  );
+}
+
+export default DynamicCheckbox;
+
 ```
 
----
+Note the optionType handling should be very similar across all component types, since that determines whether the setOption function is called a certain way or not.
+
+We have tested the provided components and they work as expected.
+
+Begin.
 
 ### AI Generation #4

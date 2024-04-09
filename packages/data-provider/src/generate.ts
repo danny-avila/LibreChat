@@ -29,6 +29,7 @@ export interface SettingDefinition {
   description?: string;
   type: 'number' | 'boolean' | 'string' | 'enum';
   default?: number | boolean | string;
+  showDefault?: boolean;
   options?: string[];
   range?: SettingRange;
   enumMappings?: Record<string, number | boolean | string>;

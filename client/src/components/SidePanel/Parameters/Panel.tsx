@@ -6,7 +6,11 @@ import type {
 } from 'librechat-data-provider';
 import { useSetIndexOptions } from '~/hooks';
 import DynamicDropdown from './DynamicDropdown';
+import DynamicCheckbox from './DynamicCheckbox';
+import DynamicTextarea from './DynamicTextarea';
 import DynamicSlider from './DynamicSlider';
+import DynamicSwitch from './DynamicSwitch';
+import DynamicInput from './DynamicInput';
 
 const settingsConfiguration: SettingsConfiguration = [
   {
@@ -68,15 +72,8 @@ const settingsConfiguration: SettingsConfiguration = [
     optionType: 'model',
   },
   {
-    key: 'promptPrefix',
-    type: 'string',
-    default: '',
-    component: 'input',
-    placeholder: 'Set custom instructions to include in System Message. Default: none',
-    optionType: 'conversation',
-  },
-  {
     key: 'chatGptLabel',
+    label: 'Custom Name',
     type: 'string',
     default: '',
     component: 'input',
@@ -84,13 +81,37 @@ const settingsConfiguration: SettingsConfiguration = [
     optionType: 'conversation',
   },
   {
+    key: 'promptPrefix',
+    label: 'Custom Instructions',
+    type: 'string',
+    default: '',
+    component: 'textarea',
+    placeholder: 'Set custom instructions to include in System Message. Default: none',
+    optionType: 'conversation',
+    // columnSpan: 2,
+  },
+  {
     key: 'resendFiles',
+    label: 'Resend Files',
     description:
       'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
     type: 'boolean',
     default: true,
     component: 'switch',
     optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  {
+    key: 'resendFiles',
+    label: 'Resend Files?',
+    description:
+      'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
+    type: 'boolean',
+    default: true,
+    component: 'checkbox',
+    optionType: 'conversation',
+    showDefault: false,
     columnSpan: 2,
   },
   {
@@ -103,7 +124,8 @@ const settingsConfiguration: SettingsConfiguration = [
     options: ['low', 'auto', 'high'],
     optionType: 'conversation',
     component: 'slider',
-    // columnSpan: 2,
+    showDefault: false,
+    columnSpan: 2,
   },
   {
     key: 'imageDetail',
@@ -115,6 +137,7 @@ const settingsConfiguration: SettingsConfiguration = [
     options: ['low', 'auto', 'high'],
     optionType: 'conversation',
     component: 'dropdown',
+    showDefault: false,
     // columnSpan: 2,
   },
 ];
@@ -122,29 +145,56 @@ const settingsConfiguration: SettingsConfiguration = [
 const componentMapping: Record<ComponentTypes, React.ComponentType<DynamicSettingProps>> = {
   [ComponentTypes.Slider]: DynamicSlider,
   [ComponentTypes.Dropdown]: DynamicDropdown,
-  // input: DynamicInput,
-  // textarea: DynamicTextarea,
-  // checkbox: DynamicCheckbox,
-  // switch: DynamicSwitch,
+  [ComponentTypes.Switch]: DynamicSwitch,
+  [ComponentTypes.Textarea]: DynamicTextarea,
+  [ComponentTypes.Input]: DynamicInput,
+  [ComponentTypes.Checkbox]: DynamicCheckbox,
 };
 
 export default function Parameters() {
   const { setOption } = useSetIndexOptions();
+
   const temperature = settingsConfiguration.find(
     (setting) => setting.key === 'temperature',
   ) as SettingDefinition;
+  const TempComponent = componentMapping[temperature.component];
+  const { key: temp, default: tempDefault, ...tempSettings } = temperature;
+
   const imageDetail = settingsConfiguration.find(
     (setting) => setting.label === 'Image Detail',
   ) as SettingDefinition;
+  const DetailComponent = componentMapping[imageDetail.component];
+  const { key: detail, default: detailDefault, ...detailSettings } = imageDetail;
+
   const testDropdown = settingsConfiguration.find(
     (setting) => setting.label === 'Detail Dropdown',
   ) as SettingDefinition;
-  const TempComponent = componentMapping[temperature.component];
-  const DetailComponent = componentMapping[imageDetail.component];
   const Dropdown = componentMapping[testDropdown.component];
-  const { key: temp, default: tempDefault, ...tempSettings } = temperature;
-  const { key: detail, default: detailDefault, ...detailSettings } = imageDetail;
   const { key: dropdown, default: dropdownDefault, ...dropdownSettings } = testDropdown;
+
+  const resendFiles = settingsConfiguration.find(
+    (setting) => setting.key === 'resendFiles',
+  ) as SettingDefinition;
+  const Switch = componentMapping[resendFiles.component];
+  const { key: switchKey, default: switchDefault, ...switchSettings } = resendFiles;
+
+  const checkboxFiles = settingsConfiguration.find(
+    (setting) => setting.label === 'Resend Files?',
+  ) as SettingDefinition;
+  const Checkbox = componentMapping[checkboxFiles.component];
+  const { key: checkboxKey, default: checkboxDefault, ...checkboxSettings } = checkboxFiles;
+
+  const promptPrefix = settingsConfiguration.find(
+    (setting) => setting.key === 'promptPrefix',
+  ) as SettingDefinition;
+  const Textarea = componentMapping[promptPrefix.component];
+  const { key: textareaKey, default: textareaDefault, ...textareaSettings } = promptPrefix;
+
+  const chatGptLabel = settingsConfiguration.find(
+    (setting) => setting.key === 'chatGptLabel',
+  ) as SettingDefinition;
+  const Input = componentMapping[chatGptLabel.component];
+  const { key: inputKey, default: inputDefault, ...inputSettings } = chatGptLabel;
 
   return (
     <div className="h-auto max-w-full overflow-x-hidden p-3">
@@ -158,16 +208,40 @@ export default function Parameters() {
           {...tempSettings}
           setOption={setOption}
         />
+        <Dropdown
+          settingKey={dropdown}
+          defaultValue={dropdownDefault}
+          {...dropdownSettings}
+          setOption={setOption}
+        />
+        <Switch
+          settingKey={switchKey}
+          defaultValue={switchDefault}
+          {...switchSettings}
+          setOption={setOption}
+        />
         <DetailComponent
           settingKey={detail}
           defaultValue={detailDefault}
           {...detailSettings}
           setOption={setOption}
         />
-        <Dropdown
-          settingKey={dropdown}
-          defaultValue={dropdownDefault}
-          {...dropdownSettings}
+        <Input
+          settingKey={inputKey}
+          defaultValue={inputDefault}
+          {...inputSettings}
+          setOption={setOption}
+        />
+        <Textarea
+          settingKey={textareaKey}
+          defaultValue={textareaDefault}
+          {...textareaSettings}
+          setOption={setOption}
+        />
+        <Checkbox
+          settingKey={checkboxKey}
+          defaultValue={checkboxDefault}
+          {...checkboxSettings}
           setOption={setOption}
         />
       </div>

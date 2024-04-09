@@ -1,14 +1,12 @@
-import React, { useMemo, useEffect, useCallback } from 'react';
+import { useMemo, useEffect, useCallback } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Slider, HoverCard, Input, InputNumber, HoverCardTrigger } from '~/components/ui';
 import { cn, defaultTextProps, optionText, capitalizeFirstLetter } from '~/utils';
 import { useLocalize, useDebouncedInput } from '~/hooks';
+import { ESide, defaultDebouncedDelay } from '~/common';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
-import { ESide } from '~/common';
-
-const defaultDebouncedDelay = 450;
 
 function DynamicSlider({
   label,
@@ -21,6 +19,7 @@ function DynamicSlider({
   optionType,
   options,
   readonly = false,
+  showDefault = true,
   includeInput = true,
 }: DynamicSettingProps) {
   const localize = useLocalize();
@@ -111,9 +110,11 @@ function DynamicSlider({
               className="text-left text-sm font-medium"
             >
               {capitalizeFirstLetter(label ?? settingKey)}{' '}
-              <small className="opacity-40">
-                ({localize('com_endpoint_default')}: {defaultValue})
-              </small>
+              {showDefault && (
+                <small className="opacity-40">
+                  ({localize('com_endpoint_default')}: {defaultValue})
+                </small>
+              )}
             </Label>
             {includeInput && !isEnum ? (
               <InputNumber

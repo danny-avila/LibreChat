@@ -1,14 +1,14 @@
+// client/src/components/SidePanel/Parameters/DynamicCheckbox.tsx
 import { useMemo, useState } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
-import { Label, HoverCard, HoverCardTrigger, SelectDropDown } from '~/components/ui';
-import { cn, capitalizeFirstLetter } from '~/utils';
+import { Label, Checkbox, HoverCard, HoverCardTrigger } from '~/components/ui';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
-function DynamicDropdown({
+function DynamicCheckbox({
   label,
   settingKey,
   defaultValue,
@@ -16,14 +16,12 @@ function DynamicDropdown({
   columnSpan,
   setOption,
   optionType,
-  options,
-  // type: _type,
   readonly = false,
   showDefault = true,
 }: DynamicSettingProps) {
   const localize = useLocalize();
   const { conversation = {} } = useChatContext();
-  const [customValue, setCustomValue] = useState<string | null>(null);
+  const [customValue, setCustomValue] = useState<boolean>(!!(defaultValue as boolean | undefined));
 
   const selectedValue = useMemo(() => {
     if (optionType === OptionTypes.Custom) {
@@ -34,51 +32,44 @@ function DynamicDropdown({
     return conversation?.[settingKey] ?? defaultValue;
   }, [conversation, defaultValue, optionType, settingKey, customValue]);
 
-  const handleChange = (value: string) => {
+  const handleCheckedChange = (checked: boolean) => {
     if (optionType === OptionTypes.Custom) {
       // TODO: custom logic, add to payload but not to conversation
-      setCustomValue(value);
+      setCustomValue(checked);
       return;
     }
-    setOption(settingKey)(value);
+    setOption(settingKey)(checked);
   };
-
-  if (!options || options.length === 0) {
-    return null;
-  }
 
   return (
     <div
-      className={cn(
-        'flex flex-col items-center justify-start gap-6',
-        columnSpan ? `col-span-${columnSpan}` : 'col-span-full',
-      )}
+      className={`flex flex-col items-center justify-start gap-6 ${
+        columnSpan ? `col-span-${columnSpan}` : 'col-span-full'
+      }`}
     >
       <HoverCard openDelay={300}>
-        <HoverCardTrigger className="grid w-full items-center gap-2">
-          <div className="flex w-full justify-between">
+        <HoverCardTrigger className="grid w-full items-center">
+          <div className="flex justify-start gap-4">
             <Label
-              htmlFor={`${settingKey}-dynamic-dropdown`}
+              htmlFor={`${settingKey}-dynamic-checkbox`}
               className="text-left text-sm font-medium"
             >
-              {capitalizeFirstLetter(label ?? settingKey)}
+              {label ?? settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
-                  ({localize('com_endpoint_default')}: {defaultValue})
+                  ({localize('com_endpoint_default')}:{' '}
+                  {defaultValue ? localize('com_ui_yes') : localize('com_ui_no')})
                 </small>
               )}
             </Label>
+            <Checkbox
+              id={`${settingKey}-dynamic-checkbox`}
+              disabled={readonly}
+              checked={selectedValue}
+              onCheckedChange={handleCheckedChange}
+              className="mt-[2px] focus:ring-opacity-20 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:focus:ring-gray-600 dark:focus:ring-opacity-50 dark:focus:ring-offset-0"
+            />
           </div>
-          <SelectDropDown
-            showLabel={false}
-            emptyTitle={true}
-            disabled={readonly}
-            value={selectedValue}
-            setValue={handleChange}
-            availableValues={options}
-            containerClassName="w-full"
-            id={`${settingKey}-dynamic-dropdown`}
-          />
         </HoverCardTrigger>
         {description && <OptionHover description={description} side={ESide.Left} />}
       </HoverCard>
@@ -86,4 +77,4 @@ function DynamicDropdown({
   );
 }
 
-export default DynamicDropdown;
+export default DynamicCheckbox;
