@@ -44,21 +44,23 @@ export const a = memo(({ href, children }: { href: string; children: React.React
   const { showToast } = useToastContext();
   const localize = useLocalize();
 
-  const { filepath, filename } = useMemo(() => {
+  const { file_id, filename, filepath } = useMemo(() => {
     const pattern = new RegExp(`(?:files|outputs)/${user?.id}/([^\\s]+)`);
     const match = href.match(pattern);
     if (match && match[0]) {
       const path = match[0];
-      const name = path.split('/').pop();
-      return { filepath: path, filename: name };
+      const parts = path.split('/');
+      const name = parts.pop();
+      const file_id = parts.pop();
+      return { file_id, filename: name, filepath: path };
     }
-    return { filepath: '', filename: '' };
+    return { file_id: '', filename: '', filepath: '' };
   }, [user?.id, href]);
 
-  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', filepath);
+  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id);
   const props: { target?: string; onClick?: React.MouseEventHandler } = { target: '_new' };
 
-  if (!filepath || !filename) {
+  if (!file_id || !filename) {
     return (
       <a href={href} {...props}>
         {children}
