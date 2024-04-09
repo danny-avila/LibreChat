@@ -19,6 +19,7 @@ const assistants = require('./assistants');
 const files = require('./files');
 
 // Customize
+const rooms = require('./rooms');
 const subscribe = require('./subscribe');
 const credits = require('./credits');
 
@@ -44,4 +45,5 @@ module.exports = {
   files,
   subscribe,
   credits,
+  rooms,
 };

@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const mongoMeili = require('../plugins/mongoMeili');
+
 const roomSchema = mongoose.Schema(
   {
     roomId: {
@@ -9,10 +10,23 @@ const roomSchema = mongoose.Schema(
       index: true,
       meiliIndex: true,
     },
-    title: {
+    name: {
       type: String,
-      default: 'New Chat Room',
+      required: true,
       meiliIndex: true,
+    },
+    password: {
+      type: String,
+      required: false,
+      default: '',
+    },
+    isPrivate: {
+      type: Boolean,
+      default: false,
+    },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
     },
     users: [
       {
@@ -36,6 +50,6 @@ if (process.env.MEILI_HOST && process.env.MEILI_MASTER_KEY) {
 
 roomSchema.index({ createdAt: 1, updatedAt: 1 });
 
-const Room = mongoose.models.Conversation || mongoose.model('Room', roomSchema);
+const Room = mongoose.models.Room || mongoose.model('Room', roomSchema);
 
 module.exports = Room;

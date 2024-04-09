@@ -23,6 +23,7 @@ const User = require('./User');
 const Session = require('./Session');
 const Balance = require('./Balance');
 const ConvoToken = require('./ConvoToken');
+const { getRoom, getRooms, getRoomsByUser, createRoom } = require('./Room');
 
 module.exports = {
   User,
@@ -60,4 +61,9 @@ module.exports = {
   updateFileUsage,
 
   ConvoToken,
+
+  createRoom,
+  getRoom,
+  getRooms,
+  getRoomsByUser,
 };

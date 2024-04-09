@@ -10,6 +10,7 @@ import {
   ApiErrorWatcher,
 } from '~/components/Auth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import RoomRoute from './RoomRoute';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -54,6 +55,10 @@ export const router = createBrowserRouter([
           //   path: 'search/:query?',
           //   element: <Search />,
           // },
+          {
+            path: 'r/:roomId',
+            element: <RoomRoute />,
+          },
         ],
       },
     ],

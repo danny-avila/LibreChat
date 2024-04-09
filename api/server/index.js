@@ -88,6 +88,7 @@ const startServer = async () => {
   // Customize
   app.use('/api/subscribe', routes.subscribe);
   app.use('/api/credits', routes.credits);
+  app.use('/api/rooms', routes.rooms);
 
   app.use((req, res) => {
     res.status(404).sendFile(path.join(app.locals.paths.dist, 'index.html'));

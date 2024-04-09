@@ -6,7 +6,7 @@ import {
   useRecoilValue,
   useSetRecoilState,
 } from 'recoil';
-import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
+import type { TMessage, TPreset, TConversation, TSubmission, TRoom } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import { useEffect } from 'react';
 
@@ -19,6 +19,21 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
         const index = Number(node.key.split('__')[1]);
         if (newValue?.assistant_id) {
           localStorage.setItem(`assistant_id__${index}`, newValue.assistant_id);
+        }
+      });
+    },
+  ] as const,
+});
+
+const roomByIndex = atomFamily<TRoom | null, string | number>({
+  key: 'roomByIndex',
+  default: null,
+  effects: [
+    ({ onSet, node }) => {
+      onSet(async (newValue: TRoom | null) => {
+        const index = Number(node.key.split('__')[1]);
+        if (newValue?.assistant_id) {
+          localStorage.setItem(`room_id__${index}`, newValue.room_id);
         }
       });
     },
@@ -128,4 +143,5 @@ export default {
   latestMessageFamily,
   allConversationsSelector,
   useCreateConversationAtom,
+  roomByIndex,
 };

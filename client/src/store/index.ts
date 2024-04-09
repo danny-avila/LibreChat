@@ -12,6 +12,7 @@ import preset from './preset';
 import lang from './language';
 import settings from './settings';
 import premiumModels from './premiumModels';
+import rooms from './rooms';
 
 export default {
   ...families,
@@ -28,4 +29,5 @@ export default {
   ...lang,
   ...settings,
   ...premiumModels,
+  ...rooms,
 };

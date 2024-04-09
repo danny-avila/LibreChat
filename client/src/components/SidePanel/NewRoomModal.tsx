@@ -2,6 +2,8 @@ import { Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Input } fro
 import React, { Dispatch, FormEvent, SetStateAction, useState } from 'react';
 import { cn } from '~/utils';
 import { useMediaQuery } from '~/hooks';
+import { request } from 'librechat-data-provider';
+import { useNavigate } from 'react-router-dom';
 
 interface RoomState {
   name: string;
@@ -16,6 +18,7 @@ export default function NewRoomModal({
   open: boolean;
   setOpen: Dispatch<SetStateAction<boolean>>;
 }) {
+  const navigate = useNavigate();
   const initialRoomState: RoomState = {
     name: '',
     isPrivate: false,
@@ -24,8 +27,11 @@ export default function NewRoomModal({
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const [room, setRoom] = useState<RoomState>(initialRoomState);
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const result = await request.post('/api/rooms', room);
+    navigate(`/r/${result.roomId}`);
+    console.log(result);
   };
 
   return (
@@ -43,7 +49,7 @@ export default function NewRoomModal({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <Input
-            placeholder="Input your Room name"
+            placeholder="Room name"
             name="name"
             onChange={(e) => setRoom({ ...room, name: e.currentTarget.value })}
           />
@@ -55,7 +61,7 @@ export default function NewRoomModal({
             <p>Private Room</p>
           </div>
           <Input
-            placeholder="Set the password"
+            placeholder="Password"
             name="password"
             onChange={(e) => setRoom({ ...room, password: e.currentTarget.value })}
             type="password"

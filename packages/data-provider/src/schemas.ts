@@ -247,6 +247,17 @@ export const tConversationSchema = z.object({
   presetOverride: z.record(z.unknown()).optional(),
 });
 
+export const tRoomSchema = z.object({
+  roomId: z.string().nullable(),
+  name: z.string().nullable().or(z.literal('New Room')).default('New Room'),
+  user: z.string().optional(),
+  users: z.array(z.string()).optional(),
+  messages: z.array(z.string()).optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  presetOverride: z.record(z.unknown()).optional(),
+});
+
 export const tPresetSchema = tConversationSchema
   .omit({
     conversationId: true,
@@ -280,6 +291,10 @@ export const tPresetUpdateSchema = tConversationSchema.merge(
 export type TPreset = z.infer<typeof tPresetSchema>;
 
 export type TConversation = z.infer<typeof tConversationSchema> & {
+  presetOverride?: Partial<TPreset>;
+};
+
+export type TRoom = z.infer<typeof tRoomSchema> & {
   presetOverride?: Partial<TPreset>;
 };
 

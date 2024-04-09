@@ -22,6 +22,8 @@ import { cn } from '~/utils';
 import store from '~/store';
 import SubscriptionBtn from '../SidePanel/Subscription/SubscriptionBtn';
 import NewRoom from './NewRoom';
+import CategorySwtich from './CategorySwitch';
+import { isPremiumUser } from '~/utils/checkPremiumUser';
 
 const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
@@ -32,6 +34,9 @@ const Nav = ({ navVisible, setNavVisible }) => {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isToggleHovering, setIsToggleHovering] = useState(false);
+  const [category, setCategory] = useState<'Conversations' | 'Rooms'>('Conversations');
+
+  const user = useRecoilValue(store.user);
 
   useEffect(() => {
     if (isSmallScreen) {
@@ -150,16 +155,26 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       onMouseLeave={() => setIsHovering(false)}
                       ref={containerRef}
                     >
-                      <NewChat
-                        toggleNav={itemToggleNav}
-                        subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
-                      />
-                      {/* <NewRoom toggleNav={itemToggleNav} /> */}
-                      <Conversations
-                        conversations={conversations}
-                        moveToTop={moveToTop}
-                        toggleNav={itemToggleNav}
-                      />
+                      {isPremiumUser(user) && (
+                        <CategorySwtich category={category} setCategory={setCategory} />
+                      )}
+                      {category === 'Conversations' ? (
+                        <>
+                          <NewChat
+                            toggleNav={itemToggleNav}
+                            subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
+                          />
+                          <Conversations
+                            conversations={conversations}
+                            moveToTop={moveToTop}
+                            toggleNav={itemToggleNav}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <NewRoom toggleNav={itemToggleNav} />
+                        </>
+                      )}
                       <Spinner
                         className={cn(
                           'm-1 mx-auto mb-4 h-4 w-4',
