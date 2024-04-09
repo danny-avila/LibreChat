@@ -1,6 +1,7 @@
 import { useContext } from 'react';
 import { ThemeContext } from '~/hooks';
 import { cn } from '~/utils';
+
 export default function SdImageIcon({
   size = 25,
   className = '',

@@ -1,5 +1,5 @@
 import { useRecoilValue } from 'recoil';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
@@ -18,8 +18,8 @@ type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
 export default function Room({ room, toggleNav, retainView }) {
   const params = useParams();
-  const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
-  const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
+  const currentRoomId = useMemo(() => params.roomId, [params.roomId]);
+  const updateConvoMutation = useUpdateConversationMutation(currentRoomId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { refreshConversations } = useConversations();
@@ -38,7 +38,7 @@ export default function Room({ room, toggleNav, retainView }) {
     }
 
     event.preventDefault();
-    if (currentConvoId === roomId) {
+    if (currentRoomId === roomId) {
       return;
     }
 
@@ -130,9 +130,11 @@ export default function Room({ room, toggleNav, retainView }) {
       'group relative grow overflow-hidden whitespace-nowrap rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 py-2 px-2';
   }
 
+  console.log('=== Room ===', roomId);
+
   return (
-    <a
-      href={`/c/${roomId}`}
+    <Link
+      to={`/r/${roomId}`}
       data-testid="convo-item"
       onClick={clickHandler}
       {...aProps}
@@ -176,6 +178,6 @@ export default function Room({ room, toggleNav, retainView }) {
       ) : (
         <div className="absolute bottom-0 right-0 top-0 w-14 rounded-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 dark:from-gray-750 dark:group-hover:from-gray-800" />
       )}
-    </a>
+    </Link>
   );
 }

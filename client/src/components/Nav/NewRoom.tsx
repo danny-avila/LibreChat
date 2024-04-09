@@ -60,22 +60,19 @@ export default function NewRoom({
                         endpoint: endpoint,
                         iconURL: iconURL,
                       })}
-                    {
-                      (endpoint && endpoint === EModelEndpoint.sdImage,
-                      (
-                        <img
-                          src={
-                            window.matchMedia &&
-                            window.matchMedia('(prefers-color-scheme: dark)').matches
-                              ? '/assets/sdimage.png'
-                              : '/assets/sdimage.png'
-                          }
-                          alt="sdimage"
-                          width="20"
-                          height="20"
-                        />
-                      ))
-                    }
+                    {endpoint && endpoint === EModelEndpoint.sdImage && (
+                      <img
+                        src={
+                          window.matchMedia &&
+                          window.matchMedia('(prefers-color-scheme: dark)').matches
+                            ? '/assets/sdimage.png'
+                            : '/assets/sdimage.png'
+                        }
+                        alt="sdimage"
+                        width="20"
+                        height="20"
+                      />
+                    )}
                   </div>
                 </div>
                 <div className="text-token-text-primary grow overflow-hidden text-ellipsis whitespace-nowrap text-sm">

@@ -1868,7 +1868,7 @@ html {
   will-change: transform;
 }
 .sd-image-thinking:empty:last-child:before {
-  content: 'generating images...';
+  content: 'generating image...';
   display: block;
   position: absolute;
   /* word-wrap: normal; */

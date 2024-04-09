@@ -35,19 +35,24 @@ export default function RoomRoute() {
       localStorage.setItem('appTitle', startupConfig.appTitle);
     }
   }, [startupConfig]);
+  console.log(roomId);
 
   useEffect(() => {
-    getRoom();
-  }, [roomId]);
-
-  const getRoom = async () => {
-    if (!roomId) {
-      const room = await request.post(`/api/room/${roomId}`);
-      console.log(room);
+    if (roomId) {
+      request
+        .get(`/api/rooms/${roomId}`)
+        .then((res) => {
+          console.log(res);
+        })
+        .catch((error) => {
+          console.error(error);
+          // navigate('/c/new');
+        });
     } else {
-      navigate('/c/new');
+      console.log(roomId);
+      // navigate('/c/new');
     }
-  };
+  }, [navigate, roomId]);
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
     return <Spinner className="m-auto text-black dark:text-white" />;

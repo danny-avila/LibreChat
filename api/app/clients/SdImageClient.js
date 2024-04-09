@@ -127,7 +127,7 @@ class SdImageClient extends BaseClient {
         result = response.output.image_url.replace('data:image/png;base64,', '');
         break;
       case 'AUTOMATIC1111':
-        result = response.output.image[0];
+        result = response.output.images[0];
         break;
       case 'SD Open Journey':
         result = response.output[0].image;
@@ -165,6 +165,8 @@ class SdImageClient extends BaseClient {
           },
         })
       ).data;
+
+      console.log('=== SdImageClient ===', responseData);
 
       if (responseData.status === 'COMPLETED') {
         const imageData = this.getImageFromResponseData(model, responseData);
