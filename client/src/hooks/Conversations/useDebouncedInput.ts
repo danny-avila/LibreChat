@@ -2,6 +2,7 @@ import debounce from 'lodash/debounce';
 import React, { useState, useCallback } from 'react';
 import type { SetterOrUpdater } from 'recoil';
 import type { TSetOption } from '~/common';
+import { defaultDebouncedDelay } from '~/common';
 
 /** A custom hook that accepts a setOption function and an option key (e.g., 'title').
 It manages a local state for the option value, a debounced setter function for that value,
@@ -11,7 +12,7 @@ function useDebouncedInput<T = unknown>({
   setter,
   optionKey,
   initialValue,
-  delay = 450,
+  delay = defaultDebouncedDelay,
 }: {
   setOption?: TSetOption;
   setter?: SetterOrUpdater<T>;

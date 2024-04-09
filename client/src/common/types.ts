@@ -98,6 +98,8 @@ export type TSetExample = (
   newValue: number | string | boolean | null,
 ) => void;
 
+export const defaultDebouncedDelay = 450;
+
 export enum ESide {
   Top = 'top',
   Right = 'right',
