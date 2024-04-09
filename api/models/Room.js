@@ -30,7 +30,7 @@ const getRoomsByUser = async (userId) => {
       users: { $elemMatch: { $eq: userId } },
     });
 
-    return [...ownedRooms, joinedRooms];
+    return [ownedRooms, joinedRooms];
   } catch (error) {
     logger.error('[getRoomsByUser] ERror getting rooms by user', error);
     return { message: 'Error getting rooms by user' };

@@ -1,4 +1,4 @@
-const { createRoom, getRoom } = require('~/models');
+const { createRoom, getRoom, getRoomsByUser } = require('~/models');
 
 const createNewRoom = async (req, res) => {
   const { name, isPrivate, password } = req.body;
@@ -20,7 +20,18 @@ const getRoomById = async (req, res) => {
   }
 };
 
+const getRoomByUser = async (req, res) => {
+  const { roomId } = req.params;
+  try {
+    const room = await getRoomsByUser(req.user._id, roomId);
+    return res.json(room);
+  } catch (error) {
+    return res.status(500).json(error);
+  }
+};
+
 module.exports = {
   createNewRoom,
   getRoomById,
+  getRoomByUser,
 };

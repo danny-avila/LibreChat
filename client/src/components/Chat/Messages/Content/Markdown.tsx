@@ -7,7 +7,7 @@ import rehypeKatex from 'rehype-katex';
 import { useRecoilValue } from 'recoil';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
-import type { TMessage } from 'librechat-data-provider';
+import { EModelEndpoint, type TMessage } from 'librechat-data-provider';
 import type { PluggableList } from 'unified';
 import { cn, langSubset, validateIframe, processLaTeX } from '~/utils';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
@@ -109,7 +109,7 @@ export const p = memo(({ children }: { children: React.ReactNode }) => {
 
 const cursor = ' ';
 const Markdown = memo(({ content, message, showCursor }: TContentProps) => {
-  const { isSubmitting, latestMessage } = useChatContext();
+  const { isSubmitting, latestMessage, conversation } = useChatContext();
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
 
   const isInitializing = content === '';
@@ -141,7 +141,15 @@ const Markdown = memo(({ content, message, showCursor }: TContentProps) => {
     return (
       <div className="absolute">
         <p className="relative">
-          <span className={cn(isSubmitting ? 'result-thinking' : '')} />
+          <span
+            className={cn(
+              isSubmitting
+                ? `result-thinking ${
+                    conversation?.endpoint === EModelEndpoint.sdImage && 'sd-image-thinking'
+                  }`
+                : '',
+            )}
+          />
         </p>
       </div>
     );

@@ -9,7 +9,7 @@ interface Props {
   setCategory: Dispatch<SetStateAction<Category>>;
 }
 
-export default function CategorySwtich({ category, setCategory }: Props) {
+export default function CategorySwitch({ category, setCategory }: Props) {
   const [categories] = useState({
     Conversations: [],
     Rooms: [],

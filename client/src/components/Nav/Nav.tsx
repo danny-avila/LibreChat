@@ -22,8 +22,9 @@ import { cn } from '~/utils';
 import store from '~/store';
 import SubscriptionBtn from '../SidePanel/Subscription/SubscriptionBtn';
 import NewRoom from './NewRoom';
-import CategorySwtich from './CategorySwitch';
+import CategorySwitch from './CategorySwitch';
 import { isPremiumUser } from '~/utils/checkPremiumUser';
+import Rooms from '../Room/Rooms';
 
 const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
@@ -155,9 +156,9 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       onMouseLeave={() => setIsHovering(false)}
                       ref={containerRef}
                     >
-                      {isPremiumUser(user) && (
-                        <CategorySwtich category={category} setCategory={setCategory} />
-                      )}
+                      {/* {isPremiumUser(user) && (
+                        <CategorySwitch category={category} setCategory={setCategory} />
+                      )} */}
                       {category === 'Conversations' ? (
                         <>
                           <NewChat
@@ -173,6 +174,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       ) : (
                         <>
                           <NewRoom toggleNav={itemToggleNav} />
+                          <Rooms toggleNav={itemToggleNav} moveToTop={moveToTop} />
                         </>
                       )}
                       <Spinner
