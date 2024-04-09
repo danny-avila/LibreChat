@@ -64,22 +64,18 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                     assistantName,
                     avatar,
                   })}
-                {
-                  (endpoint && endpoint === EModelEndpoint.sdImage,
-                  (
-                    <img
-                      src={
-                        window.matchMedia &&
-                        window.matchMedia('(prefers-color-scheme: dark)').matches
-                          ? '/assets/sdimage.png'
-                          : '/assets/sdimage.png'
-                      }
-                      alt="sdimage"
-                      width="20"
-                      height="20"
-                    />
-                  ))
-                }
+                {endpoint && endpoint === EModelEndpoint.sdImage && (
+                  <img
+                    src={
+                      window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                        ? '/assets/sdimage.png'
+                        : '/assets/sdimage.png'
+                    }
+                    alt="sdimage"
+                    width="20"
+                    height="20"
+                  />
+                )}
               </div>
               <TooltipTrigger>
                 {(startupConfig?.showBirthdayIcon ?? false) && (

@@ -38,7 +38,6 @@ export default function SubscriptionBtn() {
           ) {
             setPopupOpen(true);
           }
-          setPopupOpen(true);
         }}
         data-tooltip-id="subscribe-tooltip"
         className="duration-350 mt-text-sm mb-1 flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
