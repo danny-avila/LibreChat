@@ -19,10 +19,10 @@ export default function useSideNavLinks({
   const Links = useMemo(() => {
     const links: NavLink[] = [];
     links.push({
-      title: 'Settings',
+      title: 'com_sidepanel_parameters',
       label: '',
       icon: Settings2,
-      id: 'settings',
+      id: 'parameters',
       Component: Parameters,
     });
     if (assistants && assistants.disableBuilder !== true && keyProvided) {
