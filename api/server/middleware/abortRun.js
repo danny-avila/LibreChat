@@ -75,7 +75,6 @@ async function abortRun(req, res) {
   });
 
   const finalEvent = {
-    title: 'New Chat',
     final: true,
     conversation,
     runMessages,
