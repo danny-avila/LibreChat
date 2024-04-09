@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { saveMessage } = require('~/models');
 const logger = require('~/config/winston');
 
-const defaultModel = 'gpt-3-turbo';
+const defaultModel = 'gpt-3.5-turbo';
 
 class ConversationBuilder {
   constructor(requestUserId, endpoint) {
@@ -22,7 +22,7 @@ class ConversationBuilder {
   }
 
   async addGptMessage(text, model) {
-    const message = await this.saveMessage(text, 'GPT-4', false, model || defaultModel);
+    const message = await this.saveMessage(text, 'GPT-3.5', false, model || defaultModel);
     return message;
   }
 
@@ -32,9 +32,11 @@ class ConversationBuilder {
       messages: this.messages,
       user: this.requestUserId,
       title: title || 'Imported Chat',
-      model: this.model,
-      createdAt: new Date(createdAt * 1000),
+      createdAt: createdAt,
+      updatedAt: createdAt,
       overrideTimestamp: true,
+      endpoint: this.endpoint,
+      model: defaultModel,
     });
     logger.debug(`Conversation created id: ${saveConvoResp.conversationId}`);
   }

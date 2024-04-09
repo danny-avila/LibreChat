@@ -30,7 +30,6 @@ async function importChatGtpConvo(data, requestUserId) {
               const replacement = ` ([${metadata.title}](${metadata.url}))`;
               messageText = messageText.replace(pattern, replacement);
             });
-
             await convoBuilder.addGptMessage(messageText, messageData.metadata.model_slug);
           } else if (messageData.author && messageData.author.role === 'system') {
             // TODO: Determine if we can handle system messages
@@ -41,7 +40,7 @@ async function importChatGtpConvo(data, requestUserId) {
         }
       }
 
-      await convoBuilder.finishConversation(conv.title, conv.create_time);
+      await convoBuilder.finishConversation(conv.title, new Date(conv.create_time * 1000));
       logger.info(`Conversation ${conv.title} imported`);
     }
   } catch (error) {
