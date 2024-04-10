@@ -105,6 +105,13 @@ rateLimits:
     userMax: 50
     # Rate limit window for file uploads per user
     userWindowInMinutes: 60  
+  conversationsImport:
+    ipMax: 100
+    # Rate limit window for file uploads per IP
+    ipWindowInMinutes: 60 
+    userMax: 50
+    # Rate limit window for file uploads per user
+    userWindowInMinutes: 60  
 registration:
   socialLogins: ["google", "facebook", "github", "discord", "openid"]
   allowedDomains:
@@ -252,6 +259,21 @@ This example configuration file sets up LibreChat with detailed options across s
     - **Sub-Key**: `userWindowInMinutes`
       - **Type**: Number
       - **Description**: Time window in minutes for the user-based upload limit.
+  - **Sub-Key**: `conversationsImport`
+  - **Type**: Object
+  - **Description**: Configures rate limits specifically for conversation import operations.
+    - **Sub-Key**: `ipMax`
+      - **Type**: Number
+      - **Description**: Maximum number of imports allowed per IP address per window.
+    - **Sub-Key**: `ipWindowInMinutes`
+      - **Type**: Number
+      - **Description**: Time window in minutes for the IP-based imports limit.
+    - **Sub-Key**: `userMax`
+      - **Type**: Number
+      - **Description**: Maximum number of imports per user per window.
+    - **Sub-Key**: `userWindowInMinutes`
+      - **Type**: Number
+      - **Description**: Time window in minutes for the user-based imports limit.
 
 - **Example**:
 ```yaml

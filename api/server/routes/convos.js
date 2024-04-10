@@ -9,6 +9,7 @@ const { logger } = require('~/config');
 const multer = require('multer');
 const jobScheduler = require('~/server/utils/jobScheduler');
 const { IMPORT_CONVERSATION_JOB_NAME } = require('~/server/utils/import/jobDefinition');
+const { createImportLimiters } = require('~/server/middleware');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -103,9 +104,10 @@ router.post('/update', async (req, res) => {
   }
 });
 
+const { importIpLimiter, importUserLimiter } = createImportLimiters();
+
 // imports Json with conversation data and saves it to the database
-router.post('/', async (req, res) => {
-  // Read the content from formdata file and output to log
+router.post('/', importIpLimiter, importUserLimiter, async (req, res) => {
   try {
     const content = req.file.buffer.toString();
     const job = await jobScheduler.now(IMPORT_CONVERSATION_JOB_NAME, content, req.user.id);
