@@ -2,7 +2,7 @@ const { Constants } = require('librechat-data-provider');
 const { saveConvo } = require('~/models/Conversation');
 const { v4: uuidv4 } = require('uuid');
 const { saveMessage } = require('~/models');
-const logger = require('~/config/winston');
+const { logger } = require('~/config');
 
 const defaultModel = 'gpt-3.5-turbo';
 

@@ -7,8 +7,8 @@ const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 const multer = require('multer');
-const agenda = require('~/server/utils/import/jobScheduler');
-const mongodb = require('mongodb');
+const jobScheduler = require('~/server/utils/jobScheduler');
+const { IMPORT_CONVERSATION_JOB_NAME } = require('~/server/utils/import/jobDefinition');
 
 const router = express.Router();
 router.use(requireJwtAuth);
@@ -108,12 +108,9 @@ router.post('/', async (req, res) => {
   // Read the content from formdata file and output to log
   try {
     const content = req.file.buffer.toString();
-    const job = await agenda.now('import conversation', {
-      data: content,
-      requestUserId: req.user.id,
-    });
+    const job = await jobScheduler.now(IMPORT_CONVERSATION_JOB_NAME, content, req.user.id);
 
-    res.status(200).json({ message: 'Import started', jobId: job.attrs._id });
+    res.status(200).json({ message: 'Import started', jobId: job.id });
   } catch (error) {
     console.error('Error processing file', error);
     res.status(500).send('Error processing file');
@@ -124,32 +121,16 @@ router.post('/', async (req, res) => {
 router.get('/import/jobs/:jobId', async (req, res) => {
   try {
     const { jobId } = req.params;
-    const job = await agenda.jobs({ _id: new mongodb.ObjectId(jobId) });
-    if (!job || job.length === 0) {
+    const { userId, ...jobStatus } = await jobScheduler.getJobStatus(jobId);
+    if (!jobStatus) {
       return res.status(404).json({ message: 'Job not found.' });
     }
 
-    if (job.length > 1) {
-      // This should never happen
-      return res.status(500).json({ message: 'Multiple jobs found.' });
-    }
-    if (job[0].attrs.data.requestUserId !== req.user.id) {
+    if (userId !== req.user.id) {
       return res.status(403).json({ message: 'Unauthorized' });
     }
 
-    const jobDetails = {
-      id: job[0]._id,
-      name: job[0].attrs.name,
-      status: !job[0].attrs.lastRunAt
-        ? 'scheduled'
-        : job[0].attrs.failedAt
-          ? 'failed'
-          : job[0].attrs.lastFinishedAt
-            ? 'completed'
-            : 'running',
-    };
-
-    res.json(jobDetails);
+    res.json(jobStatus);
   } catch (error) {
     console.error('Error getting job details', error);
     res.status(500).send('Error getting job details');
