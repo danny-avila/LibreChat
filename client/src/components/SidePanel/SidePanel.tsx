@@ -9,6 +9,7 @@ import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useMediaQuery, useLocalStorage } from '~/hooks';
 import { Separator } from '~/components/ui/Separator';
 import NavToggle from '~/components/Nav/NavToggle';
+import { useChatContext } from '~/Providers';
 import Switcher from './Switcher';
 import { cn } from '~/utils';
 import Nav from './Nav';
@@ -39,6 +40,8 @@ const SidePanel = ({
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(EModelEndpoint.assistants);
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
+  const { conversation } = useChatContext();
+  const { endpoint } = conversation ?? {};
 
   const panelRef = useRef<ImperativePanelHandle>(null);
 
@@ -48,7 +51,10 @@ const SidePanel = ({
   }, []);
 
   const assistants = useMemo(() => endpointsConfig?.[EModelEndpoint.assistants], [endpointsConfig]);
-  const userProvidesKey = useMemo(() => !!assistants?.userProvide, [assistants]);
+  const userProvidesKey = useMemo(
+    () => !!endpointsConfig?.[endpoint ?? '']?.userProvide,
+    [endpointsConfig, endpoint],
+  );
   const keyProvided = useMemo(
     () => (userProvidesKey ? !!keyExpiry?.expiresAt : true),
     [keyExpiry?.expiresAt, userProvidesKey],
@@ -63,7 +69,7 @@ const SidePanel = ({
     panelRef.current?.collapse();
   }, []);
 
-  const Links = useSideNavLinks({ hidePanel, assistants, keyProvided });
+  const Links = useSideNavLinks({ hidePanel, assistants, keyProvided, endpoint });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
@@ -175,18 +181,15 @@ const SidePanel = ({
                 : 'opacity-100',
             )}
           >
-            {keyProvided && (
-              <div
-                className={cn(
-                  'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-gray-850',
-                  isCollapsed ? 'h-[52px]' : 'px-2',
-                )}
-              >
-                <Switcher isCollapsed={isCollapsed} />
-                <Separator className="bg-gray-100/50 dark:bg-gray-600" />
-              </div>
-            )}
-
+            <div
+              className={cn(
+                'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-gray-850',
+                isCollapsed ? 'h-[52px]' : 'px-2',
+              )}
+            >
+              <Switcher isCollapsed={isCollapsed} endpointKeyProvided={keyProvided} />
+              <Separator className="bg-gray-100/50 dark:bg-gray-600" />
+            </div>
             <Nav
               resize={panelRef.current?.resize}
               isCollapsed={isCollapsed}
