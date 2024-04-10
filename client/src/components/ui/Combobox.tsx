@@ -6,6 +6,8 @@ import { Search as SearchIcon } from 'lucide-react';
 import * as RadixSelect from '@radix-ui/react-select';
 import { CheckIcon, ChevronDownIcon } from '@radix-ui/react-icons';
 import type { Option } from '~/common';
+import { SelectTrigger, SelectValue } from './Select';
+import { cn } from '~/utils';
 
 export default function ComboboxComponent({
   selectedValue,
@@ -15,6 +17,7 @@ export default function ComboboxComponent({
   searchPlaceholder,
   selectPlaceholder,
   isCollapsed,
+  SelectIcon,
 }: {
   ariaLabel: string;
   selectedValue: string;
@@ -23,6 +26,7 @@ export default function ComboboxComponent({
   items: Option[] | string[];
   setValue: (value: string) => void;
   isCollapsed: boolean;
+  SelectIcon?: React.ReactNode;
 }) {
   const options: Option[] = useMemo(() => {
     if (!items) {
@@ -61,12 +65,28 @@ export default function ComboboxComponent({
           });
         }}
       >
-        <RadixSelect.Trigger aria-label={ariaLabel} className="select">
-          <RadixSelect.Value placeholder={selectPlaceholder} />
-          <RadixSelect.Icon className="select-icon">
-            <ChevronDownIcon />
-          </RadixSelect.Icon>
-        </RadixSelect.Trigger>
+        <SelectTrigger
+          aria-label={ariaLabel}
+          className={cn(
+            'flex items-center gap-2 [&>span]:line-clamp-1 [&>span]:flex [&>span]:w-full [&>span]:items-center [&>span]:gap-1 [&>span]:truncate [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0',
+            isCollapsed
+              ? 'flex h-9 w-9 shrink-0 items-center justify-center p-0 [&>span]:w-auto [&>svg]:hidden'
+              : '',
+            'bg-white text-black hover:bg-gray-50 dark:bg-gray-850 dark:text-white',
+          )}
+        >
+          <SelectValue placeholder={selectPlaceholder}>
+            <div className="assistant-item flex items-center justify-center overflow-hidden rounded-full">
+              {SelectIcon ? SelectIcon : <ChevronDownIcon />}
+            </div>
+            <span
+              className={cn('ml-2', isCollapsed ? 'hidden' : '')}
+              style={{ userSelect: 'none' }}
+            >
+              {selectPlaceholder && selectPlaceholder}
+            </span>
+          </SelectValue>
+        </SelectTrigger>
         <RadixSelect.Content
           role="dialog"
           aria-label={ariaLabel + 's'}
