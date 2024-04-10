@@ -51,7 +51,29 @@ const setup = ({
       user: {},
     },
   },
+<<<<<<< HEAD
   useGetStartupCongfigReturnValue = mockStartupConfig,
+=======
+  useGetStartupConfigReturnValue = {
+    isLoading: false,
+    isError: false,
+    data: {
+      socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
+      discordLoginEnabled: true,
+      facebookLoginEnabled: true,
+      githubLoginEnabled: true,
+      googleLoginEnabled: true,
+      openidLoginEnabled: true,
+      openidLabel: 'Test OpenID',
+      openidImageUrl: 'http://test-server.com',
+      registrationEnabled: true,
+      emailLoginEnabled: true,
+      socialLoginEnabled: true,
+      passwordResetEnabled: true,
+      serverDomain: 'mock-server',
+    },
+  },
+>>>>>>> 34bac7ac (test: fixed LoginForm test)
 } = {}) => {
   const mockUseLoginUser = jest
     .spyOn(mockDataProvider, 'useLoginUserMutation')
