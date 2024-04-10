@@ -28,7 +28,7 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
               <img
                 src={plugin.icon}
                 alt={`${plugin.name} logo`}
-                className="h-full w-full rounded-[5px] bg-white"
+                className="h-full w-full rounded-[5px]"
               />
               <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-black/10"></div>
             </div>
