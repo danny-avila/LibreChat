@@ -85,14 +85,14 @@ const CodeInProgress = ({
       style={{ opacity: 1, transform: 'none' }}
       data-projection-id="77"
     >
-      <div>
+      <div className='absolute right-[1.5px] bottom-[1.5px]'>
         <svg
           xmlns="http://www.w3.org/2000/svg"
           xmlnsXlink="http://www.w3.org/1999/xlink"
           viewBox="0 0 20 20"
           width="20"
           height="20"
-          style={{ width: '100%', height: '100%', transform: 'translate3d(0px, 0px, 0px)' }}
+          style={{ transform: 'translate3d(0px, 0px, 0px)' }}
           preserveAspectRatio="xMidYMid meet"
         >
           <defs>
@@ -101,7 +101,10 @@ const CodeInProgress = ({
             </clipPath>
           </defs>
           <g clipPath="url(#__lottie_element_11)">
-            <g style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}>
+            <g
+              style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}
+              className="slide-from-left"
+            >
               <g opacity="1" transform="matrix(1,0,0,1,7.026679992675781,8.834091186523438)">
                 <path
                   fill="rgb(177,98,253)"
@@ -119,7 +122,10 @@ const CodeInProgress = ({
                 />
               </g>
             </g>
-            <g style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}>
+            <g
+              style={{ display: 'block', transform: 'matrix(1,0,0,1,-2,-2)', opacity: 1 }}
+              className="slide-to-down"
+            >
               <g opacity="1" transform="matrix(1,0,0,1,11.79640007019043,13.512199401855469)">
                 <path
                   fill="rgb(177,98,253)"
