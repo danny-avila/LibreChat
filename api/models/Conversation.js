@@ -13,10 +13,7 @@ const getConvo = async (user, conversationId) => {
 
 module.exports = {
   Conversation,
-  saveConvo: async (
-    user,
-    { conversationId, newConversationId, overrideTimestamp: overrideTimestamp = false, ...convo },
-  ) => {
+  saveConvo: async (user, { conversationId, newConversationId, ...convo }) => {
     try {
       const messages = await getMessages({ conversationId });
       const update = { ...convo, messages, user };
@@ -27,11 +24,28 @@ module.exports = {
       return await Conversation.findOneAndUpdate({ conversationId: conversationId, user }, update, {
         new: true,
         upsert: true,
-        timestamps: !overrideTimestamp,
       });
     } catch (error) {
       logger.error('[saveConvo] Error saving conversation', error);
       return { message: 'Error saving conversation' };
+    }
+  },
+  bulkSaveConvos: async (conversations) => {
+    try {
+      const bulkOps = conversations.map((convo) => ({
+        updateOne: {
+          filter: { conversationId: convo.conversationId, user: convo.user },
+          update: convo,
+          upsert: true,
+          timestamps: false,
+        },
+      }));
+
+      const result = await Conversation.bulkWrite(bulkOps);
+      return result;
+    } catch (error) {
+      logger.error('[saveBulkConversations] Error saving conversations in bulk', error);
+      throw new Error('Failed to save conversations in bulk.');
     }
   },
   getConvosByPage: async (user, pageNumber = 1, pageSize = 25) => {
