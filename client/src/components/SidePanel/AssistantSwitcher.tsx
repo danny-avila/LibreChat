@@ -1,18 +1,11 @@
-import { useEffect } from 'react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '~/components/ui/Select';
+import { useEffect, useMemo } from 'react';
+import { Combobox } from '~/components/ui';
 import { EModelEndpoint, defaultOrderQuery } from 'librechat-data-provider';
 import type { SwitcherProps } from '~/common';
 import { useSetIndexOptions, useSelectAssistant, useLocalize } from '~/hooks';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import { useListAssistantsQuery } from '~/data-provider';
 import Icon from '~/components/Endpoints/Icon';
-import { cn } from '~/utils';
 
 export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
   const localize = useLocalize();
@@ -48,56 +41,44 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
 
   const currentAssistant = assistantMap?.[selectedAssistant ?? ''];
 
-  //  searchPlaceholder={localize('com_assistants_search_name')}
+  const assistantOptions = useMemo(() => {
+    return assistants.map((assistant) => {
+      return {
+        label: assistant.name ?? '',
+        value: assistant.id,
+        icon: (
+          <Icon
+            isCreatedByUser={false}
+            endpoint={EModelEndpoint.assistants}
+            assistantName={assistant.name ?? ''}
+            iconURL={(assistant.metadata?.avatar as string) ?? ''}
+          />
+        ),
+      };
+    });
+  }, [assistants]);
 
   return (
-    <Select value={selectedAssistant as string | undefined} onValueChange={onSelect}>
-      <SelectTrigger
-        className={cn(
-          'flex items-center gap-2 [&>span]:line-clamp-1 [&>span]:flex [&>span]:w-full [&>span]:items-center [&>span]:gap-1 [&>span]:truncate [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0',
-          isCollapsed
-            ? 'flex h-9 w-9 shrink-0 items-center justify-center p-0 [&>span]:w-auto [&>svg]:hidden'
-            : '',
-          'bg-white text-black hover:bg-gray-50 dark:bg-gray-850 dark:text-white',
-        )}
-        aria-label={localize('com_sidepanel_select_assistant')}
-      >
-        <SelectValue placeholder={localize('com_sidepanel_select_assistant')}>
-          <div className="assistant-item flex items-center justify-center overflow-hidden rounded-full">
-            <Icon
-              isCreatedByUser={false}
-              endpoint={EModelEndpoint.assistants}
-              assistantName={currentAssistant?.name ?? ''}
-              iconURL={(currentAssistant?.metadata?.avatar as string) ?? ''}
-            />
-          </div>
-          <span className={cn('ml-2', isCollapsed ? 'hidden' : '')} style={{ userSelect: 'none' }}>
-            {assistants.find((assistant) => assistant.id === selectedAssistant)?.name ??
-              localize('com_sidepanel_select_assistant')}
-          </span>
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent className="bg-white dark:bg-gray-800">
-        {assistants.map((assistant) => (
-          <SelectItem
-            key={assistant.id}
-            value={assistant.id}
-            className="hover:bg-gray-50 dark:text-white"
-          >
-            <div className="[&_svg]:text-foreground flex items-center justify-center gap-3 dark:text-white [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0">
-              <div className="assistant-item overflow-hidden rounded-full ">
-                <Icon
-                  isCreatedByUser={false}
-                  endpoint={EModelEndpoint.assistants}
-                  assistantName={assistant.name ?? ''}
-                  iconURL={(assistant.metadata?.avatar as string) ?? ''}
-                />
-              </div>
-              {assistant.name}
-            </div>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <Combobox
+      selectedValue={currentAssistant?.id ?? ''}
+      displayValue={
+        assistants.find((assistant) => assistant.id === selectedAssistant)?.name ??
+        localize('com_sidepanel_select_assistant')
+      }
+      selectPlaceholder={localize('com_sidepanel_select_assistant')}
+      searchPlaceholder={localize('com_assistants_search_name')}
+      isCollapsed={isCollapsed}
+      ariaLabel={'assistant'}
+      setValue={onSelect}
+      items={assistantOptions}
+      SelectIcon={
+        <Icon
+          isCreatedByUser={false}
+          endpoint={EModelEndpoint.assistants}
+          assistantName={currentAssistant?.name ?? ''}
+          iconURL={(currentAssistant?.metadata?.avatar as string) ?? ''}
+        />
+      }
+    />
   );
 }
