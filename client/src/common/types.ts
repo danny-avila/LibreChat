@@ -2,6 +2,7 @@ import { FileSources } from 'librechat-data-provider';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
 import type {
+  TSetOption as SetOption,
   TConversation,
   TMessage,
   TPreset,
@@ -19,6 +20,8 @@ import type { LucideIcon } from 'lucide-react';
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
 export type LastSelectedModels = Record<EModelEndpoint, string>;
+
+export const mainTextareaId = 'prompt-textarea';
 
 export enum IconContext {
   landing = 'landing',
@@ -89,14 +92,15 @@ export type AssistantPanelProps = {
 
 export type AugmentedColumnDef<TData, TValue> = ColumnDef<TData, TValue> & ColumnMeta;
 
-export type TSetOption = (
-  param: number | string,
-) => (newValue: number | string | boolean | Partial<TPreset>) => void;
+export type TSetOption = SetOption;
+
 export type TSetExample = (
   i: number,
   type: string,
   newValue: number | string | boolean | null,
 ) => void;
+
+export const defaultDebouncedDelay = 450;
 
 export enum ESide {
   Top = 'top',
@@ -304,6 +308,8 @@ export type Option = Record<string, unknown> & {
   value: string | number | null;
 };
 
+export type OptionWithIcon = Option & { icon?: React.ReactNode };
+
 export type TOptionSettings = {
   showExamples?: boolean;
   isCodeChat?: boolean;
@@ -327,3 +333,8 @@ export interface ExtendedFile {
 }
 
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
+
+export interface SwitcherProps {
+  endpointKeyProvided: boolean;
+  isCollapsed: boolean;
+}

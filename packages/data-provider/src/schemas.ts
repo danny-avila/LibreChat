@@ -17,6 +17,26 @@ export enum EModelEndpoint {
   custom = 'custom',
 }
 
+export enum ImageDetail {
+  low = 'low',
+  auto = 'auto',
+  high = 'high',
+}
+
+export const imageDetailNumeric = {
+  [ImageDetail.low]: 0,
+  [ImageDetail.auto]: 1,
+  [ImageDetail.high]: 2,
+};
+
+export const imageDetailValue = {
+  0: ImageDetail.low,
+  1: ImageDetail.auto,
+  2: ImageDetail.high,
+};
+
+export const eImageDetailSchema = z.nativeEnum(ImageDetail);
+
 export const defaultAssistantFormValues = {
   assistant: '',
   id: '',
@@ -46,38 +66,77 @@ export const ImageVisionTool: FunctionTool = {
 export const isImageVisionTool = (tool: FunctionTool | FunctionToolCall) =>
   tool.type === 'function' && tool.function?.name === ImageVisionTool?.function?.name;
 
-export const endpointSettings = {
-  [EModelEndpoint.google]: {
-    model: {
-      default: 'chat-bison',
-    },
-    maxOutputTokens: {
-      min: 1,
-      max: 2048,
-      step: 1,
-      default: 1024,
-      maxGeminiPro: 8192,
-      defaultGeminiPro: 8192,
-    },
-    temperature: {
-      min: 0,
-      max: 1,
-      step: 0.01,
-      default: 0.2,
-    },
-    topP: {
-      min: 0,
-      max: 1,
-      step: 0.01,
-      default: 0.8,
-    },
-    topK: {
-      min: 1,
-      max: 40,
-      step: 0.01,
-      default: 40,
-    },
+export const openAISettings = {
+  model: {
+    default: 'gpt-3.5-turbo',
   },
+  temperature: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 1,
+  },
+  top_p: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 1,
+  },
+  presence_penalty: {
+    min: 0,
+    max: 2,
+    step: 0.01,
+    default: 0,
+  },
+  frequency_penalty: {
+    min: 0,
+    max: 2,
+    step: 0.01,
+    default: 0,
+  },
+  resendFiles: {
+    default: true,
+  },
+  imageDetail: {
+    default: ImageDetail.auto,
+  },
+};
+
+export const googleSettings = {
+  model: {
+    default: 'chat-bison',
+  },
+  maxOutputTokens: {
+    min: 1,
+    max: 2048,
+    step: 1,
+    default: 1024,
+    maxGeminiPro: 8192,
+    defaultGeminiPro: 8192,
+  },
+  temperature: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 0.2,
+  },
+  topP: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 0.8,
+  },
+  topK: {
+    min: 1,
+    max: 40,
+    step: 0.01,
+    default: 40,
+  },
+};
+
+export const endpointSettings = {
+  [EModelEndpoint.openAI]: openAISettings,
+  [EModelEndpoint.google]: googleSettings,
 };
 
 const google = endpointSettings[EModelEndpoint.google];
@@ -85,26 +144,6 @@ const google = endpointSettings[EModelEndpoint.google];
 export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
 
 export const extendedModelEndpointSchema = z.union([eModelEndpointSchema, z.string()]);
-
-export enum ImageDetail {
-  low = 'low',
-  auto = 'auto',
-  high = 'high',
-}
-
-export const imageDetailNumeric = {
-  [ImageDetail.low]: 0,
-  [ImageDetail.auto]: 1,
-  [ImageDetail.high]: 2,
-};
-
-export const imageDetailValue = {
-  0: ImageDetail.low,
-  1: ImageDetail.auto,
-  2: ImageDetail.high,
-};
-
-export const eImageDetailSchema = z.nativeEnum(ImageDetail);
 
 export const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
@@ -278,11 +317,13 @@ export const tPresetUpdateSchema = tConversationSchema.merge(
 
 export type TPreset = z.infer<typeof tPresetSchema>;
 
+export type TSetOption = (
+  param: number | string,
+) => (newValue: number | string | boolean | Partial<TPreset>) => void;
+
 export type TConversation = z.infer<typeof tConversationSchema> & {
   presetOverride?: Partial<TPreset>;
 };
-
-// type DefaultSchemaValues = Partial<typeof google>;
 
 export const openAISchema = tConversationSchema
   .pick({
@@ -298,26 +339,27 @@ export const openAISchema = tConversationSchema
   })
   .transform((obj) => ({
     ...obj,
-    model: obj.model ?? 'gpt-3.5-turbo',
+    model: obj.model ?? openAISettings.model.default,
     chatGptLabel: obj.chatGptLabel ?? null,
     promptPrefix: obj.promptPrefix ?? null,
-    temperature: obj.temperature ?? 1,
-    top_p: obj.top_p ?? 1,
-    presence_penalty: obj.presence_penalty ?? 0,
-    frequency_penalty: obj.frequency_penalty ?? 0,
-    resendFiles: typeof obj.resendFiles === 'boolean' ? obj.resendFiles : true,
-    imageDetail: obj.imageDetail ?? ImageDetail.auto,
+    temperature: obj.temperature ?? openAISettings.temperature.default,
+    top_p: obj.top_p ?? openAISettings.top_p.default,
+    presence_penalty: obj.presence_penalty ?? openAISettings.presence_penalty.default,
+    frequency_penalty: obj.frequency_penalty ?? openAISettings.frequency_penalty.default,
+    resendFiles:
+      typeof obj.resendFiles === 'boolean' ? obj.resendFiles : openAISettings.resendFiles.default,
+    imageDetail: obj.imageDetail ?? openAISettings.imageDetail.default,
   }))
   .catch(() => ({
-    model: 'gpt-3.5-turbo',
+    model: openAISettings.model.default,
     chatGptLabel: null,
     promptPrefix: null,
-    temperature: 1,
-    top_p: 1,
-    presence_penalty: 0,
-    frequency_penalty: 0,
-    resendFiles: true,
-    imageDetail: ImageDetail.auto,
+    temperature: openAISettings.temperature.default,
+    top_p: openAISettings.top_p.default,
+    presence_penalty: openAISettings.presence_penalty.default,
+    frequency_penalty: openAISettings.frequency_penalty.default,
+    resendFiles: openAISettings.resendFiles.default,
+    imageDetail: openAISettings.imageDetail.default,
   }));
 
 export const googleSchema = tConversationSchema
@@ -674,53 +716,3 @@ export const compactPluginsSchema = tConversationSchema
     return removeNullishValues(newObj);
   })
   .catch(() => ({}));
-
-// const createGoogleSchema = (customGoogle: DefaultSchemaValues) => {
-//   const defaults = { ...google, ...customGoogle };
-//   return tConversationSchema
-//     .pick({
-//       model: true,
-//       modelLabel: true,
-//       promptPrefix: true,
-//       examples: true,
-//       temperature: true,
-//       maxOutputTokens: true,
-//       topP: true,
-//       topK: true,
-//     })
-//     .transform((obj) => {
-//       const isGeminiPro = obj?.model?.toLowerCase()?.includes('gemini-pro');
-
-//       const maxOutputTokensMax = isGeminiPro
-//         ? defaults.maxOutputTokens.maxGeminiPro
-//         : defaults.maxOutputTokens.max;
-//       const maxOutputTokensDefault = isGeminiPro
-//         ? defaults.maxOutputTokens.defaultGeminiPro
-//         : defaults.maxOutputTokens.default;
-
-//       let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;
-//       maxOutputTokens = Math.min(maxOutputTokens, maxOutputTokensMax);
-
-//       return {
-//         ...obj,
-//         model: obj.model ?? defaults.model.default,
-//         modelLabel: obj.modelLabel ?? null,
-//         promptPrefix: obj.promptPrefix ?? null,
-//         examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
-//         temperature: obj.temperature ?? defaults.temperature.default,
-//         maxOutputTokens,
-//         topP: obj.topP ?? defaults.topP.default,
-//         topK: obj.topK ?? defaults.topK.default,
-//       };
-//     })
-//     .catch(() => ({
-//       model: defaults.model.default,
-//       modelLabel: null,
-//       promptPrefix: null,
-//       examples: [{ input: { content: '' }, output: { content: '' } }],
-//       temperature: defaults.temperature.default,
-//       maxOutputTokens: defaults.maxOutputTokens.default,
-//       topP: defaults.topP.default,
-//       topK: defaults.topK.default,
-//     }));
-// };
