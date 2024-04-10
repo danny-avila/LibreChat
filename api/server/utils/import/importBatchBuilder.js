@@ -11,6 +11,7 @@ function createImportBatchBuilder(requestUserId) {
   return new ImportBatchBuilder(requestUserId);
 }
 
+// Class for building a batch of conversations and messages and pushing them to DB for Conversation Import functionality
 class ImportBatchBuilder {
   constructor(requestUserId) {
     this.requestUserId = requestUserId;

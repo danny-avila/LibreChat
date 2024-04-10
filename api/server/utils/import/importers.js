@@ -1,4 +1,4 @@
-const { createImportBatchBuilder } = require('./convoBuilder');
+const { createImportBatchBuilder } = require('./importBatchBuilder');
 const logger = require('~/config/winston');
 
 // naive detection of export file type based on JSON structure
