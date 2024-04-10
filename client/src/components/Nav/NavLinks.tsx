@@ -59,9 +59,11 @@ function NavLinks() {
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
-            {startupConfig?.checkBalance && balanceQuery.data && (
+            {startupConfig?.checkBalance &&
+              balanceQuery.data &&
+              !isNaN(parseFloat(balanceQuery.data)) && (
               <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-black dark:text-gray-200">
-                {`Balance: ${balanceQuery.data}`}
+                {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
               </div>
             )}
             <Menu.Button
