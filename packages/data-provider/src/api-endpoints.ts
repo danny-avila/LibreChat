@@ -32,6 +32,8 @@ export const updateConversation = () => `${conversationsRoot}/update`;
 
 export const deleteConversation = () => `${conversationsRoot}/clear`;
 
+export const importConversation = () => `${conversationsRoot}/import`;
+
 export const search = (q: string, pageNumber: string) =>
   `/api/search?q=${q}&pageNumber=${pageNumber}`;
 

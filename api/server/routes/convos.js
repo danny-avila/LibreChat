@@ -107,7 +107,7 @@ router.post('/update', async (req, res) => {
 const { importIpLimiter, importUserLimiter } = createImportLimiters();
 
 // imports Json with conversation data and saves it to the database
-router.post('/', importIpLimiter, importUserLimiter, async (req, res) => {
+router.post('/import', importIpLimiter, importUserLimiter, async (req, res) => {
   try {
     const content = req.file.buffer.toString();
     const job = await jobScheduler.now(IMPORT_CONVERSATION_JOB_NAME, content, req.user.id);

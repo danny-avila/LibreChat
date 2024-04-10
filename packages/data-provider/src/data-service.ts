@@ -192,7 +192,7 @@ export const uploadFile = (data: FormData): Promise<f.TFileUpload> => {
 };
 
 export const importConversationsFile = (data: FormData): Promise<f.TFileUpload> => {
-  return request.postMultiPart(endpoints.conversationsRoot, data);
+  return request.postMultiPart(endpoints.importConversation(), data);
 };
 
 export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
