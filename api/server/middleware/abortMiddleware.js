@@ -3,7 +3,6 @@ const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/uti
 const { saveMessage, getConvo, getConvoTitle } = require('~/models');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const abortControllers = require('./abortControllers');
-const { redactMessage } = require('~/config/parsers');
 const spendTokens = require('~/models/spendTokens');
 const { abortRun } = require('./abortRun');
 const { logger } = require('~/config');
@@ -109,13 +108,15 @@ const handleAbortError = async (res, req, error, data) => {
     );
   }
 
+  const errorText = 'An error occurred while processing your request. Please contact the Admin.';
+
   const respondWithError = async (partialText) => {
     let options = {
       sender,
       messageId,
       conversationId,
       parentMessageId,
-      text: redactMessage(error.message),
+      text: errorText,
       shouldSaveMessage: true,
       user: req.user.id,
     };

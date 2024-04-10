@@ -2,6 +2,7 @@ const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
 const { GoogleVertexAI } = require('langchain/llms/googlevertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
+const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
 const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
 const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
@@ -10,6 +11,7 @@ const {
   getResponseSender,
   endpointSettings,
   EModelEndpoint,
+  VisionModes,
   AuthKeys,
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images');
@@ -126,7 +128,8 @@ class GoogleClient extends BaseClient {
 
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
-    // TODO: as of 12/14/23, only gemini models are "Generative AI" models provided by Google
+    // TODO: add Gemini Support for Vertex AI
+    /** @type {boolean} Whether using a "GenerativeAI" Model */
     this.isGenerativeModel = this.modelOptions.model.includes('gemini');
     const { isGenerativeModel } = this;
     this.isChatModel = !isGenerativeModel && this.modelOptions.model.includes('chat');
@@ -248,6 +251,40 @@ class GoogleClient extends BaseClient {
   }
 
   /**
+   * Formats messages for generative AI
+   * @param {TMessage[]} messages
+   * @returns
+   */
+  async formatGenerativeMessages(messages) {
+    const formattedMessages = [];
+    const attachments = await this.options.attachments;
+    const latestMessage = { ...messages[messages.length - 1] };
+    const files = await this.addImageURLs(latestMessage, attachments, VisionModes.generative);
+    this.options.attachments = files;
+    messages[messages.length - 1] = latestMessage;
+
+    for (const _message of messages) {
+      const role = _message.isCreatedByUser ? this.userLabel : this.modelLabel;
+      const parts = [];
+      parts.push({ text: _message.text });
+      if (!_message.image_urls?.length) {
+        formattedMessages.push({ role, parts });
+        continue;
+      }
+
+      for (const images of _message.image_urls) {
+        if (images.inlineData) {
+          parts.push({ inlineData: images.inlineData });
+        }
+      }
+
+      formattedMessages.push({ role, parts });
+    }
+
+    return formattedMessages;
+  }
+
+  /**
    *
    * Adds image URLs to the message object and returns the files
    *
@@ -255,11 +292,12 @@ class GoogleClient extends BaseClient {
    * @param {MongoFile[]} files
    * @returns {Promise<MongoFile[]>}
    */
-  async addImageURLs(message, attachments) {
+  async addImageURLs(message, attachments, mode = '') {
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       EModelEndpoint.google,
+      mode,
     );
     message.image_urls = image_urls.length ? image_urls : undefined;
     return files;
@@ -301,6 +339,17 @@ class GoogleClient extends BaseClient {
     return { prompt: payload };
   }
 
+  /** @param {TMessage[]} [messages=[]]  */
+  async buildGenerativeMessages(messages = []) {
+    this.userLabel = 'user';
+    this.modelLabel = 'model';
+    const formattedMessages = await this.formatGenerativeMessages(messages);
+    // TODO: RAG CONTEXT
+    // const latestMessage = { ...messages[messages.length - 1] };
+    // this.contextHandlers = createContextHandlers(this.options.req, latestMessage.text);
+    return { prompt: formattedMessages };
+  }
+
   async buildMessages(messages = [], parentMessageId) {
     if (!this.isGenerativeModel && !this.project_id) {
       throw new Error(
@@ -310,6 +359,10 @@ class GoogleClient extends BaseClient {
       throw new Error(
         '[GoogleClient] an API Key is required for Gemini models (Generative Language API)',
       );
+    }
+
+    if (this.modelOptions.model.includes('1.5')) {
+      return await this.buildGenerativeMessages(messages);
     }
 
     if (this.options.attachments && this.isGenerativeModel) {
@@ -526,7 +579,15 @@ class GoogleClient extends BaseClient {
   }
 
   createLLM(clientOptions) {
-    if (this.isGenerativeModel) {
+    if (clientOptions.modelName.includes('1.5')) {
+      return new GenAI(this.apiKey).getGenerativeModel(
+        {
+          ...clientOptions,
+          model: clientOptions.modelName,
+        },
+        { apiVersion: 'v1beta' },
+      );
+    } else if (this.isGenerativeModel) {
       return new ChatGoogleGenerativeAI({ ...clientOptions, apiKey: this.apiKey });
     }
 
@@ -586,6 +647,24 @@ class GoogleClient extends BaseClient {
 
     if (!this.isVisionModel && context && messages?.length > 0) {
       messages.unshift(new SystemMessage(context));
+    }
+
+    if (clientOptions.modelName.includes('1.5')) {
+      /** @type {GenerativeModel} */
+      const client = model;
+      const result = await client.generateContentStream({
+        contents: _payload,
+      });
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
+        onProgress(chunkText);
+        // TODO: handle a similar method from the frontend, as this is too noisy for the event loop to handle
+        // await this.generateTextStream(chunkText, onProgress, {
+        //   delay: 12,
+        // });
+        reply += chunkText;
+      }
+      return reply;
     }
 
     const stream = await model.stream(messages, {

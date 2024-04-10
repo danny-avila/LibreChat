@@ -382,7 +382,17 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.azureOpenAI]: true,
 };
 
-export const visionModels = ['gpt-4-vision', 'llava-13b', 'gemini-pro-vision', 'claude-3'];
+export const visionModels = [
+  'gpt-4-vision',
+  'llava-13b',
+  'gemini-pro-vision',
+  'claude-3',
+  'gemini-1.5-pro',
+  'gpt-4-turbo',
+];
+export enum VisionModes {
+  generative = 'generative',
+}
 
 export function validateVisionModel({
   model,
