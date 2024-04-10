@@ -1,23 +1,37 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useCallback } from 'react';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
 import type { SwitcherProps } from '~/common';
 import { useChatContext } from '~/Providers';
 import { Combobox } from '~/components/ui';
+import { mainTextareaId } from '~/common';
 
 export default function ModelSwitcher({ isCollapsed }: SwitcherProps) {
   const localize = useLocalize();
   const modelsQuery = useGetModelsQuery();
   const { conversation } = useChatContext();
   const { setOption } = useSetIndexOptions();
+  const timeoutIdRef = useRef<NodeJS.Timeout>();
 
   const { endpoint, model = null } = conversation ?? {};
   const models = useMemo(() => {
     return modelsQuery?.data?.[endpoint ?? ''] ?? [];
   }, [modelsQuery, endpoint]);
 
-  const setModel = setOption('model');
+  const setModel = useCallback(
+    (model: string) => {
+      setOption('model')(model);
+      clearTimeout(timeoutIdRef.current);
+      timeoutIdRef.current = setTimeout(() => {
+        const textarea = document.getElementById(mainTextareaId);
+        if (textarea) {
+          textarea.focus();
+        }
+      }, 150);
+    },
+    [setOption],
+  );
 
   return (
     <Combobox
