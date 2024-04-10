@@ -9,13 +9,14 @@ import {
   ComboboxProvider,
   ComboboxCancel,
 } from '@ariakit/react';
-import type { Option } from '~/common';
+import type { OptionWithIcon } from '~/common';
 import { SelectTrigger, SelectValue } from './Select';
 import useCombobox from '~/hooks/Input/useCombobox';
 import { cn } from '~/utils';
 
 export default function ComboboxComponent({
   selectedValue,
+  displayValue,
   items,
   setValue,
   ariaLabel,
@@ -25,20 +26,21 @@ export default function ComboboxComponent({
   SelectIcon,
 }: {
   ariaLabel: string;
+  displayValue?: string;
   selectedValue: string;
   searchPlaceholder?: string;
   selectPlaceholder?: string;
-  items: Option[] | string[];
+  items: OptionWithIcon[] | string[];
   setValue: (value: string) => void;
   isCollapsed: boolean;
   SelectIcon?: React.ReactNode;
 }) {
-  const options: Option[] = useMemo(() => {
+  const options: OptionWithIcon[] = useMemo(() => {
     if (!items) {
       return [];
     }
 
-    return items.map((option: string | Option) => {
+    return items.map((option: string | OptionWithIcon) => {
       if (typeof option === 'string') {
         return { label: option, value: option };
       }
@@ -88,7 +90,9 @@ export default function ComboboxComponent({
               className={cn('ml-2', isCollapsed ? 'hidden' : '')}
               style={{ userSelect: 'none' }}
             >
-              {selectedValue ? selectedValue : selectPlaceholder && selectPlaceholder}
+              {selectedValue
+                ? displayValue ?? selectedValue
+                : selectPlaceholder && selectPlaceholder}
             </span>
           </SelectValue>
         </SelectTrigger>
@@ -131,12 +135,12 @@ export default function ComboboxComponent({
               />
             </div>
             <ComboboxList className="overflow-y-auto p-1 py-2">
-              {matches.map(({ label, value }) => (
+              {matches.map(({ label, value, icon }) => (
                 <RadixSelect.Item key={value} value={`${value ?? ''}`} asChild>
                   <ComboboxItem
                     className={cn(
                       'focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-                      'rounded-lg hover:bg-gray-100/50 hover:bg-gray-50 dark:text-white dark:hover:bg-gray-700',
+                      'rounded-lg hover:bg-gray-100/50 hover:bg-gray-50 dark:text-white dark:hover:bg-gray-600',
                     )}
                   >
                     <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
@@ -147,7 +151,7 @@ export default function ComboboxComponent({
                     <RadixSelect.ItemText>
                       <div className="[&_svg]:text-foreground flex items-center justify-center gap-3 dark:text-white [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0">
                         <div className="assistant-item overflow-hidden rounded-full ">
-                          {/* <Icon /> */}
+                          {icon && icon}
                         </div>
                         {label}
                       </div>

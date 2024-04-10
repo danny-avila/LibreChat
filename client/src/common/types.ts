@@ -308,6 +308,8 @@ export type Option = Record<string, unknown> & {
   value: string | number | null;
 };
 
+export type OptionWithIcon = Option & { icon?: React.ReactNode };
+
 export type TOptionSettings = {
   showExamples?: boolean;
   isCodeChat?: boolean;
