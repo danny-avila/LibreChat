@@ -7,6 +7,7 @@ export default {
   com_files_filter: 'Filter files...',
   com_files_number_selected: '{0} of {1} file(s) selected',
   com_sidepanel_select_assistant: 'Select an Assistant',
+  com_sidepanel_parameters: 'Parameters',
   com_sidepanel_assistant_builder: 'Assistant Builder',
   com_sidepanel_hide_panel: 'Hide Panel',
   com_sidepanel_attach_files: 'Attach Files',
@@ -68,6 +69,10 @@ export default {
     'May occasionally produce harmful instructions or biased content',
   com_ui_limitation_limited_2021: 'Limited knowledge of world and events after 2021',
   com_ui_experimental: 'Experimental Features',
+  com_ui_on: 'On',
+  com_ui_off: 'Off',
+  com_ui_yes: 'Yes',
+  com_ui_no: 'No',
   com_ui_ascending: 'Asc',
   com_ui_descending: 'Desc',
   com_ui_show_all: 'Show All',
@@ -261,7 +266,7 @@ export default {
     'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
   com_endpoint_openai_detail:
     'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
-  com_endpoint_openai_custom_name_placeholder: 'Set a custom name for ChatGPT',
+  com_endpoint_openai_custom_name_placeholder: 'Set a custom name for the AI',
   com_endpoint_openai_prompt_prefix_placeholder:
     'Set custom instructions to include in System Message. Default: none',
   com_endpoint_anthropic_temp:

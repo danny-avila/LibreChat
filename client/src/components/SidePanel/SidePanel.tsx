@@ -1,18 +1,15 @@
 import throttle from 'lodash/throttle';
-import { ArrowRightToLine } from 'lucide-react';
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import { useGetEndpointsQuery, useUserKeyQuery } from 'librechat-data-provider/react-query';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { EModelEndpoint, type TEndpointsConfig } from 'librechat-data-provider';
-import type { NavLink } from '~/common';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
-import { Blocks, AttachmentIcon } from '~/components/svg';
+import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useMediaQuery, useLocalStorage } from '~/hooks';
 import { Separator } from '~/components/ui/Separator';
 import NavToggle from '~/components/Nav/NavToggle';
-import PanelSwitch from './Builder/PanelSwitch';
-import FilesPanel from './Files/Panel';
+import { useChatContext } from '~/Providers';
 import Switcher from './Switcher';
 import { cn } from '~/utils';
 import Nav from './Nav';
@@ -43,6 +40,8 @@ const SidePanel = ({
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(EModelEndpoint.assistants);
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
+  const { conversation } = useChatContext();
+  const { endpoint } = conversation ?? {};
 
   const panelRef = useRef<ImperativePanelHandle>(null);
 
@@ -52,49 +51,25 @@ const SidePanel = ({
   }, []);
 
   const assistants = useMemo(() => endpointsConfig?.[EModelEndpoint.assistants], [endpointsConfig]);
-  const userProvidesKey = useMemo(() => !!assistants?.userProvide, [assistants]);
+  const userProvidesKey = useMemo(
+    () => !!endpointsConfig?.[endpoint ?? '']?.userProvide,
+    [endpointsConfig, endpoint],
+  );
   const keyProvided = useMemo(
     () => (userProvidesKey ? !!keyExpiry?.expiresAt : true),
     [keyExpiry?.expiresAt, userProvidesKey],
   );
 
-  const Links = useMemo(() => {
-    const links: NavLink[] = [];
-    if (assistants && assistants.disableBuilder !== true && keyProvided) {
-      links.push({
-        title: 'com_sidepanel_assistant_builder',
-        label: '',
-        icon: Blocks,
-        id: 'assistants',
-        Component: PanelSwitch,
-      });
-    }
+  const hidePanel = useCallback(() => {
+    setIsCollapsed(true);
+    setCollapsedSize(0);
+    setMinSize(defaultMinSize);
+    setFullCollapse(true);
+    localStorage.setItem('fullPanelCollapse', 'true');
+    panelRef.current?.collapse();
+  }, []);
 
-    links.push({
-      title: 'com_sidepanel_attach_files',
-      label: '',
-      icon: AttachmentIcon,
-      id: 'files',
-      Component: FilesPanel,
-    });
-
-    links.push({
-      title: 'com_sidepanel_hide_panel',
-      label: '',
-      icon: ArrowRightToLine,
-      onClick: () => {
-        setIsCollapsed(true);
-        setCollapsedSize(0);
-        setMinSize(defaultMinSize);
-        setFullCollapse(true);
-        localStorage.setItem('fullPanelCollapse', 'true');
-        panelRef.current?.collapse();
-      },
-      id: 'hide-panel',
-    });
-
-    return links;
-  }, [assistants, keyProvided]);
+  const Links = useSideNavLinks({ hidePanel, assistants, keyProvided, endpoint });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
@@ -206,18 +181,15 @@ const SidePanel = ({
                 : 'opacity-100',
             )}
           >
-            {keyProvided && (
-              <div
-                className={cn(
-                  'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-gray-850',
-                  isCollapsed ? 'h-[52px]' : 'px-2',
-                )}
-              >
-                <Switcher isCollapsed={isCollapsed} />
-                <Separator className="bg-gray-100/50 dark:bg-gray-600" />
-              </div>
-            )}
-
+            <div
+              className={cn(
+                'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-gray-850',
+                isCollapsed ? 'h-[52px]' : 'px-2',
+              )}
+            >
+              <Switcher isCollapsed={isCollapsed} endpointKeyProvided={keyProvided} />
+              <Separator className="bg-gray-100/50 dark:bg-gray-600" />
+            </div>
             <Nav
               resize={panelRef.current?.resize}
               isCollapsed={isCollapsed}
