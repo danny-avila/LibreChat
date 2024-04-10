@@ -1,9 +1,9 @@
-import { useMemo, useEffect, useCallback } from 'react';
+import { useMemo, useCallback } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Slider, HoverCard, Input, InputNumber, HoverCardTrigger } from '~/components/ui';
+import { useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
 import { cn, defaultTextProps, optionText } from '~/utils';
-import { useLocalize, useDebouncedInput } from '~/hooks';
 import { ESide, defaultDebouncedDelay } from '~/common';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
@@ -25,8 +25,8 @@ function DynamicSlider({
   descriptionCode,
 }: DynamicSettingProps) {
   const localize = useLocalize();
+  const { conversation = { conversationId: null }, preset } = useChatContext();
   const isEnum = useMemo(() => !range && options && options.length > 0, [options, range]);
-  const { conversation = {} } = useChatContext();
 
   const [setInputValue, inputValue] = useDebouncedInput<string | number>({
     optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
@@ -34,6 +34,16 @@ function DynamicSlider({
     setter: () => ({}),
     setOption,
     delay: isEnum ? 0 : defaultDebouncedDelay,
+  });
+
+  useParameterEffects({
+    preset,
+    settingKey,
+    defaultValue,
+    conversation,
+    inputValue,
+    setInputValue,
+    preventDelayedUpdate: isEnum,
   });
 
   const selectedValue = useMemo(() => {
@@ -44,23 +54,6 @@ function DynamicSlider({
 
     return inputValue;
   }, [conversation, defaultValue, settingKey, inputValue, isEnum]);
-
-  /** Updates the local state value if global (conversation) is updated elsewhere */
-  useEffect(() => {
-    if (isEnum) {
-      return;
-    }
-
-    const timeout = setTimeout(() => {
-      if (conversation?.[settingKey] === inputValue) {
-        return;
-      }
-
-      setInputValue(conversation?.[settingKey]);
-    }, defaultDebouncedDelay * 1.5);
-
-    return () => clearTimeout(timeout);
-  }, [setInputValue, isEnum, conversation, inputValue, settingKey]);
 
   const enumToNumeric = useMemo(() => {
     if (isEnum && options) {

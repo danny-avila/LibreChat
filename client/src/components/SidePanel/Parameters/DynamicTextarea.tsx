@@ -1,13 +1,12 @@
 // client/src/components/SidePanel/Parameters/DynamicTextarea.tsx
-import { useEffect } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, TextareaAutosize, HoverCard, HoverCardTrigger } from '~/components/ui';
-import { useLocalize, useDebouncedInput } from '~/hooks';
-import { ESide, defaultDebouncedDelay } from '~/common';
+import { useLocalize, useDebouncedInput, useParameterEffects } from '~/hooks';
 import { cn, defaultTextProps } from '~/utils';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
+import { ESide } from '~/common';
 
 function DynamicTextarea({
   label,
@@ -25,9 +24,9 @@ function DynamicTextarea({
   placeholderCode,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { conversation = {} } = useChatContext();
+  const { conversation = { conversationId: null }, preset } = useChatContext();
 
-  const [setInputValue, inputValue] = useDebouncedInput<string>({
+  const [setInputValue, inputValue] = useDebouncedInput<string | null>({
     optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
     initialValue:
       optionType !== OptionTypes.Custom
@@ -37,18 +36,14 @@ function DynamicTextarea({
     setOption,
   });
 
-  /** Updates the local state value if global (conversation) is updated elsewhere */
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (conversation?.[settingKey] === inputValue) {
-        return;
-      }
-
-      setInputValue(conversation?.[settingKey]);
-    }, defaultDebouncedDelay * 1.5);
-
-    return () => clearTimeout(timeout);
-  }, [setInputValue, conversation, inputValue, settingKey]);
+  useParameterEffects({
+    preset,
+    settingKey,
+    defaultValue: typeof defaultValue === 'undefined' ? '' : defaultValue,
+    conversation,
+    inputValue,
+    setInputValue,
+  });
 
   return (
     <div
@@ -78,7 +73,7 @@ function DynamicTextarea({
           <TextareaAutosize
             id={`${settingKey}-dynamic-textarea`}
             disabled={readonly}
-            value={inputValue}
+            value={inputValue ?? ''}
             onChange={setInputValue}
             placeholder={placeholderCode ? localize(placeholder ?? '') || placeholder : placeholder}
             className={cn(

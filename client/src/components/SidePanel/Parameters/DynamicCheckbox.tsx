@@ -3,9 +3,9 @@ import { useMemo, useState } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Checkbox, HoverCard, HoverCardTrigger } from '~/components/ui';
+import { useLocalize, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
-import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
 function DynamicCheckbox({
@@ -22,26 +22,36 @@ function DynamicCheckbox({
   descriptionCode,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { conversation = {} } = useChatContext();
-  const [customValue, setCustomValue] = useState<boolean>(!!(defaultValue as boolean | undefined));
+  const { conversation = { conversationId: null }, preset } = useChatContext();
+  const [inputValue, setInputValue] = useState<boolean>(!!(defaultValue as boolean | undefined));
 
   const selectedValue = useMemo(() => {
     if (optionType === OptionTypes.Custom) {
       // TODO: custom logic, add to payload but not to conversation
-      return customValue;
+      return inputValue;
     }
 
     return conversation?.[settingKey] ?? defaultValue;
-  }, [conversation, defaultValue, optionType, settingKey, customValue]);
+  }, [conversation, defaultValue, optionType, settingKey, inputValue]);
 
   const handleCheckedChange = (checked: boolean) => {
     if (optionType === OptionTypes.Custom) {
       // TODO: custom logic, add to payload but not to conversation
-      setCustomValue(checked);
+      setInputValue(checked);
       return;
     }
     setOption(settingKey)(checked);
   };
+
+  useParameterEffects({
+    preset,
+    settingKey,
+    defaultValue,
+    conversation,
+    inputValue,
+    setInputValue,
+    preventDelayedUpdate: true,
+  });
 
   return (
     <div

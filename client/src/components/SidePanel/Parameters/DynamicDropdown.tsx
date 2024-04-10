@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, HoverCard, HoverCardTrigger, SelectDropDown } from '~/components/ui';
+import { useLocalize, useParameterEffects } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
-import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 import { cn } from '~/utils';
 
@@ -24,26 +24,36 @@ function DynamicDropdown({
   descriptionCode,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { conversation = {} } = useChatContext();
-  const [customValue, setCustomValue] = useState<string | null>(null);
+  const { conversation = { conversationId: null }, preset } = useChatContext();
+  const [inputValue, setInputValue] = useState<string | null>(null);
 
   const selectedValue = useMemo(() => {
     if (optionType === OptionTypes.Custom) {
       // TODO: custom logic, add to payload but not to conversation
-      return customValue;
+      return inputValue;
     }
 
     return conversation?.[settingKey] ?? defaultValue;
-  }, [conversation, defaultValue, optionType, settingKey, customValue]);
+  }, [conversation, defaultValue, optionType, settingKey, inputValue]);
 
   const handleChange = (value: string) => {
     if (optionType === OptionTypes.Custom) {
       // TODO: custom logic, add to payload but not to conversation
-      setCustomValue(value);
+      setInputValue(value);
       return;
     }
     setOption(settingKey)(value);
   };
+
+  useParameterEffects({
+    preset,
+    settingKey,
+    defaultValue,
+    conversation,
+    inputValue,
+    setInputValue,
+    preventDelayedUpdate: true,
+  });
 
   if (!options || options.length === 0) {
     return null;
