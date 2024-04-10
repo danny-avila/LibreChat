@@ -85,14 +85,14 @@ const CodeInProgress = ({
       style={{ opacity: 1, transform: 'none' }}
       data-projection-id="77"
     >
-      <div>
+      <div className='absolute right-[1.5px] bottom-[1.5px]'>
         <svg
           xmlns="http://www.w3.org/2000/svg"
           xmlnsXlink="http://www.w3.org/1999/xlink"
           viewBox="0 0 20 20"
           width="20"
           height="20"
-          style={{ width: '100%', height: '100%', transform: 'translate3d(0px, 0px, 0px)' }}
+          style={{ transform: 'translate3d(0px, 0px, 0px)' }}
           preserveAspectRatio="xMidYMid meet"
         >
           <defs>
