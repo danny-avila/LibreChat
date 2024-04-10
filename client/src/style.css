@@ -2048,3 +2048,43 @@ html {
 .slide-to-down {
   animation: slideDownAndFadeOut 2s ease-in-out infinite;
 }
+
+
+@keyframes rotateAdjustAndBack {
+  0% {
+    transform: rotate(-33deg)  scale(1);
+  }
+  5% {
+    transform: rotate(67deg)  scale(1);
+  }
+  6%, 20% {
+    transform: rotate(57deg)  scale(1);
+  }
+  22% {
+    transform: rotate(65deg)  scale(1);
+  }
+
+  26%, 40% {
+    transform: rotate(-33deg)  scale(1);
+  }
+  42% {
+    transform: rotate(-40deg)  scale(1);
+  }
+  45%, 75% {
+    transform: rotate(30deg)  scale(0.7);
+  }
+  77%, 85% {
+    transform: rotate(57deg)  scale(1);
+  }
+  87% {
+    transform: rotate(65deg)  scale(1); 
+  }
+  90%,100% {
+    transform: rotate(-33deg)  scale(1);
+  }
+}
+
+.rotate-adjust-and-back {
+  animation: rotateAdjustAndBack 10s ease-in-out infinite;
+  transform-origin: 50% 50%;
+}
