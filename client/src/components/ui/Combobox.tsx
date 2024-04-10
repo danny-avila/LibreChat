@@ -1,12 +1,17 @@
-import './combobox.css';
 import { startTransition, useMemo } from 'react';
-import { Combobox, ComboboxItem, ComboboxList, ComboboxProvider } from '@ariakit/react';
-import useCombobox from '~/hooks/Input/useCombobox';
-import { Search as SearchIcon } from 'lucide-react';
 import * as RadixSelect from '@radix-ui/react-select';
+import { Search as SearchIcon } from 'lucide-react';
 import { CheckIcon, ChevronDownIcon } from '@radix-ui/react-icons';
+import {
+  Combobox,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxProvider,
+  ComboboxCancel,
+} from '@ariakit/react';
 import type { Option } from '~/common';
 import { SelectTrigger, SelectValue } from './Select';
+import useCombobox from '~/hooks/Input/useCombobox';
 import { cn } from '~/utils';
 
 export default function ComboboxComponent({
@@ -83,7 +88,7 @@ export default function ComboboxComponent({
               className={cn('ml-2', isCollapsed ? 'hidden' : '')}
               style={{ userSelect: 'none' }}
             >
-              {selectPlaceholder && selectPlaceholder}
+              {selectedValue ? selectedValue : selectPlaceholder && selectPlaceholder}
             </span>
           </SelectValue>
         </SelectTrigger>
@@ -91,18 +96,20 @@ export default function ComboboxComponent({
           role="dialog"
           aria-label={ariaLabel + 's'}
           position="popper"
-          className="popover"
           sideOffset={4}
           alignOffset={-16}
+          className={cn(
+            'bg-popover text-popover-foreground relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border border-gray-200 shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dark:border-gray-600',
+            'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
+            'bg-white dark:bg-gray-700',
+          )}
         >
-          <div className="combobox-wrapper">
-            <div className="combobox-icon">
-              <SearchIcon />
-            </div>
+          <div className="group sticky left-0 top-0 z-10 flex h-12 items-center gap-2 bg-gradient-to-b from-white from-65% to-transparent px-2 px-3 py-2 text-black transition-colors duration-300 focus:bg-gradient-to-b focus:from-white focus:to-white/50 dark:from-gray-700 dark:to-transparent dark:text-white dark:focus:from-white/10 dark:focus:to-white/20">
+            <SearchIcon className="h-4 w-4 text-gray-500 transition-colors duration-300 dark:group-focus-within:text-gray-300 dark:group-hover:text-gray-300" />
             <Combobox
               autoSelect
               placeholder={searchPlaceholder}
-              className="combobox"
+              className="flex-1 rounded-md border-none bg-transparent px-2.5 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-700/10 dark:focus:ring-gray-200/10"
               // Ariakit's Combobox manually triggers a blur event on virtually
               // blurred items, making them work as if they had actual DOM
               // focus. These blur events might happen after the corresponding
@@ -117,15 +124,33 @@ export default function ComboboxComponent({
                 event.stopPropagation();
               }}
             />
+            <ComboboxCancel
+              hideWhenEmpty={true}
+              className="relative flex h-5 w-5 items-center justify-end text-gray-500 transition-colors duration-300 dark:group-focus-within:text-gray-300 dark:group-hover:text-gray-300"
+            />
           </div>
-          <ComboboxList className="listbox">
+          <ComboboxList className="overflow-y-auto p-1 py-2">
             {matches.map(({ label, value }) => (
-              <RadixSelect.Item key={value} value={`${value ?? ''}`} asChild className="item">
-                <ComboboxItem>
-                  <RadixSelect.ItemText>{label}</RadixSelect.ItemText>
-                  <RadixSelect.ItemIndicator className="item-indicator">
-                    <CheckIcon />
-                  </RadixSelect.ItemIndicator>
+              <RadixSelect.Item key={value} value={`${value ?? ''}`} asChild>
+                <ComboboxItem
+                  className={cn(
+                    'focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+                    'rounded-lg hover:bg-gray-100/50 hover:bg-gray-50 dark:text-white dark:hover:bg-gray-700',
+                  )}
+                >
+                  <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+                    <RadixSelect.ItemIndicator>
+                      <CheckIcon className="h-4 w-4" />
+                    </RadixSelect.ItemIndicator>
+                  </span>
+                  <RadixSelect.ItemText>
+                    <div className="[&_svg]:text-foreground flex items-center justify-center gap-3 dark:text-white [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0">
+                      <div className="assistant-item overflow-hidden rounded-full ">
+                        {/* <Icon /> */}
+                      </div>
+                      {label}
+                    </div>
+                  </RadixSelect.ItemText>
                 </ComboboxItem>
               </RadixSelect.Item>
             ))}
