@@ -2063,7 +2063,6 @@ html {
   22% {
     transform: rotate(65deg)  scale(1);
   }
-
   26%, 40% {
     transform: rotate(-33deg)  scale(1);
   }
