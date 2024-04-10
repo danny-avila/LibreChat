@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { TMessageContentParts } from './types/assistants';
+import { Tools } from './types/assistants';
+import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
 import type { TFile } from './types/files';
 
 export const isUUID = z.string().uuid();
@@ -25,8 +26,25 @@ export const defaultAssistantFormValues = {
   model: '',
   functions: [],
   code_interpreter: false,
+  image_vision: false,
   retrieval: false,
 };
+
+export const ImageVisionTool: FunctionTool = {
+  type: Tools.function,
+  [Tools.function]: {
+    name: 'image_vision',
+    description: 'Get detailed text descriptions for all current image attachments.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+};
+
+export const isImageVisionTool = (tool: FunctionTool | FunctionToolCall) =>
+  tool.type === 'function' && tool.function?.name === ImageVisionTool?.function?.name;
 
 export const endpointSettings = {
   [EModelEndpoint.google]: {

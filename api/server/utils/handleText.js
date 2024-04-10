@@ -172,6 +172,7 @@ function generateConfig(key, baseURL, assistants = false) {
     config.retrievalModels = defaultRetrievalModels;
     config.capabilities = [
       Capabilities.code_interpreter,
+      Capabilities.image_vision,
       Capabilities.retrieval,
       Capabilities.actions,
       Capabilities.tools,

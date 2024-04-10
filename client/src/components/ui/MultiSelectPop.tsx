@@ -39,11 +39,11 @@ function MultiSelectPop({
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
 
   // Detemine if we should to convert this component into a searchable select
-  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>(
-    availableValues,
-    searchPlaceholder,
-    (option) => (option.name || '').toUpperCase(),
-  );
+  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>({
+    availableOptions: availableValues,
+    placeholder: searchPlaceholder,
+    getTextKeyOverride: (option) => (option.name || '').toUpperCase(),
+  });
   const hasSearchRender = Boolean(searchRender);
   const options = hasSearchRender ? filteredValues : availableValues;
 
@@ -80,11 +80,7 @@ function MultiSelectPop({
                       {value.map((v, i) => (
                         <div key={i} className="relative">
                           {v.icon ? (
-                            <img
-                              src={v.icon}
-                              alt={`${v} logo`}
-                              className="icon-lg rounded-sm bg-white"
-                            />
+                            <img src={v.icon} alt={`${v} logo`} className="icon-lg rounded-sm" />
                           ) : (
                             <Wrench className="icon-lg rounded-sm bg-white" />
                           )}
@@ -141,7 +137,7 @@ function MultiSelectPop({
                         <img
                           src={option.icon}
                           alt={`${option.name} logo`}
-                          className="icon-sm mr-1 rounded-sm bg-white bg-cover dark:bg-gray-800"
+                          className="icon-sm mr-1 rounded-sm bg-cover"
                         />
                       ) : (
                         <Wrench className="icon-sm mr-1 rounded-sm bg-white bg-cover dark:bg-gray-800" />

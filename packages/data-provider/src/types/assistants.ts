@@ -1,4 +1,5 @@
 import type { OpenAPIV3 } from 'openapi-types';
+import type { TFile } from './files';
 
 export type Schema = OpenAPIV3.SchemaObject & { description?: string };
 export type Reference = OpenAPIV3.ReferenceObject & { description?: string };
@@ -131,7 +132,7 @@ export type ToolCallsStepDetails = {
   type: 'tool_calls'; // Always 'tool_calls'.
 };
 
-export type ImageFile = {
+export type ImageFile = TFile & {
   /**
    * The [File](https://platform.openai.com/docs/api-reference/files) ID of the image
    * in the message content.
@@ -181,6 +182,11 @@ export type Text = {
   annotations?: Array<FileCitation | FilePath>;
   value: string;
 };
+
+export enum AnnotationTypes {
+  FILE_CITATION = 'file_citation',
+  FILE_PATH = 'file_path',
+}
 
 export enum ContentTypes {
   TEXT = 'text',
@@ -246,7 +252,10 @@ export type TMessageContentParts =
   | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata };
 
 export type StreamContentData = TMessageContentParts & {
+  /** The index of the current content part */
   index: number;
+  /** The current text content was already served but edited to replace elements therein */
+  edited?: boolean;
 };
 
 export type TContentData = StreamContentData & {
@@ -259,6 +268,8 @@ export type TContentData = StreamContentData & {
 
 export const actionDelimiter = '_action_';
 export const actionDomainSeparator = '---';
+export const hostImageIdSuffix = '_host_copy';
+export const hostImageNamePrefix = 'host_copy_';
 
 export enum AuthTypeEnum {
   ServiceHttp = 'service_http',

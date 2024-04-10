@@ -5,261 +5,316 @@ weight: -10
 ---
 # ⚠️ Breaking Changes
 
-> **Note:**
-**If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
-Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
+!!! warning
+
+    **If you experience any issues after updating, we recommend clearing your browser cache and cookies.**
+    Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
 
 ---
 
-## 🔎Meilisearch v1.6
+## v0.7.0+
 
-- **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data_v1.5` may be present in your root directory. This folder is no longer required and **can be safely deleted** to free up space.
-- **New Indexing Data Location**: With the current Meilisearch version `1.6`, the new indexing data location folder will be `meili_data_v1.6`.
+!!! info "🗃️ RAG API (Chat with Files)"
 
----
+    - **RAG API Update**: The default Docker compose files now include a Python API and Vector Database for RAG (Retrieval-Augmented Generation). Read more about this in the [RAG API page](../features/rag_api.md)
 
-## 🥷🪦 Ninja - March 4, 2024
-- Since Ninja has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
+## v0.6.10+ (-dev build)
 
----
+!!! info "🔎Meilisearch v1.7"
 
-## 🐋 docker-compose.yml - February 22nd, 2024
+    - **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data_v1.6` may be present in your root directory. This folder is no longer required and **can be safely deleted** to free up space.
+    - **New Indexing Data Location**: With the current Meilisearch version `1.7.3`, the new indexing data location folder will be `meili_data_v1.7`.
 
-### Update to `docker-compose.yml`
+!!! info "🔎Meilisearch v1.6"
 
-We have made changes to the `docker-compose.yml` file to enhance the default behavior. Starting now, the file uses the pre-built image by default. If you prefer to build the image yourself, you'll need to utilize the override file to specify your custom build configuration.
+    - **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data_v1.5` may be present in your root directory. This folder is no longer required and **can be safely deleted** to free up space.
+    - **New Indexing Data Location**: With the current Meilisearch version `1.6`, the new indexing data location folder will be `meili_data_v1.6`.
 
-Here's an example of the `docker-compose.override.yml`:
+!!! failure "🥷🪦 Ninja"
 
-```yaml
-version: '3.4'
+    - Following to the shut down of "Ninja", the ChatGPTbrowser endpoint is no longer available in LibreChat.
 
-services:
-  api:
-    image: librechat
-    build:
-      context: .
-      target: node
-```
+!!! warning "🐋 `docker-compose.yml` Update"
 
-For more detailed information on using the `docker-compose.override.yaml`, please refer to our documentation: [docker_override](https://docs.librechat.ai/install/configuration/docker_override.html)
+    We have made changes to the `docker-compose.yml` file to enhance the default behavior. Starting now, the file uses the pre-built image by default. If you prefer to build the image yourself, you'll need to utilize the override file to specify your custom build configuration.
 
----
+    Here's an example of the `docker-compose.override.yml`:
 
-## **.env** changes v0.6.6 -> v0.6.9
-see [⚙️ Environment Variables](../install/configuration/dotenv.md) for more info
+    ```yaml
+    version: '3.4'
 
-- Assistants added to the list
-```sh
-# ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
-```
-- Updated OpenAI models
-```sh
-# OPENAI_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k
-```
-- Assistants configuration
-```sh
-#====================#
-#   Assistants API   #
-#====================#
+    services:
+      api:
+        image: librechat
+        build:
+          context: .
+          target: node
+    ```
 
-# ASSISTANTS_API_KEY=
-# ASSISTANTS_BASE_URL=
-# ASSISTANTS_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
-```
-- Updated Plugin models
-```sh
-# PLUGIN_MODELS=gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
-```
-- Birthday hat
-```sh
-# SHOW_BIRTHDAY_ICON=true
-```
-### Previous changes:
-- DALL-E
-```sh
-# DALL·E
-#----------------
-# DALLE_API_KEY=
-# DALLE3_API_KEY=
-# DALLE2_API_KEY=
-# DALLE3_SYSTEM_PROMPT=
-# DALLE2_SYSTEM_PROMPT=
-# DALLE_REVERSE_PROXY=
-# DALLE3_BASEURL=
-# DALLE2_BASEURL=
-
-# DALL·E (via Azure OpenAI)
-# Note: requires some of the variables above to be set
-#----------------
-# DALLE3_AZURE_API_VERSION=
-# DALLE2_AZURE_API_VERSION=
-```
+    For more detailed information on using the `docker-compose.override.yaml`, please refer to our documentation: [docker_override](https://docs.librechat.ai/install/configuration/docker_override.html)
 
 ---
 
-## January 31th 2024
-- A new method to use the ChatGPT endpoint is now documented. It uses "Ninja"
-- For more info:
-    - ~~[Ninja Deployment Guide](../general_info/breaking_changes.md)~~
-    - [Ninja GitHub repo](https://github.com/gngpp/ninja/tree/main)
+## v0.6.10 
+
+!!! danger "Söhne Font Licensing Issue"
+
+    During a recent license review, it was discovered that the Söhne fonts used in LibreChat require proper licensing for legal use. These fonts were added early in the project by a community contribution to mirror ChatGPT's aesthetic, but it was an oversight to allow them without proper knowledge.
+
+    To address this issue, the Söhne fonts have been removed from the project and replaced with open-source alternatives, effective immediately in the latest version of the repository on GitHub. The relevant font foundry has been contacted to resolve the matter.
+
+    All users and those who have forked LibreChat are required to update to the latest version to comply with font licensing laws. If you prefer to continue using the fonts, please follow the instructions provided [here](https://gist.github.com/danny-avila/e1d623e51b24cf0989865197bb788102).
+
+    LibreChat remains committed to ensuring compliance, accessibility, and continuous improvement. The effort to match OpenAI's ChatGPT styling was well-intentioned but poorly executed, and moving forward, all aspects of the project will meet legal and permissive standards.
+
+    We appreciate your understanding and cooperation in making these necessary adjustments. For updates or guidance on implementing these changes, please reach out.
+
+    Thank you for your continued support of LibreChat.
 
 ---
 
-## January 30th 2024
-- Since PandoraNext has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
-- For more info:
-    - [https://github.com/danny-avila/LibreChat/discussions/1663](https://github.com/danny-avila/LibreChat/discussions/1663#discussioncomment-8314025)
-    - [https://linux.do/t/topic/1051](https://linux.do/t/topic/1051)
+## v0.6.9 
+
+!!! info "⚙️ Environment Variables - v0.6.6 -> v0.6.9"
+
+    see [⚙️ Environment Variables](../install/configuration/dotenv.md) for more info
+
+!!! abstract "Endpoints"
+
+    ```sh
+    # ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,chatGPTBrowser,google,gptPlugins,anthropic
+    ```
+
+!!! abstract "OpenAI models"
+
+    ```sh
+    # OPENAI_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-0301,gpt-3.5-turbo,gpt-4,gpt-4-0613,gpt-4-vision-preview,gpt-3.5-turbo-0613,gpt-3.5-turbo-16k-0613,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview,gpt-3.5-turbo-1106,gpt-3.5-turbo-instruct,gpt-3.5-turbo-instruct-0914,gpt-3.5-turbo-16k
+    ```
+
+!!! abstract "Assistants API"
+
+    ```sh
+    #====================#
+    #   Assistants API   #
+    #====================#
+
+    ASSISTANTS_API_KEY=user_provided
+    # ASSISTANTS_BASE_URL=
+    # ASSISTANTS_MODELS=gpt-3.5-turbo-0125,gpt-3.5-turbo-16k-0613,gpt-3.5-turbo-16k,gpt-3.5-turbo,gpt-4,gpt-4-0314,gpt-4-32k-0314,gpt-4-0613,gpt-3.5-turbo-0613,gpt-3.5-turbo-1106,gpt-4-0125-preview,gpt-4-turbo-preview,gpt-4-1106-preview
+    ```
+
+!!! abstract "Plugin models"
+
+    ```sh
+    # PLUGIN_MODELS=gpt-4,gpt-4-turbo-preview,gpt-4-0125-preview,gpt-4-1106-preview,gpt-4-0613,gpt-3.5-turbo,gpt-3.5-turbo-0125,gpt-3.5-turbo-1106,gpt-3.5-turbo-0613
+    ```
+
+!!! abstract "Birthday Hat"
+
+    ```sh
+    # SHOW_BIRTHDAY_ICON=true
+    ```
+
+!!! abstract "DALL·E"
+
+    ```sh
+    # DALL·E
+    #----------------
+    # DALLE_API_KEY=
+    # DALLE3_API_KEY=
+    # DALLE2_API_KEY=
+    # DALLE3_SYSTEM_PROMPT=
+    # DALLE2_SYSTEM_PROMPT=
+    # DALLE_REVERSE_PROXY=
+    # DALLE3_BASEURL=
+    # DALLE2_BASEURL=
+
+    # DALL·E (via Azure OpenAI)
+    # Note: requires some of the variables above to be set
+    #----------------
+    # DALLE3_AZURE_API_VERSION=
+    # DALLE2_AZURE_API_VERSION=
+    ```
+
+!!! success "🥷 Ninja"
+
+    - A new method to use the ChatGPT endpoint is now documented. It uses "Ninja"
+    - For more info:
+        - ~~[Ninja Deployment Guide](../general_info/breaking_changes.md)~~
+        - [Ninja GitHub repo](https://github.com/gngpp/ninja/tree/main)
+
+!!! failure "🪦 PandoraNext"
+
+    - Since PandoraNext has shut down, the ChatGPTbrowser endpoint is no longer available in LibreChat.
+    - For more info:
+        - [https://github.com/danny-avila/LibreChat/discussions/1663](https://github.com/danny-avila/LibreChat/discussions/1663#discussioncomment-8314025)
+        - [https://linux.do/t/topic/1051](https://linux.do/t/topic/1051)
 
 ---
 
 ## v0.6.6
 
-- **DALL-E Update**: user-provided keys for DALL-E are now specific to each DALL-E version, i.e.: `DALLE3_API_KEY` and `DALLE2_API_KEY`
-- Note: `DALLE_API_KEY` will work for both DALL-E-3 and DALL-E-2 when the admin provides the credential; in other words, this may only affect your users if DALLE_API_KEY is not set in the `.env` file. In this case, they will simply have to "uninstall" the plugin, and provide their API key again.
+!!! abstract "v0.6.6"
+
+    - **DALL-E Update**: user-provided keys for DALL-E are now specific to each DALL-E version, i.e.: `DALLE3_API_KEY` and `DALLE2_API_KEY`
+    - Note: `DALLE_API_KEY` will work for both DALL-E-3 and DALL-E-2 when the admin provides the credential; in other words, this may only affect your users if DALLE_API_KEY is not set in the `.env` file. In this case, they will simply have to "uninstall" the plugin, and provide their API key again.
 
 ---
 
 ## v0.6.x
 
-- **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data` may be present in your root directory. This folder is no longer required and can be **safely deleted** to free up space.
-- **New Indexing Data Location**: The indexing data has been relocated. It will now be stored in a new folder named `meili_data_v1.x`, where `1.x` represents the version of Meilisearch. For instance, with the current Meilisearch version `1.5`, the folder will be `meili_data_v1.5`.
+!!! info "Meilisearch" 
+
+    - **Meilisearch Update**: Following the recent update to Meilisearch, an unused folder named `meili_data` may be present in your root directory. This folder is no longer required and can be **safely deleted** to free up space.
+    - **New Indexing Data Location**: The indexing data has been relocated. It will now be stored in a new folder named `meili_data_v1.x`, where `1.x` represents the version of Meilisearch. For instance, with the current Meilisearch version `1.5`, the folder will be `meili_data_v1.5`.
 
 ---
 
 ## v0.5.9
 
-- It's now required to set a **JWT_REFRESH_SECRET** in your .env file as of [#927](https://github.com/danny-avila/LibreChat/pull/927)
-  - It's also recommended you update your `SESSION_EXPIRY` to a lower value and set `REFRESH_TOKEN_EXPIRY`
+!!! warning "JWT Secret"
 
-  - Default values: session expiry: 15 minutes, refresh token expiry: 7 days
+    - It's now required to set a **JWT_REFRESH_SECRET** in your .env file as of [#927](https://github.com/danny-avila/LibreChat/pull/927)
+      - It's also recommended you update your `SESSION_EXPIRY` to a lower value and set `REFRESH_TOKEN_EXPIRY`
 
-  - *See **[.env.example](https://github.com/danny-avila/LibreChat/blob/1378eb5097b666a4add27923e47be73919957e5b/.env.example#L314)** for exact values in millisecond calculation*
+      - Default values: session expiry: 15 minutes, refresh token expiry: 7 days
+
+      - *See **[.env.example](https://github.com/danny-avila/LibreChat/blob/1378eb5097b666a4add27923e47be73919957e5b/.env.example#L314)** for exact values in millisecond calculation*
 
 ---
 
 ## v0.5.8
 
-- It's now required to name manifest JSON files (for [ChatGPT Plugins](../features/plugins/chatgpt_plugins_openapi.md)) in the `api\app\clients\tools\.well-known` directory after their `name_for_model` property should you add one yourself.
-    - This was a recommended convention before, but is now required.
+!!! info "manifest JSON files"
+
+    - It's now required to name manifest JSON files (for [ChatGPT Plugins](../features/plugins/chatgpt_plugins_openapi.md)) in the `api\app\clients\tools\.well-known` directory after their `name_for_model` property should you add one yourself.
+        - This was a recommended convention before, but is now required.
 
 ---
 
 ## v0.5.7
 
-Now, we have an easier and safer way to update LibreChat. You can simply run `npm run update` from the project directory for a clean update.
-If you want to skip the prompt you can use
+!!! tip "Update LibreChat"
 
-for a docker install:
-- `npm run update:docker`
+    Now, we have an easier and safer way to update LibreChat. You can simply run `npm run update` from the project directory for a clean update.
+    If you want to skip the prompt you can use
 
-for a local install:
-- `npm run update:local`
+    for a docker install:
+    - `npm run update:docker`
+
+    for a local install:
+    - `npm run update:local`
 
 ---
 
 ## v0.5.5
-Some users have reported an error after updating their docker containers.
 
-![image](https://github.com/fuegovic/LibreChat/assets/32828263/1265d664-5a9c-47d2-b405-47bc0d029a8d)
+!!! warning "Possible Error and Solution"
 
-- To fix this error, you need to:
-  - Delete the LibreChat image in docker 🗑️
+    Some users have reported an error after updating their docker containers.
 
-    **(leave mongo intact to preserve your profiles and history)**
-    ![image](https://github.com/fuegovic/LibreChat/assets/32828263/acf15682-435e-44bd-8873-a5dceb3121cc)
-  - Repeat the docker update process: 🚀
-    - `docker compose build`
-    - `docker compose up -d`
+    ![image](https://github.com/fuegovic/LibreChat/assets/32828263/1265d664-5a9c-47d2-b405-47bc0d029a8d)
+
+    - To fix this error, you need to:
+      - Delete the LibreChat image in docker 🗑️
+
+        **(leave mongo intact to preserve your profiles and history)**
+        ![image](https://github.com/fuegovic/LibreChat/assets/32828263/acf15682-435e-44bd-8873-a5dceb3121cc)
+      - Repeat the docker update process: 🚀
+        - `docker compose build`
+        - `docker compose up -d`
 
 ---
 
 ## v0.5.4
-Some changes were made in the .env file
-**Look at the .env.example for reference.**
 
-- If you previously used social login, you need to:
-  - Add this to your .env file: 👇
+!!! abstract ".env file"
 
-```env
-##########################
-# User System:
-##########################
+    Some changes were made in the .env file
+    **Look at the .env.example for reference.**
 
-# Allow Public Registration
-ALLOW_REGISTRATION=true
+    - If you previously used social login, you need to:
+      - Add this to your .env file: 👇
 
-# Allow Social Registration
-ALLOW_SOCIAL_LOGIN=false
-```
+    ```env
+    ##########################
+    # User System:
+    ##########################
 
-  - Set ALLOW_SOCIAL_LOGIN to true if you want to enable social login 🔥
+    # Allow Public Registration
+    ALLOW_REGISTRATION=true
 
-- If you want to enable the Anthropic Endpoint (Claude), you need to:
-  - Add this part in your .env file: 👇
+    # Allow Social Registration
+    ALLOW_SOCIAL_LOGIN=false
+    ```
 
-```env
-##########################
-# Anthropic Endpoint:
-##########################
-# Access key from https://console.anthropic.com/
-# Leave it blank to disable this feature.
-# Set to "user_provided" to allow the user to provide their API key from the UI.
-# Note that access to claude-1 may potentially become unavailable with the release of claude-2.
-ANTHROPIC_API_KEY="user_provided"
-ANTHROPIC_MODELS=claude-1,claude-instant-1,claude-2
-```
+      - Set ALLOW_SOCIAL_LOGIN to true if you want to enable social login 🔥
 
-  - Choose from ANTHROPIC_MODELS which models you want to enable 🤖
+    - If you want to enable the Anthropic Endpoint (Claude), you need to:
+      - Add this part in your .env file: 👇
+
+    ```env
+    ##########################
+    # Anthropic Endpoint:
+    ##########################
+    # Access key from https://console.anthropic.com/
+    # Leave it blank to disable this feature.
+    # Set to "user_provided" to allow the user to provide their API key from the UI.
+    # Note that access to claude-1 may potentially become unavailable with the release of claude-2.
+    ANTHROPIC_API_KEY="user_provided"
+    ANTHROPIC_MODELS=claude-1,claude-instant-1,claude-2
+    ```
+
+      - Choose from ANTHROPIC_MODELS which models you want to enable 🤖
 
 ---
 
 ## v0.5.3
 
-Changed **AZURE_OPENAI_API_KEY** to **AZURE_API_KEY**:
+!!! warning "Azure API Key variable"
 
-I had to change the environment variable from AZURE_OPENAI_API_KEY to AZURE_API_KEY, because the former would be read by langchain and cause issues when a user has both Azure and OpenAI keys set. This is a [known issue in the langchain library](https://github.com/hwchase17/langchainjs/issues/1687)
+    Changed **AZURE_OPENAI_API_KEY** to **AZURE_API_KEY**:
+
+    I had to change the environment variable from AZURE_OPENAI_API_KEY to AZURE_API_KEY, because the former would be read by langchain and cause issues when a user has both Azure and OpenAI keys set. This is a [known issue in the langchain library](https://github.com/hwchase17/langchainjs/issues/1687)
 
 ---
 
 ## v0.5.0
 
-**Note: These changes only apply to users who are updating from a previous version of the app.**
+!!! warning "Summary"
+    **Note: These changes only apply to users who are updating from a previous version of the app.**
 
-### Summary
-- In this version, we have simplified the configuration process, improved the security of your credentials, and updated the docker instructions. 🚀
-- Please read the following sections carefully to learn how to upgrade your app and avoid any issues. 🙏
-- **Note:** If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+    - In this version, we have simplified the configuration process, improved the security of your credentials, and updated the docker instructions. 🚀
+    - Please read the following sections carefully to learn how to upgrade your app and avoid any issues. 🙏
+    - **Note:** If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/new?category=troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
 
----
 
-### Configuration
-- We have simplified the configuration process by using a single `.env` file in the root folder instead of separate `/api/.env` and `/client/.env` files.
-- We have renamed the `OPENAI_KEY` variable to `OPENAI_API_KEY` to match the official documentation. The upgrade script should do this automatically for you, but please double-check that your key is correct in the new `.env` file.
-- We have removed the `VITE_SHOW_GOOGLE_LOGIN_OPTION` variable, since it is no longer needed. The app will automatically enable Google Login if you provide the `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` variables. 🔑
-- We have changed the variable name for setting the app title from `VITE_APP_TITLE` to `APP_TITLE`. If you had set a custom app title before, you need to update the variable name in the `.env` file to keep it. Otherwise, the app might revert to the default title.
-- For enhanced security, we are now asking for crypto keys for securely storing credentials in the `.env` file. Crypto keys are used to encrypt and decrypt sensitive data such as passwords and access keys. If you don't set them, the app will crash on startup. 🔒
-- You need to fill the following variables in the `.env` file with 32-byte (64 characters in hex) or 16-byte (32 characters in hex) values:
-  - `CREDS_KEY` (32-byte)
-  - `CREDS_IV` (16-byte)
-  - `JWT_SECRET` (32-byte) optional but recommended
-- The upgrade script will do it for you, otherwise you can use this replit to generate some crypto keys quickly: https://replit.com/@daavila/crypto#index.js
-- Make sure you keep your crypto keys safe and don't share them with anyone. 🙊
+!!! info "Configuration"
 
----
+    - We have simplified the configuration process by using a single `.env` file in the root folder instead of separate `/api/.env` and `/client/.env` files.
+    - We have renamed the `OPENAI_KEY` variable to `OPENAI_API_KEY` to match the official documentation. The upgrade script should do this automatically for you, but please double-check that your key is correct in the new `.env` file.
+    - We have removed the `VITE_SHOW_GOOGLE_LOGIN_OPTION` variable, since it is no longer needed. The app will automatically enable Google Login if you provide the `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` variables. 🔑
+    - We have changed the variable name for setting the app title from `VITE_APP_TITLE` to `APP_TITLE`. If you had set a custom app title before, you need to update the variable name in the `.env` file to keep it. Otherwise, the app might revert to the default title.
+    - For enhanced security, we are now asking for crypto keys for securely storing credentials in the `.env` file. Crypto keys are used to encrypt and decrypt sensitive data such as passwords and access keys. If you don't set them, the app will crash on startup. 🔒
+    - You need to fill the following variables in the `.env` file with 32-byte (64 characters in hex) or 16-byte (32 characters in hex) values:
+      - `CREDS_KEY` (32-byte)
+      - `CREDS_IV` (16-byte)
+      - `JWT_SECRET` (32-byte) optional but recommended
+    - The upgrade script will do it for you, otherwise you can use this replit to generate some crypto keys quickly: https://replit.com/@daavila/crypto#index.js
+    - Make sure you keep your crypto keys safe and don't share them with anyone. 🙊
 
-### Docker
-- The docker-compose file had some change. Review the [new docker instructions](../install/installation/docker_compose_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
 
----
+!!! info "docker"
 
-### Local Install
-- If you had installed a previous version, you can run `npm run upgrade` to automatically copy the content of both files to the new `.env` file and backup the old ones in the root dir.
-- If you are installing the project for the first time, it's recommend you run the installation script `npm run ci` to guide your local setup (otherwise continue to use docker)
-- The upgrade script requires both `/api/.env` and `/client/.env` files to run properly. If you get an error about a missing client env file, just rename the `/client/.env.example` file to `/client/.env` and run the script again.
-- After running the upgrade script, the `OPENAI_API_KEY` variable might be placed in a different section in the new `.env` file than before. This does not affect the functionality of the app, but if you want to keep it organized, you can look for it near the bottom of the file and move it to its usual section.
+    - The docker-compose file had some change. Review the [new docker instructions](../install/installation/docker_compose_install.md) to make sure you are setup properly. This is still the simplest and most effective method.
 
----
+!!! info "Local Install"
+
+    - If you had installed a previous version, you can run `npm run upgrade` to automatically copy the content of both files to the new `.env` file and backup the old ones in the root dir.
+    - If you are installing the project for the first time, it's recommend you run the installation script `npm run ci` to guide your local setup (otherwise continue to use docker)
+    - The upgrade script requires both `/api/.env` and `/client/.env` files to run properly. If you get an error about a missing client env file, just rename the `/client/.env.example` file to `/client/.env` and run the script again.
+    - After running the upgrade script, the `OPENAI_API_KEY` variable might be placed in a different section in the new `.env` file than before. This does not affect the functionality of the app, but if you want to keep it organized, you can look for it near the bottom of the file and move it to its usual section.
+
+
 
 We apologize for any inconvenience caused by these changes. We hope you enjoy the new and improved version of our app!

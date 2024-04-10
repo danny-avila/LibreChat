@@ -56,7 +56,7 @@ Comment: remember to replace `your_domain.com` with your actual domain name.
 To secure your LibreChat application with HTTPS, you'll need an SSL/TLS certificate. Let's Encrypt offers free certificates:
 
 ### Install Certbot
-   - For Ubuntu: `sudo apt-get install certbot python3-certbot-nginx`
+   - For Ubuntu: `sudo apt-get install certbot python3-certbot-nginx` (You might need to run 'sudo apt update' for this to work)
    - For CentOS: `sudo yum install certbot python2-certbot-nginx`
 
 ### Obtain the Certificate

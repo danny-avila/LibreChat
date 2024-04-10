@@ -21,10 +21,15 @@ const { logger } = require('~/config');
  */
 const spendTokens = async (txData, tokenUsage) => {
   const { promptTokens, completionTokens } = tokenUsage;
-  logger.debug(`[spendTokens] conversationId: ${txData.conversationId} | Token usage: `, {
-    promptTokens,
-    completionTokens,
-  });
+  logger.debug(
+    `[spendTokens] conversationId: ${txData.conversationId}${
+      txData?.context ? ` | Context: ${txData?.context}` : ''
+    } | Token usage: `,
+    {
+      promptTokens,
+      completionTokens,
+    },
+  );
   let prompt, completion;
   try {
     if (promptTokens >= 0) {
