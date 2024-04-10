@@ -24,6 +24,7 @@ import {
 import { useDeleteFilesMutation, useListAssistantsQuery } from '~/data-provider';
 import useOriginNavigate from './useOriginNavigate';
 import useSetStorage from './useSetStorage';
+import { mainTextareaId } from '~/common';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
@@ -136,6 +137,11 @@ const useNewConvo = (index = 0) => {
             document.title = appTitle;
           }
           navigate('new');
+        }
+
+        const textarea = document.getElementById(mainTextareaId);
+        if (textarea) {
+          textarea.focus();
         }
       },
     [endpointsConfig, defaultPreset, assistants, modelsQuery.data],
