@@ -2,7 +2,7 @@ import { useMemo, useEffect, useCallback } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, Slider, HoverCard, Input, InputNumber, HoverCardTrigger } from '~/components/ui';
-import { cn, defaultTextProps, optionText, capitalizeFirstLetter } from '~/utils';
+import { cn, defaultTextProps, optionText } from '~/utils';
 import { useLocalize, useDebouncedInput } from '~/hooks';
 import { ESide, defaultDebouncedDelay } from '~/common';
 import { useChatContext } from '~/Providers';
@@ -21,6 +21,8 @@ function DynamicSlider({
   readonly = false,
   showDefault = true,
   includeInput = true,
+  labelCode,
+  descriptionCode,
 }: DynamicSettingProps) {
   const localize = useLocalize();
   const isEnum = useMemo(() => !range && options && options.length > 0, [options, range]);
@@ -109,7 +111,7 @@ function DynamicSlider({
               htmlFor={`${settingKey}-dynamic-setting`}
               className="text-left text-sm font-medium"
             >
-              {capitalizeFirstLetter(label ?? settingKey)}{' '}
+              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {defaultValue})
@@ -166,7 +168,12 @@ function DynamicSlider({
             className="flex h-4 w-full"
           />
         </HoverCardTrigger>
-        {description && <OptionHover description={description} side={ESide.Left} />}
+        {description && (
+          <OptionHover
+            description={descriptionCode ? localize(description) || description : description}
+            side={ESide.Left}
+          />
+        )}
       </HoverCard>
     </div>
   );

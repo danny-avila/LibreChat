@@ -266,7 +266,7 @@ export default {
     'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
   com_endpoint_openai_detail:
     'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
-  com_endpoint_openai_custom_name_placeholder: 'Set a custom name for ChatGPT',
+  com_endpoint_openai_custom_name_placeholder: 'Set a custom name for the AI',
   com_endpoint_openai_prompt_prefix_placeholder:
     'Set custom instructions to include in System Message. Default: none',
   com_endpoint_anthropic_temp:

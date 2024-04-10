@@ -17,6 +17,8 @@ function DynamicSwitch({
   optionType,
   readonly = false,
   showDefault = true,
+  labelCode,
+  descriptionCode,
 }: DynamicSettingProps) {
   const localize = useLocalize();
   const { conversation = {} } = useChatContext();
@@ -53,7 +55,7 @@ function DynamicSwitch({
               htmlFor={`${settingKey}-dynamic-switch`}
               className="text-left text-sm font-medium"
             >
-              {label ?? settingKey}{' '}
+              {labelCode ? localize(label ?? '') || label : label ?? settingKey}{' '}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {defaultValue ? 'com_ui_on' : 'com_ui_off'})
@@ -69,7 +71,12 @@ function DynamicSwitch({
             className="flex"
           />
         </HoverCardTrigger>
-        {description && <OptionHover description={description} side={ESide.Left} />}
+        {description && (
+          <OptionHover
+            description={descriptionCode ? localize(description) || description : description}
+            side={ESide.Left}
+          />
+        )}
       </HoverCard>
     </div>
   );

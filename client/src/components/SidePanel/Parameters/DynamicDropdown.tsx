@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react';
 import { OptionTypes } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { Label, HoverCard, HoverCardTrigger, SelectDropDown } from '~/components/ui';
-import { cn, capitalizeFirstLetter } from '~/utils';
 import { useChatContext } from '~/Providers';
 import OptionHover from './OptionHover';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
+import { cn } from '~/utils';
 
 function DynamicDropdown({
   label,
@@ -20,6 +20,8 @@ function DynamicDropdown({
   // type: _type,
   readonly = false,
   showDefault = true,
+  labelCode,
+  descriptionCode,
 }: DynamicSettingProps) {
   const localize = useLocalize();
   const { conversation = {} } = useChatContext();
@@ -61,7 +63,7 @@ function DynamicDropdown({
               htmlFor={`${settingKey}-dynamic-dropdown`}
               className="text-left text-sm font-medium"
             >
-              {capitalizeFirstLetter(label ?? settingKey)}
+              {labelCode ? localize(label ?? '') || label : label ?? settingKey}
               {showDefault && (
                 <small className="opacity-40">
                   ({localize('com_endpoint_default')}: {defaultValue})
@@ -80,7 +82,12 @@ function DynamicDropdown({
             id={`${settingKey}-dynamic-dropdown`}
           />
         </HoverCardTrigger>
-        {description && <OptionHover description={description} side={ESide.Left} />}
+        {description && (
+          <OptionHover
+            description={descriptionCode ? localize(description) || description : description}
+            side={ESide.Left}
+          />
+        )}
       </HoverCard>
     </div>
   );

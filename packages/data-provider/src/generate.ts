@@ -39,6 +39,9 @@ export interface SettingDefinition {
   columns?: number;
   label?: string;
   placeholder?: string;
+  labelCode?: boolean;
+  placeholderCode?: boolean;
+  descriptionCode?: boolean;
   minText?: number;
   maxText?: number;
   includeInput?: boolean; // Specific to slider component

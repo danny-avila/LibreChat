@@ -15,8 +15,10 @@ import DynamicInput from './DynamicInput';
 const settingsConfiguration: SettingsConfiguration = [
   {
     key: 'temperature',
-    description:
-      'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
+    label: 'com_endpoint_temperature',
+    labelCode: true,
+    description: 'com_endpoint_openai_temp',
+    descriptionCode: true,
     type: 'number',
     default: 1,
     range: {
@@ -31,8 +33,10 @@ const settingsConfiguration: SettingsConfiguration = [
   },
   {
     key: 'top_p',
-    description:
-      'An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered. We recommend altering this or temperature but not both.',
+    label: 'com_endpoint_top_p',
+    labelCode: true,
+    description: 'com_endpoint_openai_topp',
+    descriptionCode: true,
     type: 'number',
     default: 1,
     range: {
@@ -45,8 +49,10 @@ const settingsConfiguration: SettingsConfiguration = [
   },
   {
     key: 'presence_penalty',
-    description:
-      'Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model\'s likelihood to talk about new topics.',
+    label: 'com_endpoint_presence_penalty',
+    labelCode: true,
+    description: 'com_endpoint_openai_pres',
+    descriptionCode: true,
     type: 'number',
     default: 0,
     range: {
@@ -59,8 +65,10 @@ const settingsConfiguration: SettingsConfiguration = [
   },
   {
     key: 'frequency_penalty',
-    description:
-      'Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model\'s likelihood to repeat the same line verbatim.',
+    label: 'com_endpoint_frequency_penalty',
+    labelCode: true,
+    description: 'com_endpoint_openai_freq',
+    descriptionCode: true,
     type: 'number',
     default: 0,
     range: {
@@ -73,28 +81,33 @@ const settingsConfiguration: SettingsConfiguration = [
   },
   {
     key: 'chatGptLabel',
-    label: 'Custom Name',
+    label: 'com_endpoint_custom_name',
+    labelCode: true,
     type: 'string',
     default: '',
     component: 'input',
-    placeholder: 'Set a custom name for your AI',
+    placeholder: 'com_endpoint_openai_custom_name_placeholder',
+    placeholderCode: true,
     optionType: 'conversation',
   },
   {
     key: 'promptPrefix',
-    label: 'Custom Instructions',
+    label: 'com_endpoint_prompt_prefix',
+    labelCode: true,
     type: 'string',
     default: '',
     component: 'textarea',
-    placeholder: 'Set custom instructions to include in System Message. Default: none',
+    placeholder: 'com_endpoint_openai_prompt_prefix_placeholder',
+    placeholderCode: true,
     optionType: 'conversation',
     // columnSpan: 2,
   },
   {
     key: 'resendFiles',
-    label: 'Resend Files',
-    description:
-      'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
+    label: 'com_endpoint_plug_resend_files',
+    labelCode: true,
+    description: 'com_endpoint_openai_resend_files',
+    descriptionCode: true,
     type: 'boolean',
     default: true,
     component: 'switch',
@@ -103,22 +116,11 @@ const settingsConfiguration: SettingsConfiguration = [
     columnSpan: 2,
   },
   {
-    key: 'resendFiles',
-    label: 'Resend Files?',
-    description:
-      'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
-    type: 'boolean',
-    default: true,
-    component: 'checkbox',
-    optionType: 'conversation',
-    showDefault: false,
-    columnSpan: 2,
-  },
-  {
     key: 'imageDetail',
-    label: 'Image Detail',
-    description:
-      'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
+    label: 'com_endpoint_plug_image_detail',
+    labelCode: true,
+    description: 'com_endpoint_openai_detail',
+    descriptionCode: true,
     type: 'enum',
     default: 'auto',
     options: ['low', 'auto', 'high'],
@@ -126,19 +128,6 @@ const settingsConfiguration: SettingsConfiguration = [
     component: 'slider',
     showDefault: false,
     columnSpan: 2,
-  },
-  {
-    key: 'imageDetail',
-    label: 'Detail Dropdown',
-    description:
-      'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
-    type: 'enum',
-    default: 'auto',
-    options: ['low', 'auto', 'high'],
-    optionType: 'conversation',
-    component: 'dropdown',
-    showDefault: false,
-    // columnSpan: 2,
   },
 ];
 
@@ -161,28 +150,16 @@ export default function Parameters() {
   const { key: temp, default: tempDefault, ...tempSettings } = temperature;
 
   const imageDetail = settingsConfiguration.find(
-    (setting) => setting.label === 'Image Detail',
+    (setting) => setting.key === 'imageDetail',
   ) as SettingDefinition;
   const DetailComponent = componentMapping[imageDetail.component];
   const { key: detail, default: detailDefault, ...detailSettings } = imageDetail;
-
-  const testDropdown = settingsConfiguration.find(
-    (setting) => setting.label === 'Detail Dropdown',
-  ) as SettingDefinition;
-  const Dropdown = componentMapping[testDropdown.component];
-  const { key: dropdown, default: dropdownDefault, ...dropdownSettings } = testDropdown;
 
   const resendFiles = settingsConfiguration.find(
     (setting) => setting.key === 'resendFiles',
   ) as SettingDefinition;
   const Switch = componentMapping[resendFiles.component];
   const { key: switchKey, default: switchDefault, ...switchSettings } = resendFiles;
-
-  const checkboxFiles = settingsConfiguration.find(
-    (setting) => setting.label === 'Resend Files?',
-  ) as SettingDefinition;
-  const Checkbox = componentMapping[checkboxFiles.component];
-  const { key: checkboxKey, default: checkboxDefault, ...checkboxSettings } = checkboxFiles;
 
   const promptPrefix = settingsConfiguration.find(
     (setting) => setting.key === 'promptPrefix',
@@ -202,30 +179,6 @@ export default function Parameters() {
         {' '}
         {/* This is the parent element containing all settings */}
         {/* Below is an example of an applied dynamic setting, each be contained by a div with the column span specified */}
-        <TempComponent
-          settingKey={temp}
-          defaultValue={tempDefault}
-          {...tempSettings}
-          setOption={setOption}
-        />
-        <Dropdown
-          settingKey={dropdown}
-          defaultValue={dropdownDefault}
-          {...dropdownSettings}
-          setOption={setOption}
-        />
-        <Switch
-          settingKey={switchKey}
-          defaultValue={switchDefault}
-          {...switchSettings}
-          setOption={setOption}
-        />
-        <DetailComponent
-          settingKey={detail}
-          defaultValue={detailDefault}
-          {...detailSettings}
-          setOption={setOption}
-        />
         <Input
           settingKey={inputKey}
           defaultValue={inputDefault}
@@ -238,10 +191,22 @@ export default function Parameters() {
           {...textareaSettings}
           setOption={setOption}
         />
-        <Checkbox
-          settingKey={checkboxKey}
-          defaultValue={checkboxDefault}
-          {...checkboxSettings}
+        <TempComponent
+          settingKey={temp}
+          defaultValue={tempDefault}
+          {...tempSettings}
+          setOption={setOption}
+        />
+        <Switch
+          settingKey={switchKey}
+          defaultValue={switchDefault}
+          {...switchSettings}
+          setOption={setOption}
+        />
+        <DetailComponent
+          settingKey={detail}
+          defaultValue={detailDefault}
+          {...detailSettings}
           setOption={setOption}
         />
       </div>
