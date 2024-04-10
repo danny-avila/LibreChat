@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { EModelEndpoint, FileSources, defaultOrderQuery } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
@@ -37,6 +37,7 @@ const useNewConvo = (index = 0) => {
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
   const modelsQuery = useGetModelsQuery();
+  const timeoutIdRef = useRef<NodeJS.Timeout>();
 
   const { data: assistants = [] } = useListAssistantsQuery(defaultOrderQuery, {
     select: (res) =>
@@ -139,10 +140,13 @@ const useNewConvo = (index = 0) => {
           navigate('new');
         }
 
-        const textarea = document.getElementById(mainTextareaId);
-        if (textarea) {
-          textarea.focus();
-        }
+        clearTimeout(timeoutIdRef.current);
+        timeoutIdRef.current = setTimeout(() => {
+          const textarea = document.getElementById(mainTextareaId);
+          if (textarea) {
+            textarea.focus();
+          }
+        }, 150);
       },
     [endpointsConfig, defaultPreset, assistants, modelsQuery.data],
   );
