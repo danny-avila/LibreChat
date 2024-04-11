@@ -44,43 +44,67 @@ Safely access and manage your MongoDB database using Mongo Express
 How to set up the user/auth system and Google login.
 
 ### Running LibreChat
-Once you have completed all the setup, you can start the LibreChat application by running the command `docker-compose up` in your terminal. After running this command, you can access the LibreChat application at `http://localhost:3080`.
+Once you have completed all the setup, you can start the LibreChat application by running the command `docker compose up` in your terminal. After running this command, you can access the LibreChat application at `http://localhost:3080`.
 
 **Note:** MongoDB does not support older ARM CPUs like those found in Raspberry Pis. However, you can make it work by setting MongoDB’s version to mongo:4.4.18 in docker-compose.yml, the most recent version compatible with
 
 That's it! If you need more detailed information on configuring your compose file, see my notes below.
 
 ## Updating LibreChat
-The following commands will fetch the latest code of LibreChat and build a new docker image.
+
+As of v0.7.0+, Docker installations transitioned from building images locally to using prebuilt images [hosted on Github Container registry](https://github.com/danny-avila?tab=packages&repo_name=LibreChat).
+
+You can still build the image locally, as shown in the commented commands below. More info on building the image locally in the [Docker Compose Override Section](../configuration/docker_override.md).
+
+The following commands will fetch the latest LibreChat project changes, including any necessary changes to the docker compose files, as well as the latest prebuilt images.
 
 ```bash
+# Stop the running container(s)
+docker compose down
+
+# Pull latest project changes
 git pull
-docker-compose down
-docker-compose up --build
+
+# Pull the latest LibreChat image (default setup)
+docker compose pull
+
+# If building the LibreChat image Locally, build without cache (legacy setup)
+# docker compose build --no-cache
+
+# Start LibreChat
+docker compose up
 ```
 
-If you're having issues running this command, you can try running what the script does manually:
+If you're having issues running the above commands, you can try a comprehensive approach instead:
 
-Prefix commands with `sudo` according to your environment permissions.
+Note: you may need to prefix commands with `sudo` according to your environment permissions.
 
 ```bash
 # Stop the container (if running)
-docker-compose down
+docker compose down
+
 # Switch to the repo's main branch
 git checkout main
+
 # Pull the latest changes to the main branch from Github
-git pull 
+git pull
+
 # Prune all LibreChat Docker images
 docker rmi librechat:latest
-# Remove all unused dangling Docker images.
+
+# Optional: Remove all unused dangling Docker images.
 # Be careful, as this will delete all dangling docker images on your
 # computer, also those not created by LibreChat!
 docker image prune -f
-# Building a new LibreChat image without cache
-docker-compose build --no-cache
+
+# If building the LibreChat image Locally, build without cache (legacy setup)
+# docker compose build --no-cache
+
+# Pull the latest image (default setup)
+docker compose pull
 
 # Start LibreChat
-docker-compose up
+docker compose up
 ```
 
 ## Advanced Settings
@@ -117,26 +141,24 @@ For more info see:
       - MEILI_HOST=http://meilisearch:7700
 ```
 
-- If for some reason you're not able to build the app image, you can pull the latest image from **Dockerhub**.
-- Create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` with this content:
+- If you want your docker install to reflect changes made to your local folder, you can build the image locally using this method:
+    - Create a new file named `docker-compose.override.yml` in the same directory as your main `docker-compose.yml` with this content:
 
-```yaml
-version: '3.4'
+    ```yaml
+    version: '3.4'
 
-services:
-  api:
-    image: ghcr.io/danny-avila/librechat-dev:latest
-```
+    services:
+      api:
+        image: librechat
+        build:
+          context: .
+          target: node
+    ```
 
-- Then use `docker-compose build` as you would normally
-
-- **Note:** There are different Dockerhub images. the `librechat:latest` image is only updated with new release tags, so it may not have the latest changes to the main branch. To get the latest changes you can use `librechat-dev:latest` instead
-
-
-### **[LibreChat on Docker Hub](https://hub.docker.com/r/chatgptclone/app/tags)**
+    - Then use `docker compose build` as you would normally
 
 ### **[Create a MongoDB database](../configuration/mongodb.md)** (Not required if you'd like to use the local database installed by Docker)
 
 ---
 
->⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+>⚠️ Note: If you're having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

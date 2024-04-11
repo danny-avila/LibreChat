@@ -1,7 +1,7 @@
 ---
 title: 🪨 Ngrok
 description: Use Ngrok to tunnel your local server to the internet.
-weight: -5
+weight: 10
 ---
 # Ngrok Installation
 
@@ -53,4 +53,4 @@ You will see a link that can be used to access LibreChat.
 ---
 
 ### Note: 
-This readme assumes some prior knowledge and familiarity with the command line, Docker, and running applications on your local machine. If you have any issues or questions, refer to the Ngrok documentation or open an issue on our [Discord server](https://discord.gg/NGaa9RPCft)
+This readme assumes some prior knowledge and familiarity with the command line, Docker, and running applications on your local machine. If you have any issues or questions, refer to the Ngrok documentation or open an issue on our [Discord server](https://discord.librechat.ai)

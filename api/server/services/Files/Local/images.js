@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { resizeImage } = require('../images/resize');
+const { resizeImageBuffer } = require('../images/resize');
+const { updateUser } = require('~/models/userMethods');
 const { updateFile } = require('~/models/File');
 
 /**
@@ -12,12 +13,14 @@ const { updateFile } = require('~/models/File');
  * it converts the image to WebP format before saving.
  *
  * The original image is deleted after conversion.
- *
- * @param {Object} req - The request object from Express. It should have a `user` property with an `id`
+ * @param {Object} params - The params object.
+ * @param {Object} params.req - The request object from Express. It should have a `user` property with an `id`
  *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
- * @param {Express.Multer.File} file - The file object, which is part of the request. The file object should
+ * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
- * @param {string} [resolution='high'] - Optional. The desired resolution for the image resizing. Default is 'high'.
+ * @param {string} params.file_id - The file ID.
+ * @param {EModelEndpoint} params.endpoint - The params object.
+ * @param {string} [params.resolution='high'] - Optional. The desired resolution for the image resizing. Default is 'high'.
  *
  * @returns {Promise<{ filepath: string, bytes: number, width: number, height: number}>}
  *          A promise that resolves to an object containing:
@@ -26,9 +29,14 @@ const { updateFile } = require('~/models/File');
  *            - width: The width of the converted image.
  *            - height: The height of the converted image.
  */
-async function uploadLocalImage(req, file, resolution = 'high') {
+async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'high' }) {
   const inputFilePath = file.path;
-  const { buffer: resizedBuffer, width, height } = await resizeImage(inputFilePath, resolution);
+  const inputBuffer = await fs.promises.readFile(inputFilePath);
+  const {
+    buffer: resizedBuffer,
+    width,
+    height,
+  } = await resizeImageBuffer(inputBuffer, resolution, endpoint);
   const extension = path.extname(inputFilePath);
 
   const { imageOutput } = req.app.locals.paths;
@@ -38,7 +46,8 @@ async function uploadLocalImage(req, file, resolution = 'high') {
     fs.mkdirSync(userPath, { recursive: true });
   }
 
-  const newPath = path.join(userPath, path.basename(inputFilePath));
+  const fileName = `${file_id}__${path.basename(inputFilePath)}`;
+  const newPath = path.join(userPath, fileName);
 
   if (extension.toLowerCase() === '.webp') {
     const bytes = Buffer.byteLength(resizedBuffer);
@@ -96,17 +105,17 @@ async function prepareImagesLocal(req, file) {
 }
 
 /**
- * Uploads a user's avatar to Firebase Storage and returns the URL.
+ * Uploads a user's avatar to local server storage and returns the URL.
  * If the 'manual' flag is set to 'true', it also updates the user's avatar URL in the database.
  *
  * @param {object} params - The parameters object.
  * @param {Buffer} params.buffer - The Buffer containing the avatar image in WebP format.
- * @param {object} params.User - The User document (mongoose); TODO: remove direct use of Model, `User`
+ * @param {string} params.userId - The user ID.
  * @param {string} params.manual - A string flag indicating whether the update is manual ('true' or 'false').
  * @returns {Promise<string>} - A promise that resolves with the URL of the uploaded avatar.
  * @throws {Error} - Throws an error if Firebase is not initialized or if there is an error in uploading.
  */
-async function processLocalAvatar({ buffer, User, manual }) {
+async function processLocalAvatar({ buffer, userId, manual }) {
   const userDir = path.resolve(
     __dirname,
     '..',
@@ -117,10 +126,11 @@ async function processLocalAvatar({ buffer, User, manual }) {
     'client',
     'public',
     'images',
-    User._id.toString(),
+    userId,
   );
+
   const fileName = `avatar-${new Date().getTime()}.png`;
-  const urlRoute = `/images/${User._id.toString()}/${fileName}`;
+  const urlRoute = `/images/${userId}/${fileName}`;
   const avatarPath = path.join(userDir, fileName);
 
   await fs.promises.mkdir(userDir, { recursive: true });
@@ -130,8 +140,7 @@ async function processLocalAvatar({ buffer, User, manual }) {
   let url = `${urlRoute}?manual=${isManual}`;
 
   if (isManual) {
-    User.avatar = url;
-    await User.save();
+    await updateUser(userId, { avatar: url });
   }
 
   return url;

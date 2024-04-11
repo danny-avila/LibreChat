@@ -1,3 +1,5 @@
+// file deepcode ignore NoRateLimitingForLogin: Rate limiting is handled by the `loginLimiter` middleware
+
 const passport = require('passport');
 const express = require('express');
 const router = express.Router();

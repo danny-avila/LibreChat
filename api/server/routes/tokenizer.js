@@ -11,7 +11,7 @@ router.post('/', requireJwtAuth, async (req, res) => {
     res.send({ count });
   } catch (e) {
     logger.error('[/tokenizer] Error counting tokens', e);
-    res.status(500).send(e.message);
+    res.status(500).json('Error counting tokens');
   }
 });
 

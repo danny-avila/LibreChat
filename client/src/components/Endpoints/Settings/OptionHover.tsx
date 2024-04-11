@@ -15,7 +15,7 @@ const openAI = {
   topp: 'com_endpoint_openai_topp',
   freq: 'com_endpoint_openai_freq',
   pres: 'com_endpoint_openai_pres',
-  resend: 'com_endpoint_openai_resend',
+  resend: 'com_endpoint_openai_resend_files',
   detail: 'com_endpoint_openai_detail',
 };
 
@@ -25,6 +25,7 @@ const types = {
     topp: 'com_endpoint_anthropic_topp',
     topk: 'com_endpoint_anthropic_topk',
     maxoutputtokens: 'com_endpoint_anthropic_maxoutputtokens',
+    resend: openAI.resend,
   },
   google: {
     temp: 'com_endpoint_google_temp',
@@ -49,7 +50,7 @@ function OptionHover({ endpoint, type, side }: TOptionHoverProps) {
   }
   return (
     <HoverCardPortal>
-      <HoverCardContent side={side} className="z-[80]  w-80">
+      <HoverCardContent side={side} className="z-[999] w-80">
         <div className="space-y-2">
           <p className="text-sm text-gray-600 dark:text-gray-300">{localize(text)}</p>
         </div>

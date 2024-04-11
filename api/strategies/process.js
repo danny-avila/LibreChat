@@ -1,5 +1,6 @@
 const { FileSources } = require('librechat-data-provider');
-const uploadAvatar = require('~/server/services/Files/images/avatar');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const User = require('~/models/User');
 
 /**
@@ -7,7 +8,7 @@ const User = require('~/models/User');
  * '?manual=true', it updates the user's avatar with the provided URL. For local file storage, it directly updates
  * the avatar URL, while for other storage types, it processes the avatar URL using the specified file strategy.
  *
- * @param {User} oldUser - The existing user object that needs to be updated. Expected to have an 'avatar' property.
+ * @param {User} oldUser - The existing user object that needs to be updated.
  * @param {string} avatarUrl - The new avatar URL to be set for the user.
  *
  * @returns {Promise<void>}
@@ -19,13 +20,17 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
   const fileStrategy = process.env.CDN_PROVIDER;
   const isLocal = fileStrategy === FileSources.local;
 
-  if (isLocal && !oldUser.avatar.includes('?manual=true')) {
+  if (isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
     oldUser.avatar = avatarUrl;
     await oldUser.save();
-  } else if (!isLocal && !oldUser.avatar.includes('?manual=true')) {
+  } else if (!isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
     const userId = oldUser._id;
-    const newavatarUrl = await uploadAvatar({ userId, input: avatarUrl, fileStrategy });
-    oldUser.avatar = newavatarUrl;
+    const webPBuffer = await resizeAvatar({
+      userId,
+      input: avatarUrl,
+    });
+    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    oldUser.avatar = await processAvatar({ buffer: webPBuffer, userId });
     await oldUser.save();
   }
 };
@@ -78,8 +83,12 @@ const createNewUser = async ({
 
   if (!isLocal) {
     const userId = newUser._id;
-    const newavatarUrl = await uploadAvatar({ userId, input: avatarUrl, fileStrategy });
-    newUser.avatar = newavatarUrl;
+    const webPBuffer = await resizeAvatar({
+      userId,
+      input: avatarUrl,
+    });
+    const { processAvatar } = getStrategyFunctions(fileStrategy);
+    newUser.avatar = await processAvatar({ buffer: webPBuffer, userId });
     await newUser.save();
   }
 

@@ -1,26 +1,27 @@
 import { Fragment, Suspense } from 'react';
-import type { TResPlugin } from 'librechat-data-provider';
-import type { TMessageContent, TText, TDisplayProps } from '~/common';
+import type { TMessage, TResPlugin } from 'librechat-data-provider';
+import type { TMessageContentProps, TDisplayProps } from '~/common';
 import Plugin from '~/components/Messages/Content/Plugin';
 import Error from '~/components/Messages/Content/Error';
 import { DelayedRender } from '~/components/ui';
-import { useAuthContext } from '~/hooks';
 import EditMessage from './EditMessage';
 import Container from './Container';
 import Markdown from './Markdown';
 import { cn } from '~/utils';
-import Image from './Image';
 
-const ErrorMessage = ({ text }: TText) => {
-  const { logout } = useAuthContext();
-
-  if (text.includes('ban')) {
-    logout();
-    return null;
-  }
+export const ErrorMessage = ({
+  text,
+  message,
+  className = '',
+}: Pick<TDisplayProps, 'text' | 'className' | 'message'>) => {
   return (
-    <Container>
-      <div className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-100">
+    <Container message={message}>
+      <div
+        className={cn(
+          'rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+          className,
+        )}
+      >
         <Error text={text} />
       </div>
     </Container>
@@ -29,27 +30,13 @@ const ErrorMessage = ({ text }: TText) => {
 
 // Display Message Component
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
-  const imageFiles = message?.files
-    ? message.files.filter((file) => file.type && file.type.startsWith('image/'))
-    : null;
   return (
-    <Container>
-      {imageFiles &&
-        imageFiles.map((file) => (
-          <Image
-            key={file.file_id}
-            imagePath={file.preview ?? file.filepath ?? ''}
-            height={file.height ?? 1920}
-            width={file.width ?? 1080}
-            altText={file.filename ?? 'Uploaded Image'}
-            // n={imageFiles.length}
-            // i={i}
-          />
-        ))}
+    <Container message={message}>
       <div
         className={cn(
+          showCursor && !!text?.length ? 'result-streaming' : '',
           'markdown prose dark:prose-invert light w-full break-words',
-          isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-70',
+          isCreatedByUser ? 'whitespace-pre-wrap dark:text-gray-20' : 'dark:text-gray-100',
         )}
       >
         {!isCreatedByUser ? (
@@ -63,8 +50,11 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 };
 
 // Unfinished Message Component
-const UnfinishedMessage = () => (
-  <ErrorMessage text="The response is incomplete; it's either still processing, was cancelled, or censored. Refresh or try a different prompt." />
+export const UnfinishedMessage = ({ message }: { message: TMessage }) => (
+  <ErrorMessage
+    message={message}
+    text="The response is incomplete; it's either still processing, was cancelled, or censored. Refresh or try a different prompt."
+  />
 );
 
 // Content Component
@@ -76,9 +66,9 @@ const MessageContent = ({
   isSubmitting,
   isLast,
   ...props
-}: TMessageContent) => {
+}: TMessageContentProps) => {
   if (error) {
-    return <ErrorMessage text={text} />;
+    return <ErrorMessage message={props.message} text={text} />;
   } else if (edit) {
     return <EditMessage text={text} isSubmitting={isSubmitting} {...props} />;
   } else {
@@ -127,7 +117,7 @@ const MessageContent = ({
           {showText ? (
             <DisplayMessage
               key={`display-${messageId}-${idx}`}
-              showCursor={isLastIndex && isLast}
+              showCursor={isLastIndex && isLast && isSubmitting}
               text={currentText}
               {...props}
             />
@@ -135,7 +125,7 @@ const MessageContent = ({
           {!isSubmitting && unfinished && (
             <Suspense>
               <DelayedRender delay={250}>
-                <UnfinishedMessage key={`unfinished-${messageId}-${idx}`} />
+                <UnfinishedMessage message={message} key={`unfinished-${messageId}-${idx}`} />
               </DelayedRender>
             </Suspense>
           )}

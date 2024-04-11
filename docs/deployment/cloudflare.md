@@ -1,24 +1,18 @@
 ---
 title: ☁️ Cloudflare
 description: How to setup a domain with Cloudflare and use Cloudflare Tunnels to securely expose your local web servers or services to the internet.
-weight: -7
+weight: 10
 ---
-<img src="https://github.com/danny-avila/LibreChat/assets/32828263/cfbc7ca5-b51e-4f1d-aa89-b9b4cb13eead" width="350">
+<img src="https://github.com/danny-avila/LibreChat/assets/32828263/cfbc7ca5-b51e-4f1d-aa89-b9b4cb13eead" width="350"/>
 
 # Cloudflare
-### if you are new to Domain, here's a quick guide to use setup a domain with Cloudflare:
+### if you are new to domains, here's a quick guide to setup a domain with Cloudflare:
 
-## Google Domains and Cloudflare
+## Cloudflare Registrar and DNS
 
-- buy a domain at **[https://domains.google.com/](https://domains.google.com)**
-- register a Cloudflare account at **[https://dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up)**
-- click on `add site` and add your domain
-- select `Free` and tap `continue` twice
-- copy the 2 Cloudflare's nameservers
-- go to **[https://domains.google.com/registrar/](https://domains.google.com/registrar)** and select your domain
-- in the dns tab select `Custom name servers`
-- click on `Switch to these settings` and enter the two Cloudflare nameservers that you copied before, then save
-- return to the cloudflare tab and tap on `Done, check nameservers`, then `finish later` and `Check nameservers` (this process can take about 5 minutes)
+- buy a domain on **[https://www.cloudflare.com/products/registrar/](https://www.cloudflare.com/products/registrar)** or the domain provider of your choice
+   - **Note**: If you already own a domain with another registrar, update your `custom name servers` to point to cloudflare using the [Cloudflare onboarding guide](https://dash.cloudflare.com/sign-up)
+- Once your domain has been added to Cloudflare, navigate to [Manage DNS Records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/)
 - in the `DNS` tab select `Records` and `Add Record`
 
 ![cloudflare-1](https://github.com/danny-avila/LibreChat/assets/32828263/249574b5-a064-4803-8b08-f95804db0719)
@@ -109,7 +103,7 @@ Now that you have installed the tunnel, it's time to configure it. Follow these 
 
 1. Proceed to the next step and select a public hostname.
 2. Follow the instructions provided in this image to configure it correctly.
-   
+
 ![cloudflare-2](https://github.com/danny-avila/LibreChat/assets/32828263/d155b58f-7f59-4372-a3aa-dec2413a3dce)
 
 **Note: If the tunnel doesn't work and shows "bad gateway", try using your ip instead of localhost**
@@ -118,4 +112,4 @@ Now that you have installed the tunnel, it's time to configure it. Follow these 
 
 ---
 
-### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.gg/weqZFtD9C4) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.
+### Note: If you're still having trouble, before creating a new issue, please search for similar ones on our [#issues thread on our discord](https://discord.librechat.ai) or our [troubleshooting discussion](https://github.com/danny-avila/LibreChat/discussions/categories/troubleshooting) on our Discussions page. If you don't find a relevant issue, feel free to create a new one and provide as much detail as possible.

@@ -4,6 +4,7 @@ import type { Option } from '~/common';
 import CheckMark from '../svg/CheckMark';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
+import { useMultiSearch } from './MultiSearch';
 
 type SelectDropDownProps = {
   id?: string;
@@ -23,6 +24,8 @@ type SelectDropDownProps = {
   optionsClass?: string;
   subContainerClassName?: string;
   className?: string;
+  searchClassName?: string;
+  searchPlaceholder?: string;
 };
 
 function SelectDropDown({
@@ -42,6 +45,8 @@ function SelectDropDown({
   subContainerClassName,
   className,
   renderOption,
+  searchClassName,
+  searchPlaceholder,
 }: SelectDropDownProps) {
   const localize = useLocalize();
   const transitionProps = { className: 'top-full mt-3' };
@@ -57,6 +62,18 @@ function SelectDropDown({
     title = localize('com_ui_model');
   }
 
+  // Detemine if we should to convert this component into a searchable select.  If we have enough elements, a search
+  // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
+  // reset once the component is unmounted (as per a normal search)
+  const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>({
+    availableOptions: availableValues,
+    placeholder: searchPlaceholder,
+    getTextKeyOverride: (option) => ((option as Option)?.label || '').toUpperCase(),
+    className: searchClassName,
+  });
+  const hasSearchRender = Boolean(searchRender);
+  const options = hasSearchRender ? filteredValues : availableValues;
+
   return (
     <div className={cn('flex items-center justify-center gap-2 ', containerClassName ?? '')}>
       <div className={cn('relative w-full', subContainerClassName ?? '')}>
@@ -66,7 +83,7 @@ function SelectDropDown({
               <Listbox.Button
                 data-testid="select-dropdown-button"
                 className={cn(
-                  'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
+                  'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-600 dark:bg-gray-700 sm:text-sm',
                   className ?? '',
                 )}
               >
@@ -83,7 +100,7 @@ function SelectDropDown({
                 <span className="inline-flex w-full truncate">
                   <span
                     className={cn(
-                      'flex h-6 items-center gap-1 truncate text-sm text-gray-900 dark:text-white',
+                      'flex h-6 items-center gap-1 truncate text-sm text-gray-800 dark:text-white',
                       !showLabel ? 'text-xs' : '',
                       currentValueClass ?? '',
                     )}
@@ -122,7 +139,7 @@ function SelectDropDown({
               >
                 <Listbox.Options
                   className={cn(
-                    'absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs border ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]',
+                    'absolute z-10 mt-2 max-h-60 w-full overflow-auto rounded border bg-white text-base text-xs ring-black/10 focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:ring-white/20 md:w-[100%]',
                     optionsListClass ?? '',
                   )}
                 >
@@ -131,14 +148,15 @@ function SelectDropDown({
                       key={'listbox-render-option'}
                       value={null}
                       className={cn(
-                        'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-900 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700',
+                        'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-800 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700',
                         optionsClass ?? '',
                       )}
                     >
                       {renderOption()}
                     </Listbox.Option>
                   )}
-                  {availableValues.map((option: string | Option, i: number) => {
+                  {searchRender}
+                  {options.map((option: string | Option, i: number) => {
                     if (!option) {
                       return null;
                     }
@@ -155,14 +173,14 @@ function SelectDropDown({
                         key={i}
                         value={currentValue}
                         className={cn(
-                          'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-900 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700',
+                          'group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-800 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700',
                           optionsClass ?? '',
                         )}
                       >
                         <span className="flex items-center gap-1.5 truncate">
                           <span
                             className={cn(
-                              'flex h-6 items-center gap-1 text-gray-800 dark:text-gray-100',
+                              'flex h-6 items-center gap-1 text-gray-800 dark:text-gray-200',
                               option === value ? 'font-semibold' : '',
                               iconSide === 'left' ? 'ml-4' : '',
                             )}
@@ -172,7 +190,7 @@ function SelectDropDown({
                           {currentValue === activeValue && (
                             <span
                               className={cn(
-                                'absolute inset-y-0 flex items-center text-gray-800 dark:text-gray-100',
+                                'absolute inset-y-0 flex items-center text-gray-800 dark:text-gray-200',
                                 iconSide === 'left' ? 'left-0 pl-2' : 'right-0 pr-3',
                               )}
                             >

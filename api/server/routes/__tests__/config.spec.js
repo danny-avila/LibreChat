@@ -1,7 +1,9 @@
 const request = require('supertest');
 const express = require('express');
 const routes = require('../');
+// file deepcode ignore UseCsurfForExpress/test: test
 const app = express();
+app.disable('x-powered-by');
 app.use('/api/config', routes.config);
 
 afterEach(() => {
@@ -54,13 +56,14 @@ describe.skip('GET /', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
       appTitle: 'Test Title',
-      googleLoginEnabled: true,
+      socialLogins: ['google', 'facebook', 'openid', 'github', 'discord'],
+      discordLoginEnabled: true,
       facebookLoginEnabled: true,
+      githubLoginEnabled: true,
+      googleLoginEnabled: true,
       openidLoginEnabled: true,
       openidLabel: 'Test OpenID',
       openidImageUrl: 'http://test-server.com',
-      githubLoginEnabled: true,
-      discordLoginEnabled: true,
       serverDomain: 'http://test-server.com',
       emailLoginEnabled: 'true',
       registrationEnabled: 'true',

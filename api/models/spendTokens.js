@@ -1,4 +1,4 @@
-const Transaction = require('./Transaction');
+const { Transaction } = require('./Transaction');
 const { logger } = require('~/config');
 
 /**
@@ -11,6 +11,7 @@ const { logger } = require('~/config');
  * @param {String} txData.conversationId - The ID of the conversation.
  * @param {String} txData.model - The model name.
  * @param {String} txData.context - The context in which the transaction is made.
+ * @param {String} [txData.endpointTokenConfig] - The current endpoint token config.
  * @param {String} [txData.valueKey] - The value key (optional).
  * @param {Object} tokenUsage - The number of tokens used.
  * @param {Number} tokenUsage.promptTokens - The number of prompt tokens used.
@@ -20,6 +21,15 @@ const { logger } = require('~/config');
  */
 const spendTokens = async (txData, tokenUsage) => {
   const { promptTokens, completionTokens } = tokenUsage;
+  logger.debug(
+    `[spendTokens] conversationId: ${txData.conversationId}${
+      txData?.context ? ` | Context: ${txData?.context}` : ''
+    } | Token usage: `,
+    {
+      promptTokens,
+      completionTokens,
+    },
+  );
   let prompt, completion;
   try {
     if (promptTokens >= 0) {
@@ -41,7 +51,16 @@ const spendTokens = async (txData, tokenUsage) => {
       rawAmount: -completionTokens,
     });
 
-    logger.debug('[spendTokens] post-transaction', { prompt, completion });
+    prompt &&
+      completion &&
+      logger.debug('[spendTokens] Transaction data record against balance:', {
+        user: prompt.user,
+        prompt: prompt.prompt,
+        promptRate: prompt.rate,
+        completion: completion.completion,
+        completionRate: completion.rate,
+        balance: completion.balance,
+      });
   } catch (err) {
     logger.error('[spendTokens]', err);
   }

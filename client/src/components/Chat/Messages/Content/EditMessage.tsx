@@ -1,10 +1,12 @@
-import { useRef } from 'react';
+import TextareaAutosize from 'react-textarea-autosize';
 import { EModelEndpoint } from 'librechat-data-provider';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
-import Container from '~/components/Messages/Content/Container';
-import { useChatContext } from '~/Providers';
 import type { TEditProps } from '~/common';
+import { cn, removeFocusOutlines } from '~/utils';
+import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import Container from './Container';
 
 const EditMessage = ({
   text,
@@ -17,21 +19,36 @@ const EditMessage = ({
 }: TEditProps) => {
   const { getMessages, setMessages, conversation } = useChatContext();
 
-  const textEditor = useRef<HTMLDivElement | null>(null);
+  const [editedText, setEditedText] = useState<string>(text ?? '');
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+
   const { conversationId, parentMessageId, messageId } = message;
   const { endpoint: _endpoint, endpointType } = conversation ?? { endpoint: null };
   const endpoint = endpointType ?? _endpoint;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
+  useEffect(() => {
+    const textArea = textAreaRef.current;
+    if (textArea) {
+      const length = textArea.value.length;
+      textArea.focus();
+      textArea.setSelectionRange(length, length);
+    }
+  }, []);
+
   const resubmitMessage = () => {
-    const text = textEditor?.current?.innerText ?? '';
     if (message.isCreatedByUser) {
-      ask({
-        text,
-        parentMessageId,
-        conversationId,
-      });
+      ask(
+        {
+          text: editedText,
+          parentMessageId,
+          conversationId,
+        },
+        {
+          resubmitFiles: true,
+        },
+      );
 
       setSiblingIdx((siblingIdx ?? 0) - 1);
     } else {
@@ -44,7 +61,7 @@ const EditMessage = ({
       ask(
         { ...parentMessage },
         {
-          editedText: text,
+          editedText,
           editedMessageId: messageId,
           isRegenerate: true,
           isEdited: true,
@@ -62,19 +79,18 @@ const EditMessage = ({
     if (!messages) {
       return;
     }
-    const text = textEditor?.current?.innerText ?? '';
     updateMessageMutation.mutate({
       conversationId: conversationId ?? '',
       model: conversation?.model ?? 'gpt-3.5-turbo',
+      text: editedText,
       messageId,
-      text,
     });
     setMessages(
       messages.map((msg) =>
         msg.messageId === messageId
           ? {
             ...msg,
-            text,
+            text: editedText,
             isEdited: true,
           }
           : msg,
@@ -83,17 +99,48 @@ const EditMessage = ({
     enterEdit(true);
   };
 
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        enterEdit(true);
+      }
+    },
+    [enterEdit],
+  );
+
   return (
-    <Container>
-      <div
+    <Container message={message}>
+      <TextareaAutosize
+        ref={textAreaRef}
+        onChange={(e) => {
+          setEditedText(e.target.value);
+        }}
+        onKeyDown={handleKeyDown}
         data-testid="message-text-editor"
-        className="markdown prose dark:prose-invert light w-full whitespace-pre-wrap break-words border-none focus:outline-none"
+        className={cn(
+          'markdown prose dark:prose-invert light whitespace-pre-wrap break-words dark:text-gray-20',
+          'm-0 w-full resize-none border-0 bg-transparent p-0',
+          removeFocusOutlines,
+        )}
+        onPaste={(e) => {
+          e.preventDefault();
+
+          const pastedData = e.clipboardData.getData('text/plain');
+          const textArea = textAreaRef.current;
+          if (!textArea) {
+            return;
+          }
+          const start = textArea.selectionStart;
+          const end = textArea.selectionEnd;
+          const newValue =
+            textArea.value.substring(0, start) + pastedData + textArea.value.substring(end);
+          setEditedText(newValue);
+        }}
         contentEditable={true}
-        ref={textEditor}
+        value={editedText}
         suppressContentEditableWarning={true}
-      >
-        {text}
-      </div>
+      />
       <div className="mt-2 flex w-full justify-center text-center">
         <button
           className="btn btn-primary relative mr-2"

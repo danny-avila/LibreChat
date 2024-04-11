@@ -1,3 +1,5 @@
+// file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
+
 const initializeClient = require('./initializeClient');
 const { GoogleClient } = require('~/app');
 const { checkUserKeyExpiry, getUserKey } = require('../../UserService');

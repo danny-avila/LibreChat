@@ -65,7 +65,11 @@ markdown_extensions:
       custom_checkbox: true
   - pymdownx.details
   - pymdownx.superfences
+  - pymdownx.critic
+  - pymdownx.caret
   - pymdownx.mark
+  - pymdownx.tilde
+  - pymdownx.keys    
   - attr_list
   - pymdownx.superfences:
       custom_fences:
@@ -74,22 +78,23 @@ markdown_extensions:
 
 plugins:
   - search
-  # - pub-debugger # <- General purpose mkdocs debugger
+  # - pub-debugger # <- Uncomment to enable a general purpose mkdocs debugger
   - mkdocs-nav-weight:
+  # https://github.com/shu307/mkdocs-nav-weight?tab=readme-ov-file
       section_renamed: true # If true, section name will use the title of its index instead of the folder name.
       index_weight: -10
       warning: true # Controls whether to send a Warning when invalid values are detected in markdown metadata
       reverse: false # If true, sort nav by weight from largest to smallest.
       headless_included: false
-    # for more info: https://github.com/shu307/mkdocs-nav-weight?tab=readme-ov-file
   - pub-social:
+  # https://github.com/mkusz/mkdocs-publisher
       og:
         enabled: true
         locale: en_us
       twitter:
         enabled: true
-    # for more info: https://github.com/mkusz/mkdocs-publisher
   - exclude:
+  # https://github.com/apenwarr/mkdocs-exclude
       glob:
         - dev/* # <- exclude the docs/dev folder from the docs
         - "*.tmp"
@@ -97,7 +102,6 @@ plugins:
         - "*.gz"
       regex:
         - '.*\.(tmp|bin|tar)$'
-    # https://github.com/apenwarr/mkdocs-exclude
 
 extra:
   social:
@@ -121,4 +125,4 @@ extra:
       name: Hugging Face
 
 copyright:
-  © 2023 <a href="https://github.com/danny-avila/LibreChat" target="_blank" rel="noopener">LibreChat</a>
+  © 2024 <a href="https://librechat.ai/" target="_blank" rel="noopener">LibreChat</a>

@@ -1,8 +1,9 @@
 const crypto = require('crypto');
-const { supportsBalanceCheck } = require('librechat-data-provider');
+const { supportsBalanceCheck, Constants } = require('librechat-data-provider');
 const { getConvo, getMessages, saveMessage, updateMessage, saveConvo } = require('~/models');
 const { addSpaceIfNeeded, isEnabled } = require('~/server/utils');
 const checkBalance = require('~/models/checkBalance');
+const { getFiles } = require('~/models/File');
 const TextStream = require('./TextStream');
 const { logger } = require('~/config');
 
@@ -22,7 +23,7 @@ class BaseClient {
     throw new Error('Method \'setOptions\' must be implemented.');
   }
 
-  getCompletion() {
+  async getCompletion() {
     throw new Error('Method \'getCompletion\' must be implemented.');
   }
 
@@ -44,10 +45,6 @@ class BaseClient {
 
   async getTokenCountForResponse(response) {
     logger.debug('`[BaseClient] recordTokenUsage` not implemented.', response);
-  }
-
-  async addPreviousAttachments(messages) {
-    return messages;
   }
 
   async recordTokenUsage({ promptTokens, completionTokens }) {
@@ -77,7 +74,7 @@ class BaseClient {
     const saveOptions = this.getSaveOptions();
     this.abortController = opts.abortController ?? new AbortController();
     const conversationId = opts.conversationId ?? crypto.randomUUID();
-    const parentMessageId = opts.parentMessageId ?? '00000000-0000-0000-0000-000000000000';
+    const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
     const userMessageId = opts.overrideParentMessageId ?? crypto.randomUUID();
     let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
     let head = isEdited ? responseMessageId : parentMessageId;
@@ -428,7 +425,10 @@ class BaseClient {
       await this.saveMessageToDatabase(userMessage, saveOptions, user);
     }
 
-    if (isEnabled(process.env.CHECK_BALANCE) && supportsBalanceCheck[this.options.endpoint]) {
+    if (
+      isEnabled(process.env.CHECK_BALANCE) &&
+      supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
+    ) {
       await checkBalance({
         req: this.options.req,
         res: this.options.res,
@@ -438,11 +438,14 @@ class BaseClient {
           amount: promptTokens,
           model: this.modelOptions.model,
           endpoint: this.options.endpoint,
+          endpointTokenConfig: this.options.endpointTokenConfig,
         },
       });
     }
 
     const completion = await this.sendCompletion(payload, opts);
+    this.abortController.requestCompleted = true;
+
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
@@ -453,6 +456,7 @@ class BaseClient {
       sender: this.sender,
       text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
+      ...(this.metadata ?? {}),
     };
 
     if (
@@ -548,7 +552,7 @@ class BaseClient {
    *
    * Each message object should have an 'id' or 'messageId' property and may have a 'parentMessageId' property.
    * The 'parentMessageId' is the ID of the message that the current message is a reply to.
-   * If 'parentMessageId' is not present, null, or is '00000000-0000-0000-0000-000000000000',
+   * If 'parentMessageId' is not present, null, or is Constants.NO_PARENT,
    * the message is considered a root message.
    *
    * @param {Object} options - The options for the function.
@@ -603,9 +607,7 @@ class BaseClient {
       }
 
       currentMessageId =
-        message.parentMessageId === '00000000-0000-0000-0000-000000000000'
-          ? null
-          : message.parentMessageId;
+        message.parentMessageId === Constants.NO_PARENT ? null : message.parentMessageId;
     }
 
     orderedMessages.reverse();
@@ -678,6 +680,54 @@ class BaseClient {
     }
 
     return await this.sendCompletion(payload, opts);
+  }
+
+  /**
+   *
+   * @param {TMessage[]} _messages
+   * @returns {Promise<TMessage[]>}
+   */
+  async addPreviousAttachments(_messages) {
+    if (!this.options.resendFiles) {
+      return _messages;
+    }
+
+    /**
+     *
+     * @param {TMessage} message
+     */
+    const processMessage = async (message) => {
+      if (!this.message_file_map) {
+        /** @type {Record<string, MongoFile[]> */
+        this.message_file_map = {};
+      }
+
+      const fileIds = message.files.map((file) => file.file_id);
+      const files = await getFiles({
+        file_id: { $in: fileIds },
+      });
+
+      await this.addImageURLs(message, files);
+
+      this.message_file_map[message.messageId] = files;
+      return message;
+    };
+
+    const promises = [];
+
+    for (const message of _messages) {
+      if (!message.files) {
+        promises.push(message);
+        continue;
+      }
+
+      promises.push(processMessage(message));
+    }
+
+    const messages = await Promise.all(promises);
+
+    this.checkVisionRequest(Object.values(this.message_file_map ?? {}).flat());
+    return messages;
   }
 }
 

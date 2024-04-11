@@ -1,4 +1,5 @@
 const { config } = require('./EndpointService');
+const getCustomConfig = require('./getCustomConfig');
 const loadCustomConfig = require('./loadCustomConfig');
 const loadConfigModels = require('./loadConfigModels');
 const loadDefaultModels = require('./loadDefaultModels');
@@ -9,6 +10,7 @@ const loadDefaultEndpointsConfig = require('./loadDefaultEConfig');
 
 module.exports = {
   config,
+  getCustomConfig,
   loadCustomConfig,
   loadConfigModels,
   loadDefaultModels,
