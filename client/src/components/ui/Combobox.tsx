@@ -10,7 +10,7 @@ import {
   ComboboxCancel,
 } from '@ariakit/react';
 import type { OptionWithIcon } from '~/common';
-import { SelectTrigger, SelectValue, SelectScrollDownButton, SelectScrollUpButton } from './Select';
+import { SelectTrigger, SelectValue, SelectScrollDownButton } from './Select';
 import useCombobox from '~/hooks/Input/useCombobox';
 import { cn } from '~/utils';
 
