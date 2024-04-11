@@ -1,6 +1,6 @@
 /* eslint-disable jest/no-conditional-expect */
 import { ZodError, z } from 'zod';
-import { generateDynamicSchema, validateSettingDefinitions } from '../src/generate';
+import { generateDynamicSchema, validateSettingDefinitions, OptionTypes } from '../src/generate';
 import type { SettingsConfiguration } from '../src/generate';
 
 describe('generateDynamicSchema', () => {
@@ -117,7 +117,40 @@ describe('generateDynamicSchema', () => {
 });
 
 describe('validateSettingDefinitions', () => {
-  // Test for valid setting configurations
+  test('should throw error for Conversation optionType', () => {
+    const validSettings: SettingsConfiguration = [
+      {
+        key: 'themeColor',
+        component: 'input',
+        type: 'string',
+        default: '#ffffff',
+        label: 'Theme Color',
+        columns: 2,
+        columnSpan: 1,
+        optionType: OptionTypes.Conversation,
+      },
+    ];
+
+    expect(() => validateSettingDefinitions(validSettings)).toThrow();
+  });
+
+  test('should throw error for Model optionType', () => {
+    const validSettings: SettingsConfiguration = [
+      {
+        key: 'themeColor',
+        component: 'input',
+        type: 'string',
+        default: '#ffffff',
+        label: 'Theme Color',
+        columns: 2,
+        columnSpan: 1,
+        optionType: OptionTypes.Model,
+      },
+    ];
+
+    expect(() => validateSettingDefinitions(validSettings)).toThrow();
+  });
+
   test('should not throw error for valid settings', () => {
     const validSettings: SettingsConfiguration = [
       {
@@ -128,7 +161,7 @@ describe('validateSettingDefinitions', () => {
         label: 'Theme Color',
         columns: 2,
         columnSpan: 1,
-        optionType: 'model',
+        optionType: OptionTypes.Custom,
       },
       {
         key: 'fontSize',
@@ -137,6 +170,7 @@ describe('validateSettingDefinitions', () => {
         range: { min: 8, max: 36 },
         default: 14,
         columnSpan: 2,
+        optionType: OptionTypes.Custom,
       },
     ];
 
@@ -166,6 +200,7 @@ describe('validateSettingDefinitions', () => {
         columns: 4,
         range: { min: 8, max: 14 },
         default: 11,
+        optionType: OptionTypes.Custom,
       },
     ];
 
@@ -175,7 +210,13 @@ describe('validateSettingDefinitions', () => {
   // Test for label defaulting to key if not provided
   test('label should default to key if not explicitly set', () => {
     const settingsWithDefaultLabel: SettingsConfiguration = [
-      { key: 'fontWeight', component: 'dropdown', type: 'string', options: ['normal', 'bold'] },
+      {
+        key: 'fontWeight',
+        component: 'dropdown',
+        type: 'string',
+        options: ['normal', 'bold'],
+        optionType: OptionTypes.Custom,
+      },
     ];
 
     expect(() => validateSettingDefinitions(settingsWithDefaultLabel)).not.toThrow();
@@ -211,6 +252,7 @@ describe('validateSettingDefinitions', () => {
         component: 'slider',
         range: { min: 10, max: 20 },
         columns: 4,
+        optionType: OptionTypes.Custom,
       },
     ];
 
@@ -297,7 +339,12 @@ describe('validateSettingDefinitions', () => {
   // Validate correct handling of boolean settings with default values
   test('correct handling of boolean settings with defaults', () => {
     const settings: SettingsConfiguration = [
-      { key: 'enableFeatureX', type: 'boolean', component: 'switch' }, // Missing default, should default to false
+      {
+        key: 'enableFeatureX',
+        type: 'boolean',
+        component: 'switch',
+        optionType: OptionTypes.Custom,
+      }, // Missing default, should default to false
     ];
 
     validateSettingDefinitions(settings); // This would populate default values where missing
@@ -308,7 +355,13 @@ describe('validateSettingDefinitions', () => {
   // Validate that number slider without default uses middle of range
   test('number slider without default uses middle of range', () => {
     const settings: SettingsConfiguration = [
-      { key: 'brightness', type: 'number', component: 'slider', range: { min: 0, max: 100 } }, // Missing default
+      {
+        key: 'brightness',
+        type: 'number',
+        component: 'slider',
+        range: { min: 0, max: 100 },
+        optionType: OptionTypes.Custom,
+      }, // Missing default
     ];
 
     validateSettingDefinitions(settings); // This would populate default values where missing
@@ -330,6 +383,7 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
+    optionType: OptionTypes.Custom,
   },
   {
     key: 'top_p',
@@ -343,6 +397,7 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
+    optionType: OptionTypes.Custom,
   },
   {
     key: 'presence_penalty',
@@ -356,6 +411,7 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
+    optionType: OptionTypes.Custom,
   },
   {
     key: 'frequency_penalty',
@@ -369,6 +425,7 @@ const settingsConfiguration: SettingsConfiguration = [
       step: 0.01,
     },
     component: 'slider',
+    optionType: OptionTypes.Custom,
   },
   {
     key: 'resendFiles',
@@ -377,6 +434,7 @@ const settingsConfiguration: SettingsConfiguration = [
     type: 'boolean',
     default: true,
     component: 'switch',
+    optionType: OptionTypes.Custom,
   },
   {
     key: 'imageDetail',
@@ -386,12 +444,14 @@ const settingsConfiguration: SettingsConfiguration = [
     default: 'auto',
     options: ['low', 'high', 'auto'],
     component: 'slider',
+    optionType: OptionTypes.Custom,
   },
   {
     key: 'promptPrefix',
     type: 'string',
     default: '',
     component: 'input',
+    optionType: OptionTypes.Custom,
     placeholder: 'Set custom instructions to include in System Message. Default: none',
   },
   {
@@ -399,6 +459,7 @@ const settingsConfiguration: SettingsConfiguration = [
     type: 'string',
     default: '',
     component: 'input',
+    optionType: OptionTypes.Custom,
     placeholder: 'Set a custom name for your AI',
   },
 ];
