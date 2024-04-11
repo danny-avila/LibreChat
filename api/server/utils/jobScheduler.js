@@ -2,11 +2,18 @@ const Agenda = require('agenda');
 const { logger } = require('~/config');
 const mongodb = require('mongodb');
 
+/**
+ * Class for scheduling and running jobs.
+ * The workflow is as follows: start the job scheduler, define a job, and then schedule the job using defined job name.
+ */
 class JobScheduler {
   constructor() {
     this.agenda = new Agenda({ db: { address: process.env.MONGO_URI } });
   }
 
+  /**
+   * Starts the job scheduler.
+   */
   async start() {
     try {
       logger.info('Starting Agenda...');
@@ -17,6 +24,14 @@ class JobScheduler {
     }
   }
 
+  /**
+   * Schedules a job to start immediately.
+   * @param {string} jobName - The name of the job to schedule.
+   * @param {Object} data - The data to pass to the job.
+   * @param {string} userId - The ID of the user requesting the job.
+   * @returns {Promise<{ id: string }>} - A promise that resolves with the ID of the scheduled job.
+   * @throws {Error} - If the job fails to schedule.
+   */
   async now(jobName, data, userId) {
     try {
       const job = await this.agenda.now(jobName, { data: data, requestUserId: userId });
@@ -27,6 +42,12 @@ class JobScheduler {
     }
   }
 
+  /**
+   * Gets the status of a job.
+   * @param {string} jobId - The ID of the job to get the status of.
+   * @returns {Promise<{ id: string, userId: string, name: string, failReason: string, status: string } | null>} - A promise that resolves with the job status or null if the job is not found.
+   * @throws {Error} - If multiple jobs are found.
+   */
   async getJobStatus(jobId) {
     const job = await this.agenda.jobs({ _id: new mongodb.ObjectId(jobId) });
     if (!job || job.length === 0) {
@@ -55,6 +76,11 @@ class JobScheduler {
     return jobDetails;
   }
 
+  /**
+   * Defines a new job.
+   * @param {string} name - The name of the job.
+   * @param {Function} jobFunction - The function to run when the job is executed.
+   */
   define(name, jobFunction) {
     this.agenda.define(name, async (job, done) => {
       try {

@@ -4,7 +4,9 @@ const jobScheduler = require('~/server/utils/jobScheduler');
 
 const IMPORT_CONVERSATION_JOB_NAME = 'import conversation';
 
-// Define the import job function
+/**
+ * Job definition for importing a conversation.
+ */
 const importConversationJob = async (job, done) => {
   const { data, requestUserId } = job.attrs.data;
   try {
