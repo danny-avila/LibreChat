@@ -81,14 +81,14 @@ export default function useTextarea({
     }
 
     const getPlaceholderText = () => {
+      if (disabled) {
+        return localize('com_endpoint_config_placeholder');
+      }
       if (
         conversation?.endpoint === EModelEndpoint.assistants &&
         (!conversation?.assistant_id || !assistantMap?.[conversation?.assistant_id ?? ''])
       ) {
         return localize('com_endpoint_assistant_placeholder');
-      }
-      if (disabled) {
-        return localize('com_endpoint_config_placeholder');
       }
 
       if (isNotAppendable) {
