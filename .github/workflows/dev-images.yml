@@ -2,8 +2,6 @@ name: Docker Dev Images Build
 
 on:
   workflow_dispatch:
-<<<<<<< HEAD
-=======
   push:
     branches:
       - main
@@ -11,7 +9,6 @@ on:
       - 'api/**'
       - 'client/**'
       - 'packages/**'
->>>>>>> 9277e2a0c55031c28ece5163137a65838eca7061
 
 jobs:
   build:
