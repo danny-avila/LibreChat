@@ -195,6 +195,12 @@ export const importConversationsFile = (data: FormData): Promise<f.TFileUpload> 
   return request.postMultiPart(endpoints.importConversation(), data);
 };
 
+export const queryImportConversationJobStatus = async (
+  jobId: string,
+): Promise<t.TImportJobStatus> => {
+  return request.get(endpoints.importConversationJobStatus(jobId));
+};
+
 export const uploadAvatar = (data: FormData): Promise<f.AvatarUploadResponse> => {
   return request.postMultiPart(endpoints.avatar(), data);
 };

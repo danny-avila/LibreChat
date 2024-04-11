@@ -34,6 +34,9 @@ export const deleteConversation = () => `${conversationsRoot}/clear`;
 
 export const importConversation = () => `${conversationsRoot}/import`;
 
+export const importConversationJobStatus = (jobId: string) =>
+  `${conversationsRoot}/import/jobs/${jobId}`;
+
 export const search = (q: string, pageNumber: string) =>
   `/api/search?q=${q}&pageNumber=${pageNumber}`;
 
