@@ -130,22 +130,18 @@ export const useDeleteConversationMutation = (
   );
 };
 
-export const useUploadConversationsMutation = (
-  _options?: UploadMutationOptions,
-): UseMutationResult<
-  TFileUpload, // response data
-  unknown, // error
-  FormData, // request
-  unknown // context
-> => {
-  const { onSuccess, ...options } = _options || {};
-  return useMutation([MutationKeys.fileUpload], {
-    mutationFn: (body: FormData) => {
-      return dataService.importConversationsFile(body);
+export const useUploadConversationsMutation = (_options?: UploadMutationOptions) => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError } = _options || {};
+
+  return useMutation<TFileUpload, unknown, FormData>({
+    mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
+      if (onSuccess) {onSuccess(data, variables, context);}
     },
-    ...(options || {}),
-    onSuccess: (data, formData, context) => {
-      onSuccess?.(data, formData, context);
+    onError: (err, variables, context) => {
+      if (onError) {onError(err, variables, context);}
     },
   });
 };

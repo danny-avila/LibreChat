@@ -7,7 +7,6 @@ import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useState, useCallback, useRef } from 'react';
 import { useOnClickOutside } from '~/hooks';
 import DangerButton from '../DangerButton';
-import { useImportFileHandling } from '~/hooks';
 import ImportConversations from './ImportConversations';
 
 export const RevokeKeysButton = ({
@@ -64,51 +63,6 @@ export const RevokeKeysButton = ({
       dataTestIdConfirm={'revoke-all-keys-confirm'}
       mutation={all ? revokeKeysMutation : revokeKeyMutation}
     />
-  );
-};
-
-// button that opens select file dialog where user can choose only json file and sends the file to as a post request to /api/convos endpoint
-export const ImportDataButton = () => {
-  const fileInputRef = useRef(null);
-  const uploadFile = useImportFileHandling();
-
-  const handleFileChange = (event) => {
-    console.log('file change');
-    const file = event.target.files[0];
-    if (file) {
-      // const formData = new FormData();
-      // formData.append('file', file);
-
-      console.log('call handleFiles');
-      uploadFile.handleFiles(file);
-    }
-  };
-
-  const handleClick = () => {
-    fileInputRef.current.click();
-  };
-
-  return (
-    <div>
-      <input
-        type="file"
-        accept=".json"
-        style={{ display: 'none' }}
-        ref={fileInputRef}
-        onChange={handleFileChange} // Hook handleFileUpload to the onChange event of the input element
-      />
-      <DangerButton
-        confirmClear={false} // Add the missing confirmClear prop
-        showText={true} // Add the missing showText prop
-        onClick={handleClick} // Add an empty onClick function
-        id={'import-conversations'}
-        actionTextCode={'com_ui_import_conversation'} // TODO: update
-        infoTextCode={'com_ui_import_conversation_info'} // TODO: update
-        dataTestIdInitial={'revoke-all-keys-initial'} // TODO: update
-        dataTestIdConfirm={'revoke-all-keys-confirm'} // TODO: update
-        //mutation={null} // Replace the missing mutation prop with the appropriate value
-      />
-    </div>
   );
 };
 

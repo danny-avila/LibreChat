@@ -1,15 +1,77 @@
-import { useLocalize, useImportFileHandling } from '~/hooks';
 import { Import } from 'lucide-react';
 import { cn } from '~/utils';
+import { useUploadConversationsMutation } from '~/data-provider';
+import { useLocalize, useConversations } from '~/hooks';
+import { useState, useEffect, useCallback } from 'react';
 import { useToastContext } from '~/Providers';
-import React, { useState, useCallback, useRef } from 'react';
 
 function ImportConversations() {
   const localize = useLocalize();
-  const { showToast } = useToastContext();
 
-  const fileInputRef = useRef(null);
-  const uploadFile = useImportFileHandling();
+  const { showToast } = useToastContext();
+  const [errors, setErrors] = useState<string[]>([]);
+  const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
+  const { refreshConversations } = useConversations();
+
+  //const fileInputRef = useRef(null);
+  //const uploadFile = useImportFileHandling();
+
+  const setFilesLoading = (arg0: boolean) => {
+    throw new Error('Function not implemented.');
+  };
+
+  const uploadFile = useUploadConversationsMutation({
+    onSuccess: (data) => {
+      console.log('upload success', data);
+      showToast({ message: localize('com_ui_import_conversation_success') });
+      refreshConversations();
+    },
+    onError: (error) => {
+      console.error('Error: ', error);
+      setError(
+        (error as { response: { data: { message?: string } } })?.response?.data?.message ??
+          'An error occurred while uploading the file.',
+      );
+      showToast({ message: localize('com_ui_import_conversation_error'), status: 'error' });
+    },
+  });
+
+  const startUpload = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file, encodeURIComponent(file?.name || 'File'));
+
+    uploadFile.mutate(formData);
+  };
+
+  const validateFiles = (file: File) => {
+    console.debug('Validating files...');
+    return true;
+  };
+
+  const handleFiles = async (_file: File) => {
+    console.log('Handling files...');
+    /* Validate file */
+    let filesAreValid: boolean;
+    try {
+      filesAreValid = validateFiles(_file);
+    } catch (error) {
+      console.error('file validation error', error);
+      setError('An error occurred while validating the file.');
+      return;
+    }
+    if (!filesAreValid) {
+      setFilesLoading(false);
+      return;
+    }
+
+    /* Process files */
+    try {
+      await startUpload(_file);
+    } catch (error) {
+      console.log('file handling error', error);
+      setError('An error occurred while processing the file.');
+    }
+  };
 
   const handleFileChange = (event) => {
     console.log('file change');
@@ -19,7 +81,7 @@ function ImportConversations() {
       // formData.append('file', file);
 
       console.log('call handleFiles');
-      uploadFile.handleFiles(file);
+      handleFiles(file);
     }
   };
 
