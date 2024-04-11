@@ -335,6 +335,7 @@ export interface ExtendedFile {
 export type ContextType = { navVisible: boolean; setNavVisible: (visible: boolean) => void };
 
 export interface SwitcherProps {
+  endpoint?: EModelEndpoint | null;
   endpointKeyProvided: boolean;
   isCollapsed: boolean;
 }

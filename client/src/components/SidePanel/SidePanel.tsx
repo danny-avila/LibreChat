@@ -38,10 +38,10 @@ const SidePanel = ({
   const [fullCollapse, setFullCollapse] = useState(fullPanelCollapse);
   const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
-  const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(EModelEndpoint.assistants);
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const { conversation } = useChatContext();
   const { endpoint } = conversation ?? {};
+  const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(endpoint ?? '');
 
   const panelRef = useRef<ImperativePanelHandle>(null);
 
@@ -187,7 +187,11 @@ const SidePanel = ({
                 isCollapsed ? 'h-[52px]' : 'px-2',
               )}
             >
-              <Switcher isCollapsed={isCollapsed} endpointKeyProvided={keyProvided} />
+              <Switcher
+                isCollapsed={isCollapsed}
+                endpointKeyProvided={keyProvided}
+                endpoint={endpoint}
+              />
               <Separator className="bg-gray-100/50 dark:bg-gray-600" />
             </div>
             <Nav
