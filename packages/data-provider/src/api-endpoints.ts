@@ -23,6 +23,8 @@ export const conversations = (pageNumber: string) => `/api/convos?pageNumber=${p
 
 export const conversationById = (id: string) => `/api/convos/${id}`;
 
+export const genTitle = () => '/api/convos/gen_title';
+
 export const updateConversation = () => '/api/convos/update';
 
 export const deleteConversation = () => '/api/convos/clear';
@@ -64,7 +66,20 @@ export const plugins = () => '/api/plugins';
 
 export const config = () => '/api/config';
 
-export const assistants = (id?: string) => `/api/assistants${id ? `/${id}` : ''}`;
+export const assistants = (id?: string, options?: Record<string, string>) => {
+  let url = '/api/assistants';
+
+  if (id) {
+    url += `/${id}`;
+  }
+
+  if (options && Object.keys(options).length > 0) {
+    const queryParams = new URLSearchParams(options).toString();
+    url += `?${queryParams}`;
+  }
+
+  return url;
+};
 
 export const files = () => '/api/files';
 

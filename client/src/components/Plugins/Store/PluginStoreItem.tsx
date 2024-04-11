@@ -1,5 +1,6 @@
 import { TPlugin } from 'librechat-data-provider';
 import { XCircle, DownloadCloud } from 'lucide-react';
+import { useLocalize } from '~/hooks';
 
 type TPluginStoreItemProps = {
   plugin: TPlugin;
@@ -9,6 +10,7 @@ type TPluginStoreItemProps = {
 };
 
 function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPluginStoreItemProps) {
+  const localize = useLocalize();
   const handleClick = () => {
     if (isInstalled) {
       onUninstall();
@@ -19,14 +21,14 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
 
   return (
     <>
-      <div className="flex flex-col gap-4 rounded border border-black/10 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
+      <div className="flex flex-col gap-4 rounded border border-black/10 bg-white p-6 dark:border-gray-500 dark:bg-gray-700">
         <div className="flex gap-4">
           <div className="h-[70px] w-[70px] shrink-0">
             <div className="relative h-full w-full">
               <img
                 src={plugin.icon}
                 alt={`${plugin.name} logo`}
-                className="h-full w-full rounded-[5px] bg-white"
+                className="h-full w-full rounded-[5px]"
               />
               <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-black/10"></div>
             </div>
@@ -38,11 +40,11 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
             {!isInstalled ? (
               <button
                 className="btn btn-primary relative"
-                aria-label={`Install ${plugin.name}`}
+                aria-label={`${localize('com_nav_plugin_install')} ${plugin.name}`}
                 onClick={handleClick}
               >
                 <div className="flex w-full items-center justify-center gap-2">
-                  Install
+                  {localize('com_nav_plugin_install')}
                   <DownloadCloud className="flex h-4 w-4 items-center stroke-2" />
                 </div>
               </button>
@@ -50,17 +52,17 @@ function PluginStoreItem({ plugin, onInstall, onUninstall, isInstalled }: TPlugi
               <button
                 className="btn relative bg-gray-300 hover:bg-gray-400 dark:bg-gray-50 dark:hover:bg-gray-200"
                 onClick={handleClick}
-                aria-label={`Uninstall ${plugin.name}`}
+                aria-label={`${localize('com_nav_plugin_uninstall')} ${plugin.name}`}
               >
                 <div className="flex w-full items-center justify-center gap-2">
-                  Uninstall
+                  {localize('com_nav_plugin_uninstall')}
                   <XCircle className="flex h-4 w-4 items-center stroke-2" />
                 </div>
               </button>
             )}
           </div>
         </div>
-        <div className="line-clamp-3 h-[60px] text-sm text-slate-700/70 dark:text-slate-50/70">
+        <div className="line-clamp-3 h-[60px] text-sm text-gray-700/70 dark:text-gray-50/70">
           {plugin.description}
         </div>
       </div>

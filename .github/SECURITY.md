@@ -12,7 +12,7 @@ When reporting a security vulnerability, you have the following options to reach
 
 - **Option 2: GitHub Issues**: You can initiate first contact via GitHub Issues. However, please note that initial contact through GitHub Issues should not include any sensitive details.
 
-- **Option 3: Discord Server**: You can join our [Discord community](https://discord.gg/5rbRxn4uME) and initiate first contact in the `#issues` channel. However, please ensure that initial contact through Discord does not include any sensitive details.
+- **Option 3: Discord Server**: You can join our [Discord community](https://discord.librechat.ai) and initiate first contact in the `#issues` channel. However, please ensure that initial contact through Discord does not include any sensitive details.
 
 _After the initial contact, we will establish a private communication channel for further discussion._
 
@@ -39,11 +39,11 @@ Please note that as a security-conscious community, we may not always disclose d
 
 This security policy applies to the following GitHub repository:
 
-- Repository: [LibreChat](https://github.com/danny-avila/LibreChat)
+- Repository: [LibreChat](https://github.librechat.ai)
 
 ## Contact
 
-If you have any questions or concerns regarding the security of our project, please join our [Discord community](https://discord.gg/NGaa9RPCft) and report them in the appropriate channel. You can also reach out to us by [opening an issue](https://github.com/danny-avila/LibreChat/issues/new) on GitHub. Please note that the response time may vary depending on the nature and severity of the inquiry.
+If you have any questions or concerns regarding the security of our project, please join our [Discord community](https://discord.librechat.ai) and report them in the appropriate channel. You can also reach out to us by [opening an issue](https://github.com/danny-avila/LibreChat/issues/new) on GitHub. Please note that the response time may vary depending on the nature and severity of the inquiry.
 
 ## Acknowledgments
 

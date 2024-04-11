@@ -3,42 +3,39 @@ const OpenAI = require('openai');
 const { v4: uuidv4 } = require('uuid');
 const { Tool } = require('langchain/tools');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { FileContext } = require('librechat-data-provider');
 const { getImageBasename } = require('~/server/services/Files/images');
-const { processFileURL } = require('~/server/services/Files/process');
 const extractBaseURL = require('~/utils/extractBaseURL');
 const { logger } = require('~/config');
 
-const {
-  DALLE2_SYSTEM_PROMPT,
-  DALLE_REVERSE_PROXY,
-  PROXY,
-  DALLE2_AZURE_API_VERSION,
-  DALLE2_BASEURL,
-  DALLE2_API_KEY,
-  DALLE_API_KEY,
-} = process.env;
 class OpenAICreateImage extends Tool {
   constructor(fields = {}) {
     super();
 
     this.userId = fields.userId;
     this.fileStrategy = fields.fileStrategy;
+    if (fields.processFileURL) {
+      this.processFileURL = fields.processFileURL.bind(this);
+    }
     let apiKey = fields.DALLE2_API_KEY ?? fields.DALLE_API_KEY ?? this.getApiKey();
 
     const config = { apiKey };
-    if (DALLE_REVERSE_PROXY) {
-      config.baseURL = extractBaseURL(DALLE_REVERSE_PROXY);
+    if (process.env.DALLE_REVERSE_PROXY) {
+      config.baseURL = extractBaseURL(process.env.DALLE_REVERSE_PROXY);
     }
 
-    if (DALLE2_AZURE_API_VERSION && DALLE2_BASEURL) {
-      config.baseURL = DALLE2_BASEURL;
-      config.defaultQuery = { 'api-version': DALLE2_AZURE_API_VERSION };
-      config.defaultHeaders = { 'api-key': DALLE2_API_KEY, 'Content-Type': 'application/json' };
-      config.apiKey = DALLE2_API_KEY;
+    if (process.env.DALLE2_AZURE_API_VERSION && process.env.DALLE2_BASEURL) {
+      config.baseURL = process.env.DALLE2_BASEURL;
+      config.defaultQuery = { 'api-version': process.env.DALLE2_AZURE_API_VERSION };
+      config.defaultHeaders = {
+        'api-key': process.env.DALLE2_API_KEY,
+        'Content-Type': 'application/json',
+      };
+      config.apiKey = process.env.DALLE2_API_KEY;
     }
 
-    if (PROXY) {
-      config.httpAgent = new HttpsProxyAgent(PROXY);
+    if (process.env.PROXY) {
+      config.httpAgent = new HttpsProxyAgent(process.env.PROXY);
     }
 
     this.openai = new OpenAI(config);
@@ -51,7 +48,7 @@ Guidelines:
 "Subject: [subject], Style: [style], Color: [color], Details: [details], Emotion: [emotion]"
 - Generate images only once per human query unless explicitly requested by the user`;
     this.description_for_model =
-      DALLE2_SYSTEM_PROMPT ??
+      process.env.DALLE2_SYSTEM_PROMPT ??
       `// Whenever a description of an image is given, generate prompts (following these rules), and use dalle to create the image. If the user does not ask for a specific number of images, default to creating 2 prompts to send to dalle that are written to be as diverse as possible. All prompts sent to dalle must abide by the following policies:
 // 1. Prompts must be in English. Translate to English if needed.
 // 2. One image per function call. Create only 1 image per request unless explicitly told to generate more than 1 image.
@@ -67,7 +64,7 @@ Guidelines:
   }
 
   getApiKey() {
-    const apiKey = DALLE2_API_KEY ?? DALLE_API_KEY ?? '';
+    const apiKey = process.env.DALLE2_API_KEY ?? process.env.DALLE_API_KEY ?? '';
     if (!apiKey) {
       throw new Error('Missing DALLE_API_KEY environment variable.');
     }
@@ -86,13 +83,21 @@ Guidelines:
   }
 
   async _call(input) {
-    const resp = await this.openai.images.generate({
-      prompt: this.replaceUnwantedChars(input),
-      // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
-      n: 1,
-      // size: '1024x1024'
-      size: '512x512',
-    });
+    let resp;
+
+    try {
+      resp = await this.openai.images.generate({
+        prompt: this.replaceUnwantedChars(input),
+        // TODO: Future idea -- could we ask an LLM to extract these arguments from an input that might contain them?
+        n: 1,
+        // size: '1024x1024'
+        size: '512x512',
+      });
+    } catch (error) {
+      logger.error('[DALL-E] Problem generating the image:', error);
+      return `Something went wrong when trying to generate the image. The DALL-E API may be unavailable:
+Error Message: ${error.message}`;
+    }
 
     const theImageUrl = resp.data[0].url;
 
@@ -116,15 +121,16 @@ Guidelines:
     });
 
     try {
-      const result = await processFileURL({
+      const result = await this.processFileURL({
         fileStrategy: this.fileStrategy,
         userId: this.userId,
         URL: theImageUrl,
         fileName: imageName,
         basePath: 'images',
+        context: FileContext.image_generation,
       });
 
-      this.result = this.wrapInMarkdown(result);
+      this.result = this.wrapInMarkdown(result.filepath);
     } catch (error) {
       logger.error('Error while saving the image:', error);
       this.result = `Failed to save the image locally. ${error.message}`;

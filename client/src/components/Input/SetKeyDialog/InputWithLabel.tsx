@@ -1,6 +1,6 @@
 import { forwardRef } from 'react';
 import type { ChangeEvent, FC, Ref } from 'react';
-import { cn, defaultTextPropsLabel, removeFocusOutlines } from '~/utils/';
+import { cn, defaultTextPropsLabel, removeFocusOutlines, defaultTextProps } from '~/utils/';
 import { Input, Label } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 
@@ -37,7 +37,7 @@ const InputWithLabel: FC<InputWithLabelProps> = forwardRef((props, ref) => {
         ref={ref}
         placeholder={`${localize('com_endpoint_config_value')} ${label}`}
         className={cn(
-          defaultTextPropsLabel,
+          defaultTextProps,
           'flex h-10 max-h-10 w-full resize-none px-3 py-2',
           removeFocusOutlines,
           inputClassName,

@@ -6,10 +6,11 @@ import {
   Input,
   Label,
   Slider,
-  InputNumber,
+  Switch,
   HoverCard,
-  HoverCardTrigger,
+  InputNumber,
   SelectDropDown,
+  HoverCardTrigger,
 } from '~/components/ui';
 import OptionHover from './OptionHover';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
@@ -20,7 +21,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   if (!conversation) {
     return null;
   }
-  const { model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens } =
+  const { model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens, resendFiles } =
     conversation;
 
   const setModel = setOption('model');
@@ -30,6 +31,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setTopP = setOption('topP');
   const setTopK = setOption('topK');
   const setMaxOutputTokens = setOption('maxOutputTokens');
+  const setResendFiles = setOption('resendFiles');
 
   return (
     <div className="grid grid-cols-5 gap-6">
@@ -243,6 +245,27 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             type="maxoutputtokens"
             side={ESide.Left}
           />
+        </HoverCard>
+        <HoverCard openDelay={500}>
+          <HoverCardTrigger className="grid w-full">
+            <div className="flex justify-between">
+              <Label htmlFor="resend-files" className="text-left text-sm font-medium">
+                {localize('com_endpoint_plug_resend_files')}{' '}
+              </Label>
+              <Switch
+                id="resend-files"
+                checked={resendFiles ?? true}
+                onCheckedChange={(checked: boolean) => setResendFiles(checked)}
+                disabled={readonly}
+                className="flex"
+              />
+              <OptionHover
+                endpoint={conversation?.endpoint ?? ''}
+                type="resend"
+                side={ESide.Bottom}
+              />
+            </div>
+          </HoverCardTrigger>
         </HoverCard>
       </div>
     </div>

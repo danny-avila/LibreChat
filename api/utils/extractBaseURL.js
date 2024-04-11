@@ -1,3 +1,5 @@
+const { CohereConstants } = require('librechat-data-provider');
+
 /**
  * Extracts a valid OpenAI baseURL from a given string, matching "url/v1," followed by an optional suffix.
  * The suffix can be one of several predefined values (e.g., 'openai', 'azure-openai', etc.),
@@ -12,9 +14,17 @@
  * - `https://api.example.com/v1/replicate` -> `https://api.example.com/v1/replicate`
  *
  * @param {string} url - The URL to be processed.
- * @returns {string} The matched pattern or input if no match is found.
+ * @returns {string | undefined} The matched pattern or input if no match is found.
  */
 function extractBaseURL(url) {
+  if (!url || typeof url !== 'string') {
+    return undefined;
+  }
+
+  if (url.startsWith(CohereConstants.API_URL)) {
+    return null;
+  }
+
   if (!url.includes('/v1')) {
     return url;
   }

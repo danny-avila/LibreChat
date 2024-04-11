@@ -1,5 +1,44 @@
 import { EModelEndpoint, KnownEndpoints } from 'librechat-data-provider';
 import { CustomMinimalIcon } from '~/components/svg';
+import { IconContext } from '~/common';
+
+const knownEndpointAssets = {
+  [KnownEndpoints.mistral]: '/assets/mistral.png',
+  [KnownEndpoints.openrouter]: '/assets/openrouter.png',
+  [KnownEndpoints.groq]: '/assets/groq.png',
+  [KnownEndpoints.shuttleai]: '/assets/shuttleai.png',
+  [KnownEndpoints.anyscale]: '/assets/anyscale.png',
+  [KnownEndpoints.fireworks]: '/assets/fireworks.png',
+  [KnownEndpoints.ollama]: '/assets/ollama.png',
+  [KnownEndpoints.perplexity]: '/assets/perplexity.png',
+  [KnownEndpoints['together.ai']]: '/assets/together.png',
+  [KnownEndpoints.cohere]: '/assets/cohere.png',
+};
+
+const knownEndpointClasses = {
+  [KnownEndpoints.cohere]: {
+    [IconContext.landing]: 'p-2',
+  },
+};
+
+const getKnownClass = ({
+  currentEndpoint,
+  context = '',
+  className,
+}: {
+  currentEndpoint: string;
+  context?: string;
+  className: string;
+}) => {
+  if (currentEndpoint === KnownEndpoints.openrouter) {
+    return className;
+  }
+
+  const match = knownEndpointClasses[currentEndpoint]?.[context];
+  const defaultClass = context === IconContext.landing ? '' : className;
+
+  return match ?? defaultClass;
+};
 
 export default function UnknownIcon({
   className = '',
@@ -20,17 +59,23 @@ export default function UnknownIcon({
 
   if (iconURL) {
     return <img className={className} src={iconURL} alt={`${endpoint} Icon`} />;
-  } else if (currentEndpoint === KnownEndpoints.mistral) {
-    return (
-      <img
-        className={context === 'landing' ? '' : className}
-        src="/assets/mistral.png"
-        alt="Mistral AI Icon"
-      />
-    );
-  } else if (currentEndpoint === KnownEndpoints.openrouter) {
-    return <img className={className} src="/assets/openrouter.png" alt="OpenRouter Icon" />;
   }
 
-  return <CustomMinimalIcon className={className} />;
+  const assetPath = knownEndpointAssets[currentEndpoint];
+
+  if (!assetPath) {
+    return <CustomMinimalIcon className={className} />;
+  }
+
+  return (
+    <img
+      className={getKnownClass({
+        currentEndpoint,
+        context: context,
+        className,
+      })}
+      src={assetPath}
+      alt={`${currentEndpoint} Icon`}
+    />
+  );
 }

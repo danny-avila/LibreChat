@@ -3,6 +3,7 @@ const { CallbackManager } = require('langchain/callbacks');
 const { BufferMemory, ChatMessageHistory } = require('langchain/memory');
 const { initializeCustomAgent, initializeFunctionsAgent } = require('./agents');
 const { addImages, buildErrorInput, buildPromptPrefix } = require('./output_parsers');
+const { processFileURL } = require('~/server/services/Files/process');
 const { EModelEndpoint } = require('librechat-data-provider');
 const { formatLangChainMessages } = require('./prompts');
 const checkBalance = require('~/models/checkBalance');
@@ -29,10 +30,6 @@ class PluginsClient extends OpenAIClient {
     this.agentIsGpt3 = this.agentOptions?.model?.includes('gpt-3');
 
     super.setOptions(options);
-
-    if (this.functionsAgent && this.agentOptions.model && !this.useOpenRouter) {
-      this.agentOptions.model = this.getFunctionModelName(this.agentOptions.model);
-    }
 
     this.isGpt3 = this.modelOptions?.model?.includes('gpt-3');
 
@@ -113,6 +110,7 @@ class PluginsClient extends OpenAIClient {
         openAIApiKey: this.openAIApiKey,
         conversationId: this.conversationId,
         fileStrategy: this.options.req.app.locals.fileStrategy,
+        processFileURL,
         message,
       },
     });

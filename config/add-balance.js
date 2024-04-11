@@ -1,7 +1,7 @@
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
-const Transaction = require('~/models/Transaction');
+const { Transaction } = require('~/models/Transaction');
 const User = require('~/models/User');
 const connect = require('./connect');
 
@@ -84,7 +84,7 @@ const connect = require('./connect');
   }
 
   // Check the result
-  if (!result?.tokenCredits) {
+  if (!result?.balance) {
     console.red('Error: Something went wrong while updating the balance!');
     console.error(result);
     silentExit(1);
@@ -93,7 +93,7 @@ const connect = require('./connect');
   // Done!
   console.green('Transaction created successfully!');
   console.purple(`Amount: ${amount}
-New Balance: ${result.tokenCredits}`);
+New Balance: ${result.balance}`);
   silentExit(0);
 })();
 

@@ -13,10 +13,10 @@ weight: -8
 ## Language Translation
 
 ### Preparation
-Fork the [LibreChat repository](https://github.com/danny-avila/LibreChat) and download it using git clone 
+Fork the [LibreChat repository](https://github.librechat.ai) and download it using git clone. See: [Getting Started for Contributors - GitHub](./how_to_contribute.md#github)  
 
-### Add your language to `Translation.tsx`:
-- Navigate to the `client\src\localization` folder and open the `Translation.tsx` file
+### Add your language to `Translation.ts`:
+- Navigate to the `client\src\localization` folder and open the `Translation.ts` file
 
 - At the beginning of the code, add your language below all the others in this format:
 
@@ -41,7 +41,7 @@ Example (English): `'en-US': English,`
 
 - Copy all the content from `Eng.tsx` into your file and modify it as follows:
 
-  ```js
+  ```js title="Eng.tsx"
   // your-language-name phrases
 
   export default {
@@ -52,7 +52,7 @@ Example (English): `'en-US': English,`
   __Translate only the part after the `:`.__ 
   Example:
 
-  ```js
+  ```js title="**.tsx (new language)"
   // my-language phrases
 
   export default {
@@ -61,19 +61,22 @@ Example (English): `'en-US': English,`
   };
   ```
 
-  ⚠️ Do not modify the `com_...` part ⚠️
+!!! warning
+    Do not modify the `com_...` part
 
-### Delete the Language list after `com_nav_setting_general: 'General',` near the bottom of the file (You do not need to translate the individual language names), except for `com_nav_setting_data: 'Data controls'` (you need to translate it)
+!!! success "Important:"
+    - Delete the Language list after `com_nav_setting_general: 'General',` near the bottom of the file (You do not need to translate the individual language names)
+    - Do not delete `com_nav_setting_data: 'Data controls'` (you need to translate it)
 
 
 ### Add your language to `Eng.tsx`
 Open `Eng.tsx` and add your language to the language list in the bottom of the document.
 
 ### Add your language to the menu
-To add your language to the menu, open the file `client\src\components\Nav\SettingsTabs\General.tsx`. 
-Add your language to the `LangSelector` variable in the following way:
+- Navigate to the file `client\src\components\Nav\SettingsTabs\General.tsx`. 
+- Add your language to the `LangSelector` variable in the following way:
 
-```js
+```js title="LangSelector"
 export const LangSelector = ({
   //other code
         <option value="en-US">{localize(lang, 'com_nav_lang_english')}</option>
@@ -84,9 +87,9 @@ export const LangSelector = ({
   );
 };
 ```
-
-Where `**-**` is the local identifier of your language and `com_nav_lang_your-language-name` stands for the name of your language. 
-Example: `com_nav_lang_english` or `com_nav_lang_italian`
+!!! note
+    `**-**` is the local identifier of your language and `com_nav_lang_your-language-name` stands for the name of your language. 
+    Example: `com_nav_lang_english` or `com_nav_lang_italian`
 
 **You should only need to add one line of code:**
 ```js
@@ -94,27 +97,22 @@ Example: `com_nav_lang_english` or `com_nav_lang_italian`
 ```
 
 ### Summary
-If you followed everything you should have __one__ new file and __3__ files with modifications:
+If you followed everything you should have ^^**one new file**^^  and ^^**3 modified files**^^:
 
 ```bash
-        new file:   client/src/localization/languages/**.tsx            <-----new language
-        modified:   client/src/components/Nav/SettingsTabs/General.tsx
-        modified:   client/src/localization/Translation.tsx
-        modified:   client/src/localization/languages/Eng.tsx
+  new file:   client/src/localization/languages/**.tsx            <-----new language
+  modified:   client/src/components/Nav/SettingsTabs/General.tsx
+  modified:   client/src/localization/Translation.ts
+  modified:   client/src/localization/languages/Eng.tsx
 ```
-
-You can confirm this by using the following command: `git status`
+!!! tip
+    You can confirm this by using the following command: `git status`
 
 ### Commit and create a new PR
-- Commit your changes using:
-    - `git add *` 
-    - `git commit -m "Language translation: your-language translation"`
-    - `git push`
 
-- Open your repository in a browser and click on "Contribute"
+See: [Make a PR](./how_to_contribute.md#make-a-pull-request-pr)
 
-![image](https://github.com/Berry-13/LibreChat/assets/81851188/ab91cf4b-1830-4419-9d0c-68fcb2fd5f5e)
-
-- Answer all the questions, and in the "Type of Change" section, add `- [x] Translation support`
-- Delete irrelevant comments from the template
-- Create a pull request 🎉
+!!! success "Pull Request"
+    - Answer all the questions, and in the "Type of Change" section, check `- [x] Translation update`
+    - **Delete irrelevant comments** from the PR template
+    - Create a pull request 😎
