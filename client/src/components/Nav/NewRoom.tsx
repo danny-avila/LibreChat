@@ -7,6 +7,7 @@ import { getEndpointField } from '~/utils';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/';
 import NewRoomModal from '../SidePanel/NewRoomModal';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export default function NewRoom({
   toggleNav,
@@ -17,6 +18,7 @@ export default function NewRoom({
 }) {
   const localize = useLocalize();
 
+  const navigate = useNavigate();
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const [convo] = useLocalStorage('lastConversationSetup', { endpoint: EModelEndpoint.openAI });
   const { endpoint } = convo;
@@ -25,19 +27,16 @@ export default function NewRoom({
   const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
   const Icon = icons[iconKey];
 
-  const [roomOpen, setRoomOpen] = useState<boolean>(false);
-
   const clickHandler = (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (event.button === 0 && !event.ctrlKey) {
       event.preventDefault();
-      setRoomOpen(true);
       toggleNav();
+      navigate('/r/new');
     }
   };
 
   return (
     <>
-      <NewRoomModal open={roomOpen} setOpen={setRoomOpen} />
       <TooltipProvider delayDuration={250}>
         <Tooltip>
           <div className="sticky left-0 right-0 top-0 z-20 bg-gray-50 pt-3.5 dark:bg-gray-900">

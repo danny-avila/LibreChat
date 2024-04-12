@@ -58,7 +58,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   try {
     if (isPremiumModel(endpointOption.modelOptions.model) && credits <= 0) {
       throw new Error(
-        'You do not have enough credits. You should buy Credits to continue chat with premium models with Top-up Subscription',
+        'You have run out of credits. If you want to continue chatting with the premium models, you need to purchase more credits. Simply click the "Add Credits" button on the left to do so. Alternatively, you can continue chatting with our free models.',
       );
     }
     const { client } = await initializeClient({ req, res, endpointOption });

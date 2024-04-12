@@ -169,6 +169,10 @@ export type TAskProps = {
   parentMessageId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
+  isRoom?: boolean;
+  password?: string;
+  isPrivate?: boolean;
+  title?: string;
 };
 
 export type TOptions = {

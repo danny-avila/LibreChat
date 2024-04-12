@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useCallback, useEffect, useState, useMemo, memo } from 'react';
-import type { ConversationListResponse } from 'librechat-data-provider';
+import type { ConversationListResponse, TUser } from 'librechat-data-provider';
 import {
   useMediaQuery,
   useAuthContext,
@@ -29,13 +29,13 @@ import Rooms from '../Room/Rooms';
 const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
+  const convoType = useRecoilValue(store.convoType);
 
   const [navWidth, setNavWidth] = useState('260px');
   const [isHovering, setIsHovering] = useState(false);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isToggleHovering, setIsToggleHovering] = useState(false);
-  const [category, setCategory] = useState<'Conversations' | 'Rooms'>('Conversations');
 
   const user = useRecoilValue(store.user);
 
@@ -156,17 +156,15 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       onMouseLeave={() => setIsHovering(false)}
                       ref={containerRef}
                     >
-                      {/* {isPremiumUser(user) && (
-                        <CategorySwitch category={category} setCategory={setCategory} />
-                      )} */}
-                      {category === 'Conversations' ? (
+                      {isPremiumUser(user as TUser) && <CategorySwitch />}
+                      {convoType === 'c' ? (
                         <>
                           <NewChat
                             toggleNav={itemToggleNav}
                             subHeaders={isSearchEnabled && <SearchBar clearSearch={clearSearch} />}
                           />
                           <Conversations
-                            conversations={conversations}
+                            conversations={conversations.filter((i) => !i.isRoom)}
                             moveToTop={moveToTop}
                             toggleNav={itemToggleNav}
                           />

@@ -46,6 +46,8 @@ export default function useServerStream(submission: TSubmission | null) {
       isRegenerate = false,
     } = submission;
 
+    // console.log('=== useServerStream ===', messages, initialResponse);
+
     if (isRegenerate) {
       setMessages([
         ...messages,
@@ -110,6 +112,7 @@ export default function useServerStream(submission: TSubmission | null) {
 
   const createdHandler = (data: TResData, submission: TSubmission) => {
     const { messages, message, initialResponse, isRegenerate = false } = submission;
+    // console.log('=== useServerStream ===', messages, initialResponse);
 
     if (isRegenerate) {
       setMessages([

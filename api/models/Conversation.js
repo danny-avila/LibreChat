@@ -34,7 +34,7 @@ module.exports = {
     try {
       const totalConvos = (await Conversation.countDocuments({ user })) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
-      const convos = await Conversation.find({ user })
+      const convos = await Conversation.find({ user, isRoom: false })
         .sort({ updatedAt: -1 })
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
@@ -59,6 +59,7 @@ module.exports = {
         promises.push(
           Conversation.findOne({
             user,
+            isRoom: false,
             conversationId: convo.conversationId,
           }).lean(),
         ),

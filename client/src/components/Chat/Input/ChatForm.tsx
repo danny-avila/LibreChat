@@ -1,6 +1,6 @@
-import { useRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
-import { memo, useCallback, useRef, useMemo } from 'react';
+import { memo, useCallback, useRef, useMemo, useEffect, useState } from 'react';
 import {
   supportsFiles,
   EModelEndpoint,
@@ -17,8 +17,11 @@ import StopButton from './StopButton';
 import SendButton from './SendButton';
 import FileRow from './Files/FileRow';
 import store from '~/store';
+import { useParams } from 'react-router-dom';
 
-const ChatForm = ({ index = 0 }) => {
+const ChatForm = ({ index = 0 }: { index: number }) => {
+  const convoType = useRecoilValue(store.convoType);
+  const { conversationId } = useParams();
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
@@ -82,6 +85,15 @@ const ChatForm = ({ index = 0 }) => {
     () => !!(requiresKey || invalidAssistant),
     [requiresKey, invalidAssistant],
   );
+  const [isNewRoom, setIsNewRoom] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (conversationId === 'new' && convoType === 'r') {
+      setIsNewRoom(true);
+    } else {
+      setIsNewRoom(false);
+    }
+  }, [conversationId, convoType]);
 
   return (
     <form
@@ -113,7 +125,7 @@ const ChatForm = ({ index = 0 }) => {
                 ref={(e) => {
                   textAreaRef.current = e;
                 }}
-                disabled={disableInputs}
+                disabled={disableInputs || isNewRoom}
                 onPaste={handlePaste}
                 onKeyUp={handleKeyUp}
                 onKeyDown={handleKeyDown}

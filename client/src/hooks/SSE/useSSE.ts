@@ -36,6 +36,8 @@ import { useAuthContext } from '../AuthContext';
 import useChatHelpers from '../useChatHelpers';
 import useSetStorage from '../useSetStorage';
 import store from '~/store';
+import { useChatCall } from '../useChatCall';
+import { Socket } from 'socket.io-client';
 
 type TResData = {
   plugin?: TResPlugin;
@@ -58,7 +60,7 @@ type TSyncData = {
   conversationId: string;
 };
 
-export default function useSSE(submission: TSubmission | null, index = 0) {
+export default function useSSE(submission: TSubmission | null, index = 0, socket?: Socket) {
   const setStorage = useSetStorage();
   const queryClient = useQueryClient();
   const genTitle = useGenTitleMutation();
@@ -67,6 +69,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
   const { token, isAuthenticated } = useAuthContext();
   const [completed, setCompleted] = useState(new Set());
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
+  const { sendMessage } = useChatCall(socket);
 
   const {
     setMessages,
@@ -532,6 +535,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
         finalHandler(data, { ...submission, plugins, message });
         startupConfig?.checkBalance && balanceQuery.refetch();
         console.log('final', data);
+        sendMessage(data.responseMessage);
       }
       if (data.created) {
         message = {

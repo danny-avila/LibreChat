@@ -1,6 +1,7 @@
 import { v4 } from 'uuid';
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { Socket } from 'socket.io-client';
 import {
   Constants,
   EModelEndpoint,
@@ -8,7 +9,7 @@ import {
   parseCompactConvo,
   ContentTypes,
 } from 'librechat-data-provider';
-import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import type {
   TMessage,
@@ -24,9 +25,12 @@ import useUserKey from './Input/useUserKey';
 import { getEndpointField } from '~/utils';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
+import { useChatCall } from './useChatCall';
+import isBotCommand, { COMMAND } from '~/utils/isBotCommand';
 
 // this to be set somewhere else
-export default function useChatHelpers(index = 0, paramId: string | undefined) {
+export default function useChatHelpers(index = 0, paramId: string | undefined, socket?: Socket) {
+  const convoType = useRecoilValue(store.convoType);
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const [filesLoading, setFilesLoading] = useState(false);
@@ -40,6 +44,8 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
   const { conversationId, endpoint } = conversation ?? {};
+
+  const { sendMessage } = useChatCall(socket);
 
   const queryParam = paramId === 'new' ? paramId : conversationId ?? paramId ?? '';
 
@@ -90,7 +96,16 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
 
   const ask: TAskFunction = (
-    { text, parentMessageId = null, conversationId = null, messageId = null },
+    {
+      text,
+      parentMessageId = null,
+      conversationId = null,
+      messageId = null,
+      isRoom = false,
+      isPrivate = false,
+      password = '',
+      title = '',
+    },
     {
       editedText = null,
       editedMessageId = null,
@@ -224,7 +239,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
           },
         },
       ];
-    } else {
+    } else if (convoType !== 'r') {
       setShowStopButton(true);
     }
 
@@ -249,15 +264,34 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       isContinued,
       isRegenerate,
       initialResponse,
+      isPrivate,
+      isRoom,
+      password,
+      title,
     };
 
-    if (isRegenerate) {
-      setMessages([...submission.messages, initialResponse]);
-    } else {
-      setMessages([...submission.messages, currentMsg, initialResponse]);
+    if (convoType === 'c') {
+      if (isRegenerate) {
+        setMessages([...submission.messages, initialResponse]);
+      } else {
+        setMessages([...submission.messages, currentMsg, initialResponse]);
+      }
+      setLatestMessage(initialResponse);
+      setSubmission(submission);
+    } else if (convoType === 'r') {
+      const command = isBotCommand(text);
+      if (command) {
+        const message = { ...currentMsg, text: text.replace(COMMAND.BOT, '') };
+        setMessages([...submission.messages, message, initialResponse]);
+        sendMessage(message);
+        setLatestMessage(message);
+        setSubmission(submission);
+      } else {
+        setMessages([...submission.messages, currentMsg]);
+        setLatestMessage(currentMsg);
+        sendMessage(currentMsg);
+      }
     }
-    setLatestMessage(initialResponse);
-    setSubmission(submission);
   };
 
   const regenerate = ({ parentMessageId }) => {
@@ -265,7 +299,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     const parentMessage = messages?.find((element) => element.messageId == parentMessageId);
 
     if (parentMessage && parentMessage.isCreatedByUser) {
-      ask({ ...parentMessage }, { isRegenerate: true });
+      ask({ ...parentMessage, title: parentMessage.title ?? undefined }, { isRegenerate: true });
     } else {
       console.error(
         'Failed to regenerate the message: parentMessage not found or not created by user.',
@@ -286,7 +320,10 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     );
 
     if (parentMessage && parentMessage.isCreatedByUser) {
-      ask({ ...parentMessage }, { isContinued: true, isRegenerate: true, isEdited: true });
+      ask(
+        { ...parentMessage, title: parentMessage.title ?? undefined },
+        { isContinued: true, isRegenerate: true, isEdited: true },
+      );
     } else {
       console.error(
         'Failed to regenerate the message: parentMessage not found, or not created by user.',

@@ -27,6 +27,11 @@ const latestMessage = atom<TMessage | null>({
   default: null,
 });
 
+const convoType = atom<'c' | 'r'>({
+  key: 'convoType',
+  default: 'c',
+});
+
 const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
   key: 'messagesSiblingIdx',
   default: 0,
@@ -38,4 +43,5 @@ export default {
   messagesTree,
   latestMessage,
   messagesSiblingIdxFamily,
+  convoType,
 };

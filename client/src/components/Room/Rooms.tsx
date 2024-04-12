@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { TRoom, request } from 'librechat-data-provider';
+import { TConversation, request } from 'librechat-data-provider';
 import Room from './Room';
 
 export default function Rooms({
@@ -9,14 +9,15 @@ export default function Rooms({
   moveToTop: () => void;
   toggleNav: () => void;
 }) {
-  const [rooms, setRooms] = useState<{ created: TRoom[]; joined: TRoom[] }>({
-    created: [],
+  const [rooms, setRooms] = useState<{ owned: TConversation[]; joined: TConversation[] }>({
+    owned: [],
     joined: [],
   });
+
   useEffect(() => {
     request
       .get('/api/rooms')
-      .then((res: any) => setRooms({ created: res[0], joined: res[1] }))
+      .then((res) => setRooms(res))
       .catch((error) => console.error(error));
   }, []);
 
@@ -25,8 +26,8 @@ export default function Rooms({
       <div>
         <div>
           <span>
-            {Object.keys(rooms).map((cat) => (
-              <div key={cat}>
+            {Object.keys(rooms).map((i) => (
+              <div key={i}>
                 <div
                   style={{
                     color: '#aaa',
@@ -36,11 +37,11 @@ export default function Rooms({
                     paddingLeft: '10px',
                   }}
                 >
-                  Your Rooms - {rooms[cat].length}
+                  Your Rooms - {rooms[i].length}
                 </div>
-                {rooms[cat].map((room) => (
+                {rooms[i].map((room) => (
                   <Room
-                    key={`${cat}-${room.conversationId}-${room}`}
+                    key={`${room.conversationId}-${room}`}
                     // isLatestConvo={room.conversationId === firstTodayConvoId}
                     room={room}
                     retainView={moveToTop}

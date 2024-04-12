@@ -13,11 +13,15 @@ import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
 import store from '~/store';
+import { useChatSocket, useInitSocket } from '~/hooks/useChatSocket';
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
-  useSSE(submissionAtIndex);
+
+  const socket = useInitSocket();
+  useChatSocket(socket);
+  useSSE(submissionAtIndex, 0, socket);
 
   const fileMap = useFileMapContext();
 
@@ -29,7 +33,7 @@ function ChatView({ index = 0 }: { index?: number }) {
     enabled: !!fileMap,
   });
 
-  const chatHelpers = useChatHelpers(index, conversationId);
+  const chatHelpers = useChatHelpers(index, conversationId, socket);
 
   return (
     <ChatContext.Provider value={chatHelpers}>

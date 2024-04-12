@@ -1,18 +1,24 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
-import type { ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import { icons } from './Menus/Endpoints/Icons';
 import { BirthdayIcon } from '~/components/svg';
 import { getEndpointField } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { useParams } from 'react-router-dom';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import RoomCreate from '../SidePanel/RoomCreate';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
+  const { conversationId } = useParams();
   const { conversation } = useChatContext();
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { data: startupConfig } = useGetStartupConfig();
   const assistantMap = useAssistantsMapContext();
+  const convoType = useRecoilValue(store.convoType);
 
   const localize = useLocalize();
 
@@ -94,10 +100,15 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                 <div className="text-token-text-secondary max-w-md text-center text-xl font-normal ">
                   {assistantDesc ? assistantDesc : localize('com_nav_welcome_message')}
                 </div>
-                {/* <div className="mt-1 flex items-center gap-1 text-token-text-tertiary">
-              <div className="text-sm text-token-text-tertiary">By Daniel Avila</div>
-            </div> */}
               </div>
+            ) : convoType === 'r' ? (
+              conversationId === 'new' ? (
+                <RoomCreate />
+              ) : (
+                <div className="mb-5 text-2xl font-medium dark:text-white">
+                  {localize('com_nav_welcome_message')}
+                </div>
+              )
             ) : (
               <div className="mb-5 text-2xl font-medium dark:text-white">
                 {localize('com_nav_welcome_message')}

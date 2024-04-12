@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const Room = require('./schema/roomSchema');
+const Conversation = require('./schema/convoSchema');
 const logger = require('~/config/winston');
 const uuid = require('uuid');
 
@@ -10,7 +10,7 @@ const uuid = require('uuid');
  */
 const getRooms = async (name) => {
   try {
-    const rooms = await Room.find({ name: RegExp(name, 'i') });
+    const rooms = await Conversation.find({ name: RegExp(name, 'i'), isRoom: true });
     return rooms;
   } catch (error) {
     logger.error('[getRooms] Error getting entire rooms', error);
@@ -25,12 +25,13 @@ const getRooms = async (name) => {
  */
 const getRoomsByUser = async (userId) => {
   try {
-    const ownedRooms = await Room.find({ user: userId });
-    const joinedRooms = await Room.find({
+    const owned = await Conversation.find({ user: userId, isRoom: true });
+    const joined = await Conversation.find({
       users: { $elemMatch: { $eq: userId } },
+      isRoom: true,
     });
 
-    return [ownedRooms, joinedRooms];
+    return { owned, joined };
   } catch (error) {
     logger.error('[getRoomsByUser] ERror getting rooms by user', error);
     return { message: 'Error getting rooms by user' };
@@ -45,7 +46,7 @@ const getRoomsByUser = async (userId) => {
  */
 const getRoom = async (user, roomId) => {
   try {
-    return await Room.findOne({ user, roomId }).lean();
+    return await Conversation.findOne({ user, roomId, isRoom: true }).lean();
   } catch (error) {
     logger.error('[getRoom] Error getting single room', error);
     return { message: 'Error getting single room' };
@@ -71,7 +72,7 @@ const createRoom = async (name, isPrivate, password, user) => {
         }
       });
     });
-    const newRoom = new Room({
+    const newRoom = new Conversation({
       roomId: uuid.v4(),
       name,
       isPrivate,
@@ -86,7 +87,7 @@ const createRoom = async (name, isPrivate, password, user) => {
 };
 
 module.exports = {
-  Room,
+  Room: Conversation,
   getRoom,
   getRooms,
   getRoomsByUser,

@@ -1,4 +1,4 @@
-import { useRecoilValue } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import {
@@ -8,19 +8,20 @@ import {
 } from 'librechat-data-provider/react-query';
 import { defaultOrderQuery } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
-import { useGetConvoIdQuery, useListAssistantsQuery } from '~/data-provider';
+import { ConvoType, useGetConvoIdQuery, useListAssistantsQuery } from '~/data-provider';
 import { useNewConvo, useConfigOverride } from '~/hooks';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
 import { Spinner } from '~/components/svg';
 import store from '~/store';
 
-export default function ChatRoute() {
+export default function ChatRoute({ convo = 'c' }: { convo: ConvoType }) {
   const index = 0;
 
   useConfigOverride();
   const { conversationId } = useParams();
   const { data: startupConfig } = useGetStartupConfig();
+  const [_convoType, setConvoType] = useRecoilState(store.convoType);
 
   const { conversation } = store.useCreateConversationAtom(index);
   const modelsQueryEnabled = useRecoilValue(store.modelsQueryEnabled);
@@ -37,6 +38,10 @@ export default function ChatRoute() {
     select: (res) =>
       res.data.map(({ id, name, metadata, model }) => ({ id, name, metadata, model })),
   });
+
+  useEffect(() => {
+    setConvoType(convo);
+  }, [convo, setConvoType]);
 
   useEffect(() => {
     if (startupConfig?.appTitle) {

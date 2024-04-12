@@ -245,6 +245,12 @@ export const tConversationSchema = z.object({
   instructions: z.string().optional(),
   /** Used to overwrite active conversation settings when saving a Preset */
   presetOverride: z.record(z.unknown()).optional(),
+
+  // Room Config
+  isRoom: z.boolean().optional(),
+  isPrivate: z.boolean().optional(),
+  password: z.string().optional(),
+  users: z.array(z.string()).optional(),
 });
 
 export const tRoomSchema = z.object({

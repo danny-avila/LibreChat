@@ -1,16 +1,18 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useResetRecoilState } from 'recoil';
+import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
-import useOriginNavigate from './useOriginNavigate';
+// import useOriginNavigate from './useOriginNavigate';
 import useSetStorage from './useSetStorage';
 import store from '~/store';
+import { useNavigate } from 'react-router-dom';
 
 const useNavigateToConvo = (index = 0) => {
+  const convoType = useRecoilValue(store.convoType);
   const setStorage = useSetStorage();
   const queryClient = useQueryClient();
-  const navigate = useOriginNavigate();
+  const navigate = useNavigate();
   const { setConversation } = store.useCreateConversationAtom(index);
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
   // const setConversation = useSetRecoilState(store.conversationByIndex(index));
@@ -52,7 +54,7 @@ const useNavigateToConvo = (index = 0) => {
     }
     setStorage(convo);
     setConversation(convo);
-    navigate(convo?.conversationId);
+    navigate(`/${convoType}/${convo?.conversationId}`);
   };
 
   return {

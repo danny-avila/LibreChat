@@ -42,6 +42,24 @@ const convoSchema = mongoose.Schema(
     invocationId: {
       type: Number,
     },
+    users: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    isRoom: {
+      type: Boolean,
+      default: false,
+    },
+    isPrivate: {
+      type: Boolean,
+      default: false,
+    },
+    password: {
+      type: String,
+      default: '',
+    },
   },
   { timestamps: true },
 );

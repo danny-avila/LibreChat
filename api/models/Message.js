@@ -159,6 +159,15 @@ module.exports = {
     }
   },
 
+  async getMessageById(messageId) {
+    try {
+      return await Message.findOne({ id: messageId }).lean();
+    } catch (err) {
+      logger.error('Error getting message by Id:', err);
+      throw new Error('Failed to get message by Id.');
+    }
+  },
+
   async deleteMessages(filter) {
     try {
       return await Message.deleteMany(filter);

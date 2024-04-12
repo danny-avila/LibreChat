@@ -7,6 +7,7 @@ import DragDropOverlay from './Input/Files/DragDropOverlay';
 import { useDeleteFilesMutation } from '~/data-provider';
 import { SidePanel } from '~/components/SidePanel';
 import store from '~/store';
+import UserList from '../Room/UserList';
 
 export default function Presentation({
   children,
@@ -69,6 +70,12 @@ export default function Presentation({
         ref={drop}
         className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800"
       >
+        {/* <UserList defaultLayout={defaultLayout} defaultCollapsed={defaultCollapsed}>
+          <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
+            {children}
+            {isActive && <DragDropOverlay />}
+          </div>
+        </UserList> */}
         <SidePanel defaultLayout={defaultLayout} defaultCollapsed={defaultCollapsed}>
           <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
             {children}

@@ -1,56 +1,100 @@
+const { getMessageById } = require('~/models');
 const { Server } = require('socket.io');
-const clients = new Set();
+const clients = [];
 
 /**
  * Setup Websocket
  * @param {HTTP Server} server
  */
 const setupWebSocket = (server) => {
-  const io = new Server(
-    server,
-    //   {
-    //   cors: {
-    //     origin: `${process.env.DOMAIN_SERVER}`,
-    //     methods: ['GET', 'POST'],
-    //     allowedHeaders: ['Content-Type', 'Authorization'],
-    //     credentials: true,
-    //   },
-    // }
-  );
+  const io = new Server(server, {
+    cors: {
+      origin: `${process.env.DOMAIN_CLIENT}`,
+      methods: ['GET', 'POST'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      credentials: true,
+    },
+  });
 
   io.on('connection', (socket) => {
     // Handle incoming messages from the client
-    addConnection(io, socket.handshake.query.userId);
+    const { userId, roomId } = socket.handshake.query;
+    addConnection(socket, userId, roomId);
 
     // Handle client disconnection
-    socket.on('disconnect', () => {});
+    socket.on('disconnect', () => disconnectClient(socket));
 
-    socket.on('addMessage', () => {
-      // addMessage(data);
-    });
+    socket.on('message', (data) => sendMessage(socket, data.messageId, data.roomId));
+
+    socket.on('move room', (data) => moveRoom(socket.id, data.roomId));
   });
 };
 
-const addConnection = (io, userId) => {
-  console.log(userId);
+/**
+ * @param {Socket} socket
+ * @param {string} userId
+ */
+const addConnection = (socket, userId, roomId) => {
   let flag = 0;
-  clients.forEach((client) => {
-    if (client.userId == userId) {
+  let userIndex = 0;
+  clients.forEach((client, i) => {
+    if (client.socket.id == socket.id) {
       flag = 1;
+      userIndex = i;
     }
   });
+
   if (!flag) {
-    clients.add({ io, userId });
+    clients.push({ socket, userId, roomId });
+    console.log('=== Added new socket client ===', socket.id);
+  } else if (userId && flag) {
+    clients[userIndex].roomId = roomId;
+    clients[userIndex].socket = socket;
   }
 };
 
-// const addMessage = (data) {
-//   try {
+/**
+ * @param {Socket} socket
+ * @param {string} messageId
+ * @param {string} roomId
+ */
+const sendMessage = async (socket, messageId, roomId) => {
+  try {
+    const message = await getMessageById(messageId);
+    // console.log('=== fetched message ===', message);
+    if (message) {
+      clients
+        .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
+        .forEach((client) => {
+          console.log(`=== sending event to ${client.socket.id} ===`);
+          client.socket.emit('new message', {
+            roomId,
+            message,
+          });
+        });
+    }
+  } catch (error) {
+    throw new Error('[sendMessage] Error in Send Message');
+  }
+};
 
-//   } catch (err) {
+const disconnectClient = (socket) => {
+  const clientIndex = clients.map((c) => c.socket.id).indexOf(socket.id);
+  if (clientIndex > -1) {
+    console.log('=== Removed disconnected socket client ===', clients[clientIndex].socket.id);
+    clients.splice(clientIndex, 1);
+  }
+};
 
-//   }
-// }
+const moveRoom = (socketId, roomId) => {
+  try {
+    const clientIndex = clients.map((c) => c.socket.id).indexOf(socketId);
+    clients[clientIndex].roomId = roomId;
+    console.log(`=== User moved the room to ${clients[clientIndex].roomId} ===`);
+  } catch (error) {
+    throw new Error(`[moveRoom] Error in moverRoom ${error}`);
+  }
+};
 
 module.exports = {
   setupWebSocket,

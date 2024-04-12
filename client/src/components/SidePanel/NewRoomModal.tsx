@@ -1,14 +1,17 @@
 import { Checkbox, Dialog, DialogContent, DialogHeader, DialogTitle, Input } from '~/components/ui';
-import React, { Dispatch, FormEvent, SetStateAction, useState } from 'react';
-import { cn } from '~/utils';
+import React, { Dispatch, SetStateAction, useCallback, useState } from 'react';
+import { cn, mapEndpoints } from '~/utils';
 import { useMediaQuery } from '~/hooks';
-import { request } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { useNavigate } from 'react-router-dom';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
+import { useAssistantsMapContext, useChatContext } from '~/Providers';
 
 interface RoomState {
-  name: string;
+  title: string;
   isPrivate: boolean;
   password: string;
+  endpoint: EModelEndpoint;
 }
 
 export default function NewRoomModal({
@@ -18,21 +21,34 @@ export default function NewRoomModal({
   open: boolean;
   setOpen: Dispatch<SetStateAction<boolean>>;
 }) {
-  const navigate = useNavigate();
   const initialRoomState: RoomState = {
-    name: '',
+    title: '',
     isPrivate: false,
     password: '',
+    endpoint: EModelEndpoint.openAI,
   };
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const [room, setRoom] = useState<RoomState>(initialRoomState);
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const result = await request.post('/api/rooms', room);
-    navigate(`/r/${result.roomId}`);
-    console.log(result);
-  };
+  // const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  //   e.preventDefault();
+  //   const result = await request.post('/api/rooms', room);
+  //   navigate(`/r/${result.roomId}`);
+  //   console.log(result);
+  // };
+
+  const { ask } = useChatContext();
+
+  const submitNewRoom = useCallback(() => {
+    if (!room.title) {
+      return console.warn('No title provided to submit new room');
+    }
+    ask({
+      text: `Say User Created new multi user room with topic '${room.title}'. This room is ${
+        room.isPrivate ? 'private' : 'public'
+      } and joined users can continue chat with chatbots & images bots here with same Topic and Endpoints`,
+    });
+  }, [ask]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -47,11 +63,18 @@ export default function NewRoomModal({
             Create New Room
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitNewRoom();
+          }}
+          className="flex flex-col gap-5"
+        >
           <Input
-            placeholder="Room name"
+            placeholder="Room Topic"
             name="name"
-            onChange={(e) => setRoom({ ...room, name: e.currentTarget.value })}
+            value={room.title}
+            onChange={(e) => setRoom({ ...room, title: e.currentTarget.value })}
           />
           <div className="flex items-center gap-1">
             <Checkbox
@@ -63,6 +86,7 @@ export default function NewRoomModal({
           <Input
             placeholder="Password"
             name="password"
+            value={room.password}
             onChange={(e) => setRoom({ ...room, password: e.currentTarget.value })}
             type="password"
             disabled={!room.isPrivate}

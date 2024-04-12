@@ -41,6 +41,10 @@ export type TSubmission = {
   initialResponse: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
+  isPrivate?: boolean;
+  isRoom?: boolean;
+  password?: string;
+  title?: string;
 };
 
 export type TPluginAction = {

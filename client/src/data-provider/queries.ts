@@ -356,3 +356,5 @@ export const useFileDownload = (userId: string, filepath: string): QueryObserver
     },
   );
 };
+
+export type ConvoType = 'c' | 'r';
