@@ -38,7 +38,7 @@ any) => {
         {!isSubmitting && unfinished && (
           <Suspense>
             <DelayedRender delay={250}>
-              <UnfinishedMessage key={`unfinished-${messageId}`} />
+              <UnfinishedMessage message={message} key={`unfinished-${messageId}`} />
             </DelayedRender>
           </Suspense>
         )}

@@ -81,14 +81,14 @@ export default function useTextarea({
     }
 
     const getPlaceholderText = () => {
+      if (disabled) {
+        return localize('com_endpoint_config_placeholder');
+      }
       if (
         conversation?.endpoint === EModelEndpoint.assistants &&
         (!conversation?.assistant_id || !assistantMap?.[conversation?.assistant_id ?? ''])
       ) {
         return localize('com_endpoint_assistant_placeholder');
-      }
-      if (disabled) {
-        return localize('com_endpoint_config_placeholder');
       }
 
       if (isNotAppendable) {
@@ -160,9 +160,11 @@ export default function useTextarea({
     const isUndo = e.key === 'z' && (e.ctrlKey || e.metaKey);
     if (isUndo && target.value.trim() === '') {
       textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
+      setValue('text', '', { shouldValidate: true });
       forceResize(textAreaRef);
     } else if (isUndo) {
       trimUndoneRange(textAreaRef);
+      setValue('text', '', { shouldValidate: true });
       forceResize(textAreaRef);
     }
 

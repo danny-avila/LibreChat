@@ -80,11 +80,7 @@ function MultiSelectPop({
                       {value.map((v, i) => (
                         <div key={i} className="relative">
                           {v.icon ? (
-                            <img
-                              src={v.icon}
-                              alt={`${v} logo`}
-                              className="icon-lg rounded-sm bg-white"
-                            />
+                            <img src={v.icon} alt={`${v} logo`} className="icon-lg rounded-sm" />
                           ) : (
                             <Wrench className="icon-lg rounded-sm bg-white" />
                           )}
@@ -141,7 +137,7 @@ function MultiSelectPop({
                         <img
                           src={option.icon}
                           alt={`${option.name} logo`}
-                          className="icon-sm mr-1 rounded-sm bg-white bg-cover dark:bg-gray-800"
+                          className="icon-sm mr-1 rounded-sm bg-cover"
                         />
                       ) : (
                         <Wrench className="icon-sm mr-1 rounded-sm bg-white bg-cover dark:bg-gray-800" />
