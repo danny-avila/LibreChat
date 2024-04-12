@@ -37,6 +37,26 @@ const downloadImage = async (url, imagePath, accessToken) => {
   }
 };
 
+/**
+ * Converts an input into a string suitable for a username.
+ * If the input is a string, it will be returned as is.
+ * If the input is an array, elements will be joined with underscores.
+ * In case of undefined or other falsy values, a default value will be returned.
+ *
+ * @param {string | string[] | undefined} input - The input value to be converted into a username.
+ * @param {string} [defaultValue=''] - The default value to return if the input is falsy.
+ * @returns {string} The processed input as a string suitable for a username.
+ */
+function convertToUsername(input, defaultValue = '') {
+  if (typeof input === 'string') {
+    return input;
+  } else if (Array.isArray(input)) {
+    return input.join('_');
+  }
+
+  return defaultValue;
+}
+
 async function setupOpenId() {
   try {
     const issuer = await Issuer.discover(process.env.OPENID_ISSUER);
@@ -104,11 +124,13 @@ async function setupOpenId() {
             }
           }
 
+          const username = convertToUsername(userinfo.username || userinfo.given_name || userinfo.email);
+
           if (!user) {
             user = new User({
               provider: 'openid',
               openidId: userinfo.sub,
-              username: userinfo.username || userinfo.given_name || '',
+              username,
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
@@ -116,7 +138,7 @@ async function setupOpenId() {
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
-            user.username = userinfo.username || userinfo.given_name || '';
+            user.username = username;
             user.name = fullName;
           }
 
