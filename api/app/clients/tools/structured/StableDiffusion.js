@@ -7,6 +7,7 @@ const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 const { StructuredTool } = require('langchain/tools');
 const { FileContext } = require('librechat-data-provider');
+const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const paths = require('~/config/paths');
 const { logger } = require('~/config');
 
@@ -75,7 +76,13 @@ class StableDiffusionAPI extends StructuredTool {
   }
 
   async _call(data) {
-    const url = this.url;
+    const customConfig = await getCustomConfig();
+    const sdConfig = customConfig.tools.stableDiffusion;
+    const sdProfileName = "SDXL Turbo";
+    const sdProfileObject = sdConfig.filter(obj => obj.name === sdProfileName);
+    const sdProfileUrl = sdProfileObject[0].webUI;
+    console.log('sdProfileUrl:',sdProfileUrl);
+    const payloadParameters = Object.keys(sdProfileObject[0].parameters);
     const { prompt, negative_prompt } = data;
     const payload = {
       prompt,
@@ -86,6 +93,22 @@ class StableDiffusionAPI extends StructuredTool {
       width: 1024,
       height: 1024,
     };
+    for (const parameter of payloadParameters) {
+      payload[parameter] = sdProfileObject[0].parameters[parameter];
+    }
+    console.log('payload',payload);
+    //console.log('paylaod',payloadParameters);
+    console.log('################ CHECK #####################');
+    // Check if webUI is defined, if so use that over env variable
+    let url = '';
+    if (sdProfileUrl) {
+      url = sdProfileUrl;
+      console.log('url is from librechat.yaml');
+    } else {
+      url = this.url;
+      console.log('url is from env variable');
+    }
+
     const generationResponse = await axios.post(`${url}/sdapi/v1/txt2img`, payload);
     const image = generationResponse.data.images[0];
 
