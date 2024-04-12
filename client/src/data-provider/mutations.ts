@@ -136,6 +136,7 @@ export const useUploadConversationsMutation = (_options?: UploadConversationsMut
   const queryClient = useQueryClient();
   const { onSuccess, onError } = _options || {};
 
+  // returns the job status or reason of failure
   const checkJobStatus = async (jobId) => {
     try {
       const response = await dataService.queryImportConversationJobStatus(jobId);
@@ -145,7 +146,11 @@ export const useUploadConversationsMutation = (_options?: UploadConversationsMut
     }
   };
 
+  // Polls the job status until it is completed, failed, or timed out
   const pollJobStatus = (jobId, onSuccess, onError) => {
+    let timeElapsed = 0;
+    const timeout = 60000; // Timeout after a minute
+    const pollInterval = 500; // Poll every 500ms
     const intervalId = setInterval(async () => {
       try {
         const statusResponse = await checkJobStatus(jobId);
@@ -165,13 +170,17 @@ export const useUploadConversationsMutation = (_options?: UploadConversationsMut
               );
           }
         }
+        timeElapsed += pollInterval; // Increment time elapsed by polling interval
+        if (timeElapsed >= timeout) {
+          clearInterval(intervalId);
+          onError && onError(new Error('Polling timed out'));
+        }
       } catch (error) {
         clearInterval(intervalId);
         onError && onError(error);
       }
-    }, 500); // Poll every 5 seconds. Adjust time as necessary.
+    }, pollInterval);
   };
-
   return useMutation<TImportStartResponse, unknown, FormData>({
     mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
     onSuccess: (data, variables, context) => {
@@ -185,11 +194,15 @@ export const useUploadConversationsMutation = (_options?: UploadConversationsMut
           (statusResponse) => {
             // This is the final success callback when the job is completed
             queryClient.invalidateQueries([QueryKeys.allConversations]); // Optionally refresh conversations query
-            if (onSuccess) {onSuccess(statusResponse, variables, context);}
+            if (onSuccess) {
+              onSuccess(statusResponse, variables, context);
+            }
           },
           (error) => {
             // This is the error callback for job failure or polling errors
-            if (onError) {onError(error, variables, context);}
+            if (onError) {
+              onError(error, variables, context);
+            }
           },
         );
       }
