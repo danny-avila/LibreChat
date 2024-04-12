@@ -49,7 +49,7 @@ const openAIModels = {
   'gpt-4-1106': 127990, // -10 from max
   'gpt-4-0125': 127990, // -10 from max
   'gpt-4-turbo': 127990, // -10 from max
-  'gpt-3.5-turbo': 4092, // -5 from max
+  'gpt-3.5-turbo': 16375, // -10 from max
   'gpt-3.5-turbo-0613': 4092, // -5 from max
   'gpt-3.5-turbo-0301': 4092, // -5 from max
   'gpt-3.5-turbo-16k': 16375, // -10 from max
@@ -57,6 +57,15 @@ const openAIModels = {
   'gpt-3.5-turbo-1106': 16375, // -10 from max
   'gpt-3.5-turbo-0125': 16375, // -10 from max
   'mistral-': 31990, // -10 from max
+};
+
+const cohereModels = {
+  'command-light': 4086, // -10 from max
+  'command-light-nightly': 8182, // -10 from max
+  command: 4086, // -10 from max
+  'command-nightly': 8182, // -10 from max
+  'command-r': 127500, // -500 from max
+  'command-r-plus:': 127500, // -500 from max
 };
 
 const googleModels = {
@@ -83,11 +92,13 @@ const anthropicModels = {
   'claude-3-opus': 200000,
 };
 
+const aggregateModels = { ...openAIModels, ...googleModels, ...anthropicModels, ...cohereModels };
+
 // Order is important here: by model series and context size (gpt-4 then gpt-3, ascending)
 const maxTokensMap = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
-  [EModelEndpoint.openAI]: { ...openAIModels, ...googleModels, ...anthropicModels },
-  [EModelEndpoint.custom]: { ...openAIModels, ...googleModels, ...anthropicModels },
+  [EModelEndpoint.openAI]: aggregateModels,
+  [EModelEndpoint.custom]: aggregateModels,
   [EModelEndpoint.google]: googleModels,
   [EModelEndpoint.anthropic]: anthropicModels,
 };
@@ -204,6 +215,12 @@ function processModelData(input) {
 
   for (const model of data) {
     const modelKey = model.id;
+    if (modelKey === 'openrouter/auto') {
+      model.pricing = {
+        prompt: '0.00001',
+        completion: '0.00003',
+      };
+    }
     const prompt = parseFloat(model.pricing.prompt) * 1000000;
     const completion = parseFloat(model.pricing.completion) * 1000000;
 

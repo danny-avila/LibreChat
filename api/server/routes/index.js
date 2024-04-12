@@ -20,6 +20,7 @@ const openNodePayment = require('./openNodePayment');
 const paypalPayment = require('./paypalPayment');
 const assistants = require('./assistants');
 const files = require('./files');
+const staticRoute = require('./static');
 
 module.exports = {
   search,
@@ -44,4 +45,5 @@ module.exports = {
   paypalPayment,
   assistants,
   files,
+  staticRoute,
 };

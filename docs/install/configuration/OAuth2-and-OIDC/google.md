@@ -89,7 +89,7 @@ DOMAIN_SERVER=https://your-domain.com # use http://localhost:3080 if not using a
 
 GOOGLE_CLIENT_ID=your_client_id
 GOOGLE_CLIENT_SECRET=your_client_secret
-GOOGLE_CALLBACK_URL=/oauth/github/callback
+GOOGLE_CALLBACK_URL=/oauth/google/callback
 ```
 
 - Save the `.env` file
