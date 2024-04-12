@@ -14,6 +14,7 @@ const concurrentLimiter = require('./concurrentLimiter');
 const validateMessageReq = require('./validateMessageReq');
 const buildEndpointOption = require('./buildEndpointOption');
 const validateRegistration = require('./validateRegistration');
+const validateImageRequest = require('./validateImageRequest');
 const moderateText = require('./moderateText');
 const noIndex = require('./noIndex');
 
@@ -33,6 +34,7 @@ module.exports = {
   validateMessageReq,
   buildEndpointOption,
   validateRegistration,
+  validateImageRequest,
   validateModel,
   moderateText,
   noIndex,
