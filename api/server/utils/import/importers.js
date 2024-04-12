@@ -86,19 +86,24 @@ async function importLibreChatConvo(
     const importBatchBuilder = builderFactory(requestUserId);
     importBatchBuilder.startConversation('openAI');
 
+    let firstMessageDate = null;
+
     const traverseMessages = async (messages) => {
       for (const message of messages) {
         // Leaf node: actual message
         if (message.text) {
-          if (message.sender === 'assistant' /* Adapt as necessary for your data */) {
+          if (message.sender === 'user') {
+            await importBatchBuilder.addUserMessage(message.text);
+          } else {
             await importBatchBuilder.addGptMessage(
               message.text,
               jsonData.options.model,
               message.sender,
-            ); // Adapt model as necessary
-          } else {
-            await importBatchBuilder.addUserMessage(message.text);
+            );
           }
+        }
+        if (!firstMessageDate) {
+          firstMessageDate = new Date(message.createdAt);
         }
 
         // Recursively handle child messages if any
@@ -110,7 +115,7 @@ async function importLibreChatConvo(
 
     await traverseMessages(jsonData.messagesTree);
 
-    await importBatchBuilder.finishConversation(jsonData.title, new Date(jsonData.exportAt));
+    await importBatchBuilder.finishConversation(jsonData.title, firstMessageDate);
     await importBatchBuilder.saveBatch();
     console.log(`Conversation ${jsonData.title} imported`);
   } catch (error) {
