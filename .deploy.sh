@@ -1,4 +1,3 @@
-  GNU nano 6.2                                                                                                                        chinagpt/.deploy.sh                                                                                                                                 
 #!/bin/bash
 # Pull the latest changes from your repository
 git pull
