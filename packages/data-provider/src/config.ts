@@ -186,6 +186,14 @@ export const rateLimitSchema = z.object({
     .optional(),
 });
 
+export const sdSchema = z.object({
+  name: z.string(),
+  webUI: z.string(),
+  parameterss: z.record(z.any()).optional(),
+});
+
+export type TSDProfile = z.infer<typeof sdSchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().optional().default(true),
@@ -223,6 +231,11 @@ export const configSchema = z.object({
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
       message: 'At least one `endpoints` field must be provided.',
+    })
+    .optional(),
+  tools: z
+    .object({
+      stableDiffusion: z.array(sdSchema.partial()).optional(),
     })
     .optional(),
 });
@@ -532,6 +545,10 @@ export enum SettingsTabValues {
    * Tab for Account Settings
    */
   ACCOUNT = 'account',
+  /**
+   * Tab for Plugin Settings
+   */
+  TOOLS = 'tools',
 }
 
 /**
