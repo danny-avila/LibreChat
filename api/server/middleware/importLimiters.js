@@ -40,7 +40,7 @@ const createImportHandler = (ip = true) => {
     };
 
     await logViolation(req, res, type, errorMessage);
-    res.status(429).json({ message: 'Too many file upload requests. Try again later' });
+    res.status(429).json({ message: 'Too many conversation import requests. Try again later' });
   };
 };
 
