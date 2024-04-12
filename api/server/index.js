@@ -68,6 +68,7 @@ const startServer = async () => {
   // API Endpoints
   app.use('/api/auth', routes.auth);
   app.use('/api/keys', routes.keys);
+  app.use('/api/preferences', routes.preferences);
   app.use('/api/user', routes.user);
   app.use('/api/search', routes.search);
   app.use('/api/ask', routes.ask);

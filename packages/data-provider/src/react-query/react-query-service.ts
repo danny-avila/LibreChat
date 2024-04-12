@@ -394,6 +394,40 @@ export const useUpdateUserPluginsMutation = (): UseMutationResult<
   });
 };
 
+export const usePreferenceQuery = (
+  name: string,
+  config?: UseQueryOptions<t.TPreference>,
+): QueryObserverResult<
+  t.TPreference
+> => {
+  return useQuery<t.TPreference>(
+    [QueryKeys.name, name],
+    () => {
+      return dataService.getUserPreference(name);
+    },
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+    },
+  );
+};
+
+export const useUpdatePreferenceMutation = (): UseMutationResult<
+  t.TUser,
+  unknown,
+  t.TPreference,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: t.TPreference) => dataService.updateUserPreference(payload), {
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries([QueryKeys.name, variables.name]);
+    },
+  });
+};
+
 export const useGetStartupConfig = (): QueryObserverResult<t.TStartupConfig> => {
   return useQuery<t.TStartupConfig>(
     [QueryKeys.startupConfig],

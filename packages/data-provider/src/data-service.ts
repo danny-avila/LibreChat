@@ -49,6 +49,18 @@ export function updateUserKey(payload: t.TUpdateUserKeyRequest) {
   return request.put(endpoints.keys(), payload);
 }
 
+export function getUserPreference(name: string): Promise<t.TPreference> {
+  return request.get(endpoints.preferencesQuery(name));
+}
+
+export function updateUserPreference(payload: t.TPreference) {
+  const { value } = payload;
+  if (!value) {
+    throw new Error('value is required');
+  }
+  return request.put(endpoints.preferences(), payload);
+}
+
 export function getPresets(): Promise<s.TPreset[]> {
   return request.get(endpoints.presets());
 }

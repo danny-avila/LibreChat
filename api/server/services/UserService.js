@@ -1,4 +1,4 @@
-const { User, Key } = require('~/models');
+const { User, Key, Preference } = require('~/models');
 const { encrypt, decrypt } = require('~/server/utils');
 const { logger } = require('~/config');
 
@@ -68,6 +68,27 @@ const checkUserKeyExpiry = (expiresAt, message) => {
   }
 };
 
+const getPreference = async ({ userId, name }) => {
+  const preferenceValue = await Preference.findOne({ userId, name }).lean();
+  console.log('getPrefName',name);
+  console.log('getPrefValue',preferenceValue);
+  if (preferenceValue) {
+    return preferenceValue.value;
+  }
+};
+
+const updatePreference = async ({ userId, name, value }) => {
+  return await Preference.findOneAndUpdate(
+    { userId, name },
+    {
+      userId,
+      name,
+      value,
+    },
+    { upsert: true, new: true },
+  ).lean();
+};
+
 module.exports = {
   updateUserPluginsService,
   getUserKey,
@@ -75,4 +96,6 @@ module.exports = {
   updateUserKey,
   deleteUserKey,
   checkUserKeyExpiry,
+  getPreference,
+  updatePreference,
 };
