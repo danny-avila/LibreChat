@@ -9,7 +9,7 @@ import { ModelSelect } from '~/components/Input/ModelSelect';
 import { PluginStoreDialog } from '~/components';
 import OptionsPopover from './OptionsPopover';
 import PopoverButtons from './PopoverButtons';
-import { useSetIndexOptions } from '~/hooks';
+import { useAuthContext, useSetIndexOptions } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
@@ -20,7 +20,7 @@ export default function HeaderOptions() {
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useRecoilState(
     store.showPluginStoreDialog,
   );
-
+  const { user } = useAuthContext();
   const { showPopover, conversation, latestMessage, setShowPopover, setShowBingToneSetting } =
     useChatContext();
   const { setOption } = useSetIndexOptions();
@@ -51,7 +51,7 @@ export default function HeaderOptions() {
   }, [endpoint, noSettings]);
 
   const saveAsPreset = () => {
-    if (conversation && conversation.user) {
+    if (user) {
       setSaveAsDialogShow(true);
     } else {
       console.error('conversation.user is null or undefined');
@@ -111,7 +111,7 @@ export default function HeaderOptions() {
                 <AlternativeSettings conversation={conversation} setOption={setOption} />
               </div>
             </OptionsPopover>
-            {conversation && conversation.user && (
+            {user && (
               <SaveAsPresetDialog
                 open={saveAsDialogShow}
                 onOpenChange={setSaveAsDialogShow}
