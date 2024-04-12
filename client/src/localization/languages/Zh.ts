@@ -13,14 +13,12 @@ export default {
   com_sidepanel_manage_files: '管理文件',
   com_assistants_capabilities: '功能',
   com_assistants_knowledge: '知识',
-  com_assistants_knowledge_info:
-    '如果您在“知识”中上传文件，与助手的对话可能包括文件内容。',
+  com_assistants_knowledge_info: '如果您在“知识”中上传文件，与助手的对话可能包括文件内容。',
   com_assistants_knowledge_disabled:
     '必须创建助手，且启用并保存代码解释器或检索，才能将文件作为知识上传。',
   com_assistants_image_vision: '识图',
   com_assistants_code_interpreter: '代码解释器',
-  com_assistants_code_interpreter_files:
-    '以下文件仅适用于代码解释器：',
+  com_assistants_code_interpreter_files: '以下文件仅适用于代码解释器：',
   com_assistants_retrieval: '检索',
   com_assistants_search_name: '按名称搜索助手',
   com_assistants_tools: '工具',
@@ -50,8 +48,7 @@ export default {
   com_ui_download_error: '下载文件时出错，该文件可能已被删除。',
   com_ui_attach_error_type: '渠道不支持的文件类型:',
   com_ui_attach_error_size: '超出渠道规定的文件大小:',
-  com_ui_attach_error:
-    '无法附加文件，请创建或选择一个对话，或尝试刷新页面。',
+  com_ui_attach_error: '无法附加文件，请创建或选择一个对话，或尝试刷新页面。',
   com_ui_examples: '示例',
   com_ui_new_chat: '创建新对话',
   com_ui_happy_birthday: '这是我的第一个生日！',
@@ -120,6 +117,10 @@ export default {
   com_ui_clear: '清除',
   com_ui_revoke: '撤销',
   com_ui_revoke_info: '撤销所有用户提供的凭据',
+  com_ui_import_conversation: '导入',
+  com_ui_import_conversation_info: '从JSON文件导入对话',
+  com_ui_import_conversation_success: '对话导入成功',
+  com_ui_import_conversation_error: '导入对话时发生错误',
   com_ui_confirm_action: '确认执行',
   com_ui_chats: '聊天',
   com_ui_avatar: '头像',

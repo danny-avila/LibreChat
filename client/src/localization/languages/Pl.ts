@@ -205,4 +205,8 @@ export default {
   com_nav_settings: 'Ustawienia',
   com_nav_search_placeholder: 'Szukaj wiadomości',
   com_nav_setting_general: 'Ogólne',
+  com_ui_import_conversation: 'Importuj',
+  com_ui_import_conversation_info: 'Importuj konwersacje z pliku JSON',
+  com_ui_import_conversation_success: 'Konwersacje zostały pomyślnie zaimportowane',
+  com_ui_import_conversation_error: 'Wystąpił błąd podczas importowania konwersacji',
 };
