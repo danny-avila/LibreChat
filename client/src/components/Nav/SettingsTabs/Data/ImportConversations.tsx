@@ -13,18 +13,15 @@ function ImportConversations() {
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
   const { refreshConversations } = useConversations();
 
-  //const fileInputRef = useRef(null);
-  //const uploadFile = useImportFileHandling();
-
   const setFilesLoading = (arg0: boolean) => {
     throw new Error('Function not implemented.');
   };
 
   const uploadFile = useUploadConversationsMutation({
     onSuccess: (data) => {
-      console.log('upload success', data);
-      showToast({ message: localize('com_ui_import_conversation_success') });
+      console.log('upload started', data);
       refreshConversations();
+      showToast({ message: localize('com_ui_import_conversation_success') });
     },
     onError: (error) => {
       console.error('Error: ', error);
@@ -32,7 +29,14 @@ function ImportConversations() {
         (error as { response: { data: { message?: string } } })?.response?.data?.message ??
           'An error occurred while uploading the file.',
       );
-      showToast({ message: localize('com_ui_import_conversation_error'), status: 'error' });
+      if (error?.toString().includes('Unsupported import type')) {
+        showToast({
+          message: localize('com_ui_import_conversation_file_type_error'),
+          status: 'error',
+        });
+      } else {
+        showToast({ message: localize('com_ui_import_conversation_error'), status: 'error' });
+      }
     },
   });
 

@@ -5,8 +5,10 @@ import type {
   TFile,
   BatchFile,
   TFileUpload,
+  TImportStartResponse,
   AssistantListResponse,
   UploadMutationOptions,
+  UploadConversationsMutationOptions,
   DeleteFilesResponse,
   DeleteFilesBody,
   DeleteMutationOptions,
@@ -130,18 +132,72 @@ export const useDeleteConversationMutation = (
   );
 };
 
-export const useUploadConversationsMutation = (_options?: UploadMutationOptions) => {
+export const useUploadConversationsMutation = (_options?: UploadConversationsMutationOptions) => {
   const queryClient = useQueryClient();
   const { onSuccess, onError } = _options || {};
 
-  return useMutation<TFileUpload, unknown, FormData>({
+  const checkJobStatus = async (jobId) => {
+    try {
+      const response = await dataService.queryImportConversationJobStatus(jobId);
+      return response;
+    } catch (error) {
+      throw new Error('Failed to check job status');
+    }
+  };
+
+  const pollJobStatus = (jobId, onSuccess, onError) => {
+    const intervalId = setInterval(async () => {
+      try {
+        const statusResponse = await checkJobStatus(jobId);
+        console.log('Polling job status', statusResponse);
+        if (statusResponse.status === 'completed' || statusResponse.status === 'failed') {
+          clearInterval(intervalId);
+          if (statusResponse.status === 'completed') {
+            onSuccess && onSuccess(statusResponse);
+          } else {
+            onError &&
+              onError(
+                new Error(
+                  statusResponse.failReason
+                    ? statusResponse.failReason
+                    : 'Failed to import conversations',
+                ),
+              );
+          }
+        }
+      } catch (error) {
+        clearInterval(intervalId);
+        onError && onError(error);
+      }
+    }, 500); // Poll every 5 seconds. Adjust time as necessary.
+  };
+
+  return useMutation<TImportStartResponse, unknown, FormData>({
     mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
-      if (onSuccess) {onSuccess(data, variables, context);}
+      // Assuming the job ID is in the response data
+      const jobId = data.jobId;
+      if (jobId) {
+        // Start polling for job status
+        pollJobStatus(
+          jobId,
+          (statusResponse) => {
+            // This is the final success callback when the job is completed
+            queryClient.invalidateQueries([QueryKeys.allConversations]); // Optionally refresh conversations query
+            if (onSuccess) {onSuccess(statusResponse, variables, context);}
+          },
+          (error) => {
+            // This is the error callback for job failure or polling errors
+            if (onError) {onError(error, variables, context);}
+          },
+        );
+      }
     },
     onError: (err, variables, context) => {
-      if (onError) {onError(err, variables, context);}
+      if (onError) {
+        onError(err, variables, context);
+      }
     },
   });
 };
