@@ -108,7 +108,7 @@ async function setupOpenId() {
             user = new User({
               provider: 'openid',
               openidId: userinfo.sub,
-              username: userinfo.username || userinfo.email || '',
+              username: userinfo.username || userinfo.email || userinfo.given_name || '',
               email: userinfo.email || '',
               emailVerified: userinfo.email_verified || false,
               name: fullName,
@@ -116,7 +116,7 @@ async function setupOpenId() {
           } else {
             user.provider = 'openid';
             user.openidId = userinfo.sub;
-            user.username = userinfo.username || userinfo.email || '';
+            user.username = userinfo.username || userinfo.email || userinfo.given_name || '';
             user.name = fullName;
           }
 
