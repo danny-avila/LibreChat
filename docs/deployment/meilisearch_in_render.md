@@ -1,6 +1,5 @@
 ---
 title: 🔎 Meilisearch in Render
-description: Setup Meilisearch on Render (for use with the Render deployment guide)
 weight: -3
 ---
 # Utilize Meilisearch by running LibreChat on Render
@@ -32,16 +31,15 @@ weight: -3
 **1.** To manually add the `Environment Variables`
   - You need to use `Add Environment Variables` and add them one at a time, as adding a secret file will not work in our case.
 
- ![image](https://github.com/danny-avila/LibreChat/assets/32828263/8cbc35e5-2b9b-4dad-835f-f0444627a01f)
+ ![image](https://raw.githubusercontent.com/itzraiss/images/main/Captura%20de%20tela%202024-04-13%20104455.png)
 
 **2.** You need to enter these values:
 
 | Key | Value |
 | --- | --- |
-| MEILI_HOST | http://meilisearch:7700 |
-| MEILI_HTTP_ADDR | meilisearch:7700 |
 | MEILI_MASTER_KEY | Create a 44 character alphanunmeric key | 
-| MEILI_NO_ANALYTICS | true |
+
+- Use this replit to generate: **[MEILI_MASTER_KEY](https://replit.com/@itzraiss/Meili-Master-Key)**
 
 **Deployment**
 
@@ -66,9 +64,7 @@ Now, insert the below environment variable values into your LibreChat project (R
 | Key | Value                                 |
 | --- |---------------------------------------|
 | MEILI_HOST | Your Render project's Meilisearch URL |
-| MEILI_HTTP_ADDR | meilisearch:7700                      |
 | MEILI_MASTER_KEY | Use the key created for Meilisearch   | 
-| MEILI_NO_ANALYTICS | true                                  |
 | SEARCH | true                                  |
 
   ![image](https://github.com/danny-avila/LibreChat/assets/32828263/f4ff1310-dc6b-4a81-944e-0eece8606b86)
