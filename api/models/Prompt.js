@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { logger } = require('~/config');
 
-const promptSchema = mongoose.Schema(
+const promptSchema = new mongoose.Schema(
   {
     title: {
       type: String,

@@ -1,0 +1,30 @@
+# For more information, see the Configuration Guide:
+# https://docs.librechat.ai/install/configuration/custom_config.html
+
+# Configuration version (required)
+version: 1.0.5
+
+# Cache settings: Set to true to enable caching
+cache: true
+
+fileStrategy: 'local'
+
+fileConfig:
+  endpoints:
+    zukijourney:
+      supportedMimeTypes:
+      - "application/pdf"
+
+# Definition of custom endpoints
+endpoints:
+  custom:
+    # Zukijourney
+    - name: 'Zukijourney'
+      apiKey: '${ZUKIJOURNEY_API_KEY}'
+      baseURL: '${ZUKIJOURNEY_BASE_URL}'
+      models:
+        default: ['gpt-4', 'gpt-3.5-turbo']
+        fetch: false
+      titleConvo: true
+      titleModel: 'gpt-4'
+      modelDisplayLabel: 'zuki'

@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const pluginAuthSchema = mongoose.Schema(
+const pluginAuthSchema = new mongoose.Schema(
   {
     authField: {
       type: String,

@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const mongoMeili = require('../plugins/mongoMeili');
 const { conversationPreset } = require('./defaults');
-const convoSchema = mongoose.Schema(
+const convoSchema = new mongoose.Schema(
   {
     conversationId: {
       type: String,

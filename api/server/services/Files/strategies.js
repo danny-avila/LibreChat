@@ -18,6 +18,7 @@ const {
   prepareImagesLocal,
   processLocalAvatar,
   getLocalFileStream,
+  uploadLocalFile,
 } = require('./Local');
 const { uploadOpenAIFile, deleteOpenAIFile, getOpenAIFileStream } = require('./OpenAI');
 const { uploadVectors, deleteVectors } = require('./VectorDB');
@@ -45,8 +46,7 @@ const firebaseStrategy = () => ({
  *
  * */
 const localStrategy = () => ({
-  /** @type {typeof uploadVectors | null} */
-  handleFileUpload: null,
+  handleFileUpload: uploadLocalFile,
   saveURL: saveFileFromURL,
   getFileURL: getLocalFileURL,
   saveBuffer: saveLocalBuffer,

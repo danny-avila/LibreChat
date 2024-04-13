@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const assistantSchema = mongoose.Schema(
+const assistantSchema = new mongoose.Schema(
   {
     user: {
       type: mongoose.Schema.Types.ObjectId,

@@ -93,7 +93,6 @@ router.get('/download/:userId/:file_id', async (req, res) => {
       logger.warn(`${errorPrefix} has no associated model: ${file_id}`);
       return res.status(400).send('The model used when creating this file is not available');
     }
-
     const { getDownloadStream } = getStrategyFunctions(file.source);
     if (!getDownloadStream) {
       logger.warn(`${errorPrefix} has no stream method implemented: ${file.source}`);

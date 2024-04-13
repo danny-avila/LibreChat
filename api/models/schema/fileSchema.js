@@ -25,7 +25,7 @@ const mongoose = require('mongoose');
  * @property {Date} [createdAt] - Date when the file was created
  * @property {Date} [updatedAt] - Date when the file was updated
  */
-const fileSchema = mongoose.Schema(
+const fileSchema = new mongoose.Schema(
   {
     user: {
       type: mongoose.Schema.Types.ObjectId,

@@ -5,7 +5,7 @@ const major = [0, 0];
 const minor = [0, 0];
 const patch = [0, 5];
 
-const configSchema = mongoose.Schema(
+const configSchema = new mongoose.Schema(
   {
     tag: {
       type: String,

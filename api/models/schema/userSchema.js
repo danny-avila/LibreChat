@@ -1,13 +1,13 @@
 const mongoose = require('mongoose');
 
-const Session = mongoose.Schema({
+const Session = new mongoose.Schema({
   refreshToken: {
     type: String,
     default: '',
   },
 });
 
-const userSchema = mongoose.Schema(
+const userSchema = new mongoose.Schema(
   {
     name: {
       type: String,

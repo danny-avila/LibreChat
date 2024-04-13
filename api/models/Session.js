@@ -6,7 +6,7 @@ const { logger } = require('~/config');
 const { REFRESH_TOKEN_EXPIRY } = process.env ?? {};
 const expires = eval(REFRESH_TOKEN_EXPIRY) ?? 1000 * 60 * 60 * 24 * 7;
 
-const sessionSchema = mongoose.Schema({
+const sessionSchema = new mongoose.Schema({
   refreshTokenHash: {
     type: String,
     required: true,

@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { conversationPreset } = require('./defaults');
-const presetSchema = mongoose.Schema(
+const presetSchema = new mongoose.Schema(
   {
     presetId: {
       type: String,

@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const mongoMeili = require('~/models/plugins/mongoMeili');
-const messageSchema = mongoose.Schema(
+const messageSchema = new mongoose.Schema(
   {
     messageId: {
       type: String,

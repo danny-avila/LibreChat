@@ -59,7 +59,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '~': path.join(__dirname, 'src/'),
-      $fonts: resolve('public/fonts'),
+      $fonts: process.env.NODE_ENV === 'development' ? resolve('fonts') : resolve('public/fonts'),
     },
   },
 });
