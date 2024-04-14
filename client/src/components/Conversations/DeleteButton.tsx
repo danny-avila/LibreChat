@@ -17,7 +17,6 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
   const deleteConvoMutation = useDeleteConversationMutation({
     onSuccess: () => {
       if (currentConvoId === conversationId) {
-        console.log('currentConvoId === conversationId', currentConvoId, conversationId);
         newConversation();
       }
       retainView();
