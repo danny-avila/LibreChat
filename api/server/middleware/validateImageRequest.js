@@ -3,9 +3,14 @@ const jwt = require('jsonwebtoken');
 const { logger } = require('~/config');
 
 /**
- * Middleware to validate image request
+ * Middleware to validate image request.
+ * Must be set by `secureImageLinks` via custom config file.
  */
 function validateImageRequest(req, res, next) {
+  if (!req.app.locals.secureImageLinks) {
+    return next();
+  }
+
   const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
   if (!refreshToken) {
     logger.warn('[validateImageRequest] Refresh token not provided');
