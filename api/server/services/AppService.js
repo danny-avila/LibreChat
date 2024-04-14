@@ -180,6 +180,7 @@ const AppService = async (app) => {
     fileStrategy,
     fileConfig: config?.fileConfig,
     interface: config?.interface,
+    secureImageLinks: config?.secureImageLinks,
     paths,
     ...endpointLocals,
   };
