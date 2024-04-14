@@ -1,17 +1,17 @@
 import debounce from 'lodash/debounce';
-import React, { useEffect, useRef, useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
+import React, { useEffect, useRef, useCallback } from 'react';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { UseFormSetValue } from 'react-hook-form';
 import type { KeyboardEvent } from 'react';
-import { useRecoilState } from 'recoil';
-import store from '~/store';
 import { forceResize, insertTextAtCursor, trimUndoneRange, getAssistantName } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useChatContext } from '~/Providers/ChatContext';
 import useLocalize from '~/hooks/useLocalize';
+import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
@@ -29,7 +29,7 @@ export default function useTextarea({
   disabled?: boolean;
 }) {
   const assistantMap = useAssistantsMapContext();
-  const [enterToSend] = useRecoilState(store.enterToSend);
+  const enterToSend = useRecoilValue(store.enterToSend);
   const {
     conversation,
     isSubmitting,
@@ -138,20 +138,22 @@ export default function useTextarea({
   ]);
 
   const handleKeyDown = (e: KeyEvent) => {
-    const isEnterKey = e.key === 'Enter';
-    const isNonShiftEnter = isEnterKey && !e.shiftKey;
+    if (e.key === 'Enter' && isSubmitting) {
+      return;
+    }
 
-    if (isEnterKey && (isSubmitting || filesLoading)) {
+    const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
+
+    if (isNonShiftEnter && filesLoading) {
       e.preventDefault();
-    } else if (isNonShiftEnter && !isComposing?.current) {
+    }
+
+    if (isNonShiftEnter || !enterToSend) {
       e.preventDefault();
-      if (enterToSend) {
-        submitButtonRef.current?.click();
-      } else {
-        if (textAreaRef.current) {
-          insertTextAtCursor(textAreaRef.current, '\n');
-        }
-      }
+    }
+
+    if (isNonShiftEnter && !isComposing?.current) {
+      submitButtonRef.current?.click();
     }
   };
 
