@@ -13,6 +13,8 @@ const {
   WolframAlphaAPI,
   OpenAICreateImage,
   StableDiffusionAPI,
+  // My tools
+  AgentCoordinator,
   // Structured Tools
   DALLE3,
   E2BTools,
@@ -167,6 +169,7 @@ const loadTools = async ({
     'azure-ai-search': functions ? StructuredACS : AzureAISearch,
     CodeBrew: CodeBrew,
     traversaal_search: TraversaalSearch,
+    'agent-coordinator': AgentCoordinator,
   };
 
   const openAIApiKey = await getOpenAIKey(options, user);

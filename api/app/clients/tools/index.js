@@ -7,6 +7,9 @@ const OpenAICreateImage = require('./DALL-E');
 const StableDiffusionAPI = require('./StableDiffusion');
 const SelfReflectionTool = require('./SelfReflection');
 
+// My tools
+const AgentCoordinator = require('./AgentCoordinator');
+
 // Structured Tools
 const DALLE3 = require('./structured/DALLE3');
 const ChatTool = require('./structured/ChatTool');
@@ -30,6 +33,8 @@ module.exports = {
   OpenAICreateImage,
   StableDiffusionAPI,
   SelfReflectionTool,
+  // My tools
+  AgentCoordinator,
   // Structured Tools
   DALLE3,
   ChatTool,

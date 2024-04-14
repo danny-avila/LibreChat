@@ -4,6 +4,7 @@ require('winston-daily-rotate-file');
 const { redactFormat, redactMessage, debugTraverse } = require('./parsers');
 
 const logDir = path.join(__dirname, '..', 'logs');
+const basePath = path.resolve(__dirname, '..');
 
 const { NODE_ENV, DEBUG_LOGGING = true, DEBUG_CONSOLE = false, CONSOLE_JSON = false } = process.env;
 
@@ -26,6 +27,21 @@ const levels = {
   silly: 7,
 };
 
+function wrapLogMethod(originalMethod) {
+  return function (message, ...args) {
+    const err = new Error();
+    const relevantStack = err.stack.split('\n')[2];
+    const match = relevantStack ? /at (.*?) \(?(.+?):(\d+):(\d+)\)?/.exec(relevantStack) : null;
+
+    if (match) {
+      const relativePath = path.relative(basePath, match[2]);
+      message = `[./api/${relativePath}:${match[3]}] ${message}`;
+    }
+
+    originalMethod.call(this, message, ...args);
+  };
+}
+
 winston.addColors({
   info: 'green', // fontStyle color
   warn: 'italic yellow',
@@ -44,7 +60,7 @@ const fileFormat = winston.format.combine(
   winston.format.timestamp({ format: () => new Date().toISOString() }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
-  // redactErrors(),
+  winston.format.printf((info) => `${info.timestamp} [${info.level}]: ${info.message}`),
 );
 
 const transports = [
@@ -57,6 +73,10 @@ const transports = [
     maxFiles: '14d',
     format: fileFormat,
   }),
+  // new winston.transports.Console({
+  //   level: level(),
+  //   format: fileFormat,
+  // }),
   // new winston.transports.DailyRotateFile({
   //   level: 'info',
   //   filename: `${logDir}/info-%DATE%.log`,
@@ -66,14 +86,6 @@ const transports = [
   //   maxFiles: '14d',
   // }),
 ];
-
-// if (NODE_ENV !== 'production') {
-//   transports.push(
-//     new winston.transports.Console({
-//       format: winston.format.combine(winston.format.colorize(), winston.format.simple()),
-//     }),
-//   );
-// }
 
 if (
   (typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING?.toLowerCase() === 'true') ||
@@ -136,6 +148,14 @@ const logger = winston.createLogger({
   level: level(),
   levels,
   transports,
+});
+
+// Wrap all logger methods to include file and line numbers
+Object.keys(levels).forEach((level) => {
+  const originalMethod = logger[level];
+  if (typeof originalMethod === 'function') {
+    logger[level] = wrapLogMethod(originalMethod.bind(logger), level);
+  }
 });
 
 module.exports = logger;
