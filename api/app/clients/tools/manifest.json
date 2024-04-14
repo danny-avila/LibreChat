@@ -60,7 +60,7 @@
     "name": "CodeSherpa",
     "pluginKey": "codesherpa_tools",
     "description": "[Experimental] A REPL for your chat. Requires https://github.com/iamgreggarcia/codesherpa",
-    "icon": "https://github.com/iamgreggarcia/codesherpa/blob/main/localserver/_logo.png",
+    "icon": "https://raw.githubusercontent.com/iamgreggarcia/codesherpa/main/localserver/_logo.png",
     "authConfig": [
       {
         "authField": "CODESHERPA_SERVER_URL",
