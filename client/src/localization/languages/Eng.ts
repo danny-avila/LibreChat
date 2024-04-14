@@ -405,6 +405,7 @@ export default {
   com_nav_theme_system: 'System',
   com_nav_theme_dark: 'Dark',
   com_nav_theme_light: 'Light',
+  com_nav_enter_to_send: 'Press Enter to send messages',
   com_nav_user_name_display: 'Display username in messages',
   com_nav_show_code: 'Always show code when using code interpreter',
   com_nav_clear_all_chats: 'Clear all chats',
