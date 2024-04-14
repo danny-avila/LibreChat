@@ -58,7 +58,7 @@ export default {
   com_ui_happy_birthday: 'Es ist mein 1. Geburtstag!',
   com_ui_example_quantum_computing: 'Erkläre Quantencomputing in einfachen Worten',
   com_ui_example_10_year_old_b_day: 'Hast du eine kreative Idee für den Geburtstag eines 10-Jährigen?',
-  com_ui_example_http_in_js: "Wie stelle ich eine HTTP-Anfrage in Javascript?",
+  com_ui_example_http_in_js: 'Wie stelle ich eine HTTP-Anfrage in Javascript?',
   com_ui_capabilities: 'Funktionen',
   com_ui_capability_remember: 'Erinnert sich daran, was der Benutzer zu einem früheren Zeitpunkt in der Konversation gesagt hat',
   com_ui_capability_correction: 'Ermöglicht es dem Benutzer, nachträgliche Korrekturen vorzunehmen',
