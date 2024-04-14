@@ -202,10 +202,12 @@ export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise
   );
 };
 
-export const getFileDownload = async (userId: string, filepath: string): Promise<AxiosResponse> => {
-  const encodedFilePath = encodeURIComponent(filepath);
-  return request.getResponse(`${endpoints.files()}/download/${userId}/${encodedFilePath}`, {
+export const getFileDownload = async (userId: string, file_id: string): Promise<AxiosResponse> => {
+  return request.getResponse(`${endpoints.files()}/download/${userId}/${file_id}`, {
     responseType: 'blob',
+    headers: {
+      Accept: 'application/octet-stream',
+    },
   });
 };
 

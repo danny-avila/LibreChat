@@ -1985,3 +1985,66 @@ html {
   background-clip: content-box;
   -webkit-box-shadow: 0 0 0 50vh #0d0d0d inset;
 }
+
+
+@keyframes slideFromLeftToRightAndFade {
+  0% {
+    opacity: 0;
+    transform: translateX(-10%); 
+  }
+  20% {
+    opacity: 1;
+    transform: translateX(0); 
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(0); 
+  }
+  75% {
+    opacity: 1;
+    transform: translateX(10%); 
+  }
+  80% {
+    opacity: 0;
+    transform: translateX(20%); 
+  }
+  85%, 100% {
+    opacity: 0;
+    transform: translateX(30%); 
+  }
+}
+
+.slide-from-left {
+  animation: slideFromLeftToRightAndFade 2s ease-in-out infinite;
+}
+
+@keyframes slideDownAndFadeOut {
+  0% {
+    opacity: 1;
+    transform: translateY(-10%); 
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(0); 
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  75% {
+    opacity: 1;
+    transform: translateY(10%); 
+  }
+  80% {
+    opacity: 0;
+    transform: translateY(20%);
+  }
+  85%, 100% {
+    opacity: 0;
+    transform: translateY(30%); 
+  }
+}
+
+.slide-to-down {
+  animation: slideDownAndFadeOut 2s ease-in-out infinite;
+}
