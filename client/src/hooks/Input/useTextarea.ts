@@ -1,6 +1,7 @@
 import debounce from 'lodash/debounce';
-import React, { useEffect, useRef, useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
+import React, { useEffect, useRef, useCallback } from 'react';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { UseFormSetValue } from 'react-hook-form';
 import type { KeyboardEvent } from 'react';
@@ -10,6 +11,7 @@ import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useChatContext } from '~/Providers/ChatContext';
 import useLocalize from '~/hooks/useLocalize';
+import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
@@ -27,6 +29,7 @@ export default function useTextarea({
   disabled?: boolean;
 }) {
   const assistantMap = useAssistantsMapContext();
+  const enterToSend = useRecoilValue(store.enterToSend);
   const {
     conversation,
     isSubmitting,
@@ -134,25 +137,34 @@ export default function useTextarea({
     assistantMap,
   ]);
 
-  const handleKeyDown = (e: KeyEvent) => {
-    if (e.key === 'Enter' && isSubmitting) {
-      return;
-    }
+  const handleKeyDown = useCallback(
+    (e: KeyEvent) => {
+      if (e.key === 'Enter' && isSubmitting) {
+        return;
+      }
 
-    const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
+      const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
 
-    if (isNonShiftEnter && filesLoading) {
-      e.preventDefault();
-    }
+      if (isNonShiftEnter && filesLoading) {
+        e.preventDefault();
+      }
 
-    if (isNonShiftEnter) {
-      e.preventDefault();
-    }
+      if (isNonShiftEnter) {
+        e.preventDefault();
+      }
 
-    if (isNonShiftEnter && !isComposing?.current) {
-      submitButtonRef.current?.click();
-    }
-  };
+      if (e.key === 'Enter' && !enterToSend && textAreaRef.current) {
+        insertTextAtCursor(textAreaRef.current, '\n');
+        forceResize(textAreaRef);
+        return;
+      }
+
+      if (isNonShiftEnter && !isComposing?.current) {
+        submitButtonRef.current?.click();
+      }
+    },
+    [isSubmitting, filesLoading, enterToSend, textAreaRef, submitButtonRef],
+  );
 
   const handleKeyUp = (e: KeyEvent) => {
     const target = e.target as HTMLTextAreaElement;
