@@ -137,25 +137,34 @@ export default function useTextarea({
     assistantMap,
   ]);
 
-  const handleKeyDown = (e: KeyEvent) => {
-    if (e.key === 'Enter' && isSubmitting) {
-      return;
-    }
+  const handleKeyDown = useCallback(
+    (e: KeyEvent) => {
+      if (e.key === 'Enter' && isSubmitting) {
+        return;
+      }
 
-    const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
+      const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
 
-    if (isNonShiftEnter && filesLoading) {
-      e.preventDefault();
-    }
+      if (isNonShiftEnter && filesLoading) {
+        e.preventDefault();
+      }
 
-    if (isNonShiftEnter || !enterToSend) {
-      e.preventDefault();
-    }
+      if (isNonShiftEnter) {
+        e.preventDefault();
+      }
 
-    if (isNonShiftEnter && !isComposing?.current) {
-      submitButtonRef.current?.click();
-    }
-  };
+      if (e.key === 'Enter' && !enterToSend && textAreaRef.current) {
+        insertTextAtCursor(textAreaRef.current, '\n');
+        forceResize(textAreaRef);
+        return;
+      }
+
+      if (isNonShiftEnter && !isComposing?.current) {
+        submitButtonRef.current?.click();
+      }
+    },
+    [isSubmitting, filesLoading, enterToSend, textAreaRef, submitButtonRef],
+  );
 
   const handleKeyUp = (e: KeyEvent) => {
     const target = e.target as HTMLTextAreaElement;
