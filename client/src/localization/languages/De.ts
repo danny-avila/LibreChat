@@ -214,8 +214,8 @@ export default {
   com_endpoint_bing_context_placeholder:
     'Bing kann bis zu 7k Token für \'context\' verwenden, auf die es in der Konversation Bezug nehmen kann. Der genaue Grenzwert ist nicht bekannt, aber mehr als 7k Token können zu Fehlern führen.',
   com_endpoint_bing_system_message_placeholder:
-    'WARNUNG: Der Missbrauch dieser Funktion kann dazu führen, dass du von der Nutzung von Bing ausgeschlossen wirst! Klicken Sie auf \'Systemnachricht\', um vollständige Anweisungen und die Standardnachricht zu erhalten, die als sicher gilt.',
-  com_endpoint_system_message: 'Systemnachricht',
+    'WARNUNG: Der Missbrauch dieser Funktion kann dazu führen, dass du von der Nutzung von Bing ausgeschlossen wirst! Klicken Sie auf \'Systemaufforderung\', um vollständige Anweisungen und die Standardnachricht zu erhalten, die als sicher gilt.',
+  com_endpoint_system_message: 'Systemauffoderung',
   com_endpoint_message: 'Nachricht an',
   com_endpoint_message_not_appendable: 'Bearbeite deine Nachricht oder generiere sie neu.',
   com_endpoint_default_blank: 'Standard: leer',
@@ -268,7 +268,7 @@ export default {
     'Die Auflösung für Bilderkennungs-Anfragen. "Niedrig" ist billiger und schneller, "Hoch" ist detaillierter und teurer, und "Auto" wählt automatisch zwischen den beiden Auflösungen.',
   com_endpoint_openai_custom_name_placeholder: 'Setzt einen benutzerdefinierten Namen für die KI',
   com_endpoint_openai_prompt_prefix_placeholder:
-    'Lege benutzerdefinierte Anweisungen fest, die in die Systemmeldung aufgenommen werden sollen. Standard: keine',
+    'Lege benutzerdefinierte Anweisungen fest, die in die Systemaufforderung aufgenommen werden sollen. Standard: keine',
   com_endpoint_anthropic_temp:
     'Der Bereich reicht von 0 bis 1. Verwende temp näher an 0 für analytische / Multiple Choice Aufgaben und näher an 1 für kreative und generative Aufgaben. Wir empfehlen, dies oder Top P zu ändern, aber nicht beides.',
   com_endpoint_anthropic_topp:
@@ -288,7 +288,7 @@ export default {
   com_endpoint_disabled_with_tools: 'Mit Werkzeugen deaktiviert',
   com_endpoint_disabled_with_tools_placeholder: 'Deaktiviert mit ausgewählten Werkzeugen',
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
-    'Setzt benutzerdefinierte Anweisungen, die in die Systemmeldung aufgenommen werden. Standard: keine',
+    'Setzt benutzerdefinierte Anweisungen, die in die Systemaufforderung aufgenommen werden. Standard: keine',
   com_endpoint_import: 'Importieren',
   com_endpoint_set_custom_name: 'Lege einen benutzerdefinierten Namen fest, für den Fall, dass du diese Vorgabe finden kannst',
   com_endpoint_preset_delete_confirm: 'Bist du sicher, dass du diese Vorgabe löschen willst?',
@@ -425,24 +425,4 @@ export default {
   com_nav_setting_data: 'Datenkontrollen',
   com_nav_setting_account: 'Konto',
   com_nav_language: 'Sprache',
-  com_nav_lang_auto: 'Auto detect',
-  com_nav_lang_english: 'English',
-  com_nav_lang_chinese: '中文',
-  com_nav_lang_german: 'Deutsch',
-  com_nav_lang_spanish: 'Español',
-  com_nav_lang_french: 'Français ',
-  com_nav_lang_italian: 'Italiano',
-  com_nav_lang_polish: 'Polski',
-  com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
-  com_nav_lang_russian: 'Русский',
-  com_nav_lang_japanese: '日本語',
-  com_nav_lang_swedish: 'Svenska',
-  com_nav_lang_korean: '한국어',
-  com_nav_lang_vietnamese: 'Tiếng Việt',
-  com_nav_lang_traditionalchinese: '繁體中文',
-  com_nav_lang_arabic: 'العربية',
-  com_nav_lang_turkish: 'Türkçe',
-  com_nav_lang_dutch: 'Nederlands',
-  com_nav_lang_indonesia: 'Indonesia',
-  com_nav_lang_hebrew: 'עברית',
 };
