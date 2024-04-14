@@ -215,18 +215,18 @@ export default {
     'Bing kann bis zu 7k Token für \'context\' verwenden, auf die es in der Konversation Bezug nehmen kann. Der genaue Grenzwert ist nicht bekannt, aber mehr als 7k Token können zu Fehlern führen.',
   com_endpoint_bing_system_message_placeholder:
     'WARNUNG: Der Missbrauch dieser Funktion kann dazu führen, dass du von der Nutzung von Bing ausgeschlossen wirst! Klicken Sie auf \'Systemaufforderung\', um vollständige Anweisungen und die Standardnachricht zu erhalten, die als sicher gilt.',
-  com_endpoint_system_message: 'Systemauffoderung',
+  com_endpoint_system_message: 'Systemaufforderung',
   com_endpoint_message: 'Nachricht an',
   com_endpoint_message_not_appendable: 'Bearbeite deine Nachricht oder generiere sie neu.',
   com_endpoint_default_blank: 'Standard: leer',
   com_endpoint_default_false: 'Standard: falsch',
-  com_endpoint_default_creative: 'standardmäßig: kreativ',
-  com_endpoint_default_empty: 'standardmäßig: leer',
+  com_endpoint_default_creative: 'Standard: kreativ',
+  com_endpoint_default_empty: 'Standard: leer',
   com_endpoint_default_with_num: 'Standard: {0}',
   com_endpoint_context: 'Kontext',
   com_endpoint_tone_style: 'Farbtonstil',
   com_endpoint_token_count: 'Token-Anzahl',
-  com_endpoint_output: 'Ausgabe',
+  com_endpoint_output: 'Antwort',
   com_endpoint_google_temp:
     'Höhere Werte = zufälliger, während niedrigere Werte = gezielter und deterministischer sind. Wir empfehlen, dies oder Top P zu ändern, aber nicht beides.',
   com_endpoint_google_topp:
@@ -249,7 +249,7 @@ export default {
   com_endpoint_default: 'Standard',
   com_endpoint_top_p: 'Top-P',
   com_endpoint_top_k: 'Top-K',
-  com_endpoint_max_output_tokens: 'Max. Ausgabe Tokens',
+  com_endpoint_max_output_tokens: 'Max. Antwort Tokens',
   com_endpoint_openai_temp:
     'Höhere Werte = zufälliger, während niedrigere Werte = zielgerichteter und deterministischer sind. Wir empfehlen, dies oder Top P zu ändern, aber nicht beides.',
   com_endpoint_openai_max:
