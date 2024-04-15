@@ -76,13 +76,13 @@ const refreshController = async (req, res) => {
   }
 
   try {
-    let payload;
-    payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const userId = payload.id;
-    const user = await User.findOne({ _id: userId });
+    const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    const user = await User.findOne({ _id: payload.id });
     if (!user) {
       return res.status(401).redirect('/login');
     }
+
+    const userId = payload.id;
 
     if (process.env.NODE_ENV === 'CI') {
       const token = await setAuthTokens(userId, res);
@@ -118,6 +118,6 @@ module.exports = {
   getUserController,
   refreshController,
   registrationController,
-  resetPasswordRequestController,
   resetPasswordController,
+  resetPasswordRequestController,
 };
