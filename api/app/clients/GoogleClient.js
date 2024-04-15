@@ -303,7 +303,12 @@ class GoogleClient extends BaseClient {
     return files;
   }
 
-  async buildVisionMessages(messages = [], parentMessageId) {
+  /**
+   * Builds the augmented prompt for attachments
+   * TODO: Add File API Support
+   * @param {TMessage[]} messages
+   */
+  async buildAugmentedPrompt(messages = []) {
     const attachments = await this.options.attachments;
     const latestMessage = { ...messages[messages.length - 1] };
     this.contextHandlers = createContextHandlers(this.options.req, latestMessage.text);
@@ -319,6 +324,12 @@ class GoogleClient extends BaseClient {
       this.augmentedPrompt = await this.contextHandlers.createContext();
       this.options.promptPrefix = this.augmentedPrompt + this.options.promptPrefix;
     }
+  }
+
+  async buildVisionMessages(messages = [], parentMessageId) {
+    const attachments = await this.options.attachments;
+    const latestMessage = { ...messages[messages.length - 1] };
+    await this.buildAugmentedPrompt(messages);
 
     const { prompt } = await this.buildMessagesPrompt(messages, parentMessageId);
 
@@ -343,10 +354,10 @@ class GoogleClient extends BaseClient {
   async buildGenerativeMessages(messages = []) {
     this.userLabel = 'user';
     this.modelLabel = 'model';
-    const formattedMessages = await this.formatGenerativeMessages(messages);
-    // TODO: RAG CONTEXT
-    // const latestMessage = { ...messages[messages.length - 1] };
-    // this.contextHandlers = createContextHandlers(this.options.req, latestMessage.text);
+    const promises = [];
+    promises.push(await this.formatGenerativeMessages(messages));
+    promises.push(this.buildAugmentedPrompt(messages));
+    const [formattedMessages] = await Promise.all(promises);
     return { prompt: formattedMessages };
   }
 
@@ -649,12 +660,23 @@ class GoogleClient extends BaseClient {
     if (this.isGenerativeModel && !this.project_id) {
       /** @type {GenerativeModel} */
       const client = model;
-      const result = await client.generateContentStream({
+      const requestOptions = {
         contents: _payload,
-      });
+      };
+
+      if (this.options?.promptPrefix?.length) {
+        requestOptions.systemInstruction = {
+          parts: [
+            {
+              text: this.options.promptPrefix,
+            },
+          ],
+        };
+      }
+
+      const result = await client.generateContentStream(requestOptions);
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();
-        // TODO: handle a similar method from the frontend, as this is too noisy for the event loop to handle
         this.generateTextStream(chunkText, onProgress, {
           delay: 12,
         });
