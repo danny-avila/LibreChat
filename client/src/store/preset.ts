@@ -1,7 +1,7 @@
 import { atom } from 'recoil';
 import { TPreset } from 'librechat-data-provider';
 
-// preset structure is as same defination as conversation
+// preset structure is as same definition as conversation
 
 // an array of saved presets.
 // sample structure
