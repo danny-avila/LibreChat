@@ -14,21 +14,9 @@ USER node
 
 COPY --chown=node:node . .
 
-ENV VITE_APP_TITLE=${VITE_APP_TITLE} \
-    VITE_APP_DESCRIPTION=${VITE_APP_DESCRIPTION} \
-    VITE_APP_KEYWORDS=${VITE_APP_KEYWORDS} \
-    VITE_APP_AUTHOR=${VITE_APP_AUTHOR} \
-    VITE_APP_URL=${VITE_APP_URL} \
-    VITE_APP_OG_IMAGE=${VITE_APP_OG_IMAGE} \
-    VITE_APP_TWITTER_IMAGE=${VITE_APP_TWITTER_IMAGE} \
-    VITE_APP_FAVICON_32=${VITE_APP_FAVICON_32} \
-    VITE_APP_FAVICON_16=${VITE_APP_FAVICON_16} \
-    VITE_GOOGLE_ANALYTICS_ID=${VITE_GOOGLE_ANALYTICS_ID} \
-    VITE_GOOGLE_ADS_ID=${VITE_GOOGLE_ADS_ID}
-
 # Allow mounting of these files, which have no default
 # values.
-COPY --chown=node:node .env .
+RUN touch .env
 RUN npm config set fetch-retry-maxtimeout 600000
 RUN npm config set fetch-retries 5
 RUN npm config set fetch-retry-mintimeout 15000
