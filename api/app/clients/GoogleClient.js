@@ -129,7 +129,6 @@ class GoogleClient extends BaseClient {
 
     this.options.attachments?.then((attachments) => this.checkVisionRequest(attachments));
 
-    // TODO: add Gemini Support for Vertex AI
     /** @type {boolean} Whether using a "GenerativeAI" Model */
     this.isGenerativeModel = this.modelOptions.model.includes('gemini');
     const { isGenerativeModel } = this;
