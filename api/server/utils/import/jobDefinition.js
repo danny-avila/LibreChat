@@ -1,6 +1,7 @@
 const { getImporter } = require('./importers');
 const { logger } = require('~/config');
 const jobScheduler = require('~/server/utils/jobScheduler');
+const { indexSync } = require('~/lib/db');
 
 const IMPORT_CONVERSATION_JOB_NAME = 'import conversation';
 
@@ -14,6 +15,8 @@ const importConversationJob = async (job, done) => {
     const jsonData = JSON.parse(data);
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId);
+    //sync meilisearch index
+    await indexSync();
     logger.info('Finished importing conversations');
     done();
   } catch (error) {
