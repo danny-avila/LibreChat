@@ -30,7 +30,6 @@ function smartTruncateText(text, maxLength = MAX_CHAR) {
   const halfMaxLength = Math.floor((maxLength - ellipsis.length - notification.length) / 2);
 
   if (text.length > maxLength) {
-    // Calculate the starting point for the last half
     const startLastHalf = text.length - halfMaxLength;
     return `${text.slice(0, halfMaxLength)}${ellipsis}${text.slice(startLastHalf)}${notification}`;
   }
