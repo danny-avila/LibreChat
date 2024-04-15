@@ -407,6 +407,10 @@ export function validateVisionModel({
     return false;
   }
 
+  if (model === 'gpt-4-turbo-preview') {
+    return false;
+  }
+
   if (availableModels && !availableModels.includes(model)) {
     return false;
   }
