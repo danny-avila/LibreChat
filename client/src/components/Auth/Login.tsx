@@ -9,6 +9,8 @@ import { getLoginError } from '~/utils';
 import { useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
 
+const apiUrl = process.env.REACT_APP_API_URL;
+
 function Login() {
   const { login, error, isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
@@ -115,13 +117,27 @@ function Login() {
       {termsOfService?.externalUrl ? localize('com_ui_terms_of_service') : 'Terms of Service'}
     </a>
   );
+
+  const domainLogos = {
+    'gptchina.io': 'logo-china.png',
+    'gptafrica.io': 'logo-africa.png',
+    'gptglobal.io': 'logo-global.png',
+    'gptiran.io': 'logo-iran.png',
+    'gptitaly.io': 'logo-italy.png',
+    'gptrussia.io': 'logo-russia.png',
+    'gptusa.io': 'logo-usa.png',
+  };
+
+  const currentDomain = window.location.hostname;
+  const logoImageFilename = domainLogos[currentDomain] || 'logo-global.png';
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
       <div className="absolute bottom-0 left-0 m-4">
         <ThemeSelector />
       </div>
       <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
-        <img src="/assets/logo-china.png" className="mx-auto mb-6 h-16 w-auto" />
+        <img src={`/assets/${logoImageFilename}`} className="mx-auto mb-6 h-16 w-auto" alt="Logo" />
         <h1
           className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
           style={{ userSelect: 'none' }}
