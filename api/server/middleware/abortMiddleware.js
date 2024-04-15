@@ -1,5 +1,6 @@
 const { EModelEndpoint } = require('librechat-data-provider');
 const { sendMessage, sendError, countTokens, isEnabled } = require('~/server/utils');
+const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const { saveMessage, getConvo, getConvoTitle } = require('~/models');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const abortControllers = require('./abortControllers');
@@ -99,7 +100,15 @@ const createAbortController = (req, res, getAbortData) => {
 };
 
 const handleAbortError = async (res, req, error, data) => {
-  logger.error('[handleAbortError] AI response error; aborting request:', error);
+  if (error?.message?.includes('base64')) {
+    logger.error('[handleAbortError] Error in base64 encoding', {
+      ...error,
+      stack: smartTruncateText(error?.stack, 1000),
+      message: truncateText(error.message, 350),
+    });
+  } else {
+    logger.error('[handleAbortError] AI response error; aborting request:', error);
+  }
   const { sender, conversationId, messageId, parentMessageId, partialText } = data;
 
   if (error.stack && error.stack.includes('google')) {
