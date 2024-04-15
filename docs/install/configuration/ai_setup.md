@@ -133,8 +133,6 @@ Instructions for both are given below.
 
 **[See here for Gemini API pricing and rate limits](https://ai.google.dev/pricing)**
 
-**[See here for Vertex API pricing and rate limits](https://cloud.google.com/vertex-ai/generative-ai/pricing)**
-
 ⚠️ While Google models are free, they are using your input/output to help improve the model, with data de-identified from your Google Account and API key.
 ⚠️ During this period, your messages “may be accessible to trained reviewers.”
 
@@ -174,6 +172,8 @@ Setting `GOOGLE_KEY=user_provided` in your .env file sets both the Vertex AI Ser
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/728cbc04-4180-45a8-848c-ae5de2b02996)
 
 ### Vertex AI
+
+**[See here for Vertex API pricing and rate limits](https://cloud.google.com/vertex-ai/generative-ai/pricing)**
 
 To setup Google LLMs (via Google Cloud Vertex AI), first, signup for Google Cloud: **[cloud.google.com](https://cloud.google.com/)**
 
