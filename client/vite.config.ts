@@ -24,6 +24,21 @@ export default defineConfig({
       },
     },
   },
+  define: {
+    'import.meta.env.VITE_APP_TITLE': JSON.stringify(process.env.VITE_APP_TITLE),
+    'import.meta.env.VITE_APP_DESCRIPTION': JSON.stringify(process.env.VITE_APP_DESCRIPTION),
+    'import.meta.env.VITE_APP_KEYWORDS': JSON.stringify(process.env.VITE_APP_KEYWORDS),
+    'import.meta.env.VITE_APP_AUTHOR': JSON.stringify(process.env.VITE_APP_AUTHOR),
+    'import.meta.env.VITE_APP_URL': JSON.stringify(process.env.VITE_APP_URL),
+    'import.meta.env.VITE_APP_OG_IMAGE': JSON.stringify(process.env.VITE_APP_OG_IMAGE),
+    'import.meta.env.VITE_APP_TWITTER_IMAGE': JSON.stringify(process.env.VITE_APP_TWITTER_IMAGE),
+    'import.meta.env.VITE_APP_FAVICON_32': JSON.stringify(process.env.VITE_APP_FAVICON_32),
+    'import.meta.env.VITE_APP_FAVICON_16': JSON.stringify(process.env.VITE_APP_FAVICON_16),
+    'import.meta.env.VITE_GOOGLE_ANALYTICS_ID': JSON.stringify(
+      process.env.VITE_GOOGLE_ANALYTICS_ID,
+    ),
+    'import.meta.env.VITE_GOOGLE_ADS_ID': JSON.stringify(process.env.VITE_GOOGLE_ADS_ID),
+  },
   // All other env variables are filtered out
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
