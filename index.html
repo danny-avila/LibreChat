@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#343541">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- SEO meta tags -->
+    <title>%VITE_APP_TITLE%</title>
+    <meta name="description" content="%VITE_APP_DESCRIPTION%" />
+    <meta name="keywords" content="%VITE_APP_KEYWORDS%" />
+    <meta name="author" content="%VITE_APP_AUTHOR%" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="%VITE_APP_URL%" />
+    <meta property="og:title" content="%VITE_APP_TITLE%" />
+    <meta property="og:description" content="%VITE_APP_DESCRIPTION%" />
+    <meta property="og:image" content="%VITE_APP_OG_IMAGE%" />
+
+    <!-- Twitter Card -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="%VITE_APP_URL%" />
+    <meta property="twitter:title" content="%VITE_APP_TITLE%" />
+    <meta property="twitter:description" content="%VITE_APP_DESCRIPTION%" />
+    <meta property="twitter:image" content="%VITE_APP_TWITTER_IMAGE%" />
+
+    <link rel="shortcut icon" href="#" />
+    <link rel="icon" type="image/png" sizes="32x32" href="%VITE_APP_FAVICON_32%" />
+    <link rel="icon" type="image/png" sizes="16x16" href="%VITE_APP_FAVICON_16%" />
+    <script
+      defer
+      type="module"
+      src="/src/main.jsx"
+    ></script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=%VITE_APP_GOOGLE_ANALYTICS_ID%"></script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=%VITE_APP_GOOGLE_ADS_ID%"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', '%VITE_APP_GOOGLE_ANALYTICS_ID%');
+      gtag('config', '%VITE_APP_GOOGLE_ADS_ID%');
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script
+      type="module"
+      src="/src/main.jsx"
+    ></script>
+  </body>
+</html>
