@@ -107,6 +107,10 @@ describe('AppService', () => {
         },
       },
       paths: expect.anything(),
+      imageOutputType: expect.any(String),
+      interface: undefined,
+      fileConfig: undefined,
+      secureImageLinks: undefined,
     });
   });
 
