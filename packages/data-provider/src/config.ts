@@ -387,7 +387,7 @@ export const visionModels = [
   'llava-13b',
   'gemini-pro-vision',
   'claude-3',
-  'gemini-1.5-pro',
+  'gemini-1.5',
   'gpt-4-turbo',
 ];
 export enum VisionModes {
