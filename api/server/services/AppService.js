@@ -206,6 +206,12 @@ const AppService = async (app) => {
       `,
     );
   }
+
+  if (process.env.GOOGLE_API_KEY) {
+    logger.warn(
+      'The `GOOGLE_API_KEY` environment variable is deprecated.\nPlease use the `GOOGLE_SEARCH_API_KEY` environment variable instead.',
+    );
+  }
 };
 
 module.exports = AppService;

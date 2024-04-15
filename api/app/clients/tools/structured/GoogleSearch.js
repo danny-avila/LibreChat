@@ -9,7 +9,7 @@ class GoogleSearchResults extends Tool {
 
   constructor(fields = {}) {
     super(fields);
-    this.envVarApiKey = 'GOOGLE_API_KEY';
+    this.envVarApiKey = 'GOOGLE_SEARCH_API_KEY';
     this.envVarSearchEngineId = 'GOOGLE_CSE_ID';
     this.override = fields.override ?? false;
     this.apiKey = fields.apiKey ?? getEnvironmentVariable(this.envVarApiKey);

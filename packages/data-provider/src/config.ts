@@ -499,6 +499,8 @@ export enum AuthKeys {
   GOOGLE_SERVICE_KEY = 'GOOGLE_SERVICE_KEY',
   /**
    * API key to use Google Generative AI.
+   *
+   * Note: this is not for Environment Variables, but to access encrypted object values.
    */
   GOOGLE_API_KEY = 'GOOGLE_API_KEY',
 }
