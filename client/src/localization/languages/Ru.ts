@@ -303,7 +303,6 @@ export default {
   com_nav_profile_picture: 'Изображение профиля',
   com_nav_change_picture: 'Изменить изображение',
   com_nav_lang_auto: 'Автоопределение',
-  com_nav_clear: 'Очистить',
   com_nav_clear_all_chats: 'Удалить все чаты',
   com_nav_confirm_clear: 'Подтвердить удаление',
   com_nav_close_sidebar: 'Закрыть боковую панель',
