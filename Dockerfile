@@ -10,9 +10,6 @@ RUN apk --no-cache add curl
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
 
-ARG ENV_FILE
-COPY ${ENV_FILE} .
-
 USER node
 
 COPY --chown=node:node . .
