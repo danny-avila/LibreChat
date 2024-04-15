@@ -36,6 +36,14 @@ const base64Only = new Set([EModelEndpoint.google, EModelEndpoint.anthropic]);
 async function encodeAndFormat(req, files, endpoint, mode) {
   const promises = [];
   const encodingMethods = {};
+  const result = {
+    files: [],
+    image_urls: [],
+  };
+
+  if (!files || !files.length) {
+    return result;
+  }
 
   for (let file of files) {
     const source = file.source ?? FileSources.local;
@@ -70,11 +78,6 @@ async function encodeAndFormat(req, files, endpoint, mode) {
   /** @type {Array<[MongoFile, string]>} */
   const formattedImages = await Promise.all(promises);
 
-  const result = {
-    files: [],
-    image_urls: [],
-  };
-
   for (const [file, imageContent] of formattedImages) {
     const fileMetadata = {
       type: file.type,
@@ -105,11 +108,11 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     };
 
     if (endpoint && endpoint === EModelEndpoint.google && mode === VisionModes.generative) {
+      delete imagePart.image_url;
       imagePart.inlineData = {
         mimeType: file.type,
-        data: imagePart.image_url.url,
+        data: imageContent,
       };
-      delete imagePart.image_url;
     } else if (endpoint && endpoint === EModelEndpoint.google) {
       imagePart.image_url = imagePart.image_url.url;
     } else if (endpoint && endpoint === EModelEndpoint.anthropic) {
