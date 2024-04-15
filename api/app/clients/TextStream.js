@@ -39,7 +39,7 @@ class TextStream extends Readable {
       });
 
       this.on('end', () => {
-        // logger.debug('[processTextStream] Stream ended');
+        // logger.debug('Stream ended');
         resolve();
       });
 

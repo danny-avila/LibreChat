@@ -188,14 +188,14 @@ class CustomOutputParser extends ZeroShotAgentOutputParser {
 
         const inputMatch = this.actionValues.exec(returnValues.log); //new
         if (inputMatch) {
-          logger.debug('[CustomOutputParser] inputMatch', inputMatch);
+          logger.debug('inputMatch', inputMatch);
           returnValues.toolInput = inputMatch[1].replaceAll('"', '').trim();
           returnValues.log = returnValues.log.replace(this.actionValues, '');
         }
 
         return returnValues;
       } else {
-        logger.debug('[CustomOutputParser] No valid tool mentioned.', this.tools, text);
+        logger.debug('No valid tool mentioned.', this.tools, text);
         return {
           tool: 'self-reflection',
           toolInput: 'Hypothetical actions: \n"' + text + '"\n',

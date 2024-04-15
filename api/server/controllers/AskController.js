@@ -15,7 +15,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     overrideParentMessageId = null,
   } = req.body;
 
-  logger.debug('[AskController]', { text, conversationId, ...endpointOption });
+  logger.debug({ text, conversationId, ...endpointOption });
 
   let userMessage;
   let promptTokens;
@@ -84,7 +84,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
     const { abortController, onStart } = createAbortController(req, res, getAbortData);
 
     res.on('close', () => {
-      logger.debug('[AskController] Request closed');
+      logger.debug('Request closed');
       if (!abortController) {
         return;
       } else if (abortController.signal.aborted) {
@@ -94,7 +94,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
       }
 
       abortController.abort();
-      logger.debug('[AskController] Request aborted on close');
+      logger.debug('Request aborted on close');
     });
 
     const messageOptions = {

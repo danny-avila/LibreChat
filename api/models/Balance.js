@@ -16,7 +16,7 @@ balanceSchema.statics.check = async function ({
   const tokenCost = amount * multiplier;
   const { tokenCredits: balance } = (await this.findOne({ user }, 'tokenCredits').lean()) ?? {};
 
-  logger.debug('[Balance.check]', {
+  logger.debug({
     user,
     model,
     endpoint,
@@ -36,7 +36,7 @@ balanceSchema.statics.check = async function ({
     };
   }
 
-  logger.debug('[Balance.check]', { tokenCost });
+  logger.debug({ tokenCost });
 
   return { canSpend: balance >= tokenCost, balance, tokenCost };
 };

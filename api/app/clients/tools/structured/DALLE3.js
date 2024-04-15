@@ -146,7 +146,7 @@ Error Message: ${error.message}`;
     const extension = imageExt.startsWith('.') ? imageExt.slice(1) : imageExt;
     const imageName = `img-${uuidv4()}.${extension}`;
 
-    logger.debug('[DALL-E-3]', {
+    logger.debug({
       imageName,
       imageBasename,
       imageExt,

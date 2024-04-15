@@ -41,7 +41,7 @@ const spendTokens = async (txData, tokenUsage) => {
     }
 
     if (!completionTokens) {
-      logger.debug('[spendTokens] !completionTokens', { prompt, completion });
+      logger.debug('!completionTokens', { prompt, completion });
       return;
     }
 
@@ -53,7 +53,7 @@ const spendTokens = async (txData, tokenUsage) => {
 
     prompt &&
       completion &&
-      logger.debug('[spendTokens] Transaction data record against balance:', {
+      logger.debug('Transaction data record against balance:', {
         user: prompt.user,
         prompt: prompt.prompt,
         promptRate: prompt.rate,

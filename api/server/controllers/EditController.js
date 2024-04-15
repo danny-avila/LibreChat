@@ -18,7 +18,7 @@ const EditController = async (req, res, next, initializeClient) => {
     overrideParentMessageId = null,
   } = req.body;
 
-  logger.debug('[EditController]', {
+  logger.debug({
     text,
     generation,
     isContinued,
@@ -83,7 +83,7 @@ const EditController = async (req, res, next, initializeClient) => {
   const { abortController, onStart } = createAbortController(req, res, getAbortData);
 
   res.on('close', () => {
-    logger.debug('[EditController] Request closed');
+    logger.debug('Request closed');
     if (!abortController) {
       return;
     } else if (abortController.signal.aborted) {
@@ -93,7 +93,7 @@ const EditController = async (req, res, next, initializeClient) => {
     }
 
     abortController.abort();
-    logger.debug('[EditController] Request aborted on close');
+    logger.debug('Request aborted on close');
   });
 
   try {

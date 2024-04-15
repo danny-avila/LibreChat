@@ -340,7 +340,7 @@ class GoogleClient extends BaseClient {
       payload.instances[0].examples = this.options.examples;
     }
 
-    logger.debug('[GoogleClient] buildMessages', payload);
+    logger.debug('buildMessages', payload);
 
     return { prompt: payload };
   }
@@ -351,7 +351,7 @@ class GoogleClient extends BaseClient {
       parentMessageId,
     });
 
-    logger.debug('[GoogleClient]', {
+    logger.debug({
       orderedMessages,
       parentMessageId,
     });

@@ -581,7 +581,7 @@ async function processMessages({ openai, client, messages = [] }) {
         continue;
       }
 
-      logger.debug('[processMessages] Processing annotations:', annotations);
+      logger.debug('Processing annotations:', annotations);
       for (const annotation of annotations) {
         let file;
         const type = annotation.type;

@@ -34,7 +34,7 @@ router.post('/delete', async (req, res) => {
     filter = { presetId };
   }
 
-  logger.debug('[/presets/delete] delete preset filter', filter);
+  logger.debug('delete preset filter', filter);
 
   try {
     const deleteCount = await deletePresets(req.user.id, filter);

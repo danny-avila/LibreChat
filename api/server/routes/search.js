@@ -33,7 +33,7 @@ router.get('/', async function (req, res) {
     const key = `${user}:search:${q}`;
     const cached = await cache.get(key);
     if (cached) {
-      logger.debug('[/search] cache hit: ' + key);
+      logger.debug('cache hit: ' + key);
       const { pages, pageSize, messages } = cached;
       res
         .status(200)

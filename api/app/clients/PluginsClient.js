@@ -91,7 +91,7 @@ class PluginsClient extends OpenAIClient {
     const pastMessages = formatLangChainMessages(this.currentMessages.slice(0, -1), {
       userName: this.options?.name,
     });
-    logger.debug('[PluginsClient] pastMessages: ' + pastMessages.length);
+    logger.debug('pastMessages: ' + pastMessages.length);
 
     // TODO: use readOnly memory, TokenBufferMemory? (both unavailable in LangChainJS)
     const memory = new BufferMemory({
@@ -121,7 +121,7 @@ class PluginsClient extends OpenAIClient {
       return;
     }
 
-    logger.debug('[PluginsClient] Requested Tools', this.options.tools);
+    logger.debug('Requested Tools', this.options.tools);
     logger.debug(
       '[PluginsClient] Loaded Tools',
       this.tools.map((tool) => tool.name),
@@ -130,7 +130,7 @@ class PluginsClient extends OpenAIClient {
     const handleAction = (action, runId, callback = null) => {
       this.saveLatestAction(action);
 
-      logger.debug('[PluginsClient] Latest Agent Action ', this.actions[this.actions.length - 1]);
+      logger.debug('Action:', action);
 
       if (typeof callback === 'function') {
         callback(action, runId);
@@ -159,7 +159,7 @@ class PluginsClient extends OpenAIClient {
       }),
     });
 
-    logger.debug('[PluginsClient] Loaded agent.');
+    logger.debug('Loaded agent.');
   }
 
   async executorCall(message, { signal, stream, onToolStart, onToolEnd }) {
@@ -178,7 +178,7 @@ class PluginsClient extends OpenAIClient {
       logger.debug(`[PluginsClient] Attempt ${attempts} of ${maxAttempts}`);
 
       if (errorMessage.length > 0) {
-        logger.debug('[PluginsClient] Caught error, input: ' + JSON.stringify(input));
+        logger.debug('Caught error, input: ' + JSON.stringify(input));
       }
 
       try {
@@ -216,7 +216,7 @@ class PluginsClient extends OpenAIClient {
 
   async handleResponseMessage(responseMessage, saveOptions, user) {
     const { output, errorMessage, ...result } = this.result;
-    logger.debug('[PluginsClient][handleResponseMessage] Output:', {
+    logger.debug('Output:', {
       output,
       errorMessage,
       ...result,
@@ -244,7 +244,7 @@ class PluginsClient extends OpenAIClient {
       this.setOptions(opts);
       return super.sendMessage(message, opts);
     }
-    logger.debug('[PluginsClient] sendMessage', { message, opts });
+    logger.debug('sendMessage', { message, opts });
     const {
       user,
       isEdited,
@@ -274,10 +274,10 @@ class PluginsClient extends OpenAIClient {
     );
 
     if (tokenCountMap) {
-      logger.debug('[PluginsClient] tokenCountMap', { tokenCountMap });
+      logger.debug('tokenCountMap', { tokenCountMap });
       if (tokenCountMap[userMessage.messageId]) {
         userMessage.tokenCount = tokenCountMap[userMessage.messageId];
-        logger.debug('[PluginsClient] userMessage.tokenCount', userMessage.tokenCount);
+        logger.debug('userMessage.tokenCount', userMessage.tokenCount);
       }
       this.handleTokenCountMap(tokenCountMap);
     }
@@ -363,7 +363,7 @@ class PluginsClient extends OpenAIClient {
       return await this.handleResponseMessage(responseMessage, saveOptions, user);
     }
 
-    logger.debug('[PluginsClient] Completion phase: this.result', this.result);
+    logger.debug('Completion phase: this.result', this.result);
 
     const promptPrefix = buildPromptPrefix({
       result: this.result,
@@ -371,20 +371,20 @@ class PluginsClient extends OpenAIClient {
       functionsAgent: this.functionsAgent,
     });
 
-    logger.debug('[PluginsClient]', { promptPrefix });
+    logger.debug({ promptPrefix });
 
     payload = await this.buildCompletionPrompt({
       messages: this.currentMessages,
       promptPrefix,
     });
 
-    logger.debug('[PluginsClient] buildCompletionPrompt Payload', payload);
+    logger.debug('buildCompletionPrompt Payload', payload);
     responseMessage.text = await this.sendCompletion(payload, opts);
     return await this.handleResponseMessage(responseMessage, saveOptions, user);
   }
 
   async buildCompletionPrompt({ messages, promptPrefix: _promptPrefix }) {
-    logger.debug('[PluginsClient] buildCompletionPrompt messages', messages);
+    logger.debug('buildCompletionPrompt messages', messages);
 
     const orderedMessages = messages;
     let promptPrefix = _promptPrefix.trim();

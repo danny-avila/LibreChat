@@ -32,7 +32,7 @@ function validateImageRequest(req, res, next) {
   }
 
   if (req.path.includes(payload.id)) {
-    logger.debug('[validateImageRequest] Image request validated');
+    logger.debug('Image request validated');
     next();
   } else {
     res.status(403).send('Access Denied');

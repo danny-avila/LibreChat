@@ -63,7 +63,7 @@ const sendEmail = async (email, subject, payload, template) => {
         logger.error('[sendEmail]', error);
         return error;
       } else {
-        logger.debug('[sendEmail]', info);
+        logger.debug(info);
         return info;
       }
     });

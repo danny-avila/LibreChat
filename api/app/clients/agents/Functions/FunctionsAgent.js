@@ -114,7 +114,7 @@ class FunctionsAgent extends Agent {
       valuesForLLM,
       callbackManager,
     );
-    logger.debug('[FunctionsAgent] plan message', message);
+    logger.debug('plan message', message);
     return parseOutput(message);
   }
 }

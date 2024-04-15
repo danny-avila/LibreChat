@@ -4,6 +4,7 @@ require('winston-daily-rotate-file');
 const { redactFormat, redactMessage, debugTraverse } = require('./parsers');
 
 const logDir = path.join(__dirname, '..', 'logs');
+const basePath = path.resolve(__dirname, '..');
 
 const { NODE_ENV, DEBUG_LOGGING = true, DEBUG_CONSOLE = false, CONSOLE_JSON = false } = process.env;
 
@@ -26,6 +27,36 @@ const levels = {
   silly: 7,
 };
 
+function wrapLogMethod(originalMethod) {
+  return function (message, ...args) {
+    const err = new Error();
+    const stack = err.stack.split('\n');
+    // Start parsing from the first relevant entry, which seems to be the second one based on your stack example.
+    let relevantStack = stack[2] || stack[1]; // Fallback to an earlier stack if needed
+    // Adjusted regex to optionally match function calls in parentheses
+    let match = relevantStack
+      ? /at\s+(?:.*?\s+)?\(?([^)]+):(\d+):(\d+)\)?/.exec(relevantStack)
+      : null;
+
+    if (!match) {
+      // Try a broader regex if the first one fails
+      match = relevantStack ? /at\s+.*?\((.*?):(\d+):(\d+)\)/.exec(relevantStack) : null;
+    }
+
+    if (match) {
+      // Calculate the relative path based on the basePath you define
+      const relativePath = path.relative(basePath, match[1]);
+      message = `[./api/${relativePath}:${match[2]}] ${message}`;
+    } else {
+      // Log the entire stack if no match is found (optional, for debugging purposes)
+      console.log('Failed to parse stack:', err.stack);
+      message = `[can't detect location] ${message}`;
+    }
+
+    originalMethod.call(this, message, ...args);
+  };
+}
+
 winston.addColors({
   info: 'green', // fontStyle color
   warn: 'italic yellow',
@@ -44,6 +75,7 @@ const fileFormat = winston.format.combine(
   winston.format.timestamp({ format: () => new Date().toISOString() }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
+  // winston.format.printf((info) => `${info.timestamp} [${info.level}]: ${info.message}`),
   // redactErrors(),
 );
 
@@ -57,6 +89,10 @@ const transports = [
     maxFiles: '14d',
     format: fileFormat,
   }),
+  // new winston.transports.Console({
+  //   level: level(),
+  //   format: fileFormat,
+  // }),
   // new winston.transports.DailyRotateFile({
   //   level: 'info',
   //   filename: `${logDir}/info-%DATE%.log`,
@@ -136,6 +172,14 @@ const logger = winston.createLogger({
   level: level(),
   levels,
   transports,
+});
+
+// Wrap all logger methods to include file and line numbers
+Object.keys(levels).forEach((level) => {
+  const originalMethod = logger[level];
+  if (typeof originalMethod === 'function') {
+    logger[level] = wrapLogMethod(originalMethod.bind(logger), level);
+  }
 });
 
 module.exports = logger;

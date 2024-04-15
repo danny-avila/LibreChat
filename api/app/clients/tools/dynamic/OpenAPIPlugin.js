@@ -101,34 +101,34 @@ async function createOpenAPIPlugin({ data, llm, user, message, memory, signal })
   const headers = {};
   const { auth, name_for_model, description_for_model, description_for_human } = data;
   if (auth && AuthDefinition.parse(auth)) {
-    logger.debug('[createOpenAPIPlugin] auth detected', auth);
+    logger.debug('auth detected', auth);
     const { openai } = auth.verification_tokens;
     if (AuthBearer.parse(auth)) {
       headers.authorization = `Bearer ${openai}`;
-      logger.debug('[createOpenAPIPlugin] added auth bearer', headers);
+      logger.debug('added auth bearer', headers);
     }
   }
 
   const chainOptions = { llm };
 
   if (data.headers && data.headers['librechat_user_id']) {
-    logger.debug('[createOpenAPIPlugin] id detected', headers);
+    logger.debug('id detected', headers);
     headers[data.headers['librechat_user_id']] = user;
   }
 
   if (Object.keys(headers).length > 0) {
-    logger.debug('[createOpenAPIPlugin] headers detected', headers);
+    logger.debug('headers detected', headers);
     chainOptions.headers = headers;
   }
 
   if (data.params) {
-    logger.debug('[createOpenAPIPlugin] params detected', data.params);
+    logger.debug('params detected', data.params);
     chainOptions.params = data.params;
   }
 
   let history = '';
   if (memory) {
-    logger.debug('[createOpenAPIPlugin] openAPI chain: memory detected', memory);
+    logger.debug('openAPI chain: memory detected', memory);
     const { history: chat_history } = await memory.loadMemoryVariables({});
     history = chat_history?.length > 0 ? `\n\n## Chat History:\n${chat_history}\n` : '';
   }

@@ -170,7 +170,7 @@ class OpenAIClient extends BaseClient {
     }
 
     if (this.options.debug) {
-      logger.debug('[OpenAIClient] maxContextTokens', this.maxContextTokens);
+      logger.debug('maxContextTokens', this.maxContextTokens);
     }
 
     this.maxResponseTokens = this.modelOptions.max_tokens || 1024;
@@ -339,7 +339,7 @@ class OpenAIClient extends BaseClient {
   resetTokenizersIfNecessary() {
     if (tokenizerCallsCount >= 25) {
       if (this.options.debug) {
-        logger.debug('[OpenAIClient] freeAndResetAllEncoders: reached 25 encodings, resetting...');
+        logger.debug('freeAndResetAllEncoders: reached 25 encodings, resetting...');
       }
       this.constructor.freeAndResetAllEncoders();
     }
@@ -613,7 +613,7 @@ class OpenAIClient extends BaseClient {
         return result.trim();
       }
 
-      logger.debug('[OpenAIClient] sendCompletion: result', result);
+      logger.debug('sendCompletion: result', result);
 
       if (this.isChatCompletion) {
         reply = result.choices[0].message.content;
@@ -814,7 +814,7 @@ ${convo}
 
     if (this.options.titleMethod === 'completion') {
       await titleChatCompletion();
-      logger.debug('[OpenAIClient] Convo Title: ' + title);
+      logger.debug('Convo Title: ' + title);
       return title;
     }
 
@@ -829,7 +829,7 @@ ${convo}
       title = await runTitleChain({ llm, text, convo, signal: this.abortController.signal });
     } catch (e) {
       if (e?.message?.toLowerCase()?.includes('abort')) {
-        logger.debug('[OpenAIClient] Aborted title generation');
+        logger.debug('Aborted title generation');
         return;
       }
       logger.error(
@@ -840,12 +840,12 @@ ${convo}
       await titleChatCompletion();
     }
 
-    logger.debug('[OpenAIClient] Convo Title: ' + title);
+    logger.debug('Convo Title: ' + title);
     return title;
   }
 
   async summarizeMessages({ messagesToRefine, remainingContextTokens }) {
-    logger.debug('[OpenAIClient] Summarizing messages...');
+    logger.debug('Summarizing messages...');
     let context = messagesToRefine;
     let prompt;
 
@@ -905,7 +905,7 @@ ${convo}
     // by recreating the summary prompt (single message) to avoid LangChain handling
 
     const initialPromptTokens = this.maxContextTokens - remainingContextTokens;
-    logger.debug('[OpenAIClient] initialPromptTokens', initialPromptTokens);
+    logger.debug('initialPromptTokens', initialPromptTokens);
 
     const llm = this.initializeLLM({
       model,
@@ -931,7 +931,7 @@ ${convo}
       const summaryTokenCount = this.getTokenCountForMessage(summaryMessage);
 
       if (this.options.debug) {
-        logger.debug('[OpenAIClient] summaryTokenCount', summaryTokenCount);
+        logger.debug('summaryTokenCount', summaryTokenCount);
         logger.debug(
           `[OpenAIClient] Summarization complete: remainingContextTokens: ${remainingContextTokens}, after refining: ${
             remainingContextTokens - summaryTokenCount
@@ -942,7 +942,7 @@ ${convo}
       return { summaryMessage, summaryTokenCount };
     } catch (e) {
       if (e?.message?.toLowerCase()?.includes('abort')) {
-        logger.debug('[OpenAIClient] Aborted summarization');
+        logger.debug('Aborted summarization');
         const { run, runId } = this.runManager.getRunByConversationId(this.conversationId);
         if (run && run.error) {
           const { error } = run;
@@ -996,7 +996,7 @@ ${convo}
       }
 
       const baseURL = extractBaseURL(this.completionsUrl);
-      logger.debug('[OpenAIClient] chatCompletion', { baseURL, modelOptions });
+      logger.debug('chatCompletion', { baseURL, modelOptions });
       const opts = {
         baseURL,
       };
@@ -1104,7 +1104,7 @@ ${convo}
           ...modelOptions,
           ...this.options.addParams,
         };
-        logger.debug('[OpenAIClient] chatCompletion: added params', {
+        logger.debug('chatCompletion: added params', {
           addParams: this.options.addParams,
           modelOptions,
         });
@@ -1114,7 +1114,7 @@ ${convo}
         this.options.dropParams.forEach((param) => {
           delete modelOptions[param];
         });
-        logger.debug('[OpenAIClient] chatCompletion: dropped params', {
+        logger.debug('chatCompletion: dropped params', {
           dropParams: this.options.dropParams,
           modelOptions,
         });
@@ -1192,7 +1192,7 @@ ${convo}
         this.metadata = { finish_reason };
       }
 
-      logger.debug('[OpenAIClient] chatCompletion response', chatCompletion);
+      logger.debug('chatCompletion response', chatCompletion);
 
       if (!message?.content?.trim() && intermediateReply.length) {
         logger.debug(

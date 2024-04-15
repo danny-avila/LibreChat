@@ -31,7 +31,7 @@ function validateJson(json) {
   try {
     return ManifestDefinition.parse(json);
   } catch (error) {
-    logger.debug('[validateJson] manifest parsing error', error);
+    logger.debug('manifest parsing error', error);
     return false;
   }
 }
@@ -63,7 +63,7 @@ async function loadSpecs({ llm, user, message, tools = [], map = false, memory, 
   const validJsons = [];
   const constructorMap = {};
 
-  logger.debug('[validateJson] files', files);
+  logger.debug('files', files);
 
   for (const file of files) {
     if (path.extname(file) === '.json') {
@@ -72,7 +72,7 @@ async function loadSpecs({ llm, user, message, tools = [], map = false, memory, 
       const json = JSON.parse(fileContent);
 
       if (!validateJson(json)) {
-        logger.debug('[validateJson] Invalid json', json);
+        logger.debug('Invalid json', json);
         continue;
       }
 
@@ -104,7 +104,7 @@ async function loadSpecs({ llm, user, message, tools = [], map = false, memory, 
 
   const plugins = (await Promise.all(validJsons)).filter((plugin) => plugin);
 
-  //   logger.debug('[validateJson] plugins', plugins);
+  //   logger.debug('plugins', plugins);
   //   logger.debug(plugins[0].name);
 
   return plugins;

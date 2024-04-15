@@ -42,7 +42,7 @@ const createStartHandler = ({
     }
 
     prelimPromptTokens += promptTokensEstimate(payload);
-    logger.debug('[createStartHandler]', {
+    logger.debug({
       prelimPromptTokens,
       tokenBuffer,
     });

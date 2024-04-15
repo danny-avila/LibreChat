@@ -166,7 +166,7 @@ router.post(
         response.parentMessageId = overrideParentMessageId;
       }
 
-      logger.debug('[/edit/gptPlugins] CLIENT RESPONSE', response);
+      logger.debug('CLIENT RESPONSE', response);
       response.plugin = { ...plugin, loading: false };
       await saveMessage({ ...response, user });
 

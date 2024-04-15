@@ -45,18 +45,18 @@ async function indexSync(req, res, next) {
     );
 
     if (messageCount !== messagesIndexed) {
-      logger.debug('[indexSync] Messages out of sync, indexing');
+      logger.debug('Messages out of sync, indexing');
       Message.syncWithMeili();
     }
 
     if (convoCount !== convosIndexed) {
-      logger.debug('[indexSync] Convos out of sync, indexing');
+      logger.debug('Convos out of sync, indexing');
       Conversation.syncWithMeili();
     }
   } catch (err) {
-    // logger.debug('[indexSync] in index sync');
+    // logger.debug('in index sync');
     if (err.message.includes('not found')) {
-      logger.debug('[indexSync] Creating indices...');
+      logger.debug('Creating indices...');
       currentTimeout = setTimeout(async () => {
         try {
           await Message.syncWithMeili();
@@ -75,7 +75,7 @@ async function indexSync(req, res, next) {
 }
 
 process.on('exit', () => {
-  logger.debug('[indexSync] Clearing sync timeouts before exiting...');
+  logger.debug('Clearing sync timeouts before exiting...');
   clearTimeout(currentTimeout);
 });
 

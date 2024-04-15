@@ -206,7 +206,7 @@ class AnthropicClient extends BaseClient {
       parentMessageId,
     });
 
-    logger.debug('[AnthropicClient] orderedMessages', { orderedMessages, parentMessageId });
+    logger.debug('orderedMessages', { orderedMessages, parentMessageId });
 
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
@@ -295,7 +295,7 @@ class AnthropicClient extends BaseClient {
         return map;
       }, {});
 
-    logger.debug('[AnthropicClient]', {
+    logger.debug({
       messagesInWindow: messagesInWindow.length,
       remainingContextTokens,
     });
@@ -587,7 +587,7 @@ class AnthropicClient extends BaseClient {
       requestOptions.system = this.systemMessage;
     }
 
-    logger.debug('[AnthropicClient]', { ...requestOptions });
+    logger.debug({ ...requestOptions });
 
     const handleChunk = (currentChunk) => {
       if (currentChunk) {
@@ -606,7 +606,7 @@ class AnthropicClient extends BaseClient {
           response = await this.createResponse(client, requestOptions);
 
           signal.addEventListener('abort', () => {
-            logger.debug('[AnthropicClient] message aborted!');
+            logger.debug('message aborted!');
             if (response.controller?.abort) {
               response.controller.abort();
             }
@@ -636,7 +636,7 @@ class AnthropicClient extends BaseClient {
           }
         } finally {
           signal.removeEventListener('abort', () => {
-            logger.debug('[AnthropicClient] message aborted!');
+            logger.debug('message aborted!');
             if (response.controller?.abort) {
               response.controller.abort();
             }
@@ -749,7 +749,7 @@ class AnthropicClient extends BaseClient {
     };
 
     await titleChatCompletion();
-    logger.debug('[AnthropicClient] Convo Title: ' + title);
+    logger.debug('Convo Title: ' + title);
     return title;
   }
 }

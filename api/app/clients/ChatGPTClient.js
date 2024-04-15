@@ -293,7 +293,7 @@ class ChatGPTClient extends BaseClient {
         ...modelOptions,
         ...this.options.addParams,
       };
-      logger.debug('[ChatGPTClient] chatCompletion: added params', {
+      logger.debug('chatCompletion: added params', {
         addParams: this.options.addParams,
         modelOptions,
       });
@@ -303,7 +303,7 @@ class ChatGPTClient extends BaseClient {
       this.options.dropParams.forEach((param) => {
         delete modelOptions[param];
       });
-      logger.debug('[ChatGPTClient] chatCompletion: dropped params', {
+      logger.debug('chatCompletion: dropped params', {
         dropParams: this.options.dropParams,
         modelOptions,
       });

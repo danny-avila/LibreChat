@@ -24,7 +24,7 @@ const summaryBuffer = async ({
   signal,
 }) => {
   if (previous_summary) {
-    logger.debug('[summaryBuffer]', { previous_summary });
+    logger.debug({ previous_summary });
   }
 
   const formattedMessages = formatLangChainMessages(context, formatOptions);
@@ -46,7 +46,7 @@ const summaryBuffer = async ({
   const messages = await chatPromptMemory.chatHistory.getMessages();
 
   if (debug) {
-    logger.debug('[summaryBuffer]', { summary_buffer_messages: messages.length });
+    logger.debug({ summary_buffer_messages: messages.length });
   }
 
   const predictSummary = await predictNewSummary({
@@ -57,7 +57,7 @@ const summaryBuffer = async ({
   });
 
   if (debug) {
-    logger.debug('[summaryBuffer]', { summary: predictSummary });
+    logger.debug({ summary: predictSummary });
   }
 
   return { role: 'system', content: predictSummary };

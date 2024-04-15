@@ -66,7 +66,7 @@ class RunManager {
           });
 
           if (metadata.context !== 'title') {
-            logger.debug('[RunManager] handleLLMEnd:', {
+            logger.debug('handleLLMEnd:', {
               output: _output,
             });
           }
