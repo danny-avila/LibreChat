@@ -129,7 +129,7 @@ function Login() {
   };
 
   const currentDomain = window.location.hostname;
-  const logoImageFilename = domainLogos[currentDomain] || 'logo-africa.png';
+  const logoImageFilename = domainLogos[currentDomain] || 'logo-global.png';
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
@@ -137,11 +137,7 @@ function Login() {
         <ThemeSelector />
       </div>
       <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
-        <img
-          src={`/public/assets/${logoImageFilename}`}
-          className="mx-auto mb-6 h-16 w-auto"
-          alt="Logo"
-        />
+        <img src={`/assets/${logoImageFilename}`} className="mx-auto mb-6 h-16 w-auto" alt="Logo" />
         <h1
           className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
           style={{ userSelect: 'none' }}
