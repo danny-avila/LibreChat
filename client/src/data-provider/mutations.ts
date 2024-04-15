@@ -72,6 +72,7 @@ export const useGenTitleMutation = (): UseMutationResult<
           title: response.title,
         } as TConversation);
       });
+      document.title = response.title;
     },
   });
 };

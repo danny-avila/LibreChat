@@ -175,6 +175,25 @@ const TextToSpeech = atom<boolean>({
   ] as const,
 });
 
+const enterToSend = atom<boolean>({
+  key: 'enterToSend',
+  default: true,
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('enterToSend');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('enterToSend', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 const SpeechToText = atom<boolean>({
   key: 'SpeechToText',
   default: true,
@@ -223,6 +242,7 @@ export default {
   showBingToneSetting,
   showPopover,
   autoScroll,
+  enterToSend,
   showCode,
   hideSidePanel,
   modularChat,

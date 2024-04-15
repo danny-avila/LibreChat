@@ -14,6 +14,7 @@ import { TextareaAutosize } from '~/components/ui';
 import { useGetFileConfig } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
 import AttachFile from './Files/AttachFile';
+import { mainTextareaId } from '~/common';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import FileRow from './Files/FileRow';
@@ -140,7 +141,7 @@ const ChatForm = ({ index = 0 }) => {
                 onKeyDown={handleKeyDown}
                 onCompositionStart={handleCompositionStart}
                 onCompositionEnd={handleCompositionEnd}
-                id="prompt-textarea"
+                id={mainTextareaId}
                 tabIndex={0}
                 data-testid="text-input"
                 style={{ height: 44, overflowY: 'auto' }}
