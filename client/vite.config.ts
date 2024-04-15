@@ -15,11 +15,11 @@ export default defineConfig({
     strictPort: false,
     proxy: {
       '/api': {
-        target: 'http://localhost:3080',
+        target: 'https://fn-libre-c7ee2a1657b5.herokuapp.com/',
         changeOrigin: true,
       },
       '/oauth': {
-        target: 'http://localhost:3080',
+        target: 'https://fn-libre-c7ee2a1657b5.herokuapp.com/',
         changeOrigin: true,
       },
     },
