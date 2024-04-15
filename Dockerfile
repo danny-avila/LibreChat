@@ -28,7 +28,7 @@ ENV VITE_APP_TITLE=${VITE_APP_TITLE} \
 
 # Allow mounting of these files, which have no default
 # values.
-RUN touch .env
+COPY --chown=node:node .env .
 RUN npm config set fetch-retry-maxtimeout 600000
 RUN npm config set fetch-retries 5
 RUN npm config set fetch-retry-mintimeout 15000
