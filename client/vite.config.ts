@@ -15,6 +15,9 @@ function htmlPlugin(env: ReturnType<typeof loadEnv>) {
           if (value === undefined) {
             return match;
           }
+          if (!value.includes('"')) {
+            return value;
+          }
           return value.replace(/"/g, '&quot;');
         });
       },
