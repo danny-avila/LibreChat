@@ -1,3 +1,4 @@
+<!-- v0.7.0 -->
 <!DOCTYPE html>
 <html>
   <head>
@@ -33,15 +34,15 @@
       type="module"
       src="/src/main.jsx"
     ></script>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=%VITE_APP_GOOGLE_ANALYTICS_ID%"></script>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=%VITE_APP_GOOGLE_ADS_ID%"></script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=%VITE_GOOGLE_ANALYTICS_ID%"></script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=%VITE_GOOGLE_ADS_ID%"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
 
-      gtag('config', '%VITE_APP_GOOGLE_ANALYTICS_ID%');
-      gtag('config', '%VITE_APP_GOOGLE_ADS_ID%');
+      gtag('config', '%VITE_GOOGLE_ANALYTICS_ID%');
+      gtag('config', '%VITE_GOOGLE_ADS_ID%');
     </script>
   </head>
   <body>
@@ -49,7 +50,7 @@
 
     <script
       type="module"
-      src="/src/main.jsx"
+      src="/client/src/main.jsx"
     ></script>
   </body>
 </html>
