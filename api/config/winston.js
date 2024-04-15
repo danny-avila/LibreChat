@@ -30,12 +30,27 @@ const levels = {
 function wrapLogMethod(originalMethod) {
   return function (message, ...args) {
     const err = new Error();
-    const relevantStack = err.stack.split('\n')[2];
-    const match = relevantStack ? /at (.*?) \(?(.+?):(\d+):(\d+)\)?/.exec(relevantStack) : null;
+    const stack = err.stack.split('\n');
+    // Start parsing from the first relevant entry, which seems to be the second one based on your stack example.
+    let relevantStack = stack[2] || stack[1]; // Fallback to an earlier stack if needed
+    // Adjusted regex to optionally match function calls in parentheses
+    let match = relevantStack
+      ? /at\s+(?:.*?\s+)?\(?([^)]+):(\d+):(\d+)\)?/.exec(relevantStack)
+      : null;
+
+    if (!match) {
+      // Try a broader regex if the first one fails
+      match = relevantStack ? /at\s+.*?\((.*?):(\d+):(\d+)\)/.exec(relevantStack) : null;
+    }
 
     if (match) {
-      const relativePath = path.relative(basePath, match[2]);
-      message = `[./api/${relativePath}:${match[3]}] ${message}`;
+      // Calculate the relative path based on the basePath you define
+      const relativePath = path.relative(basePath, match[1]);
+      message = `[./api/${relativePath}:${match[2]}] ${message}`;
+    } else {
+      // Log the entire stack if no match is found (optional, for debugging purposes)
+      console.log('Failed to parse stack:', err.stack);
+      message = `[can't detect location] ${message}`;
     }
 
     originalMethod.call(this, message, ...args);

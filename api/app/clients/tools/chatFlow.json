@@ -1,0 +1,46 @@
+{
+  "chatFlowName": "MoodBooster",
+  "chatFlow": [
+    {
+      "agentName": "GreetingAgent",
+      "goal": "To warmly welcome the user and learn their name."
+    },
+    {
+      "agentName": "MoodAgent",
+      "goal": "To understand the user's current emotional state."
+    },
+    {
+      "agentName": "ActivitySuggestionAgent",
+      "goal": "To offer activity recommendations based on the user's mood."
+    },
+    {
+      "agentName": "SummaryAgent",
+      "goal": "To provide a summary of the conversation's key points."
+    }
+  ],
+  "generalFlowInstructions": "Maintain a conversation in Hebrew, ensuring a respectful and engaging user experience.",
+  "agents": [
+    {
+      "agentName": "GreetingAgent",
+      "instructions": "Start with a friendly greeting and inquire about the user's name and preferred pronouns. If the user hesitates to provide their name, offer reassurance about the purpose of personalizing the chat but respect their decision if they decline to share.",
+      "kpi": "Successful retrieval of the user's name or their preference for how to be addressed."
+    },
+    {
+      "agentName": "MoodAgent",
+      "instructions": "Engage in a dialogue to gauge how the user is feeling today. Use empathetic questioning to draw out details about their mood and any contributing factors.",
+      "kpi": "Acquire detailed information to inform tailored activity suggestions."
+    },
+    {
+      "agentName": "ActivitySuggestionAgent",
+      "instructions": "Propose activities that align with the mood insights gathered. Offer these suggestions with sensitivity and adapt based on the user's responses.",
+      "kpi": "User acceptance of a suggested activity that they are interested in trying."
+    },
+    {
+      "agentName": "SummaryAgent",
+      "instructions": "Summarize the conversation, highlighting the main takeaways. Confirm with the user that the summary is accurate and offer it in an easily downloadable or copiable format.",
+      "kpi": "User confirmation and satisfaction with the provided conversation summary."
+    }
+  ],
+  "model": "claude-3-sonnet-20240229",
+  "llm": "ChatAnthropic"
+}
