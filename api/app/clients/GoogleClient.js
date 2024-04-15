@@ -4,6 +4,7 @@ const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
 const { GoogleVertexAI } = require('@langchain/community/llms/googlevertexai');
+const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
 const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
@@ -362,7 +363,7 @@ class GoogleClient extends BaseClient {
   }
 
   async buildMessages(messages = [], parentMessageId) {
-    if (this.isTextModel && !this.project_id) {
+    if (!this.isGenerativeModel && !this.project_id) {
       throw new Error(
         '[GoogleClient] a Service Account JSON Key is required for PaLM 2 and Codey models (Vertex AI)',
       );
@@ -589,6 +590,8 @@ class GoogleClient extends BaseClient {
     const model = clientOptions.modelName ?? clientOptions.model;
     if (this.project_id && this.isTextModel) {
       return new GoogleVertexAI(clientOptions);
+    } else if (this.project_id && this.isChatModel) {
+      return new ChatGoogleVertexAI(clientOptions);
     } else if (this.project_id) {
       return new ChatVertexAI(clientOptions);
     } else if (model.includes('1.5')) {
