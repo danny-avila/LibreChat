@@ -1,9 +1,9 @@
 const { google } = require('googleapis');
 const { Agent, ProxyAgent } = require('undici');
-const { GoogleVertexAI } = require('langchain/llms/googlevertexai');
+const { ChatVertexAI } = require('@langchain/google-vertexai');
 const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
 const { GoogleGenerativeAI: GenAI } = require('@google/generative-ai');
-const { ChatGoogleVertexAI } = require('langchain/chat_models/googlevertexai');
+const { GoogleVertexAI } = require('@langchain/community/llms/googlevertexai');
 const { AIMessage, HumanMessage, SystemMessage } = require('langchain/schema');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const {
@@ -351,17 +351,13 @@ class GoogleClient extends BaseClient {
   }
 
   async buildMessages(messages = [], parentMessageId) {
-    if (!this.isGenerativeModel && !this.project_id) {
+    if (this.isTextModel && !this.project_id) {
       throw new Error(
         '[GoogleClient] a Service Account JSON Key is required for PaLM 2 and Codey models (Vertex AI)',
       );
-    } else if (this.isGenerativeModel && (!this.apiKey || this.apiKey === 'user_provided')) {
-      throw new Error(
-        '[GoogleClient] an API Key is required for Gemini models (Generative Language API)',
-      );
     }
 
-    if (this.modelOptions.model.includes('1.5')) {
+    if (!this.project_id && this.modelOptions.model.includes('1.5')) {
       return await this.buildGenerativeMessages(messages);
     }
 
@@ -579,7 +575,11 @@ class GoogleClient extends BaseClient {
   }
 
   createLLM(clientOptions) {
-    if (clientOptions.modelName.includes('1.5')) {
+    if (this.project_id && this.isTextModel) {
+      return new GoogleVertexAI(clientOptions);
+    } else if (this.project_id) {
+      return new ChatVertexAI(clientOptions);
+    } else if (clientOptions.modelName.includes('1.5')) {
       return new GenAI(this.apiKey).getGenerativeModel(
         {
           ...clientOptions,
@@ -587,13 +587,9 @@ class GoogleClient extends BaseClient {
         },
         { apiVersion: 'v1beta' },
       );
-    } else if (this.isGenerativeModel) {
-      return new ChatGoogleGenerativeAI({ ...clientOptions, apiKey: this.apiKey });
     }
 
-    return this.isTextModel
-      ? new GoogleVertexAI(clientOptions)
-      : new ChatGoogleVertexAI(clientOptions);
+    return new ChatGoogleGenerativeAI({ ...clientOptions, apiKey: this.apiKey });
   }
 
   async getCompletion(_payload, options = {}) {
@@ -605,7 +601,7 @@ class GoogleClient extends BaseClient {
 
     let clientOptions = { ...parameters, maxRetries: 2 };
 
-    if (!this.isGenerativeModel) {
+    if (this.project_id) {
       clientOptions['authOptions'] = {
         credentials: {
           ...this.serviceKey,
@@ -618,7 +614,7 @@ class GoogleClient extends BaseClient {
       clientOptions = { ...clientOptions, ...this.modelOptions };
     }
 
-    if (this.isGenerativeModel) {
+    if (this.isGenerativeModel && !this.project_id) {
       clientOptions.modelName = clientOptions.model;
       delete clientOptions.model;
     }
@@ -649,7 +645,7 @@ class GoogleClient extends BaseClient {
       messages.unshift(new SystemMessage(context));
     }
 
-    if (clientOptions.modelName.includes('1.5')) {
+    if (this.isGenerativeModel && !this.project_id) {
       /** @type {GenerativeModel} */
       const client = model;
       const result = await client.generateContentStream({
@@ -657,11 +653,10 @@ class GoogleClient extends BaseClient {
       });
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();
-        onProgress(chunkText);
         // TODO: handle a similar method from the frontend, as this is too noisy for the event loop to handle
-        // await this.generateTextStream(chunkText, onProgress, {
-        //   delay: 12,
-        // });
+        this.generateTextStream(chunkText, onProgress, {
+          delay: 12,
+        });
         reply += chunkText;
       }
       return reply;
@@ -673,10 +668,11 @@ class GoogleClient extends BaseClient {
     });
 
     for await (const chunk of stream) {
-      await this.generateTextStream(chunk?.content ?? chunk, onProgress, {
+      const chunkText = chunk?.content ?? chunk;
+      this.generateTextStream(chunkText, onProgress, {
         delay: this.isGenerativeModel ? 12 : 8,
       });
-      reply += chunk?.content ?? chunk;
+      reply += chunkText;
     }
 
     return reply;
