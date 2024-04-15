@@ -9,8 +9,15 @@ function htmlPlugin(env: ReturnType<typeof loadEnv>) {
     name: 'html-transform',
     transformIndexHtml: {
       enforce: 'pre' as const,
-      transform: (html: string): string =>
-        html.replace(/%(.*?)%/g, (match, p1) => env[p1] ?? match),
+      transform: (html: string): string => {
+        return html.replace(/%(.*?)%/g, (match, p1) => {
+          const value = env[p1];
+          if (value === undefined) {
+            return match;
+          }
+          return value.replace(/"/g, '&quot;');
+        });
+      },
     },
   };
 }
