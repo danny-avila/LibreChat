@@ -48,9 +48,7 @@ async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'hi
 
   const fileName = `${file_id}__${path.basename(inputFilePath)}`;
   const newPath = path.join(userPath, fileName);
-
-  const targetFormat = req.app.locals.imageOutputType.split('/')[1];
-  const targetExtension = `.${targetFormat}`;
+  const targetExtension = `.${req.app.locals.imageOutputType}`;
 
   if (extension.toLowerCase() === targetExtension) {
     const bytes = Buffer.byteLength(resizedBuffer);
@@ -60,7 +58,7 @@ async function uploadLocalImage({ req, file, file_id, endpoint, resolution = 'hi
   }
 
   const outputFilePath = newPath.replace(extension, targetExtension);
-  const data = await sharp(resizedBuffer).toFormat(targetFormat).toBuffer();
+  const data = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
   await fs.promises.writeFile(outputFilePath, data);
   const bytes = Buffer.byteLength(data);
   const filepath = path.posix.join('/', 'images', req.user.id, path.basename(outputFilePath));

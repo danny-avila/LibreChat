@@ -1,6 +1,7 @@
 const {
   FileSources,
   EModelEndpoint,
+  EImageOutputType,
   defaultSocialLogins,
   validateAzureGroups,
   deprecatedAzureVariables,
@@ -129,20 +130,29 @@ describe('AppService', () => {
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Outdated Config version'));
   });
 
-  it('should change the imageOutputType based on fileConfig value', async () => {
+  it('should change the `imageOutputType` based on config value', async () => {
     require('./Config/loadCustomConfig').mockImplementationOnce(() =>
       Promise.resolve({
         version: '0.10.0',
-        fileConfig: {
-          imageOutputType: 'image/webp',
-        },
+        imageOutputType: EImageOutputType.WEBP,
       }),
     );
 
     await AppService(app);
 
-    expect(app.locals.imageOutputType).toEqual('image/webp');
-    expect(app.locals.fileConfig.imageOutputType).toEqual('image/webp');
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.WEBP);
+  });
+
+  it('should default to `PNG` `imageOutputType` with no provided type', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        version: '0.10.0',
+      }),
+    );
+
+    await AppService(app);
+
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
   });
 
   it('should initialize Firebase when fileStrategy is firebase', async () => {

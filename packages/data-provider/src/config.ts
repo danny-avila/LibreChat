@@ -186,10 +186,17 @@ export const rateLimitSchema = z.object({
     .optional(),
 });
 
+export enum EImageOutputType {
+  PNG = 'png',
+  WEBP = 'webp',
+  JPEG = 'jpeg',
+}
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().optional().default(true),
   secureImageLinks: z.boolean().optional(),
+  imageOutputType: z.nativeEnum(EImageOutputType).optional().default(EImageOutputType.PNG),
   interface: z
     .object({
       privacyPolicy: z

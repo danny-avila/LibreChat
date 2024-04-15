@@ -185,17 +185,10 @@ export const endpointFileConfigSchema = z.object({
   supportedMimeTypes: supportedMimeTypesSchema.optional(),
 });
 
-export enum EImageOutputType {
-  PNG = 'image/png',
-  WEBP = 'image/webp',
-  JPEG = 'image/jpeg',
-}
-
 export const fileConfigSchema = z.object({
   endpoints: z.record(endpointFileConfigSchema).optional(),
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
-  imageOutputType: z.nativeEnum(EImageOutputType).optional().default(EImageOutputType.PNG),
 });
 
 /** Helper function to safely convert string patterns to RegExp objects */

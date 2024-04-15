@@ -18,7 +18,7 @@ router.post('/', upload.single('input'), async (req, res) => {
     }
 
     const fileStrategy = req.app.locals.fileStrategy;
-    const desiredFormat = req.app.locals.imageOutputType.split('/')[1];
+    const desiredFormat = req.app.locals.imageOutputType;
     const resizedBuffer = await resizeAvatar({
       userId,
       input,

@@ -38,15 +38,13 @@ async function convertImage(req, file, resolution = 'high', basename = '') {
       height,
     } = await resizeImageBuffer(inputBuffer, resolution);
 
-    // Check if the file is already in target format
-    const targetType = req.app.locals.imageOutputType;
-    const targetExtension = targetType.split('/')[1];
-    // If it isn't, convert it:
-    if (extension === `.${targetExtension}`) {
+    // Check if the file is already in target format; if it isn't, convert it:
+    const targetExtension = `.${req.app.locals.imageOutputType}`;
+    if (extension === targetExtension) {
       outputBuffer = resizedBuffer;
     } else {
-      outputBuffer = await sharp(resizedBuffer).toFormat(targetExtension).toBuffer();
-      extension = `.${targetExtension}`;
+      outputBuffer = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
+      extension = targetExtension;
     }
 
     // Generate a new filename for the output file

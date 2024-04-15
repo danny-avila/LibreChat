@@ -39,12 +39,11 @@ async function uploadImageToFirebase({ req, file, file_id, endpoint, resolution 
 
   let webPBuffer;
   let fileName = `${file_id}__${path.basename(inputFilePath)}`;
-  const targetFormat = req.app.locals.imageOutputType.split('/')[1];
-  const targetExtension = `.${targetFormat}`;
+  const targetExtension = `.${req.app.locals.imageOutputType}`;
   if (extension.toLowerCase() === targetExtension) {
     webPBuffer = resizedBuffer;
   } else {
-    webPBuffer = await sharp(resizedBuffer).toFormat(targetFormat).toBuffer();
+    webPBuffer = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
     // Replace or append the correct extension
     const extRegExp = new RegExp(path.extname(fileName) + '$');
     fileName = fileName.replace(extRegExp, targetExtension);

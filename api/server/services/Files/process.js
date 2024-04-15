@@ -207,7 +207,7 @@ const processImageFile = async ({ req, res, file, metadata }) => {
       filename: file.originalname,
       context: FileContext.message_attachment,
       source,
-      type: req.app.locals.imageOutputType,
+      type: `image/${req.app.locals.imageOutputType}`,
       width,
       height,
     },
@@ -233,16 +233,14 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
   let { buffer, width, height, bytes, filename, file_id, type } = metadata;
   if (resize) {
     file_id = v4();
-    type = req.app.locals.imageOutputType;
-    const targetExtension = type.split('/')[1];
+    type = `image/${req.app.locals.imageOutputType}`;
     ({ buffer, width, height, bytes } = await resizeAndConvert({
       inputBuffer: buffer,
-      desiredFormat: targetExtension,
+      desiredFormat: req.app.locals.imageOutputType,
     }));
-    filename = `${path.basename(
-      req.file.originalname,
-      path.extname(req.file.originalname),
-    )}.${targetExtension}`;
+    filename = `${path.basename(req.file.originalname, path.extname(req.file.originalname))}.${
+      req.app.locals.imageOutputType
+    }`;
   }
 
   const filepath = await saveBuffer({ userId: req.user.id, fileName: filename, buffer });
@@ -387,7 +385,7 @@ const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileEx
     ..._file,
     usage: 1,
     user: req.user.id,
-    type: req.app.locals.imageOutputType,
+    type: `image/${req.app.locals.imageOutputType}`,
     createdAt: formattedDate,
     updatedAt: formattedDate,
     source: req.app.locals.fileStrategy,
