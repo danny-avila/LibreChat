@@ -1,27 +1,34 @@
 const { Tool } = require('langchain/tools');
-const chatFlowConfig = require('./chatFlow.json');
+const chatFlowConfig = require('./agent_recipe/MoodBooster.json');
+const { logger } = require('~/config');
 
 class AgentCoordinator extends Tool {
   constructor() {
     super();
+    this.sessions = {};
     this.reminders = 0;
     this.description =
       'The AgentCoordinator is a tool designed to manage and navigate through a structured multi stage conversational flow within an LLM chat application based on given chat Flow.';
+    //   this.description_for_model = `
+    //   // Guidelines:
+    //   // - Start the conversation with the "BootstrapAgent".
+    //   // - Follow the instructions to proceed through each agent.
+    //   // - The flow is sequential, and each agent has a specific role and goal.
+    //   // - Upon completing an agent's goal, invoke this tool again with the name of the current agent to receive instructions for the next agent.
+    //   // - Engage directly with the user, using the tool to guide the conversation's structure.
+    // `;
+
     this.description_for_model = `// Defines and dominates the goals and flow of the chat per predefined script that the chat needs to comply with.
 // Guidelines:
-// - Call the tool with the "BootstrapAgent" to initiate the conversation flow.
-// - Ensure a seamless and engaging user experience throughout the conversation by accurately following the provided instructions for each agent.
-// - ALWAYS use the current agent's name as input to determine the next agent in the flow.
+// - The tool should be called with input of 2 words. Agent name and status which is either "Start" or "Done". The initial agent name is "BootstrapAgent" and the status is "Done".
+// - Call the tool with the "BootstrapAgent Done" to initiate the conversation flow at the first time.
+// - The tool will provide you with your current name, mission, and instructions. Follow the instructions to complete your mission.
+// - ALWAYS use the current agent's name and the status. 
+// - When calling the tool with the "Done" status, you signal the completion of the current agent's mission and transition to the next agent in the flow.
+// - Actually there is no need to call the tool with status "Start", since it will repeat the same instructions it gave with the previous Agent was done.  
 // - The flow is defined by a sequential list of agents, each with a specific role and goal to achieve during the interaction.
-// - Upon completing an agent's goal, invoke this tool again with the name of the current agent to receive instructions for transitioning to the next agent.
-// - Each agent's instructions include the role, goal, specific action items, KPIs, and general instructions for interaction.
-// - The conversation flow concludes when there are no more agents to transition to, signaling the end of the multi stage interaction.
-// Example for initiating the flow:
-// "currentAgentName":"BootstrapAgent"
-// Example for transitioning to the next agent:
-// "currentAgentName":"GreetingAgent"
-// Start now by calling the tool with "BootstrapAgent" to initiate the conversation flow.
-// Remember, the tool is there to guide you, but the user's input is paramount. Engage with the user directly and use the tool as a guide for the conversation's structure and progression.
+// Start now by calling the tool with "BootstrapAgent Done" to initiate the conversation flow.
+// Remember, the tool is there to guide you, but the user's input is paramount. Engage with the user directly and use the tool as a guide for the conversation's structure and progression. if you need more instructions use self reflect to decide
 `;
 
     // this.returnDirect = true;
@@ -32,17 +39,32 @@ class AgentCoordinator extends Tool {
     this.generalFlowInstructions = chatFlowConfig.generalFlowInstructions;
   }
 
-  async _call(agentName) {
+  async _call(agentRequest) {
     // Your tool's functionality goes here
     try {
-      this.agentName = this.getAgentName(agentName);
+      this.agentName = this.getAgentName(agentRequest);
+      return this.getNextAgentDetails(this.agentName);
     } catch (error) {
-      console.error(error.message);
+      return error(error.message);
     }
-    return this.getNextAgentDetails(this.agentName);
   }
 
-  getAgentName(agentName) {
+  getAgentName(agentRequest) {
+    // Extract the agentName from the agentRequest
+    let agentName;
+    let status;
+    try {
+      agentName = agentRequest.split(' ')[0];
+      status = agentRequest.split(' ')[1];
+    } catch (error) {
+      throw new Error(
+        'Invalid input. Please provide 2 words with a space between them "agent_name status".',
+      );
+    }
+    if (status !== 'Start' && status !== 'Done') {
+      throw new Error('Invalid status. Please provide either "Start" or "Done".');
+    }
+
     // Handle the bootstrap scenario by returning the first agent if no agentName is provided
     // or if the agentName is "BootstrapAgent"
     if (!agentName || agentName === 'BootstrapAgent') {
@@ -66,7 +88,8 @@ class AgentCoordinator extends Tool {
 
   // Function to find the index of the current agent in the chat flow
   _findCurrentAgentIndex(currentAgentName) {
-    return Object.keys(this.chatFlow).indexOf(currentAgentName);
+    const agents = chatFlowConfig.agents;
+    return agents.findIndex((agent) => agent.agentName === currentAgentName);
   }
 
   // Main method to get the next agent's details
@@ -82,39 +105,25 @@ class AgentCoordinator extends Tool {
       nextAgentIndex = currentAgentIndex + 1; // Proceed to next agent
     }
 
-    if (nextAgentIndex > Object.keys(this.chatFlow).length - 1) {
+    if (nextAgentIndex >= chatFlowConfig.agents) {
       return { endOfFlow: true, message: 'This is the end of the conversation flow. Thank you!' };
     }
 
     // Get the next agent's name from the chat flow order
-    nextAgent = this.chatFlow[nextAgentIndex];
-    const agentDetails = this.agents.find((agent) => agent.agentName === nextAgent.agentName);
-    const agentInstructions = agentDetails ? agentDetails.instructions : 'Agent not found';
-    const agentKPI = agentDetails ? agentDetails.kpi : 'Agent not found';
+    nextAgent = this.agents[nextAgentIndex];
 
-    // Construct the next agent's prompt including role, goal, and instructions
-    const nextAgentPrompt = `
-    As the ${
-  nextAgent.agentName
-}, your mission is to ${nextAgent.goal.toLowerCase()}. Adhere to the following instructions:
-    
-    ${agentInstructions}
-    
-    Aim to achieve the following key performance indicator (KPI):
-    - ${agentKPI}
-    
-    Keep in mind these general guidelines during your interaction:
-    - ${this.generalFlowInstructions}
-    
-    Upon completing your current mission, engage the AgentCoordinator with the code ${
-  nextAgent.agentName
-}', signaling readiness for the next phase of the conversation.
-    `;
-
-    // Debugging - Uncomment if needed to verify the content of the prompt
-    // console.log(nextAgentPrompt);
-
-    return nextAgentPrompt.trim();
+    const nextAgentPrompt = {
+      agentName: nextAgent.agentName,
+      goal: nextAgent.goal,
+      general_flow_instructions: this.generalFlowInstructions,
+      instructions_for_current_agent: nextAgent.instructions,
+      kpi: nextAgent.kpi,
+      when_done: `Call the AgentCoordinator with the input '${nextAgent.agentName}' to signal readiness for the next phase of the conversation.`,
+      important: `Don't call the plugin more than once for the same stage. you already called it with input ${currentAgentName}.`,
+    };
+    const result = JSON.stringify(nextAgentPrompt);
+    logger.debug(result);
+    return result;
   }
 }
 

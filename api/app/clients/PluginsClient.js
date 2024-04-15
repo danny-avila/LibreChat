@@ -183,29 +183,23 @@ class PluginsClient extends OpenAIClient {
       }
 
       try {
-        this.result = await this.executor.call(
+        this.result = await this.executor.call({ input, signal }, [
           {
-            input: { currentAgentName: this.currentAgent }, // Use updated agent name
-            signal,
-          },
-          [
-            {
-              handleToolStart: async (...args) => {
-                await onToolStart(...args);
-              },
-              handleToolEnd: async (...args) => {
-                await onToolEnd(...args);
-              },
-              async handleLLMEnd(output) {
-                const { generations } = output;
-                const { text } = generations[0][0];
-                if (text && typeof stream === 'function') {
-                  await stream(text);
-                }
-              },
+            handleToolStart: async (...args) => {
+              await onToolStart(...args);
             },
-          ],
-        );
+            handleToolEnd: async (...args) => {
+              await onToolEnd(...args);
+            },
+            async handleLLMEnd(output) {
+              const { generations } = output;
+              const { text } = generations[0][0];
+              if (text && typeof stream === 'function') {
+                await stream(text);
+              }
+            },
+          },
+        ]);
 
         break; // Exit the loop if the function call is successful
       } catch (err) {
