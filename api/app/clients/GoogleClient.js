@@ -659,7 +659,8 @@ class GoogleClient extends BaseClient {
       messages.unshift(new SystemMessage(context));
     }
 
-    if (this.isGenerativeModel && !this.project_id) {
+    const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
+    if (modelName?.includes('1.5') && !this.project_id) {
       /** @type {GenerativeModel} */
       const client = model;
       const requestOptions = {
