@@ -237,14 +237,14 @@ class PluginsClient extends OpenAIClient {
     return { ...responseMessage, ...result };
   }
 
-  async sendMessage(message, opts = {}) {
+  async sendMessage(HumanMessage, opts = {}) {
     // If a message is edited, no tools can be used.
     const completionMode = this.options.tools.length === 0 || opts.isEdited;
     if (completionMode) {
       this.setOptions(opts);
-      return super.sendMessage(message, opts);
+      return super.sendMessage(HumanMessage, opts);
     }
-    logger.debug('sendMessage', { message, opts });
+    logger.debug('sendMessage', { HumanMessage, opts });
     const {
       user,
       isEdited,
@@ -256,7 +256,7 @@ class PluginsClient extends OpenAIClient {
       onChainEnd,
       onToolStart,
       onToolEnd,
-    } = await this.handleStartMethods(message, opts);
+    } = await this.handleStartMethods(HumanMessage, opts);
 
     this.currentMessages.push(userMessage);
 
@@ -316,7 +316,7 @@ class PluginsClient extends OpenAIClient {
 
     await this.initialize({
       user,
-      message,
+      message: HumanMessage,
       onAgentAction,
       onChainEnd,
       signal: this.abortController.signal,
@@ -326,7 +326,7 @@ class PluginsClient extends OpenAIClient {
     // const stream = async (text) => {
     //   await this.generateTextStream.call(this, text, opts.onProgress, { delay: 1 });
     // };
-    await this.executorCall(message, {
+    await this.executorCall(HumanMessage, {
       signal: this.abortController.signal,
       // stream,
       onToolStart,
@@ -367,7 +367,7 @@ class PluginsClient extends OpenAIClient {
 
     const promptPrefix = buildPromptPrefix({
       result: this.result,
-      message,
+      message: HumanMessage,
       functionsAgent: this.functionsAgent,
     });
 
