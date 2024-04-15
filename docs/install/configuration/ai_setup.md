@@ -121,7 +121,7 @@ ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
 
 ## Google
 
-For the Google Endpoint, you can either use the **Generative Language API** (for Gemini models), or the **Vertex AI API** (for PaLM2 & Codey models, Gemini support coming soon).
+For the Google Endpoint, you can either use the **Generative Language API** (for Gemini models), or the **Vertex AI API** (for Gemini, PaLM2 & Codey models).
 
 The Generative Language API uses an API key, which you can get from **Google AI Studio**.
 
@@ -166,6 +166,7 @@ Notes:
 - Selecting `gemini-pro-vision` for messages with attachments is not necessary as it will be switched behind the scenes for you
 - Since `gemini-pro-vision`does not accept non-attachment messages, messages without attachments are automatically switched to use `gemini-pro` (otherwise, Google responds with an error)
 - With the Google endpoint, you cannot use both Vertex AI and Generative Language API at the same time. You must choose one or the other.
+- Some PaLM/Codey models and `gemini-pro-vision` may fail when `maxOutputTokens` is set to a high value. If you encounter this issue, try reducing the value through the conversation parameters.
 
 Setting `GOOGLE_KEY=user_provided` in your .env file sets both the Vertex AI Service Account JSON key file and the Generative Language API key to be provided from the frontend like so:
 
