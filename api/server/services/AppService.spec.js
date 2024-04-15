@@ -129,6 +129,22 @@ describe('AppService', () => {
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Outdated Config version'));
   });
 
+  it('should change the imageOutputType based on fileConfig value', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        version: '0.10.0',
+        fileConfig: {
+          imageOutputType: 'image/webp',
+        },
+      }),
+    );
+
+    await AppService(app);
+
+    expect(app.locals.imageOutputType).toEqual('image/webp');
+    expect(app.locals.fileConfig.imageOutputType).toEqual('image/webp');
+  });
+
   it('should initialize Firebase when fileStrategy is firebase', async () => {
     require('./Config/loadCustomConfig').mockImplementationOnce(() =>
       Promise.resolve({
