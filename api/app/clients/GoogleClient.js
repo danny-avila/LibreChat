@@ -575,15 +575,16 @@ class GoogleClient extends BaseClient {
   }
 
   createLLM(clientOptions) {
+    const model = clientOptions.modelName ?? clientOptions.model;
     if (this.project_id && this.isTextModel) {
       return new GoogleVertexAI(clientOptions);
     } else if (this.project_id) {
       return new ChatVertexAI(clientOptions);
-    } else if (clientOptions.modelName.includes('1.5')) {
+    } else if (model.includes('1.5')) {
       return new GenAI(this.apiKey).getGenerativeModel(
         {
           ...clientOptions,
-          model: clientOptions.modelName,
+          model,
         },
         { apiVersion: 'v1beta' },
       );
