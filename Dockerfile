@@ -9,8 +9,9 @@ RUN apk --no-cache add curl
 
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
-# Copy the .env file from your local machine
-COPY .env .
+
+ARG ENV_FILE
+COPY ${ENV_FILE} .
 
 USER node
 
