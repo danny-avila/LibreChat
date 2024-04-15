@@ -121,7 +121,7 @@ function Login() {
         <ThemeSelector />
       </div>
       <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
-        <img src="/assets/logo-china.png" className="mx-auto mb-6 h-16 w-auto" />
+        <img src={process.env.REACT_APP_LOGO_URL} className="mx-auto mb-6 h-16 w-auto" />
         <h1
           className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
           style={{ userSelect: 'none' }}
