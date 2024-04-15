@@ -6,7 +6,7 @@ const { getStrategyFunctions } = require('../strategies');
 const { logger } = require('~/config');
 
 /**
- * Converts an image file or buffer to WebP format with specified resolution.
+ * Converts an image file or buffer to target output type with specified resolution.
  *
  * @param {Express.Request} req - The request object, containing user and app configuration data.
  * @param {Buffer | Express.Multer.File} file - The file object, containing either a path or a buffer.
@@ -15,7 +15,7 @@ const { logger } = require('~/config');
  * @returns {Promise<{filepath: string, bytes: number, width: number, height: number}>} An object containing the path, size, and dimensions of the converted image.
  * @throws Throws an error if there is an issue during the conversion process.
  */
-async function convertToWebP(req, file, resolution = 'high', basename = '') {
+async function convertImage(req, file, resolution = 'high', basename = '') {
   try {
     let inputBuffer;
     let outputBuffer;
@@ -38,13 +38,15 @@ async function convertToWebP(req, file, resolution = 'high', basename = '') {
       height,
     } = await resizeImageBuffer(inputBuffer, resolution);
 
-    // Check if the file is already in WebP format
+    // Check if the file is already in target format
+    const targetType = req.app.locals.imageOutputType;
+    const targetExtension = targetType.split('/')[1];
     // If it isn't, convert it:
-    if (extension === '.webp') {
+    if (extension === `.${targetExtension}`) {
       outputBuffer = resizedBuffer;
     } else {
-      outputBuffer = await sharp(resizedBuffer).toFormat('webp').toBuffer();
-      extension = '.webp';
+      outputBuffer = await sharp(resizedBuffer).toFormat(targetExtension).toBuffer();
+      extension = `.${targetExtension}`;
     }
 
     // Generate a new filename for the output file
@@ -67,4 +69,4 @@ async function convertToWebP(req, file, resolution = 'high', basename = '') {
   }
 }
 
-module.exports = { convertToWebP };
+module.exports = { convertImage };

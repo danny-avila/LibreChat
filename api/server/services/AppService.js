@@ -3,6 +3,7 @@ const {
   FileSources,
   Capabilities,
   EModelEndpoint,
+  EImageOutputType,
   defaultSocialLogins,
   validateAzureGroups,
   mapModelToAzureConfig,
@@ -181,6 +182,7 @@ const AppService = async (app) => {
     fileConfig: config?.fileConfig,
     interface: config?.interface,
     secureImageLinks: config?.secureImageLinks,
+    imageOutputType: config?.fileConfig?.imageOutputType ?? EImageOutputType.PNG,
     paths,
     ...endpointLocals,
   };

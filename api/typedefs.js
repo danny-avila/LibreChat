@@ -302,6 +302,12 @@
  */
 
 /**
+ * @exports EImageOutputType
+ * @typedef {import('librechat-data-provider').EImageOutputType} EImageOutputType
+ * @memberof typedefs
+ */
+
+/**
  * @exports TCustomConfig
  * @typedef {import('librechat-data-provider').TCustomConfig} TCustomConfig
  * @memberof typedefs

@@ -227,6 +227,11 @@ This example configuration file sets up LibreChat with detailed options across s
     - **Type**: Number
     - **Description**: Maximum size (in MB) for user avatar images.
 
+  - **Sub-Key**: `imageOutputType`
+    - **Type**: String, "image/png" | "image/webp" | "image/jpeg"
+    - **Description**: The image output type for image responses. Defaults to "image/png" if omitted.
+    - **Note**: Google endpoint does not support "image/webp" output type.
+
 ### Rate Limiting
 
 - **Key**: `rateLimits`
