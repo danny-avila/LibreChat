@@ -1,5 +1,5 @@
 const throttle = require('lodash/throttle');
-const { getResponseSender, Constants } = require('librechat-data-provider');
+const { getResponseSender, Constants, EModelEndpoint } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 const { saveMessage, getConvo } = require('~/models');
@@ -48,7 +48,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
   try {
     const { client } = await initializeClient({ req, res, endpointOption });
-
+    const unfinished = endpointOption.endpoint === EModelEndpoint.google ? false : true;
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
       onProgress: throttle(
         ({ text: partialText }) => {
@@ -59,7 +59,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
             parentMessageId: overrideParentMessageId ?? userMessageId,
             text: partialText,
             model: client.modelOptions.model,
-            unfinished: true,
+            unfinished,
             error: false,
             user,
           });
