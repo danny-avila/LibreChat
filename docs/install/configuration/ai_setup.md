@@ -121,7 +121,7 @@ ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
 
 ## Google
 
-For the Google Endpoint, you can either use the **Generative Language API** (for Gemini models), or the **Vertex AI API** (for PaLM2 & Codey models, Gemini support coming soon).
+For the Google Endpoint, you can either use the **Generative Language API** (for Gemini models), or the **Vertex AI API** (for Gemini, PaLM2 & Codey models).
 
 The Generative Language API uses an API key, which you can get from **Google AI Studio**.
 
@@ -131,12 +131,12 @@ Instructions for both are given below.
 
 ### Generative Language API (Gemini)
 
-**60 Gemini requests/minute are currently free until early next year when it enters general availability.**
+**[See here for Gemini API pricing and rate limits](https://ai.google.dev/pricing)**
 
-⚠️ Google will be using that free input/output to help improve the model, with data de-identified from your Google Account and API key.
+⚠️ While Google models are free, they are using your input/output to help improve the model, with data de-identified from your Google Account and API key.
 ⚠️ During this period, your messages “may be accessible to trained reviewers.”
 
-To use Gemini models, you'll need an API key. If you don't already have one, create a key in Google AI Studio.
+To use Gemini models through Google AI Studio, you'll need an API key. If you don't already have one, create a key in Google AI Studio.
 
 Get an API key here: **[makersuite.google.com](https://makersuite.google.com/app/apikey)**
 
@@ -151,16 +151,30 @@ Or, you can make users provide it from the frontend by setting the following:
 GOOGLE_KEY=user_provided
 ```
 
+Since fetching the models list isn't yet supported, you should set the models you want to use in the .env file.
+
+For your convenience, these are the latest models as of 4/15/24 that can be used with the Generative Language API:
+
+```bash
+GOOGLE_MODELS=gemini-1.0-pro,gemini-1.0-pro-001,gemini-1.0-pro-latest,gemini-1.0-pro-vision-latest,gemini-1.5-pro-latest,gemini-pro,gemini-pro-vision
+```
+
 Notes:
-- PaLM2 and Codey models cannot be accessed through the Generative Language API, only through Vertex AI.
+- A gemini-pro model or `gemini-pro-vision` are required in your list for attaching images.
+- Using LibreChat, PaLM2 and Codey models can only be accessed through Vertex AI, not the Generative Language API.
+    - Only models that support the `generateContent` method can be used natively with LibreChat + the Gen AI API.
 - Selecting `gemini-pro-vision` for messages with attachments is not necessary as it will be switched behind the scenes for you
 - Since `gemini-pro-vision`does not accept non-attachment messages, messages without attachments are automatically switched to use `gemini-pro` (otherwise, Google responds with an error)
+- With the Google endpoint, you cannot use both Vertex AI and Generative Language API at the same time. You must choose one or the other.
+- Some PaLM/Codey models and `gemini-pro-vision` may fail when `maxOutputTokens` is set to a high value. If you encounter this issue, try reducing the value through the conversation parameters.
 
-Setting `GOOGLE_KEY=user_provided` in your .env file will configure both the Vertex AI Service Account JSON key file and the Generative Language API key to be provided from the frontend like so:
+Setting `GOOGLE_KEY=user_provided` in your .env file sets both the Vertex AI Service Account JSON key file and the Generative Language API key to be provided from the frontend like so:
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/728cbc04-4180-45a8-848c-ae5de2b02996)
 
-### Vertex AI (PaLM 2 & Codey)
+### Vertex AI
+
+**[See here for Vertex API pricing and rate limits](https://cloud.google.com/vertex-ai/generative-ai/pricing)**
 
 To setup Google LLMs (via Google Cloud Vertex AI), first, signup for Google Cloud: **[cloud.google.com](https://cloud.google.com/)**
 
@@ -199,7 +213,13 @@ Alternatively, you can make users provide it from the frontend by setting the fo
 GOOGLE_KEY=user_provided
 ```
 
-Note: Using Gemini models through Vertex AI is possible but not yet supported.
+Since fetching the models list isn't yet supported, you should set the models you want to use in the .env file.
+
+For your convenience, these are the latest models as of 4/15/24 that can be used with the Generative Language API:
+
+```bash
+GOOGLE_MODELS=gemini-1.5-pro-preview-0409,gemini-1.0-pro-vision-001,gemini-pro,gemini-pro-vision,chat-bison,chat-bison-32k,codechat-bison,codechat-bison-32k,text-bison,text-bison-32k,text-unicorn,code-gecko,code-bison,code-bison-32k
+```
 
 ---
 
