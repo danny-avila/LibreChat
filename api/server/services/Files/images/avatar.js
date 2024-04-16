@@ -20,7 +20,7 @@ const { logger } = require('~/config');
  * @throws {Error} Throws an error if the user ID is undefined, the input type is invalid, the image fetching fails,
  *                 or any other error occurs during the processing.
  */
-async function resizeAvatar({ userId, input, desiredFormat }) {
+async function resizeAvatar({ userId, input, desiredFormat = 'png' }) {
   try {
     if (userId === undefined) {
       throw new Error('User ID is undefined');

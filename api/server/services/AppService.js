@@ -182,7 +182,7 @@ const AppService = async (app) => {
     fileConfig: config?.fileConfig,
     interface: config?.interface,
     secureImageLinks: config?.secureImageLinks,
-    imageOutputType: config?.imageOutputType?.toLowerCase() ?? EImageOutputType.PNG,
+    imageOutputType: config?.imageOutputType ?? EImageOutputType.PNG,
     paths,
     ...endpointLocals,
   };
