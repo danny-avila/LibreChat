@@ -7,6 +7,7 @@ const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 const { StructuredTool } = require('langchain/tools');
 const { FileContext } = require('librechat-data-provider');
+const { Preference } = require('~/models');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const paths = require('~/config/paths');
 const { logger } = require('~/config');
@@ -78,8 +79,14 @@ class StableDiffusionAPI extends StructuredTool {
   async _call(data) {
     const customConfig = await getCustomConfig();
     const sdConfig = customConfig.tools.stableDiffusion;
-    const sdProfileName = "SDXL Turbo";
-    const sdProfileObject = sdConfig.filter(obj => obj.name === sdProfileName);
+    //const sdProfileName = "SDXL Turbo";
+    const prefName = 'sdProfile';
+    const prefUser = this.userId;
+    const sdPreference = await Preference.findOne({ prefUser, prefName }).lean();
+    console.log('sdProfile',sdPreference);
+    //const sdProfileName = sdProfile.name
+    //console.log('sdProfileName',sdProfileName);
+    const sdProfileObject = sdConfig.filter(obj => obj.name === sdPreference.value);
     const sdProfileUrl = sdProfileObject[0].webUI;
     console.log('sdProfileUrl:',sdProfileUrl);
     const payloadParameters = Object.keys(sdProfileObject[0].parameters);
