@@ -22,7 +22,6 @@ class PluginsClient extends OpenAIClient {
     this.setOptions(options);
     this.openAIApiKey = this.apiKey;
     this.executor = null;
-    this.currentAgent = 'BootstrapAgent';
   }
 
   setOptions(options) {
@@ -185,10 +184,10 @@ class PluginsClient extends OpenAIClient {
       try {
         this.result = await this.executor.call({ input, signal }, [
           {
-            handleToolStart: async (...args) => {
+            async handleToolStart(...args) {
               await onToolStart(...args);
             },
-            handleToolEnd: async (...args) => {
+            async handleToolEnd(...args) {
               await onToolEnd(...args);
             },
             async handleLLMEnd(output) {
@@ -200,7 +199,6 @@ class PluginsClient extends OpenAIClient {
             },
           },
         ]);
-
         break; // Exit the loop if the function call is successful
       } catch (err) {
         logger.error('[PluginsClient] executorCall error:', err);
@@ -318,7 +316,7 @@ class PluginsClient extends OpenAIClient {
 
     await this.initialize({
       user,
-      message: humanMessage,
+      humanMessage,
       onAgentAction,
       onChainEnd,
       signal: this.abortController.signal,
@@ -369,7 +367,7 @@ class PluginsClient extends OpenAIClient {
 
     const promptPrefix = buildPromptPrefix({
       result: this.result,
-      message: humanMessage,
+      humanMessage,
       functionsAgent: this.functionsAgent,
     });
 

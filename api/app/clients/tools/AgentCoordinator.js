@@ -5,20 +5,9 @@ const { logger } = require('~/config');
 class AgentCoordinator extends Tool {
   constructor() {
     super();
-    this.sessions = {};
-    this.reminders = 0;
     this.description =
       'The AgentCoordinator is a tool designed to manage and navigate through a structured multi stage conversational flow within an LLM chat application based on given chat Flow.';
-    //   this.description_for_model = `
-    //   // Guidelines:
-    //   // - Start the conversation with the "BootstrapAgent".
-    //   // - Follow the instructions to proceed through each agent.
-    //   // - The flow is sequential, and each agent has a specific role and goal.
-    //   // - Upon completing an agent's goal, invoke this tool again with the name of the current agent to receive instructions for the next agent.
-    //   // - Engage directly with the user, using the tool to guide the conversation's structure.
-    // `;
-
-    this.description_for_model = `// Defines and dominates the goals and flow of the chat per predefined script that the chat needs to comply with.
+    this.description_for_model = `// Defines and dominates the goals and flow of the chat per predefined chat flow recipe that the chat needs to comply with.
 // Guidelines:
 // - The tool should be called with input of 2 words. Agent name and status which is either "Start" or "Done". The initial agent name is "BootstrapAgent" and the status is "Done".
 // - Call the tool with the "BootstrapAgent Done" to initiate the conversation flow at the first time.
@@ -31,12 +20,11 @@ class AgentCoordinator extends Tool {
 // Remember, the tool is there to guide you, but the user's input is paramount. Engage with the user directly and use the tool as a guide for the conversation's structure and progression. if you need more instructions use self reflect to decide
 `;
 
-    // this.returnDirect = true;
     this.name = 'agent-coordinator';
     this.chatFlowName = chatFlowConfig.chatFlowName;
-    this.chatFlow = chatFlowConfig.chatFlow;
-    this.agents = chatFlowConfig.agents;
+    this.chatFlow = chatFlowConfig.generalDescription;
     this.generalFlowInstructions = chatFlowConfig.generalFlowInstructions;
+    this.agents = chatFlowConfig.agents;
   }
 
   async _call(agentRequest) {
@@ -109,7 +97,6 @@ class AgentCoordinator extends Tool {
       return { endOfFlow: true, message: 'This is the end of the conversation flow. Thank you!' };
     }
 
-    // Get the next agent's name from the chat flow order
     nextAgent = this.agents[nextAgentIndex];
 
     const nextAgentPrompt = {
@@ -118,8 +105,8 @@ class AgentCoordinator extends Tool {
       general_flow_instructions: this.generalFlowInstructions,
       instructions_for_current_agent: nextAgent.instructions,
       kpi: nextAgent.kpi,
-      when_done: `Call the AgentCoordinator with the input '${nextAgent.agentName}' to signal readiness for the next phase of the conversation.`,
-      important: `Don't call the plugin more than once for the same stage. you already called it with input ${currentAgentName}.`,
+      when_done: `Call the AgentCoordinator with the input '${nextAgent.agentName} Done' to signal readiness for the next phase of the conversation.`,
+      important: `Don't call the plugin more than once for the same stage. you already called it with input '${currentAgentName}  Done'.`,
     };
     const result = JSON.stringify(nextAgentPrompt);
     logger.debug(result);

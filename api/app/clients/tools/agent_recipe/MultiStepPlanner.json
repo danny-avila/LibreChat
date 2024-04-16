@@ -40,6 +40,6 @@
       "definition_of_done": "Confirm task completion with the user, ensuring each task's results meet the predefined objectives and receive user approval before proceeding."
     }
   ],
-  "model": "claude-3-sonnet-20240229",
-  "llm": "ChatAnthropic"
+  "NOT_SUPPORTED_YET_model": "claude-3-sonnet-20240229",
+  "NOT_SUPPORTED_YET_llm": "ChatAnthropic"
 }

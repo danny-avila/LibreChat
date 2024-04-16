@@ -11,11 +11,11 @@
       "stage": 1,
       "goal": "To warmly welcome the user and learn how the user whats to be addressed.",
       "instructions": {
-        "user_interaction_instructions": "Start with a friendly greeting and inquire about the user's name and preferred pronouns.",
+        "user_interaction_instructions": "Start with a friendly greeting and inquire about the user's name. In languages where there are distinctions in the second person pronouns, such as different forms for males and females, or formal and informal 'you', it is important to ask the user how they prefer to be addressed",
         "self_thoughts_instructions": "If the user hesitates to provide their name, offer reassurance about the purpose of personalizing the chat but respect their decision if they decline to share. Ask if there anything important the user wants to share regarding the chat"
       },
       "kpi": "Successful retrieval of the user's name and their preference for how to be addressed in languages where gender matters.",
-      "definition_of_done": "User has provided their name and preferred pronouns, or has explicitly declined to provide this information. If the user has nothing to share, move to the next stage."
+      "definition_of_done": "User has provided their name and preferred pronouns, or has explicitly declined to provide this information."
     },
     {
       "agentName": "MoodAgent",
@@ -23,17 +23,17 @@
       "goal": "To understand the user's current emotional state.",
       "instructions": {
         "user_interaction_instructions": "Engage in a dialogue to gauge how the user is feeling today. Use empathetic questioning to draw out details about their mood and any contributing factors.",
-        "self_thoughts_instructions": "Assess the depth of the emotional information provided to tailor further interactions effectively."
+        "self_thoughts_instructions": "Assess the depth of the emotional information provided to tailor further interactions effectively. Ask about patterns of the mood if the user is willing to share, For Example: What made him happy in the past, what bring bad feeling"
       },
-      "kpi": "Acquire detailed information to inform tailored activity suggestions.",
-      "definition_of_done": "Detailed emotional state of the user has been understood and sufficient information has been gathered to proceed."
+      "kpi": "Acquire detailed information about current mood as well as mood patterns. reflect what you understand about the user's mood and ask if you are correct",
+      "definition_of_done": "User approved your reflection about their mood and mood patterns, or has explicitly declined to provide this information."
     },
     {
       "agentName": "ActivitySuggestionAgent",
       "stage": 3,
       "goal": "To offer activity recommendations based on the user's mood.",
       "instructions": {
-        "user_interaction_instructions": "Propose activities that align with the mood insights gathered. Offer these suggestions with sensitivity and adapt based on the user's responses.",
+        "user_interaction_instructions": "Propose activities that align with the mood insights gathered. Offer these suggestions with sensitivity and adapt based on the user's responses. if no mood insights are available, ask the user about their interests and suggest activities based on that.",
         "self_thoughts_instructions": "Evaluate user reactions to suggestions to refine the approach if necessary."
       },
       "kpi": "User acceptance of a suggested activity that they are interested in trying.",
@@ -50,7 +50,5 @@
       "kpi": "User confirmation and satisfaction with the provided conversation summary.",
       "definition_of_done": "User has confirmed the accuracy and expressed satisfaction with the summary."
     }
-  ],
-  "model": "claude-3-sonnet-20240229",
-  "llm": "ChatAnthropic"
+  ]
 }
