@@ -3,6 +3,7 @@ const {
   FileSources,
   Capabilities,
   EModelEndpoint,
+  EImageOutputType,
   defaultSocialLogins,
   validateAzureGroups,
   mapModelToAzureConfig,
@@ -180,6 +181,8 @@ const AppService = async (app) => {
     fileStrategy,
     fileConfig: config?.fileConfig,
     interface: config?.interface,
+    secureImageLinks: config?.secureImageLinks,
+    imageOutputType: config?.imageOutputType?.toLowerCase() ?? EImageOutputType.PNG,
     paths,
     ...endpointLocals,
   };
@@ -201,6 +204,12 @@ const AppService = async (app) => {
       https://replit.com/@daavila/crypto#index.js
       
       `,
+    );
+  }
+
+  if (process.env.GOOGLE_API_KEY) {
+    logger.warn(
+      'The `GOOGLE_API_KEY` environment variable is deprecated.\nPlease use the `GOOGLE_SEARCH_API_KEY` environment variable instead.',
     );
   }
 };

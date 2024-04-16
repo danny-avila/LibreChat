@@ -18,13 +18,15 @@ router.post('/', upload.single('input'), async (req, res) => {
     }
 
     const fileStrategy = req.app.locals.fileStrategy;
-    const webPBuffer = await resizeAvatar({
+    const desiredFormat = req.app.locals.imageOutputType;
+    const resizedBuffer = await resizeAvatar({
       userId,
       input,
+      desiredFormat,
     });
 
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    const url = await processAvatar({ buffer: webPBuffer, userId, manual });
+    const url = await processAvatar({ buffer: resizedBuffer, userId, manual });
 
     res.json({ url });
   } catch (error) {
