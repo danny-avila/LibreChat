@@ -1,6 +1,7 @@
 const sharp = require('sharp');
 const fs = require('fs').promises;
 const fetch = require('node-fetch');
+const { EImageOutputType } = require('librechat-data-provider');
 const { resizeAndConvert } = require('./resize');
 const { logger } = require('~/config');
 
@@ -20,7 +21,7 @@ const { logger } = require('~/config');
  * @throws {Error} Throws an error if the user ID is undefined, the input type is invalid, the image fetching fails,
  *                 or any other error occurs during the processing.
  */
-async function resizeAvatar({ userId, input, desiredFormat }) {
+async function resizeAvatar({ userId, input, desiredFormat = EImageOutputType.PNG }) {
   try {
     if (userId === undefined) {
       throw new Error('User ID is undefined');
