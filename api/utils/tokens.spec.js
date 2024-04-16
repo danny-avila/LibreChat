@@ -131,6 +131,18 @@ describe('getModelMaxTokens', () => {
   });
 
   test('should return correct tokens for partial match - Google models', () => {
+    expect(getModelMaxTokens('gemini-1.5-pro-latest', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-1.5'],
+    );
+    expect(getModelMaxTokens('gemini-1.5-pro-preview-0409', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-1.5'],
+    );
+    expect(getModelMaxTokens('gemini-pro-vision', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini-pro-vision'],
+    );
+    expect(getModelMaxTokens('gemini-1.0', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemini'],
+    );
     expect(getModelMaxTokens('gemini-pro', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['gemini'],
     );
@@ -139,6 +151,15 @@ describe('getModelMaxTokens', () => {
     );
     expect(getModelMaxTokens('chat-', EModelEndpoint.google)).toBe(
       maxTokensMap[EModelEndpoint.google]['chat-'],
+    );
+  });
+
+  test('should return correct tokens for partial match - Cohere models', () => {
+    expect(getModelMaxTokens('command', EModelEndpoint.custom)).toBe(
+      maxTokensMap[EModelEndpoint.custom]['command'],
+    );
+    expect(getModelMaxTokens('command-r-plus', EModelEndpoint.custom)).toBe(
+      maxTokensMap[EModelEndpoint.custom]['command-r-plus'],
     );
   });
 

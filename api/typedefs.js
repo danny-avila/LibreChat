@@ -15,6 +15,12 @@
  */
 
 /**
+ * @exports GenerativeModel
+ * @typedef {import('@google/generative-ai').GenerativeModel} GenerativeModel
+ * @memberof typedefs
+ */
+
+/**
  * @exports AssistantStreamEvent
  * @typedef {import('openai').default.Beta.AssistantStreamEvent} AssistantStreamEvent
  * @memberof typedefs
@@ -292,6 +298,12 @@
 /**
  * @exports TPlugin
  * @typedef {import('librechat-data-provider').TPlugin} TPlugin
+ * @memberof typedefs
+ */
+
+/**
+ * @exports EImageOutputType
+ * @typedef {import('librechat-data-provider').EImageOutputType} EImageOutputType
  * @memberof typedefs
  */
 
