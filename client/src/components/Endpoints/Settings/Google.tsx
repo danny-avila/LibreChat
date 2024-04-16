@@ -22,12 +22,12 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const { model, modelLabel, promptPrefix, temperature, topP, topK, maxOutputTokens } =
     conversation ?? {};
 
-  const isGeminiPro = model?.toLowerCase()?.includes('gemini-pro');
+  const isGemini = model?.toLowerCase()?.includes('gemini');
 
-  const maxOutputTokensMax = isGeminiPro
+  const maxOutputTokensMax = isGemini
     ? google.maxOutputTokens.maxGeminiPro
     : google.maxOutputTokens.max;
-  const maxOutputTokensDefault = isGeminiPro
+  const maxOutputTokensDefault = isGemini
     ? google.maxOutputTokens.defaultGeminiPro
     : google.maxOutputTokens.default;
 
