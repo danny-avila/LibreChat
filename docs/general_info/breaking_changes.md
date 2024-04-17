@@ -24,7 +24,7 @@ weight: -10
     - **RAG API Update**: The default Docker compose files now include a Python API and Vector Database for RAG (Retrieval-Augmented Generation). Read more about this in the [RAG API page](../features/rag_api.md)
 
 ??? warning "⚙️ .env variables changes v0.6.10 → v0.7.0"
-    - JSON Logging
+    - ➕ JSON Logging
     ```sh
     #===============#
     # JSON Logging  #
@@ -34,7 +34,7 @@ weight: -10
     CONSOLE_JSON=false
     ```
 
-    - LibreChat.yaml path
+    - ➕ LibreChat.yaml path
     ```sh
     #===============#
     # Configuration #
@@ -44,12 +44,12 @@ weight: -10
     # CONFIG_PATH="/alternative/path/to/librechat.yaml"
     ```
     
-    - "chatGPTBrowser" was removed
+    - ❌ "chatGPTBrowser" was removed
     ```sh
     # ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,google,gptPlugins,anthropic
     ```
 
-    - Added placeholders for Known Endpoints
+    - ➕ Added placeholders for Known Endpoints
     ```sh
     #===================================#
     # Known Endpoints - librechat.yaml  #
@@ -66,7 +66,7 @@ weight: -10
     # TOGETHERAI_API_KEY=
     ```
     
-    - Update Anthropic models
+    - ✨ Update Anthropic models
     ```sh
     # ANTHROPIC_MODELS=claude-3-opus-20240229,claude-3-sonnet-20240229,claude-3-haiku-20240307,claude-2.1,claude-2,claude-1.2,claude-1,claude-1-100k,claude-instant-1,claude-instant-1-100k
     ```
@@ -106,17 +106,17 @@ weight: -10
     # CHATGPT_REVERSE_PROXY=
     ```
 
-    - Assistants now set to "user_provided" by default
+    - ✨ Assistants now set to "user_provided" by default
     ```sh
     ASSISTANTS_API_KEY=user_provided
     ```
 
-    - `GOOGLE_API_KEY` renamed `GOOGLE_SEARCH_API_KEY=`
+    - ⚠️ `GOOGLE_API_KEY` renamed `GOOGLE_SEARCH_API_KEY=`
     ```sh
     GOOGLE_SEARCH_API_KEY=
     ```
 
-    - Tavily and Traversaal API keys
+    - ➕ Tavily and Traversaal API keys
     ```
     # Tavily
     #-----------------
@@ -126,12 +126,12 @@ weight: -10
     #-----------------
     TRAVERSAAL_API_KEY=
     ```
-    - Moderation, illegal model request score
+    - ➕ Moderation, illegal model request score
     ```sh
     ILLEGAL_MODEL_REQ_SCORE=5
     ```
 
-    - OpenID Auth update
+    - ➕ OpenID Auth update
     ```sh
     OPENID_REQUIRED_ROLE=
     OPENID_REQUIRED_ROLE_TOKEN_KIND=
