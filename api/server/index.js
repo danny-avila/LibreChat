@@ -42,8 +42,8 @@ const startServer = async () => {
       new Sentry.Integrations.Express({ app }),
       nodeProfilingIntegration(),
     ],
-    tracesSampleRate: 0.1,
-    profilesSampleRate: 0.1,
+    tracesSampleRate: 0.05,
+    profilesSampleRate: 0.05,
   });
 
   app.disable('x-powered-by');
