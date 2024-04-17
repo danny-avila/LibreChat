@@ -31,7 +31,6 @@ const trackingCode = domainTrackingCodes[currentDomain] || 'G-2HYZSSFTSV';
 
 // Initialize GA4 with the tracking code
 ReactGA.initialize(trackingCode);
-ReactGA.initialize('AW-11258294301');
 
 const PageViewTracker = () => {
   const location = useLocation();
