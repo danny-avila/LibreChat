@@ -1,4 +1,6 @@
 require('dotenv').config();
+const Sentry = require('@sentry/node');
+const { nodeProfilingIntegration } = require('@sentry/profiling-node');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
@@ -32,12 +34,26 @@ const startServer = async () => {
   await indexSync();
 
   const app = express();
+
+  Sentry.init({
+    dsn: 'https://9fe618ffe956020b729289e4d4701167@o4507099226177536.ingest.us.sentry.io/4507099229192192',
+    integrations: [
+      new Sentry.Integrations.Http({ tracing: true }),
+      new Sentry.Integrations.Express({ app }),
+      nodeProfilingIntegration(),
+    ],
+    tracesSampleRate: 0.1,
+    profilesSampleRate: 0.1,
+  });
+
   app.disable('x-powered-by');
   await AppService(app);
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   // Middleware
+  app.use(Sentry.Handlers.requestHandler());
+  app.use(Sentry.Handlers.tracingHandler());
   app.use(noIndex);
   app.use(errorController);
   app.use(
@@ -99,6 +115,8 @@ const startServer = async () => {
   app.use((req, res) => {
     res.status(404).sendFile(path.join(app.locals.paths.dist, 'index.html'));
   });
+
+  app.use(Sentry.Handlers.errorHandler());
 
   app.listen(port, host, () => {
     if (host == '0.0.0.0') {
