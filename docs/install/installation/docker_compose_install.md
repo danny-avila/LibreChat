@@ -10,7 +10,7 @@ Docker Compose installation is recommended for most use cases. It's the easiest,
 
 If you prefer to watch a video, we have video guides for [Windows](./windows_install.md#recommended) and [Ubuntu 22.04 LTS](./linux_install.md#recommended)
 
-## TL;DR
+## Quick Start - TL;DR
 Here's the quick summary to get started with the default configuration:
 > Requirement: `Git` and `Docker`
   
