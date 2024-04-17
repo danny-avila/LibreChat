@@ -17,7 +17,7 @@ Go to the [LibreChat repository](https://github.com/danny-avila/LibreChat) on Gi
 ### **Click the "Deploy on Railway" button**
 
 <p align="left">
-    <a href="https://railway.app/template/b5k2mn?referralCode=HI9hWz">
+    <a href="https://railway.app/template/b5k2mn?referralCode=myKrVZ">
         <img src="https://railway.app/button.svg" alt="Deploy on Railway" height="30"/>
     </a>
 </p>
