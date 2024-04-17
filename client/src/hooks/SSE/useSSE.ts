@@ -295,11 +295,15 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
 
       // update the messages; if assistants endpoint, client doesn't receive responseMessage
       if (runMessages) {
+        console.log('=== runMessages ===', runMessages);
         setMessages([...runMessages]);
       } else if (isRegenerate && responseMessage) {
+        console.log('=== regenerating ===', responseMessage);
         setMessages([...messages, responseMessage]);
       } else if (responseMessage) {
+        console.log('=== final response ===', requestMessage, responseMessage);
         setMessages([...messages, requestMessage, responseMessage]);
+        sendMessage(responseMessage, true);
       }
 
       const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
@@ -534,8 +538,7 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins, message });
         startupConfig?.checkBalance && balanceQuery.refetch();
-        console.log('final', data);
-        sendMessage(data.responseMessage);
+        sendMessage(data.responseMessage, true);
       }
       if (data.created) {
         message = {

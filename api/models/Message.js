@@ -152,7 +152,12 @@ module.exports = {
 
   async getMessages(filter) {
     try {
-      return await Message.find(filter).sort({ createdAt: 1 }).lean();
+      const result = await Message.find(filter)
+        .sort({ createdAt: 1 })
+        .populate('user', ['name', 'avatar'])
+        .lean();
+      console.log(result);
+      return result;
     } catch (err) {
       logger.error('Error getting messages:', err);
       throw new Error('Failed to get messages.');
@@ -161,7 +166,7 @@ module.exports = {
 
   async getMessageById(messageId) {
     try {
-      return await Message.findOne({ id: messageId }).lean();
+      return await Message.findOne({ messageId }).lean();
     } catch (err) {
       logger.error('Error getting message by Id:', err);
       throw new Error('Failed to get message by Id.');

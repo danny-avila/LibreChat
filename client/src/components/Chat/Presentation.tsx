@@ -5,9 +5,9 @@ import type { ExtendedFile } from '~/common';
 import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
 import DragDropOverlay from './Input/Files/DragDropOverlay';
 import { useDeleteFilesMutation } from '~/data-provider';
-import { SidePanel } from '~/components/SidePanel';
 import store from '~/store';
 import UserList from '../Room/UserList';
+import { useParams } from 'react-router-dom';
 
 export default function Presentation({
   children,
@@ -19,6 +19,8 @@ export default function Presentation({
   useSidePanel?: boolean;
 }) {
   const hideSidePanel = useRecoilValue(store.hideSidePanel);
+  const convoType = useRecoilValue(store.convoType);
+  const { conversationId } = useParams();
   const { isOver, canDrop, drop } = useDragHelpers();
   const setFilesToDelete = useSetFilesToDelete();
   const { mutateAsync } = useDeleteFilesMutation({
@@ -64,24 +66,24 @@ export default function Presentation({
     </div>
   );
 
-  if (useSidePanel && !hideSidePanel) {
+  if (useSidePanel && !hideSidePanel && convoType === 'r' && conversationId !== 'new') {
     return (
       <div
         ref={drop}
         className="relative flex w-full grow overflow-hidden bg-white dark:bg-gray-800"
       >
-        {/* <UserList defaultLayout={defaultLayout} defaultCollapsed={defaultCollapsed}>
+        <UserList defaultLayout={defaultLayout} defaultCollapsed={defaultCollapsed}>
           <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
             {children}
             {isActive && <DragDropOverlay />}
           </div>
-        </UserList> */}
-        <SidePanel defaultLayout={defaultLayout} defaultCollapsed={defaultCollapsed}>
+        </UserList>
+        {/* <SidePanel defaultLayout={defaultLayout} defaultCollapsed={defaultCollapsed}>
           <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
             {children}
             {isActive && <DragDropOverlay />}
           </div>
-        </SidePanel>
+        </SidePanel> */}
       </div>
     );
   }

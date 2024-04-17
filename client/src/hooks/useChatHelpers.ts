@@ -283,9 +283,9 @@ export default function useChatHelpers(index = 0, paramId: string | undefined, s
       if (command) {
         const message = { ...currentMsg, text: text.replace(COMMAND.BOT, '') };
         setMessages([...submission.messages, message, initialResponse]);
-        sendMessage(message);
         setLatestMessage(message);
         setSubmission(submission);
+        sendMessage(message, true);
       } else {
         setMessages([...submission.messages, currentMsg]);
         setLatestMessage(currentMsg);

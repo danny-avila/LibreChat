@@ -14,6 +14,7 @@ import Header from './Header';
 import Footer from './Footer';
 import store from '~/store';
 import { useChatSocket, useInitSocket } from '~/hooks/useChatSocket';
+import useRoomUsers from '~/hooks/useRoomUsers';
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
@@ -34,6 +35,8 @@ function ChatView({ index = 0 }: { index?: number }) {
   });
 
   const chatHelpers = useChatHelpers(index, conversationId, socket);
+  useRoomUsers(conversationId, socket);
+  console.log('--- messagesTree ---', messagesTree);
 
   return (
     <ChatContext.Provider value={chatHelpers}>

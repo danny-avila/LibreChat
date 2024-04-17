@@ -154,6 +154,28 @@ export const useConversationsInfiniteQuery = (
   );
 };
 
+export const useRoomsInfiniteQuery = (
+  params?: ConversationListParams,
+  config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
+) => {
+  return useInfiniteQuery<ConversationListResponse, unknown>(
+    [QueryKeys.allConversations],
+    ({ pageParam = '' }) => dataService.listRooms({ ...params, pageNumber: pageParam?.toString() }),
+    {
+      getNextPageParam: (lastPage) => {
+        const currentPageNumber = Number(lastPage.pageNumber);
+        const totalPages = Number(lastPage.pages); // Convert totalPages to a number
+        // If the current page number is less than total pages, return the next page number
+        return currentPageNumber < totalPages ? currentPageNumber + 1 : undefined;
+      },
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
 /**
  * ASSISTANTS
  */

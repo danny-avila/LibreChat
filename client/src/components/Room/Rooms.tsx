@@ -13,8 +13,29 @@ export default function Rooms({
     owned: [],
     joined: [],
   });
+  // const { isAuthenticated } = useAuthContext();
+  // const [pageNumber, setPageNumber] = useState(1);
+  // const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
+  //   { pageNumber: pageNumber.toString() },
+  //   { enabled: isAuthenticated },
+  // );
+
+  // const searchQuery = useRecoilValue(store.searchQuery);
+  // const searchQueryRes = useSearchInfiniteQuery(
+  //   { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
+  //   { enabled: isAuthenticated && !!searchQuery.length },
+  // );
+
+  // const conversations = useMemo(
+  //   () =>
+  //     (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
+  //     [],
+  //   [data, searchQuery, searchQueryRes?.data],
+  // );
+  // console.log('=== data in rooms ===', data);
 
   useEffect(() => {
+    console.log('=== fetching rooms ===');
     request
       .get('/api/rooms')
       .then((res) => setRooms(res))

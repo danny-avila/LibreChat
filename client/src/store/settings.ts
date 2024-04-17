@@ -83,7 +83,7 @@ const showCode = atom<boolean>({
 const hideSidePanel = atom<boolean>({
   key: 'hideSidePanel',
   // default: localStorage.getItem('hideSidePanel') === 'true',
-  default: true,
+  default: false,
   effects: [
     ({ setSelf, onSet }) => {
       const savedValue = localStorage.getItem('hideSidePanel');

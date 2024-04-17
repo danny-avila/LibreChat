@@ -4,7 +4,15 @@ const logger = require('~/config/winston');
 
 const getConvo = async (user, conversationId) => {
   try {
-    return await Conversation.findOne({ user, conversationId }).lean();
+    return await Conversation.findOne({
+      // user,
+      conversationId,
+      users: {
+        $in: user,
+      },
+    })
+      .populate('users')
+      .lean();
   } catch (error) {
     logger.error('[getConvo] Error getting single conversation', error);
     return { message: 'Error getting single conversation' };
@@ -30,11 +38,11 @@ module.exports = {
       return { message: 'Error saving conversation' };
     }
   },
-  getConvosByPage: async (user, pageNumber = 1, pageSize = 25) => {
+  getConvosByPage: async (user, pageNumber = 1, pageSize = 25, isRoom = 'false') => {
     try {
       const totalConvos = (await Conversation.countDocuments({ user })) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
-      const convos = await Conversation.find({ user, isRoom: false })
+      const convos = await Conversation.find({ user, isRoom: isRoom === 'true' ? true : false })
         .sort({ updatedAt: -1 })
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
@@ -45,7 +53,7 @@ module.exports = {
       return { message: 'Error getting conversations' };
     }
   },
-  getConvosQueried: async (user, convoIds, pageNumber = 1, pageSize = 25) => {
+  getConvosQueried: async (user, convoIds, pageNumber = 1, pageSize = 25, isRoom = 'false') => {
     try {
       if (!convoIds || convoIds.length === 0) {
         return { conversations: [], pages: 1, pageNumber, pageSize };
@@ -59,7 +67,7 @@ module.exports = {
         promises.push(
           Conversation.findOne({
             user,
-            isRoom: false,
+            isRoom: isRoom === 'true' ? true : false,
             conversationId: convo.conversationId,
           }).lean(),
         ),

@@ -27,6 +27,7 @@ router.get('/sync', async function (req, res) {
 
 router.get('/', async function (req, res) {
   try {
+    const isRoom = req.query.isRoom;
     let user = req.user.id ?? '';
     const { q } = req.query;
     const pageNumber = req.query.pageNumber || 1;
@@ -64,7 +65,7 @@ router.get('/', async function (req, res) {
     // debugging:
     // logger.debug('user:', user, 'message hits:', messages.length, 'convo hits:', titles.length);
     // logger.debug('sorted hits:', sortedHits.length);
-    const result = await getConvosQueried(user, sortedHits, pageNumber);
+    const result = await getConvosQueried(user, sortedHits, pageNumber, isRoom);
 
     const activeMessages = [];
     for (let i = 0; i < messages.length; i++) {

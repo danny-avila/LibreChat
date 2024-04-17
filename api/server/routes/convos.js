@@ -11,6 +11,7 @@ const router = express.Router();
 router.use(requireJwtAuth);
 
 router.get('/', async (req, res) => {
+  const isRoom = req.query.isRoom;
   let pageNumber = req.query.pageNumber || 1;
   pageNumber = parseInt(pageNumber, 10);
 
@@ -18,7 +19,7 @@ router.get('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid page number' });
   }
 
-  res.status(200).send(await getConvosByPage(req.user.id, pageNumber));
+  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, isRoom));
 });
 
 router.get('/:conversationId', async (req, res) => {
@@ -48,7 +49,7 @@ router.post('/gen_title', async (req, res) => {
     res.status(200).json({ title });
   } else {
     res.status(404).json({
-      message: 'Title not found or method not implemented for the conversation\'s endpoint',
+      message: "Title not found or method not implemented for the conversation's endpoint",
     });
   }
 });

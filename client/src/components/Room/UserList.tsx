@@ -1,17 +1,15 @@
-import React from 'react';
+import React, { memo } from 'react';
 import throttle from 'lodash/throttle';
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useGetEndpointsQuery, useUserKeyQuery } from 'librechat-data-provider/react-query';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { EModelEndpoint, type TEndpointsConfig } from 'librechat-data-provider';
-import type { NavLink } from '~/common';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
-import { Blocks, AttachmentIcon } from '~/components/svg';
 import { useMediaQuery, useLocalStorage } from '~/hooks';
-import { Separator } from '~/components/ui/Separator';
 import NavToggle from '~/components/Nav/NavToggle';
 import { cn } from '~/utils';
+import Users from './Users';
 
 interface UserListProps {
   defaultLayout?: number[] | undefined;
@@ -22,7 +20,7 @@ interface UserListProps {
 
 const defaultMinSize = 20;
 
-export default function UserList({
+function UserList({
   defaultLayout = [97, 3],
   defaultCollapsed = false,
   navCollapsedSize = 3,
@@ -39,34 +37,8 @@ export default function UserList({
 
   const panelRef = useRef<ImperativePanelHandle>(null);
 
-  const activePanel = localStorage.getItem('side:active-panel');
-  const defaultActive = activePanel ? activePanel : undefined;
-
-  const Links = useMemo(() => {
-    const links: NavLink[] = [];
-    const assistants = endpointsConfig?.[EModelEndpoint.assistants];
-    const userProvidesKey = !!assistants?.userProvide;
-    const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
-    if (assistants && assistants.disableBuilder !== true && keyProvided) {
-      links.push({
-        title: 'com_sidepanel_assistant_builder',
-        label: '',
-        icon: Blocks,
-        id: 'assistants',
-        // Component: PanelSwitch,
-      });
-    }
-
-    links.push({
-      title: 'com_sidepanel_attach_files',
-      label: '',
-      icon: AttachmentIcon,
-      id: 'files',
-      // Component: FilesPanel,
-    });
-
-    return links;
-  }, [endpointsConfig, keyExpiry?.expiresAt]);
+  // const activePanel = localStorage.getItem('side:active-panel');
+  // const defaultActive = activePanel ? activePanel : undefined;
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
@@ -173,7 +145,9 @@ export default function UserList({
               isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
               minSize === 0 ? 'min-w-0' : '',
             )}
-          ></ResizablePanel>
+          >
+            <Users />
+          </ResizablePanel>
         </ResizablePanelGroup>
       </TooltipProvider>
       <div
@@ -190,3 +164,5 @@ export default function UserList({
     </>
   );
 }
+
+export default memo(UserList);

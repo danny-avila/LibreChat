@@ -30,6 +30,15 @@ const getRoomById = async (req, res) => {
   }
 };
 
+// const getUsersByRoomId = async (req, res) => {
+//   const { roomId } = req.params;
+//   try {
+//     const users = await Conversation
+//   } catch (error) {
+//     return res.status(500).json(error);
+//   }
+// }
+
 const getRoomByUser = async (req, res) => {
   try {
     const room = await getRoomsByUser(req.user._id);
@@ -47,7 +56,8 @@ const createNewMessage = async (req, res) => {
       files: [],
       ...req.body,
     });
-    return result;
+    console.log('=== created new meessage ===', result);
+    return res.json(result);
   } catch (error) {
     return res.status(500).json(error);
   }

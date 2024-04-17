@@ -200,6 +200,31 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   files?: Partial<TFile>[];
 };
 
+export const tUserSchema = z.object({
+  _id: z.string(),
+  username: z.string().optional(),
+  email: z.string(),
+  name: z.string(),
+  emailVerified: z.boolean().optional(),
+  avatar: z.string().or(z.null()).optional(),
+  role: z.string(),
+  provider: z.string().optional(),
+  plugins: z.array(z.string()).optional(),
+  createdAt: z.date().or(z.string()),
+  updatedAt: z.date().or(z.string()),
+  subscription: z
+    .object({
+      subType: z.string().optional(),
+      active: z.boolean().optional(),
+      customerId: z.string().optional(),
+      renewalDate: z.date().or(z.string()).optional(),
+      subscriptionId: z.string().optional(),
+    })
+    .optional(),
+  credits: z.number().optional(),
+  active: z.boolean().optional(),
+});
+
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
@@ -250,7 +275,7 @@ export const tConversationSchema = z.object({
   isRoom: z.boolean().optional(),
   isPrivate: z.boolean().optional(),
   password: z.string().optional(),
-  users: z.array(z.string()).optional(),
+  users: z.array(tUserSchema.optional()).or(z.array(z.string())).optional(),
 });
 
 export const tRoomSchema = z.object({

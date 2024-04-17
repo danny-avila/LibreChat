@@ -15,10 +15,11 @@ const messageSchema = mongoose.Schema(
       meiliIndex: true,
     },
     user: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
       index: true,
-      required: true,
+      // required: true,
       default: null,
+      ref: 'User',
     },
     model: {
       type: String,

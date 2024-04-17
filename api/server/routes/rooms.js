@@ -15,5 +15,6 @@ router.post('/', createNewRoom);
 router.post('/:roomId', createNewMessage);
 router.get('/', getRoomByUser);
 router.get('/:roomId', getRoomById);
+router.get('/:roomId/users', getRoomById);
 
 module.exports = router;

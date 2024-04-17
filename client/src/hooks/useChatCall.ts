@@ -10,12 +10,15 @@ export const useChatCall = (socket?: Socket) => {
   const { conversationId } = useParams();
 
   const sendMessage = useCallback(
-    (message: TMessage) => {
+    async (message: TMessage, bot?: boolean) => {
       if (!socket) {
         return null;
       }
 
-      // request.post(`/api/rooms/${conversationId}`, message);
+      if (!bot) {
+        await request.post(`/api/rooms/${conversationId}`, message);
+      }
+
       socket?.emit('message', {
         userId: user?.id,
         roomId: conversationId,

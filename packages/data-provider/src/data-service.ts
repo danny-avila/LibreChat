@@ -256,6 +256,14 @@ export const listConversations = (
   return request.get(endpoints.conversations(pageNumber));
 };
 
+export const listRooms = (
+  params?: q.ConversationListParams,
+): Promise<q.ConversationListResponse> => {
+  // Assuming params has a pageNumber property
+  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
+  return request.get(endpoints.rooms(pageNumber));
+};
+
 export const listConversationsByQuery = (
   params?: q.ConversationListParams & { searchQuery?: string },
 ): Promise<q.ConversationListResponse> => {
@@ -269,6 +277,19 @@ export const listConversationsByQuery = (
   }
 };
 
+export const listRoomsByQuery = (
+  params?: q.ConversationListParams & { searchQuery?: string },
+): Promise<q.ConversationListResponse> => {
+  const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
+  const searchQuery = params?.searchQuery || ''; // If no search query is provided, default to an empty string
+  // Update the endpoint to handle a search query
+  if (searchQuery !== '') {
+    return request.get(endpoints.search(searchQuery, pageNumber));
+  } else {
+    return request.get(endpoints.rooms(pageNumber));
+  }
+};
+
 export const searchConversations = async (
   q: string,
   pageNumber: string,
@@ -276,12 +297,24 @@ export const searchConversations = async (
   return request.get(endpoints.search(q, pageNumber));
 };
 
+// export const searchRooms = async (q: string, pageNumber: string): Promise<t.TSearchResults> => {
+//   return request.get(endpoints.search(q, pageNumber));
+// };
+
 export function getConversations(pageNumber: string): Promise<t.TGetConversationsResponse> {
   return request.get(endpoints.conversations(pageNumber));
 }
 
+export function getRooms(pageNumber: string): Promise<t.TGetConversationsResponse> {
+  return request.get(endpoints.rooms(pageNumber));
+}
+
 export function getConversationById(id: string): Promise<s.TConversation> {
   return request.get(endpoints.conversationById(id));
+}
+
+export function getRoomById(id: string): Promise<s.TConversation> {
+  return request.get(endpoints.roomById(id));
 }
 
 export function updateConversation(

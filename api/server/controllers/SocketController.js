@@ -61,12 +61,10 @@ const addConnection = (socket, userId, roomId) => {
 const sendMessage = async (socket, messageId, roomId) => {
   try {
     const message = await getMessageById(messageId);
-    // console.log('=== fetched message ===', message);
     if (message) {
       clients
         .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
         .forEach((client) => {
-          console.log(`=== sending event to ${client.socket.id} ===`);
           client.socket.emit('new message', {
             roomId,
             message,
@@ -89,7 +87,12 @@ const disconnectClient = (socket) => {
 const moveRoom = (socketId, roomId) => {
   try {
     const clientIndex = clients.map((c) => c.socket.id).indexOf(socketId);
+    // const lastRoom = clients[clientIndex].roomId;
     clients[clientIndex].roomId = roomId;
+    // const newRoom = clients[clientIndex].roomId;
+
+    // clients.filter(client => client.roomId === lastRoom).forEach(client => client.socket.emit('user left the room', ))
+
     console.log(`=== User moved the room to ${clients[clientIndex].roomId} ===`);
   } catch (error) {
     throw new Error(`[moveRoom] Error in moverRoom ${error}`);

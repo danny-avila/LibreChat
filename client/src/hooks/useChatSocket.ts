@@ -39,7 +39,7 @@ export const useChatSocket = (socket?: Socket) => {
       console.log('new message income', data);
       if (conversationId === data.roomId) {
         const currentMessages: TMessage[] | null = getMessages() ?? [];
-
+        console.log('=== receiving event ===', currentMessages, data.message);
         setMessages([...currentMessages, data.message]);
         setLatestMessage(data.message);
       }
@@ -58,6 +58,7 @@ export const useChatSocket = (socket?: Socket) => {
 
   const sendMessage = useCallback(
     (message: TMessage) => {
+      console.log('sending message', message);
       if (message.isCreatedByUser) {
         request.post(`/api/rooms/${conversationId}`, message);
       }

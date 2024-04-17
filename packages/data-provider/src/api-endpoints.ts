@@ -21,7 +21,11 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
 export const conversations = (pageNumber: string) => `/api/convos?pageNumber=${pageNumber}`;
 
+export const rooms = (pageNumber: string) => `/api/convos?pageNumber=${pageNumber}&isRoom=true`;
+
 export const conversationById = (id: string) => `/api/convos/${id}`;
+
+export const roomById = (id: string) => `/api/convos/${id}?isRoom=true`;
 
 export const genTitle = () => '/api/convos/gen_title';
 
