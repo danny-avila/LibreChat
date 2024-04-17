@@ -139,7 +139,6 @@ describe('AppService', () => {
     );
 
     await AppService(app);
-
     expect(app.locals.imageOutputType).toEqual(EImageOutputType.WEBP);
   });
 
@@ -151,7 +150,15 @@ describe('AppService', () => {
     );
 
     await AppService(app);
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
+  });
 
+  it('should default to `PNG` `imageOutputType` with no provided config', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve(undefined),
+    );
+
+    await AppService(app);
     expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
   });
 
