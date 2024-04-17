@@ -65,12 +65,14 @@ const cohereModels = {
   command: 4086, // -10 from max
   'command-nightly': 8182, // -10 from max
   'command-r': 127500, // -500 from max
-  'command-r-plus:': 127500, // -500 from max
+  'command-r-plus': 127500, // -500 from max
 };
 
 const googleModels = {
   /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
-  gemini: 32750, // -10 from max
+  gemini: 30720, // -2048 from max
+  'gemini-pro-vision': 12288, // -4096 from max
+  'gemini-1.5': 1048576, // -8192 from max
   'text-bison-32k': 32758, // -10 from max
   'chat-bison-32k': 32758, // -10 from max
   'code-bison-32k': 32758, // -10 from max

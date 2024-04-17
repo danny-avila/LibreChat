@@ -209,6 +209,13 @@ This example configuration file sets up LibreChat with detailed options across s
 - **Description**: Whether or not to secure access to image links that are hosted locally by the app. Default: false.
 - **Example**: `secureImageLinks: true`
 
+### Image Output Type
+- **Key**: `imageOutputType`
+- **Type**: String, "png" | "webp" | "jpeg"
+- **Description**: The image output type for image responses. Defaults to "png" if omitted.
+- **Note**: Case-sensitive. Google endpoint only supports "jpeg" and "png" output types.
+- **Example**: `imageOutputType: "webp"`
+
 ### File Configuration
 - **Key**: `fileConfig`
 - **Type**: Object

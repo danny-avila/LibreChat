@@ -1,6 +1,6 @@
 const throttle = require('lodash/throttle');
-const { getResponseSender, Constants } = require('librechat-data-provider');
 const { saveMessage, getConvo, getMessagesCount } = require('~/models');
+const { getResponseSender, Constants, EModelEndpoint } = require('librechat-data-provider');
 const { createAbortController, handleAbortError } = require('~/server/middleware');
 const { sendMessage, createOnProgress } = require('~/server/utils');
 // const { saveMessage, getConvo } = require('~/models');
@@ -51,6 +51,8 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   try {
     // const { client } = await initializeClient({ req, res, endpointOption });
 
+    const { client } = await initializeClient({ req, res, endpointOption });
+    const unfinished = endpointOption.endpoint === EModelEndpoint.google ? false : true;
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
       onProgress: throttle(
         ({ text: partialText }) => {
@@ -60,8 +62,8 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
             conversationId,
             parentMessageId: overrideParentMessageId ?? userMessageId,
             text: partialText,
-            model: endpointOption.modelOptions.model,
-            unfinished: true,
+            model: client.modelOptions.model,
+            unfinished,
             error: false,
             user,
             senderId: req.user.id,
@@ -86,7 +88,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
 
     const { abortController, onStart } = createAbortController(req, res, getAbortData);
     // try {
-    const { client } = await initializeClient({ req, res, endpointOption });
+    // const { client } = await initializeClient({ req, res, endpointOption });
 
     const isSensitive = await trieSensitive.checkSensitiveWords(text);
     if (isSensitive) {
