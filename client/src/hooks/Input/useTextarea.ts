@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { UseFormSetValue } from 'react-hook-form';
 import type { KeyboardEvent } from 'react';
-import { forceResize, insertTextAtCursor, trimUndoneRange, getAssistantName } from '~/utils';
+import { forceResize, insertTextAtCursor, getAssistantName } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
@@ -19,13 +19,11 @@ export default function useTextarea({
   textAreaRef,
   submitButtonRef,
   setValue,
-  getValues,
   disabled = false,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
   setValue: UseFormSetValue<{ text: string }>;
-  getValues: (field: string) => string;
   disabled?: boolean;
 }) {
   const assistantMap = useAssistantsMapContext();
@@ -139,6 +137,22 @@ export default function useTextarea({
 
   const handleKeyDown = useCallback(
     (e: KeyEvent) => {
+      if ((e.keyCode === 8 || e.key === 'Backspace') && textAreaRef.current) {
+        const text = textAreaRef.current.value;
+        const isSingleNewline = text === '\n';
+        const isAllTextSelected =
+          text.length > 0 &&
+          textAreaRef.current.selectionStart === 0 &&
+          textAreaRef.current.selectionEnd === text.length;
+
+        if (isSingleNewline || isAllTextSelected) {
+          textAreaRef.current.setRangeText('', 0, text.length, 'end');
+          setValue('text', '', { shouldValidate: true });
+          forceResize(textAreaRef);
+          e.preventDefault();
+        }
+      }
+
       if (e.key === 'Enter' && isSubmitting) {
         return;
       }
@@ -163,35 +177,8 @@ export default function useTextarea({
         submitButtonRef.current?.click();
       }
     },
-    [isSubmitting, filesLoading, enterToSend, textAreaRef, submitButtonRef],
+    [isSubmitting, filesLoading, enterToSend, textAreaRef, submitButtonRef, setValue],
   );
-
-  const handleKeyUp = (e: KeyEvent) => {
-    const target = e.target as HTMLTextAreaElement;
-
-    const isUndo = e.key === 'z' && (e.ctrlKey || e.metaKey);
-    if (isUndo && target.value.trim() === '') {
-      textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
-      setValue('text', '', { shouldValidate: true });
-      forceResize(textAreaRef);
-    } else if (isUndo) {
-      trimUndoneRange(textAreaRef);
-      setValue('text', '', { shouldValidate: true });
-      forceResize(textAreaRef);
-    }
-
-    if ((e.keyCode === 8 || e.key === 'Backspace') && target.value.trim() === '') {
-      textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
-    }
-
-    if (e.key === 'Enter' && e.shiftKey) {
-      return console.log('Enter + Shift');
-    }
-
-    if (isSubmitting) {
-      return;
-    }
-  };
 
   const handleCompositionStart = () => {
     isComposing.current = true;
@@ -201,33 +188,12 @@ export default function useTextarea({
     isComposing.current = false;
   };
 
-  /** Necessary handler to update form state when paste doesn't fire textArea input event */
-  const setPastedValue = useCallback(
-    (textArea: HTMLTextAreaElement, pastedData: string) => {
-      const currentTextValue = getValues('text') || '';
-      const { selectionStart, selectionEnd } = textArea;
-      const newValue =
-        currentTextValue.substring(0, selectionStart) +
-        pastedData +
-        currentTextValue.substring(selectionEnd);
-
-      setValue('text', newValue, { shouldValidate: true });
-    },
-    [getValues, setValue],
-  );
-
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      e.preventDefault();
       const textArea = textAreaRef.current;
       if (!textArea) {
         return;
       }
-
-      const pastedData = e.clipboardData.getData('text/plain');
-      setPastedValue(textArea, pastedData);
-      insertTextAtCursor(textArea, pastedData);
-      forceResize(textAreaRef);
 
       if (e.clipboardData && e.clipboardData.files.length > 0) {
         e.preventDefault();
@@ -242,14 +208,13 @@ export default function useTextarea({
         handleFiles(timestampedFiles);
       }
     },
-    [handleFiles, setFilesLoading, setPastedValue, textAreaRef],
+    [handleFiles, setFilesLoading, textAreaRef],
   );
 
   return {
     textAreaRef,
-    handleKeyDown,
-    handleKeyUp,
     handlePaste,
+    handleKeyDown,
     handleCompositionStart,
     handleCompositionEnd,
   };
