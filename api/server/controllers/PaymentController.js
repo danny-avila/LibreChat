@@ -85,7 +85,21 @@ exports.handleWebhook = async (req, res) => {
   if (event['type'] === 'payment_intent.succeeded') {
     const paymentIntent = event.data.object;
     const userId = paymentIntent.metadata.userId;
-    const priceId = paymentIntent.metadata.priceId; // Retrieve priceId from metadata
+    const priceId = paymentIntent.metadata.priceId;
+    const customerId = paymentIntent.customer;
+
+    // Retrieve the customer's payment history
+    const paymentIntents = await stripe.paymentIntents.list({
+      customer: customerId,
+      limit: 100,
+    });
+
+    // Calculate the total spend for the customer
+    const totalSpend = paymentIntents.data.reduce((total, intent) => {
+      return total + intent.amount;
+    }, 0);
+
+    console.log(`Customer ${customerId} has spent a total of ${totalSpend / 100} USD`);
 
     if (!priceId) {
       console.error('Price ID not found in payment intent metadata');
