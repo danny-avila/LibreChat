@@ -10,6 +10,32 @@ Docker Compose installation is recommended for most use cases. It's the easiest,
 
 If you prefer to watch a video, we have video guides for [Windows](./windows_install.md#recommended) and [Ubuntu 22.04 LTS](./linux_install.md#recommended)
 
+## Quick Start - TL;DR
+Here's the quick summary to get started with the default configuration:
+> Requirement: `Git` and `Docker`
+  
+- Clone the repo
+```bash
+  git clone https://github.com/danny-avila/LibreChat.git
+```
+- navigate to the LibreChat folder
+```bash
+  cd LibreChat
+```
+- Create a .env from the .env.example
+  - note: you might need to use `copy` instead of `cp` if you're using Windows 10
+```bash
+  cp .env.example .env
+```
+- Start LibreChat
+```sh
+  docker compose up -d
+```
+- Access LibreChat
+> visit [http://localhost:3080/](http://localhost:3080/)
+
+- ⚠️ Refer to the remaining sections of this guide as well as our other guides for more advanced configuration options and updates.
+
 ## Installation and Configuration
 
 ### Preparation
