@@ -108,16 +108,16 @@ exports.handleWebhook = async (req, res) => {
       case 'price_1ORgxoHKD0byXXClx3u1yLa0': // 10 CNY - only for China users
         tokens = 100000;
         break;
-      case 'price_1ORgzyHKD0byXXCl9hIUu3Fn': // 2 USD - only for global users
+      case 'price_1P6dqBHKD0byXXClWuA2RGY2': // 2 USD - only for global users
         tokens = 100000;
         break;
-      case 'price_1ORh0JHKD0byXXCl40t8BtlB': // 6 USD - only for global users
+      case 'price_1P6dqdHKD0byXXClcboa06Tu': // 6 USD - only for global users
         tokens = 500000;
         break;
-      case 'price_1ORh0cHKD0byXXClqFvZXCiA': // 10 USD - only for global users
+      case 'price_1P6drEHKD0byXXClOjmSkPKm': // 10 USD - only for global users
         tokens = 1000000;
         break;
-      case 'price_1ORh15HKD0byXXClGtCFxyXf': // 50 USD - only for global users
+      case 'price_1P6drxHKD0byXXClVVLokkLh': // 50 USD - only for global users
         tokens = 10000000;
         break;
       default:
