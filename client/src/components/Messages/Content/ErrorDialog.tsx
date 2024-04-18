@@ -59,7 +59,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
 
     try {
       if (selectedPaymentOption === 'bitcoin') {
-        await processBitcoinPayment(selectedTokens, selectedOption, userId, email);
+        await processBitcoinPayment(selectedTokens, selectedOption, userId, email, isChina);
       } else {
         await processStripePayment(selectedOption, selectedPaymentOption, userId, email);
       }
@@ -68,7 +68,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
     } finally {
       setProcessingTokenAmount(null);
     }
-  }, [selectedTokens, selectedPaymentOption, userId, email, tokenOptionsToUse]);
+  }, [selectedTokens, selectedPaymentOption, userId, email, isChina]);
 
   useEffect(() => {
     if (open) {

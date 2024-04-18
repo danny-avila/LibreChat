@@ -3,26 +3,25 @@ const addTokensByUserId = require('../../../config/addTokens');
 opennode.setCredentials(process.env.OPENNODE_API_KEY, 'live');
 
 exports.createBitcoinCharge = async (req, res) => {
-  const { userId, email, description } = req.body;
+  const { userId, email, description, domain } = req.body;
   console.log('Request body for creating OpenNode charge:', req.body);
   const amount = req.body.amount;
-  const currency = req.body.currency;
   const selectedTokens = req.body.selectedTokens;
   const chargeDescription = `${description} || Tokens: ${selectedTokens}`;
 
-  // Log the request body to verify the input
-  console.log('Request body for creating OpenNode charge:', req.body);
+  // Determine the currency based on the domain
+  const currency = domain === 'gptchina.io' ? 'CNY' : 'USD';
 
   try {
     // Prepare the parameters for the API call
     const chargeParams = {
-      amount, // Use the converted amount here
-      currency: currency, // Or "BTC", depending on your conversion logic
+      amount,
+      currency,
       description: chargeDescription,
       customer_name: email,
       order_id: userId,
-      callback_url: 'https://gptchina.io/api/payment/opennode/callback            ',
-      success_url: 'https://gptchina.io',
+      callback_url: `https://${domain}/api/payment/opennode/callback`,
+      success_url: `https://${domain}`,
       selectedTokens: selectedTokens,
     };
 
