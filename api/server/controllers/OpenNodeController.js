@@ -3,14 +3,10 @@ const addTokensByUserId = require('../../../config/addTokens');
 opennode.setCredentials(process.env.OPENNODE_API_KEY, 'live');
 
 exports.createBitcoinCharge = async (req, res) => {
-  const { userId, email, description, domain } = req.body;
+  const { userId, email, description, domain, amount, currency } = req.body;
   console.log('Request body for creating OpenNode charge:', req.body);
-  const amount = req.body.amount;
   const selectedTokens = req.body.selectedTokens;
   const chargeDescription = `${description} || Tokens: ${selectedTokens}`;
-
-  // Determine the currency based on the domain
-  const currency = domain === 'gptchina.io' ? 'CNY' : 'USD';
 
   try {
     // Prepare the parameters for the API call
