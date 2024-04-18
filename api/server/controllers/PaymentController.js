@@ -57,6 +57,7 @@ exports.createPaymentIntent = async (req, res) => {
       mode: 'payment',
       success_url: `${process.env.DOMAIN_CLIENT}`,
       cancel_url: `${process.env.DOMAIN_CLIENT}`,
+      customer: await stripe.customers.create({ email: email }),
     });
 
     res.status(200).json({ sessionId: session.id });

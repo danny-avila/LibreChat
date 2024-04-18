@@ -6,11 +6,12 @@ const stripePromise = loadStripe(
 
 export const processStripePayment = async (selectedOption, paymentMethod, userId, email) => {
   const { priceId } = selectedOption;
+  const domain = window.location.hostname;
 
   const res = await fetch('/api/payment/stripe/create-checkout-session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ priceId, userId, domain: 'gptchina.io', email, paymentMethod }),
+    body: JSON.stringify({ priceId, userId, domain, email, paymentMethod }),
   });
 
   console.log('res', res);
