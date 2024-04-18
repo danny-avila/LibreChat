@@ -6,7 +6,7 @@ export const processBitcoinPayment = async (selectedTokens, selectedOption, user
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       userId,
-      amount: selectedTokens,
+      tokenAmount: selectedTokens,
       amountCNY: selectedOption.amountCNY,
       selectedTokens: selectedTokens,
       email: email,

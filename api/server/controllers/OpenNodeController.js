@@ -4,7 +4,9 @@ opennode.setCredentials(process.env.OPENNODE_API_KEY, 'live');
 
 exports.createBitcoinCharge = async (req, res) => {
   const { userId, email, description } = req.body;
-  const amount = req.body.amountCNY;
+  console.log('Request body for creating OpenNode charge:', req.body);
+  const amount = req.body.amount;
+  const currency = req.body.currency;
   const selectedTokens = req.body.selectedTokens;
   const chargeDescription = `${description} || Tokens: ${selectedTokens}`;
 
@@ -15,7 +17,7 @@ exports.createBitcoinCharge = async (req, res) => {
     // Prepare the parameters for the API call
     const chargeParams = {
       amount, // Use the converted amount here
-      currency: 'CNY', // Or "BTC", depending on your conversion logic
+      currency: currency, // Or "BTC", depending on your conversion logic
       description: chargeDescription,
       customer_name: email,
       order_id: userId,
