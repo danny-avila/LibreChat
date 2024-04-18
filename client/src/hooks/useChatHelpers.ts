@@ -94,6 +94,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
     {
       editedText = null,
       editedMessageId = null,
+      resubmitFiles = false,
       isRegenerate = false,
       isContinued = false,
       isEdited = false,
@@ -140,7 +141,10 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       (msg) => msg.messageId === latestMessage?.parentMessageId,
     );
 
-    const thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+    let thread_id = parentMessage?.thread_id ?? latestMessage?.thread_id;
+    if (!thread_id) {
+      thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
+    }
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
@@ -174,7 +178,7 @@ export default function useChatHelpers(index = 0, paramId: string | undefined) {
       error: false,
     };
 
-    const reuseFiles = isRegenerate && parentMessage?.files;
+    const reuseFiles = (isRegenerate || resubmitFiles) && parentMessage?.files;
     if (reuseFiles && parentMessage.files?.length) {
       currentMsg.files = parentMessage.files;
       setFiles(new Map());

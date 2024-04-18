@@ -1,8 +1,10 @@
 /* config */
+export * from './azure';
 export * from './config';
 export * from './file-config';
 /* schema helpers  */
 export * from './parsers';
+export * from './generate';
 /* types (exports schemas from `./types` as they contain needed in other defs) */
 export * from './types';
 export * from './types/assistants';

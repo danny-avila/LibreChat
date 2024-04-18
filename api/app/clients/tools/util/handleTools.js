@@ -20,6 +20,7 @@ const {
   StructuredSD,
   StructuredACS,
   CodeSherpaTools,
+  TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
 } = require('../');
@@ -165,6 +166,7 @@ const loadTools = async ({
     'stable-diffusion': functions ? StructuredSD : StableDiffusionAPI,
     'azure-ai-search': functions ? StructuredACS : AzureAISearch,
     CodeBrew: CodeBrew,
+    traversaal_search: TraversaalSearch,
   };
 
   const openAIApiKey = await getOpenAIKey(options, user);
@@ -235,9 +237,11 @@ const loadTools = async ({
   }
 
   const imageGenOptions = {
+    req: options.req,
     fileStrategy: options.fileStrategy,
     processFileURL: options.processFileURL,
     returnMetadata: options.returnMetadata,
+    uploadImageBuffer: options.uploadImageBuffer,
   };
 
   const toolOptions = {

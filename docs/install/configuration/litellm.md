@@ -1,25 +1,207 @@
 ---
-title: 🚅 LiteLLM and Ollama
+title: 🚅 LiteLLM
 description: Using LibreChat with LiteLLM Proxy 
 weight: -7
 ---
 
 # Using LibreChat with LiteLLM Proxy 
 Use **[LiteLLM Proxy](https://docs.litellm.ai/docs/simple_proxy)** for: 
+
 * Calling 100+ LLMs Huggingface/Bedrock/TogetherAI/etc. in the OpenAI ChatCompletions & Completions format
 * Load balancing - between Multiple Models + Deployments of the same model LiteLLM proxy can handle 1k+ requests/second during load tests
 * Authentication & Spend Tracking Virtual Keys
 
 ## Start LiteLLM Proxy Server 
-### Pip install litellm 
-```shell
-pip install litellm
+### 1. Uncomment desired sections in docker-compose.override.yml
+The override file contains sections for the below LiteLLM features
+
+Minimum working `docker-compose.override.yml` Example:
+```
+litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    volumes:
+      - ./litellm/litellm-config.yaml:/app/config.yaml
+      # NOTE: For Google - required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
+      # This also means you need to add the `application_default_credentaials.json` file within ~/litellm
+      - ./litellm/application_default_credentials.json:/app/application_default_credentials.json
+    ports:
+      - "4000:8000"
+    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
+    For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /app/application_default_credentials.json
 ```
 
-### Create a config.yaml for litellm proxy 
+#### Caching with Redis
+Litellm supports in-memory, redis, and s3 caching. Note: Caching currently only works with exact matching.
+
+#### Performance Monitoring with Langfuse
+Litellm supports various logging and observability options.  The settings below will enable Langfuse which will provide a cache_hit tag showing which conversations used cache.
+
+### 2. Create a Config for LiteLLM proxy 
+LiteLLM requires a configuration file in addition to the override file. Within LibreChat, this will be `litellm/litellm-config.yml`. The file 
+below has the options to enable llm proxy to various providers, load balancing, Redis caching, and Langfuse monitoring. Review documentation for other configuration options.
 More information on LiteLLM configurations here: **[docs.litellm.ai/docs/simple_proxy](https://docs.litellm.ai/docs/simple_proxy)**
 
+#### Working Example of incorporating OpenAI, Azure OpenAI, AWS Bedrock, and GCP
+
+Please note the `...` being a secret or a value you should not share (API key, custom tenant endpoint, etc)
+You can potentially use env variables for these too, ex: `api_key: "os.environ/AZURE_API_KEY" # does os.getenv("AZURE_API_KEY")`
 ```yaml
+model_list:
+  # https://litellm.vercel.app/docs/proxy/quick_start
+  - model_name: claude-3-haiku
+    litellm_params:
+      model: bedrock/anthropic.claude-3-haiku-20240307-v1:0
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: claude-3-sonnet
+    litellm_params:
+      model: bedrock/anthropic.claude-3-sonnet-20240229-v1:0
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: claude-v2
+    litellm_params:
+      model: bedrock/anthropic.claude-v2:1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: claude-instant
+    litellm_params:
+      model: bedrock/anthropic.claude-instant-v1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: llama2-13b
+    litellm_params:
+      model: bedrock/meta.llama2-13b-chat-v1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: llama2-70b
+    litellm_params:
+      model: bedrock/meta.llama2-70b-chat-v1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: mistral-7b-instruct
+    litellm_params:
+      model: bedrock/mistral.mistral-7b-instruct-v0:2
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: mixtral-8x7b-instruct
+    litellm_params:
+      model: bedrock/mistral.mixtral-8x7b-instruct-v0:1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+
+  - model_name: azure-gpt-4-turbo-preview
+    litellm_params:
+      model: azure/gpt-4-turbo-preview
+      api_base: https://tenant.openai.azure.com/
+      api_key: ...
+
+  - model_name: azure-gpt-3.5-turbo
+    litellm_params:
+      model: azure/gpt-35-turbo
+      api_base: https://tenant.openai.azure.com/
+      api_key: ...
+
+  - model_name: azure-gpt-4
+    litellm_params:
+      model: azure/gpt-4
+      api_base: https://tenant.openai.azure.com/
+      api_key: ...
+
+  - model_name: azure-gpt-3.5-turbo-16k
+    litellm_params:
+      model: azure/gpt-35-turbo-16k
+      api_base: https://tenant.openai.azure.com/
+      api_key: ...
+
+  - model_name: azure-gpt-4-32k
+    litellm_params:
+      model: azure/gpt-4-32k
+      api_base: https://tenant.openai.azure.com/
+      api_key: ...
+
+
+  - model_name: openai-gpt-4-turbo-preview
+    litellm_params:
+      model: gpt-4-turbo-preview
+      api_key: sk-...
+
+  - model_name: openai-gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
+      api_key: sk-...
+
+  - model_name: openai-gpt-4
+    litellm_params:
+      model: gpt-4
+      api_key: sk-...
+
+  - model_name: openai-gpt-3.5-turbo-16k
+    litellm_params:
+      model: gpt-3.5-turbo-16k
+      api_key: sk-...
+
+  - model_name: openai-gpt-4-32k
+    litellm_params:
+      model: gpt-4-32k
+      api_key: sk-...
+
+  - model_name: openai-gpt-4-vision-preview
+    litellm_params:
+      model: gpt-4-vision-preview
+      api_key: sk-...
+
+  # NOTE: For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
+  - model_name: google-chat-bison
+    litellm_params:
+      model: vertex_ai/chat-bison
+      vertex_project: ...
+      vertex_location: us-central1
+
+  # NOTE: For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
+  - model_name: google-chat-bison-32k
+    litellm_params:
+      model: vertex_ai/chat-bison-32k
+      vertex_project: ...
+      vertex_location: us-central1
+
+  # NOTE: For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
+  - model_name: google-gemini-pro
+    litellm_params:
+      model: vertex_ai/gemini-pro
+      vertex_project: ...
+      vertex_location: us-central1
+
+litellm_settings:
+  success_callback: ["langfuse"]
+  cache: True
+  cache_params:
+    type: "redis"
+    supported_call_types: ["acompletion", "completion", "embedding", "aembedding"]
+general_settings:
+  master_key: sk_live_SetToRandomValue
+```
+
+#### Example of a few Different Options (ex: rpm, stream, ollama)
+```yaml
+
 model_list:
   - model_name: gpt-3.5-turbo
     litellm_params:
@@ -39,43 +221,54 @@ model_list:
       api_base: https://openai-france-1234.openai.azure.com/
       api_key: 
       rpm: 1440
+  - model_name: mixtral
+    litellm_params:
+      model: openai/mixtral:8x7b-instruct-v0.1-q5_K_M      # use openai/* for ollama's openai api compatibility
+      api_base: http://ollama:11434/v1
+      stream: True
+  - model_name: mistral
+    litellm_params:
+      model: openai/mistral                                # use openai/* for ollama's openai api compatibility
+      api_base: http://ollama:11434/v1
+      stream: True
+litellm_settings:
+  success_callback: ["langfuse"]
+  cache: True
+  cache_params:
+    type: "redis"
+    supported_call_types: ["acompletion", "completion", "embedding", "aembedding"]
+general_settings:
+  master_key: sk_live_SetToRandomValue
 ```
 
-### Start the proxy
-```shell
-litellm --config /path/to/config.yaml
 
-#INFO: Proxy running on http://0.0.0.0:8000
+
+### 3. Configure LibreChat
+
+Use `librechat.yaml` [Configuration file (guide here)](./ai_endpoints.md) to add Reverse Proxies as separate endpoints.
+
+Here is an example config:
+
 ```
-
-## Use LiteLLM Proxy Server with LibreChat
-
-
-#### 1. Clone the repo
-```shell
-git clone https://github.com/danny-avila/LibreChat.git
+custom:
+    - name: "Lite LLM"
+      # A place holder - otherwise it becomes the default (OpenAI) key
+      # Provide the key instead in each "model" block within "litellm/litellm-config.yaml"
+      apiKey: "sk-from-config-file"
+      # See the required changes above in "Start LiteLLM Proxy Server" step.
+      baseURL: "http://host.docker.internal:4000"
+      # A "default" model to start new users with. The "fetch" will pull the rest of the available models from LiteLLM
+      # More or less this is "irrelevant", you can pick any model. Just pick one you have defined in LiteLLM.
+      models:
+        default: ["gpt-3.5-turbo"]
+        fetch: true
+      titleConvo: true
+      titleModel: "gpt-3.5-turbo"
+      summarize: false
+      summaryModel: "gpt-3.5-turbo"
+      forcePrompt: false
+      modelDisplayLabel: "Lite LLM"
 ```
-
-
-#### 2. Modify Librechat's `docker-compose.yml`
-```yaml
-OPENAI_REVERSE_PROXY=http://host.docker.internal:8000/v1/chat/completions
-```
-
-**Important**: As of v0.6.6, it's recommend you use the `librechat.yaml` [Configuration file (guide here)](./custom_config.md) to add Reverse Proxies as separate endpoints.
-
-#### 3. Save fake OpenAI key in Librechat's `.env` 
-
-Copy Librechat's `.env.example` to `.env` and overwrite the default OPENAI_API_KEY (by default it requires the user to pass a key).
-```env
-OPENAI_API_KEY=sk-1234
-```
-
-#### 4. Run LibreChat: 
-```shell
-docker compose up
-```
-
 ---
 
 ### Why use LiteLLM?
@@ -102,161 +295,3 @@ Key components and features include:
 - **Proxy CLI Arguments**: A wide range of command-line arguments for customization.
 
 Overall, LiteLLM Server offers a comprehensive suite of tools for managing, deploying, and interacting with a variety of LLMs, making it a versatile choice for large-scale AI applications.
-
-## Ollama
-Use [Ollama](https://ollama.ai/) for
-
-* Run large language models on local hardware
-* Host multiple models
-* Dynamically load the model upon request
-
-### GPU Acceleration
-
-- **Linux**: Requires a Linux distrubution support by official Nvidia drivers. [Nvidia CUDA Toolkit](https://developer.nvidia.com/cuda-downloads?target_os=Linux)
-- **Windows**: Requires Windows Subsytem for Linux. Follow Nvidia instructions at [Nvidia WSL User Guide](https://docs.nvidia.com/cuda/wsl-user-guide/index.html)
-- **macOS**: [macOS Ollama Download](https://ollama.ai/download/mac)
-
-### docker-compose.override.yml with GPU
-```yaml
-version: "3.8"
-services:
-  litellm:
-    image: ghcr.io/berriai/litellm:main-latest
-    volumes:
-      - ./litellm/litellm-config.yaml:/app/config.yaml
-    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
-  ollama:
-    image: ollama/ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [compute, utility]
-    ports:
-      - "11434:11434"
-    volumes:
-      - ./ollama:/root/.ollama
-
-```
-
-### Loading Models in Ollama
-1. Browse the available models at [Ollama Library](https://ollama.ai/library)
-2. Run ```docker exec -it ollama /bin/bash```
-3. Copy the text from the Tags tab from the library website. It should begin with 'ollama run'
-4. Check model size. Models that can run in GPU memory perform the best.
-5. Use /bye to exit the terminal
-
-### Litellm Ollama Configuration
-Add the below lines to the config to access the Ollama models
-```yaml
-  - model_name: mixtral
-    litellm_params:
-      model: ollama/mixtral:8x7b-instruct-v0.1-q5_K_M
-      api_base: http://ollama:11434
-      stream: True
-  - model_name: mistral
-    litellm_params:
-      model: ollama/mistral
-      api_base: http://ollama:11434
-      stream: True
-```
-
-## Caching with Redis
-Litellm supports in-memory, redis, and s3 caching. Note: Caching currently only works with exact matching.
-
-### Update docker-compose.override.yml to enable Redis
-Add the below service to your docker-compose.override.yml
-```yaml
-  redis:
-    image: redis:7-alpine
-    command:
-    - sh
-    - -c # this is to evaluate the $REDIS_PASSWORD from the env
-    - redis-server --appendonly yes --requirepass $$REDIS_PASSWORD ## $$ because of docker-compose
-    environment:
-      REDIS_PASSWORD: RedisChangeMe
-    volumes:
-    - ./redis:/data
-```
-
-Add the following to the environment variables in the litellm service inside the docker-compose.override.yml
-```yaml
-  litellm:
-    image: ghcr.io/berriai/litellm:main-latest
-    volumes:
-      - ./litellm/litellm-config.yaml:/app/config.yaml
-    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
-    environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: RedisChangeMe
-```
-
-### Update Litellm Config File
-Add the below options to the litellm config file
-```yaml
-litellm_settings: # module level litellm settings - https://github.com/BerriAI/litellm/blob/main/litellm/__init__.py
-  cache: True          # set cache responses to True, litellm defaults to using a redis cache
-  cache_params:         # cache_params are optional
-    type: "redis"  # The type of cache to initialize. Can be "local" or "redis". Defaults to "local".
-
-    # Optional configurations
-    supported_call_types: ["acompletion", "completion", "embedding", "aembedding"] # defaults to all litellm call types
-```
-
-
-## Performance Monitoring with Langfuse
-Litellm supports various logging and observability options.  The settings below will enable Langfuse which will provide a cache_hit tag showing which conversations used cache.
-
-### Update docker-compose.override.yml to enable Langfuse
-Langfuse requires a postgres database, so add both postgres and langfuse services to the docker-compose.override.yml
-```yaml
-  langfuse-server:
-    image: ghcr.io/langfuse/langfuse:latest
-    depends_on:
-      - db
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://postgres:PostgresChangeMe@db:5432/postgres
-      - NEXTAUTH_SECRET=ChangeMe
-      - SALT=ChangeMe
-      - NEXTAUTH_URL=http://localhost:3000
-      - TELEMETRY_ENABLED=${TELEMETRY_ENABLED:-true}
-      - NEXT_PUBLIC_SIGN_UP_DISABLED=${NEXT_PUBLIC_SIGN_UP_DISABLED:-false}
-      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
-
-  db:
-    image: postgres
-    restart: always
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=PostgresChangeMe
-      - POSTGRES_DB=postgres
-    volumes:
-      - ./postgres:/var/lib/postgresql/data
-```
-
-Once Langfuse is running, create an account by accessing the web interface on port 3000. Create a new project to obtain the needed public and private key used by the litellm config
-Add environement variable within the litellm service within docker-compose.override.yml
-```yaml
-  litellm:
-    image: ghcr.io/berriai/litellm:main-latest
-    ports:
-      - "8000:8000"
-    volumes:
-      - /srv/litellm/config/litellm-config.yaml:/app/config.yaml
-    command: [ "--config", "/app/config.yaml", "--port", "8000", "--num_workers", "8" ]
-    environment:
-      LANGFUSE_PUBLIC_KEY: pk-lf-RandomStringFromLangfuseWebInterface
-      LANGFUSE_SECRET_KEY: sk-lf-RandomStringFromLangfuseWebInterface
-      LANGFUSE_HOST: http://langfuse-server:3000
-```
-
-### Update litellm config file
-```yaml
-litellm_settings:
-  success_callback: ["langfuse"]
-```

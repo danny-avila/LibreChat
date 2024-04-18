@@ -1,4 +1,5 @@
 import { atom } from 'recoil';
+import { SettingsViews } from 'librechat-data-provider';
 import type { TOptionSettings } from '~/common';
 
 const abortScroll = atom<boolean>({
@@ -26,6 +27,11 @@ const showAgentSettings = atom<boolean>({
   default: false,
 });
 
+const currentSettingsView = atom<SettingsViews>({
+  key: 'currentSettingsView',
+  default: SettingsViews.default,
+});
+
 const showBingToneSetting = atom<boolean>({
   key: 'showBingToneSetting',
   default: false,
@@ -49,6 +55,25 @@ const autoScroll = atom<boolean>({
       onSet((newValue: unknown) => {
         if (typeof newValue === 'boolean') {
           localStorage.setItem('autoScroll', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
+const showCode = atom<boolean>({
+  key: 'showCode',
+  default: localStorage.getItem('showCode') === 'true',
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('showCode');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('showCode', newValue.toString());
         }
       });
     },
@@ -131,15 +156,37 @@ const UsernameDisplay = atom<boolean>({
   ] as const,
 });
 
+const enterToSend = atom<boolean>({
+  key: 'enterToSend',
+  default: true,
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('enterToSend');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('enterToSend', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 export default {
   abortScroll,
   showFiles,
   optionSettings,
   showPluginStoreDialog,
   showAgentSettings,
+  currentSettingsView,
   showBingToneSetting,
   showPopover,
   autoScroll,
+  enterToSend,
+  showCode,
   hideSidePanel,
   modularChat,
   LaTeXParsing,

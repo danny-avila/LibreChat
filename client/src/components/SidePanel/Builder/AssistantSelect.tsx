@@ -3,17 +3,26 @@ import { useCallback, useEffect, useRef } from 'react';
 import {
   defaultAssistantFormValues,
   defaultOrderQuery,
+  isImageVisionTool,
+  EModelEndpoint,
+  Capabilities,
   FileSources,
 } from 'librechat-data-provider';
 import type { UseFormReset } from 'react-hook-form';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { Assistant, AssistantCreateParams } from 'librechat-data-provider';
-import type { AssistantForm, Actions, TAssistantOption, ExtendedFile } from '~/common';
+import type {
+  AssistantForm,
+  Actions,
+  TAssistantOption,
+  ExtendedFile,
+  LastSelectedModels,
+} from '~/common';
 import SelectDropDown from '~/components/ui/SelectDropDown';
 import { useListAssistantsQuery } from '~/data-provider';
+import { useLocalize, useLocalStorage } from '~/hooks';
 import { useFileMapContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
-import { cn } from '~/utils/';
+import { cn } from '~/utils';
 
 const keys = new Set(['name', 'id', 'description', 'instructions', 'model']);
 
@@ -33,6 +42,10 @@ export default function AssistantSelect({
   const localize = useLocalize();
   const fileMap = useFileMapContext();
   const lastSelectedAssistant = useRef<string | null>(null);
+  const [lastSelectedModels] = useLocalStorage<LastSelectedModels>(
+    'lastSelectedModel',
+    {} as LastSelectedModels,
+  );
 
   const assistants = useListAssistantsQuery(defaultOrderQuery, {
     select: (res) =>
@@ -77,7 +90,10 @@ export default function AssistantSelect({
       createMutation.reset();
       if (!assistant) {
         setCurrentAssistantId(undefined);
-        return reset(defaultAssistantFormValues);
+        return reset({
+          ...defaultAssistantFormValues,
+          model: lastSelectedModels?.[EModelEndpoint.assistants] ?? '',
+        });
       }
 
       const update = {
@@ -87,26 +103,28 @@ export default function AssistantSelect({
       };
 
       const actions: Actions = {
-        code_interpreter: false,
-        retrieval: false,
+        [Capabilities.code_interpreter]: false,
+        [Capabilities.image_vision]: false,
+        [Capabilities.retrieval]: false,
       };
 
       assistant?.tools
-        ?.filter((tool) => tool.type !== 'function')
-        ?.map((tool) => tool.type)
+        ?.filter((tool) => tool.type !== 'function' || isImageVisionTool(tool))
+        ?.map((tool) => tool?.function?.name || tool.type)
         .forEach((tool) => {
           actions[tool] = true;
         });
 
       const functions =
         assistant?.tools
-          ?.filter((tool) => tool.type === 'function')
+          ?.filter((tool) => tool.type === 'function' && !isImageVisionTool(tool))
           ?.map((tool) => tool.function?.name ?? '') ?? [];
 
       const formValues: Partial<AssistantForm & Actions> = {
         functions,
         ...actions,
         assistant: update,
+        model: update.model,
       };
 
       Object.entries(assistant).forEach(([name, value]) => {
@@ -123,7 +141,7 @@ export default function AssistantSelect({
       reset(formValues);
       setCurrentAssistantId(assistant?.id);
     },
-    [assistants.data, reset, setCurrentAssistantId, createMutation],
+    [assistants.data, reset, setCurrentAssistantId, createMutation, lastSelectedModels],
   );
 
   useEffect(() => {
@@ -165,15 +183,17 @@ export default function AssistantSelect({
       showLabel={false}
       emptyTitle={true}
       containerClassName="flex-grow"
+      searchClassName="dark:from-gray-850"
+      searchPlaceholder={localize('com_assistants_search_name')}
       optionsClass="hover:bg-gray-20/50 dark:border-gray-700"
-      optionsListClass="rounded-lg shadow-lg dark:bg-black dark:border-gray-700 dark:last:border"
+      optionsListClass="rounded-lg shadow-lg dark:bg-gray-850 dark:border-gray-700 dark:last:border"
       currentValueClass={cn(
         'text-md font-semibold text-gray-900 dark:text-white',
         value === '' ? 'text-gray-500' : '',
       )}
       className={cn(
-        'mt-1 rounded-md dark:border-gray-700 dark:bg-black',
-        'z-50 flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer hover:border-green-500 focus:border-green-500',
+        'mt-1 rounded-md dark:border-gray-700 dark:bg-gray-850',
+        'z-50 flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer hover:border-green-500 focus:border-gray-400',
       )}
       renderOption={() => (
         <span className="flex items-center gap-1.5 truncate">

@@ -1,4 +1,12 @@
-const { FileSources, defaultSocialLogins } = require('librechat-data-provider');
+const {
+  FileSources,
+  EModelEndpoint,
+  EImageOutputType,
+  defaultSocialLogins,
+  validateAzureGroups,
+  deprecatedAzureVariables,
+  conflictingAzureVariables,
+} = require('librechat-data-provider');
 
 const AppService = require('./AppService');
 
@@ -32,6 +40,43 @@ jest.mock('./ToolService', () => ({
   }),
 }));
 
+const azureGroups = [
+  {
+    group: 'librechat-westus',
+    apiKey: '${WESTUS_API_KEY}',
+    instanceName: 'librechat-westus',
+    version: '2023-12-01-preview',
+    models: {
+      'gpt-4-vision-preview': {
+        deploymentName: 'gpt-4-vision-preview',
+        version: '2024-02-15-preview',
+      },
+      'gpt-3.5-turbo': {
+        deploymentName: 'gpt-35-turbo',
+      },
+      'gpt-3.5-turbo-1106': {
+        deploymentName: 'gpt-35-turbo-1106',
+      },
+      'gpt-4': {
+        deploymentName: 'gpt-4',
+      },
+      'gpt-4-1106-preview': {
+        deploymentName: 'gpt-4-1106-preview',
+      },
+    },
+  },
+  {
+    group: 'librechat-eastus',
+    apiKey: '${EASTUS_API_KEY}',
+    instanceName: 'librechat-eastus',
+    deploymentName: 'gpt-4-turbo',
+    version: '2024-02-15-preview',
+    models: {
+      'gpt-4-turbo': true,
+    },
+  },
+];
+
 describe('AppService', () => {
   let app;
 
@@ -63,6 +108,10 @@ describe('AppService', () => {
         },
       },
       paths: expect.anything(),
+      imageOutputType: expect.any(String),
+      interface: undefined,
+      fileConfig: undefined,
+      secureImageLinks: undefined,
     });
   });
 
@@ -79,6 +128,38 @@ describe('AppService', () => {
 
     const { logger } = require('~/config');
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Outdated Config version'));
+  });
+
+  it('should change the `imageOutputType` based on config value', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        version: '0.10.0',
+        imageOutputType: EImageOutputType.WEBP,
+      }),
+    );
+
+    await AppService(app);
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.WEBP);
+  });
+
+  it('should default to `PNG` `imageOutputType` with no provided type', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        version: '0.10.0',
+      }),
+    );
+
+    await AppService(app);
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
+  });
+
+  it('should default to `PNG` `imageOutputType` with no provided config', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve(undefined),
+    );
+
+    await AppService(app);
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
   });
 
   it('should initialize Firebase when fileStrategy is firebase', async () => {
@@ -122,11 +203,11 @@ describe('AppService', () => {
     });
   });
 
-  it('should correctly configure endpoints based on custom config', async () => {
+  it('should correctly configure Assistants endpoint based on custom config', async () => {
     require('./Config/loadCustomConfig').mockImplementationOnce(() =>
       Promise.resolve({
         endpoints: {
-          assistants: {
+          [EModelEndpoint.assistants]: {
             disableBuilder: true,
             pollIntervalMs: 5000,
             timeoutMs: 30000,
@@ -138,8 +219,8 @@ describe('AppService', () => {
 
     await AppService(app);
 
-    expect(app.locals).toHaveProperty('assistants');
-    expect(app.locals.assistants).toEqual(
+    expect(app.locals).toHaveProperty(EModelEndpoint.assistants);
+    expect(app.locals[EModelEndpoint.assistants]).toEqual(
       expect.objectContaining({
         disableBuilder: true,
         pollIntervalMs: 5000,
@@ -147,6 +228,34 @@ describe('AppService', () => {
         supportedIds: expect.arrayContaining(['id1', 'id2']),
       }),
     );
+  });
+
+  it('should correctly configure Azure OpenAI endpoint based on custom config', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.azureOpenAI]: {
+            groups: azureGroups,
+          },
+        },
+      }),
+    );
+
+    process.env.WESTUS_API_KEY = 'westus-key';
+    process.env.EASTUS_API_KEY = 'eastus-key';
+
+    await AppService(app);
+
+    expect(app.locals).toHaveProperty(EModelEndpoint.azureOpenAI);
+    const azureConfig = app.locals[EModelEndpoint.azureOpenAI];
+    expect(azureConfig).toHaveProperty('modelNames');
+    expect(azureConfig).toHaveProperty('modelGroupMap');
+    expect(azureConfig).toHaveProperty('groupMap');
+
+    const { modelNames, modelGroupMap, groupMap } = validateAzureGroups(azureGroups);
+    expect(azureConfig.modelNames).toEqual(modelNames);
+    expect(azureConfig.modelGroupMap).toEqual(modelGroupMap);
+    expect(azureConfig.groupMap).toEqual(groupMap);
   });
 
   it('should not modify FILE_UPLOAD environment variables without rate limits', async () => {
@@ -213,7 +322,7 @@ describe('AppService', () => {
   });
 });
 
-describe('AppService updating app.locals', () => {
+describe('AppService updating app.locals and issuing warnings', () => {
   let app;
   let initialEnv;
 
@@ -308,5 +417,57 @@ describe('AppService updating app.locals', () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Both `supportedIds` and `excludedIds` are defined'),
     );
+  });
+
+  it('should issue expected warnings when loading Azure Groups with deprecated Environment Variables', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.azureOpenAI]: {
+            groups: azureGroups,
+          },
+        },
+      }),
+    );
+
+    deprecatedAzureVariables.forEach((varInfo) => {
+      process.env[varInfo.key] = 'test';
+    });
+
+    const app = { locals: {} };
+    await require('./AppService')(app);
+
+    const { logger } = require('~/config');
+    deprecatedAzureVariables.forEach(({ key, description }) => {
+      expect(logger.warn).toHaveBeenCalledWith(
+        `The \`${key}\` environment variable (related to ${description}) should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you will experience conflicts and errors.`,
+      );
+    });
+  });
+
+  it('should issue expected warnings when loading conflicting Azure Envrionment Variables', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.azureOpenAI]: {
+            groups: azureGroups,
+          },
+        },
+      }),
+    );
+
+    conflictingAzureVariables.forEach((varInfo) => {
+      process.env[varInfo.key] = 'test';
+    });
+
+    const app = { locals: {} };
+    await require('./AppService')(app);
+
+    const { logger } = require('~/config');
+    conflictingAzureVariables.forEach(({ key }) => {
+      expect(logger.warn).toHaveBeenCalledWith(
+        `The \`${key}\` environment variable should not be used in combination with the \`azureOpenAI\` endpoint configuration, as you may experience with the defined placeholders for mapping to the current model grouping using the same name.`,
+      );
+    });
   });
 });

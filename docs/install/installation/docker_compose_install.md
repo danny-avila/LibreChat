@@ -10,6 +10,32 @@ Docker Compose installation is recommended for most use cases. It's the easiest,
 
 If you prefer to watch a video, we have video guides for [Windows](./windows_install.md#recommended) and [Ubuntu 22.04 LTS](./linux_install.md#recommended)
 
+## Quick Start - TL;DR
+Here's the quick summary to get started with the default configuration:
+> Requirement: `Git` and `Docker`
+  
+- Clone the repo
+```bash
+  git clone https://github.com/danny-avila/LibreChat.git
+```
+- navigate to the LibreChat folder
+```bash
+  cd LibreChat
+```
+- Create a .env from the .env.example
+  - note: you might need to use `copy` instead of `cp` if you're using Windows 10
+```bash
+  cp .env.example .env
+```
+- Start LibreChat
+```sh
+  docker compose up -d
+```
+- Access LibreChat
+> visit [http://localhost:3080/](http://localhost:3080/)
+
+- ⚠️ Refer to the remaining sections of this guide as well as our other guides for more advanced configuration options and updates.
+
 ## Installation and Configuration
 
 ### Preparation
@@ -51,33 +77,57 @@ Once you have completed all the setup, you can start the LibreChat application b
 That's it! If you need more detailed information on configuring your compose file, see my notes below.
 
 ## Updating LibreChat
-The following commands will fetch the latest code of LibreChat and build a new docker image.
+
+As of v0.7.0+, Docker installations transitioned from building images locally to using prebuilt images [hosted on Github Container registry](https://github.com/danny-avila?tab=packages&repo_name=LibreChat).
+
+You can still build the image locally, as shown in the commented commands below. More info on building the image locally in the [Docker Compose Override Section](../configuration/docker_override.md).
+
+The following commands will fetch the latest LibreChat project changes, including any necessary changes to the docker compose files, as well as the latest prebuilt images.
 
 ```bash
-git pull
+# Stop the running container(s)
 docker compose down
-docker compose up --build
+
+# Pull latest project changes
+git pull
+
+# Pull the latest LibreChat image (default setup)
+docker compose pull
+
+# If building the LibreChat image Locally, build without cache (legacy setup)
+# docker compose build --no-cache
+
+# Start LibreChat
+docker compose up
 ```
 
-If you're having issues running this command, you can try running what the script does manually:
+If you're having issues running the above commands, you can try a comprehensive approach instead:
 
-Prefix commands with `sudo` according to your environment permissions.
+Note: you may need to prefix commands with `sudo` according to your environment permissions.
 
 ```bash
 # Stop the container (if running)
 docker compose down
+
 # Switch to the repo's main branch
 git checkout main
+
 # Pull the latest changes to the main branch from Github
-git pull 
+git pull
+
 # Prune all LibreChat Docker images
 docker rmi librechat:latest
-# Remove all unused dangling Docker images.
+
+# Optional: Remove all unused dangling Docker images.
 # Be careful, as this will delete all dangling docker images on your
 # computer, also those not created by LibreChat!
 docker image prune -f
-# Building a new LibreChat image without cache
-docker compose build --no-cache
+
+# If building the LibreChat image Locally, build without cache (legacy setup)
+# docker compose build --no-cache
+
+# Pull the latest image (default setup)
+docker compose pull
 
 # Start LibreChat
 docker compose up

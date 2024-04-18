@@ -332,7 +332,7 @@ export default function ExportModal({ open, onOpenChange, conversation }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
-        title="Export conversation"
+        title={localize('com_nav_export_conversation')}
         className="max-w-full sm:max-w-2xl"
         main={
           <div className="flex w-full flex-col items-center gap-6">
@@ -435,7 +435,7 @@ export default function ExportModal({ open, onOpenChange, conversation }) {
           <>
             <DialogButton
               onClick={exportConversation}
-              className="dark:hover:gray-400 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
+              className="dark:hover:gray-400 border-gray-700 bg-green-500 text-white hover:bg-green-600 dark:hover:bg-green-600"
             >
               {localize('com_endpoint_export')}
             </DialogButton>

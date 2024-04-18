@@ -2,9 +2,11 @@ require('dotenv').config();
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
+const axios = require('axios');
 const express = require('express');
 const passport = require('passport');
 const mongoSanitize = require('express-mongo-sanitize');
+const validateImageRequest = require('./middleware/validateImageRequest');
 const errorController = require('./controllers/ErrorController');
 const { jwtLogin, passportLogin } = require('~/strategies');
 const configureSocialLogins = require('./socialLogins');
@@ -22,6 +24,9 @@ const port = Number(PORT) || 3080;
 const host = HOST || 'localhost';
 
 const startServer = async () => {
+  if (typeof Bun !== 'undefined') {
+    axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
+  }
   await connectDb();
   logger.info('Connected to MongoDB');
   await indexSync();
@@ -39,7 +44,8 @@ const startServer = async () => {
   app.use(mongoSanitize());
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(express.static(app.locals.paths.dist));
-  app.use(express.static(app.locals.paths.publicPath));
+  app.use(express.static(app.locals.paths.fonts));
+  app.use(express.static(app.locals.paths.assets));
   app.set('trust proxy', 1); // trust first proxy
   app.use(cors());
 
@@ -78,6 +84,7 @@ const startServer = async () => {
   app.use('/api/config', routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
+  app.use('/images/', validateImageRequest, routes.staticRoute);
 
   app.use((req, res) => {
     res.status(404).sendFile(path.join(app.locals.paths.dist, 'index.html'));

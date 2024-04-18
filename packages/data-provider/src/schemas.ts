@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { TMessageContentParts } from './types/assistants';
+import { Tools } from './types/assistants';
+import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
 import type { TFile } from './types/files';
 
 export const isUUID = z.string().uuid();
@@ -15,58 +16,6 @@ export enum EModelEndpoint {
   assistants = 'assistants',
   custom = 'custom',
 }
-
-export const defaultAssistantFormValues = {
-  assistant: '',
-  id: '',
-  name: '',
-  description: '',
-  instructions: '',
-  model: 'gpt-3.5-turbo-1106',
-  functions: [],
-  code_interpreter: false,
-  retrieval: false,
-};
-
-export const endpointSettings = {
-  [EModelEndpoint.google]: {
-    model: {
-      default: 'chat-bison',
-    },
-    maxOutputTokens: {
-      min: 1,
-      max: 2048,
-      step: 1,
-      default: 1024,
-      maxGeminiPro: 8192,
-      defaultGeminiPro: 8192,
-    },
-    temperature: {
-      min: 0,
-      max: 1,
-      step: 0.01,
-      default: 0.2,
-    },
-    topP: {
-      min: 0,
-      max: 1,
-      step: 0.01,
-      default: 0.8,
-    },
-    topK: {
-      min: 1,
-      max: 40,
-      step: 0.01,
-      default: 40,
-    },
-  },
-};
-
-const google = endpointSettings[EModelEndpoint.google];
-
-export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
-
-export const extendedModelEndpointSchema = z.union([eModelEndpointSchema, z.string()]);
 
 export enum ImageDetail {
   low = 'low',
@@ -87,6 +36,114 @@ export const imageDetailValue = {
 };
 
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
+
+export const defaultAssistantFormValues = {
+  assistant: '',
+  id: '',
+  name: '',
+  description: '',
+  instructions: '',
+  model: '',
+  functions: [],
+  code_interpreter: false,
+  image_vision: false,
+  retrieval: false,
+};
+
+export const ImageVisionTool: FunctionTool = {
+  type: Tools.function,
+  [Tools.function]: {
+    name: 'image_vision',
+    description: 'Get detailed text descriptions for all current image attachments.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+};
+
+export const isImageVisionTool = (tool: FunctionTool | FunctionToolCall) =>
+  tool.type === 'function' && tool.function?.name === ImageVisionTool?.function?.name;
+
+export const openAISettings = {
+  model: {
+    default: 'gpt-3.5-turbo',
+  },
+  temperature: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 1,
+  },
+  top_p: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 1,
+  },
+  presence_penalty: {
+    min: 0,
+    max: 2,
+    step: 0.01,
+    default: 0,
+  },
+  frequency_penalty: {
+    min: 0,
+    max: 2,
+    step: 0.01,
+    default: 0,
+  },
+  resendFiles: {
+    default: true,
+  },
+  imageDetail: {
+    default: ImageDetail.auto,
+  },
+};
+
+export const googleSettings = {
+  model: {
+    default: 'chat-bison',
+  },
+  maxOutputTokens: {
+    min: 1,
+    max: 2048,
+    step: 1,
+    default: 1024,
+    maxGeminiPro: 8192,
+    defaultGeminiPro: 8192,
+  },
+  temperature: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 0.2,
+  },
+  topP: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 0.8,
+  },
+  topK: {
+    min: 1,
+    max: 40,
+    step: 0.01,
+    default: 40,
+  },
+};
+
+export const endpointSettings = {
+  [EModelEndpoint.openAI]: openAISettings,
+  [EModelEndpoint.google]: googleSettings,
+};
+
+const google = endpointSettings[EModelEndpoint.google];
+
+export const eModelEndpointSchema = z.nativeEnum(EModelEndpoint);
+
+export const extendedModelEndpointSchema = z.union([eModelEndpointSchema, z.string()]);
 
 export const tPluginAuthConfigSchema = z.object({
   authField: z.string(),
@@ -216,8 +273,10 @@ export const tConversationSchema = z.object({
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   file_ids: z.array(z.string()).optional(),
-  /* vision */
+  /** @deprecated */
   resendImages: z.boolean().optional(),
+  /* vision */
+  resendFiles: z.boolean().optional(),
   imageDetail: eImageDetailSchema.optional(),
   /* assistant */
   assistant_id: z.string().optional(),
@@ -258,11 +317,13 @@ export const tPresetUpdateSchema = tConversationSchema.merge(
 
 export type TPreset = z.infer<typeof tPresetSchema>;
 
+export type TSetOption = (
+  param: number | string,
+) => (newValue: number | string | boolean | Partial<TPreset>) => void;
+
 export type TConversation = z.infer<typeof tConversationSchema> & {
   presetOverride?: Partial<TPreset>;
 };
-
-// type DefaultSchemaValues = Partial<typeof google>;
 
 export const openAISchema = tConversationSchema
   .pick({
@@ -273,31 +334,32 @@ export const openAISchema = tConversationSchema
     top_p: true,
     presence_penalty: true,
     frequency_penalty: true,
-    resendImages: true,
+    resendFiles: true,
     imageDetail: true,
   })
   .transform((obj) => ({
     ...obj,
-    model: obj.model ?? 'gpt-3.5-turbo',
+    model: obj.model ?? openAISettings.model.default,
     chatGptLabel: obj.chatGptLabel ?? null,
     promptPrefix: obj.promptPrefix ?? null,
-    temperature: obj.temperature ?? 1,
-    top_p: obj.top_p ?? 1,
-    presence_penalty: obj.presence_penalty ?? 0,
-    frequency_penalty: obj.frequency_penalty ?? 0,
-    resendImages: obj.resendImages ?? false,
-    imageDetail: obj.imageDetail ?? ImageDetail.auto,
+    temperature: obj.temperature ?? openAISettings.temperature.default,
+    top_p: obj.top_p ?? openAISettings.top_p.default,
+    presence_penalty: obj.presence_penalty ?? openAISettings.presence_penalty.default,
+    frequency_penalty: obj.frequency_penalty ?? openAISettings.frequency_penalty.default,
+    resendFiles:
+      typeof obj.resendFiles === 'boolean' ? obj.resendFiles : openAISettings.resendFiles.default,
+    imageDetail: obj.imageDetail ?? openAISettings.imageDetail.default,
   }))
   .catch(() => ({
-    model: 'gpt-3.5-turbo',
+    model: openAISettings.model.default,
     chatGptLabel: null,
     promptPrefix: null,
-    temperature: 1,
-    top_p: 1,
-    presence_penalty: 0,
-    frequency_penalty: 0,
-    resendImages: false,
-    imageDetail: ImageDetail.auto,
+    temperature: openAISettings.temperature.default,
+    top_p: openAISettings.top_p.default,
+    presence_penalty: openAISettings.presence_penalty.default,
+    frequency_penalty: openAISettings.frequency_penalty.default,
+    resendFiles: openAISettings.resendFiles.default,
+    imageDetail: openAISettings.imageDetail.default,
   }));
 
 export const googleSchema = tConversationSchema
@@ -391,6 +453,7 @@ export const anthropicSchema = tConversationSchema
     maxOutputTokens: true,
     topP: true,
     topK: true,
+    resendFiles: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -401,6 +464,7 @@ export const anthropicSchema = tConversationSchema
     maxOutputTokens: obj.maxOutputTokens ?? 4000,
     topP: obj.topP ?? 0.7,
     topK: obj.topK ?? 5,
+    resendFiles: typeof obj.resendFiles === 'boolean' ? obj.resendFiles : true,
   }))
   .catch(() => ({
     model: 'claude-1',
@@ -410,6 +474,7 @@ export const anthropicSchema = tConversationSchema
     maxOutputTokens: 4000,
     topP: 0.7,
     topK: 5,
+    resendFiles: true,
   }));
 
 export const chatGPTBrowserSchema = tConversationSchema
@@ -501,7 +566,7 @@ export const compactOpenAISchema = tConversationSchema
     top_p: true,
     presence_penalty: true,
     frequency_penalty: true,
-    resendImages: true,
+    resendFiles: true,
     imageDetail: true,
   })
   .transform((obj: Partial<TConversation>) => {
@@ -518,8 +583,8 @@ export const compactOpenAISchema = tConversationSchema
     if (newObj.frequency_penalty === 0) {
       delete newObj.frequency_penalty;
     }
-    if (newObj.resendImages !== true) {
-      delete newObj.resendImages;
+    if (newObj.resendFiles === true) {
+      delete newObj.resendFiles;
     }
     if (newObj.imageDetail === ImageDetail.auto) {
       delete newObj.imageDetail;
@@ -568,6 +633,7 @@ export const compactAnthropicSchema = tConversationSchema
     maxOutputTokens: true,
     topP: true,
     topK: true,
+    resendFiles: true,
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
@@ -582,6 +648,9 @@ export const compactAnthropicSchema = tConversationSchema
     }
     if (newObj.topK === 5) {
       delete newObj.topK;
+    }
+    if (newObj.resendFiles === true) {
+      delete newObj.resendFiles;
     }
 
     return removeNullishValues(newObj);
@@ -647,53 +716,3 @@ export const compactPluginsSchema = tConversationSchema
     return removeNullishValues(newObj);
   })
   .catch(() => ({}));
-
-// const createGoogleSchema = (customGoogle: DefaultSchemaValues) => {
-//   const defaults = { ...google, ...customGoogle };
-//   return tConversationSchema
-//     .pick({
-//       model: true,
-//       modelLabel: true,
-//       promptPrefix: true,
-//       examples: true,
-//       temperature: true,
-//       maxOutputTokens: true,
-//       topP: true,
-//       topK: true,
-//     })
-//     .transform((obj) => {
-//       const isGeminiPro = obj?.model?.toLowerCase()?.includes('gemini-pro');
-
-//       const maxOutputTokensMax = isGeminiPro
-//         ? defaults.maxOutputTokens.maxGeminiPro
-//         : defaults.maxOutputTokens.max;
-//       const maxOutputTokensDefault = isGeminiPro
-//         ? defaults.maxOutputTokens.defaultGeminiPro
-//         : defaults.maxOutputTokens.default;
-
-//       let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;
-//       maxOutputTokens = Math.min(maxOutputTokens, maxOutputTokensMax);
-
-//       return {
-//         ...obj,
-//         model: obj.model ?? defaults.model.default,
-//         modelLabel: obj.modelLabel ?? null,
-//         promptPrefix: obj.promptPrefix ?? null,
-//         examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
-//         temperature: obj.temperature ?? defaults.temperature.default,
-//         maxOutputTokens,
-//         topP: obj.topP ?? defaults.topP.default,
-//         topK: obj.topK ?? defaults.topK.default,
-//       };
-//     })
-//     .catch(() => ({
-//       model: defaults.model.default,
-//       modelLabel: null,
-//       promptPrefix: null,
-//       examples: [{ input: { content: '' }, output: { content: '' } }],
-//       temperature: defaults.temperature.default,
-//       maxOutputTokens: defaults.maxOutputTokens.default,
-//       topP: defaults.topP.default,
-//       topK: defaults.topK.default,
-//     }));
-// };

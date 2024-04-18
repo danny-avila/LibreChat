@@ -3,7 +3,6 @@ import {
   isToday,
   isWithinInterval,
   subDays,
-  getMonth,
   getYear,
   startOfDay,
   startOfYear,
@@ -43,6 +42,10 @@ export const groupConversationsByDate = (conversations: TConversation[]): Groupe
 
   const seenConversationIds = new Set();
   const groups = conversations.reduce((acc, conversation) => {
+    if (!conversation) {
+      return acc;
+    }
+
     if (seenConversationIds.has(conversation.conversationId)) {
       return acc;
     }
@@ -161,4 +164,21 @@ export const deleteConversation = (
   }
 
   return newData;
+};
+
+export const getConversationById = (
+  data: ConversationData | undefined,
+  conversationId: string | null,
+): TConversation | undefined => {
+  if (!data || !conversationId) {
+    return undefined;
+  }
+
+  for (const page of data.pages) {
+    const conversation = page.conversations.find((c) => c.conversationId === conversationId);
+    if (conversation) {
+      return conversation;
+    }
+  }
+  return undefined;
 };

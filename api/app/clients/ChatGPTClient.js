@@ -1,9 +1,19 @@
-const crypto = require('crypto');
 const Keyv = require('keyv');
+const crypto = require('crypto');
+const {
+  EModelEndpoint,
+  resolveHeaders,
+  CohereConstants,
+  mapModelToAzureConfig,
+} = require('librechat-data-provider');
+const { CohereClient } = require('cohere-ai');
 const { encoding_for_model: encodingForModel, get_encoding: getEncoding } = require('tiktoken');
 const { fetchEventSource } = require('@waylaidwanderer/fetch-event-source');
+const { createCoherePayload } = require('./llm');
 const { Agent, ProxyAgent } = require('undici');
 const BaseClient = require('./BaseClient');
+const { logger } = require('~/config');
+const { extractBaseURL, constructAzureURL, genAzureChatCompletion } = require('~/utils');
 
 const CHATGPT_MODEL = 'gpt-3.5-turbo';
 const tokenizersCache = {};
@@ -140,11 +150,13 @@ class ChatGPTClient extends BaseClient {
     return tokenizer;
   }
 
-  async getCompletion(input, onProgress, abortController = null) {
+  /** @type {getCompletion} */
+  async getCompletion(input, onProgress, onTokenProgress, abortController = null) {
     if (!abortController) {
       abortController = new AbortController();
     }
-    const modelOptions = { ...this.modelOptions };
+
+    let modelOptions = { ...this.modelOptions };
     if (typeof onProgress === 'function') {
       modelOptions.stream = true;
     }
@@ -159,17 +171,12 @@ class ChatGPTClient extends BaseClient {
     }
 
     const { debug } = this.options;
-    const url = this.completionsUrl;
+    let baseURL = this.completionsUrl;
     if (debug) {
       console.debug();
-      console.debug(url);
+      console.debug(baseURL);
       console.debug(modelOptions);
       console.debug();
-    }
-
-    if (this.azure || this.options.azure) {
-      // Azure does not accept `model` in the body, so we need to remove it.
-      delete modelOptions.model;
     }
 
     const opts = {
@@ -177,17 +184,78 @@ class ChatGPTClient extends BaseClient {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(modelOptions),
       dispatcher: new Agent({
         bodyTimeout: 0,
         headersTimeout: 0,
       }),
     };
 
-    if (this.apiKey && this.options.azure) {
-      opts.headers['api-key'] = this.apiKey;
+    if (this.isVisionModel) {
+      modelOptions.max_tokens = 4000;
+    }
+
+    /** @type {TAzureConfig | undefined} */
+    const azureConfig = this.options?.req?.app?.locals?.[EModelEndpoint.azureOpenAI];
+
+    const isAzure = this.azure || this.options.azure;
+    if (
+      (isAzure && this.isVisionModel && azureConfig) ||
+      (azureConfig && this.isVisionModel && this.options.endpoint === EModelEndpoint.azureOpenAI)
+    ) {
+      const { modelGroupMap, groupMap } = azureConfig;
+      const {
+        azureOptions,
+        baseURL,
+        headers = {},
+        serverless,
+      } = mapModelToAzureConfig({
+        modelName: modelOptions.model,
+        modelGroupMap,
+        groupMap,
+      });
+      opts.headers = resolveHeaders(headers);
+      this.langchainProxy = extractBaseURL(baseURL);
+      this.apiKey = azureOptions.azureOpenAIApiKey;
+
+      const groupName = modelGroupMap[modelOptions.model].group;
+      this.options.addParams = azureConfig.groupMap[groupName].addParams;
+      this.options.dropParams = azureConfig.groupMap[groupName].dropParams;
+      // Note: `forcePrompt` not re-assigned as only chat models are vision models
+
+      this.azure = !serverless && azureOptions;
+      this.azureEndpoint =
+        !serverless && genAzureChatCompletion(this.azure, modelOptions.model, this);
+    }
+
+    if (this.options.headers) {
+      opts.headers = { ...opts.headers, ...this.options.headers };
+    }
+
+    if (isAzure) {
+      // Azure does not accept `model` in the body, so we need to remove it.
+      delete modelOptions.model;
+
+      baseURL = this.langchainProxy
+        ? constructAzureURL({
+          baseURL: this.langchainProxy,
+          azureOptions: this.azure,
+        })
+        : this.azureEndpoint.split(/(?<!\/)\/(chat|completion)\//)[0];
+
+      if (this.options.forcePrompt) {
+        baseURL += '/completions';
+      } else {
+        baseURL += '/chat/completions';
+      }
+
+      opts.defaultQuery = { 'api-version': this.azure.azureOpenAIApiVersion };
+      opts.headers = { ...opts.headers, 'api-key': this.apiKey };
     } else if (this.apiKey) {
       opts.headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+
+    if (process.env.OPENAI_ORGANIZATION) {
+      opts.headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
     }
 
     if (this.useOpenRouter) {
@@ -195,20 +263,84 @@ class ChatGPTClient extends BaseClient {
       opts.headers['X-Title'] = 'LibreChat';
     }
 
-    if (this.options.headers) {
-      opts.headers = { ...opts.headers, ...this.options.headers };
-    }
-
     if (this.options.proxy) {
       opts.dispatcher = new ProxyAgent(this.options.proxy);
     }
+
+    /* hacky fixes for Mistral AI API:
+      - Re-orders system message to the top of the messages payload, as not allowed anywhere else
+      - If there is only one message and it's a system message, change the role to user
+      */
+    if (baseURL.includes('https://api.mistral.ai/v1') && modelOptions.messages) {
+      const { messages } = modelOptions;
+
+      const systemMessageIndex = messages.findIndex((msg) => msg.role === 'system');
+
+      if (systemMessageIndex > 0) {
+        const [systemMessage] = messages.splice(systemMessageIndex, 1);
+        messages.unshift(systemMessage);
+      }
+
+      modelOptions.messages = messages;
+
+      if (messages.length === 1 && messages[0].role === 'system') {
+        modelOptions.messages[0].role = 'user';
+      }
+    }
+
+    if (this.options.addParams && typeof this.options.addParams === 'object') {
+      modelOptions = {
+        ...modelOptions,
+        ...this.options.addParams,
+      };
+      logger.debug('[ChatGPTClient] chatCompletion: added params', {
+        addParams: this.options.addParams,
+        modelOptions,
+      });
+    }
+
+    if (this.options.dropParams && Array.isArray(this.options.dropParams)) {
+      this.options.dropParams.forEach((param) => {
+        delete modelOptions[param];
+      });
+      logger.debug('[ChatGPTClient] chatCompletion: dropped params', {
+        dropParams: this.options.dropParams,
+        modelOptions,
+      });
+    }
+
+    if (baseURL.startsWith(CohereConstants.API_URL)) {
+      const payload = createCoherePayload({ modelOptions });
+      return await this.cohereChatCompletion({ payload, onTokenProgress });
+    }
+
+    if (baseURL.includes('v1') && !baseURL.includes('/completions') && !this.isChatCompletion) {
+      baseURL = baseURL.split('v1')[0] + 'v1/completions';
+    } else if (
+      baseURL.includes('v1') &&
+      !baseURL.includes('/chat/completions') &&
+      this.isChatCompletion
+    ) {
+      baseURL = baseURL.split('v1')[0] + 'v1/chat/completions';
+    }
+
+    const BASE_URL = new URL(baseURL);
+    if (opts.defaultQuery) {
+      Object.entries(opts.defaultQuery).forEach(([key, value]) => {
+        BASE_URL.searchParams.append(key, value);
+      });
+      delete opts.defaultQuery;
+    }
+
+    const completionsURL = BASE_URL.toString();
+    opts.body = JSON.stringify(modelOptions);
 
     if (modelOptions.stream) {
       // eslint-disable-next-line no-async-promise-executor
       return new Promise(async (resolve, reject) => {
         try {
           let done = false;
-          await fetchEventSource(url, {
+          await fetchEventSource(completionsURL, {
             ...opts,
             signal: abortController.signal,
             async onopen(response) {
@@ -236,7 +368,6 @@ class ChatGPTClient extends BaseClient {
               // workaround for private API not sending [DONE] event
               if (!done) {
                 onProgress('[DONE]');
-                abortController.abort();
                 resolve();
               }
             },
@@ -249,14 +380,13 @@ class ChatGPTClient extends BaseClient {
             },
             onmessage(message) {
               if (debug) {
-                // console.debug(message);
+                console.debug(message);
               }
               if (!message.data || message.event === 'ping') {
                 return;
               }
               if (message.data === '[DONE]') {
                 onProgress('[DONE]');
-                abortController.abort();
                 resolve();
                 done = true;
                 return;
@@ -269,7 +399,7 @@ class ChatGPTClient extends BaseClient {
         }
       });
     }
-    const response = await fetch(url, {
+    const response = await fetch(completionsURL, {
       ...opts,
       signal: abortController.signal,
     });
@@ -285,6 +415,35 @@ class ChatGPTClient extends BaseClient {
       throw error;
     }
     return response.json();
+  }
+
+  /** @type {cohereChatCompletion} */
+  async cohereChatCompletion({ payload, onTokenProgress }) {
+    const cohere = new CohereClient({
+      token: this.apiKey,
+      environment: this.completionsUrl,
+    });
+
+    if (!payload.stream) {
+      const chatResponse = await cohere.chat(payload);
+      return chatResponse.text;
+    }
+
+    const chatStream = await cohere.chatStream(payload);
+    let reply = '';
+    for await (const message of chatStream) {
+      if (!message) {
+        continue;
+      }
+
+      if (message.eventType === 'text-generation' && message.text) {
+        onTokenProgress(message.text);
+      } else if (message.eventType === 'stream-end' && message.response) {
+        reply = message.response.text;
+      }
+    }
+
+    return reply;
   }
 
   async generateTitle(userMessage, botMessage) {

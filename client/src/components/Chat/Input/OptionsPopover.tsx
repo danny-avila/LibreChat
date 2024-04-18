@@ -56,14 +56,14 @@ export default function OptionsPopover({
           <div
             className={cn(
               cardStyle,
-              'dark:bg-gray-900',
+              'dark:bg-gray-700',
               'border-d-0 flex w-full flex-col overflow-hidden rounded-none border-s-0 border-t bg-white px-0 pb-[10px] dark:border-white/10 md:rounded-md md:border lg:w-[736px]',
             )}
           >
-            <div className="flex w-full items-center bg-slate-100 px-2 py-2 dark:bg-gray-800/60">
+            <div className="flex w-full items-center bg-gray-50 px-2 py-2 dark:bg-gray-700">
               <Button
                 type="button"
-                className="h-auto justify-start rounded-md bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black focus:ring-0 dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white dark:focus:outline-none dark:focus:ring-offset-0"
+                className="h-auto w-[150px] justify-start rounded-md border-2 border-gray-300/50 bg-transparent px-2 py-1 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black focus:ring-1 focus:ring-green-500/90 dark:border-gray-500/50 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:focus:ring-green-500"
                 onClick={saveAsPreset}
               >
                 <Save className="mr-1 w-[14px]" />
@@ -73,7 +73,7 @@ export default function OptionsPopover({
               <Button
                 type="button"
                 className={cn(
-                  'ml-auto h-auto bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-slate-200 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white',
+                  'ml-auto h-auto bg-transparent px-3 py-2 text-xs font-medium font-normal text-black hover:bg-gray-100 hover:text-black dark:bg-transparent dark:text-white dark:hover:bg-gray-700 dark:hover:text-white',
                   removeFocusOutlines,
                 )}
                 onClick={closePopover}

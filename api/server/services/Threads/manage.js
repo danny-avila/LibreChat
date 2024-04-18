@@ -1,14 +1,18 @@
+const path = require('path');
 const { v4 } = require('uuid');
 const {
-  EModelEndpoint,
   Constants,
-  defaultOrderQuery,
   ContentTypes,
+  EModelEndpoint,
+  AnnotationTypes,
+  defaultOrderQuery,
 } = require('librechat-data-provider');
+const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 const { recordMessage, getMessages } = require('~/models/Message');
 const { saveConvo } = require('~/models/Conversation');
 const spendTokens = require('~/models/spendTokens');
 const { countTokens } = require('~/server/utils');
+const { logger } = require('~/config');
 
 /**
  * Initializes a new thread or adds messages to an existing thread.
@@ -429,13 +433,15 @@ async function checkMessageGaps({ openai, latestMessageId, thread_id, run_id, co
   }
 
   let addedCurrentMessage = false;
-  const apiMessages = response.data.map((msg) => {
-    if (msg.id === currentMessage.id) {
-      addedCurrentMessage = true;
-      return currentMessage;
-    }
-    return msg;
-  });
+  const apiMessages = response.data
+    .map((msg) => {
+      if (msg.id === currentMessage.id) {
+        addedCurrentMessage = true;
+        return currentMessage;
+      }
+      return msg;
+    })
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
   if (!addedCurrentMessage) {
     apiMessages.push(currentMessage);
@@ -463,30 +469,186 @@ async function checkMessageGaps({ openai, latestMessageId, thread_id, run_id, co
 
 /**
  * Records token usage for a given completion request.
- *
  * @param {Object} params - The parameters for initializing a thread.
  * @param {number} params.prompt_tokens - The number of prompt tokens used.
  * @param {number} params.completion_tokens - The number of completion tokens used.
  * @param {string} params.model - The model used by the assistant run.
  * @param {string} params.user - The user's ID.
  * @param {string} params.conversationId - LibreChat conversation ID.
+ * @param {string} [params.context='message'] - The context of the usage. Defaults to 'message'.
  * @return {Promise<TMessage[]>} A promise that resolves to the updated messages
  */
-const recordUsage = async ({ prompt_tokens, completion_tokens, model, user, conversationId }) => {
+const recordUsage = async ({
+  prompt_tokens,
+  completion_tokens,
+  model,
+  user,
+  conversationId,
+  context = 'message',
+}) => {
   await spendTokens(
     {
       user,
       model,
-      context: 'message',
+      context,
       conversationId,
     },
     { promptTokens: prompt_tokens, completionTokens: completion_tokens },
   );
 };
 
+/**
+ * Safely replaces the annotated text within the specified range denoted by start_index and end_index,
+ * after verifying that the text within that range matches the given annotation text.
+ * Proceeds with the replacement even if a mismatch is found, but logs a warning.
+ *
+ * @param {string} originalText The original text content.
+ * @param {number} start_index The starting index where replacement should begin.
+ * @param {number} end_index The ending index where replacement should end.
+ * @param {string} expectedText The text expected to be found in the specified range.
+ * @param {string} replacementText The text to insert in place of the existing content.
+ * @returns {string} The text with the replacement applied, regardless of text match.
+ */
+function replaceAnnotation(originalText, start_index, end_index, expectedText, replacementText) {
+  if (start_index < 0 || end_index > originalText.length || start_index > end_index) {
+    logger.warn(`Invalid range specified for annotation replacement.
+    Attempting replacement with \`replace\` method instead...
+    length: ${originalText.length}
+    start_index: ${start_index}
+    end_index: ${end_index}`);
+    return originalText.replace(originalText, replacementText);
+  }
+
+  const actualTextInRange = originalText.substring(start_index, end_index);
+
+  if (actualTextInRange !== expectedText) {
+    logger.warn(`The text within the specified range does not match the expected annotation text.
+    Attempting replacement with \`replace\` method instead...
+    Expected: ${expectedText}
+    Actual: ${actualTextInRange}`);
+
+    return originalText.replace(originalText, replacementText);
+  }
+
+  const beforeText = originalText.substring(0, start_index);
+  const afterText = originalText.substring(end_index);
+  return beforeText + replacementText + afterText;
+}
+
+/**
+ * Sorts, processes, and flattens messages to a single string.
+ *
+ * @param {object} params - The OpenAI client instance.
+ * @param {OpenAIClient} params.openai - The OpenAI client instance.
+ * @param {RunClient} params.client - The LibreChat client that manages the run: either refers to `OpenAI` or `StreamRunManager`.
+ * @param {ThreadMessage[]} params.messages - An array of messages.
+ * @returns {Promise<{messages: ThreadMessage[], text: string}>} The sorted messages and the flattened text.
+ */
+async function processMessages({ openai, client, messages = [] }) {
+  const sorted = messages.sort((a, b) => a.created_at - b.created_at);
+
+  let text = '';
+  let edited = false;
+  const sources = [];
+  for (const message of sorted) {
+    message.files = [];
+    for (const content of message.content) {
+      const type = content.type;
+      const contentType = content[type];
+      const currentFileId = contentType?.file_id;
+
+      if (type === ContentTypes.IMAGE_FILE && !client.processedFileIds.has(currentFileId)) {
+        const file = await retrieveAndProcessFile({
+          openai,
+          client,
+          file_id: currentFileId,
+          basename: `${currentFileId}.png`,
+        });
+
+        client.processedFileIds.add(currentFileId);
+        message.files.push(file);
+        continue;
+      }
+
+      let currentText = contentType?.value ?? '';
+
+      /** @type {{ annotations: Annotation[] }} */
+      const { annotations } = contentType ?? {};
+
+      // Process annotations if they exist
+      if (!annotations?.length) {
+        text += currentText + ' ';
+        continue;
+      }
+
+      logger.debug('[processMessages] Processing annotations:', annotations);
+      for (const annotation of annotations) {
+        let file;
+        const type = annotation.type;
+        const annotationType = annotation[type];
+        const file_id = annotationType?.file_id;
+        const alreadyProcessed = client.processedFileIds.has(file_id);
+
+        const replaceCurrentAnnotation = (replacement = '') => {
+          currentText = replaceAnnotation(
+            currentText,
+            annotation.start_index,
+            annotation.end_index,
+            annotation.text,
+            replacement,
+          );
+          edited = true;
+        };
+
+        if (alreadyProcessed) {
+          const { file_id } = annotationType || {};
+          file = await retrieveAndProcessFile({ openai, client, file_id, unknownType: true });
+        } else if (type === AnnotationTypes.FILE_PATH) {
+          const basename = path.basename(annotation.text);
+          file = await retrieveAndProcessFile({
+            openai,
+            client,
+            file_id,
+            basename,
+          });
+          replaceCurrentAnnotation(file.filepath);
+        } else if (type === AnnotationTypes.FILE_CITATION) {
+          file = await retrieveAndProcessFile({
+            openai,
+            client,
+            file_id,
+            unknownType: true,
+          });
+          sources.push(file.filename);
+          replaceCurrentAnnotation(`^${sources.length}^`);
+        }
+
+        text += currentText + ' ';
+
+        if (!file) {
+          continue;
+        }
+
+        client.processedFileIds.add(file_id);
+        message.files.push(file);
+      }
+    }
+  }
+
+  if (sources.length) {
+    text += '\n\n';
+    for (let i = 0; i < sources.length; i++) {
+      text += `^${i + 1}.^ ${sources[i]}${i === sources.length - 1 ? '' : '\n'}`;
+    }
+  }
+
+  return { messages: sorted, text, edited };
+}
+
 module.exports = {
   initThread,
   recordUsage,
+  processMessages,
   saveUserMessage,
   checkMessageGaps,
   addThreadMetadata,

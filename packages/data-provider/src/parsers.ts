@@ -1,5 +1,6 @@
+import type { ZodIssue } from 'zod';
 import type { TConversation, TPreset } from './schemas';
-import type { TEndpointOption } from './types';
+import type { TConfig, TEndpointOption, TEndpointsConfig } from './types';
 import {
   EModelEndpoint,
   openAISchema,
@@ -41,6 +42,101 @@ const endpointSchemas: Record<EModelEndpoint, EndpointSchema> = {
 // const schemaCreators: Record<EModelEndpoint, (customSchema: DefaultSchemaValues) => EndpointSchema> = {
 //   [EModelEndpoint.google]: createGoogleSchema,
 // };
+
+/** Get the enabled endpoints from the `ENDPOINTS` environment variable */
+export function getEnabledEndpoints() {
+  const defaultEndpoints: string[] = [
+    EModelEndpoint.openAI,
+    EModelEndpoint.assistants,
+    EModelEndpoint.azureOpenAI,
+    EModelEndpoint.google,
+    EModelEndpoint.bingAI,
+    EModelEndpoint.chatGPTBrowser,
+    EModelEndpoint.gptPlugins,
+    EModelEndpoint.anthropic,
+  ];
+
+  const endpointsEnv = process.env.ENDPOINTS || '';
+  let enabledEndpoints = defaultEndpoints;
+  if (endpointsEnv) {
+    enabledEndpoints = endpointsEnv
+      .split(',')
+      .filter((endpoint) => endpoint?.trim())
+      .map((endpoint) => endpoint.trim());
+  }
+  return enabledEndpoints;
+}
+
+/** Orders an existing EndpointsConfig object based on enabled endpoint/custom ordering */
+export function orderEndpointsConfig(endpointsConfig: TEndpointsConfig) {
+  if (!endpointsConfig) {
+    return {};
+  }
+  const enabledEndpoints = getEnabledEndpoints();
+  const endpointKeys = Object.keys(endpointsConfig);
+  const defaultCustomIndex = enabledEndpoints.indexOf(EModelEndpoint.custom);
+  return endpointKeys.reduce(
+    (accumulatedConfig: Record<string, TConfig | null | undefined>, currentEndpointKey) => {
+      const isCustom = !(currentEndpointKey in EModelEndpoint);
+      const isEnabled = enabledEndpoints.includes(currentEndpointKey);
+      if (!isEnabled && !isCustom) {
+        return accumulatedConfig;
+      }
+
+      const index = enabledEndpoints.indexOf(currentEndpointKey);
+
+      if (isCustom) {
+        accumulatedConfig[currentEndpointKey] = {
+          order: defaultCustomIndex >= 0 ? defaultCustomIndex : 9999,
+          ...(endpointsConfig[currentEndpointKey] as Omit<TConfig, 'order'> & { order?: number }),
+        };
+      } else if (endpointsConfig[currentEndpointKey]) {
+        accumulatedConfig[currentEndpointKey] = {
+          ...endpointsConfig[currentEndpointKey],
+          order: index,
+        };
+      }
+      return accumulatedConfig;
+    },
+    {},
+  );
+}
+
+/** Converts an array of Zod issues into a string. */
+export function errorsToString(errors: ZodIssue[]) {
+  return errors
+    .map((error) => {
+      const field = error.path.join('.');
+      const message = error.message;
+
+      return `${field}: ${message}`;
+    })
+    .join(' ');
+}
+
+export const envVarRegex = /^\${(.+)}$/;
+
+/** Extracts the value of an environment variable from a string. */
+export function extractEnvVariable(value: string) {
+  const envVarMatch = value.match(envVarRegex);
+  if (envVarMatch) {
+    return process.env[envVarMatch[1]] || value;
+  }
+  return value;
+}
+
+/** Resolves header values to env variables if detected */
+export function resolveHeaders(headers: Record<string, string> | undefined) {
+  const resolvedHeaders = { ...(headers ?? {}) };
+
+  if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
+    Object.keys(headers).forEach((key) => {
+      resolvedHeaders[key] = extractEnvVariable(headers[key]);
+    });
+  }
+
+  return resolvedHeaders;
+}
 
 export function getFirstDefinedValue(possibleValues: string[]) {
   let returnValue;

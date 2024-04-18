@@ -1,3 +1,4 @@
+import { Capabilities } from 'librechat-data-provider';
 import type { Assistant } from 'librechat-data-provider';
 import type { Option, ExtendedFile } from './types';
 
@@ -6,8 +7,9 @@ export type TAssistantOption =
   | (Option & Assistant & { files?: Array<[string, ExtendedFile]> });
 
 export type Actions = {
-  code_interpreter: boolean;
-  retrieval: boolean;
+  [Capabilities.code_interpreter]: boolean;
+  [Capabilities.image_vision]: boolean;
+  [Capabilities.retrieval]: boolean;
 };
 
 export type AssistantForm = {

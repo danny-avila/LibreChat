@@ -19,14 +19,18 @@ const EditPresetDialog = ({
   const localize = useLocalize();
   const { preset, setPreset } = useChatContext();
   const { setOption } = useSetIndexOptions(preset);
-  const [onTitleChange, title] = useDebouncedInput(setOption, 'title', preset?.title);
+  const [onTitleChange, title] = useDebouncedInput({
+    setOption,
+    optionKey: 'title',
+    initialValue: preset?.title,
+  });
   const [presetModalVisible, setPresetModalVisible] = useRecoilState(store.presetModalVisible);
 
   const { data: availableEndpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
 
-  const { endpoint } = preset || {};
+  const { endpoint, endpointType, model } = preset || {};
   if (!endpoint) {
     return null;
   }
@@ -48,8 +52,8 @@ const EditPresetDialog = ({
         className="h-full max-w-full overflow-y-auto pb-4 sm:w-[680px] sm:pb-0 md:h-[720px] md:w-[750px] md:overflow-y-hidden lg:w-[950px] xl:h-[720px]"
         main={
           <div className="flex w-full flex-col items-center gap-2 md:h-[530px]">
-            <div className="grid w-full grid-cols-5 gap-6">
-              <div className="col-span-4 flex items-start justify-start gap-4">
+            <div className="grid w-full">
+              <div className="col-span-4 flex flex-col items-start justify-start gap-6 pb-4 md:flex-row">
                 <div className="flex w-full flex-col">
                   <Label htmlFor="preset-name" className="mb-1 text-left text-sm font-medium">
                     {localize('com_endpoint_preset_name')}
@@ -77,7 +81,7 @@ const EditPresetDialog = ({
                   />
                 </div>
               </div>
-              <div className="col-span-2 flex items-start justify-start gap-4 sm:col-span-1">
+              <div className="col-span-2 flex items-start justify-between gap-4 sm:col-span-4">
                 <div className="flex w-full flex-col">
                   <Label
                     htmlFor="endpoint"
@@ -86,13 +90,16 @@ const EditPresetDialog = ({
                     {'ㅤ'}
                   </Label>
                   <PopoverButtons
-                    buttonClass="ml-0 w-full dark:bg-gray-700 dark:hover:bg-gray-800 p-2 h-[40px] justify-center mt-0"
-                    iconClass="hidden lg:block w-4"
+                    buttonClass="ml-0 w-full border border-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:hover:bg-gray-600 p-2 h-[40px] justify-center mt-0"
+                    iconClass="hidden lg:block w-4 "
+                    endpoint={endpoint}
+                    endpointType={endpointType}
+                    model={model}
                   />
                 </div>
               </div>
             </div>
-            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-500" />
+            <div className="my-4 w-full border-t border-gray-300 dark:border-gray-600" />
             <div className="w-full p-0">
               <EndpointSettings
                 conversation={preset}
@@ -106,12 +113,15 @@ const EditPresetDialog = ({
         }
         buttons={
           <div className="mb-6 md:mb-2">
-            <DialogButton onClick={exportPreset} className="dark:hover:gray-400 border-gray-700">
+            <DialogButton
+              onClick={exportPreset}
+              className="border-gray-100 hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
+            >
               {localize('com_endpoint_export')}
             </DialogButton>
             <DialogClose
               onClick={submitPreset}
-              className="dark:hover:gray-400 ml-2 border-gray-700 bg-green-600 text-white hover:bg-green-700 dark:hover:bg-green-800"
+              className="ml-2 bg-green-500 text-white hover:bg-green-600 dark:hover:bg-green-600"
             >
               {localize('com_ui_save')}
             </DialogClose>

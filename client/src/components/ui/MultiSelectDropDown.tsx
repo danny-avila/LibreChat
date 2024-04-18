@@ -3,6 +3,7 @@ import { Listbox, Transition } from '@headlessui/react';
 import { Wrench, ArrowRight } from 'lucide-react';
 import { CheckMark } from '~/components/svg';
 import useOnClickOutside from '~/hooks/useOnClickOutside';
+import { useMultiSearch } from './MultiSearch';
 import { cn } from '~/utils/';
 import type { TPlugin } from 'librechat-data-provider';
 
@@ -17,6 +18,7 @@ export type TMultiSelectDropDownProps = {
   containerClassName?: string;
   isSelected: (value: string) => boolean;
   className?: string;
+  searchPlaceholder?: string;
   optionValueKey?: string;
 };
 
@@ -31,6 +33,7 @@ function MultiSelectDropDown({
   containerClassName,
   isSelected,
   className,
+  searchPlaceholder,
   optionValueKey = 'value',
 }: TMultiSelectDropDownProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -43,6 +46,17 @@ function MultiSelectDropDown({
     setIsOpen(true);
   };
 
+  // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
+  // reset once the component is unmounted (as per a normal search)
+  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>({
+    availableOptions: availableValues,
+    placeholder: searchPlaceholder,
+    getTextKeyOverride: (option) => (option.name || '').toUpperCase(),
+  });
+
+  const hasSearchRender = Boolean(searchRender);
+  const options = hasSearchRender ? filteredValues : availableValues;
+
   const transitionProps = { className: 'top-full mt-3' };
   if (showAbove) {
     transitionProps.className = 'bottom-full mb-3';
@@ -52,6 +66,7 @@ function MultiSelectDropDown({
     <div className={cn('flex items-center justify-center gap-2', containerClassName ?? '')}>
       <div className="relative w-full">
         {/* the function typing is correct but there's still an issue here */}
+        {/* @ts-ignore */}
         <Listbox value={value} onChange={handleSelect} disabled={disabled}>
           {() => (
             <>
@@ -77,7 +92,7 @@ function MultiSelectDropDown({
                 <span className="inline-flex w-full truncate" id={excludeIds[2]}>
                   <span
                     className={cn(
-                      'flex h-6 items-center gap-1 truncate text-sm text-gray-900 dark:text-white',
+                      'flex h-6 items-center gap-1 truncate text-sm text-gray-800 dark:text-white',
                       !showLabel ? 'text-xs' : '',
                     )}
                   >
@@ -136,9 +151,12 @@ function MultiSelectDropDown({
               >
                 <Listbox.Options
                   ref={menuRef}
-                  className="absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]"
+                  className={cn(
+                    'absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]',
+                  )}
                 >
-                  {availableValues.map((option, i: number) => {
+                  {searchRender}
+                  {options.map((option, i: number) => {
                     if (!option) {
                       return null;
                     }
@@ -147,7 +165,7 @@ function MultiSelectDropDown({
                       <Listbox.Option
                         key={i}
                         value={option[optionValueKey]}
-                        className="group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-900 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700"
+                        className="group relative flex h-[42px] cursor-pointer select-none items-center overflow-hidden border-b border-black/10 pl-3 pr-9 text-gray-800 last:border-0 hover:bg-gray-20 dark:border-white/20 dark:text-white dark:hover:bg-gray-700"
                       >
                         <span className="flex items-center gap-1.5 truncate">
                           {!option.isButton && (
@@ -168,19 +186,19 @@ function MultiSelectDropDown({
                           )}
                           <span
                             className={cn(
-                              'flex h-6 items-center gap-1 text-gray-800 dark:text-gray-100',
+                              'flex h-6 items-center gap-1 text-gray-800 dark:text-gray-200',
                               selected ? 'font-semibold' : '',
                             )}
                           >
                             {option.name}
                           </span>
                           {option.isButton && (
-                            <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-800 dark:text-gray-100">
+                            <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-800 dark:text-gray-200">
                               <ArrowRight />
                             </span>
                           )}
                           {selected && !option.isButton && (
-                            <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-800 dark:text-gray-100">
+                            <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-800 dark:text-gray-200">
                               <CheckMark />
                             </span>
                           )}

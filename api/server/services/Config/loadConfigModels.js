@@ -1,6 +1,6 @@
-const { EModelEndpoint } = require('librechat-data-provider');
-const { isUserProvided, extractEnvVariable } = require('~/server/utils');
+const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
 const { fetchModels } = require('~/server/services/ModelService');
+const { isUserProvided } = require('~/server/utils');
 const getCustomConfig = require('./getCustomConfig');
 
 /**
@@ -17,6 +17,21 @@ async function loadConfigModels(req) {
 
   const { endpoints = {} } = customConfig ?? {};
   const modelsConfig = {};
+  const azureEndpoint = endpoints[EModelEndpoint.azureOpenAI];
+  const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
+  const { modelNames } = azureConfig ?? {};
+
+  if (modelNames && azureEndpoint) {
+    modelsConfig[EModelEndpoint.azureOpenAI] = modelNames;
+  }
+
+  if (modelNames && azureEndpoint && azureEndpoint.plugins) {
+    modelsConfig[EModelEndpoint.gptPlugins] = modelNames;
+  }
+
+  if (azureEndpoint?.assistants && azureConfig.assistantModels) {
+    modelsConfig[EModelEndpoint.assistants] = azureConfig.assistantModels;
+  }
 
   if (!Array.isArray(endpoints[EModelEndpoint.custom])) {
     return modelsConfig;
@@ -31,21 +46,34 @@ async function loadConfigModels(req) {
       (endpoint.models.fetch || endpoint.models.default),
   );
 
-  const fetchPromisesMap = {}; // Map for promises keyed by baseURL
-  const baseUrlToNameMap = {}; // Map to associate baseURLs with names
+  /**
+   * @type {Record<string, string[]>}
+   * Map for promises keyed by unique combination of baseURL and apiKey */
+  const fetchPromisesMap = {};
+  /**
+   * @type {Record<string, string[]>}
+   * Map to associate unique keys with endpoint names; note: one key may can correspond to multiple endpoints */
+  const uniqueKeyToEndpointsMap = {};
+  /**
+   * @type {Record<string, Partial<TEndpoint>>}
+   * Map to associate endpoint names to their configurations */
+  const endpointsMap = {};
 
   for (let i = 0; i < customEndpoints.length; i++) {
     const endpoint = customEndpoints[i];
     const { models, name, baseURL, apiKey } = endpoint;
+    endpointsMap[name] = endpoint;
 
     const API_KEY = extractEnvVariable(apiKey);
     const BASE_URL = extractEnvVariable(baseURL);
 
+    const uniqueKey = `${BASE_URL}__${API_KEY}`;
+
     modelsConfig[name] = [];
 
     if (models.fetch && !isUserProvided(API_KEY) && !isUserProvided(BASE_URL)) {
-      fetchPromisesMap[BASE_URL] =
-        fetchPromisesMap[BASE_URL] ||
+      fetchPromisesMap[uniqueKey] =
+        fetchPromisesMap[uniqueKey] ||
         fetchModels({
           user: req.user.id,
           baseURL: BASE_URL,
@@ -53,8 +81,8 @@ async function loadConfigModels(req) {
           name,
           userIdQuery: models.userIdQuery,
         });
-      baseUrlToNameMap[BASE_URL] = baseUrlToNameMap[BASE_URL] || [];
-      baseUrlToNameMap[BASE_URL].push(name);
+      uniqueKeyToEndpointsMap[uniqueKey] = uniqueKeyToEndpointsMap[uniqueKey] || [];
+      uniqueKeyToEndpointsMap[uniqueKey].push(name);
       continue;
     }
 
@@ -64,15 +92,16 @@ async function loadConfigModels(req) {
   }
 
   const fetchedData = await Promise.all(Object.values(fetchPromisesMap));
-  const baseUrls = Object.keys(fetchPromisesMap);
+  const uniqueKeys = Object.keys(fetchPromisesMap);
 
   for (let i = 0; i < fetchedData.length; i++) {
-    const currentBaseUrl = baseUrls[i];
+    const currentKey = uniqueKeys[i];
     const modelData = fetchedData[i];
-    const associatedNames = baseUrlToNameMap[currentBaseUrl];
+    const associatedNames = uniqueKeyToEndpointsMap[currentKey];
 
     for (const name of associatedNames) {
-      modelsConfig[name] = modelData;
+      const endpoint = endpointsMap[name];
+      modelsConfig[name] = !modelData?.length ? endpoint.models.default ?? [] : modelData;
     }
   }
 

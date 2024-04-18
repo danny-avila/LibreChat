@@ -5,7 +5,7 @@ import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import { SelectDropDown, MultiSelectDropDown, SelectDropDownPop, Button } from '~/components/ui';
-import { useSetOptions, useAuthContext, useMediaQuery } from '~/hooks';
+import { useSetOptions, useAuthContext, useMediaQuery, useLocalize } from '~/hooks';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
 
@@ -26,6 +26,7 @@ export default function Plugins({
   showAbove,
   popover = false,
 }: TModelSelectProps) {
+  const localize = useLocalize();
   const { data: allPlugins } = useAvailablePluginsQuery();
   const [visible, setVisibility] = useState<boolean>(true);
   const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
@@ -84,7 +85,7 @@ export default function Plugins({
         type="button"
         className={cn(
           cardStyle,
-          'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-3 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
+          'z-40 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
         )}
         onClick={() => setVisibility((prev) => !prev)}
       >
@@ -100,7 +101,7 @@ export default function Plugins({
         setValue={setOption('model')}
         availableValues={models}
         showAbove={showAbove}
-        className={cn(cardStyle, 'min-w-60 z-40 flex w-64 sm:w-48', visible ? '' : 'hidden')}
+        className={cn(cardStyle, 'z-40 flex w-64 min-w-60 sm:w-48', visible ? '' : 'hidden')}
       />
       <MultiSelectDropDown
         value={conversation.tools || []}
@@ -109,7 +110,8 @@ export default function Plugins({
         availableValues={availableTools}
         optionValueKey="pluginKey"
         showAbove={showAbove}
-        className={cn(cardStyle, 'min-w-60 z-50 w-64 sm:w-48', visible ? '' : 'hidden')}
+        className={cn(cardStyle, 'z-50 w-64 min-w-60 sm:w-48', visible ? '' : 'hidden')}
+        searchPlaceholder={localize('com_ui_select_search_plugin')}
       />
     </>
   );

@@ -44,7 +44,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
   return (
     <div
       ref={ref}
-      className="relative mt-1 flex flex h-10 cursor-pointer items-center gap-3 rounded-lg border-white bg-black px-2 px-3 py-2 text-white transition-colors duration-200 hover:bg-gray-900 focus:bg-gray-900"
+      className="relative mt-1 flex flex h-10 cursor-pointer items-center gap-3 rounded-lg border-white bg-gray-50 px-2 px-3 py-2 text-black transition-colors duration-200 focus-within:bg-gray-200 hover:bg-gray-200 dark:bg-gray-750 dark:text-white dark:focus-within:bg-gray-800 dark:hover:bg-gray-800"
     >
       {<Search className="absolute left-3 h-4 w-4" />}
       <input

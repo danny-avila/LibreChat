@@ -6,13 +6,13 @@ import {
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
-import * as t from '../types';
-import * as s from '../schemas';
-import * as m from '../types/mutations';
-import { defaultOrderQuery } from '../config';
+import { defaultOrderQuery, initialModelsConfig } from '../config';
 import * as dataService from '../data-service';
-import request from '../request';
+import * as m from '../types/mutations';
 import { QueryKeys } from '../keys';
+import request from '../request';
+import * as s from '../schemas';
+import * as t from '../types';
 
 export const useAbortRequestWithMessage = (): UseMutationResult<
   void,
@@ -211,10 +211,11 @@ export const useGetModelsQuery = (
   config?: UseQueryOptions<t.TModelsConfig>,
 ): QueryObserverResult<t.TModelsConfig> => {
   return useQuery<t.TModelsConfig>([QueryKeys.models], () => dataService.getModels(), {
-    staleTime: Infinity,
+    initialData: initialModelsConfig,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
+    staleTime: Infinity,
     ...config,
   });
 };
