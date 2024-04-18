@@ -78,12 +78,6 @@ export default function Presentation({
             {isActive && <DragDropOverlay />}
           </div>
         </UserList>
-        {/* <SidePanel defaultLayout={defaultLayout} defaultCollapsed={defaultCollapsed}>
-          <div className="flex h-full flex-col" role="presentation" tabIndex={0}>
-            {children}
-            {isActive && <DragDropOverlay />}
-          </div>
-        </SidePanel> */}
       </div>
     );
   }

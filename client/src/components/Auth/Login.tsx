@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
@@ -6,7 +6,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { ThemeSelector } from '~/components/ui';
 import SocialButton from './SocialButton';
 import { getLoginError } from '~/utils';
-import { useLocalize } from '~/hooks';
+import { ThemeContext, useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
 
 function Login() {
@@ -14,6 +14,7 @@ function Login() {
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
   const navigate = useNavigate();
+  const { theme } = useContext(ThemeContext);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -123,7 +124,11 @@ function Login() {
       </div>
       <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
         <div className="flex w-full justify-center">
-          <img src="/assets/cglogo.png" alt="CG Logo" className="object-fill" />
+          <img
+            src={theme === 'light' ? '/assets/cglogo.png' : '/assets/Chatglogo-dark.png'}
+            alt="CG Logo"
+            className="object-fill"
+          />
         </div>
         <h1
           className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"

@@ -5,6 +5,11 @@ import type { Option } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 import { useMultiSearch } from './MultiSearch';
+import { isPremiumUser } from '~/utils/checkPremiumUser';
+import { TUser } from 'librechat-data-provider';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import { useToastContext } from '~/Providers';
 
 type SelectDropDownProps = {
   id?: string;
@@ -29,6 +34,7 @@ function SelectDropDownPop({
   showLabel = true,
   emptyTitle = false,
 }: SelectDropDownProps) {
+  const { showToast } = useToastContext();
   const localize = useLocalize();
   const transitionProps = { className: 'top-full mt-3' };
   if (showAbove) {
@@ -51,6 +57,9 @@ function SelectDropDownPop({
   });
   const hasSearchRender = Boolean(searchRender);
   const options = hasSearchRender ? filteredValues : availableValues;
+
+  const premiumModels = useRecoilValue(store.premiumModelsConfig);
+  const user = useRecoilValue(store.user);
 
   return (
     <Root>
@@ -118,7 +127,20 @@ function SelectDropDownPop({
                     title={option}
                     value={option}
                     selected={!!(value && value === option)}
-                    onClick={() => setValue(option)}
+                    onClick={() => {
+                      if (premiumModels.indexOf(option) > -1) {
+                        if (isPremiumUser(user as TUser)) {
+                          setValue(option);
+                        } else {
+                          showToast({
+                            message: 'This is premium AI Model ' + localize('com_premium_warning'),
+                            status: 'info',
+                          });
+                        }
+                      } else {
+                        setValue(option);
+                      }
+                    }}
                   />
                 );
               })}

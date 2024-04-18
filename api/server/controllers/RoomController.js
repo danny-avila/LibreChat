@@ -1,3 +1,4 @@
+const { addUserToRoom } = require('~/models/Room');
 const { v4: uuidV4 } = require('uuid');
 const { getRoom, getRoomsByUser, saveConvo, saveMessage } = require('~/models');
 
@@ -56,8 +57,18 @@ const createNewMessage = async (req, res) => {
       files: [],
       ...req.body,
     });
-    console.log('=== created new meessage ===', result);
     return res.json(result);
+  } catch (error) {
+    return res.status(500).json(error);
+  }
+};
+
+const joinRoom = async (req, res) => {
+  const { roomId } = req.params;
+  const userId = req.user._id;
+  try {
+    const result = await addUserToRoom(roomId, userId);
+    res.json(result);
   } catch (error) {
     return res.status(500).json(error);
   }
@@ -68,4 +79,5 @@ module.exports = {
   getRoomById,
   getRoomByUser,
   createNewMessage,
+  joinRoom,
 };

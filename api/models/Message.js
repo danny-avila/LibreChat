@@ -166,7 +166,7 @@ module.exports = {
 
   async getMessageById(messageId) {
     try {
-      return await Message.findOne({ messageId }).lean();
+      return await Message.findOne({ messageId }).populate('user').lean();
     } catch (err) {
       logger.error('Error getting message by Id:', err);
       throw new Error('Failed to get message by Id.');

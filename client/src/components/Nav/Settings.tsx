@@ -1,6 +1,6 @@
 /* eslint-disable indent */
 import * as Tabs from '@radix-ui/react-tabs';
-import { SettingsTabValues } from 'librechat-data-provider';
+import { SettingsTabValues, TUser } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
 import { GearIcon, DataIcon, UserIcon, ExperimentIcon, ChartBarIcon } from '~/components/svg';
@@ -12,8 +12,7 @@ import SettingsTab from './SettingsTab';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { useSearchParams } from 'react-router-dom';
-import isEmpty from 'is-empty';
-import { isPast } from 'date-fns';
+import { isPremiumUser } from '~/utils/checkPremiumUser';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
   const user = useRecoilValue(store.user);
@@ -73,9 +72,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                 <UserIcon />
                 {localize('com_nav_setting_account')}
               </SettingsTab>
-              {(user?.subscription.active ||
-                (!isEmpty(user?.subscription.renewalDate) &&
-                  !isPast(user?.subscription.renewalDate as Date))) && (
+              {isPremiumUser(user as TUser) && (
                 <SettingsTab value={SettingsTabValues.CREDITS}>
                   <ChartBarIcon />
                   {localize('com_nav_setting_credits')}

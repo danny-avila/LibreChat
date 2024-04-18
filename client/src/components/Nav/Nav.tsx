@@ -156,7 +156,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       onMouseLeave={() => setIsHovering(false)}
                       ref={containerRef}
                     >
-                      {isPremiumUser(user as TUser) && <CategorySwitch />}
+                      {/* <CategorySwitch /> */}
                       {convoType === 'c' ? (
                         <>
                           <NewChat
@@ -171,7 +171,8 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         </>
                       ) : (
                         <>
-                          <NewRoom toggleNav={itemToggleNav} />
+                          {isPremiumUser(user as TUser) && <NewRoom toggleNav={itemToggleNav} />}
+
                           <Rooms toggleNav={itemToggleNav} moveToTop={moveToTop} />
                         </>
                       )}

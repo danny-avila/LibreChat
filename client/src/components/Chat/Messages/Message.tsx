@@ -13,6 +13,7 @@ import store from '~/store';
 
 export default function Message(props: TMessageProps) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
+  const convoType = useRecoilValue(store.convoType);
   const { user } = useAuthContext();
   const localize = useLocalize();
 
@@ -43,11 +44,22 @@ export default function Message(props: TMessageProps) {
 
   const { text, children, messageId = null, isCreatedByUser, error, unfinished } = message ?? {};
 
-  let messageLabel = '';
-  if (isCreatedByUser) {
+  let messageLabel = '',
+    userAvatar = '';
+  if (isCreatedByUser && convoType === 'c') {
     messageLabel = UsernameDisplay ? user?.name : localize('com_user_message');
   } else {
     messageLabel = message.sender;
+  }
+
+  if (convoType === 'r') {
+    if (message.user) {
+      messageLabel = message.user.name;
+      userAvatar = message.user.avatar;
+    } else {
+      messageLabel = user?.name as string;
+      userAvatar = user?.avatar as string;
+    }
   }
 
   return (
@@ -63,7 +75,9 @@ export default function Message(props: TMessageProps) {
               <div>
                 <div className="pt-0.5">
                   <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                    {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
+                    {userAvatar ? (
+                      <img src={userAvatar} />
+                    ) : typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
                       <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
                     ) : (
                       icon

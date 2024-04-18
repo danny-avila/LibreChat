@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
 import type { TFile } from './types/files';
+import { TUser } from './types';
 
 export const isUUID = z.string().uuid();
 
@@ -198,6 +199,7 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   plugins?: TResPlugin[];
   content?: TMessageContentParts[];
   files?: Partial<TFile>[];
+  user?: TUser;
 };
 
 export const tUserSchema = z.object({
@@ -228,7 +230,7 @@ export const tUserSchema = z.object({
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
-  user: z.string().optional(),
+  user: z.string().or(tUserSchema.optional()).optional(),
   endpoint: eModelEndpointSchema.nullable(),
   endpointType: eModelEndpointSchema.optional(),
   suggestions: z.array(z.string()).optional(),

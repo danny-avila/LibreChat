@@ -3,7 +3,7 @@ import { Settings } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { EModelEndpoint, modularEndpoints } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TPreset, TConversation } from 'librechat-data-provider';
+import type { TPreset, TConversation, TUser } from 'librechat-data-provider';
 import type { FC } from 'react';
 import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
@@ -12,8 +12,7 @@ import { useChatContext } from '~/Providers';
 import { icons } from './Icons';
 import store from '~/store';
 import { useToastContext } from '~/Providers';
-import { isPast } from 'date-fns';
-import isEmpty from 'is-empty';
+import { isPremiumUser } from '~/utils/checkPremiumUser';
 
 type MenuItemProps = {
   title: string;
@@ -115,11 +114,7 @@ const MenuItem: FC<MenuItemProps> = ({
             (endpoint === EModelEndpoint.google ||
               endpoint === EModelEndpoint.assistants ||
               endpoint === EModelEndpoint.sdImage) &&
-            !(
-              user?.subscription.active ||
-              (!isEmpty(user?.subscription.renewalDate) &&
-                !isPast(user?.subscription.renewalDate as Date))
-            )
+            !isPremiumUser(user as TUser)
           ) {
             showToast({
               message: 'This is premium AI provider ' + localize('com_premium_warning'),

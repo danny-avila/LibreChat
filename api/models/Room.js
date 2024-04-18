@@ -86,10 +86,30 @@ const createRoom = async (name, isPrivate, password, user) => {
   }
 };
 
+/**
+ * @param {string} conversationId
+ * @param {string} userId
+ * @returns ConvoSchema
+ */
+const addUserToRoom = async (conversationId, userId) => {
+  try {
+    const result = await Conversation.findOneAndUpdate(
+      { conversationId },
+      { $addToSet: { users: userId } },
+      { new: true },
+    );
+    return result;
+  } catch (error) {
+    logger.error('[addUserToRoom] Error creating new room', error);
+    return { message: 'Error adding user to room' };
+  }
+};
+
 module.exports = {
   Room: Conversation,
   getRoom,
   getRooms,
   getRoomsByUser,
   createRoom,
+  addUserToRoom,
 };

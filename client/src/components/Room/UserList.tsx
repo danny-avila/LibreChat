@@ -51,8 +51,8 @@ function UserList({
   useEffect(() => {
     if (isSmallScreen) {
       setIsCollapsed(true);
-      setMinSize(0);
-      setCollapsedSize(0);
+      setMinSize(20);
+      setCollapsedSize(20);
       panelRef.current?.collapse();
       return;
     }
@@ -64,8 +64,8 @@ function UserList({
     }
     setIsCollapsed((prev: boolean) => {
       if (!prev) {
-        setMinSize(0);
-        setCollapsedSize(0);
+        setMinSize(defaultMinSize);
+        setCollapsedSize(3);
       } else {
         // setMinSize(defaultMinSize);
         setCollapsedSize(3);
@@ -141,12 +141,12 @@ function UserList({
               localStorage.setItem('react-resizable-panels:collapsed', 'true');
             }}
             className={cn(
-              'sidenav hide-scrollbar border-l border-gray-200 bg-white dark:border-gray-800/50 dark:bg-gray-900',
-              isCollapsed ? 'min-w-[50px]' : 'min-w-[340px] sm:min-w-[352px]',
+              'sidenav hide-scrollbar border-l border-gray-200 bg-white p-1 dark:border-gray-800/50 dark:bg-gray-900',
+              isCollapsed ? 'min-w-[50px]' : 'min-w-[250px] sm:min-w-[250px]',
               minSize === 0 ? 'min-w-0' : '',
             )}
           >
-            <Users />
+            <Users isCollapsed={isCollapsed} />
           </ResizablePanel>
         </ResizablePanelGroup>
       </TooltipProvider>

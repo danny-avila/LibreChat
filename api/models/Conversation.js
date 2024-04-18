@@ -7,10 +7,11 @@ const getConvo = async (user, conversationId) => {
     return await Conversation.findOne({
       // user,
       conversationId,
-      users: {
-        $in: user,
-      },
+      // users: {
+      //   $in: user,
+      // },
     })
+      .populate('user')
       .populate('users')
       .lean();
   } catch (error) {

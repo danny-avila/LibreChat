@@ -12,6 +12,7 @@ router.use(requireJwtAuth);
 
 router.get('/', async (req, res) => {
   const isRoom = req.query.isRoom;
+  console.log('hello world', isRoom);
   let pageNumber = req.query.pageNumber || 1;
   pageNumber = parseInt(pageNumber, 10);
 

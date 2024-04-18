@@ -1,14 +1,22 @@
 import { TUser } from 'librechat-data-provider';
 import React from 'react';
+import useAvatar from '~/hooks/Messages/useAvatar';
 
-export default function User({ user }: { user: TUser }) {
+export default function User({
+  user,
+  isCollapsed = false,
+}: {
+  user: TUser;
+  isCollapsed?: boolean;
+}) {
   const activeConvo = false;
+  const avatarSrc = useAvatar(user);
   // currentConvoId === conversationId ||
   // (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
-
   const aProps = {
-    className:
-      'group relative mt-2 flex cursor-pointer items-center gap-2 break-all rounded-lg bg-gray-200 px-2 py-2 active:opacity-50 dark:bg-gray-700',
+    className: `group relative mt-1 flex cursor-pointer items-center gap-2 break-all rounded-lg bg-gray-200 ${
+      isCollapsed ? 'px-0 py-0' : 'px-2 py-2'
+    } active:opacity-50 dark:bg-gray-700`,
   };
 
   if (!activeConvo) {
@@ -18,7 +26,12 @@ export default function User({ user }: { user: TUser }) {
 
   return (
     <a data-testid="convo-item" {...aProps}>
-      {user.name}
+      <img
+        src={user.avatar || avatarSrc}
+        alt={user.name}
+        className="h-6 w-6 flex-shrink-0 rounded-full"
+      />
+      {!isCollapsed && user.name}
     </a>
   );
 }

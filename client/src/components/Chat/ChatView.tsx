@@ -15,10 +15,13 @@ import Footer from './Footer';
 import store from '~/store';
 import { useChatSocket, useInitSocket } from '~/hooks/useChatSocket';
 import useRoomUsers from '~/hooks/useRoomUsers';
+import ContinueChat from './ContinueChat';
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
+  const user = useRecoilValue(store.user);
+  const convoType = useRecoilValue(store.convoType);
 
   const socket = useInitSocket();
   useChatSocket(socket);
@@ -35,8 +38,10 @@ function ChatView({ index = 0 }: { index?: number }) {
   });
 
   const chatHelpers = useChatHelpers(index, conversationId, socket);
+  const { conversation } = chatHelpers;
+  const users = conversation ? conversation.users : [];
   useRoomUsers(conversationId, socket);
-  console.log('--- messagesTree ---', messagesTree);
+  console.log(user?.id);
 
   return (
     <ChatContext.Provider value={chatHelpers}>
@@ -51,7 +56,15 @@ function ChatView({ index = 0 }: { index?: number }) {
           <Landing Header={<Header />} />
         )}
         <div className="w-full border-t-0 pl-0 pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
-          <ChatForm index={index} />
+          {convoType === 'c' ? (
+            <ChatForm index={index} />
+          ) : users !== undefined &&
+            (users?.map((u) => u._id).indexOf(user?.id) > -1 ||
+              conversation?.user?._id === user?.id) ? (
+            <ChatForm index={index} />
+          ) : (
+            <ContinueChat />
+          )}
           <Footer />
         </div>
       </Presentation>

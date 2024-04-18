@@ -31,6 +31,10 @@ export const router = createBrowserRouter([
     path: 'reset-password',
     element: <ResetPassword />,
   },
+  // {
+  //   path: 'r/:conversationId?',
+  //   element: <ChatRoute convo="r" />,
+  // },
   {
     element: <AuthLayout />,
     children: [

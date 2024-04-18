@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { EModelEndpoint, alternateName } from 'librechat-data-provider';
-import type { TPreset } from 'librechat-data-provider';
-import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
+// import type { TPreset } from 'librechat-data-provider';
+// import EndpointOptionsDialog from '../Endpoints/EndpointOptionsDialog';
 import { Plugin } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -101,11 +101,11 @@ const MessageHeader = ({ isSearchView = false }) => {
         </div>
       </div>
 
-      <EndpointOptionsDialog
+      {/* <EndpointOptionsDialog
         open={saveAsDialogShow}
         onOpenChange={setSaveAsDialogShow}
         preset={conversation as TPreset}
-      />
+      /> */}
     </>
   );
 };

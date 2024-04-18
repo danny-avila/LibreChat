@@ -1,6 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { TConversation, request } from 'librechat-data-provider';
 import Room from './Room';
+import { useRecoilValue } from 'recoil';
+import {
+  useConversationsInfiniteQuery,
+  useRoomsInfiniteQuery,
+  useSearchInfiniteQuery,
+} from '~/data-provider';
+import { useAuthContext } from '~/hooks';
+import store from '~/store';
 
 export default function Rooms({
   toggleNav,
@@ -15,7 +23,7 @@ export default function Rooms({
   });
   // const { isAuthenticated } = useAuthContext();
   // const [pageNumber, setPageNumber] = useState(1);
-  // const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
+  // const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useRoomsInfiniteQuery(
   //   { pageNumber: pageNumber.toString() },
   //   { enabled: isAuthenticated },
   // );
@@ -49,7 +57,7 @@ export default function Rooms({
           <span>
             {Object.keys(rooms).map((i) => (
               <div key={i}>
-                <div
+                {/* <div
                   style={{
                     color: '#aaa',
                     fontSize: '0.7rem',
@@ -59,7 +67,7 @@ export default function Rooms({
                   }}
                 >
                   Your Rooms - {rooms[i].length}
-                </div>
+                </div> */}
                 {rooms[i].map((room) => (
                   <Room
                     key={`${room.conversationId}-${room}`}

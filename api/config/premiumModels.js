@@ -11,10 +11,10 @@ const premiumModels = [
   // Anthropic Premium Models
   'claude-3-opus-20240229',
   'claude-3-sonnet-20240229',
-  'claude-2.1',
-  'claude-2',
-  'claude-instant-1',
   'claude-instant-1-100k',
+  'claude-1.2',
+  'claude-1',
+  'claude-1-100k',
   // Gemini Premium Models
   'gemini-pro',
   'gemini-pro-vision',
