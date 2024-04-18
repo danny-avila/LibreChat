@@ -36,6 +36,7 @@ exports.createPaymentIntent = async (req, res) => {
       };
     }
 
+    const customer = await stripe.customers.create({ email: email });
     const session = await stripe.checkout.sessions.create({
       payment_method_types: [paymentMethod],
       line_items: [
@@ -56,7 +57,7 @@ exports.createPaymentIntent = async (req, res) => {
       mode: 'payment',
       success_url: `${process.env.DOMAIN_CLIENT}`,
       cancel_url: `${process.env.DOMAIN_CLIENT}`,
-      customer: await stripe.customers.create({ email: email }), // Create a new customer object
+      customer: customer.id, // Pass the customer ID instead of the entire customer object
     });
 
     res.status(200).json({ sessionId: session.id });
