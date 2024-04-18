@@ -23,7 +23,121 @@ weight: -10
 
     - **RAG API Update**: The default Docker compose files now include a Python API and Vector Database for RAG (Retrieval-Augmented Generation). Read more about this in the [RAG API page](../features/rag_api.md)
 
-## v0.6.10+ (-dev build)
+??? warning "⚙️ .env variables changes v0.6.10 → v0.7.0"
+    - ➕ JSON Logging
+    ```sh
+    #===============#
+    # JSON Logging  #
+    #===============#
+
+    # Use when process console logs in cloud deployment like GCP/AWS
+    CONSOLE_JSON=false
+    ```
+
+    - ➕ LibreChat.yaml path
+    ```sh
+    #===============#
+    # Configuration #
+    #===============#
+    # Use an absolute path, a relative path, or a URL
+
+    # CONFIG_PATH="/alternative/path/to/librechat.yaml"
+    ```
+    
+    - ❌ "chatGPTBrowser" was removed
+    ```sh
+    # ENDPOINTS=openAI,assistants,azureOpenAI,bingAI,google,gptPlugins,anthropic
+    ```
+
+    - ➕ Added placeholders for Known Endpoints
+    ```sh
+    #===================================#
+    # Known Endpoints - librechat.yaml  #
+    #===================================#
+    # https://docs.librechat.ai/install/configuration/ai_endpoints.html
+
+    # GROQ_API_KEY=
+    # SHUTTLEAI_KEY=
+    # OPENROUTER_KEY=
+    # MISTRAL_API_KEY=
+    # ANYSCALE_API_KEY=
+    # FIREWORKS_API_KEY=
+    # PERPLEXITY_API_KEY=
+    # TOGETHERAI_API_KEY=
+    ```
+    
+    - ✨ Update Anthropic models
+    ```sh
+    # ANTHROPIC_MODELS=claude-3-opus-20240229,claude-3-sonnet-20240229,claude-3-haiku-20240307,claude-2.1,claude-2,claude-1.2,claude-1,claude-1-100k,claude-instant-1,claude-instant-1-100k
+    ```
+
+    - ❌ Azure env config now deprecated
+    ```sh
+    #============#
+    # Azure      #
+    #============#
+
+
+    # Note: these variables are DEPRECATED
+    # Use the `librechat.yaml` configuration for `azureOpenAI` instead
+    # You may also continue to use them if you opt out of using the `librechat.yaml` configuration
+
+    # AZURE_OPENAI_DEFAULT_MODEL=gpt-3.5-turbo # Deprecated
+    # AZURE_OPENAI_MODELS=gpt-3.5-turbo,gpt-4 # Deprecated
+    # AZURE_USE_MODEL_AS_DEPLOYMENT_NAME=TRUE # Deprecated
+    # AZURE_API_KEY= # Deprecated
+    # AZURE_OPENAI_API_INSTANCE_NAME= # Deprecated
+    # AZURE_OPENAI_API_DEPLOYMENT_NAME= # Deprecated
+    # AZURE_OPENAI_API_VERSION= # Deprecated
+    # AZURE_OPENAI_API_COMPLETIONS_DEPLOYMENT_NAME= # Deprecated
+    # AZURE_OPENAI_API_EMBEDDINGS_DEPLOYMENT_NAME= # Deprecated
+    # PLUGINS_USE_AZURE="true" # Deprecated
+    ## v0.6.10+ (-dev build)
+    ```
+
+    - ❌ Removed ChatGPT
+    ```sh
+    #============#
+    # ChatGPT    #
+    #============#
+
+    CHATGPT_TOKEN=
+    CHATGPT_MODELS=text-davinci-002-render-sha
+    # CHATGPT_REVERSE_PROXY=
+    ```
+
+    - ✨ Assistants now set to "user_provided" by default
+    ```sh
+    ASSISTANTS_API_KEY=user_provided
+    ```
+
+    - ⚠️ `GOOGLE_API_KEY` renamed `GOOGLE_SEARCH_API_KEY=`
+    ```sh
+    GOOGLE_SEARCH_API_KEY=
+    ```
+
+    - ➕ Tavily and Traversaal API keys
+    ```
+    # Tavily
+    #-----------------
+    TAVILY_API_KEY=
+
+    # Traversaal
+    #-----------------
+    TRAVERSAAL_API_KEY=
+    ```
+    - ➕ Moderation, illegal model request score
+    ```sh
+    ILLEGAL_MODEL_REQ_SCORE=5
+    ```
+
+    - ➕ OpenID Auth update
+    ```sh
+    OPENID_REQUIRED_ROLE=
+    OPENID_REQUIRED_ROLE_TOKEN_KIND=
+    OPENID_REQUIRED_ROLE_PARAMETER_PATH=
+    ```
+
 
 !!! info "🔎Meilisearch v1.7"
 
