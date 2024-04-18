@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Dialog } from '~/components/ui/';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { loadStripe } from '@stripe/stripe-js';
 import { useAuthContext } from '../../../hooks/AuthContext';
 import { Spinner } from '~/components';
-import { SiWechat, SiAlipay } from 'react-icons/si';
-import { FaCreditCard, FaCcPaypal, FaBitcoin } from 'react-icons/fa';
 import { useLocalize } from '~/hooks';
-
-const stripePromise = loadStripe(
-  'pk_live_51MwvEEHKD0byXXCl8IzAvUl0oZ7RE6vIz72lWUVYl5rW3zy0u3FiGtIAgsbmqSHbhkTJeZjs5VEbQMNStaaQL9xQ001pwxI3RP',
-);
+import PaymentOptionButton from '~/components/payment/PaymentOptionButton';
+import { tokenOptions, tokenOptionsChina } from '~/components/payment/paymentConstants';
+import { processBitcoinPayment } from '~/components/payment/BitcoinPayment';
+import { processStripePayment } from '~/components/payment/StripePayment';
 
 export default function ErrorDialog({ open, onOpenChange }) {
   const { user } = useAuthContext();
@@ -23,36 +20,12 @@ export default function ErrorDialog({ open, onOpenChange }) {
   const [errorMessage, setErrorMessage] = useState('');
   const localize = useLocalize();
 
-  const tokenOptions = [
-    {
-      tokens: 100000,
-      label: localize('com_token_package_label_100k'),
-      price: localize('com_token_package_price_100k'),
-      amountCNY: 10,
-      priceId: 'price_1ORgxoHKD0byXXClx3u1yLa0',
-    },
-    {
-      tokens: 500000,
-      label: localize('com_token_package_label_500k'),
-      price: localize('com_token_package_price_500k'),
-      amountCNY: 35,
-      priceId: 'price_1ORgyJHKD0byXXClfvOyCbp7',
-    },
-    {
-      tokens: 1000000,
-      label: localize('com_token_package_label_1m'),
-      price: localize('com_token_package_price_1m'),
-      amountCNY: 50,
-      priceId: 'price_1ORgyiHKD0byXXClHetdaI3W',
-    },
-    {
-      tokens: 10000000,
-      label: localize('com_token_package_label_10m'),
-      price: localize('com_token_package_price_10m'),
-      amountCNY: 250,
-      priceId: 'price_1ORgzMHKD0byXXClDCm5PkwO',
-    },
-  ];
+  // Determine the user's domain (China or global)
+  const isChina = window.location.hostname.includes('gptchina.io');
+
+  // Select the appropriate token options array based on the user's domain
+  const tokenOptionsToUse = isChina ? tokenOptionsChina : tokenOptions;
+
   const fetchTokenBalance = useCallback(async () => {
     try {
       const response = await fetch('/api/balance');
@@ -75,7 +48,8 @@ export default function ErrorDialog({ open, onOpenChange }) {
 
     setErrorMessage('');
 
-    const selectedOption = tokenOptions.find((option) => option.tokens === selectedTokens);
+    const selectedOption = tokenOptionsToUse.find((option) => option.tokens === selectedTokens);
+    console.log('selectedOption', selectedOption);
     if (!selectedOption) {
       console.error('Invalid token selection');
       return;
@@ -85,74 +59,16 @@ export default function ErrorDialog({ open, onOpenChange }) {
 
     try {
       if (selectedPaymentOption === 'bitcoin') {
-        await processBitcoinPayment(selectedTokens, selectedOption);
-      } else if (selectedPaymentOption === 'paypal') {
-        await processPayPalPayment(selectedTokens, selectedOption);
+        await processBitcoinPayment(selectedTokens, selectedOption, userId, email);
       } else {
-        await processStripePayment(selectedOption);
+        await processStripePayment(selectedOption, selectedPaymentOption, userId, email);
       }
     } catch (error) {
       console.error('Payment error:', error);
     } finally {
       setProcessingTokenAmount(null);
     }
-  }, [selectedTokens, selectedPaymentOption, userId, email, tokenOptions]);
-
-  const processBitcoinPayment = async (selectedTokens, selectedOption) => {
-    console.log('Processing Bitcoin payment for', selectedTokens);
-    const description = `Purchase of ${selectedTokens} tokens`;
-    const response = await fetch('/api/payment/opennode/create-bitcoin-charge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId,
-        amount: selectedTokens,
-        amountCNY: selectedOption.amountCNY,
-        selectedTokens: selectedTokens,
-        email: email,
-        description,
-      }),
-    });
-    const data = await response.json();
-    if (data.hosted_checkout_url) {
-      window.location.href = data.hosted_checkout_url;
-    } else {
-      console.error(
-        'Failed to initiate Bitcoin payment',
-        data.error || 'Missing hosted_checkout_url',
-      );
-    }
-  };
-
-  const processStripePayment = async (selectedOption) => {
-    const { priceId } = selectedOption;
-    const paymentMethod = selectedPaymentOption;
-
-    const res = await fetch('/api/payment/stripe/create-checkout-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ priceId, userId, domain: 'gptchina.io', email, paymentMethod }),
-    });
-
-    console.log('res', res);
-    const data = await res.json();
-    const stripe = await stripePromise;
-    const { error } = await stripe.redirectToCheckout({ sessionId: data.sessionId });
-    if (error) {
-      console.error('Stripe Checkout Error:', error);
-    }
-  };
-
-  const PaymentOptionButton = ({ icon: Icon, isSelected, onClick }) => (
-    <button
-      onClick={onClick}
-      className={`rounded p-2 ${
-        isSelected ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
-      } transition-colors duration-150 hover:bg-blue-600 hover:text-white`}
-    >
-      <Icon size="2.5em" />
-    </button>
-  );
+  }, [selectedTokens, selectedPaymentOption, userId, email, tokenOptionsToUse]);
 
   useEffect(() => {
     if (open) {
@@ -176,7 +92,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
               Please Note! WeChat and Alipay valid only with a Chinese National ID-linked account
             </div>
             <div className="grid w-full grid-cols-2 gap-5 p-3">
-              {tokenOptions.map(({ tokens, label, price, amountCNY }) => (
+              {tokenOptionsToUse.map(({ tokens, label, price }) => (
                 <button
                   key={tokens}
                   onClick={() => handleSelect(tokens)}
@@ -186,9 +102,9 @@ export default function ErrorDialog({ open, onOpenChange }) {
                       : 'border-4-green-500 border-4 bg-green-500 hover:bg-green-600 dark:hover:bg-green-600'
                   }`}
                 >
-                  <div className="text-lg font-bold">{label}</div>
+                  <div className="text-lg font-bold">{localize(label)}</div>
                   <div>{localize('com_ui_payment_tokens')}</div>
-                  <div className="text-sm">{price}</div>
+                  <div className="text-sm">{localize(price)}</div>
                 </button>
               ))}
             </div>
@@ -203,22 +119,22 @@ export default function ErrorDialog({ open, onOpenChange }) {
 
             <div className="my-4 flex justify-center space-x-4">
               <PaymentOptionButton
-                icon={SiWechat}
+                option="wechat_pay"
                 isSelected={selectedPaymentOption === 'wechat_pay'}
                 onClick={() => setSelectedPaymentOption('wechat_pay')}
               />
               <PaymentOptionButton
-                icon={SiAlipay}
+                option="alipay"
                 isSelected={selectedPaymentOption === 'alipay'}
                 onClick={() => setSelectedPaymentOption('alipay')}
               />
               <PaymentOptionButton
-                icon={FaCreditCard}
+                option="card"
                 isSelected={selectedPaymentOption === 'card'}
                 onClick={() => setSelectedPaymentOption('card')}
               />
               <PaymentOptionButton
-                icon={FaBitcoin}
+                option="bitcoin"
                 isSelected={selectedPaymentOption === 'bitcoin'}
                 onClick={() => setSelectedPaymentOption('bitcoin')}
               />

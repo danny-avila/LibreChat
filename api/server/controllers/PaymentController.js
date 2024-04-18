@@ -10,10 +10,10 @@ exports.createPaymentIntent = async (req, res) => {
       'price_1ORgyJHKD0byXXClfvOyCbp7', // 35 CNY - only for China users
       'price_1ORgyiHKD0byXXClHetdaI3W', // 50 CNY - only for China users
       'price_1ORgzMHKD0byXXClDCm5PkwO', // 250 CNY - only for China users
-      'price_1ORgzyHKD0byXXCl9hIUu3Fn', // 2 USD - only for global users
-      'price_1ORh0JHKD0byXXCl40t8BtlB', // 6 USD - only for global users
-      'price_1ORh0cHKD0byXXClqFvZXCiA', // 10 USD - only for global users
-      'price_1ORh15HKD0byXXClGtCFxyXf', // 50 USD - only for global users
+      'price_1P6dqBHKD0byXXClWuA2RGY2', // 2 USD - only for global users
+      'price_1P6dqdHKD0byXXClcboa06Tu', // 6 USD - only for global users
+      'price_1P6drEHKD0byXXClOjmSkPKm', // 10 USD - only for global users
+      'price_1P6drxHKD0byXXClVVLokkLh', // 50 USD - only for global users
     ];
 
     if (!validPriceIds.includes(priceId)) {
