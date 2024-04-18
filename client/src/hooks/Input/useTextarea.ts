@@ -3,7 +3,6 @@ import { useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
 import React, { useEffect, useRef, useCallback } from 'react';
 import type { TEndpointOption } from 'librechat-data-provider';
-import type { UseFormSetValue } from 'react-hook-form';
 import type { KeyboardEvent } from 'react';
 import { forceResize, insertTextAtCursor, getAssistantName } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
@@ -18,12 +17,10 @@ type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 export default function useTextarea({
   textAreaRef,
   submitButtonRef,
-  setValue,
   disabled = false,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
-  setValue: UseFormSetValue<{ text: string }>;
   disabled?: boolean;
 }) {
   const assistantMap = useAssistantsMapContext();
@@ -137,22 +134,6 @@ export default function useTextarea({
 
   const handleKeyDown = useCallback(
     (e: KeyEvent) => {
-      if ((e.keyCode === 8 || e.key === 'Backspace') && textAreaRef.current) {
-        const text = textAreaRef.current.value;
-        const isSingleNewline = text === '\n';
-        const isAllTextSelected =
-          text.length > 0 &&
-          textAreaRef.current.selectionStart === 0 &&
-          textAreaRef.current.selectionEnd === text.length;
-
-        if (isSingleNewline || isAllTextSelected) {
-          textAreaRef.current.setRangeText('', 0, text.length, 'end');
-          setValue('text', '', { shouldValidate: true });
-          forceResize(textAreaRef);
-          e.preventDefault();
-        }
-      }
-
       if (e.key === 'Enter' && isSubmitting) {
         return;
       }
@@ -177,7 +158,7 @@ export default function useTextarea({
         submitButtonRef.current?.click();
       }
     },
-    [isSubmitting, filesLoading, enterToSend, textAreaRef, submitButtonRef, setValue],
+    [isSubmitting, filesLoading, enterToSend, textAreaRef, submitButtonRef],
   );
 
   const handleCompositionStart = () => {
@@ -195,8 +176,24 @@ export default function useTextarea({
         return;
       }
 
-      if (e.clipboardData && e.clipboardData.files.length > 0) {
+      if (!e.clipboardData) {
+        return;
+      }
+
+      let includedText = '';
+      const { types } = e.clipboardData;
+
+      if (types.indexOf('text/rtf') !== -1 || types.indexOf('Files') !== -1) {
         e.preventDefault();
+        includedText = e.clipboardData.getData('text/plain');
+      }
+
+      if (includedText && e.clipboardData.files.length > 0) {
+        insertTextAtCursor(textAreaRef.current, includedText);
+        forceResize(textAreaRef);
+      }
+
+      if (e.clipboardData.files.length > 0) {
         setFilesLoading(true);
         const timestampedFiles: File[] = [];
         for (const file of e.clipboardData.files) {

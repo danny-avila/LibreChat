@@ -33,7 +33,6 @@ const ChatForm = ({ index = 0 }) => {
     textAreaRef,
     submitButtonRef,
     disabled: !!requiresKey,
-    setValue: methods.setValue,
   });
 
   const {
@@ -56,9 +55,6 @@ const ChatForm = ({ index = 0 }) => {
       }
       ask({ text: data.text });
       methods.reset();
-      if (textAreaRef.current) {
-        textAreaRef.current.value = '';
-      }
     },
     [ask, methods],
   );
