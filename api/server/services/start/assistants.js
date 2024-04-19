@@ -6,11 +6,23 @@ const {
 const { logger } = require('~/config');
 
 /**
- * Sets up the Assistants configuration from the config (`librechat.yaml`) file.
- * @param {TCustomConfig} config - The loaded custom configuration.
+ * Sets up the minimum, default Assistants configuration if Azure OpenAI Assistants option is enabled.
  * @returns {Partial<TAssistantEndpoint>} The Assistants endpoint configuration.
  */
-function assistantsConfigSetup(config) {
+function azureAssistantsDefaults() {
+  return {
+    capabilities: [Capabilities.tools, Capabilities.actions, Capabilities.code_interpreter],
+  };
+}
+
+/**
+ * Sets up the Assistants configuration from the config (`librechat.yaml`) file.
+ * @param {TCustomConfig} config - The loaded custom configuration.
+ * @param {Partial<TAssistantEndpoint>} [prevConfig]
+ * - The previously loaded assistants configuration from Azure OpenAI Assistants option.
+ * @returns {Partial<TAssistantEndpoint>} The Assistants endpoint configuration.
+ */
+function assistantsConfigSetup(config, prevConfig = {}) {
   const assistantsConfig = config.endpoints[EModelEndpoint.assistants];
   const parsedConfig = assistantEndpointSchema.parse(assistantsConfig);
   if (assistantsConfig.supportedIds?.length && assistantsConfig.excludedIds?.length) {
@@ -18,12 +30,6 @@ function assistantsConfigSetup(config) {
       `Both \`supportedIds\` and \`excludedIds\` are defined for the ${EModelEndpoint.assistants} endpoint; \`excludedIds\` field will be ignored.`,
     );
   }
-
-  const prevConfig = config.endpoints[EModelEndpoint.azureOpenAI]?.assistants
-    ? {
-      capabilities: [Capabilities.tools, Capabilities.actions, Capabilities.code_interpreter],
-    }
-    : {};
 
   return {
     ...prevConfig,
@@ -37,4 +43,4 @@ function assistantsConfigSetup(config) {
   };
 }
 
-module.exports = { assistantsConfigSetup };
+module.exports = { azureAssistantsDefaults, assistantsConfigSetup };
