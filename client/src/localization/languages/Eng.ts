@@ -254,6 +254,8 @@ export default {
     'Your account has been temporarily banned due to violations of our service.',
   com_auth_error_login_server:
     'There was an internal server error. Please wait a few moments and try again.',
+  com_auth_error_login_unverified:
+    'Your account has not been verified. Please check your email for a verification link.',
   com_auth_no_account: 'Don\'t have an account?',
   com_auth_sign_up: 'Sign up',
   com_auth_sign_in: 'Sign in',

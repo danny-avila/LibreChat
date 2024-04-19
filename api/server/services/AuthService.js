@@ -126,7 +126,7 @@ const registerUser = async (user) => {
       { name: 'Validation error:', value: errorMessage },
     );
 
-    return { status: 422, message: errorMessage };
+    return { status: 404, message: errorMessage };
   }
 
   const { email, password, name, username } = user;
