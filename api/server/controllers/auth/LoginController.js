@@ -12,8 +12,8 @@ const loginController = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    if (user.emailVerified === false && process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN === false) {
-      return res.status(400).json({ message: 'Email not verified' });
+    if (!user.emailVerified && JSON.parse(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN) === false) {
+      return res.status(422).json({ message: 'Email not verified' });
     }
 
     const token = await setAuthTokens(user._id, res);
