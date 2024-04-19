@@ -19,6 +19,10 @@ weight: -10
 
     Client-facing error messages now display this warning asking to contact the admin. For the full error consult the console logs or the additional logs located in `./logs`
 
+!!! warning "🪵Logs Location"
+
+    - The full logs are now in `./logs` (they were previously in `./api/logs`)
+
 !!! warning "🔍 Google Search Plugin"
 
     - **[Google Search Plugin](../features/plugins/google_search.md)**: Changed the environment variable for this plugin from `GOOGLE_API_KEY` to `GOOGLE_SEARCH_API_KEY` due to a conflict with the Google Generative AI library pulling this variable automatically. If you are using this plugin, please update your `.env` file accordingly.
