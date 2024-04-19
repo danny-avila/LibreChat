@@ -66,8 +66,7 @@ const AppService = async (app) => {
   const endpointLocals = {};
 
   if (config?.endpoints?.[EModelEndpoint.azureOpenAI]) {
-    const azureConfig = azureConfigSetup(config);
-    endpointLocals[EModelEndpoint.azureOpenAI] = azureConfig ?? {};
+    endpointLocals[EModelEndpoint.azureOpenAI] = azureConfigSetup(config);
     checkAzureVariables();
   }
 
