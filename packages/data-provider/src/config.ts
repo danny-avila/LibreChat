@@ -1,5 +1,6 @@
 /* eslint-disable max-len */
 import { z } from 'zod';
+import type { ZodError } from 'zod';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
@@ -79,6 +80,11 @@ export type TValidatedAzureConfig = {
   modelNames: string[];
   modelGroupMap: TAzureModelGroupMap;
   groupMap: TAzureGroupMap;
+};
+
+export type TAzureConfigValidationResult = TValidatedAzureConfig & {
+  isValid: boolean;
+  errors: (ZodError | string)[];
 };
 
 export enum Capabilities {
@@ -173,7 +179,7 @@ export const azureEndpointSchema = z
   );
 
 export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
-  TValidatedAzureConfig;
+  TAzureConfigValidationResult;
 
 export const rateLimitSchema = z.object({
   fileUploads: z
