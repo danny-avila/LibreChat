@@ -296,6 +296,7 @@ export type TStartupConfig = {
   helpAndFaqURL: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
+  analyticsGtmId?: string;
 };
 
 export type TRefreshTokenResponse = {

@@ -52,6 +52,7 @@ router.get('/', async function (req, res) {
       helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
       interface: req.app.locals.interfaceConfig,
       modelSpecs: req.app.locals.modelSpecs,
+      analyticsGtmId: process.env.ANALYTICS_GTM_ID,
     };
 
     if (typeof process.env.CUSTOM_FOOTER === 'string') {
