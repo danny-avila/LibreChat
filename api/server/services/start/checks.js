@@ -1,4 +1,8 @@
-const { deprecatedAzureVariables, conflictingAzureVariables } = require('librechat-data-provider');
+const {
+  Constants,
+  deprecatedAzureVariables,
+  conflictingAzureVariables,
+} = require('librechat-data-provider');
 const { logger } = require('~/config');
 
 const secretDefaults = {
@@ -88,4 +92,16 @@ function checkAzureVariables() {
   });
 }
 
-module.exports = { checkVariables, checkHealth, checkAzureVariables };
+/**
+ * Performs basic checks on the loaded config object.
+ * @param {TCustomConfig} config - The loaded custom configuration.
+ */
+function checkConfig(config) {
+  if (config.version !== Constants.CONFIG_VERSION) {
+    logger.info(
+      `\nOutdated Config version: ${config.version}. Current version: ${Constants.CONFIG_VERSION}\n\nCheck out the latest config file guide for new options and features.\nhttps://docs.librechat.ai/install/configuration/custom_config.html\n\n`,
+    );
+  }
+}
+
+module.exports = { checkVariables, checkHealth, checkConfig, checkAzureVariables };

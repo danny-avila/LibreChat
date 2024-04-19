@@ -1,21 +1,17 @@
 const {
-  Constants,
   FileSources,
-  Capabilities,
   EModelEndpoint,
   EImageOutputType,
   defaultSocialLogins,
-  validateAzureGroups,
-  mapModelToAzureConfig,
-  assistantEndpointSchema,
 } = require('librechat-data-provider');
-const { checkVariables, checkHealth, checkAzureVariables } = require('./start/checks');
+const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
+const { assistantsConfigSetup } = require('./start/assistants');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
+const { azureConfigSetup } = require('./start/azureOpenAI');
 const { loadAndFormatTools } = require('./ToolService');
 const paths = require('~/config/paths');
-const { logger } = require('~/config');
 
 /**
  *
@@ -54,108 +50,40 @@ const AppService = async (app) => {
 
   if (!Object.keys(config).length) {
     app.locals = {
+      paths,
       fileStrategy,
       socialLogins,
       availableTools,
       imageOutputType,
-      paths,
     };
 
     return;
   }
 
-  if (config.version !== Constants.CONFIG_VERSION) {
-    logger.info(
-      `\nOutdated Config version: ${config.version}. Current version: ${Constants.CONFIG_VERSION}\n\nCheck out the latest config file guide for new options and features.\nhttps://docs.librechat.ai/install/configuration/custom_config.html\n\n`,
-    );
-  }
-
+  checkConfig(config);
   handleRateLimits(config?.rateLimits);
 
   const endpointLocals = {};
 
   if (config?.endpoints?.[EModelEndpoint.azureOpenAI]) {
-    const { groups, ...azureConfiguration } = config.endpoints[EModelEndpoint.azureOpenAI];
-    const { isValid, modelNames, modelGroupMap, groupMap, errors } = validateAzureGroups(groups);
-
-    if (!isValid) {
-      const errorString = errors.join('\n');
-      const errorMessage = 'Invalid Azure OpenAI configuration:\n' + errorString;
-      logger.error(errorMessage);
-      throw new Error(errorMessage);
-    }
-
-    const assistantModels = [];
-    const assistantGroups = new Set();
-    for (const modelName of modelNames) {
-      mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
-      const groupName = modelGroupMap?.[modelName]?.group;
-      const modelGroup = groupMap?.[groupName];
-      let supportsAssistants = modelGroup?.assistants || modelGroup?.[modelName]?.assistants;
-      if (supportsAssistants) {
-        assistantModels.push(modelName);
-        !assistantGroups.has(groupName) && assistantGroups.add(groupName);
-      }
-    }
-
-    if (azureConfiguration.assistants && assistantModels.length === 0) {
-      throw new Error(
-        'No Azure models are configured to support assistants. Please remove the `assistants` field or configure at least one model to support assistants.',
-      );
-    }
-
-    endpointLocals[EModelEndpoint.azureOpenAI] = {
-      modelNames,
-      modelGroupMap,
-      groupMap,
-      assistantModels,
-      assistantGroups: Array.from(assistantGroups),
-      ...azureConfiguration,
-    };
-
+    const azureConfig = azureConfigSetup(config);
+    endpointLocals[EModelEndpoint.azureOpenAI] = azureConfig ?? {};
     checkAzureVariables();
-
-    if (azureConfiguration.assistants) {
-      endpointLocals[EModelEndpoint.assistants] = {
-        // Note: may need to add retrieval models here in the future
-        capabilities: [Capabilities.tools, Capabilities.actions, Capabilities.code_interpreter],
-      };
-    }
   }
 
   if (config?.endpoints?.[EModelEndpoint.assistants]) {
-    const assistantsConfig = config.endpoints[EModelEndpoint.assistants];
-    const parsedConfig = assistantEndpointSchema.parse(assistantsConfig);
-    if (assistantsConfig.supportedIds?.length && assistantsConfig.excludedIds?.length) {
-      logger.warn(
-        `Both \`supportedIds\` and \`excludedIds\` are defined for the ${EModelEndpoint.assistants} endpoint; \`excludedIds\` field will be ignored.`,
-      );
-    }
-
-    const prevConfig = endpointLocals[EModelEndpoint.assistants] ?? {};
-
-    /** @type {Partial<TAssistantEndpoint>} */
-    endpointLocals[EModelEndpoint.assistants] = {
-      ...prevConfig,
-      retrievalModels: parsedConfig.retrievalModels,
-      disableBuilder: parsedConfig.disableBuilder,
-      pollIntervalMs: parsedConfig.pollIntervalMs,
-      supportedIds: parsedConfig.supportedIds,
-      capabilities: parsedConfig.capabilities,
-      excludedIds: parsedConfig.excludedIds,
-      timeoutMs: parsedConfig.timeoutMs,
-    };
+    endpointLocals[EModelEndpoint.assistants] = assistantsConfigSetup(config);
   }
 
   app.locals = {
+    paths,
     socialLogins,
     fileStrategy,
     availableTools,
     imageOutputType,
-    fileConfig: config?.fileConfig,
     interface: config?.interface,
+    fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
-    paths,
     ...endpointLocals,
   };
 };
