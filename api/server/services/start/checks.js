@@ -48,7 +48,7 @@ function checkVariables() {
     logger.warn(
       `The \`OPENROUTER_API_KEY\` environment variable is deprecated and its functionality will be removed soon.
       Use of this environment variable is highly discouraged as it can lead to unexpected errors when using custom endpoints.
-      Please use the config (\`librechat.yaml\`) file for setting up OpenRouter, and use \`OPENROUTER_KEY\` environment variable instead.`,
+      Please use the config (\`librechat.yaml\`) file for setting up OpenRouter, and use \`OPENROUTER_KEY\` or another environment variable instead.`,
     );
   }
 }
