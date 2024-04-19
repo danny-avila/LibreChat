@@ -302,6 +302,12 @@
  */
 
 /**
+ * @exports TAzureConfigValidationResult
+ * @typedef {import('librechat-data-provider').TAzureConfigValidationResult} TAzureConfigValidationResult
+ * @memberof typedefs
+ */
+
+/**
  * @exports EImageOutputType
  * @typedef {import('librechat-data-provider').EImageOutputType} EImageOutputType
  * @memberof typedefs
