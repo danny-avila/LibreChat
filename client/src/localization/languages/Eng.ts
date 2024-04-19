@@ -156,6 +156,8 @@ export default {
     'Your account has been temporarily banned due to violations of our service.',
   com_auth_error_login_server:
     'There was an internal server error. Please wait a few moments and try again.',
+  com_auth_error_login_unverified:
+    'Your account has not been verified. Please check your email for a verification link.',
   com_auth_no_account: 'Don\'t have an account?',
   com_auth_sign_up: 'Sign up',
   com_auth_sign_in: 'Sign in',
@@ -207,6 +209,10 @@ export default {
   com_auth_submit_registration: 'Submit registration',
   com_auth_welcome_back: 'Welcome back',
   com_auth_back_to_login: 'Back to Login',
+  com_auth_email_verification_success: 'Email verification successful',
+  com_auth_email_verification_failed: 'Email verification failed',
+  com_auth_email_verification_invalid: 'Invalid email verification token',
+  com_auth_email_verification_in_progress: 'Email verification in progress',
   com_endpoint_open_menu: 'Open Menu',
   com_endpoint_bing_enable_sydney: 'Enable Sydney',
   com_endpoint_bing_to_enable_sydney: 'To enable Sydney',
