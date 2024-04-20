@@ -1,4 +1,3 @@
-const { CacheKeys } = require('librechat-data-provider');
 const banViolation = require('./banViolation');
 
 jest.mock('keyv');
@@ -7,6 +6,7 @@ jest.mock('../models/Session');
 jest.mock('./getLogStores', () => {
   return jest.fn().mockImplementation(() => {
     const EventEmitter = require('events');
+    const { CacheKeys } = require('librechat-data-provider');
     const math = require('../server/utils/math');
     const mockGet = jest.fn();
     const mockSet = jest.fn();
