@@ -1,5 +1,6 @@
 ---
 title: 🔎 Meilisearch in Render
+description: Setup Meilisearch on Render (for use with the Render deployment guide)
 weight: -3
 ---
 # Utilize Meilisearch by running LibreChat on Render
