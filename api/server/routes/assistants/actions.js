@@ -1,8 +1,9 @@
 const { v4 } = require('uuid');
 const express = require('express');
+const mongoose = require('mongoose');
+const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { actionDelimiter, EModelEndpoint } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
-const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistant, getAssistant } = require('~/models/Assistant');
 const { logger } = require('~/config');
@@ -33,6 +34,8 @@ router.get('/', async (req, res) => {
  * @returns {Object} 200 - success response - application/json
  */
 router.post('/:assistant_id', async (req, res) => {
+  /** @type {mongoose.ClientSession | undefined} */
+  let session;
   try {
     const { assistant_id } = req.params;
 
@@ -109,6 +112,8 @@ router.post('/:assistant_id', async (req, res) => {
       );
 
     const promises = [];
+    session = await mongoose.startSession();
+    session.startTransaction();
     promises.push(
       updateAssistant(
         { assistant_id },
@@ -116,10 +121,13 @@ router.post('/:assistant_id', async (req, res) => {
           actions,
           user: req.user.id,
         },
+        session,
       ),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { tools }));
-    promises.push(updateAction({ action_id }, { metadata, assistant_id, user: req.user.id }));
+    promises.push(
+      updateAction({ action_id }, { metadata, assistant_id, user: req.user.id }, session),
+    );
 
     /** @type {[AssistantDocument, Assistant, Action]} */
     const resolved = await Promise.all(promises);
@@ -138,11 +146,20 @@ router.post('/:assistant_id', async (req, res) => {
       };
     }
 
+    await session.commitTransaction();
     res.json(resolved);
   } catch (error) {
+    if (session && session.inTransaction()) {
+      await session.abortTransaction();
+    }
+
     const message = 'Trouble updating the Assistant Action';
     logger.error(message, error);
     res.status(500).json({ message });
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
   }
 });
 
@@ -154,6 +171,8 @@ router.post('/:assistant_id', async (req, res) => {
  * @returns {Object} 200 - success response - application/json
  */
 router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
+  /** @type {mongoose.ClientSession | undefined} */
+  let session;
   try {
     const { assistant_id, action_id, model } = req.params;
     req.body.model = model;
@@ -186,6 +205,8 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
       (tool) => !(tool.function && tool.function.name.includes(domain)),
     );
 
+    session = await mongoose.startSession();
+    session.startTransaction();
     const promises = [];
     promises.push(
       updateAssistant(
@@ -194,17 +215,26 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
           actions: updatedActions,
           user: req.user.id,
         },
+        session,
       ),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { tools: updatedTools }));
-    promises.push(deleteAction({ action_id }));
+    promises.push(deleteAction({ action_id }, session));
 
     await Promise.all(promises);
+    await session.commitTransaction();
     res.status(200).json({ message: 'Action deleted successfully' });
   } catch (error) {
+    if (session && session.inTransaction()) {
+      await session.abortTransaction();
+    }
     const message = 'Trouble deleting the Assistant Action';
     logger.error(message, error);
     res.status(500).json({ message });
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
   }
 });
 
