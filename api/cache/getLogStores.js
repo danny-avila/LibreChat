@@ -47,7 +47,7 @@ const namespaces = {
   [CacheKeys.ENCODED_DOMAINS]: new Keyv({
     store: keyvMongo,
     namespace: CacheKeys.ENCODED_DOMAINS,
-    ttl: THIRTY_MINUTES,
+    ttl: 0,
   }),
   general: new Keyv({ store: logFile, namespace: 'violations' }),
   concurrent: createViolationInstance('concurrent'),
