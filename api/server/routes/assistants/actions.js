@@ -1,6 +1,6 @@
 const { v4 } = require('uuid');
 const express = require('express');
-const { actionDelimiter } = require('librechat-data-provider');
+const { actionDelimiter, EModelEndpoint } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
@@ -46,7 +46,7 @@ router.post('/:assistant_id', async (req, res) => {
 
     let { domain } = metadata;
     /* Azure doesn't support periods in function names */
-    domain = domainParser(req, domain, true);
+    domain = await domainParser(req, domain, true);
 
     if (!domain) {
       return res.status(400).json({ message: 'No domain provided' });
@@ -129,6 +129,15 @@ router.post('/:assistant_id', async (req, res) => {
         delete resolved[2].metadata[field];
       }
     }
+
+    /* Map Azure OpenAI model to the assistant as defined by config */
+    if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
+      resolved[1] = {
+        ...resolved[1],
+        model: req.body.model,
+      };
+    }
+
     res.json(resolved);
   } catch (error) {
     const message = 'Trouble updating the Assistant Action';
@@ -171,7 +180,7 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
       return true;
     });
 
-    domain = domainParser(req, domain, true);
+    domain = await domainParser(req, domain, true);
 
     const updatedTools = tools.filter(
       (tool) => !(tool.function && tool.function.name.includes(domain)),
