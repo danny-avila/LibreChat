@@ -1,20 +1,30 @@
-const { AuthTypeEnum, EModelEndpoint, actionDomainSeparator } = require('librechat-data-provider');
+const {
+  AuthTypeEnum,
+  EModelEndpoint,
+  actionDomainSeparator,
+  CacheKeys,
+  Constants,
+} = require('librechat-data-provider');
 const { encryptV2, decryptV2 } = require('~/server/utils/crypto');
 const { getActions } = require('~/models/Action');
+const { getLogStores } = require('~/cache');
 const { logger } = require('~/config');
 
 /**
  * Parses the domain for an action.
  *
- * Azure OpenAI Assistants API doesn't support periods in function
- * names due to `[a-zA-Z0-9_-]*` Regex Validation.
+ * Necessary because Azure OpenAI Assistants API doesn't support periods in function
+ * names due to `[a-zA-Z0-9_-]*` Regex Validation, limited to a 64-character maximum.
+ *
+ * This function will replace periods with `actionDomainSeparator` and encodes the domain
+ * to base64, the truncation of which is used as the key for the cache to retrieve the full encoding.
  *
  * @param {Express.Request} req - Express Request object
  * @param {string} domain - The domain for the actoin
  * @param {boolean} inverse - If true, replaces periods with `actionDomainSeparator`
- * @returns {string} The parsed domain
+ * @returns {Promise<string>} The parsed domain
  */
-function domainParser(req, domain, inverse = false) {
+async function domainParser(req, domain, inverse = false) {
   if (!domain) {
     return;
   }
@@ -23,11 +33,33 @@ function domainParser(req, domain, inverse = false) {
     return domain;
   }
 
-  if (inverse) {
-    return domain.replace(/\./g, actionDomainSeparator);
+  const domainsCache = getLogStores(CacheKeys.ENCODED_DOMAINS);
+  const encodedDomain = await domainsCache.get(domain);
+  if (inverse && encodedDomain) {
+    return domain;
   }
 
-  return domain.replace(actionDomainSeparator, '.');
+  if (inverse) {
+    const modifiedDomain = Buffer.from(domain.replace(/\./g, actionDomainSeparator)).toString(
+      'base64',
+    );
+    const key = modifiedDomain.substring(0, Constants.ENCODED_DOMAIN_LENGTH);
+    await domainsCache.set(key, modifiedDomain);
+    return key;
+  }
+
+  if (!encodedDomain) {
+    return domain;
+  }
+
+  try {
+    return Buffer.from(encodedDomain, 'base64')
+      .toString('utf-8')
+      .replace(new RegExp(actionDomainSeparator, 'g'), '.');
+  } catch (error) {
+    logger.error(`Failed to parse domain (possibly not base64): ${domain}`, error);
+    return domain;
+  }
 }
 
 /**

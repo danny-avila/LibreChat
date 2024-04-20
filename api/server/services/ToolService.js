@@ -274,9 +274,16 @@ async function processRequiredActions(client, requiredActions) {
           })) ?? [];
       }
 
-      const actionSet = actionSets.find((action) =>
-        currentAction.tool.includes(domainParser(client.req, action.metadata.domain, true)),
-      );
+      let actionSet = null;
+      let currentDomain = '';
+      for (let action of actionSets) {
+        const domain = await domainParser(client.req, action.metadata.domain, true);
+        if (currentAction.tool.includes(domain)) {
+          currentDomain = domain;
+          actionSet = action;
+          break;
+        }
+      }
 
       if (!actionSet) {
         // TODO: try `function` if no action set is found
@@ -298,10 +305,8 @@ async function processRequiredActions(client, requiredActions) {
         builders = requestBuilders;
       }
 
-      const functionName = currentAction.tool.replace(
-        `${actionDelimiter}${domainParser(client.req, actionSet.metadata.domain, true)}`,
-        '',
-      );
+      const functionName = currentAction.tool.replace(`${actionDelimiter}${currentDomain}`, '');
+
       const requestBuilder = builders[functionName];
 
       if (!requestBuilder) {
