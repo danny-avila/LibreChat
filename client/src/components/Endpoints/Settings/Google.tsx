@@ -25,10 +25,10 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const isGemini = model?.toLowerCase()?.includes('gemini');
 
   const maxOutputTokensMax = isGemini
-    ? google.maxOutputTokens.maxGeminiPro
+    ? google.maxOutputTokens.maxGemini
     : google.maxOutputTokens.max;
   const maxOutputTokensDefault = isGemini
-    ? google.maxOutputTokens.defaultGeminiPro
+    ? google.maxOutputTokens.defaultGemini
     : google.maxOutputTokens.default;
 
   useEffect(

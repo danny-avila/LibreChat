@@ -237,7 +237,7 @@ class GoogleClient extends BaseClient {
       this.isVisionModel = true;
     }
 
-    if (this.isVisionModel && !attachments) {
+    if (this.isVisionModel && !attachments && this.modelOptions.model.includes('gemini-pro')) {
       this.modelOptions.model = 'gemini-pro';
       this.isVisionModel = false;
     }
