@@ -99,4 +99,6 @@ const fileSchema = mongoose.Schema(
   },
 );
 
+fileSchema.index({ createdAt: 1, updatedAt: 1 });
+
 module.exports = fileSchema;
