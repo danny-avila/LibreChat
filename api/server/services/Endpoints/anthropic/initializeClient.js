@@ -1,5 +1,6 @@
-const { AnthropicClient } = require('~/app');
+const { EModelEndpoint } = require('librechat-data-provider');
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { AnthropicClient } = require('~/app');
 
 const initializeClient = async ({ req, res, endpointOption }) => {
   const { ANTHROPIC_API_KEY, ANTHROPIC_REVERSE_PROXY, PROXY } = process.env;
@@ -11,10 +12,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     : ANTHROPIC_API_KEY;
 
   if (expiresAt && isUserProvided) {
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your ANTHROPIC_API_KEY has expired. Please provide your API key again.',
-    );
+    checkUserKeyExpiry(expiresAt, EModelEndpoint.anthropic);
   }
 
   const client = new AnthropicClient(anthropicApiKey, {

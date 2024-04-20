@@ -9,10 +9,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   let userKey = null;
   if (expiresAt && isUserProvided) {
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your Google Credentials have expired. Please provide your Service Account JSON Key or Generative Language API Key again.',
-    );
+    checkUserKeyExpiry(expiresAt, EModelEndpoint.google);
     userKey = await getUserKey({ userId: req.user.id, name: EModelEndpoint.google });
   }
 

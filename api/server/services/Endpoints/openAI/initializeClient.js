@@ -37,10 +37,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   let userValues = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your OpenAI API values have expired. Please provide them again.',
-    );
+    checkUserKeyExpiry(expiresAt, endpoint);
     userValues = await getUserKey({ userId: req.user.id, name: endpoint });
     try {
       userValues = JSON.parse(userValues);

@@ -48,10 +48,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
 
   let userValues = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
-    checkUserKeyExpiry(
-      expiresAt,
-      `Your API values for ${endpoint} have expired. Please configure them again.`,
-    );
+    checkUserKeyExpiry(expiresAt, endpoint);
     userValues = await getUserKey({ userId: req.user.id, name: endpoint });
     try {
       userValues = JSON.parse(userValues);

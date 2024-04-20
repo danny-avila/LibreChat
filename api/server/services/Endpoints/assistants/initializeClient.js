@@ -26,10 +26,7 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
       userId: req.user.id,
       name: EModelEndpoint.assistants,
     });
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your Assistants API key has expired. Please provide your API key again.',
-    );
+    checkUserKeyExpiry(expiresAt, EModelEndpoint.assistants);
     userValues = await getUserKey({ userId: req.user.id, name: EModelEndpoint.assistants });
     try {
       userValues = JSON.parse(userValues);
