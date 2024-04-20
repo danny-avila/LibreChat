@@ -11,13 +11,21 @@ weight: -10
     Certain changes in the updates may impact cookies, leading to unexpected behaviors if not cleared properly.
 
 ---
-## v0.7.1+
-
-!!! info "🔍 Google Search Plugin"
-
-    - **[Google Search Plugin](../features/plugins/google_search.md)**: Changed the environment variable for this plugin from `GOOGLE_API_KEY` to `GOOGLE_SEARCH_API_KEY` due to a conflict with the Google Generative AI library pulling this variable automatically. If you are using this plugin, please update your `.env` file accordingly.
 
 ## v0.7.0+
+
+!!! failure "Error Messages (UI)"
+    ![image](https://github.com/danny-avila/LibreChat/assets/32828263/0ab27798-5515-49b4-ac29-e4ad83d73d7c)
+
+    Client-facing error messages now display this warning asking to contact the admin. For the full error consult the console logs or the additional logs located in `./logs`
+
+!!! warning "🪵Logs Location"
+
+    - The full logs are now in `./logs` (they are still in `./api/logs` for local, non-docker installations)
+
+!!! warning "🔍 Google Search Plugin"
+
+    - **[Google Search Plugin](../features/plugins/google_search.md)**: Changed the environment variable for this plugin from `GOOGLE_API_KEY` to `GOOGLE_SEARCH_API_KEY` due to a conflict with the Google Generative AI library pulling this variable automatically. If you are using this plugin, please update your `.env` file accordingly.
 
 !!! info "🗃️ RAG API (Chat with Files)"
 
