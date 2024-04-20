@@ -54,7 +54,7 @@ const spendTokens = async (txData, tokenUsage) => {
     prompt &&
       completion &&
       logger.debug('[spendTokens] Transaction data record against balance:', {
-        user: prompt.user,
+        user: txData.user,
         prompt: prompt.prompt,
         promptRate: prompt.rate,
         completion: completion.completion,
