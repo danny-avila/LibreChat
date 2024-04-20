@@ -50,7 +50,13 @@ endpoints:
       apiKey: '${GROQ_API_KEY}'
       baseURL: 'https://api.groq.com/openai/v1/'
       models:
-        default: ['llama2-70b-4096', 'mixtral-8x7b-32768', 'gemma-7b-it']
+        default: [
+          "llama3-70b-8192",
+          "llama3-8b-8192",
+          "llama2-70b-4096",
+          "mixtral-8x7b-32768",
+          "gemma-7b-it",
+          ]
         fetch: false
       titleConvo: true
       titleModel: 'mixtral-8x7b-32768'

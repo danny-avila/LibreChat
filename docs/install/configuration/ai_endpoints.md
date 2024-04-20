@@ -64,9 +64,11 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       baseURL: "https://api.groq.com/openai/v1/"
       models:
         default: [
+          "llama3-70b-8192",
+          "llama3-8b-8192",
           "llama2-70b-4096",
           "mixtral-8x7b-32768",
-          "gemma-7b-it"
+          "gemma-7b-it",
           ]
         fetch: false
       titleConvo: true
@@ -374,3 +376,31 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       forcePrompt: false
       modelDisplayLabel: "Ollama"
 ```
+
+!!! tip "Ollama -> llama3"
+    
+    To prevent the behavior where llama3 does not stop generating, add this `addParams` block to the config:
+    
+    ```yaml
+    - name: "Ollama"
+      apiKey: "ollama"
+      baseURL: "http://host.docker.internal:11434/v1/" 
+      models:
+        default: [
+          "llama3"
+          ]
+        fetch: false # fetching list of models is not supported
+      titleConvo: true
+      titleModel: "llama3"
+      summarize: false
+      summaryModel: "llama3"
+      forcePrompt: false
+      modelDisplayLabel: "Ollama"
+      addParams:
+            "stop": [
+              "<|start_header_id|>",
+              "<|end_header_id|>",
+              "<|eot_id|>",
+              "<|reserved_special_token"
+            ]
+    ```
