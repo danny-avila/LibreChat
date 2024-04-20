@@ -22,7 +22,8 @@ export const useChatCall = (socket?: Socket) => {
       socket?.emit('message', {
         userId: user?.id,
         roomId: conversationId,
-        messageId: message.messageId,
+        message: message,
+        bot,
       });
     },
     [socket, user, conversationId],

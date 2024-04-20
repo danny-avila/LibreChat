@@ -24,7 +24,7 @@ const setupWebSocket = (server) => {
     // Handle client disconnection
     socket.on('disconnect', () => disconnectClient(socket));
 
-    socket.on('message', (data) => sendMessage(socket, data.messageId, data.roomId));
+    socket.on('message', (data) => sendMessage(socket, data.message, data.roomId, data.bot));
 
     socket.on('move room', (data) => moveRoom(socket.id, data.roomId));
   });
@@ -58,9 +58,13 @@ const addConnection = (socket, userId, roomId) => {
  * @param {string} messageId
  * @param {string} roomId
  */
-const sendMessage = async (socket, messageId, roomId) => {
+const sendMessage = async (socket, msg, roomId, isBot = false) => {
   try {
-    const message = await getMessageById(messageId);
+    let message = msg;
+    if (!(isBot && message.isCreatedByUser)) {
+      message = await getMessageById(message.messageId);
+    }
+
     if (message) {
       clients
         .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)

@@ -16,6 +16,7 @@ import store from '~/store';
 import { useChatSocket, useInitSocket } from '~/hooks/useChatSocket';
 import useRoomUsers from '~/hooks/useRoomUsers';
 import ContinueChat from './ContinueChat';
+import { isYou } from '~/utils/checkUserValid';
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
@@ -38,10 +39,8 @@ function ChatView({ index = 0 }: { index?: number }) {
   });
 
   const chatHelpers = useChatHelpers(index, conversationId, socket);
-  const { conversation } = chatHelpers;
-  const users = conversation ? conversation.users : [];
+  const { conversation, setConversation } = chatHelpers;
   useRoomUsers(conversationId, socket);
-  console.log(user?.id);
 
   return (
     <ChatContext.Provider value={chatHelpers}>
@@ -58,12 +57,10 @@ function ChatView({ index = 0 }: { index?: number }) {
         <div className="w-full border-t-0 pl-0 pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
           {convoType === 'c' ? (
             <ChatForm index={index} />
-          ) : users !== undefined &&
-            (users?.map((u) => u._id).indexOf(user?.id) > -1 ||
-              conversation?.user?._id === user?.id) ? (
+          ) : user && conversation && isYou(user, conversation) ? (
             <ChatForm index={index} />
           ) : (
-            <ContinueChat />
+            <ContinueChat conversation={conversation} setConversation={setConversation} />
           )}
           <Footer />
         </div>

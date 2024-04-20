@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Socket, io } from 'socket.io-client';
 import store from '~/store';
 import useChatHelpers from './useChatHelpers';
 import { useParams } from 'react-router-dom';
-import { request, type TMessage } from 'librechat-data-provider';
+import { type TMessage } from 'librechat-data-provider';
 
 export const useInitSocket = () => {
   const user = useRecoilValue(store.user);
@@ -29,14 +29,12 @@ export const useChatSocket = (socket?: Socket) => {
   const index = 0;
   const { conversationId } = useParams();
 
-  const user = useRecoilValue(store.user);
   const convoType = useRecoilValue(store.convoType);
 
   const { getMessages, setMessages, setLatestMessage } = useChatHelpers(index, conversationId);
 
   useEffect(() => {
     socket?.on('new message', (data) => {
-      console.log('new message income', data);
       if (conversationId === data.roomId) {
         const currentMessages: TMessage[] | null = getMessages() ?? [];
         console.log('=== receiving event ===', currentMessages, data.message);
@@ -56,21 +54,20 @@ export const useChatSocket = (socket?: Socket) => {
     }
   }, [conversationId, convoType, socket]);
 
-  const sendMessage = useCallback(
-    (message: TMessage) => {
-      console.log('sending message', message);
-      if (message.isCreatedByUser) {
-        request.post(`/api/rooms/${conversationId}`, message);
-      }
+  // const sendMessage = useCallback(
+  //   (message: TMessage) => {
+  //     if (message.isCreatedByUser) {
+  //       request.post(`/api/rooms/${conversationId}`, message);
+  //     }
 
-      socket?.emit('message', {
-        userId: user?.id,
-        roomId: conversationId,
-        messageId: message.messageId,
-      });
-    },
-    [socket, user?.id, conversationId],
-  );
+  //     socket?.emit('message', {
+  //       userId: user?.id,
+  //       roomId: conversationId,
+  //       messageId: message.messageId,
+  //     });
+  //   },
+  //   [socket, user?.id, conversationId],
+  // );
 
-  return { socket, sendMessage };
+  return { socket };
 };

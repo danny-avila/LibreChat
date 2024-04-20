@@ -1,3 +1,4 @@
+/* eslint-disable import/no-cycle */
 import { z } from 'zod';
 import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
@@ -203,7 +204,8 @@ export type TMessage = z.input<typeof tMessageSchema> & {
 };
 
 export const tUserSchema = z.object({
-  _id: z.string(),
+  _id: z.string().optional(),
+  id: z.string().optional(),
   username: z.string().optional(),
   email: z.string(),
   name: z.string(),
@@ -230,7 +232,7 @@ export const tUserSchema = z.object({
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
-  user: z.string().or(tUserSchema.optional()).optional(),
+  user: tUserSchema.or(z.string()).optional(),
   endpoint: eModelEndpointSchema.nullable(),
   endpointType: eModelEndpointSchema.optional(),
   suggestions: z.array(z.string()).optional(),

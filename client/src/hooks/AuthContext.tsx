@@ -14,7 +14,7 @@ import {
   useLoginUserMutation,
   useRefreshTokenMutation,
 } from 'librechat-data-provider/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import { useLogoutUserMutation } from '~/data-provider';
 import useTimeout from './useTimeout';
@@ -33,6 +33,7 @@ const AuthContextProvider = ({
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const { conversationId } = useParams();
 
   const navigate = useNavigate();
 
@@ -106,6 +107,11 @@ const AuthContextProvider = ({
         } else {
           console.log('Token is not present. User is not authenticated.');
           if (authConfig?.test) {
+            return;
+          }
+
+          if (conversationId !== 'new' && conversationId) {
+            setUserContext({ token: undefined, isAuthenticated: false, user: undefined });
             return;
           }
           navigate('/login');

@@ -23,7 +23,7 @@ import store from '~/store';
 import SubscriptionBtn from '../SidePanel/Subscription/SubscriptionBtn';
 import NewRoom from './NewRoom';
 import CategorySwitch from './CategorySwitch';
-import { isPremiumUser } from '~/utils/checkPremiumUser';
+import { isPremiumUser } from '~/utils/checkUserValid';
 import Rooms from '../Room/Rooms';
 
 const Nav = ({ navVisible, setNavVisible }) => {
@@ -156,7 +156,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       onMouseLeave={() => setIsHovering(false)}
                       ref={containerRef}
                     >
-                      {/* <CategorySwitch /> */}
+                      <CategorySwitch />
                       {convoType === 'c' ? (
                         <>
                           <NewChat

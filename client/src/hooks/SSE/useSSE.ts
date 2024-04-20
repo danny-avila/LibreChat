@@ -1,5 +1,5 @@
 import { v4 } from 'uuid';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, useCallback } from 'react';
@@ -64,6 +64,7 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
   const setStorage = useSetStorage();
   const queryClient = useQueryClient();
   const genTitle = useGenTitleMutation();
+  const user = useRecoilValue(store.user);
 
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
@@ -531,6 +532,8 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
 
+    sendMessage({ ...message }, true);
+
     events.onmessage = (e: MessageEvent) => {
       const data = JSON.parse(e.data);
 
@@ -538,7 +541,6 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
         const { plugins } = data;
         finalHandler(data, { ...submission, plugins, message });
         startupConfig?.checkBalance && balanceQuery.refetch();
-        sendMessage(data.responseMessage, true);
       }
       if (data.created) {
         message = {

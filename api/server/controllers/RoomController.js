@@ -4,7 +4,6 @@ const { getRoom, getRoomsByUser, saveConvo, saveMessage } = require('~/models');
 
 const createNewRoom = async (req, res) => {
   // const { title, isPrivate, password, endpoint } = req.body;
-  console.log('=== RoomController -> createNewRoom ===', req.body);
   const body = req.body;
 
   const createdAt = new Date();

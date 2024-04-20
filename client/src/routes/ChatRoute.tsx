@@ -91,7 +91,6 @@ export default function ChatRoute({ convo = 'c' }: { convo: ConvoType }) {
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
     return <Spinner className="m-auto text-black dark:text-white" />;
   }
-  console.log('--- ChatRoute ---', convoType, isAuthenticated);
 
   if (!isAuthenticated && convoType !== 'r') {
     return null;

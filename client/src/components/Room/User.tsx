@@ -11,8 +11,7 @@ export default function User({
 }) {
   const activeConvo = false;
   const avatarSrc = useAvatar(user);
-  // currentConvoId === conversationId ||
-  // (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
+
   const aProps = {
     className: `group relative mt-1 flex cursor-pointer items-center gap-2 break-all rounded-lg bg-gray-200 ${
       isCollapsed ? 'px-0 py-0' : 'px-2 py-2'

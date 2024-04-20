@@ -155,7 +155,6 @@ export default function AssistantPanel({
       return functionName;
     });
 
-    console.log(data);
     if (data.code_interpreter) {
       tools.push({ type: Tools.code_interpreter });
     }

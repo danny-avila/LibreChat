@@ -12,7 +12,7 @@ import { useChatContext } from '~/Providers';
 import { icons } from './Icons';
 import store from '~/store';
 import { useToastContext } from '~/Providers';
-import { isPremiumUser } from '~/utils/checkPremiumUser';
+import { isPremiumUser } from '~/utils/checkUserValid';
 
 type MenuItemProps = {
   title: string;

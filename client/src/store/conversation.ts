@@ -15,6 +15,11 @@ const messages = atom<TMessagesAtom>({
   default: [],
 });
 
+const rooms = atom<TConversation[]>({
+  key: 'rooms',
+  default: [],
+});
+
 const messagesTree = selector({
   key: 'messagesTree',
   get: ({ get }) => {
@@ -44,4 +49,5 @@ export default {
   latestMessage,
   messagesSiblingIdxFamily,
   convoType,
+  rooms,
 };

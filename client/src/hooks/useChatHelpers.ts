@@ -281,11 +281,10 @@ export default function useChatHelpers(index = 0, paramId: string | undefined, s
     } else if (convoType === 'r') {
       const command = isBotCommand(text);
       if (command) {
-        const message = { ...currentMsg, text: text.replace(COMMAND.BOT, '') };
-        setMessages([...submission.messages, message, initialResponse]);
-        setLatestMessage(message);
+        // const message = { ...currentMsg, text };
+        setMessages([...submission.messages, currentMsg, initialResponse]);
+        setLatestMessage(initialResponse);
         setSubmission(submission);
-        sendMessage(message, true);
       } else {
         setMessages([...submission.messages, currentMsg]);
         setLatestMessage(currentMsg);

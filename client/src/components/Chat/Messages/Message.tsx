@@ -52,7 +52,7 @@ export default function Message(props: TMessageProps) {
     messageLabel = message.sender;
   }
 
-  if (convoType === 'r') {
+  if (convoType === 'r' && isCreatedByUser) {
     if (message.user) {
       messageLabel = message.user.name;
       userAvatar = message.user.avatar;

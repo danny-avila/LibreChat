@@ -12,7 +12,7 @@ import SettingsTab from './SettingsTab';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { useSearchParams } from 'react-router-dom';
-import { isPremiumUser } from '~/utils/checkPremiumUser';
+import { isPremiumUser } from '~/utils/checkUserValid';
 
 export default function Settings({ open, onOpenChange }: TDialogProps) {
   const user = useRecoilValue(store.user);

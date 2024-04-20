@@ -5,7 +5,7 @@ import type { Option } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils/';
 import { useMultiSearch } from './MultiSearch';
-import { isPremiumUser } from '~/utils/checkPremiumUser';
+import { isPremiumUser } from '~/utils/checkUserValid';
 import { TUser } from 'librechat-data-provider';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';

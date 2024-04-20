@@ -156,7 +156,6 @@ module.exports = {
         .sort({ createdAt: 1 })
         .populate('user', ['name', 'avatar'])
         .lean();
-      console.log(result);
       return result;
     } catch (err) {
       logger.error('Error getting messages:', err);

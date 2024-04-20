@@ -50,7 +50,6 @@ export default function useGenerations({
       EModelEndpoint.anthropic,
     ].find((e) => e === endpoint);
 
-  console.log('---- useGenerations => regenerateEnabled ---', isSubmitting, branchingSupported);
   const regenerateEnabled =
     !isCreatedByUser && !searchResult && !isEditing && !isSubmitting && branchingSupported;
 

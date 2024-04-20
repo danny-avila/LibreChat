@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { TConversation, request } from 'librechat-data-provider';
 import Room from './Room';
-import { useRecoilValue } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import {
   useConversationsInfiniteQuery,
   useRoomsInfiniteQuery,
@@ -17,10 +17,11 @@ export default function Rooms({
   moveToTop: () => void;
   toggleNav: () => void;
 }) {
-  const [rooms, setRooms] = useState<{ owned: TConversation[]; joined: TConversation[] }>({
-    owned: [],
-    joined: [],
-  });
+  // const [rooms, setRooms] = useState<{ owned: TConversation[]; joined: TConversation[] }>({
+  //   owned: [],
+  //   joined: [],
+  // });
+  const [rooms, setRooms] = useRecoilState(store.rooms);
   // const { isAuthenticated } = useAuthContext();
   // const [pageNumber, setPageNumber] = useState(1);
   // const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useRoomsInfiniteQuery(
@@ -43,10 +44,9 @@ export default function Rooms({
   // console.log('=== data in rooms ===', data);
 
   useEffect(() => {
-    console.log('=== fetching rooms ===');
     request
       .get('/api/rooms')
-      .then((res) => setRooms(res))
+      .then((res: unknown) => setRooms(res as TConversation[]))
       .catch((error) => console.error(error));
   }, []);
 
@@ -55,35 +55,14 @@ export default function Rooms({
       <div>
         <div>
           <span>
-            {Object.keys(rooms).map((i) => (
-              <div key={i}>
-                {/* <div
-                  style={{
-                    color: '#aaa',
-                    fontSize: '0.7rem',
-                    marginTop: '20px',
-                    marginBottom: '5px',
-                    paddingLeft: '10px',
-                  }}
-                >
-                  Your Rooms - {rooms[i].length}
-                </div> */}
-                {rooms[i].map((room) => (
-                  <Room
-                    key={`${room.conversationId}-${room}`}
-                    // isLatestConvo={room.conversationId === firstTodayConvoId}
-                    room={room}
-                    retainView={moveToTop}
-                    toggleNav={toggleNav}
-                  />
-                ))}
-                <div
-                  style={{
-                    marginTop: '5px',
-                    marginBottom: '5px',
-                  }}
-                />
-              </div>
+            {rooms.map((room) => (
+              <Room
+                key={`${room.conversationId}-${room}`}
+                // isLatestConvo={room.conversationId === firstTodayConvoId}
+                room={room}
+                retainView={moveToTop}
+                toggleNav={toggleNav}
+              />
             ))}
           </span>
         </div>

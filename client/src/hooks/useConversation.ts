@@ -33,7 +33,6 @@ const useConversation = () => {
         const { endpoint = null } = conversation;
 
         if (endpoint === null) {
-          // console.log('--- useConversatoin ---', endpointsConfig);
           const defaultEndpoint = getDefaultEndpoint({
             convoSetup: preset ?? conversation,
             endpointsConfig,

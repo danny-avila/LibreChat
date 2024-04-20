@@ -31,7 +31,7 @@ const getRoomsByUser = async (userId) => {
       isRoom: true,
     });
 
-    return { owned, joined };
+    return [...owned, ...joined];
   } catch (error) {
     logger.error('[getRoomsByUser] ERror getting rooms by user', error);
     return { message: 'Error getting rooms by user' };
@@ -93,11 +93,10 @@ const createRoom = async (name, isPrivate, password, user) => {
  */
 const addUserToRoom = async (conversationId, userId) => {
   try {
-    const result = await Conversation.findOneAndUpdate(
-      { conversationId },
-      { $addToSet: { users: userId } },
-      { new: true },
-    );
+    await Conversation.findOneAndUpdate({ conversationId }, { $addToSet: { users: userId } });
+    const result = await Conversation.findOne({ conversationId })
+      .populate('users')
+      .populate('user');
     return result;
   } catch (error) {
     logger.error('[addUserToRoom] Error creating new room', error);

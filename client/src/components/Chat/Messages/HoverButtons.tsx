@@ -1,3 +1,4 @@
+/* eslint-disable indent */
 import { useState } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
@@ -5,6 +6,8 @@ import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import { DownloadIcon } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
 
 type THoverButtons = {
   isEditing: boolean;
@@ -39,6 +42,8 @@ export default function HoverButtons({
 }: THoverButtons) {
   const localize = useLocalize();
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
+  const user = useRecoilValue(store.user);
+  const convoType = useRecoilValue(store.convoType);
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
   const { hideEditButton, regenerateEnabled, continueSupported } = useGenerationsByLatest({
@@ -63,23 +68,28 @@ export default function HoverButtons({
 
   return (
     <div className="visible mt-0 flex justify-center gap-1 self-end text-gray-400 lg:justify-start">
-      {endpoint !== EModelEndpoint.assistants && endpoint !== EModelEndpoint.sdImage && (
-        <button
-          className={cn(
-            'hover-button rounded-md p-1 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
-            isCreatedByUser ? '' : 'active',
-            hideEditButton ? 'opacity-0' : '',
-            isEditing ? 'active bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200' : '',
-            !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
-          )}
-          onClick={onEdit}
-          type="button"
-          title={localize('com_ui_edit')}
-          disabled={hideEditButton}
-        >
-          <EditIcon />
-        </button>
-      )}
+      {endpoint !== EModelEndpoint.assistants &&
+        endpoint !== EModelEndpoint.sdImage &&
+        user &&
+        convoType !== 'r' && (
+          <button
+            className={cn(
+              'hover-button rounded-md p-1 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+              isCreatedByUser ? '' : 'active',
+              hideEditButton ? 'opacity-0' : '',
+              isEditing
+                ? 'active bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+                : '',
+              !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
+            )}
+            onClick={onEdit}
+            type="button"
+            title={localize('com_ui_edit')}
+            disabled={hideEditButton}
+          >
+            <EditIcon />
+          </button>
+        )}
       {copyDisabled ? null : (
         <button
           className={cn(
@@ -97,7 +107,7 @@ export default function HoverButtons({
         </button>
       )}
 
-      {regenerateEnabled ? (
+      {regenerateEnabled && user && convoType !== 'r' ? (
         <button
           className={cn(
             'hover-button active rounded-md p-1 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible md:group-[.final-completion]:visible',
@@ -123,7 +133,7 @@ export default function HoverButtons({
           <DownloadIcon className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
-      {continueSupported ? (
+      {continueSupported && user && convoType !== 'r' ? (
         <button
           className={cn(
             'hover-button active rounded-md p-1 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',

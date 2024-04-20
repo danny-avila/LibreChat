@@ -1,17 +1,25 @@
 import React from 'react';
 import { Button } from '../ui';
-import { request } from 'librechat-data-provider';
+import { TConversation, request } from 'librechat-data-provider';
 import { useParams } from 'react-router-dom';
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
+import { SetterOrUpdater } from 'recoil';
 
-export default function ContinueChat() {
+interface Props {
+  conversation: TConversation | null;
+  setConversation: SetterOrUpdater<TConversation | null>;
+}
+
+export default function ContinueChat({ conversation, setConversation }: Props) {
   const { conversationId } = useParams();
-  const conversation = useRecoilValue(store.conversation);
   console.log(conversation);
 
   const handleClick = () => {
-    request.post(`/api/rooms/join/${conversationId}`);
+    request
+      .post(`/api/rooms/join/${conversationId}`)
+      .then((responseData) => {
+        setConversation(responseData);
+      })
+      .catch((error) => console.error(error));
   };
 
   return (
