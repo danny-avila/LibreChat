@@ -21,6 +21,7 @@ const domainTrackingCodes = {
   'gptitaly.io': 'G-40QF6KBX1L',
   'gptrussia.io': 'G-N5L46P3PCX',
   'gptusa.io': 'G-46JS78DD0K',
+  'navlisky.io': 'G-xxxxxxxxxx',
 };
 
 // Get the current domain
