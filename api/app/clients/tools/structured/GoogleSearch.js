@@ -1,7 +1,7 @@
+const axios = require('axios').default;
 const { z } = require('zod');
 const { Tool } = require('@langchain/core/tools');
 const { getEnvironmentVariable } = require('@langchain/core/utils/env');
-
 const { JSDOM, VirtualConsole } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
 
@@ -71,25 +71,30 @@ class GoogleSearchResults extends Tool {
 
     const { query, max_results = 5 } = validationResult.data;
 
-    const response = await fetch(
-      `https://www.googleapis.com/customsearch/v1?key=${this.apiKey}&cx=${
-        this.searchEngineId
-      }&q=${encodeURIComponent(query)}&num=${max_results}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
+    let response;
+    try {
+      response = await axios.get(
+        `https://www.googleapis.com/customsearch/v1?key=${this.apiKey}&cx=${
+          this.searchEngineId
+        }&q=${encodeURIComponent(query)}&num=${max_results}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
         },
-      },
-    );
-
-    const json = await response.json();
-    if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}: ${json.error.message}`);
+      );
+    } catch (error) {
+      // the default axios exception only shows the code
+      // here we add the response body, which usually has more information
+      throw new Error(
+        `Request failed with status ${error.response.status}: ${error.response.data}`,
+      );
     }
 
     // now go through all of the search results, and retrieve the text contents of all search result pages in parallel
-    const webPages = await Promise.all(json.items.map((item, idx) => this.handleItem(item, idx)));
+    const webPages = await Promise.all(
+      response.data.items.map((item, idx) => this.handleItem(item, idx)),
+    );
 
     // truncate each webPage to truncWords words
     const truncWords = 1300;
@@ -105,7 +110,7 @@ class GoogleSearchResults extends Tool {
     const res =
       'When writing your response, please cite the web pages inline using `[^N]` (markdown footnote syntax) ' +
       'with the number N from the `## Web page N` headings. List all pages at the end of your answer ' +
-      'in a markdown bullet list even if you don\'t cite them in the text.\n\n' +
+      'in a markdown numbered list even if you don\'t cite them in the text.\n\n' +
       `${truncWebPages.join('\n\n')}`;
     //console.log(res);
     return res;
