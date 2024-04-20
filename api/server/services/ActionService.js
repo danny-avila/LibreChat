@@ -39,6 +39,10 @@ async function domainParser(req, domain, inverse = false) {
     return domain;
   }
 
+  if (inverse && domain.length <= Constants.ENCODED_DOMAIN_LENGTH) {
+    return domain.replace(/\./g, actionDomainSeparator);
+  }
+
   if (inverse) {
     const modifiedDomain = Buffer.from(domain.replace(/\./g, actionDomainSeparator)).toString(
       'base64',
