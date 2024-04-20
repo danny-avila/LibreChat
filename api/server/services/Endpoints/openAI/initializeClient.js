@@ -1,4 +1,5 @@
 const {
+  ErrorTypes,
   EModelEndpoint,
   resolveHeaders,
   mapModelToAzureConfig,
@@ -45,7 +46,9 @@ const initializeClient = async ({ req, res, endpointOption }) => {
       userValues = JSON.parse(userValues);
     } catch (e) {
       throw new Error(
-        `Invalid JSON provided for ${endpoint} user values. Please provide them again.`,
+        JSON.stringify({
+          type: ErrorTypes.INVALID_USER_KEY,
+        }),
       );
     }
   }
@@ -100,7 +103,11 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   }
 
   if (!apiKey) {
-    throw new Error(`${endpoint} API key not provided. Please provide it again.`);
+    throw new Error(
+      JSON.stringify({
+        type: ErrorTypes.NO_USER_KEY,
+      }),
+    );
   }
 
   const client = new OpenAIClient(apiKey, clientOptions);
