@@ -42,7 +42,7 @@ const abortKeys = isEnabled(USE_REDIS)
 const namespaces = {
   [CacheKeys.CONFIG_STORE]: config,
   pending_req,
-  ban: new Keyv({ store: keyvMongo, namespace: 'bans', ttl: duration }),
+  [ViolationTypes.BAN]: new Keyv({ store: keyvMongo, namespace: CacheKeys.BANS, ttl: duration }),
   general: new Keyv({ store: logFile, namespace: 'violations' }),
   concurrent: createViolationInstance('concurrent'),
   non_browser: createViolationInstance('non_browser'),

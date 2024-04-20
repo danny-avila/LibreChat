@@ -1,3 +1,4 @@
+const { CacheKeys } = require('librechat-data-provider');
 const banViolation = require('./banViolation');
 
 jest.mock('keyv');
@@ -33,7 +34,7 @@ jest.mock('./getLogStores', () => {
     }
 
     return new KeyvMongo('', {
-      namespace: 'bans',
+      namespace: CacheKeys.BANS,
       ttl: math(process.env.BAN_DURATION, 7200000),
     });
   });

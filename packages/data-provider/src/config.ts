@@ -482,6 +482,10 @@ export enum CacheKeys {
    * Key for the override config cache.
    */
   OVERRIDE_CONFIG = 'overrideConfig',
+  /**
+   * Key for the bans cache.
+   */
+  BANS = 'bans',
 }
 
 /**
@@ -500,6 +504,10 @@ export enum ViolationTypes {
    * Token Limit Violation.
    */
   TOKEN_BALANCE = 'token_balance',
+  /**
+   * An issued ban.
+   */
+  BAN = 'ban',
 }
 
 /**
