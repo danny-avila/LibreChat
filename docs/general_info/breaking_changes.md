@@ -21,7 +21,7 @@ weight: -10
 
 !!! warning "🪵Logs Location"
 
-    - The full logs are now in `./logs` (they were previously in `./api/logs`)
+    - The full logs are now in `./logs` (they are still in `./api/logs` for local, non-docker installations)
 
 !!! warning "🔍 Google Search Plugin"
 
