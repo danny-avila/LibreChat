@@ -62,6 +62,8 @@ export const requestPasswordReset = () => '/api/auth/requestPasswordReset';
 
 export const resetPassword = () => '/api/auth/resetPassword';
 
+export const verifyEmail = () => '/api/auth/verify';
+
 export const plugins = () => '/api/plugins';
 
 export const config = () => '/api/config';

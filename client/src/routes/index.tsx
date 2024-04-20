@@ -6,6 +6,7 @@ import {
   Registration,
   RequestPasswordReset,
   ResetPassword,
+  VerifyEmail,
   ApiErrorWatcher,
 } from '~/components/Auth';
 import TermsOfService from '~/components/TermsOfService/TermsOfService';
@@ -31,6 +32,10 @@ export const router = createBrowserRouter([
   {
     path: 'reset-password',
     element: <ResetPassword />,
+  },
+  {
+    path: 'verify',
+    element: <VerifyEmail />,
   },
   {
     element: <AuthLayout />,

@@ -47,6 +47,12 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: 'Incorrect password.' });
     }
 
+    if (!user.emailVerified && JSON.parse(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN) === false) {
+      logError('Passport Local Strategy - Email not verified', { email });
+      logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
+      return done(null, user, { message: 'Email not verified.' });
+    }
+
     logger.info(`[Login] [Login successful] [Username: ${email}] [Request-IP: ${req.ip}]`);
     return done(null, user);
   } catch (err) {

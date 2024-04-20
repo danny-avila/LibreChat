@@ -26,6 +26,7 @@ Here's an overview of the general configuration, located in the `.env` file at t
   - `ALLOW_REGISTRATION`: Email registration of new users. Set to `true` or `false` to enable or disable Email registration.
   - `ALLOW_SOCIAL_LOGIN`: Allow users to connect to LibreChat with various social networks, see below. Set to `true` or `false` to enable or disable.
   - `ALLOW_SOCIAL_REGISTRATION`: Enable or disable registration of new user using various social network. Set to `true` or `false` to enable or disable.
+  - `ALLOW_UNVERIFIED_EMAIL_LOGIN`: Allow users to log in with an unverified email. Set to `true` or `false` to enable or disable.
 
 > **Note:** OpenID does not support the ability to disable only registration.
 
@@ -39,6 +40,7 @@ ALLOW_EMAIL_LOGIN=true
 ALLOW_REGISTRATION=true       
 ALLOW_SOCIAL_LOGIN=false
 ALLOW_SOCIAL_REGISTRATION=false
+ALLOW_UNVERIFIED_EMAIL_LOGIN=true
 ```
 
 ### Session Expiry and Refresh Token
