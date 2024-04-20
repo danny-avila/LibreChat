@@ -482,6 +482,15 @@ export enum CacheKeys {
    * Key for the override config cache.
    */
   OVERRIDE_CONFIG = 'overrideConfig',
+  /**
+   * Key for the bans cache.
+   */
+  BANS = 'bans',
+  /**
+   * Key for the encoded domains cache.
+   * Used by Azure OpenAI Assistants.
+   */
+  ENCODED_DOMAINS = 'encoded_domains',
 }
 
 /**
@@ -500,6 +509,10 @@ export enum ViolationTypes {
    * Token Limit Violation.
    */
   TOKEN_BALANCE = 'token_balance',
+  /**
+   * An issued ban.
+   */
+  BAN = 'ban',
 }
 
 /**
@@ -580,6 +593,10 @@ export enum Constants {
    * Standard value for the first message's `parentMessageId` value, to indicate no parent exists.
    */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
+  /**
+   * Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing.
+   */
+  ENCODED_DOMAIN_LENGTH = 10,
 }
 
 /**

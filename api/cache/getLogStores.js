@@ -6,6 +6,7 @@ const keyvRedis = require('./keyvRedis');
 const keyvMongo = require('./keyvMongo');
 
 const { BAN_DURATION, USE_REDIS } = process.env ?? {};
+const THIRTY_MINUTES = 1800000;
 
 const duration = math(BAN_DURATION, 7200000);
 
@@ -24,8 +25,8 @@ const config = isEnabled(USE_REDIS)
   : new Keyv({ namespace: CacheKeys.CONFIG_STORE });
 
 const tokenConfig = isEnabled(USE_REDIS) // ttl: 30 minutes
-  ? new Keyv({ store: keyvRedis, ttl: 1800000 })
-  : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: 1800000 });
+  ? new Keyv({ store: keyvRedis, ttl: THIRTY_MINUTES })
+  : new Keyv({ namespace: CacheKeys.TOKEN_CONFIG, ttl: THIRTY_MINUTES });
 
 const genTitle = isEnabled(USE_REDIS) // ttl: 2 minutes
   ? new Keyv({ store: keyvRedis, ttl: 120000 })
@@ -42,7 +43,12 @@ const abortKeys = isEnabled(USE_REDIS)
 const namespaces = {
   [CacheKeys.CONFIG_STORE]: config,
   pending_req,
-  ban: new Keyv({ store: keyvMongo, namespace: 'bans', ttl: duration }),
+  [ViolationTypes.BAN]: new Keyv({ store: keyvMongo, namespace: CacheKeys.BANS, ttl: duration }),
+  [CacheKeys.ENCODED_DOMAINS]: new Keyv({
+    store: keyvMongo,
+    namespace: CacheKeys.ENCODED_DOMAINS,
+    ttl: 0,
+  }),
   general: new Keyv({ store: logFile, namespace: 'violations' }),
   concurrent: createViolationInstance('concurrent'),
   non_browser: createViolationInstance('non_browser'),

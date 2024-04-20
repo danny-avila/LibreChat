@@ -5,6 +5,7 @@ const handleText = require('./handleText');
 const cryptoUtils = require('./crypto');
 const citations = require('./citations');
 const sendEmail = require('./sendEmail');
+const mongoose = require('./mongoose');
 const queue = require('./queue');
 const files = require('./files');
 const math = require('./math');
@@ -14,6 +15,7 @@ module.exports = {
   ...cryptoUtils,
   ...handleText,
   ...citations,
+  ...mongoose,
   countTokens,
   removePorts,
   sendEmail,
