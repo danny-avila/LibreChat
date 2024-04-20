@@ -36,7 +36,7 @@ class GoogleSearchResults extends Tool {
     });
   }
 
-  async handleItem(item, idx) {
+  async handleItem(item) {
     // fetch page via URL, then parse into DOM for readability
     // but first setup to ignore jsdom errors, because it often can't parse style sheets
     // see https://stackoverflow.com/a/69958999/532513
@@ -53,14 +53,16 @@ class GoogleSearchResults extends Tool {
     // title, content, textContent (this is what you want), length (characters), except,
     const article = new Readability(dom).parse();
 
+    // this means Readability could not extract anything
     if (!article) {
-      return '';
+      return null;
     }
 
     // collapse empty lines in textContent, using start of line and end of line anchors
-    return `## Web page ${idx + 1}\nTitle: ${item.title}\n\nLink: ${
-      item.link
-    }\n\n${article.textContent.replace(/^[\s]*$/gm, '')}\n`;
+    return `Title: ${item.title}\n\nLink: ${item.link}\n\n${article.textContent.replace(
+      /^[\s]*$/gm,
+      '',
+    )}\n`;
   }
 
   async _call(input) {
@@ -92,9 +94,13 @@ class GoogleSearchResults extends Tool {
     }
 
     // now go through all of the search results, and retrieve the text contents of all search result pages in parallel
-    const webPages = await Promise.all(
-      response.data.items.map((item, idx) => this.handleItem(item, idx)),
-    );
+    const webPages = (
+      await Promise.all(response.data.items.map((item, idx) => this.handleItem(item, idx)))
+    )
+      // filter to remove any nulls, which are pages that Readability could not parse
+      .filter((item) => item !== null)
+      // add a correctly numbered heading to each page
+      .map((item, idx) => `## Web page ${idx + 1}\n${item}`);
 
     // truncate each webPage to truncWords words
     const truncWords = 1300;
@@ -108,9 +114,8 @@ class GoogleSearchResults extends Tool {
     });
 
     const res =
-      'When writing your response, please cite the web pages inline using `[^N]` (markdown footnote syntax) ' +
-      'with the number N from the `## Web page N` headings. List all pages at the end of your answer ' +
-      'in a markdown numbered list even if you don\'t cite them in the text.\n\n' +
+      'When writing your response, please cite the web pages inline using "[source N](LINK)" ' +
+      'with the number N from the "## Web page N" headings and LINK from the "Link:" at the start of the relevant web page. \n\n' +
       `${truncWebPages.join('\n\n')}`;
     //console.log(res);
     return res;
