@@ -126,7 +126,7 @@ function Login() {
     'gptitaly.io': 'logo-italy.png',
     'gptrussia.io': 'logo-russia.png',
     'gptusa.io': 'logo-usa.png',
-    'navlisky.io': 'logo-navlisky.png',
+    'novlisky.io': 'logo-novlisky.png',
   };
 
   const currentDomain = window.location.hostname;
