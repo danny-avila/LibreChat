@@ -1,12 +1,13 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
+  ErrorTypes,
   EModelEndpoint,
   resolveHeaders,
   mapModelToAzureConfig,
 } = require('librechat-data-provider');
 const {
-  getUserKey,
+  getUserKeyValues,
   getUserKeyExpiry,
   checkUserKeyExpiry,
 } = require('~/server/services/UserService');
@@ -26,18 +27,8 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
       userId: req.user.id,
       name: EModelEndpoint.assistants,
     });
-    checkUserKeyExpiry(
-      expiresAt,
-      'Your Assistants API key has expired. Please provide your API key again.',
-    );
-    userValues = await getUserKey({ userId: req.user.id, name: EModelEndpoint.assistants });
-    try {
-      userValues = JSON.parse(userValues);
-    } catch (e) {
-      throw new Error(
-        'Invalid JSON provided for Assistants API user values. Please provide them again.',
-      );
-    }
+    checkUserKeyExpiry(expiresAt, EModelEndpoint.assistants);
+    userValues = await getUserKeyValues({ userId: req.user.id, name: EModelEndpoint.assistants });
   }
 
   let apiKey = userProvidesKey ? userValues.apiKey : ASSISTANTS_API_KEY;
@@ -99,6 +90,14 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
       clientOptions.headers = opts.defaultHeaders;
       clientOptions.azure = !serverless && azureOptions;
     }
+  }
+
+  if (userProvidesKey & !apiKey) {
+    throw new Error(
+      JSON.stringify({
+        type: ErrorTypes.NO_USER_KEY,
+      }),
+    );
   }
 
   if (!apiKey) {
