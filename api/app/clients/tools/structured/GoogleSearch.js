@@ -4,6 +4,7 @@ const { Tool } = require('@langchain/core/tools');
 const { getEnvironmentVariable } = require('@langchain/core/utils/env');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
+const { logger } = require('~/config');
 
 class GoogleSearchResults extends Tool {
   static lc_name() {
@@ -44,10 +45,17 @@ class GoogleSearchResults extends Tool {
     virtualConsole.on('error', () => {
       // No-op to skip console errors.
     });
-    const dom = await fetch(item.link)
-      .then((res) => res.text())
-      .then((html) => new JSDOM(html, { virtualConsole }))
-      .then((dom) => dom.window.document);
+
+    // use axios to fetch page into DOM
+    let resp;
+    try {
+      resp = await axios.get(item.link);
+    } catch (error) {
+      // handle exception here, else none of the other page fetch data will successfully return
+      logger.error(`Error fetching page ${item.link}: ${error} - ${error.response.data}`);
+      return null;
+    }
+    const dom = new JSDOM(resp.data, { virtualConsole }).window.document;
 
     // parse DOM using Readability
     // title, content, textContent (this is what you want), length (characters), except,
