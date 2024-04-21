@@ -490,4 +490,5 @@ export default {
     'GPT China 保留随时修改这些条款的权利。用户将通过电子邮件被通知任何更改。',
   com_terms_contact_title: '10. 联系信息',
   com_terms_contact_text: '如有任何关于这些条款的问题或担忧，请通过 hello@gptchina.io 与我们联系。',
+  com_auth_registration_success: '注册成功。请检查您的电子邮件以验证您的电子邮件地址。',
 };
