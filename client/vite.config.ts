@@ -82,6 +82,15 @@ export default defineConfig({
       // external: ['uuid'],
       output: {
         manualChunks: (id) => {
+          if (id.includes('node_modules/highlight.js')) {
+            return 'markdown_highlight';
+          }
+          if (id.includes('node_modules/hast-util-raw')) {
+            return 'markdown_large';
+          }
+          if (id.includes('node_modules/katex')) {
+            return 'markdown_large';
+          }
           if (id.includes('node_modules')) {
             return 'vendor';
           }
