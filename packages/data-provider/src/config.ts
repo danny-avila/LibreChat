@@ -532,6 +532,10 @@ export enum ErrorTypes {
    */
   INVALID_USER_KEY = 'invalid_user_key',
   /**
+   * No Base URL Provided.
+   */
+  NO_BASE_URL = 'no_base_url',
+  /**
    * Moderation error
    */
   MODERATION = 'moderation',

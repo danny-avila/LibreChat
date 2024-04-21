@@ -4,7 +4,7 @@ const {
   resolveHeaders,
   mapModelToAzureConfig,
 } = require('librechat-data-provider');
-const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const { isEnabled, isUserProvided } = require('~/server/utils');
 const { getAzureCredentials } = require('~/utils');
 const { OpenAIClient } = require('~/app');
@@ -38,16 +38,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   let userValues = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
     checkUserKeyExpiry(expiresAt, endpoint);
-    userValues = await getUserKey({ userId: req.user.id, name: endpoint });
-    try {
-      userValues = JSON.parse(userValues);
-    } catch (e) {
-      throw new Error(
-        JSON.stringify({
-          type: ErrorTypes.INVALID_USER_KEY,
-        }),
-      );
-    }
+    userValues = await getUserKeyValues({ userId: req.user.id, name: endpoint });
   }
 
   let apiKey = userProvidesKey ? userValues?.apiKey : credentials[endpoint];
@@ -99,12 +90,16 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     apiKey = clientOptions.azure.azureOpenAIApiKey;
   }
 
-  if (!apiKey) {
+  if (userProvidesKey & !apiKey) {
     throw new Error(
       JSON.stringify({
         type: ErrorTypes.NO_USER_KEY,
       }),
     );
+  }
+
+  if (!apiKey) {
+    throw new Error(`${endpoint} API Key not provided.`);
   }
 
   const client = new OpenAIClient(apiKey, clientOptions);

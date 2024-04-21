@@ -1,11 +1,12 @@
 const {
   CacheKeys,
+  ErrorTypes,
   envVarRegex,
   EModelEndpoint,
   FetchTokenConfig,
   extractEnvVariable,
 } = require('librechat-data-provider');
-const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
+const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { fetchModels } = require('~/server/services/ModelService');
 const getLogStores = require('~/cache/getLogStores');
@@ -49,16 +50,27 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   let userValues = null;
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
     checkUserKeyExpiry(expiresAt, endpoint);
-    userValues = await getUserKey({ userId: req.user.id, name: endpoint });
-    try {
-      userValues = JSON.parse(userValues);
-    } catch (e) {
-      throw new Error(`Invalid JSON provided for ${endpoint} user values.`);
-    }
+    userValues = await getUserKeyValues({ userId: req.user.id, name: endpoint });
   }
 
   let apiKey = userProvidesKey ? userValues?.apiKey : CUSTOM_API_KEY;
   let baseURL = userProvidesURL ? userValues?.baseURL : CUSTOM_BASE_URL;
+
+  if (userProvidesKey & !apiKey) {
+    throw new Error(
+      JSON.stringify({
+        type: ErrorTypes.NO_USER_KEY,
+      }),
+    );
+  }
+
+  if (userProvidesURL && !baseURL) {
+    throw new Error(
+      JSON.stringify({
+        type: ErrorTypes.NO_BASE_URL,
+      }),
+    );
+  }
 
   if (!apiKey) {
     throw new Error(`${endpoint} API key not provided.`);

@@ -8,8 +8,12 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   const isUserProvided = ANTHROPIC_API_KEY === 'user_provided';
 
   const anthropicApiKey = isUserProvided
-    ? await getAnthropicUserKey(req.user.id)
+    ? await getUserKey({ userId: req.user.id, name: EModelEndpoint.anthropic })
     : ANTHROPIC_API_KEY;
+
+  if (!anthropicApiKey) {
+    throw new Error('Anthropic API key not provided. Please provide it again.');
+  }
 
   if (expiresAt && isUserProvided) {
     checkUserKeyExpiry(expiresAt, EModelEndpoint.anthropic);
@@ -27,10 +31,6 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     client,
     anthropicApiKey,
   };
-};
-
-const getAnthropicUserKey = async (userId) => {
-  return await getUserKey({ userId, name: 'anthropic' });
 };
 
 module.exports = initializeClient;
