@@ -12,6 +12,7 @@ const Registration: React.FC = () => {
   const navigate = useNavigate();
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
 
   const {
     register,
@@ -28,7 +29,7 @@ const Registration: React.FC = () => {
   const onRegisterUserFormSubmit = async (data: TRegisterUser) => {
     try {
       await registerUser.mutateAsync(data);
-      navigate('/c/new');
+      setRegistrationSuccess(true);
     } catch (error) {
       setError(true);
       //@ts-ignore - error is of type unknown
@@ -199,6 +200,14 @@ const Registration: React.FC = () => {
         >
           {localize('com_auth_create_account')}
         </h1>
+        {registrationSuccess && (
+          <div
+            className="rounded-md border border-green-500 bg-green-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
+            role="alert"
+          >
+            {localize('com_auth_registration_success')}
+          </div>
+        )}
         {error && (
           <div
             className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"

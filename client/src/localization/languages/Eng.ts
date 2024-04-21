@@ -536,4 +536,6 @@ export default {
   com_terms_contact_title: '10. Contact Information',
   com_terms_contact_text:
     'For any questions or concerns regarding these terms, please contact us at hello@gptchina.io.',
+  com_auth_registration_success:
+    'Registration successful. Please check your email to verify your email address.',
 };
