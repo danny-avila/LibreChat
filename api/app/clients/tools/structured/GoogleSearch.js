@@ -5,6 +5,7 @@ const { getEnvironmentVariable } = require('@langchain/core/utils/env');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const { Readability } = require('@mozilla/readability');
 const { logger } = require('~/config');
+const { ProxyAgent } = require('proxy-agent');
 
 class GoogleSearchResults extends Tool {
   static lc_name() {
@@ -35,6 +36,10 @@ class GoogleSearchResults extends Tool {
         .describe('The maximum number of search results to return. Defaults to 10.'),
       // Note: Google API has its own parameters for search customization, adjust as needed.
     });
+
+    // this will get proxy configuration from the standard environment variables
+    // https://github.com/TooTallNate/proxy-agents/tree/main/packages/proxy-agent
+    this.agent = new ProxyAgent();
   }
 
   async handleItem(item) {
@@ -49,7 +54,7 @@ class GoogleSearchResults extends Tool {
     // use axios to fetch page into DOM
     let resp;
     try {
-      resp = await axios.get(item.link);
+      resp = await axios.get(item.link, { httpAgent: this.agent, httpsAgent: this.agent });
     } catch (error) {
       // handle exception here, else none of the other page fetch data will successfully return
       logger.error(`Error fetching page ${item.link}: ${error} - ${error.response.data}`);
