@@ -1,8 +1,9 @@
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path, { resolve } from 'path';
 import type { Plugin } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -27,7 +28,52 @@ export default defineConfig({
   // All other env variables are filtered out
   envDir: '../',
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
-  plugins: [react(), nodePolyfills(), sourcemapExclude({ excludeNodeModules: true })],
+  plugins: [
+    react(),
+    nodePolyfills(),
+    VitePWA({
+      injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
+      registerType: 'prompt', // 'prompt' | 'auto' | 'disabled'
+      devOptions: {
+        enabled: false, // enable/disable registering SW in development mode
+      },
+      workbox: {
+        globPatterns: ['assets/**/*.{png,jpg,svg,ico}', '**/*.{js,css,html,ico,woff2}'],
+      },
+      manifest: {
+        name: 'LibreChat',
+        short_name: 'LibreChat',
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#000000',
+        theme_color: '#009688',
+        icons: [
+          {
+            src: '/assets/favicon-32x32.png',
+            sizes: '32x32',
+            type: 'image/png',
+          },
+          {
+            src: '/assets/favicon-16x16.png',
+            sizes: '16x16',
+            type: 'image/png',
+          },
+          {
+            src: '/assets/apple-touch-icon-180x180.png',
+            sizes: '180x180',
+            type: 'image/png',
+          },
+          {
+            src: '/assets/maskable-icon.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
+    }),
+    sourcemapExclude({ excludeNodeModules: true }),
+  ],
   publicDir: './public',
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
@@ -36,6 +82,15 @@ export default defineConfig({
       // external: ['uuid'],
       output: {
         manualChunks: (id) => {
+          if (id.includes('node_modules/highlight.js')) {
+            return 'markdown_highlight';
+          }
+          if (id.includes('node_modules/hast-util-raw')) {
+            return 'markdown_large';
+          }
+          if (id.includes('node_modules/katex')) {
+            return 'markdown_large';
+          }
           if (id.includes('node_modules')) {
             return 'vendor';
           }
@@ -78,17 +133,6 @@ export function sourcemapExclude(opts?: SourcemapExclude): Plugin {
           map: { mappings: '' },
         };
       }
-    },
-  };
-}
-
-function htmlPlugin(env: ReturnType<typeof loadEnv>) {
-  return {
-    name: 'html-transform',
-    transformIndexHtml: {
-      enforce: 'pre' as const,
-      transform: (html: string): string =>
-        html.replace(/%(.*?)%/g, (match, p1) => env[p1] ?? match),
     },
   };
 }
