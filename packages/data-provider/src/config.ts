@@ -516,6 +516,32 @@ export enum ViolationTypes {
 }
 
 /**
+ * Enum for error message types that are not "violations" as above, used to identify client-facing errors.
+ */
+export enum ErrorTypes {
+  /**
+   * No User-provided Key.
+   */
+  NO_USER_KEY = 'no_user_key',
+  /**
+   * Expired User-provided Key.
+   */
+  EXPIRED_USER_KEY = 'expired_user_key',
+  /**
+   * Invalid User-provided Key.
+   */
+  INVALID_USER_KEY = 'invalid_user_key',
+  /**
+   * No Base URL Provided.
+   */
+  NO_BASE_URL = 'no_base_url',
+  /**
+   * Moderation error
+   */
+  MODERATION = 'moderation',
+}
+
+/**
  * Enum for authentication keys.
  */
 export enum AuthKeys {

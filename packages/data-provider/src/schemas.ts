@@ -111,8 +111,8 @@ export const googleSettings = {
     max: 2048,
     step: 1,
     default: 1024,
-    maxGeminiPro: 8192,
-    defaultGeminiPro: 8192,
+    maxGemini: 8192,
+    defaultGemini: 8192,
   },
   temperature: {
     min: 0,
@@ -374,13 +374,13 @@ export const googleSchema = tConversationSchema
     topK: true,
   })
   .transform((obj) => {
-    const isGeminiPro = obj?.model?.toLowerCase()?.includes('gemini-pro');
+    const isGemini = obj?.model?.toLowerCase()?.includes('gemini');
 
-    const maxOutputTokensMax = isGeminiPro
-      ? google.maxOutputTokens.maxGeminiPro
+    const maxOutputTokensMax = isGemini
+      ? google.maxOutputTokens.maxGemini
       : google.maxOutputTokens.max;
-    const maxOutputTokensDefault = isGeminiPro
-      ? google.maxOutputTokens.defaultGeminiPro
+    const maxOutputTokensDefault = isGemini
+      ? google.maxOutputTokens.defaultGemini
       : google.maxOutputTokens.default;
 
     let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;

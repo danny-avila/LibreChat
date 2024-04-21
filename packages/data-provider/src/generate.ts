@@ -437,13 +437,13 @@ export const generateGoogleSchema = (customGoogle: GoogleSettings) => {
       topK: true,
     })
     .transform((obj) => {
-      const isGeminiPro = obj?.model?.toLowerCase()?.includes('gemini-pro');
+      const isGemini = obj?.model?.toLowerCase()?.includes('gemini');
 
-      const maxOutputTokensMax = isGeminiPro
-        ? defaults.maxOutputTokens.maxGeminiPro
+      const maxOutputTokensMax = isGemini
+        ? defaults.maxOutputTokens.maxGemini
         : defaults.maxOutputTokens.max;
-      const maxOutputTokensDefault = isGeminiPro
-        ? defaults.maxOutputTokens.defaultGeminiPro
+      const maxOutputTokensDefault = isGemini
+        ? defaults.maxOutputTokens.defaultGemini
         : defaults.maxOutputTokens.default;
 
       let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;
