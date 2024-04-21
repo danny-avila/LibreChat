@@ -15,7 +15,7 @@ const tokenValues = {
   'gpt-3.5-turbo-1106': { prompt: 0.5, completion: 0.75 },
   'gpt-4-1106': { prompt: 3, completion: 8 },
   'gpt-3.5-turbo-0125': { prompt: 0.3, completion: 0.5 },
-  'claude-3-opus': { prompt: 4.5, completion: 20 },
+  'claude-3-opus': { prompt: 8, completion: 20 },
   'claude-3-sonnet': { prompt: 0.6, completion: 3.75 },
   'claude-3-haiku': { prompt: 0.15, completion: 0.75 },
   'claude-2.1': { prompt: 8, completion: 24 },
