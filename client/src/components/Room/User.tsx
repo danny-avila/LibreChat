@@ -20,13 +20,13 @@ export default function User({
 
   if (!activeConvo) {
     aProps.className =
-      'group relative grow overflow-hidden whitespace-nowrap rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 py-2 px-2';
+      'group relative grow overflow-hidden whitespace-nowrap rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 dark:text-white py-2 px-2';
   }
 
   return (
     <a data-testid="convo-item" {...aProps}>
       <img
-        src={user.avatar || avatarSrc}
+        src={user && user.avatar ? user.avatar : avatarSrc}
         alt={user.name}
         className="h-6 w-6 flex-shrink-0 rounded-full"
       />

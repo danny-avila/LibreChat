@@ -64,7 +64,6 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
   const setStorage = useSetStorage();
   const queryClient = useQueryClient();
   const genTitle = useGenTitleMutation();
-  const user = useRecoilValue(store.user);
 
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
@@ -301,10 +300,12 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
       } else if (isRegenerate && responseMessage) {
         console.log('=== regenerating ===', responseMessage);
         setMessages([...messages, responseMessage]);
+        sendMessage(responseMessage, true);
       } else if (responseMessage) {
         console.log('=== final response ===', requestMessage, responseMessage);
         setMessages([...messages, requestMessage, responseMessage]);
-        sendMessage(responseMessage, true);
+        console.log('--- requestmessage', requestMessage);
+        sendMessage([requestMessage, responseMessage], true);
       }
 
       const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
@@ -532,7 +533,11 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
 
-    sendMessage({ ...message }, true);
+    const { isRegenerate } = submission;
+
+    if (!isRegenerate) {
+      sendMessage({ ...message }, true);
+    }
 
     events.onmessage = (e: MessageEvent) => {
       const data = JSON.parse(e.data);

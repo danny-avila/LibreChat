@@ -1,3 +1,4 @@
+/* eslint-disable indent */
 import TextareaAutosize from 'react-textarea-autosize';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -7,6 +8,11 @@ import Container from '~/components/Messages/Content/Container';
 import { cn, removeFocusOutlines } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
+import isBotCommand from '~/utils/isBotCommand';
+import { useChatCall } from '~/hooks/useChatCall';
+import { useChatSocket, useInitSocket } from '~/hooks/useChatSocket';
 
 const EditMessage = ({
   text,
@@ -18,6 +24,9 @@ const EditMessage = ({
   setSiblingIdx,
 }: TEditProps) => {
   const { getMessages, setMessages, conversation } = useChatContext();
+  const socket = useInitSocket();
+  useChatSocket(socket);
+  const { updateMessage: updateMessageSocket } = useChatCall(socket);
 
   const [editedText, setEditedText] = useState<string>(text ?? '');
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -27,6 +36,8 @@ const EditMessage = ({
   const endpoint = endpointType ?? _endpoint;
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
+
+  const convoType = useRecoilValue(store.convoType);
 
   useEffect(() => {
     const textArea = textAreaRef.current;
@@ -84,13 +95,15 @@ const EditMessage = ({
       messages.map((msg) =>
         msg.messageId === messageId
           ? {
-            ...msg,
-            text: editedText,
-            isEdited: true,
-          }
+              ...msg,
+              text: editedText,
+              isEdited: true,
+            }
           : msg,
       ),
     );
+
+    updateMessageSocket({ ...message, text: editedText, isEdited: true });
     enterEdit(true);
   };
 
@@ -137,15 +150,17 @@ const EditMessage = ({
         suppressContentEditableWarning={true}
       />
       <div className="mt-2 flex w-full justify-center text-center">
-        <button
-          className="btn btn-primary relative mr-2"
-          disabled={
-            isSubmitting || (endpoint === EModelEndpoint.google && !message.isCreatedByUser)
-          }
-          onClick={resubmitMessage}
-        >
-          {localize('com_ui_save_submit')}
-        </button>
+        {(convoType === 'c' || isBotCommand(message.text)) && (
+          <button
+            className="btn btn-primary relative mr-2"
+            disabled={
+              isSubmitting || (endpoint === EModelEndpoint.google && !message.isCreatedByUser)
+            }
+            onClick={resubmitMessage}
+          >
+            {localize('com_ui_save_submit')}
+          </button>
+        )}
         <button
           className="btn btn-secondary relative mr-2"
           disabled={isSubmitting}

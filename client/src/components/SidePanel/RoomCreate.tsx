@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { Checkbox, Input } from '../ui';
 import { useChatContext } from '~/Providers';
 import { useNavigate } from 'react-router-dom';
+import { useRecoilState } from 'recoil';
+import store from '~/store';
 
 interface RoomState {
   title: string;
@@ -18,6 +20,7 @@ export default function RoomCreate() {
     password: '',
   };
   const [room, setRoom] = useState<RoomState>(initialRoomState);
+  const [rooms, setRooms] = useRecoilState(store.rooms);
 
   const { conversation } = useChatContext();
 
@@ -25,6 +28,8 @@ export default function RoomCreate() {
     request
       .post('/api/rooms', { ...conversation, ...room, isRoom: true })
       .then((res) => {
+        console.log('---- new room', res);
+        setRooms([res, ...rooms]);
         navigate(`/r/${res.conversationId}`);
       })
       .catch((error) => console.error(error));
@@ -49,7 +54,7 @@ export default function RoomCreate() {
           checked={room.isPrivate}
           onCheckedChange={(e) => setRoom({ ...room, isPrivate: e as boolean })}
         />
-        <p>Private Room</p>
+        <p className="text-black dark:text-white">Private Room</p>
       </div>
       <Input
         placeholder="Password"

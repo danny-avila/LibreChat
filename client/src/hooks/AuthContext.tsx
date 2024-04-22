@@ -47,7 +47,7 @@ const AuthContextProvider = ({
       //@ts-ignore - ok for token to be undefined initially
       setTokenHeader(token);
       setIsAuthenticated(isAuthenticated);
-      if (redirect) {
+      if (redirect && user?.username !== 'guest-user') {
         navigate(redirect, { replace: true });
       }
     },
@@ -111,7 +111,8 @@ const AuthContextProvider = ({
           }
 
           if (conversationId !== 'new' && conversationId) {
-            setUserContext({ token: undefined, isAuthenticated: false, user: undefined });
+            // setUserContext({ token: undefined, isAuthenticated: false, user: undefined });
+            login({ email: 'guest-user@gmail.com', password: '123123123' });
             return;
           }
           navigate('/login');

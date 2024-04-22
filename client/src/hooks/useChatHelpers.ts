@@ -26,7 +26,7 @@ import { getEndpointField } from '~/utils';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
 import { useChatCall } from './useChatCall';
-import isBotCommand, { COMMAND } from '~/utils/isBotCommand';
+import isBotCommand from '~/utils/isBotCommand';
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId: string | undefined, socket?: Socket) {

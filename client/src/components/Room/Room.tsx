@@ -17,7 +17,7 @@ export default function Room({ room, toggleNav, retainView }) {
   const updateConvoMutation = useUpdateConversationMutation(currentRoomId ?? '');
   const { refreshConversations } = useConversations();
   const { showToast } = useToastContext();
-  const { navigateToConvo } = useNavigateToConvo();
+  const { navigateToConvo } = useNavigateToConvo('r');
 
   const { conversationId, title } = room;
   const inputRef = useRef<HTMLInputElement | null>(null);

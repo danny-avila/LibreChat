@@ -23,7 +23,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { refreshConversations } = useConversations();
-  const { navigateToConvo } = useNavigateToConvo();
+  const { navigateToConvo } = useNavigateToConvo('c');
   const { showToast } = useToastContext();
 
   const { conversationId, title } = conversation;

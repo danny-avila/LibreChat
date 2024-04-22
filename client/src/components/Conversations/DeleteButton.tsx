@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
@@ -7,6 +7,8 @@ import { useDeleteConversationMutation } from '~/data-provider';
 import { Dialog, DialogTrigger, Label } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { TrashIcon, CrossIcon } from '~/components/svg';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import store from '~/store';
 
 export default function DeleteButton({ conversationId, renaming, retainView, title }) {
   const localize = useLocalize();
@@ -15,6 +17,9 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
   const { refreshConversations } = useConversations();
   const { conversationId: currentConvoId } = useParams();
   const deleteConvoMutation = useDeleteConversationMutation();
+  const convoType = useRecoilValue(store.convoType);
+  const [rooms, setRooms] = useRecoilState(store.rooms);
+  const navigate = useNavigate();
 
   const confirmDelete = () => {
     const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
@@ -24,12 +29,22 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
       { conversationId, thread_id, source: 'button' },
       {
         onSuccess: () => {
-          if (currentConvoId === conversationId) {
-            newConversation();
-          }
+          if (convoType === 'r') {
+            const updatedRooms = rooms;
+            const index = rooms.map((i) => i.conversationId).indexOf(conversationId);
+            console.log(updatedRooms, conversationId, index);
+            updatedRooms.splice(index, 1);
+            console.log(updatedRooms);
+            setRooms(updatedRooms);
+            navigate('/c/new');
+          } else {
+            if (currentConvoId === conversationId) {
+              newConversation();
+            }
 
-          refreshConversations();
-          retainView();
+            refreshConversations();
+            retainView();
+          }
         },
       },
     );

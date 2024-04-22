@@ -1,6 +1,6 @@
 import { isPast } from 'date-fns';
 import isEmpty from 'is-empty';
-import { TConversation, TUser } from 'librechat-data-provider';
+import { TConversation, TMessage, TUser } from 'librechat-data-provider';
 
 export const isPremiumUser = (user: TUser) => {
   return (
@@ -26,4 +26,11 @@ export const isYou = (user: TUser, conversation: TConversation) => {
   }
 
   return isValid;
+};
+
+export const isMessageOwner = (user: TUser, message: TMessage) => {
+  if (message.user?._id === user.id) {
+    return true;
+  }
+  return false;
 };

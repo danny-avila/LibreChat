@@ -29,7 +29,7 @@ import Rooms from '../Room/Rooms';
 const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
-  const convoType = useRecoilValue(store.convoType);
+  const [convoType, setConvoType] = useState('c');
 
   const [navWidth, setNavWidth] = useState('260px');
   const [isHovering, setIsHovering] = useState(false);
@@ -156,7 +156,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       onMouseLeave={() => setIsHovering(false)}
                       ref={containerRef}
                     >
-                      <CategorySwitch />
+                      <CategorySwitch convoType={convoType} setConvoType={setConvoType} />
                       {convoType === 'c' ? (
                         <>
                           <NewChat

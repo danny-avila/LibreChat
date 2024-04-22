@@ -24,7 +24,8 @@ const setupWebSocket = (server) => {
     // Handle client disconnection
     socket.on('disconnect', () => disconnectClient(socket));
 
-    socket.on('message', (data) => sendMessage(socket, data.message, data.roomId, data.bot));
+    socket.on('new message', (data) => sendMessage(socket, data.message, data.roomId, data.bot));
+    socket.on('udpate message', (data) => updateMessage(socket, data.message, data.roomId));
 
     socket.on('move room', (data) => moveRoom(socket.id, data.roomId));
   });
@@ -61,7 +62,7 @@ const addConnection = (socket, userId, roomId) => {
 const sendMessage = async (socket, msg, roomId, isBot = false) => {
   try {
     let message = msg;
-    if (!(isBot && message.isCreatedByUser)) {
+    if (!isBot) {
       message = await getMessageById(message.messageId);
     }
 
@@ -69,10 +70,56 @@ const sendMessage = async (socket, msg, roomId, isBot = false) => {
       clients
         .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
         .forEach((client) => {
-          client.socket.emit('new message', {
-            roomId,
-            message,
-          });
+          if (Array.isArray(message)) {
+            console.log('--- array message ---', message);
+            message.forEach((m, i) => {
+              client.socket.emit('new message', {
+                roomId,
+                message: m,
+                replace: i === 0 ? true : false,
+              });
+            });
+          } else {
+            client.socket.emit('new message', {
+              roomId,
+              message,
+            });
+          }
+        });
+    }
+  } catch (error) {
+    throw new Error('[sendMessage] Error in Send Message');
+  }
+};
+
+/**
+ * @param {Socket} socket
+ * @param {string} messageId
+ * @param {string} roomId
+ */
+const updateMessage = async (socket, msg, roomId) => {
+  try {
+    const message = await getMessageById(msg.messageId);
+
+    if (message) {
+      clients
+        .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
+        .forEach((client) => {
+          if (Array.isArray(message)) {
+            console.log('--- array message ---', message);
+            message.forEach((m, i) => {
+              client.socket.emit('update message', {
+                roomId,
+                message: m,
+                replace: i === 0 ? true : false,
+              });
+            });
+          } else {
+            client.socket.emit('update message', {
+              roomId,
+              message,
+            });
+          }
         });
     }
   } catch (error) {

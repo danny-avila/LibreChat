@@ -48,14 +48,30 @@ export default function Message(props: TMessageProps) {
     userAvatar = '';
   if (isCreatedByUser && convoType === 'c') {
     messageLabel = UsernameDisplay ? user?.name : localize('com_user_message');
-  } else {
+  } else if (convoType === 'c') {
     messageLabel = message.sender;
   }
 
   if (convoType === 'r' && isCreatedByUser) {
     if (message.user) {
-      messageLabel = message.user.name;
-      userAvatar = message.user.avatar;
+      if (typeof message.user === 'string') {
+        let messageOwner;
+        if (conversation && conversation.user && conversation.users) {
+          if (conversation?.user._id === message.user) {
+            messageOwner = conversation.user;
+          }
+          if (conversation.users.map((i) => i._id).indexOf(message.user) > -1) {
+            messageOwner = conversation?.users.filter((i) => i._id === message.user)[0];
+          }
+          if (messageOwner) {
+            messageLabel = messageOwner.name;
+            userAvatar = messageOwner.avatar;
+          }
+        }
+      } else {
+        messageLabel = message.user.name;
+        userAvatar = message.user.avatar;
+      }
     } else {
       messageLabel = user?.name as string;
       userAvatar = user?.avatar as string;

@@ -37,14 +37,27 @@ export const useChatSocket = (socket?: Socket) => {
     socket?.on('new message', (data) => {
       if (conversationId === data.roomId) {
         const currentMessages: TMessage[] | null = getMessages() ?? [];
-        console.log('=== receiving event ===', currentMessages, data.message);
+        if (data.replace) {
+          currentMessages.pop();
+        }
         setMessages([...currentMessages, data.message]);
         setLatestMessage(data.message);
       }
     });
 
+    socket?.on('update message', (data) => {
+      if (conversationId === data.roomId) {
+        const currentMessages: TMessage[] | null = getMessages() ?? [];
+        const index = currentMessages.map((i) => i.messageId).indexOf(data.messageId);
+        currentMessages[index] = data.message;
+        console.log(currentMessages);
+        setMessages(currentMessages);
+      }
+    });
+
     return () => {
       socket?.off('new message');
+      socket?.off('update message');
     };
   }, [socket, setLatestMessage, setMessages, getMessages, conversationId]);
 

@@ -7,11 +7,12 @@ import store from '~/store';
 
 export const useChatCall = (socket?: Socket) => {
   const user = useRecoilValue(store.user);
+  const convoType = useRecoilValue(store.convoType);
   const { conversationId } = useParams();
 
   const sendMessage = useCallback(
-    async (message: TMessage, bot?: boolean) => {
-      if (!socket) {
+    async (message: TMessage | TMessage[], bot?: boolean) => {
+      if (!socket || convoType !== 'r') {
         return null;
       }
 
@@ -19,15 +20,31 @@ export const useChatCall = (socket?: Socket) => {
         await request.post(`/api/rooms/${conversationId}`, message);
       }
 
-      socket?.emit('message', {
+      socket.emit('new message', {
         userId: user?.id,
         roomId: conversationId,
         message: message,
         bot,
       });
     },
-    [socket, user, conversationId],
+    [socket, user, conversationId, convoType],
   );
 
-  return { socket, sendMessage };
+  const updateMessage = useCallback(
+    async (message: TMessage | TMessage[]) => {
+      console.log(socket, convoType);
+      if (!socket || convoType !== 'r') {
+        return null;
+      }
+
+      socket.emit('update message', {
+        userId: user?.id,
+        roomId: conversationId,
+        message: message,
+      });
+    },
+    [socket, user, conversationId, convoType],
+  );
+
+  return { socket, sendMessage, updateMessage };
 };

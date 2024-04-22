@@ -8,6 +8,7 @@ import { cn } from '~/utils';
 import { DownloadIcon } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
+import { isMessageOwner } from '~/utils/checkUserValid';
 
 type THoverButtons = {
   isEditing: boolean;
@@ -43,7 +44,6 @@ export default function HoverButtons({
   const localize = useLocalize();
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
   const user = useRecoilValue(store.user);
-  const convoType = useRecoilValue(store.convoType);
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
   const { hideEditButton, regenerateEnabled, continueSupported } = useGenerationsByLatest({
@@ -71,7 +71,7 @@ export default function HoverButtons({
       {endpoint !== EModelEndpoint.assistants &&
         endpoint !== EModelEndpoint.sdImage &&
         user &&
-        convoType !== 'r' && (
+        isMessageOwner(user, message) && (
           <button
             className={cn(
               'hover-button rounded-md p-1 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
@@ -107,7 +107,7 @@ export default function HoverButtons({
         </button>
       )}
 
-      {regenerateEnabled && user && convoType !== 'r' ? (
+      {regenerateEnabled && user && isMessageOwner(user, message) ? (
         <button
           className={cn(
             'hover-button active rounded-md p-1 text-gray-400 hover:text-gray-900 dark:text-gray-400/70 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible md:group-[.final-completion]:visible',
@@ -133,7 +133,7 @@ export default function HoverButtons({
           <DownloadIcon className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
-      {continueSupported && user && convoType !== 'r' ? (
+      {continueSupported && user ? (
         <button
           className={cn(
             'hover-button active rounded-md p-1 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',

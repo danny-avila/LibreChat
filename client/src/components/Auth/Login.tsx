@@ -10,17 +10,17 @@ import { ThemeContext, useLocalize } from '~/hooks';
 import LoginForm from './LoginForm';
 
 function Login() {
-  const { login, error, isAuthenticated } = useAuthContext();
+  const { login, error, isAuthenticated, user } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
   const navigate = useNavigate();
   const { theme } = useContext(ThemeContext);
-
+  console.log(user?.username);
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && user?.username !== 'guest-user') {
       navigate('/c/new', { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, user?.username]);
 
   if (!startupConfig) {
     return null;

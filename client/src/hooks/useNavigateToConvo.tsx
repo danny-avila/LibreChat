@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
+import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
@@ -8,8 +8,8 @@ import useSetStorage from './useSetStorage';
 import store from '~/store';
 import { useNavigate } from 'react-router-dom';
 
-const useNavigateToConvo = (index = 0) => {
-  const convoType = useRecoilValue(store.convoType);
+const useNavigateToConvo = (convoType = 'c') => {
+  const index = 0;
   const setStorage = useSetStorage();
   const queryClient = useQueryClient();
   const navigate = useNavigate();

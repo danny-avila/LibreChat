@@ -69,10 +69,10 @@ const EditMessage = ({
       messages.map((msg) =>
         msg.messageId === messageId
           ? {
-            ...msg,
-            text,
-            isEdited: true,
-          }
+              ...msg,
+              text,
+              isEdited: true,
+            }
           : msg,
       ),
     );

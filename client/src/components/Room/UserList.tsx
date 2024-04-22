@@ -31,8 +31,6 @@ function UserList({
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
   const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
-  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
-  const { data: keyExpiry = { expiresAt: undefined } } = useUserKeyQuery(EModelEndpoint.assistants);
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
   const panelRef = useRef<ImperativePanelHandle>(null);
@@ -78,10 +76,6 @@ function UserList({
       panelRef.current?.expand();
     }
   };
-
-  const assistants = endpointsConfig?.[EModelEndpoint.assistants];
-  const userProvidesKey = !!assistants?.userProvide;
-  const keyProvided = userProvidesKey ? !!keyExpiry?.expiresAt : true;
 
   return (
     <>

@@ -46,7 +46,10 @@ const getRoomsByUser = async (userId) => {
  */
 const getRoom = async (user, roomId) => {
   try {
-    return await Conversation.findOne({ user, roomId, isRoom: true }).lean();
+    return await Conversation.findOne({ user, roomId, isRoom: true })
+      .populate('user')
+      .populate('users')
+      .lean();
   } catch (error) {
     logger.error('[getRoom] Error getting single room', error);
     return { message: 'Error getting single room' };
@@ -91,8 +94,25 @@ const createRoom = async (name, isPrivate, password, user) => {
  * @param {string} userId
  * @returns ConvoSchema
  */
-const addUserToRoom = async (conversationId, userId) => {
+const addUserToRoom = async (conversationId, userId, password) => {
   try {
+    const room = await Conversation.findOne({ conversationId });
+    let isPasswordCorrect = false;
+    if (room.isPrivate && room.password && password) {
+      isPasswordCorrect = await new Promise((resolve, reject) => {
+        bcrypt.compare(password, room.password, (err, isMatch) => {
+          console.log('hashing', isMatch);
+          if (err) {
+            reject('error in bcrypt hash');
+          }
+          resolve(isMatch);
+        });
+      });
+    }
+
+    if (!isPasswordCorrect) {
+      return { error: 'Password is incorrect' };
+    }
     await Conversation.findOneAndUpdate({ conversationId }, { $addToSet: { users: userId } });
     const result = await Conversation.findOne({ conversationId })
       .populate('users')

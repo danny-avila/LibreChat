@@ -1,5 +1,6 @@
-import { memo } from 'react';
-import { useRecoilValue } from 'recoil';
+/* eslint-disable indent */
+import { memo, useEffect } from 'react';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useGetMessagesByConvoId } from 'librechat-data-provider/react-query';
 import { ChatContext, useFileMapContext } from '~/Providers';
@@ -17,12 +18,14 @@ import { useChatSocket, useInitSocket } from '~/hooks/useChatSocket';
 import useRoomUsers from '~/hooks/useRoomUsers';
 import ContinueChat from './ContinueChat';
 import { isYou } from '~/utils/checkUserValid';
+import { TConversation, TUser } from 'librechat-data-provider';
 
 function ChatView({ index = 0 }: { index?: number }) {
   const { conversationId } = useParams();
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
   const user = useRecoilValue(store.user);
   const convoType = useRecoilValue(store.convoType);
+  const [hideSidePanel, setHideSidePanel] = useRecoilState(store.hideSidePanel);
 
   const socket = useInitSocket();
   useChatSocket(socket);
@@ -42,10 +45,29 @@ function ChatView({ index = 0 }: { index?: number }) {
   const { conversation, setConversation } = chatHelpers;
   useRoomUsers(conversationId, socket);
 
+  useEffect(() => {
+    if (
+      convoType === 'r' &&
+      !isYou(user as TUser, conversation as TConversation) &&
+      conversation?.isPrivate
+    ) {
+      setHideSidePanel(true);
+    } else {
+      setHideSidePanel(false);
+    }
+  }, [convoType, setHideSidePanel, user, conversation]);
+
   return (
     <ChatContext.Provider value={chatHelpers}>
       <Presentation useSidePanel={true}>
-        {isLoading && conversationId !== 'new' ? (
+        {convoType === 'r' &&
+        !isYou(user as TUser, conversation as TConversation) &&
+        conversation?.isPrivate ? (
+          <div className="flex h-screen flex-col items-center justify-center text-2xl font-bold text-black dark:text-white">
+            <p className="mb-3 text-4xl">{conversation.title}</p>
+            <p className="text-sm font-thin">This is private channel.</p>
+          </div>
+        ) : isLoading && conversationId !== 'new' ? (
           <div className="flex h-screen items-center justify-center">
             <Spinner className="opacity-0" />
           </div>
