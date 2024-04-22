@@ -42,7 +42,7 @@ function Login() {
           value: '#0d47a1',
         },
       },
-      fpsLimit: 120,
+      fpsLimit: 30,
       interactivity: {
         events: {
           onClick: {
@@ -75,11 +75,11 @@ function Login() {
           density: {
             enable: true,
           },
-          value: 150,
+          value: 100,
         },
-        opacity: {
-          value: 0.5,
-        },
+        // opacity: {
+        //   value: 0.5,
+        // },
         shape: {
           type: 'line',
         },
@@ -94,7 +94,7 @@ function Login() {
           straight: false,
         },
       },
-      detectRetina: true,
+      detectRetina: false,
     }),
     [],
   );
