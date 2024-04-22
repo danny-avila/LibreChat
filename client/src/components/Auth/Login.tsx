@@ -12,6 +12,7 @@ import LoginForm from './LoginForm';
 import Particles, { initParticlesEngine } from '@tsparticles/react';
 import { type Container, type ISourceOptions, MoveDirection, OutMode } from '@tsparticles/engine';
 import { loadSlim } from '@tsparticles/slim';
+import { TypeAnimation } from 'react-type-animation';
 
 const apiUrl = process.env.REACT_APP_API_URL;
 
@@ -280,8 +281,15 @@ function Login() {
           className="absolute inset-0"
         />
         <div className="z-10 text-left">
-          <h1 className="mb-4 text-4xl font-bold text-white">Welcome to Novlisky</h1>
-          <h2 className="mb-2 text-2xl font-semibold text-white">AI-Powered Conversations</h2>
+          <div className="z-10 text-left">
+            <TypeAnimation
+              sequence={['Welcome to Novlisky']}
+              wrapper="h1"
+              cursor={true}
+              repeat={Infinity}
+              className="mb-4 text-5xl font-bold text-white"
+            />
+          </div>
           <p className="mb-4 text-lg text-white">
             Unleash the power of advanced language models like Anthropic, Mistral, GPT-3, and GPT-4
             with Novliskys cutting-edge AI chat platform. Experience seamless, intelligent
