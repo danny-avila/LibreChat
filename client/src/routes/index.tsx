@@ -11,6 +11,7 @@ import {
 } from '~/components/Auth';
 import TermsOfService from '~/components/TermsOfService/TermsOfService';
 import PrivacyPolicy from '~/components/PrivacyPolicy/PrivacyPolicy';
+import Intro from '~/components/Landing/Intro';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 
 const AuthLayout = () => (
@@ -36,6 +37,10 @@ export const router = createBrowserRouter([
   {
     path: 'verify',
     element: <VerifyEmail />,
+  },
+  {
+    path: 'login1',
+    element: <Intro />,
   },
   {
     element: <AuthLayout />,
