@@ -127,8 +127,24 @@ export const codeInterpreterMimeTypes = [
   imageMimeTypes,
 ];
 
+export const codeTypeMapping: { [key: string]: string } = {
+  c: 'text/x-c',
+  cs: 'text/x-csharp',
+  cpp: 'text/x-c++',
+  md: 'text/markdown',
+  php: 'text/x-php',
+  py: 'text/x-python',
+  rb: 'text/x-ruby',
+  tex: 'text/x-tex',
+  js: 'text/javascript',
+  sh: 'application/x-sh',
+  ts: 'application/typescript',
+  tar: 'application/x-tar',
+  zip: 'application/zip',
+};
+
 export const retrievalMimeTypes = [
-  /^(text\/(x-c|x-c\+\+|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain))$/,
+  /^(text\/(x-c|x-c\+\+|html|x-java|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|xml))$/,
   /^(application\/(json|pdf|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)))$/,
 ];
 
