@@ -9,7 +9,7 @@
   ],
   "overrides": {
     "vite": {
-      "rollup": "4.13.2"
+      "rollup": "4.15.0"
     }
   },
   "scripts": {
