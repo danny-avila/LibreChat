@@ -10,7 +10,9 @@ const uuid = require('uuid');
  */
 const getRooms = async (name) => {
   try {
-    const rooms = await Conversation.find({ name: RegExp(name, 'i'), isRoom: true });
+    const rooms = await Conversation.find({ name: RegExp(name, 'i'), isRoom: true })
+      .populate('user')
+      .populate('users');
     return rooms;
   } catch (error) {
     logger.error('[getRooms] Error getting entire rooms', error);
@@ -25,7 +27,9 @@ const getRooms = async (name) => {
  */
 const getRoomsByUser = async (userId) => {
   try {
-    const owned = await Conversation.find({ user: userId, isRoom: true });
+    const owned = await Conversation.find({ user: userId, isRoom: true })
+      .populate('user')
+      .populate('users');
     const joined = await Conversation.find({
       users: { $elemMatch: { $eq: userId } },
       isRoom: true,
@@ -41,12 +45,12 @@ const getRoomsByUser = async (userId) => {
 /**
  *
  * @param {string} user
- * @param {string} roomId
+ * @param {string} conversationId
  * @returns Room
  */
-const getRoom = async (user, roomId) => {
+const getRoom = async (user, conversationId) => {
   try {
-    return await Conversation.findOne({ user, roomId, isRoom: true })
+    return await Conversation.findOne({ user, conversationId, isRoom: true })
       .populate('user')
       .populate('users')
       .lean();

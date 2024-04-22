@@ -7,7 +7,9 @@ import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from '../Conversations/DeleteButton';
 import RenameButton from '../Conversations/RenameButton';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, request } from 'librechat-data-provider';
+import { useRecoilState } from 'recoil';
+import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
@@ -15,9 +17,9 @@ export default function Room({ room, toggleNav, retainView }) {
   const params = useParams();
   const currentRoomId = useMemo(() => params.conversationId, [params.conversationId]);
   const updateConvoMutation = useUpdateConversationMutation(currentRoomId ?? '');
-  const { refreshConversations } = useConversations();
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo('r');
+  const [rooms, setRooms] = useRecoilState(store.rooms);
 
   const { conversationId, title } = room;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -72,20 +74,29 @@ export default function Room({ room, toggleNav, retainView }) {
     if (titleInput === title) {
       return;
     }
-    updateConvoMutation.mutate(
-      { conversationId: conversationId, title: titleInput },
-      {
-        onSuccess: () => refreshConversations(),
-        onError: () => {
-          setTitleInput(title);
-          showToast({
-            message: 'Failed to rename conversation',
-            severity: NotificationSeverity.ERROR,
-            showIcon: true,
-          });
+
+    request
+      .post(`/api/convos/${conversationId}`, {
+        arg: {
+          conversationId,
+          title: titleInput,
         },
-      },
-    );
+      })
+      .then((res) => {
+        const updatedRooms = rooms;
+        const index = updatedRooms.map((i) => i.conversationId).indexOf(conversationId);
+        updatedRooms[index].title = titleInput;
+        setRooms(updatedRooms);
+        console.log(res);
+      })
+      .catch((err) => {
+        setTitleInput(title);
+        showToast({
+          message: 'Failed to rename conversation',
+          severity: NotificationSeverity.ERROR,
+          showIcon: true,
+        });
+      });
   };
 
   // const icon = MinimalIcon({

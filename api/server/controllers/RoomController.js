@@ -11,7 +11,6 @@ const createNewRoom = async (req, res) => {
   const newConversationId = uuidV4();
   let password = '';
   if (body.password && body.isPrivate) {
-    console.log('--- lock password ---', body.password);
     password = await new Promise((resolve, reject) => {
       bcrypt.hash(body.password, 10, function (err, hash) {
         if (err) {
@@ -23,7 +22,7 @@ const createNewRoom = async (req, res) => {
     });
   }
   try {
-    await saveConvo(req.user._id, {
+    const newConvo = await saveConvo(req.user._id, {
       conversationId: body.conversationId,
       newConversationId,
       ...body,
@@ -31,7 +30,8 @@ const createNewRoom = async (req, res) => {
       createdAt,
     });
 
-    const result = await getRoom(req.user._id, newConversationId);
+    const result = await getRoom(req.user._id, newConvo.conversationId);
+
     return res.json(result);
   } catch (error) {
     return res.status(500).json(error);

@@ -9,6 +9,7 @@ export default function User({
   user: TUser;
   isCollapsed?: boolean;
 }) {
+  console.log(user);
   const activeConvo = false;
   const avatarSrc = useAvatar(user);
 

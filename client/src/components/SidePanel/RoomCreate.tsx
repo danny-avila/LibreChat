@@ -22,7 +22,7 @@ export default function RoomCreate() {
   const [room, setRoom] = useState<RoomState>(initialRoomState);
   const [rooms, setRooms] = useRecoilState(store.rooms);
 
-  const { conversation } = useChatContext();
+  const { conversation, setConversation } = useChatContext();
 
   const handleSubmit = () => {
     request
@@ -30,6 +30,8 @@ export default function RoomCreate() {
       .then((res) => {
         console.log('---- new room', res);
         setRooms([res, ...rooms]);
+        // location.href = `/r/${res.conversationId}`;
+        setConversation(res);
         navigate(`/r/${res.conversationId}`);
       })
       .catch((error) => console.error(error));
