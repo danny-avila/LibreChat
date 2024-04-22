@@ -125,16 +125,16 @@ Some of the endpoints are marked as **Known,** which means they might have speci
     - name: "OpenRouter"
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
       # recommended environment variables:
-      # Known issue: you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
-      apiKey: "${OPENROUTER_KEY}"
+      apiKey: "${OPENROUTER_KEY}" # NOT OPENROUTER_API_KEY
+      baseURL: "https://openrouter.ai/api/v1"
       models:
-        default: ["gpt-3.5-turbo"]
+        default: ["meta-llama/llama-3-70b-instruct"]
         fetch: true
       titleConvo: true
-      titleModel: "gpt-3.5-turbo" # change to your preferred model
-      modelDisplayLabel: "OpenRouter"
+      titleModel: "meta-llama/llama-3-70b-instruct"
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ["stop"]
+      modelDisplayLabel: "OpenRouter"
 ```
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/c4a0415e-732c-46af-82a6-3598663b7f42)
