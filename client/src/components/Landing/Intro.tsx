@@ -1,107 +1,201 @@
 import React from 'react';
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
+import { useAuthContext } from '~/hooks/AuthContext';
+import { ThemeSelector } from '~/components/ui';
+import SocialButton from './SocialButton';
+import { getLoginError } from '~/utils';
+import { useLocalize } from '~/hooks';
+import LoginForm from './LoginForm';
 
-const Intro: React.FC = () => {
+const apiUrl = process.env.REACT_APP_API_URL;
+
+function Login() {
+  const { login, error, isAuthenticated } = useAuthContext();
+  const { data: startupConfig } = useGetStartupConfig();
+  const localize = useLocalize();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/c/new', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+
+  if (!startupConfig) {
+    return null;
+  }
+
+  const socialLogins = startupConfig.socialLogins ?? [];
+
+  const providerComponents = {
+    discord: (
+      <SocialButton
+        key="discord"
+        enabled={startupConfig.discordLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="discord"
+        Icon={DiscordIcon}
+        label={localize('com_auth_discord_login')}
+        id="discord"
+      />
+    ),
+    facebook: (
+      <SocialButton
+        key="facebook"
+        enabled={startupConfig.facebookLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="facebook"
+        Icon={FacebookIcon}
+        label={localize('com_auth_facebook_login')}
+        id="facebook"
+      />
+    ),
+    github: (
+      <SocialButton
+        key="github"
+        enabled={startupConfig.githubLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="github"
+        Icon={GithubIcon}
+        label={localize('com_auth_github_login')}
+        id="github"
+      />
+    ),
+    google: (
+      <SocialButton
+        key="google"
+        enabled={startupConfig.googleLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="google"
+        Icon={GoogleIcon}
+        label={localize('com_auth_google_login')}
+        id="google"
+      />
+    ),
+    openid: (
+      <SocialButton
+        key="openid"
+        enabled={startupConfig.openidLoginEnabled}
+        serverDomain={startupConfig.serverDomain}
+        oauthPath="openid"
+        Icon={() =>
+          startupConfig.openidImageUrl ? (
+            <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
+          ) : (
+            <OpenIDIcon />
+          )
+        }
+        label={startupConfig.openidLabel}
+        id="openid"
+      />
+    ),
+  };
+
+  const privacyPolicy = startupConfig.interface?.privacyPolicy;
+  const termsOfService = startupConfig.interface?.termsOfService;
+
+  const privacyPolicyRender = (
+    <a
+      className="text-xs font-medium text-green-500"
+      href={privacyPolicy?.externalUrl || 'privacy-policy'}
+      target="_blank"
+      rel="noreferrer"
+    >
+      {privacyPolicy?.externalUrl ? localize('com_ui_privacy_policy') : 'Privacy Policy'}
+    </a>
+  );
+
+  const termsOfServiceRender = (
+    <a
+      className="text-xs font-medium text-green-500"
+      href={termsOfService?.externalUrl || 'terms-of-service'}
+      target="_blank"
+      rel="noreferrer"
+    >
+      {termsOfService?.externalUrl ? localize('com_ui_terms_of_service') : 'Terms of Service'}
+    </a>
+  );
+
+  const domainLogos = {
+    'gptchina.io': 'logo-china.png',
+    'gptafrica.io': 'logo-africa.png',
+    'gptglobal.io': 'logo-global.png',
+    'gptiran.io': 'logo-iran.png',
+    'gptitaly.io': 'logo-italy.png',
+    'gptrussia.io': 'logo-russia.png',
+    'gptusa.io': 'logo-usa.png',
+    'novlisky.io': 'logo-novlisky.png',
+  };
+
+  const currentDomain = window.location.hostname;
+  const logoImageFilename = domainLogos[currentDomain] || 'logo-global.png';
+
   return (
-    <section className="gradient-form h-screen bg-neutral-200 dark:bg-gray-900">
-      <div className="flex h-full">
-        <div className="flex w-full">
-          <div className="g-0 h-full w-full lg:flex lg:flex-wrap">
-            {/* Left column container*/}
-            <div className="px-4 md:px-0 lg:w-4/12">
-              <div className="md:mx-6 md:p-12">
-                {/*Logo*/}
-                <div className="text-center">
-                  <img className="mx-auto w-52" src="/assets/logo-novlisky.png" alt="logo" />
-                  <h4 className="mb-12 mt-1 pb-1 text-xl font-semibold text-white"></h4>
-                </div>
-
-                <form>
-                  <p className="mb-4 text-white">Please login to your account</p>
-                  {/*Username input*/}
-                  <div className="relative mb-4" data-twe-input-wrapper-init>
-                    <input
-                      type="text"
-                      className="peer-focus:text-primary dark:peer-focus:text-primary peer block min-h-[auto] w-full rounded border border-gray-300 bg-transparent px-3 py-[0.32rem] leading-[1.6] outline-none transition-all duration-200 ease-linear focus:placeholder:opacity-100 data-[twe-input-state-active]:placeholder:opacity-100 motion-reduce:transition-none dark:border-neutral-600 dark:text-gray-700 dark:placeholder:text-gray-400 [&:not([data-twe-input-placeholder-active])]:placeholder:opacity-0"
-                      id="exampleFormControlInput1"
-                      placeholder="Username"
-                    />
-                    <label
-                      htmlFor="exampleFormControlInput1"
-                      className="peer-focus:text-primary dark:peer-focus:text-primary pointer-events-none absolute left-3 top-0 mb-0 max-w-[90%] origin-[0_0] truncate pt-[0.37rem] leading-[1.6] text-gray-500 transition-all duration-200 ease-out peer-focus:-translate-y-[0.9rem] peer-focus:scale-[0.8] peer-data-[twe-input-state-active]:-translate-y-[0.9rem] peer-data-[twe-input-state-active]:scale-[0.8] motion-reduce:transition-none dark:text-gray-500"
-                    >
-                      Username
-                    </label>
-                  </div>
-
-                  {/*Password input*/}
-                  <div className="relative mb-4" data-twe-input-wrapper-init>
-                    <input
-                      type="password"
-                      className="peer-focus:text-primary dark:peer-focus:text-primary peer block min-h-[auto] w-full rounded border border-gray-300 bg-transparent px-3 py-[0.32rem] leading-[1.6] outline-none transition-all duration-200 ease-linear focus:placeholder:opacity-100 data-[twe-input-state-active]:placeholder:opacity-100 motion-reduce:transition-none dark:border-neutral-600 dark:text-gray-700 dark:placeholder:text-gray-400 [&:not([data-twe-input-placeholder-active])]:placeholder:opacity-0"
-                      id="exampleFormControlInput11"
-                      placeholder="Password"
-                    />
-                    <label
-                      htmlFor="exampleFormControlInput11"
-                      className="peer-focus:text-primary dark:peer-focus:text-primary pointer-events-none absolute left-3 top-0 mb-0 max-w-[90%] origin-[0_0] truncate pt-[0.37rem] leading-[1.6] text-gray-500 transition-all duration-200 ease-out peer-focus:-translate-y-[0.9rem] peer-focus:scale-[0.8] peer-data-[twe-input-state-active]:-translate-y-[0.9rem] peer-data-[twe-input-state-active]:scale-[0.8] motion-reduce:transition-none dark:text-gray-500"
-                    >
-                      Password
-                    </label>
-                  </div>
-
-                  {/*Submit button*/}
-                  <div className="mb-12 pb-1 pt-1 text-center">
-                    <button
-                      className="mb-3 inline-block w-full rounded bg-blue-600 px-6 pb-2 pt-2.5 text-xs font-medium uppercase leading-normal text-white shadow-[0_4px_9px_-4px_#3b71ca] transition duration-150 ease-in-out hover:bg-blue-700 hover:shadow-[0_8px_9px_-4px_rgba(59,113,202,0.3),0_4px_18px_0_rgba(59,113,202,0.2)] focus:bg-blue-700 focus:shadow-[0_8px_9px_-4px_rgba(59,113,202,0.3),0_4px_18px_0_rgba(59,113,202,0.2)] focus:outline-none focus:ring-0 active:bg-blue-800 active:shadow-[0_8px_9px_-4px_rgba(59,113,202,0.3),0_4px_18px_0_rgba(59,113,202,0.2)]"
-                      type="button"
-                      data-twe-ripple-init
-                      data-twe-ripple-color="light"
-                    >
-                      Log in
-                    </button>
-
-                    {/*Forgot password link*/}
-                    <a href="#!" className="text-white">
-                      Forgot password?
-                    </a>
-                  </div>
-
-                  {/*Register button*/}
-                  <div className="flex items-center justify-between pb-6">
-                    <p className="mb-0 mr-2 text-white">Dont have an account?</p>
-                    <button
-                      type="button"
-                      className="inline-block rounded border-2 border-blue-600 px-6 pb-[6px] pt-2 text-sm font-medium uppercase leading-normal text-white transition duration-150 ease-in-out hover:border-blue-700 hover:bg-blue-50 hover:text-blue-700 focus:border-blue-700 focus:bg-blue-50 focus:text-blue-700 focus:outline-none focus:ring-0 active:border-blue-800 active:text-blue-800"
-                      data-twe-ripple-init
-                      data-twe-ripple-color="light"
-                    >
-                      Register
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-            {/* Right column container with background and description*/}
+    <section className="flex flex-col md:h-screen md:flex-row">
+      <div className="w-full bg-black p-6 dark:bg-gray-900 md:w-1/2">
+        <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
+          <img
+            src={`/assets/${logoImageFilename}`}
+            className="mx-auto mb-6 h-16 w-auto"
+            alt="Logo"
+          />
+          <h1
+            className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
+            style={{ userSelect: 'none' }}
+          >
+            {localize('com_auth_welcome_back')}
+          </h1>
+          {error && (
             <div
-              className="flex items-center justify-center rounded-b-lg lg:w-8/12 lg:rounded-e-lg lg:rounded-bl-none"
-              style={{
-                background: 'linear-gradient(to right, #1a79f1, #ee607f)',
-              }}
+              className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
+              role="alert"
             >
-              <div className="px-4 py-6 text-center text-white md:mx-6 md:p-12">
-                <h4 className="mb-6 text-xl font-semibold">We are more than just a company</h4>
-                <p className="text-sm">
-                  Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor
-                  incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud
-                  exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
-                </p>
-              </div>
+              {localize(getLoginError(error))}
             </div>
-          </div>
+          )}
+          {startupConfig.emailLoginEnabled && <LoginForm onSubmit={login} />}
+          {startupConfig.registrationEnabled && (
+            <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
+              {' '}
+              {localize('com_auth_no_account')}{' '}
+              <a href="/register" className="p-1 font-medium text-green-500">
+                {localize('com_auth_sign_up')}
+              </a>
+            </p>
+          )}
+          {startupConfig.socialLoginEnabled && (
+            <>
+              {startupConfig.emailLoginEnabled && (
+                <>
+                  <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+                    <div className="absolute bg-white px-3 text-xs text-black dark:bg-gray-900 dark:text-white">
+                      Or
+                    </div>
+                  </div>
+                  <div className="mt-8" />
+                </>
+              )}
+              <div className="mt-2">
+                {socialLogins.map((provider) => providerComponents[provider] || null)}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="flex w-full items-center justify-center bg-blue-500 dark:bg-blue-600 md:w-1/2">
+        <div className="flex justify-center gap-4 align-middle">
+          {privacyPolicyRender}
+          {privacyPolicyRender && termsOfServiceRender && (
+            <div className="border-r-[1px] border-gray-300" />
+          )}
+          {termsOfServiceRender}
         </div>
       </div>
     </section>
   );
-};
+}
 
-export default Intro;
+export default Login;
