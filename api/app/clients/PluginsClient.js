@@ -244,7 +244,7 @@ class PluginsClient extends OpenAIClient {
       this.setOptions(opts);
       return super.sendMessage(message, opts);
     }
-    logger.debug('[PluginsClient] sendMessage', { message, opts });
+    logger.debug('[PluginsClient] sendMessage', { userMessageText: message, opts });
     const {
       user,
       isEdited,

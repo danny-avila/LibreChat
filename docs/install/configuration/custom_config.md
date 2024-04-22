@@ -20,8 +20,6 @@ Future updates will streamline configuration further by migrating some settings 
 
 Stay tuned for ongoing enhancements to customize your LibreChat instance!
 
-> Note: To verify your YAML config, you can use online tools like [yamlchecker.com](https://yamlchecker.com/)
-
 **Note:** To verify your YAML config, you can use online tools like [yamlchecker.com](https://yamlchecker.com/)
 
 ## Compatible Endpoints

@@ -31,14 +31,11 @@ const ChatForm = ({ index = 0 }) => {
     defaultValues: { text: text || '' }, // 使用Recoil获取到的text状态进行初始化
   });
 
-  const { handlePaste, handleKeyUp, handleKeyDown, handleCompositionStart, handleCompositionEnd } =
-    useTextarea({
-      textAreaRef,
-      submitButtonRef,
-      disabled: !!requiresKey,
-      setValue: methods.setValue,
-      getValues: methods.getValues,
-    });
+  const { handlePaste, handleKeyDown, handleCompositionStart, handleCompositionEnd } = useTextarea({
+    textAreaRef,
+    submitButtonRef,
+    disabled: !!requiresKey,
+  });
 
   const {
     ask,
@@ -60,9 +57,9 @@ const ChatForm = ({ index = 0 }) => {
       }
       ask({ text: data.text });
       methods.reset();
-      if (textAreaRef.current) {
-        textAreaRef.current.value = '';
-      }
+      // if (textAreaRef.current) {
+      //   textAreaRef.current.value = '';
+      // }
       setText('');
     },
     [ask, methods, setText],
@@ -91,6 +88,14 @@ const ChatForm = ({ index = 0 }) => {
     [requiresKey, invalidAssistant],
   );
 
+  const { ref, ...registerProps } = methods.register('text', {
+    required: true,
+    onChange: (e) => {
+      methods.setValue('text', e.target.value);
+      setText(e.target.value); // 更新Recoil中text状态的值
+    },
+  });
+
   return (
     <form
       onSubmit={methods.handleSubmit((data) => submitMessage(data))}
@@ -112,20 +117,21 @@ const ChatForm = ({ index = 0 }) => {
             {endpoint && (
               <TextareaAutosize
                 value={text}
-                {...methods.register('text', {
-                  required: true,
-                  onChange: (e) => {
-                    methods.setValue('text', e.target.value);
-                    setText(e.target.value); // 更新Recoil中text状态的值
-                  },
-                })}
+                // {...methods.register('text', {
+                //   required: true,
+                //   onChange: (e) => {
+                //     methods.setValue('text', e.target.value);
+                //     setText(e.target.value); // 更新Recoil中text状态的值
+                //   },
+                // })}
+                {...registerProps}
                 autoFocus
                 ref={(e) => {
+                  ref(e);
                   textAreaRef.current = e;
                 }}
                 disabled={disableInputs}
                 onPaste={handlePaste}
-                onKeyUp={handleKeyUp}
                 onKeyDown={handleKeyDown}
                 onCompositionStart={handleCompositionStart}
                 onCompositionEnd={handleCompositionEnd}

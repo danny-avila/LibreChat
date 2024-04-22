@@ -1,5 +1,6 @@
 /* eslint-disable max-len */
 import { z } from 'zod';
+import type { ZodError } from 'zod';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
@@ -79,6 +80,11 @@ export type TValidatedAzureConfig = {
   modelNames: string[];
   modelGroupMap: TAzureModelGroupMap;
   groupMap: TAzureGroupMap;
+};
+
+export type TAzureConfigValidationResult = TValidatedAzureConfig & {
+  isValid: boolean;
+  errors: (ZodError | string)[];
 };
 
 export enum Capabilities {
@@ -173,7 +179,7 @@ export const azureEndpointSchema = z
   );
 
 export type TAzureConfig = Omit<z.infer<typeof azureEndpointSchema>, 'groups'> &
-  TValidatedAzureConfig;
+  TAzureConfigValidationResult;
 
 export const rateLimitSchema = z.object({
   fileUploads: z
@@ -476,6 +482,15 @@ export enum CacheKeys {
    * Key for the override config cache.
    */
   OVERRIDE_CONFIG = 'overrideConfig',
+  /**
+   * Key for the bans cache.
+   */
+  BANS = 'bans',
+  /**
+   * Key for the encoded domains cache.
+   * Used by Azure OpenAI Assistants.
+   */
+  ENCODED_DOMAINS = 'encoded_domains',
 }
 
 /**
@@ -494,6 +509,36 @@ export enum ViolationTypes {
    * Token Limit Violation.
    */
   TOKEN_BALANCE = 'token_balance',
+  /**
+   * An issued ban.
+   */
+  BAN = 'ban',
+}
+
+/**
+ * Enum for error message types that are not "violations" as above, used to identify client-facing errors.
+ */
+export enum ErrorTypes {
+  /**
+   * No User-provided Key.
+   */
+  NO_USER_KEY = 'no_user_key',
+  /**
+   * Expired User-provided Key.
+   */
+  EXPIRED_USER_KEY = 'expired_user_key',
+  /**
+   * Invalid User-provided Key.
+   */
+  INVALID_USER_KEY = 'invalid_user_key',
+  /**
+   * No Base URL Provided.
+   */
+  NO_BASE_URL = 'no_base_url',
+  /**
+   * Moderation error
+   */
+  MODERATION = 'moderation',
 }
 
 /**
@@ -574,6 +619,10 @@ export enum Constants {
    * Standard value for the first message's `parentMessageId` value, to indicate no parent exists.
    */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
+  /**
+   * Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing.
+   */
+  ENCODED_DOMAIN_LENGTH = 10,
 }
 
 /**

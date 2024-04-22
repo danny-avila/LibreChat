@@ -228,6 +228,27 @@ describe('AppService', () => {
     );
   });
 
+  it('should correctly configure minimum Azure OpenAI Assistant values', async () => {
+    const assistantGroups = [azureGroups[0], { ...azureGroups[1], assistants: true }];
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.azureOpenAI]: {
+            groups: assistantGroups,
+            assistants: true,
+          },
+        },
+      }),
+    );
+
+    process.env.WESTUS_API_KEY = 'westus-key';
+    process.env.EASTUS_API_KEY = 'eastus-key';
+
+    await AppService(app);
+    expect(app.locals).toHaveProperty(EModelEndpoint.assistants);
+    expect(app.locals[EModelEndpoint.assistants].capabilities.length).toEqual(3);
+  });
+
   it('should correctly configure Azure OpenAI endpoint based on custom config', async () => {
     require('./Config/loadCustomConfig').mockImplementationOnce(() =>
       Promise.resolve({

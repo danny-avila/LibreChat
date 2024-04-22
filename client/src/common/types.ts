@@ -21,6 +21,8 @@ export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
 export type LastSelectedModels = Record<EModelEndpoint, string>;
 
+export type LocalizeFunction = (phraseKey: string, ...values: string[]) => string;
+
 export const mainTextareaId = 'prompt-textarea';
 
 export enum IconContext {
