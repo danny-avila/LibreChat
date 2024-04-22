@@ -174,11 +174,11 @@ const useFileHandling = (params?: UseFileHandling) => {
       let originalFile = fileList[i];
       let fileType = originalFile.type;
       const extension = originalFile.name.split('.').pop() ?? '';
-      const isKnownCodeFile = codeTypeMapping[extension];
+      const knownCodeType = codeTypeMapping[extension];
 
       // Infer MIME type for Known Code files when the type is empty or a mismatch
-      if (isKnownCodeFile && (!fileType || fileType !== isKnownCodeFile)) {
-        fileType = codeTypeMapping[extension];
+      if (knownCodeType && (!fileType || fileType !== knownCodeType)) {
+        fileType = knownCodeType;
       }
 
       // Check if the file type is still empty after the extension check
