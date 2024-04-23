@@ -1,12 +1,34 @@
-import { nodePolyfills } from 'vite-plugin-node-polyfills';
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
 import path, { resolve } from 'path';
-import type { Plugin } from 'vite';
+import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { defineConfig, createLogger } from 'vite';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
+import type { Plugin } from 'vite';
+
+const logger = createLogger();
+const originalWarning = logger.warn;
+logger.warn = (msg, options) => {
+  /* Suppresses:
+   [vite:css] Complex selectors in '.group:focus-within .dark\:group-focus-within\:text-gray-300:is(.dark *)' can not be transformed to an equivalent selector without ':is()'.
+   */
+  if (msg.includes('vite:css') && msg.includes('^^^^^^^')) {
+    return;
+  }
+  /* Suppresses:
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+   */
+  if (msg.includes('Use build.rollupOptions.output.manualChunks')) {
+    return;
+  }
+  originalWarning(msg, options);
+};
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  customLogger: logger,
   server: {
     fs: {
       cachedChecks: false,
