@@ -52,6 +52,8 @@ const getValueKey = (model, endpoint) => {
     return 'gpt-3.5-turbo-1106';
   } else if (modelName.includes('gpt-3.5')) {
     return '4k';
+  } else if (modelName.includes('gpt-4-vision')) {
+    return 'gpt-4-1106';
   } else if (modelName.includes('gpt-4-1106')) {
     return 'gpt-4-1106';
   } else if (modelName.includes('gpt-4-0125')) {

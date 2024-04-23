@@ -59,6 +59,12 @@ describe('getModelMaxTokens', () => {
     expect(getModelMaxTokens('gpt-4-1106')).toBe(maxTokensMap[EModelEndpoint.openAI]['gpt-4-1106']);
   });
 
+  test('should return correct tokens for gpt-4-vision exact match', () => {
+    expect(getModelMaxTokens('gpt-4-vision')).toBe(
+      maxTokensMap[EModelEndpoint.openAI]['gpt-4-vision'],
+    );
+  });
+
   test('should return correct tokens for gpt-3.5-turbo-1106 partial match', () => {
     expect(getModelMaxTokens('something-/gpt-3.5-turbo-1106')).toBe(
       maxTokensMap[EModelEndpoint.openAI]['gpt-3.5-turbo-1106'],

@@ -1,4 +1,4 @@
-# v0.7.0
+# v0.7.1
 
 # Base node image
 FROM node:18-alpine3.18 AS node
