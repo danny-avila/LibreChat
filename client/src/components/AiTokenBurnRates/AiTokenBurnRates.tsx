@@ -1,4 +1,4 @@
-/* eslint-disable */
+/* eslint-disable react/no-unescaped-entities */
 import React from 'react';
 import { ThemeSelector } from '~/components/ui';
 import { Link } from 'react-router-dom';
