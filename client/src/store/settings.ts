@@ -232,6 +232,25 @@ const conversationMode = atom<boolean>({
   ] as const,
 });
 
+const autoSendText = atom<boolean>({
+  key: 'autoSendText',
+  default: false,
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem('autoSendText');
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem('autoSendText', newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 export default {
   abortScroll,
   showFiles,
@@ -251,4 +270,5 @@ export default {
   TextToSpeech,
   SpeechToText,
   conversationMode,
+  autoSendText,
 };
