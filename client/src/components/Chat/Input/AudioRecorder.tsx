@@ -26,15 +26,15 @@ export default function AudioRecorder({
           <button
             onClick={isListening ? handleStopRecording : handleStartRecording}
             disabled={disabled}
-            className="absolute bottom-1.5 right-12 flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-black p-0.5 transition-colors disabled:disabled:opacity-10 dark:bg-white dark:disabled:opacity-10 md:bottom-3 md:right-12"
+            className="absolute bottom-1.5 right-12 flex h-[30px] w-[30px] items-center justify-center rounded-lg p-0.5 transition-colors md:bottom-3 md:right-12"
             type="button"
           >
             {isListening ? (
-              <SpeechIcon className="stroke-white dark:stroke-black" />
+              <SpeechIcon className="stroke-gray-700 dark:stroke-gray-300" />
             ) : isLoading ? (
-              <Spinner className="stroke-white dark:stroke-black" />
+              <Spinner className="stroke-gray-700 dark:stroke-gray-300" />
             ) : (
-              <ListeningIcon className="stroke-white dark:stroke-black" />
+              <ListeningIcon className="stroke-gray-700 dark:stroke-gray-300" />
             )}
           </button>
         </TooltipTrigger>

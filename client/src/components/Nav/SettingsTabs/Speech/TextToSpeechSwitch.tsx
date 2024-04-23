@@ -20,7 +20,9 @@ export default function TextToSpeechSwitch({
 
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_text_to_speech')} </div>
+      <div>
+        <strong>{localize('com_nav_text_to_speech')}</strong>
+      </div>
       <Switch
         id="TextToSpeech"
         checked={TextToSpeech}
