@@ -2048,3 +2048,98 @@ html {
 .slide-to-down {
   animation: slideDownAndFadeOut 2s ease-in-out infinite;
 }
+
+
+@keyframes rotateAdjustAndBack {
+  0% {
+    transform: rotate(-33deg)  scale(1);
+  }
+  5% {
+    transform: rotate(67deg)  scale(1);
+  }
+  6%, 20% {
+    transform: rotate(57deg)  scale(1);
+  }
+  22% {
+    transform: rotate(65deg)  scale(1);
+  }
+  26%, 40% {
+    transform: rotate(-33deg)  scale(1);
+  }
+  42% {
+    transform: rotate(-40deg)  scale(1);
+  }
+  45%, 75% {
+    transform: rotate(30deg)  scale(0.7);
+  }
+  77%, 85% {
+    transform: rotate(57deg)  scale(1);
+  }
+  87% {
+    transform: rotate(65deg)  scale(1); 
+  }
+  90%,100% {
+    transform: rotate(-33deg)  scale(1);
+  }
+}
+
+.rotate-adjust-and-back {
+  animation: rotateAdjustAndBack 10s ease-in-out infinite;
+  transform-origin: 50% 50%;
+}
+
+@keyframes moonRise {
+  0% {
+    transform: translate(4px, 1px) rotate(-45deg);
+    opacity: 0;
+  }
+  10% {
+    transform: translate(4px, 1px) rotate(-45deg);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(0, 0px) rotate(34deg);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(0, 0px) rotate(34deg);
+    opacity: 1;
+  }
+  60%,100% {
+    transform: translate(0, 0px) rotate(34deg);
+    opacity: 1;
+  }
+}
+
+.moon-rise {
+  animation: moonRise 4s ease-in-out infinite; /* 'forwards' mantém a lua na posição final após a animação */
+  transform-origin: 45% 50%; /* Ajuste dependendo da posição relativa do morro */
+}
+
+@keyframes moveUp {
+  0% {
+    transform: translateY(0.5px); /* Move um pouco para cima */
+    opacity: 0.8;
+  }
+  10% {
+    transform: translateY(0.5px); /* Move um pouco para cima */
+    opacity: 1;
+  }
+  20% {
+    transform: translateY(0px); /* Move um pouco para cima */
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(0px); /* Move um pouco para cima */
+    opacity: 1;
+  }
+  60%,100% {
+    transform: translateY(0px); /* Move um pouco para cima */
+    opacity: 1;
+  }
+}
+
+.move-up {
+  animation: moveUp 4s ease-in-out infinite;
+  
+}
