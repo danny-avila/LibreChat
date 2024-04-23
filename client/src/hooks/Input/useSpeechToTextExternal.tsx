@@ -10,7 +10,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
   const { showToast } = useToastContext();
   const { data: startupConfig } = useGetStartupConfig();
   const isExternalSpeechEnabled = startupConfig?.speechToTextExternal ?? false;
-  const [chatAudio] = useRecoilState<boolean>(store.chatAudio);
+  const [conversationMode] = useRecoilState<boolean>(store.conversationMode);
   const [text, setText] = useState<string>('');
   const [isListening, setIsListening] = useState(false);
   const [permission, setPermission] = useState(false);
@@ -25,7 +25,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
       const extractedText = data.text;
       setText(extractedText);
       setIsRequestBeingMade(false);
-      if (chatAudio) {
+      if (conversationMode) {
         onTranscriptionComplete(extractedText);
       }
     },
@@ -104,7 +104,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
         mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
         mediaRecorderRef.current.addEventListener('stop', handleStop);
         mediaRecorderRef.current.start(100);
-        if (!harkRef.current && chatAudio) {
+        if (!harkRef.current && conversationMode) {
           harkRef.current = Hark(audioStream.current, {
             interval: 100,
           });
@@ -134,7 +134,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
       mediaRecorderRef.current.stop();
       setIsListening(false);
 
-      if (harkRef.current && chatAudio) {
+      if (harkRef.current && conversationMode) {
         harkRef.current.stop();
         harkRef.current = null;
       }

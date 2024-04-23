@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react';
 import { useOnClickOutside } from '~/hooks';
 import TextToSpeechSwitch from './TextToSpeechSwitch';
 import SpeechToTextSwitch from './SpeechToTextSwitch';
-import ChatAudioSwitch from './ChatAudio';
+import ConversationModeSwitch from './ConversationMode';
 
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
@@ -27,7 +27,7 @@ function Speech() {
           <SpeechToTextSwitch />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <ChatAudioSwitch />
+          <ConversationModeSwitch />
         </div>
       </div>
     </Tabs.Content>

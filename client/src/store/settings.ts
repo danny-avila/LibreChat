@@ -213,19 +213,19 @@ const SpeechToText = atom<boolean>({
   ] as const,
 });
 
-const chatAudio = atom<boolean>({
-  key: 'chatAudio',
+const conversationMode = atom<boolean>({
+  key: 'conversationMode',
   default: false,
   effects: [
     ({ setSelf, onSet }) => {
-      const savedValue = localStorage.getItem('chatAudio');
+      const savedValue = localStorage.getItem('conversationMode');
       if (savedValue != null) {
         setSelf(savedValue === 'true');
       }
 
       onSet((newValue: unknown) => {
         if (typeof newValue === 'boolean') {
-          localStorage.setItem('chatAudio', newValue.toString());
+          localStorage.setItem('conversationMode', newValue.toString());
         }
       });
     },
@@ -250,5 +250,5 @@ export default {
   UsernameDisplay,
   TextToSpeech,
   SpeechToText,
-  chatAudio,
+  conversationMode,
 };
