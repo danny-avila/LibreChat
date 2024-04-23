@@ -610,7 +610,7 @@ export enum Constants {
   /**
    * Key for the app's version.
    */
-  VERSION = 'v0.7.0',
+  VERSION = 'v0.7.1',
   /**
    * Key for the Custom Config's version (librechat.yaml).
    */
