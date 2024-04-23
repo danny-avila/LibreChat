@@ -1,25 +1,26 @@
 import { useParams } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
-import { useConversations, useNavigateToConvo } from '~/hooks';
-import { useUpdateConversationMutation } from '~/data-provider';
+import { useNavigateToConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from '../Conversations/DeleteButton';
 import RenameButton from '../Conversations/RenameButton';
-import { EModelEndpoint, request } from 'librechat-data-provider';
-import { useRecoilState } from 'recoil';
+import { EModelEndpoint, TConversation, TUser, request } from 'librechat-data-provider';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import store from '~/store';
+import LeaveButton from '../Conversations/LeaveButton';
+import { isRoomOwner } from '~/utils/checkUserValid';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
 export default function Room({ room, toggleNav, retainView }) {
   const params = useParams();
   const currentRoomId = useMemo(() => params.conversationId, [params.conversationId]);
-  const updateConvoMutation = useUpdateConversationMutation(currentRoomId ?? '');
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo('r');
   const [rooms, setRooms] = useRecoilState(store.rooms);
+  const user = useRecoilValue(store.user);
 
   const { conversationId, title } = room;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -76,20 +77,19 @@ export default function Room({ room, toggleNav, retainView }) {
     }
 
     request
-      .post(`/api/convos/${conversationId}`, {
+      .post('/api/convos/update', {
         arg: {
           conversationId,
           title: titleInput,
         },
       })
-      .then((res) => {
+      .then(() => {
         const updatedRooms = rooms;
         const index = updatedRooms.map((i) => i.conversationId).indexOf(conversationId);
         updatedRooms[index].title = titleInput;
         setRooms(updatedRooms);
-        console.log(res);
       })
-      .catch((err) => {
+      .catch(() => {
         setTitleInput(title);
         showToast({
           message: 'Failed to rename conversation',
@@ -163,13 +163,18 @@ export default function Room({ room, toggleNav, retainView }) {
       )}
       {currentRoomId === conversationId ? (
         <div className="visible absolute right-1 z-10 flex from-gray-900 text-gray-500 dark:text-gray-300">
-          <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
-          <DeleteButton
-            conversationId={conversationId}
-            retainView={retainView}
-            renaming={renaming}
-            title={title}
-          />
+          {isRoomOwner(user as TUser, room) && (
+            <>
+              <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
+              <DeleteButton
+                conversationId={conversationId}
+                retainView={retainView}
+                renaming={renaming}
+                title={title}
+              />
+            </>
+          )}
+          <LeaveButton conversationId={conversationId} />
         </div>
       ) : (
         <div className="absolute bottom-0 right-0 top-0 w-14 rounded-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 dark:from-gray-750 dark:group-hover:from-gray-800" />

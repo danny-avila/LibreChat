@@ -13,7 +13,7 @@ const getRooms = async (name) => {
     const rooms = await Conversation.find({ name: RegExp(name, 'i'), isRoom: true })
       .populate('user')
       .populate('users');
-    return rooms;
+    return rooms.reverse();
   } catch (error) {
     logger.error('[getRooms] Error getting entire rooms', error);
     return { message: 'Error getting Rooms by name' };
@@ -112,6 +112,8 @@ const addUserToRoom = async (conversationId, userId, password) => {
           resolve(isMatch);
         });
       });
+    } else {
+      isPasswordCorrect = true;
     }
 
     if (!isPasswordCorrect) {
@@ -128,6 +130,36 @@ const addUserToRoom = async (conversationId, userId, password) => {
   }
 };
 
+/**
+ * @param {string} conversationId
+ * @param {string} userId
+ * @returns ConvoSchema
+ */
+const removeUserFromRoom = async (conversationId, userId) => {
+  try {
+    const room = await Conversation.findOne({ conversationId });
+    if (room.user.toString() === userId.toString()) {
+      const poppedUser = room.users.shift();
+
+      room.user = poppedUser;
+      await room.save();
+    } else {
+      const userIndex = room.users.map((u) => u.toString()).indexOf(userId);
+      room.users.splice(userIndex);
+      console.log('--- room', room);
+      await room.save();
+    }
+
+    const result = await Conversation.findOne({ conversationId })
+      .populate('users')
+      .populate('user');
+    return result;
+  } catch (error) {
+    logger.error('[removeuserFromRoom] Error creating new room', error);
+    return { message: 'Error adding user to room' };
+  }
+};
+
 module.exports = {
   Room: Conversation,
   getRoom,
@@ -135,4 +167,5 @@ module.exports = {
   getRoomsByUser,
   createRoom,
   addUserToRoom,
+  removeUserFromRoom,
 };

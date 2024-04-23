@@ -28,7 +28,6 @@ export default function ChatRoute({ convo = 'c' }: { convo: ConvoType }) {
   const { isAuthenticated } = useAuthRedirect();
   const { newConversation } = useNewConvo();
   const hasSetConversation = useRef(false);
-  const user = useRecoilValue(store.user);
 
   const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated && modelsQueryEnabled });
   const initialConvoQuery = useGetConvoIdQuery(conversationId ?? '', {
@@ -42,7 +41,6 @@ export default function ChatRoute({ convo = 'c' }: { convo: ConvoType }) {
 
   useEffect(() => {
     setConvoType(convo);
-    console.log('user', user);
   }, [convo, setConvoType]);
 
   useEffect(() => {

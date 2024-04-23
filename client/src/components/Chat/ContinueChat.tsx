@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { Button, Input } from '../ui';
 import { TConversation, request } from 'librechat-data-provider';
 import { useParams } from 'react-router-dom';
-import { SetterOrUpdater } from 'recoil';
+import { SetterOrUpdater, useRecoilState } from 'recoil';
 import { useAuthContext } from '~/hooks';
 import DialogTemplate from '../ui/DialogTemplate';
 import { Dialog, DialogTrigger } from '../ui';
+import store from '~/store';
 
 interface Props {
   conversation: TConversation | null;
@@ -16,6 +17,7 @@ export default function ContinueChat({ conversation, setConversation }: Props) {
   const [password, setPassword] = useState<string>('');
   const [passwordErr, setPasswordErr] = useState<string>('');
   const [passwordOpen, setPasswordOpen] = useState<boolean>(false);
+  const [rooms, setRooms] = useRecoilState(store.rooms);
   const { conversationId } = useParams();
   const { user, logout } = useAuthContext();
 
@@ -38,6 +40,7 @@ export default function ContinueChat({ conversation, setConversation }: Props) {
         setPasswordErr('');
         setPasswordOpen(false);
         setConversation(responseData);
+        setRooms([responseData, ...rooms]);
       })
       .catch((error) => {
         if (error.response.status === 400) {

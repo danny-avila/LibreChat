@@ -92,6 +92,7 @@ router.post('/update', async (req, res) => {
   const update = req.body.arg;
 
   try {
+    console.log('=== update', update);
     const dbResponse = await saveConvo(req.user.id, update);
     res.status(201).json(dbResponse);
   } catch (error) {

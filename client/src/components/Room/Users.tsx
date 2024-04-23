@@ -2,13 +2,10 @@ import React from 'react';
 import { useChatContext } from '~/Providers';
 import User from './User';
 import { TUser } from 'librechat-data-provider';
-import { useRecoilValue } from 'recoil';
-import store from '~/store';
 
 export default function Users({ isCollapsed = false }: { isCollapsed?: boolean }) {
   const { conversation } = useChatContext();
   // const conversation = useRecoilValue(store.conversation);
-  console.log('--- users', conversation);
 
   return (
     <>

@@ -1,6 +1,6 @@
 const { addUserToRoom } = require('~/models/Room');
 const { v4: uuidV4 } = require('uuid');
-const { getRoom, getRoomsByUser, saveConvo, saveMessage } = require('~/models');
+const { getRoom, getRoomsByUser, saveConvo, saveMessage, removeUserFromRoom } = require('~/models');
 const bcrypt = require('bcryptjs');
 
 const createNewRoom = async (req, res) => {
@@ -95,10 +95,26 @@ const joinRoom = async (req, res) => {
   }
 };
 
+const leaveRoom = async (req, res) => {
+  const { password } = req.body;
+  const { roomId } = req.params;
+  const userId = req.user._id;
+  try {
+    const result = await removeUserFromRoom(roomId, userId, password);
+    if (result.error) {
+      return res.status(400).json(result.error);
+    }
+    res.json(result);
+  } catch (error) {
+    return res.status(500).json(error);
+  }
+};
+
 module.exports = {
   createNewRoom,
   getRoomById,
   getRoomByUser,
   createNewMessage,
   joinRoom,
+  leaveRoom,
 };

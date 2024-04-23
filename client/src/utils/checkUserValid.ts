@@ -28,6 +28,21 @@ export const isYou = (user: TUser, conversation: TConversation) => {
   return isValid;
 };
 
+export const isRoomOwner = (user: TUser, conversation: TConversation) => {
+  let isValid = false;
+
+  // const checkUser = { ...user, id: user.id ? user.id : user._id };
+  // if (typeof conversation.user === 'string' && checkUser.id === conversation.user) {
+  //   isValid = true;
+  // }
+
+  if (user.id === conversation.user?.id) {
+    isValid = true;
+  }
+
+  return isValid;
+};
+
 export const isMessageOwner = (user: TUser, message: TMessage) => {
   if (message.user?._id === user.id) {
     return true;

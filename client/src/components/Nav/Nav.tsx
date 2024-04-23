@@ -30,6 +30,11 @@ const Nav = ({ navVisible, setNavVisible }) => {
   const { conversationId } = useParams();
   const { isAuthenticated } = useAuthContext();
   const [convoType, setConvoType] = useState('c');
+  const convo = useRecoilValue(store.convoType);
+
+  useEffect(() => {
+    setConvoType(convo);
+  }, [convo]);
 
   const [navWidth, setNavWidth] = useState('260px');
   const [isHovering, setIsHovering] = useState(false);
