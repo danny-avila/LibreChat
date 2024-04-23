@@ -1,12 +1,17 @@
 {
   "name": "LibreChat",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "",
   "workspaces": [
     "api",
     "client",
     "packages/*"
   ],
+  "overrides": {
+    "vite": {
+      "rollup": "4.15.0"
+    }
+  },
   "scripts": {
     "update": "node config/update.js",
     "add-balance": "node config/add-balance.js",

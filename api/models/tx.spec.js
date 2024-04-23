@@ -34,6 +34,13 @@ describe('getValueKey', () => {
     expect(getValueKey('openai/gpt-4-1106')).toBe('gpt-4-1106');
     expect(getValueKey('gpt-4-1106/openai/')).toBe('gpt-4-1106');
   });
+
+  it('should return "gpt-4-1106" for model type of "gpt-4-1106"', () => {
+    expect(getValueKey('gpt-4-vision-preview')).toBe('gpt-4-1106');
+    expect(getValueKey('openai/gpt-4-1106')).toBe('gpt-4-1106');
+    expect(getValueKey('gpt-4-turbo')).toBe('gpt-4-1106');
+    expect(getValueKey('gpt-4-0125')).toBe('gpt-4-1106');
+  });
 });
 
 describe('getMultiplier', () => {

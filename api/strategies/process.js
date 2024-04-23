@@ -25,12 +25,12 @@ const handleExistingUser = async (oldUser, avatarUrl) => {
     await oldUser.save();
   } else if (!isLocal && (oldUser.avatar === null || !oldUser.avatar.includes('?manual=true'))) {
     const userId = oldUser._id;
-    const webPBuffer = await resizeAvatar({
+    const resizedBuffer = await resizeAvatar({
       userId,
       input: avatarUrl,
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    oldUser.avatar = await processAvatar({ buffer: webPBuffer, userId });
+    oldUser.avatar = await processAvatar({ buffer: resizedBuffer, userId });
     await oldUser.save();
   }
 };
@@ -83,12 +83,12 @@ const createNewUser = async ({
 
   if (!isLocal) {
     const userId = newUser._id;
-    const webPBuffer = await resizeAvatar({
+    const resizedBuffer = await resizeAvatar({
       userId,
       input: avatarUrl,
     });
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    newUser.avatar = await processAvatar({ buffer: webPBuffer, userId });
+    newUser.avatar = await processAvatar({ buffer: resizedBuffer, userId });
     await newUser.save();
   }
 

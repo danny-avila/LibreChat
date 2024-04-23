@@ -213,7 +213,13 @@ router.post('/avatar/:assistant_id', upload.single('file'), async (req, res) => 
     /** @type {{ openai: OpenAI }} */
     const { openai } = await initializeClient({ req, res });
 
-    const image = await uploadImageBuffer({ req, context: FileContext.avatar });
+    const image = await uploadImageBuffer({
+      req,
+      context: FileContext.avatar,
+      metadata: {
+        buffer: req.file.buffer,
+      },
+    });
 
     try {
       _metadata = JSON.parse(_metadata);

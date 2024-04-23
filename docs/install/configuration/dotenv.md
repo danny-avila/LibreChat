@@ -523,7 +523,7 @@ Remember to replace placeholder text such as "Your DALL-E-3 System Prompt here" 
 See detailed instructions here: [Google Search](../../features/plugins/google_search.md)
 
 ```bash
-GOOGLE_API_KEY=
+GOOGLE_SEARCH_API_KEY=
 GOOGLE_CSE_ID=
 ```
 

@@ -64,9 +64,11 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       baseURL: "https://api.groq.com/openai/v1/"
       models:
         default: [
+          "llama3-70b-8192",
+          "llama3-8b-8192",
           "llama2-70b-4096",
           "mixtral-8x7b-32768",
-          "gemma-7b-it"
+          "gemma-7b-it",
           ]
         fetch: false
       titleConvo: true
@@ -123,16 +125,16 @@ Some of the endpoints are marked as **Known,** which means they might have speci
     - name: "OpenRouter"
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
       # recommended environment variables:
-      # Known issue: you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
-      apiKey: "${OPENROUTER_KEY}"
+      apiKey: "${OPENROUTER_KEY}" # NOT OPENROUTER_API_KEY
+      baseURL: "https://openrouter.ai/api/v1"
       models:
-        default: ["gpt-3.5-turbo"]
+        default: ["meta-llama/llama-3-70b-instruct"]
         fetch: true
       titleConvo: true
-      titleModel: "gpt-3.5-turbo" # change to your preferred model
-      modelDisplayLabel: "OpenRouter"
+      titleModel: "meta-llama/llama-3-70b-instruct"
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ["stop"]
+      modelDisplayLabel: "OpenRouter"
 ```
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/c4a0415e-732c-46af-82a6-3598663b7f42)
@@ -374,3 +376,31 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       forcePrompt: false
       modelDisplayLabel: "Ollama"
 ```
+
+!!! tip "Ollama -> llama3"
+    
+    To prevent the behavior where llama3 does not stop generating, add this `addParams` block to the config:
+    
+    ```yaml
+    - name: "Ollama"
+      apiKey: "ollama"
+      baseURL: "http://host.docker.internal:11434/v1/" 
+      models:
+        default: [
+          "llama3"
+          ]
+        fetch: false # fetching list of models is not supported
+      titleConvo: true
+      titleModel: "llama3"
+      summarize: false
+      summaryModel: "llama3"
+      forcePrompt: false
+      modelDisplayLabel: "Ollama"
+      addParams:
+            "stop": [
+              "<|start_header_id|>",
+              "<|end_header_id|>",
+              "<|eot_id|>",
+              "<|reserved_special_token"
+            ]
+    ```

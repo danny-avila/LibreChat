@@ -1,12 +1,13 @@
 // gptPlugins/initializeClient.spec.js
-const { EModelEndpoint, validateAzureGroups } = require('librechat-data-provider');
-const { getUserKey } = require('~/server/services/UserService');
+const { EModelEndpoint, ErrorTypes, validateAzureGroups } = require('librechat-data-provider');
+const { getUserKey, getUserKeyValues } = require('~/server/services/UserService');
 const initializeClient = require('./initializeClient');
 const { PluginsClient } = require('~/app');
 
 // Mock getUserKey since it's the only function we want to mock
 jest.mock('~/server/services/UserService', () => ({
   getUserKey: jest.fn(),
+  getUserKeyValues: jest.fn(),
   checkUserKeyExpiry: jest.requireActual('~/server/services/UserService').checkUserKeyExpiry,
 }));
 
@@ -205,7 +206,7 @@ describe('gptPlugins/initializeClient', () => {
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
 
-    getUserKey.mockResolvedValue(JSON.stringify({ apiKey: 'test-user-provided-openai-api-key' }));
+    getUserKeyValues.mockResolvedValue({ apiKey: 'test-user-provided-openai-api-key' });
 
     const { openAIApiKey } = await initializeClient({ req, res, endpointOption });
 
@@ -225,14 +226,12 @@ describe('gptPlugins/initializeClient', () => {
     const res = {};
     const endpointOption = { modelOptions: { model: 'test-model' } };
 
-    getUserKey.mockResolvedValue(
-      JSON.stringify({
-        apiKey: JSON.stringify({
-          azureOpenAIApiKey: 'test-user-provided-azure-api-key',
-          azureOpenAIApiDeploymentName: 'test-deployment',
-        }),
+    getUserKeyValues.mockResolvedValue({
+      apiKey: JSON.stringify({
+        azureOpenAIApiKey: 'test-user-provided-azure-api-key',
+        azureOpenAIApiDeploymentName: 'test-deployment',
       }),
-    );
+    });
 
     const { azure } = await initializeClient({ req, res, endpointOption });
 
@@ -251,7 +250,9 @@ describe('gptPlugins/initializeClient', () => {
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
 
-    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(/Your OpenAI API/);
+    await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
+      /expired_user_key/,
+    );
   });
 
   test('should throw an error if the user-provided Azure key is invalid JSON', async () => {
@@ -268,9 +269,22 @@ describe('gptPlugins/initializeClient', () => {
 
     // Simulate an invalid JSON string returned from getUserKey
     getUserKey.mockResolvedValue('invalid-json');
+    getUserKeyValues.mockImplementation(() => {
+      let userValues = getUserKey();
+      try {
+        userValues = JSON.parse(userValues);
+      } catch (e) {
+        throw new Error(
+          JSON.stringify({
+            type: ErrorTypes.INVALID_USER_KEY,
+          }),
+        );
+      }
+      return userValues;
+    });
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      /Invalid JSON provided/,
+      /invalid_user_key/,
     );
   });
 
@@ -305,9 +319,22 @@ describe('gptPlugins/initializeClient', () => {
 
     // Mock getUserKey to return a non-JSON string
     getUserKey.mockResolvedValue('not-a-json');
+    getUserKeyValues.mockImplementation(() => {
+      let userValues = getUserKey();
+      try {
+        userValues = JSON.parse(userValues);
+      } catch (e) {
+        throw new Error(
+          JSON.stringify({
+            type: ErrorTypes.INVALID_USER_KEY,
+          }),
+        );
+      }
+      return userValues;
+    });
 
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      /Invalid JSON provided for openAI user values/,
+      /invalid_user_key/,
     );
   });
 
@@ -369,9 +396,10 @@ describe('gptPlugins/initializeClient', () => {
     const res = {};
     const endpointOption = {};
 
-    getUserKey.mockResolvedValue(
-      JSON.stringify({ apiKey: 'test', baseURL: 'https://user-provided-url.com' }),
-    );
+    getUserKeyValues.mockResolvedValue({
+      apiKey: 'test',
+      baseURL: 'https://user-provided-url.com',
+    });
 
     const result = await initializeClient({ req, res, endpointOption });
 

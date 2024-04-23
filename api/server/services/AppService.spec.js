@@ -1,6 +1,7 @@
 const {
   FileSources,
   EModelEndpoint,
+  EImageOutputType,
   defaultSocialLogins,
   validateAzureGroups,
   deprecatedAzureVariables,
@@ -107,6 +108,10 @@ describe('AppService', () => {
         },
       },
       paths: expect.anything(),
+      imageOutputType: expect.any(String),
+      interface: undefined,
+      fileConfig: undefined,
+      secureImageLinks: undefined,
     });
   });
 
@@ -123,6 +128,36 @@ describe('AppService', () => {
 
     const { logger } = require('~/config');
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Outdated Config version'));
+  });
+
+  it('should change the `imageOutputType` based on config value', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        version: '0.10.0',
+        imageOutputType: EImageOutputType.WEBP,
+      }),
+    );
+
+    await AppService(app);
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.WEBP);
+  });
+
+  it('should default to `PNG` `imageOutputType` with no provided type', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        version: '0.10.0',
+      }),
+    );
+
+    await AppService(app);
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
+  });
+
+  it('should default to `PNG` `imageOutputType` with no provided config', async () => {
+    require('./Config/loadCustomConfig').mockImplementationOnce(() => Promise.resolve(undefined));
+
+    await AppService(app);
+    expect(app.locals.imageOutputType).toEqual(EImageOutputType.PNG);
   });
 
   it('should initialize Firebase when fileStrategy is firebase', async () => {
@@ -191,6 +226,27 @@ describe('AppService', () => {
         supportedIds: expect.arrayContaining(['id1', 'id2']),
       }),
     );
+  });
+
+  it('should correctly configure minimum Azure OpenAI Assistant values', async () => {
+    const assistantGroups = [azureGroups[0], { ...azureGroups[1], assistants: true }];
+    require('./Config/loadCustomConfig').mockImplementationOnce(() =>
+      Promise.resolve({
+        endpoints: {
+          [EModelEndpoint.azureOpenAI]: {
+            groups: assistantGroups,
+            assistants: true,
+          },
+        },
+      }),
+    );
+
+    process.env.WESTUS_API_KEY = 'westus-key';
+    process.env.EASTUS_API_KEY = 'eastus-key';
+
+    await AppService(app);
+    expect(app.locals).toHaveProperty(EModelEndpoint.assistants);
+    expect(app.locals[EModelEndpoint.assistants].capabilities.length).toEqual(3);
   });
 
   it('should correctly configure Azure OpenAI endpoint based on custom config', async () => {
