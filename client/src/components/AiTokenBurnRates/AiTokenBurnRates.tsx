@@ -3,68 +3,74 @@ import React from 'react';
 import { ThemeSelector } from '~/components/ui';
 import { Link } from 'react-router-dom';
 import { FaHome } from 'react-icons/fa';
+import { useLocalize } from '~/hooks';
 
 const AiTokenBurnRates = () => {
+  const localize = useLocalize();
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-white">
-      <div className="absolute bottom-0 left-0 m-4">
+    <div className="relative min-h-screen bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-white">
+      <div className="fixed bottom-0 left-0 m-4">
         <ThemeSelector />
       </div>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between py-4">
-          <h1 className="text-2xl font-bold">Token Usage Overview</h1>
+          <h1 className="text-2xl font-bold">{localize('com_token_usage_overview')}</h1>
           <Link to="/login" className="text-black-500 hover:text-blue-700">
             <FaHome className="h-6 w-6" />
           </Link>
         </div>
         <div className="mb-8">
-          <p className="mb-4">
-            When purchasing tokens, these can be used with various language models available on our
-            platform. Each model has an associated "burn rate" (BR), which serves as a way to
-            compare token consumption rates across different models. This rate provides you with a
-            multiplier that reflects the average token consumption for both input and output
-            combined.
-          </p>
-          <h2 className="mb-2 text-xl font-bold">Model Consumption Rates</h2>
-          <p>Below is a table outlining the burn rates for different models:</p>
+          <p className="mb-4">{localize('com_token_usage_description')}</p>
+          <h2 className="mb-2 text-xl font-bold">{localize('com_model_consumption_rates')}</h2>
+          <p>{localize('com_model_rates_table')}</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full table-auto border-collapse border border-gray-400">
             <thead>
               <tr>
-                <th className="border border-gray-400 px-4 py-2">Model</th>
-                <th className="border border-gray-400 px-4 py-2">Input Tokens</th>
-                <th className="border border-gray-400 px-4 py-2">Output Tokens</th>
-                <th className="border border-gray-400 px-4 py-2">Burn Rate (BR)</th>
+                <th className="border border-gray-400 px-4 py-2">{localize('com_model')}</th>
+                <th className="border border-gray-400 px-4 py-2">{localize('com_input_tokens')}</th>
+                <th className="border border-gray-400 px-4 py-2">
+                  {localize('com_output_tokens')}
+                </th>
+                <th className="border border-gray-400 px-4 py-2">{localize('com_burn_rate')}</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td className="border border-gray-400 px-4 py-2">GPT-3.5 Turbo</td>
+                <td className="border border-gray-400 px-4 py-2">
+                  {localize('com_gpt_3_5_turbo')}
+                </td>
                 <td className="border border-gray-400 px-4 py-2">0.3</td>
                 <td className="border border-gray-400 px-4 py-2">0.5</td>
                 <td className="border border-gray-400 px-4 py-2">0.4</td>
               </tr>
               <tr>
-                <td className="border border-gray-400 px-4 py-2">GPT-4</td>
+                <td className="border border-gray-400 px-4 py-2">{localize('com_gpt_4')}</td>
                 <td className="border border-gray-400 px-4 py-2">3</td>
                 <td className="border border-gray-400 px-4 py-2">8</td>
                 <td className="border border-gray-400 px-4 py-2">5</td>
               </tr>
               <tr>
-                <td className="border border-gray-400 px-4 py-2">Claude-3 Haiku</td>
+                <td className="border border-gray-400 px-4 py-2">
+                  {localize('com_claude_3_haiku')}
+                </td>
                 <td className="border border-gray-400 px-4 py-2">0.15</td>
                 <td className="border border-gray-400 px-4 py-2">0.75</td>
                 <td className="border border-gray-400 px-4 py-2">0.3</td>
               </tr>
               <tr>
-                <td className="border border-gray-400 px-4 py-2">Claude-3 Sonnet</td>
+                <td className="border border-gray-400 px-4 py-2">
+                  {localize('com_claude_3_sonnet')}
+                </td>
                 <td className="border border-gray-400 px-4 py-2">0.6</td>
                 <td className="border border-gray-400 px-4 py-2">3.75</td>
                 <td className="border border-gray-400 px-4 py-2">1.5</td>
               </tr>
               <tr>
-                <td className="border border-gray-400 px-4 py-2">Claude-3 Opus</td>
+                <td className="border border-gray-400 px-4 py-2">
+                  {localize('com_claude_3_opus')}
+                </td>
                 <td className="border border-gray-400 px-4 py-2">8</td>
                 <td className="border border-gray-400 px-4 py-2">20</td>
                 <td className="border border-gray-400 px-4 py-2">12</td>
@@ -73,28 +79,20 @@ const AiTokenBurnRates = () => {
           </table>
         </div>
         <div className="mt-8">
-          <p>
-            Token consumption upon interacting with a model depends on the combined number of input
-            and output tokens. Input consists of context and prompt tokens, with context tokens
-            providing background and prompt tokens directing the model's task.
-          </p>
+          <p>{localize('com_token_consumption_depends')}</p>
         </div>
         <div className="mt-8">
-          <h2 className="mb-2 text-xl font-bold">How to Calculate Token Consumption</h2>
-          <p className="mb-4">
-            For estimating total token consumption, utilize the following formula:
-          </p>
+          <h2 className="mb-2 text-xl font-bold">
+            {localize('com_how_to_calculate_token_consumption')}
+          </h2>
+          <p className="mb-4">{localize('com_total_token_consumption_formula')}</p>
           <pre className="mb-4 overflow-x-auto rounded bg-gray-800 p-4">
             <code className="text-white">
               Total Token Consumption = (Input Tokens + Output Tokens) * Burn Rate
             </code>
           </pre>
-          <h2 className="mb-2 text-xl font-bold">Example of Token Consumption</h2>
-          <p className="mb-4">
-            Here's a hypothetical scenario using a model with a burn rate of 5. If an interaction
-            includes 50 context, 100 prompt tokens, and the model produces a 50-token response, the
-            consumption is calculated as:
-          </p>
+          <h2 className="mb-2 text-xl font-bold">{localize('com_example_of_token_consumption')}</h2>
+          <p className="mb-4">{localize('com_example_of_token_consumption')}</p>
           <pre className="overflow-x-auto rounded bg-gray-800 p-4">
             <code className="text-white">
               Input Tokens = 50 (context) + 100 (prompt) = 150 tokens
@@ -108,28 +106,13 @@ const AiTokenBurnRates = () => {
           </pre>
         </div>
         <div className="mt-8">
-          <h2 className="mb-2 text-xl font-bold">Important Considerations</h2>
-          <p>
-            The provided burn rate is a tool to compare the token usage efficiency among different
-            models, it is not a direct measure of total token cost. Be aware that token consumption
-            can vary based on specific interactions, and the burn rate should be used for a rough
-            estimation. The extent of your input will have a significant impact on the total token
-            consumption.
-          </p>
+          <h2 className="mb-2 text-xl font-bold">{localize('com_important_considerations')}</h2>
+          <p>{localize('com_important_considerations')}</p>
         </div>
         <hr className="my-12 h-0.5 border-t-0 bg-black dark:bg-white/10" />
         <div className="mt-8">
-          <h1 className="mb-4 mt-8 text-2xl font-bold ">
-            Comparative Analysis of AI Models Across Diverse Benchmarks
-          </h1>
-          <p>
-            The table below compares the performance of various AI models across a range of tasks
-            and benchmarks, demonstrating their impressive capabilities in areas such as knowledge,
-            reasoning, math problem-solving, and question-answering. Claude 3 Opus consistently
-            outperforms other models in most tasks, with GPT-4 and Gemini 1.0 Ultra also showing
-            strong performance. The results highlight the effectiveness of different prompting
-            techniques and showcase the rapid advancements in AI language models.
-          </p>
+          <h1 className="mb-4 mt-8 text-2xl font-bold ">{localize('com_comparative_analysis')}</h1>
+          <p>{localize('com_comparative_analysis')}</p>
         </div>
       </div>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -139,19 +122,18 @@ const AiTokenBurnRates = () => {
               <tr>
                 <th className="border border-gray-400 px-4 py-2"></th>
                 <th className="border border-gray-400 px-4 py-2">
-                  Claude 3<br />
-                  Opus
+                  {localize('com_claude_3_opus')}
                 </th>
                 <th className="border border-gray-400 px-4 py-2">
-                  Claude 3<br />
-                  Sonnet
+                  {localize('com_claude_3_sonnet')}
                 </th>
                 <th className="border border-gray-400 px-4 py-2">
-                  Claude 3<br />
-                  Haiku
+                  {localize('com_claude_3_haiku')}
                 </th>
-                <th className="border border-gray-400 px-4 py-2">GPT-4</th>
-                <th className="border border-gray-400 px-4 py-2">GPT-3.5</th>
+                <th className="border border-gray-400 px-4 py-2">{localize('com_gpt_4')}</th>
+                <th className="border border-gray-400 px-4 py-2">
+                  {localize('com_gpt_3_5_turbo')}
+                </th>
                 <th className="border border-gray-400 px-4 py-2">
                   Gemini 1.0
                   <br />
@@ -167,11 +149,7 @@ const AiTokenBurnRates = () => {
             <tbody>
               <tr>
                 <td className="border border-gray-400 px-4 py-2">
-                  Undergraduate
-                  <br />
-                  level biology
-                  <br />
-                  MMLU
+                  {localize('com_undergraduate_biology')}
                 </td>
                 <td className="border border-gray-400 px-4 py-2">
                   86.8%
@@ -211,11 +189,7 @@ const AiTokenBurnRates = () => {
               </tr>
               <tr>
                 <td className="border border-gray-400 px-4 py-2">
-                  Graduate level
-                  <br />
-                  reasoning
-                  <br />
-                  GFVR, Diamond
+                  {localize('com_graduate_reasoning')}
                 </td>
                 <td className="border border-gray-400 px-4 py-2">
                   50.4%
@@ -247,9 +221,7 @@ const AiTokenBurnRates = () => {
               </tr>
               <tr>
                 <td className="border border-gray-400 px-4 py-2">
-                  Grade school math
-                  <br />
-                  GSMAR
+                  {localize('com_grade_school_math')}
                 </td>
                 <td className="border border-gray-400 px-4 py-2">
                   95.0%
@@ -289,11 +261,7 @@ const AiTokenBurnRates = () => {
               </tr>
               <tr>
                 <td className="border border-gray-400 px-4 py-2">
-                  Math
-                  <br />
-                  problem-solving
-                  <br />
-                  MATH
+                  {localize('com_math_problem_solving')}
                 </td>
                 <td className="border border-gray-400 px-4 py-2">
                   60.1%
@@ -333,9 +301,7 @@ const AiTokenBurnRates = () => {
               </tr>
               <tr>
                 <td className="border border-gray-400 px-4 py-2">
-                  Multilingual math
-                  <br />
-                  MGSM
+                  {localize('com_multilingual_math')}
                 </td>
                 <td className="border border-gray-400 px-4 py-2">
                   90.7%
@@ -370,11 +336,7 @@ const AiTokenBurnRates = () => {
                 </td>
               </tr>
               <tr>
-                <td className="border border-gray-400 px-4 py-2">
-                  Code
-                  <br />
-                  HumanEval
-                </td>
+                <td className="border border-gray-400 px-4 py-2">{localize('com_code')}</td>
                 <td className="border border-gray-400 px-4 py-2">
                   84.9%
                   <br />
@@ -413,9 +375,7 @@ const AiTokenBurnRates = () => {
               </tr>
               <tr>
                 <td className="border border-gray-400 px-4 py-2">
-                  Reasoning over text
-                  <br />
-                  DROP F1 score
+                  {localize('com_reasoning_over_text')}
                 </td>
                 <td className="border border-gray-400 px-4 py-2">
                   83.1
@@ -455,9 +415,7 @@ const AiTokenBurnRates = () => {
               </tr>
               <tr>
                 <td className="border border-gray-400 px-4 py-2">
-                  Mixed evaluations
-                  <br />
-                  Big-bench Hard
+                  {localize('com_mixed_evaluations')}
                 </td>
                 <td className="border border-gray-400 px-4 py-2">
                   86.8%
@@ -496,11 +454,7 @@ const AiTokenBurnRates = () => {
                 </td>
               </tr>
               <tr>
-                <td className="border border-gray-400 px-4 py-2">
-                  Knowledge Q&amp;A
-                  <br />
-                  ARC Challenge
-                </td>
+                <td className="border border-gray-400 px-4 py-2">{localize('com_knowledge_qa')}</td>
                 <td className="border border-gray-400 px-4 py-2">
                   96.4%
                   <br />
@@ -531,11 +485,7 @@ const AiTokenBurnRates = () => {
               </tr>
               <tr>
                 <td className="border border-gray-400 px-4 py-2">
-                  Common
-                  <br />
-                  Knowledge
-                  <br />
-                  Demknow
+                  {localize('com_common_knowledge')}
                 </td>
                 <td className="border border-gray-400 px-4 py-2">
                   95.4%
@@ -577,40 +527,20 @@ const AiTokenBurnRates = () => {
           </table>
           <h2 className="mb-4 mt-8 text-2xl font-bold">AI Models and their Use Cases</h2>
 
-          <h3 className="mb-2 text-xl font-bold">GPT-3.5</h3>
-          <p className="mb-4">
-            A versatile model that performs well in various tasks, although not as strong as its
-            more advanced counterparts. Use case: Suitable for general-purpose language tasks and
-            applications that don't require the highest level of performance.
-          </p>
+          <h3 className="mb-2 text-xl font-bold">{localize('com_gpt_3_5_turbo')}</h3>
+          <p className="mb-4">{localize('com_gpt_3_5_use_case')}</p>
 
-          <h3 className="mb-2 text-xl font-bold">GPT-4</h3>
-          <p className="mb-4">
-            A powerful model that closely follows Claude 3 Opus in performance and excels in
-            knowledge-based question-answering. Use case: Ideal for tasks that require deep
-            understanding, complex reasoning, and extensive knowledge retrieval.
-          </p>
+          <h3 className="mb-2 text-xl font-bold">{localize('com_gpt_4')}</h3>
+          <p className="mb-4">{localize('com_gpt_4_use_case')}</p>
 
-          <h3 className="mb-2 text-xl font-bold">Claude 3 Haiku</h3>
-          <p className="mb-4">
-            A capable model that performs well in code evaluation and reasoning over text. Use case:
-            Best suited for tasks involving code analysis, text-based reasoning, and creative
-            writing.
-          </p>
+          <h3 className="mb-2 text-xl font-bold">{localize('com_claude_3_haiku')}</h3>
+          <p className="mb-4">{localize('com_claude_3_haiku_use_case')}</p>
 
-          <h3 className="mb-2 text-xl font-bold">Claude 3 Sonnet</h3>
-          <p className="mb-4">
-            A strong performer across multiple domains, slightly behind Claude 3 Opus in most tasks.
-            Use case: Suitable for a wide range of applications that require high-quality language
-            understanding and generation.
-          </p>
+          <h3 className="mb-2 text-xl font-bold">{localize('com_claude_3_sonnet')}</h3>
+          <p className="mb-4">{localize('com_claude_3_sonnet_use_case')}</p>
 
-          <h3 className="mb-2 text-xl font-bold">Claude 3 Opus</h3>
-          <p>
-            A highly capable AI model that consistently outperforms others across various
-            benchmarks. Use case: Ideal for complex tasks requiring advanced reasoning,
-            problem-solving, and knowledge-based question-answering.
-          </p>
+          <h3 className="mb-2 text-xl font-bold">{localize('com_claude_3_opus')}</h3>
+          <p>{localize('com_claude_3_opus_use_case')}</p>
         </div>
       </div>
     </div>
