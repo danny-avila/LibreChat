@@ -1,4 +1,4 @@
-# v0.7.0
+# v0.7.1
 
 # Build API, Client and Data Provider
 FROM node:20-alpine AS base
@@ -33,7 +33,6 @@ COPY config/ ./
 RUN mkdir -p /app/api/node_modules/librechat-data-provider/
 RUN cp -R /app/packages/data-provider/* /app/api/node_modules/librechat-data-provider/
 RUN npm install
-RUN npm install openai@4.36.0
 COPY --from=client-build /app/client/dist /app/client/dist
 EXPOSE 3080
 ENV HOST=0.0.0.0
