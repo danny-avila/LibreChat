@@ -1,5 +1,5 @@
 import { v4 } from 'uuid';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, useCallback } from 'react';
@@ -64,6 +64,9 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
   const setStorage = useSetStorage();
   const queryClient = useQueryClient();
   const genTitle = useGenTitleMutation();
+  const [user, setUser] = useRecoilState(store.user);
+
+  const premiumModels = useRecoilValue(store.premiumModelsConfig);
 
   const { conversationId: paramId } = useParams();
   const { token, isAuthenticated } = useAuthContext();
@@ -306,6 +309,10 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
         setMessages([...messages, requestMessage, responseMessage]);
         console.log('--- requestmessage', requestMessage);
         sendMessage([requestMessage, responseMessage], true);
+      }
+
+      if (premiumModels.indexOf(submission.conversation.model as string) > -1) {
+        setUser(user ? { ...user, credits: user.credits - 1 } : undefined);
       }
 
       const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;

@@ -6,7 +6,7 @@ import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from '../Conversations/DeleteButton';
 import RenameButton from '../Conversations/RenameButton';
-import { EModelEndpoint, TConversation, TUser, request } from 'librechat-data-provider';
+import { EModelEndpoint, TUser, request } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import store from '~/store';
 import LeaveButton from '../Conversations/LeaveButton';
@@ -84,10 +84,15 @@ export default function Room({ room, toggleNav, retainView }) {
         },
       })
       .then(() => {
-        const updatedRooms = rooms;
-        const index = updatedRooms.map((i) => i.conversationId).indexOf(conversationId);
-        updatedRooms[index].title = titleInput;
-        setRooms(updatedRooms);
+        setRooms((prevRooms) =>
+          prevRooms.map((r) => {
+            if (r.conversationId === conversationId) {
+              return { ...r, title: titleInput };
+            } else {
+              return r;
+            }
+          }),
+        );
       })
       .catch(() => {
         setTitleInput(title);

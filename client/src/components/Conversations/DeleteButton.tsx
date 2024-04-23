@@ -30,13 +30,8 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
       {
         onSuccess: () => {
           if (convoType === 'r') {
-            const updatedRooms = rooms;
-            const index = rooms.map((i) => i.conversationId).indexOf(conversationId);
-            console.log(updatedRooms, conversationId, index);
-            updatedRooms.splice(index, 1);
-            console.log(updatedRooms);
-            setRooms(updatedRooms);
-            navigate('/c/new');
+            setRooms((prevRooms) => prevRooms.filter((r) => r.conversationId !== conversationId));
+            navigate('/r/new');
           } else {
             if (currentConvoId === conversationId) {
               newConversation();

@@ -60,32 +60,34 @@ function ChatView({ index = 0 }: { index?: number }) {
   return (
     <ChatContext.Provider value={chatHelpers}>
       <Presentation useSidePanel={true}>
-        {convoType === 'r' &&
-        !isYou(user as TUser, conversation as TConversation) &&
-        conversation?.isPrivate ? (
+        {isLoading && conversationId !== 'new' ? (
+          <div className="flex h-screen items-center justify-center">
+            <Spinner className="opacity-0" />
+          </div>
+        ) : convoType === 'r' &&
+          !isYou(user as TUser, conversation as TConversation) &&
+          conversation?.isPrivate ? (
           <div className="flex h-screen flex-col items-center justify-center text-2xl font-bold text-black dark:text-white">
             <p className="mb-3 text-4xl">{conversation.title}</p>
             <p className="text-sm font-thin">This is private channel.</p>
-          </div>
-        ) : isLoading && conversationId !== 'new' ? (
-          <div className="flex h-screen items-center justify-center">
-            <Spinner className="opacity-0" />
           </div>
         ) : messagesTree && messagesTree.length !== 0 ? (
           <MessagesView messagesTree={messagesTree} Header={<Header />} />
         ) : (
           <Landing Header={<Header />} />
         )}
-        <div className="w-full border-t-0 pl-0 pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
-          {convoType === 'c' ? (
-            <ChatForm index={index} />
-          ) : user && conversation && isYou(user, conversation) ? (
-            <ChatForm index={index} />
-          ) : (
-            <ContinueChat conversation={conversation} setConversation={setConversation} />
-          )}
-          <Footer />
-        </div>
+        {!isLoading && (
+          <div className="w-full border-t-0 pl-0 pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
+            {convoType === 'c' ? (
+              <ChatForm index={index} />
+            ) : user && conversation && isYou(user, conversation) ? (
+              <ChatForm index={index} />
+            ) : (
+              <ContinueChat conversation={conversation} setConversation={setConversation} />
+            )}
+            <Footer />
+          </div>
+        )}
       </Presentation>
     </ChatContext.Provider>
   );
