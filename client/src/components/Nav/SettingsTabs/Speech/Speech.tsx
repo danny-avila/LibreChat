@@ -6,6 +6,7 @@ import TextToSpeechSwitch from './TextToSpeechSwitch';
 import SpeechToTextSwitch from './SpeechToTextSwitch';
 import ConversationModeSwitch from './ConversationModeSwitch';
 import AutoSendTextSwitch from './AutoSendTextSwitch';
+import AutoTranscribeAudioSwitch from './AutoTranscribeAudioSwitch';
 
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
@@ -30,6 +31,9 @@ function Speech() {
         <div className="my-1 h-px bg-black/20 bg-white/20" role="none" />
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <SpeechToTextSwitch />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <AutoTranscribeAudioSwitch />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <AutoSendTextSwitch />

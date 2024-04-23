@@ -156,8 +156,9 @@ export default {
   com_ui_privacy_policy: 'Privacy policy',
   com_ui_terms_of_service: 'Terms of service',
   com_ui_use_micrphone: 'Use microphone',
-  com_ui_conversation_mode: 'Conversation Mode (BETA)',
+  com_ui_conversation_mode: 'Conversation Mode',
   com_ui_auto_send_text: 'Auto send text',
+  com_ui_auto_transcribe_audio: 'Auto transcribe audio',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
