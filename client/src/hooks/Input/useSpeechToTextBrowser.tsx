@@ -25,6 +25,12 @@ const useSpeechToTextBrowser = () => {
       setIsListening(false);
     };
 
+    recognition.onerror = (event) => {
+      if (event.error === 'network') {
+        showToast({ message: 'Network error occurred in SpeechRecognition', status: 'error' });
+      }
+    };
+
     return recognition;
   };
 

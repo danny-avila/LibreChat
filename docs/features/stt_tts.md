@@ -45,7 +45,7 @@ in the `librechat.yaml` add this configuration:
 stt:
   url: 'http://localhost:8080/v1/audio/transcriptions'
   apiKey: '${STT_API_KEY}'
-  model: 'whisper-1'
+  model: 'whisper'
 ```
 
 where, the url it's the url of the whisper instance, the apiKey points to the .env (you need to use the .env necessarly), put a random string if (in the case of LocalAI) you don't have an api, and the model is the model that you want to use for the transcription.
