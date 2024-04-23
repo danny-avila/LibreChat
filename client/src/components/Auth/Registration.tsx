@@ -202,7 +202,7 @@ const Registration: React.FC = () => {
         </h1>
         {registrationSuccess && (
           <div
-            className="rounded-md border border-green-500 bg-green-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
+            className="rounded-md border border-blue-500 bg-green-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
             role="alert"
           >
             {localize('com_auth_registration_success')}

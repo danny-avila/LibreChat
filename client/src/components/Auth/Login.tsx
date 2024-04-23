@@ -39,10 +39,10 @@ function Login() {
     () => ({
       background: {
         color: {
-          value: '#0d47a1',
+          value: '#2563eb',
         },
       },
-      fpsLimit: 30,
+      fpsLimit: 120,
       interactivity: {
         events: {
           onClick: {
@@ -52,11 +52,11 @@ function Login() {
         },
         modes: {
           push: {
-            quantity: 4,
+            quantity: 1,
           },
           repulse: {
             distance: 100,
-            duration: 0.4,
+            duration: 0.5,
           },
         },
       },
@@ -66,20 +66,17 @@ function Login() {
         },
         links: {
           color: '#ffffff',
-          distance: 200,
+          distance: 250,
           enable: true,
-          opacity: 0.5,
-          width: 1,
+          opacity: 0.6,
+          width: 0.5,
         },
         number: {
           density: {
             enable: true,
           },
-          value: 100,
+          value: 130,
         },
-        // opacity: {
-        //   value: 0.5,
-        // },
         shape: {
           type: 'line',
         },
@@ -90,7 +87,7 @@ function Login() {
           direction: 'none',
           random: true,
           enable: true,
-          speed: 2,
+          speed: 1.5,
           straight: false,
         },
       },
@@ -220,15 +217,9 @@ function Login() {
         <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
           <img
             src={`/assets/${logoImageFilename}`}
-            className="mx-auto mb-6 h-16 w-auto"
+            className="mx-auto mb-10 h-16 w-auto"
             alt="Logo"
           />
-          <h1
-            className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
-            style={{ userSelect: 'none' }}
-          >
-            {localize('com_auth_welcome_back')}
-          </h1>
           {error && (
             <div
               className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
@@ -283,10 +274,14 @@ function Login() {
         <div className="z-10 text-left">
           <div className="z-10 text-left">
             <TypeAnimation
-              sequence={['Welcome to Novlisky']}
-              wrapper="h1"
-              cursor={true}
+              sequence={[
+                // Same substring at the start will only be typed once, initially
+                'Welcome to Novlisky',
+                1000,
+              ]}
+              speed={50}
               repeat={Infinity}
+              cursor={true}
               className="mb-4 text-5xl font-bold text-white"
             />
           </div>
