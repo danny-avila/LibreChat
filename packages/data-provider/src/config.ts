@@ -397,6 +397,7 @@ export const supportsBalanceCheck = {
 
 export const visionModels = [
   'gpt-4-vision',
+  'llava',
   'llava-13b',
   'gemini-pro-vision',
   'claude-3',
