@@ -563,7 +563,7 @@ export default {
     'Token consumption upon interacting with a model depends on the combined number of input and output tokens. Input consists of context and prompt tokens, with context tokens providing background and prompt tokens directing the model\'s task.',
   com_how_to_calculate_token_consumption: 'How to Calculate Token Consumption',
   com_total_token_consumption_formula:
-    'Total Token Consumption = (Input Tokens + Output Tokens) * Burn Rate',
+    'For estimating total token consumption, utilize the following formula:',
   com_example_of_token_consumption: 'Example of Token Consumption',
   com_important_considerations: 'Important Considerations',
   com_important_considerations_text:

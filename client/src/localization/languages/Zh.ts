@@ -515,7 +515,8 @@ export default {
   com_token_consumption_depends:
     '与模型交互时的算力消耗取决于输入和输出算力的总和。输入包括上下文算力和提示算力，其中上下文算力提供背景，提示算力指导模型的任务。',
   com_how_to_calculate_token_consumption: '如何计算算力消耗',
-  com_total_token_consumption_formula: '总算力消耗 =（输入算力 + 输出算力）* 燃烧率',
+  com_total_token_consumption_formula:
+    'For estimating total token consumption, utilize the following formula:',
   com_example_of_token_consumption: '算力消耗示例',
   com_important_considerations: '重要考虑因素',
   com_important_considerations_text:
