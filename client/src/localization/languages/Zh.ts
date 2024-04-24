@@ -532,6 +532,7 @@ export default {
   com_mixed_evaluations: '混合评估 Big-bench Hard',
   com_knowledge_qa: '知识问答 ARC Challenge',
   com_common_knowledge: '常识 Demknow',
+  com_ai_model_use_cases: 'AI Models and Their Use Cases',
   com_gpt_3_5_use_case:
     '一个多功能模型，在各种任务中表现良好，尽管不如更高级的模型强大。用例：适用于一般语言任务和不需要最高性能的应用程序。',
   com_gpt_4_use_case:

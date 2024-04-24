@@ -581,6 +581,7 @@ export default {
   com_mixed_evaluations: 'Mixed evaluations Big-bench Hard',
   com_knowledge_qa: 'Knowledge Q&A ARC Challenge',
   com_common_knowledge: 'Common Knowledge Demknow',
+  com_ai_model_use_cases: 'AI Models and Their Use Cases',
   com_gpt_3_5_use_case:
     'A versatile model that performs well in various tasks, although not as strong as its more advanced counterparts. Use case: Suitable for general-purpose language tasks and applications that don\'t require the highest level of performance.',
   com_gpt_4_use_case:

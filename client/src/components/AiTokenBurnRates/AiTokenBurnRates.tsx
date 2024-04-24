@@ -525,7 +525,7 @@ const AiTokenBurnRates = () => {
               </tr>
             </tbody>
           </table>
-          <h2 className="mb-4 mt-8 text-2xl font-bold">AI Models and their Use Cases</h2>
+          <h2 className="mb-4 mt-8 text-2xl font-bold">{localize('com_ai_model_use_cases')}</h2>
 
           <h3 className="mb-2 text-xl font-bold">{localize('com_gpt_3_5_turbo')}</h3>
           <p className="mb-4">{localize('com_gpt_3_5_use_case')}</p>
