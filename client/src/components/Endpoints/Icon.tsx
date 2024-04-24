@@ -33,7 +33,7 @@ const Icon: React.FC<IconProps> = (props) => {
   const avatarSrc = useAvatar(user);
 
   if (isCreatedByUser) {
-    const username = user?.name || 'User';
+    const username = user?.name || user?.username || 'User';
 
     return (
       <div
