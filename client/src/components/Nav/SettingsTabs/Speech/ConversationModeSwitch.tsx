@@ -8,8 +8,9 @@ export default function ConversationModeSwitch({
 }: {
   onCheckedChange?: (value: boolean) => void;
 }) {
-  const [conversationMode, setConversationMode] = useRecoilState<boolean>(store.conversationMode);
   const localize = useLocalize();
+  const [conversationMode, setConversationMode] = useRecoilState<boolean>(store.conversationMode);
+  const [TextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
 
   const handleCheckedChange = (value: boolean) => {
     setConversationMode(value);
@@ -27,6 +28,7 @@ export default function ConversationModeSwitch({
         onCheckedChange={handleCheckedChange}
         className="ml-4 mt-2"
         data-testid="ConversationMode"
+        disabled={!TextToSpeech}
       />
     </div>
   );

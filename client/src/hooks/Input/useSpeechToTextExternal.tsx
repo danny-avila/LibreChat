@@ -4,12 +4,12 @@ import { useSpeechToTextMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import store from '~/store';
-import Hark from 'hark';
 
 const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void) => {
   const { showToast } = useToastContext();
   const { data: startupConfig } = useGetStartupConfig();
   const isExternalSpeechEnabled = startupConfig?.speechToTextExternal ?? false;
+  const [speechToText] = useRecoilState<boolean>(store.SpeechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
   const [autoSendText] = useRecoilState<boolean>(store.autoSendText);
   const [text, setText] = useState<string>('');
@@ -17,10 +17,10 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
   const [permission, setPermission] = useState(false);
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [isRequestBeingMade, setIsRequestBeingMade] = useState(false);
+  const [minDecibels] = useRecoilState(store.decibelValue);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioStream = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const MIN_DECIBELS = -45;
   const animationFrameIdRef = useRef<number | null>(null);
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
@@ -28,7 +28,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
       const extractedText = data.text;
       setText(extractedText);
       setIsRequestBeingMade(false);
-      if (autoSendText) {
+      if (autoSendText && speechToText && extractedText.length > 0) {
         setTimeout(() => {
           onTranscriptionComplete(extractedText);
         }, 3000);
@@ -96,7 +96,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
     const audioContext = new AudioContext();
     const audioStreamSource = audioContext.createMediaStreamSource(stream);
     const analyser = audioContext.createAnalyser();
-    analyser.minDecibels = MIN_DECIBELS;
+    analyser.minDecibels = minDecibels;
     audioStreamSource.connect(analyser);
 
     const bufferLength = analyser.frequencyBinCount;
@@ -142,7 +142,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
         mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
         mediaRecorderRef.current.addEventListener('stop', handleStop);
         mediaRecorderRef.current.start(100);
-        if (!audioContextRef.current && autoTranscribeAudio) {
+        if (!audioContextRef.current && autoTranscribeAudio && speechToText) {
           monitorSilence(audioStream.current, stopRecording);
         }
         setIsListening(true);

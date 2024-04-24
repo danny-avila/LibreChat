@@ -8,8 +8,9 @@ export default function AutoSendTextSwitch({
 }: {
   onCheckedChange?: (value: boolean) => void;
 }) {
-  const [autoSendText, setAutoSendText] = useRecoilState<boolean>(store.autoSendText);
   const localize = useLocalize();
+  const [autoSendText, setAutoSendText] = useRecoilState<boolean>(store.autoSendText);
+  const [SpeechToText] = useRecoilState<boolean>(store.SpeechToText);
 
   const handleCheckedChange = (value: boolean) => {
     setAutoSendText(value);
@@ -27,6 +28,7 @@ export default function AutoSendTextSwitch({
         onCheckedChange={handleCheckedChange}
         className="ml-4 mt-2"
         data-testid="AutoSendText"
+        disabled={!SpeechToText}
       />
     </div>
   );

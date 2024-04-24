@@ -159,6 +159,7 @@ export default {
   com_ui_conversation_mode: 'Conversation Mode',
   com_ui_auto_send_text: 'Auto send text',
   com_ui_auto_transcribe_audio: 'Auto transcribe audio',
+  com_ui_db_sensitivity: 'Decibel sensitivity',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
