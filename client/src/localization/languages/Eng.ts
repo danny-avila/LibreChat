@@ -6,6 +6,11 @@ export default {
   com_ui_payment_title: 'Purchase Tokens',
   com_ui_payment_tokens: 'Tokens',
   com_ui_buy_token: 'Buy Tokens',
+  com_ui_payment_options: 'Select Payment Option',
+  com_ui_payment_purchase_button: 'Purchase',
+  com_ui_payment_please_note:
+    'Please Note! WeChat and Alipay valid only with a Chinese National ID-linked account',
+  com_ui_learn_more: 'Learn More',
   com_files_no_results: 'No results.',
   com_files_filter: 'Filter files...',
   com_files_number_selected: '{0} of {1} file(s) selected',

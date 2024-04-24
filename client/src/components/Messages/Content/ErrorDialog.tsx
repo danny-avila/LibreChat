@@ -89,7 +89,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
               </div>
             )}
             <div className="text-center text-sm dark:text-white">
-              Please Note! WeChat and Alipay valid only with a Chinese National ID-linked account
+              {localize('com_ui_payment_please_note')}
             </div>
             <div className="grid w-full grid-cols-2 gap-5 p-3">
               {tokenOptionsToUse.map(({ tokens, label, price }) => (
@@ -112,7 +112,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
             <div className="my-2 flex w-full items-center">
               <div className="flex-grow border-t border-gray-300"></div>
               <span className="text-md mx-4 flex-shrink bg-transparent px-2 text-gray-700 dark:text-gray-300">
-                Select Payment Option
+                {localize('com_ui_payment_options')}
               </span>
               <div className="flex-grow border-t border-gray-300"></div>
             </div>
@@ -146,7 +146,11 @@ export default function ErrorDialog({ open, onOpenChange }) {
               className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"
             >
               <span className="inline-flex items-center justify-center">
-                {processingTokenAmount !== null ? <Spinner /> : 'Purchase - 购买'}
+                {processingTokenAmount !== null ? (
+                  <Spinner />
+                ) : (
+                  localize('com_ui_payment_purchase_button')
+                )}
               </span>
             </button>
           </div>

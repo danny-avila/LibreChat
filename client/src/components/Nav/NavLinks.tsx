@@ -78,7 +78,7 @@ function NavLinks() {
                 {`${localize('com_tokens_remaining')} ${formatTokenCount(balanceQuery.data)}`}
               </div>
               <a href="/token-burn-rate" className="text-xs text-green-600">
-                Learn More
+                {localize('com_ui_learn_more')}
               </a>
               <button
                 onClick={() => setShowBuyTokens(true)}
