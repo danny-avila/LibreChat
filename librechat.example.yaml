@@ -24,6 +24,7 @@ registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook']
   # allowedDomains:
   # - "gmail.com"
+
 # rateLimits:
 #   fileUploads:
 #     ipMax: 100
@@ -115,13 +116,14 @@ endpoints:
       apiKey: '${OPENROUTER_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
       models:
-        default: ['gpt-3.5-turbo']
+        default: ['meta-llama/llama-3-70b-instruct']
         fetch: true
       titleConvo: true
-      titleModel: 'gpt-3.5-turbo'
+      titleModel: 'meta-llama/llama-3-70b-instruct'
       # Recommended: Drop the stop parameter from the request as Openrouter models use a variety of stop tokens.
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
+
 # fileConfig:
 #   endpoints:
 #     assistants:

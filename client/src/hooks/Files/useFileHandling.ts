@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   megabyte,
   EModelEndpoint,
+  codeTypeMapping,
   mergeFileConfig,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
@@ -172,10 +173,12 @@ const useFileHandling = (params?: UseFileHandling) => {
     for (let i = 0; i < fileList.length; i++) {
       let originalFile = fileList[i];
       let fileType = originalFile.type;
+      const extension = originalFile.name.split('.').pop() ?? '';
+      const knownCodeType = codeTypeMapping[extension];
 
-      // Infer MIME type for Markdown files when the type is empty
-      if (!fileType && originalFile.name.endsWith('.md')) {
-        fileType = 'text/markdown';
+      // Infer MIME type for Known Code files when the type is empty or a mismatch
+      if (knownCodeType && (!fileType || fileType !== knownCodeType)) {
+        fileType = knownCodeType;
       }
 
       // Check if the file type is still empty after the extension check
