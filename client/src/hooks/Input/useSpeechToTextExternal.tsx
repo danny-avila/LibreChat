@@ -19,7 +19,9 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
   const [isRequestBeingMade, setIsRequestBeingMade] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioStream = useRef<MediaStream | null>(null);
-  const harkRef = useRef(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const MIN_DECIBELS = -45;
+  const animationFrameIdRef = useRef<number | null>(null);
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
@@ -90,6 +92,39 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
     }
   };
 
+  const monitorSilence = (stream: MediaStream, stopRecording: () => void) => {
+    const audioContext = new AudioContext();
+    const audioStreamSource = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    analyser.minDecibels = MIN_DECIBELS;
+    audioStreamSource.connect(analyser);
+
+    const bufferLength = analyser.frequencyBinCount;
+    const domainData = new Uint8Array(bufferLength);
+    let lastSoundTime = Date.now();
+
+    const detectSound = () => {
+      analyser.getByteFrequencyData(domainData);
+      const isSoundDetected = domainData.some((value) => value > 0);
+
+      if (isSoundDetected) {
+        lastSoundTime = Date.now();
+      }
+
+      const timeSinceLastSound = Date.now() - lastSoundTime;
+      const isOverSilenceThreshold = timeSinceLastSound > 3000;
+
+      if (isOverSilenceThreshold) {
+        stopRecording();
+        return;
+      }
+
+      animationFrameIdRef.current = window.requestAnimationFrame(detectSound);
+    };
+
+    animationFrameIdRef.current = window.requestAnimationFrame(detectSound);
+  };
+
   const startRecording = async () => {
     if (isRequestBeingMade) {
       showToast({ message: 'A request is already being made. Please wait.', status: 'warning' });
@@ -107,19 +142,8 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
         mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
         mediaRecorderRef.current.addEventListener('stop', handleStop);
         mediaRecorderRef.current.start(100);
-        if (!harkRef.current && autoTranscribeAudio) {
-          harkRef.current = Hark(audioStream.current, {
-            interval: 100,
-          });
-          harkRef.current.on('speaking', () => {
-            // start
-            console.log('start');
-          });
-          harkRef.current.on('stopped_speaking', () => {
-            // stop
-            console.log('stop');
-            stopRecording();
-          });
+        if (!audioContextRef.current && autoTranscribeAudio) {
+          monitorSilence(audioStream.current, stopRecording);
         }
         setIsListening(true);
       } catch (error) {
@@ -137,15 +161,16 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
 
     if (mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
-      setIsListening(false);
-
-      if (harkRef.current && autoSendText) {
-        harkRef.current.stop();
-        harkRef.current = null;
-      }
 
       audioStream.current?.getTracks().forEach((track) => track.stop());
       audioStream.current = null;
+
+      if (animationFrameIdRef.current !== null) {
+        window.cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
+      }
+
+      setIsListening(false);
     } else {
       showToast({ message: 'MediaRecorder is not recording', status: 'error' });
     }
