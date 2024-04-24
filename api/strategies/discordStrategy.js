@@ -27,18 +27,20 @@ const discordLogin = async (accessToken, refreshToken, profile, cb) => {
       return cb(null, oldUser);
     }
 
-    if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await createNewUser({
-        email,
-        avatarUrl,
-        provider: 'discord',
-        providerKey: 'discordId',
-        providerId: discordId,
-        username: profile.username,
-        name: profile.global_name,
-      });
-      return cb(null, newUser);
+    if (!ALLOW_SOCIAL_REGISTRATION) {
+      return cb(null, false, { message: 'Social signup is disabled.' });
     }
+
+    const newUser = await createNewUser({
+      email,
+      avatarUrl,
+      provider: 'discord',
+      providerKey: 'discordId',
+      providerId: discordId,
+      username: profile.username,
+      name: profile.global_name,
+    });
+    return cb(null, newUser);
   } catch (err) {
     logger.error('[discordLogin]', err);
     return cb(err);

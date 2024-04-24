@@ -17,19 +17,21 @@ const googleLogin = async (accessToken, refreshToken, profile, cb) => {
       return cb(null, oldUser);
     }
 
-    if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await createNewUser({
-        email,
-        avatarUrl,
-        provider: 'google',
-        providerKey: 'googleId',
-        providerId: googleId,
-        username: profile.name.givenName,
-        name: `${profile.name.givenName} ${profile.name.familyName}`,
-        emailVerified: profile.emails[0].verified,
-      });
-      return cb(null, newUser);
+    if (!ALLOW_SOCIAL_REGISTRATION) {
+      return cb(null, false, { message: 'Social signup is disabled.' });
     }
+
+    const newUser = await createNewUser({
+      email,
+      avatarUrl,
+      provider: 'google',
+      providerKey: 'googleId',
+      providerId: googleId,
+      username: profile.name.givenName,
+      name: `${profile.name.givenName} ${profile.name.familyName}`,
+      emailVerified: profile.emails[0].verified,
+    });
+    return cb(null, newUser);
   } catch (err) {
     logger.error('[googleLogin]', err);
     return cb(err);

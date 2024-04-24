@@ -17,19 +17,21 @@ const githubLogin = async (accessToken, refreshToken, profile, cb) => {
       return cb(null, oldUser);
     }
 
-    if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await createNewUser({
-        email,
-        avatarUrl,
-        provider: 'github',
-        providerKey: 'githubId',
-        providerId: githubId,
-        username: profile.username,
-        name: profile.displayName,
-        emailVerified: profile.emails[0].verified,
-      });
-      return cb(null, newUser);
+    if (!ALLOW_SOCIAL_REGISTRATION) {
+      return cb(null, false, { message: 'Social signup is disabled.' });
     }
+
+    const newUser = await createNewUser({
+      email,
+      avatarUrl,
+      provider: 'github',
+      providerKey: 'githubId',
+      providerId: githubId,
+      username: profile.username,
+      name: profile.displayName,
+      emailVerified: profile.emails[0].verified,
+    });
+    return cb(null, newUser);
   } catch (err) {
     logger.error('[githubLogin]', err);
     return cb(err);

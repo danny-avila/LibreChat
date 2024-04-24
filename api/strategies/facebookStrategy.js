@@ -17,18 +17,20 @@ const facebookLogin = async (accessToken, refreshToken, profile, cb) => {
       return cb(null, oldUser);
     }
 
-    if (ALLOW_SOCIAL_REGISTRATION) {
-      const newUser = await createNewUser({
-        email,
-        avatarUrl,
-        provider: 'facebook',
-        providerKey: 'facebookId',
-        providerId: facebookId,
-        username: profile.displayName,
-        name: profile.name?.givenName + ' ' + profile.name?.familyName,
-      });
-      return cb(null, newUser);
+    if (!ALLOW_SOCIAL_REGISTRATION) {
+      return cb(null, false, { message: 'Social signup is disabled.' });
     }
+
+    const newUser = await createNewUser({
+      email,
+      avatarUrl,
+      provider: 'facebook',
+      providerKey: 'facebookId',
+      providerId: facebookId,
+      username: profile.displayName,
+      name: profile.name?.givenName + ' ' + profile.name?.familyName,
+    });
+    return cb(null, newUser);
   } catch (err) {
     logger.error('[facebookLogin]', err);
     return cb(err);
