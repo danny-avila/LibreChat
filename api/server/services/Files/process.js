@@ -12,7 +12,7 @@ const {
   hostImageIdSuffix,
   hostImageNamePrefix,
 } = require('librechat-data-provider');
-const { convertToWebP, resizeAndConvert } = require('~/server/services/Files/images');
+const { convertImage, resizeAndConvert } = require('~/server/services/Files/images');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { createFile, updateFileUsage, deleteFiles } = require('~/models/File');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
@@ -207,7 +207,7 @@ const processImageFile = async ({ req, res, file, metadata }) => {
       filename: file.originalname,
       context: FileContext.message_attachment,
       source,
-      type: 'image/webp',
+      type: `image/${req.app.locals.imageOutputType}`,
       width,
       height,
     },
@@ -223,9 +223,9 @@ const processImageFile = async ({ req, res, file, metadata }) => {
  * @param {Object} params - The parameters object.
  * @param {Express.Request} params.req - The Express request object.
  * @param {FileContext} params.context - The context of the file (e.g., 'avatar', 'image_generation', etc.)
- * @param {boolean} [params.resize=true] - Whether to resize and convert the image to WebP. Default is `true`.
+ * @param {boolean} [params.resize=true] - Whether to resize and convert the image to target format. Default is `true`.
  * @param {{ buffer: Buffer, width: number, height: number, bytes: number, filename: string, type: string, file_id: string }} [params.metadata] - Required metadata for the file if resize is false.
- * @returns {Promise<{ filepath: string, filename: string, source: string, type: 'image/webp'}>}
+ * @returns {Promise<{ filepath: string, filename: string, source: string, type: string}>}
  */
 const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true }) => {
   const source = req.app.locals.fileStrategy;
@@ -233,9 +233,14 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
   let { buffer, width, height, bytes, filename, file_id, type } = metadata;
   if (resize) {
     file_id = v4();
-    type = 'image/webp';
-    ({ buffer, width, height, bytes } = await resizeAndConvert(req.file.buffer));
-    filename = path.basename(req.file.originalname, path.extname(req.file.originalname)) + '.webp';
+    type = `image/${req.app.locals.imageOutputType}`;
+    ({ buffer, width, height, bytes } = await resizeAndConvert({
+      inputBuffer: buffer,
+      desiredFormat: req.app.locals.imageOutputType,
+    }));
+    filename = `${path.basename(req.file.originalname, path.extname(req.file.originalname))}.${
+      req.app.locals.imageOutputType
+    }`;
   }
 
   const filepath = await saveBuffer({ userId: req.user.id, fileName: filename, buffer });
@@ -363,7 +368,7 @@ const processOpenAIFile = async ({
 };
 
 /**
- * Process OpenAI image files, convert to webp, save and return file metadata.
+ * Process OpenAI image files, convert to target format, save and return file metadata.
  * @param {object} params - The params object.
  * @param {Express.Request} params.req - The Express request object.
  * @param {Buffer} params.buffer - The image buffer.
@@ -375,12 +380,12 @@ const processOpenAIFile = async ({
 const processOpenAIImageOutput = async ({ req, buffer, file_id, filename, fileExt }) => {
   const currentDate = new Date();
   const formattedDate = currentDate.toISOString();
-  const _file = await convertToWebP(req, buffer, 'high', `${file_id}${fileExt}`);
+  const _file = await convertImage(req, buffer, 'high', `${file_id}${fileExt}`);
   const file = {
     ..._file,
     usage: 1,
     user: req.user.id,
-    type: 'image/webp',
+    type: `image/${req.app.locals.imageOutputType}`,
     createdAt: formattedDate,
     updatedAt: formattedDate,
     source: req.app.locals.fileStrategy,

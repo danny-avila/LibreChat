@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { EModelEndpoint, FileSources } = require('librechat-data-provider');
+const { EModelEndpoint, FileSources, VisionModes } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('../strategies');
 const { logger } = require('~/config');
 
@@ -30,11 +30,20 @@ const base64Only = new Set([EModelEndpoint.google, EModelEndpoint.anthropic]);
  * @param {Express.Request} req - The request object.
  * @param {Array<MongoFile>} files - The array of files to encode and format.
  * @param {EModelEndpoint} [endpoint] - Optional: The endpoint for the image.
+ * @param {string} [mode] - Optional: The endpoint mode for the image.
  * @returns {Promise<Object>} - A promise that resolves to the result object containing the encoded images and file details.
  */
-async function encodeAndFormat(req, files, endpoint) {
+async function encodeAndFormat(req, files, endpoint, mode) {
   const promises = [];
   const encodingMethods = {};
+  const result = {
+    files: [],
+    image_urls: [],
+  };
+
+  if (!files || !files.length) {
+    return result;
+  }
 
   for (let file of files) {
     const source = file.source ?? FileSources.local;
@@ -69,11 +78,6 @@ async function encodeAndFormat(req, files, endpoint) {
   /** @type {Array<[MongoFile, string]>} */
   const formattedImages = await Promise.all(promises);
 
-  const result = {
-    files: [],
-    image_urls: [],
-  };
-
   for (const [file, imageContent] of formattedImages) {
     const fileMetadata = {
       type: file.type,
@@ -98,12 +102,18 @@ async function encodeAndFormat(req, files, endpoint) {
       image_url: {
         url: imageContent.startsWith('http')
           ? imageContent
-          : `data:image/webp;base64,${imageContent}`,
+          : `data:${file.type};base64,${imageContent}`,
         detail,
       },
     };
 
-    if (endpoint && endpoint === EModelEndpoint.google) {
+    if (endpoint && endpoint === EModelEndpoint.google && mode === VisionModes.generative) {
+      delete imagePart.image_url;
+      imagePart.inlineData = {
+        mimeType: file.type,
+        data: imageContent,
+      };
+    } else if (endpoint && endpoint === EModelEndpoint.google) {
       imagePart.image_url = imagePart.image_url.url;
     } else if (endpoint && endpoint === EModelEndpoint.anthropic) {
       imagePart.type = 'image';

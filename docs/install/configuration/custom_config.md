@@ -203,6 +203,19 @@ This example configuration file sets up LibreChat with detailed options across s
 - **Description**: Determines where to save user uploaded/generated files. Defaults to `"local"` if omitted.
 - **Example**: `fileStrategy: "firebase"`
 
+### Image Links
+- **Key**: `secureImageLinks`
+- **Type**: Boolean
+- **Description**: Whether or not to secure access to image links that are hosted locally by the app. Default: false.
+- **Example**: `secureImageLinks: true`
+
+### Image Output Type
+- **Key**: `imageOutputType`
+- **Type**: String, "png" | "webp" | "jpeg"
+- **Description**: The image output type for image responses. Defaults to "png" if omitted.
+- **Note**: Case-sensitive. Google endpoint only supports "jpeg" and "png" output types.
+- **Example**: `imageOutputType: "webp"`
+
 ### File Configuration
 - **Key**: `fileConfig`
 - **Type**: Object
