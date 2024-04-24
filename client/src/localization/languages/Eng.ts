@@ -569,8 +569,6 @@ export default {
   com_important_considerations_text:
     'The provided burn rate is a tool to compare the token usage efficiency among different models, it is not a direct measure of total token cost. Be aware that token consumption can vary based on specific interactions, and the burn rate should be used for a rough estimation. The extent of your input will have a significant impact on the total token consumption.',
   com_comparative_analysis: 'Comparative Analysis of AI Models Across Diverse Benchmarks',
-  com_comparative_analysis_text:
-    'Here\'s a hypothetical scenario using a model with a burn rate of 5. If an interaction includes 50 context, 100 prompt tokens, and the model produces a 50-token response, the consumption is calculated as:',
   com_undergraduate_biology: 'Undergraduate level biology MMLU',
   com_graduate_reasoning: 'Graduate level reasoning GFVR, Diamond',
   com_grade_school_math: 'Grade school math GSMAR',
