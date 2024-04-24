@@ -547,7 +547,7 @@ export default {
 
   com_token_usage_overview: 'Token Usage Overview',
   com_token_usage_description:
-    'When purchasing tokens, these can be used with various language models available on our platform. Each model has an associated "burn rate" (BR), which serves as a way to compare token consumption rates across different models. This rate provides you with a multiplier that reflects the average token consumption for both input and output combined.',
+    'Tokens can be used with various language models available on our platform. Each model has an associated "burn rate" (BR), which serves as a way to compare token consumption rates across different models. This rate provides you with a multiplier that reflects the average token consumption for both input and output combined.',
   com_model_consumption_rates: 'Model Consumption Rates',
   com_model_rates_table: 'Below is a table outlining the burn rates for different models:',
   com_model: 'Model',
@@ -566,7 +566,11 @@ export default {
     'Total Token Consumption = (Input Tokens + Output Tokens) * Burn Rate',
   com_example_of_token_consumption: 'Example of Token Consumption',
   com_important_considerations: 'Important Considerations',
+  com_important_considerations_text:
+    'The provided burn rate is a tool to compare the token usage efficiency among different models, it is not a direct measure of total token cost. Be aware that token consumption can vary based on specific interactions, and the burn rate should be used for a rough estimation. The extent of your input will have a significant impact on the total token consumption.',
   com_comparative_analysis: 'Comparative Analysis of AI Models Across Diverse Benchmarks',
+  com_comparative_analysis_text:
+    'Here\'s a hypothetical scenario using a model with a burn rate of 5. If an interaction includes 50 context, 100 prompt tokens, and the model produces a 50-token response, the consumption is calculated as:',
   com_undergraduate_biology: 'Undergraduate level biology MMLU',
   com_graduate_reasoning: 'Graduate level reasoning GFVR, Diamond',
   com_grade_school_math: 'Grade school math GSMAR',

@@ -107,12 +107,12 @@ const AiTokenBurnRates = () => {
         </div>
         <div className="mt-8">
           <h2 className="mb-2 text-xl font-bold">{localize('com_important_considerations')}</h2>
-          <p>{localize('com_important_considerations')}</p>
+          <p>{localize('com_important_considerations_text')}</p>
         </div>
         <hr className="my-12 h-0.5 border-t-0 bg-black dark:bg-white/10" />
         <div className="mt-8">
           <h1 className="mb-4 mt-8 text-2xl font-bold ">{localize('com_comparative_analysis')}</h1>
-          <p>{localize('com_comparative_analysis')}</p>
+          <p>{localize('com_comparative_analysis_text')}</p>
         </div>
       </div>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">

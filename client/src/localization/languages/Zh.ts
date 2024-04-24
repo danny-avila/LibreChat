@@ -518,6 +518,8 @@ export default {
   com_total_token_consumption_formula: '总算力消耗 =（输入算力 + 输出算力）* 燃烧率',
   com_example_of_token_consumption: '算力消耗示例',
   com_important_considerations: '重要考虑因素',
+  com_important_considerations_text:
+    'The provided burn rate is a tool to compare the token usage efficiency among different models, it is not a direct measure of total token cost. Be aware that token consumption can vary based on specific interactions, and the burn rate should be used for a rough estimation. The extent of your input will have a significant impact on the total token consumption.',
   com_comparative_analysis: '跨不同基准的AI模型比较分析',
   com_undergraduate_biology: '本科生水平生物学 MMLU',
   com_graduate_reasoning: '研究生水平推理 GFVR，Diamond',
