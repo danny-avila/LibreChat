@@ -5,7 +5,6 @@ const { actionDelimiter, EModelEndpoint } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistant, getAssistant } = require('~/models/Assistant');
-const { withSession } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -109,10 +108,10 @@ router.post('/:assistant_id', async (req, res) => {
         })),
       );
 
+    let updatedAssistant = await openai.beta.assistants.update(assistant_id, { tools });
     const promises = [];
     promises.push(
-      withSession(
-        updateAssistant,
+      updateAssistant(
         { assistant_id },
         {
           actions,
@@ -120,29 +119,26 @@ router.post('/:assistant_id', async (req, res) => {
         },
       ),
     );
-    promises.push(openai.beta.assistants.update(assistant_id, { tools }));
-    promises.push(
-      withSession(updateAction, { action_id }, { metadata, assistant_id, user: req.user.id }),
-    );
+    promises.push(updateAction({ action_id }, { metadata, assistant_id, user: req.user.id }));
 
-    /** @type {[AssistantDocument, Assistant, Action]} */
-    const resolved = await Promise.all(promises);
+    /** @type {[AssistantDocument, Action]} */
+    let [assistantDocument, updatedAction] = await Promise.all(promises);
     const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
     for (let field of sensitiveFields) {
-      if (resolved[2].metadata[field]) {
-        delete resolved[2].metadata[field];
+      if (updatedAction.metadata[field]) {
+        delete updatedAction.metadata[field];
       }
     }
 
     /* Map Azure OpenAI model to the assistant as defined by config */
     if (req.app.locals[EModelEndpoint.azureOpenAI]?.assistants) {
-      resolved[1] = {
-        ...resolved[1],
+      updatedAssistant = {
+        ...updatedAssistant,
         model: req.body.model,
       };
     }
 
-    res.json(resolved);
+    res.json([assistantDocument, updatedAssistant, updatedAction]);
   } catch (error) {
     const message = 'Trouble updating the Assistant Action';
     logger.error(message, error);
@@ -190,10 +186,11 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
       (tool) => !(tool.function && tool.function.name.includes(domain)),
     );
 
+    await openai.beta.assistants.update(assistant_id, { tools: updatedTools });
+
     const promises = [];
     promises.push(
-      withSession(
-        updateAssistant,
+      updateAssistant(
         { assistant_id },
         {
           actions: updatedActions,
@@ -201,8 +198,7 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
         },
       ),
     );
-    promises.push(openai.beta.assistants.update(assistant_id, { tools: updatedTools }));
-    promises.push(withSession(deleteAction, { action_id }));
+    promises.push(deleteAction({ action_id }));
 
     await Promise.all(promises);
     res.status(200).json({ message: 'Action deleted successfully' });
