@@ -11,6 +11,7 @@ import DynamicTextarea from './DynamicTextarea';
 import DynamicSlider from './DynamicSlider';
 import DynamicSwitch from './DynamicSwitch';
 import DynamicInput from './DynamicInput';
+import DynamicTags from './DynamicTags';
 
 const settingsConfiguration: SettingsConfiguration = [
   {
@@ -129,6 +130,20 @@ const settingsConfiguration: SettingsConfiguration = [
     showDefault: false,
     columnSpan: 2,
   },
+  {
+    key: 'stop',
+    label: 'com_endpoint_stop',
+    labelCode: true,
+    description: 'com_endpoint_openai_stop',
+    descriptionCode: true,
+    type: 'array',
+    default: [],
+    component: 'tags',
+    optionType: 'conversation',
+    columnSpan: 4,
+    minTags: 1,
+    maxTags: 4,
+  },
 ];
 
 const componentMapping: Record<ComponentTypes, React.ComponentType<DynamicSettingProps>> = {
@@ -138,6 +153,7 @@ const componentMapping: Record<ComponentTypes, React.ComponentType<DynamicSettin
   [ComponentTypes.Textarea]: DynamicTextarea,
   [ComponentTypes.Input]: DynamicInput,
   [ComponentTypes.Checkbox]: DynamicCheckbox,
+  [ComponentTypes.Tags]: DynamicTags,
 };
 
 export default function Parameters() {
@@ -173,6 +189,10 @@ export default function Parameters() {
   const Input = componentMapping[chatGptLabel.component];
   const { key: inputKey, default: inputDefault, ...inputSettings } = chatGptLabel;
 
+  const stop = settingsConfiguration.find((setting) => setting.key === 'stop') as SettingDefinition;
+  const Tags = componentMapping[stop.component];
+  const { key: stopKey, default: stopDefault, ...stopSettings } = stop;
+
   return (
     <div className="h-auto max-w-full overflow-x-hidden p-3">
       <div className="grid grid-cols-4 gap-6">
@@ -207,6 +227,12 @@ export default function Parameters() {
           settingKey={detail}
           defaultValue={detailDefault}
           {...detailSettings}
+          setOption={setOption}
+        />
+        <Tags
+          settingKey={stopKey}
+          defaultValue={stopDefault}
+          {...stopSettings}
           setOption={setOption}
         />
       </div>

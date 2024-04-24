@@ -19,7 +19,7 @@ const TagPrimitiveRoot = React.forwardRef<HTMLDivElement, TagProps>(
         className,
       )}
     >
-      <div className={cn('ml-1 px-2 py-1', labelClassName)}>{label}</div>
+      <div className={cn('ml-1 truncate break-all px-2 py-1', labelClassName)}>{label}</div>
       {CancelButton ? (
         CancelButton
       ) : (
