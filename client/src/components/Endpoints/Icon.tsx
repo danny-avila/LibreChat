@@ -14,6 +14,7 @@ import {
 } from '~/components/svg';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
+import useLocalize from '~/hooks/useLocalize';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
@@ -31,9 +32,10 @@ const Icon: React.FC<IconProps> = (props) => {
   } = props;
 
   const avatarSrc = useAvatar(user);
+  const localize = useLocalize();
 
   if (isCreatedByUser) {
-    const username = user?.name || 'User';
+    const username = user?.name || user?.username || localize('com_nav_user');
 
     return (
       <div
