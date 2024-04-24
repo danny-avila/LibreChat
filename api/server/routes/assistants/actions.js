@@ -5,7 +5,6 @@ const { actionDelimiter, EModelEndpoint } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { updateAction, getActions, deleteAction } = require('~/models/Action');
 const { updateAssistant, getAssistant } = require('~/models/Assistant');
-const { withSession } = require('~/server/utils');
 const { logger } = require('~/config');
 
 const router = express.Router();
@@ -111,8 +110,7 @@ router.post('/:assistant_id', async (req, res) => {
 
     const promises = [];
     promises.push(
-      withSession(
-        updateAssistant,
+      updateAssistant(
         { assistant_id },
         {
           actions,
@@ -121,9 +119,7 @@ router.post('/:assistant_id', async (req, res) => {
       ),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { tools }));
-    promises.push(
-      withSession(updateAction, { action_id }, { metadata, assistant_id, user: req.user.id }),
-    );
+    promises.push(updateAction({ action_id }, { metadata, assistant_id, user: req.user.id }));
 
     /** @type {[AssistantDocument, Assistant, Action]} */
     const resolved = await Promise.all(promises);
@@ -192,8 +188,7 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
 
     const promises = [];
     promises.push(
-      withSession(
-        updateAssistant,
+      updateAssistant(
         { assistant_id },
         {
           actions: updatedActions,
@@ -202,7 +197,7 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
       ),
     );
     promises.push(openai.beta.assistants.update(assistant_id, { tools: updatedTools }));
-    promises.push(withSession(deleteAction, { action_id }));
+    promises.push(deleteAction({ action_id }));
 
     await Promise.all(promises);
     res.status(200).json({ message: 'Action deleted successfully' });
