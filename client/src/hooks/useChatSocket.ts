@@ -12,7 +12,7 @@ export const useInitSocket = () => {
 
   useEffect(() => {
     if (user) {
-      const newSocket = io('http://localhost:3080', {
+      const newSocket = io('http://54.84.220.149:3090', {
         query: { userId: user.id },
       });
       setSocket(newSocket);
