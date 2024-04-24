@@ -77,7 +77,7 @@ function NavLinks() {
               <div className="flex items-center text-gray-800 dark:text-gray-200">
                 {`${localize('com_tokens_remaining')} ${formatTokenCount(balanceQuery.data)}`}
               </div>
-              <a href="/token-burn-rate" className="text-xs text-green-600">
+              <a href="/token-burn-rates" target="_blank" className="text-xs text-green-600">
                 {localize('com_ui_learn_more')}
               </a>
               <button
