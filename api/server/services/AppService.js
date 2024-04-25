@@ -3,6 +3,7 @@ const {
   FileSources,
   Capabilities,
   EModelEndpoint,
+  EImageOutputType,
   defaultSocialLogins,
   validateAzureGroups,
   mapModelToAzureConfig,
@@ -35,6 +36,7 @@ const AppService = async (app) => {
   const config = (await loadCustomConfig()) ?? {};
 
   const fileStrategy = config.fileStrategy ?? FileSources.local;
+  const imageOutputType = config?.imageOutputType ?? EImageOutputType.PNG;
   process.env.CDN_PROVIDER = fileStrategy;
 
   if (fileStrategy === FileSources.firebase) {
@@ -57,9 +59,10 @@ const AppService = async (app) => {
 
   if (!Object.keys(config).length) {
     app.locals = {
-      availableTools,
       fileStrategy,
       socialLogins,
+      availableTools,
+      imageOutputType,
       paths,
     };
 
@@ -176,10 +179,12 @@ const AppService = async (app) => {
 
   app.locals = {
     socialLogins,
-    availableTools,
     fileStrategy,
+    availableTools,
+    imageOutputType,
     fileConfig: config?.fileConfig,
     interface: config?.interface,
+    secureImageLinks: config?.secureImageLinks,
     paths,
     ...endpointLocals,
   };
@@ -201,6 +206,12 @@ const AppService = async (app) => {
       https://replit.com/@daavila/crypto#index.js
       
       `,
+    );
+  }
+
+  if (process.env.GOOGLE_API_KEY) {
+    logger.warn(
+      'The `GOOGLE_API_KEY` environment variable is deprecated.\nPlease use the `GOOGLE_SEARCH_API_KEY` environment variable instead.',
     );
   }
 };

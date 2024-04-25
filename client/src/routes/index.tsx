@@ -9,6 +9,7 @@ import {
   VerifyEmail,
   ApiErrorWatcher,
 } from '~/components/Auth';
+import AiTokenBurnRates from '~/components/AiTokenBurnRates/AiTokenBurnRates';
 import TermsOfService from '~/components/TermsOfService/TermsOfService';
 import PrivacyPolicy from '~/components/PrivacyPolicy/PrivacyPolicy';
 import { AuthContextProvider } from '~/hooks/AuthContext';
@@ -71,5 +72,9 @@ export const router = createBrowserRouter([
   {
     path: 'privacy-policy',
     element: <PrivacyPolicy />,
+  },
+  {
+    path: 'token-burn-rates', // New route for AI token burn rates
+    element: <AiTokenBurnRates />,
   },
 ]);

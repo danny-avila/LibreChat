@@ -3,6 +3,13 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets present in this file
 
 export default {
+  com_ui_payment_title: '购买算力',
+  com_ui_payment_tokens: '算力',
+  com_ui_buy_token: '购买算力',
+  com_ui_payment_options: '选择支付方式',
+  com_ui_payment_purchase_button: '购买',
+  com_ui_payment_please_note: '请注意！微信和支付宝仅适用于与中国身份证关联的账户。',
+  com_ui_learn_more: '了解更多',
   com_files_no_results: '无结果。',
   com_files_filter: '筛选文件...',
   com_files_number_selected: '已选择 {0} 个文件（共 {1} 个文件）',
@@ -426,7 +433,7 @@ export default {
   com_signin_create_account: '创建账户',
   com_insufficient_funds: '算力不足! 余额:',
   com_tokens_remaining: '剩余算力:',
-  gpt4_token_burn_rate: 'GPT-4使用的算力是GPT-3.5的15倍。',
+  token_burn_rate: 'Click here for more info on Token Usage',
   com_privacy_policy_title: 'GPT China 隐私政策',
   com_privacy_policy_last_updated: '最后更新：2024年4月4日',
   com_privacy_policy_intro:
@@ -491,4 +498,48 @@ export default {
   com_terms_contact_title: '10. 联系信息',
   com_terms_contact_text: '如有任何关于这些条款的问题或担忧，请通过 hello@gptchina.io 与我们联系。',
   com_auth_registration_success: '注册成功。请检查您的电子邮件以验证您的电子邮件地址。',
+  com_token_usage_overview: '算力使用概览',
+  com_token_usage_description:
+    '算力可以在我们平台上的各种语言模型中使用。每个模型都有一个相关的"燃烧率"（BR），它可以比较不同模型之间的算力消耗率。这个比率为您提供了一个乘数，反映了输入和输出的平均算力消耗。',
+  com_model_consumption_rates: '模型消耗率',
+  com_model_rates_table: '下表概述了不同模型的燃烧率：',
+  com_model: '模型',
+  com_input_tokens: '输入算力',
+  com_output_tokens: '输出算力',
+  com_burn_rate: '燃烧率（BR）',
+  com_gpt_3_5_turbo: 'GPT-3.5 Turbo',
+  com_gpt_4: 'GPT-4',
+  com_claude_3_haiku: 'Claude-3 Haiku',
+  com_claude_3_sonnet: 'Claude-3 Sonnet',
+  com_claude_3_opus: 'Claude-3 Opus',
+  com_token_consumption_depends:
+    '与模型交互时的算力消耗取决于输入和输出算力的总和。输入包括上下文算力和提示算力，其中上下文算力提供背景，提示算力指导模型的任务。',
+  com_how_to_calculate_token_consumption: '如何计算算力消耗',
+  com_total_token_consumption_formula: '要估算总算力消耗，请使用以下公式：',
+  com_example_of_token_consumption: '算力消耗示例',
+  com_important_considerations: '重要考虑因素',
+  com_important_considerations_text:
+    '提供的燃烧率是一个比较不同模型算力使用效率的工具，它不是总算力成本的直接衡量标准。请注意，算力消耗可能会根据具体的交互而有所不同，燃烧率应该用于粗略估计。您的输入程度将对总算力消耗产生重大影响。',
+  com_comparative_analysis: '跨不同基准的AI模型比较分析',
+  com_undergraduate_biology: '本科生水平生物学 MMLU',
+  com_graduate_reasoning: '研究生水平推理 GFVR，Diamond',
+  com_grade_school_math: '小学数学 GSMAR',
+  com_math_problem_solving: '数学问题解决 MATH',
+  com_multilingual_math: '多语言数学 MGSM',
+  com_code: '代码 HumanEval',
+  com_reasoning_over_text: '文本推理 DROP F1 score',
+  com_mixed_evaluations: '混合评估 Big-bench Hard',
+  com_knowledge_qa: '知识问答 ARC Challenge',
+  com_common_knowledge: '常识 Demknow',
+  com_ai_model_use_cases: 'AI模型及其用例',
+  com_gpt_3_5_use_case:
+    '一个多功能模型，在各种任务中表现良好，尽管不如更高级的模型强大。用例：适用于一般语言任务和不需要最高性能的应用。',
+  com_gpt_4_use_case:
+    '一个强大的模型，在性能上紧跟 Claude 3 Opus，并在基于知识的问答方面表现出色。用例：非常适合需要深入理解、复杂推理和广泛知识检索的任务。',
+  com_claude_3_haiku_use_case:
+    '一个有能力的模型，在代码评估和文本推理方面表现良好。用例：最适合涉及代码分析、基于文本的推理和创意写作的任务。',
+  com_claude_3_sonnet_use_case:
+    '在多个领域表现出色，在大多数任务中略低于 Claude 3 Opus。用例：适用于需要高质量语言理解和生成的各种应用。',
+  com_claude_3_opus_use_case:
+    '一个高度capable的AI模型，在各种基准测试中始终优于其他模型。用例：非常适合需要高级推理、问题解决和基于知识的问答的复杂任务。',
 };

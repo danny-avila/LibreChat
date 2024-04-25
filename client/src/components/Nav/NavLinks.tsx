@@ -17,8 +17,8 @@ import NavLink from './NavLink';
 import Logout from './Logout';
 import { cn } from '~/utils/';
 import ErrorDialog from '~/components/Messages/Content/ErrorDialog';
-import { Tooltip } from 'react-tooltip';
 import numeral from 'numeral';
+import { Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/Tooltip';
 
 import store from '~/store';
 
@@ -70,52 +70,16 @@ function NavLinks() {
 
   return (
     <>
-      <Tooltip id="token-explain" />
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
             <div className="m-1 ml-3 flex flex-col items-start whitespace-nowrap text-left text-sm text-gray-100">
-              <div className="flex items-center">
-                <span
-                  data-tooltip-id="token-explain"
-                  data-tooltip-html={localize('gpt4_token_burn_rate')}
-                  className="text-gray-800 dark:text-gray-200"
-                >
-                  {`${localize('com_tokens_remaining')} ${formatTokenCount(balanceQuery.data)}`}
-
-                  <svg
-                    width="18px"
-                    height="18px"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="ml-1"
-                    style={{ display: 'inline-block' }}
-                  >
-                    <path
-                      d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M9 9C9 5.49997 14.5 5.5 14.5 9C14.5 11.5 12 10.9999 12 13.9999"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M12 18.01L12.01 17.9989"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
+              <div className="flex items-center text-gray-800 dark:text-gray-200">
+                {`${localize('com_tokens_remaining')} ${formatTokenCount(balanceQuery.data)}`}
               </div>
+              <a href="/token-burn-rates" target="_blank" className="text-xs text-green-600">
+                {localize('com_ui_learn_more')}
+              </a>
               <button
                 onClick={() => setShowBuyTokens(true)}
                 className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"

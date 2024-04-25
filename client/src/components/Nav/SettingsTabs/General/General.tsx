@@ -14,6 +14,7 @@ import {
 import type { TDangerButtonProps } from '~/common';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
 import AutoScrollSwitch from './AutoScrollSwitch';
+import SendMessageKeyEnter from './EnterToSend';
 import ShowCodeSwitch from './ShowCodeSwitch';
 import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
@@ -185,6 +186,9 @@ function General() {
 
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <AutoScrollSwitch />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <SendMessageKeyEnter />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <ShowCodeSwitch />

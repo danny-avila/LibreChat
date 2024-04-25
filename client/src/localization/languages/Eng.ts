@@ -6,6 +6,11 @@ export default {
   com_ui_payment_title: 'Purchase Tokens',
   com_ui_payment_tokens: 'Tokens',
   com_ui_buy_token: 'Buy Tokens',
+  com_ui_payment_options: 'Select Payment Option',
+  com_ui_payment_purchase_button: 'Purchase',
+  com_ui_payment_please_note:
+    'Please Note! WeChat and Alipay valid only with a Chinese National ID-linked account',
+  com_ui_learn_more: 'Learn More',
   com_files_no_results: 'No results.',
   com_files_filter: 'Filter files...',
   com_files_number_selected: '{0} of {1} file(s) selected',
@@ -414,6 +419,7 @@ export default {
   com_nav_theme_system: 'System',
   com_nav_theme_dark: 'Dark',
   com_nav_theme_light: 'Light',
+  com_nav_enter_to_send: 'Press Enter to send messages',
   com_nav_user_name_display: 'Display username in messages',
   com_nav_show_code: 'Always show code when using code interpreter',
   com_nav_clear_all_chats: 'Clear all chats',
@@ -470,7 +476,7 @@ export default {
   com_signin_create_account: 'create an account',
   com_insufficient_funds: 'Insufficient Funds',
   com_tokens_remaining: 'Tokens Remaining:',
-  gpt4_token_burn_rate: 'GPT-4使用的算力是GPT-3.5的15倍。',
+  token_burn_rate: 'Click here for more info on Token Usage',
   com_nav_lang_hebrew: 'עברית',
   com_privacy_policy_title: 'Privacy Policy for GPT China',
   com_privacy_policy_last_updated: 'Last updated: April 4, 2024',
@@ -538,4 +544,50 @@ export default {
     'For any questions or concerns regarding these terms, please contact us at hello@gptchina.io.',
   com_auth_registration_success:
     'Registration successful. Please check your email to verify your email address.',
+
+  com_token_usage_overview: 'Token Usage Overview',
+  com_token_usage_description:
+    'Tokens can be used with various language models available on our platform. Each model has an associated "burn rate" (BR), which serves as a way to compare token consumption rates across different models. This rate provides you with a multiplier that reflects the average token consumption for both input and output combined.',
+  com_model_consumption_rates: 'Model Consumption Rates',
+  com_model_rates_table: 'Below is a table outlining the burn rates for different models:',
+  com_model: 'Model',
+  com_input_tokens: 'Input Tokens',
+  com_output_tokens: 'Output Tokens',
+  com_burn_rate: 'Burn Rate (BR)',
+  com_gpt_3_5_turbo: 'GPT-3.5 Turbo',
+  com_gpt_4: 'GPT-4',
+  com_claude_3_haiku: 'Claude-3 Haiku',
+  com_claude_3_sonnet: 'Claude-3 Sonnet',
+  com_claude_3_opus: 'Claude-3 Opus',
+  com_token_consumption_depends:
+    'Token consumption upon interacting with a model depends on the combined number of input and output tokens. Input consists of context and prompt tokens, with context tokens providing background and prompt tokens directing the model\'s task.',
+  com_how_to_calculate_token_consumption: 'How to Calculate Token Consumption',
+  com_total_token_consumption_formula:
+    'For estimating total token consumption, utilize the following formula:',
+  com_example_of_token_consumption: 'Example of Token Consumption',
+  com_important_considerations: 'Important Considerations',
+  com_important_considerations_text:
+    'The provided burn rate is a tool to compare the token usage efficiency among different models, it is not a direct measure of total token cost. Be aware that token consumption can vary based on specific interactions, and the burn rate should be used for a rough estimation. The extent of your input will have a significant impact on the total token consumption.',
+  com_comparative_analysis: 'Comparative Analysis of AI Models Across Diverse Benchmarks',
+  com_undergraduate_biology: 'Undergraduate level biology MMLU',
+  com_graduate_reasoning: 'Graduate level reasoning GFVR, Diamond',
+  com_grade_school_math: 'Grade school math GSMAR',
+  com_math_problem_solving: 'Math problem-solving MATH',
+  com_multilingual_math: 'Multilingual math MGSM',
+  com_code: 'Code HumanEval',
+  com_reasoning_over_text: 'Reasoning over text DROP F1 score',
+  com_mixed_evaluations: 'Mixed evaluations Big-bench Hard',
+  com_knowledge_qa: 'Knowledge Q&A ARC Challenge',
+  com_common_knowledge: 'Common Knowledge Demknow',
+  com_ai_model_use_cases: 'AI Models and Their Use Cases',
+  com_gpt_3_5_use_case:
+    'A versatile model that performs well in various tasks, although not as strong as its more advanced counterparts. Use case: Suitable for general-purpose language tasks and applications that don\'t require the highest level of performance.',
+  com_gpt_4_use_case:
+    'A powerful model that closely follows Claude 3 Opus in performance and excels in knowledge-based question-answering. Use case: Ideal for tasks that require deep understanding, complex reasoning, and extensive knowledge retrieval.',
+  com_claude_3_haiku_use_case:
+    'A capable model that performs well in code evaluation and reasoning over text. Use case: Best suited for tasks involving code analysis, text-based reasoning, and creative writing.',
+  com_claude_3_sonnet_use_case:
+    'A strong performer across multiple domains, slightly behind Claude 3 Opus in most tasks. Use case: Suitable for a wide range of applications that require high-quality language understanding and generation.',
+  com_claude_3_opus_use_case:
+    'A highly capable AI model that consistently outperforms others across various benchmarks. Use case: Ideal for complex tasks requiring advanced reasoning, problem-solving, and knowledge-based question-answering.',
 };

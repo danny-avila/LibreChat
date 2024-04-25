@@ -1,32 +1,30 @@
 import debounce from 'lodash/debounce';
-import React, { useEffect, useRef, useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
+import React, { useEffect, useRef, useCallback } from 'react';
 import type { TEndpointOption } from 'librechat-data-provider';
-import type { UseFormSetValue } from 'react-hook-form';
 import type { KeyboardEvent } from 'react';
-import { forceResize, insertTextAtCursor, trimUndoneRange, getAssistantName } from '~/utils';
+import { forceResize, insertTextAtCursor, getAssistantName } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useChatContext } from '~/Providers/ChatContext';
 import useLocalize from '~/hooks/useLocalize';
+import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
 export default function useTextarea({
   textAreaRef,
   submitButtonRef,
-  setValue,
-  getValues,
   disabled = false,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
-  setValue: UseFormSetValue<{ text: string }>;
-  getValues: (field: string) => string;
   disabled?: boolean;
 }) {
   const assistantMap = useAssistantsMapContext();
+  const enterToSend = useRecoilValue(store.enterToSend);
   const {
     conversation,
     isSubmitting,
@@ -134,52 +132,34 @@ export default function useTextarea({
     assistantMap,
   ]);
 
-  const handleKeyDown = (e: KeyEvent) => {
-    if (e.key === 'Enter' && isSubmitting) {
-      return;
-    }
+  const handleKeyDown = useCallback(
+    (e: KeyEvent) => {
+      if (e.key === 'Enter' && isSubmitting) {
+        return;
+      }
 
-    const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
+      const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
 
-    if (isNonShiftEnter && filesLoading) {
-      e.preventDefault();
-    }
+      if (isNonShiftEnter && filesLoading) {
+        e.preventDefault();
+      }
 
-    if (isNonShiftEnter) {
-      e.preventDefault();
-    }
+      if (isNonShiftEnter) {
+        e.preventDefault();
+      }
 
-    if (isNonShiftEnter && !isComposing?.current) {
-      submitButtonRef.current?.click();
-    }
-  };
+      if (e.key === 'Enter' && !enterToSend && textAreaRef.current) {
+        insertTextAtCursor(textAreaRef.current, '\n');
+        forceResize(textAreaRef);
+        return;
+      }
 
-  const handleKeyUp = (e: KeyEvent) => {
-    const target = e.target as HTMLTextAreaElement;
-
-    const isUndo = e.key === 'z' && (e.ctrlKey || e.metaKey);
-    if (isUndo && target.value.trim() === '') {
-      textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
-      setValue('text', '', { shouldValidate: true });
-      forceResize(textAreaRef);
-    } else if (isUndo) {
-      trimUndoneRange(textAreaRef);
-      setValue('text', '', { shouldValidate: true });
-      forceResize(textAreaRef);
-    }
-
-    if ((e.keyCode === 8 || e.key === 'Backspace') && target.value.trim() === '') {
-      textAreaRef.current?.setRangeText('', 0, textAreaRef.current?.value?.length, 'end');
-    }
-
-    if (e.key === 'Enter' && e.shiftKey) {
-      return console.log('Enter + Shift');
-    }
-
-    if (isSubmitting) {
-      return;
-    }
-  };
+      if (isNonShiftEnter && !isComposing?.current) {
+        submitButtonRef.current?.click();
+      }
+    },
+    [isSubmitting, filesLoading, enterToSend, textAreaRef, submitButtonRef],
+  );
 
   const handleCompositionStart = () => {
     isComposing.current = true;
@@ -189,36 +169,31 @@ export default function useTextarea({
     isComposing.current = false;
   };
 
-  /** Necessary handler to update form state when paste doesn't fire textArea input event */
-  const setPastedValue = useCallback(
-    (textArea: HTMLTextAreaElement, pastedData: string) => {
-      const currentTextValue = getValues('text') || '';
-      const { selectionStart, selectionEnd } = textArea;
-      const newValue =
-        currentTextValue.substring(0, selectionStart) +
-        pastedData +
-        currentTextValue.substring(selectionEnd);
-
-      setValue('text', newValue, { shouldValidate: true });
-    },
-    [getValues, setValue],
-  );
-
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      e.preventDefault();
       const textArea = textAreaRef.current;
       if (!textArea) {
         return;
       }
 
-      const pastedData = e.clipboardData.getData('text/plain');
-      setPastedValue(textArea, pastedData);
-      insertTextAtCursor(textArea, pastedData);
-      forceResize(textAreaRef);
+      if (!e.clipboardData) {
+        return;
+      }
 
-      if (e.clipboardData && e.clipboardData.files.length > 0) {
+      let includedText = '';
+      const { types } = e.clipboardData;
+
+      if (types.indexOf('text/rtf') !== -1 || types.indexOf('Files') !== -1) {
         e.preventDefault();
+        includedText = e.clipboardData.getData('text/plain');
+      }
+
+      if (includedText && e.clipboardData.files.length > 0) {
+        insertTextAtCursor(textAreaRef.current, includedText);
+        forceResize(textAreaRef);
+      }
+
+      if (e.clipboardData.files.length > 0) {
         setFilesLoading(true);
         const timestampedFiles: File[] = [];
         for (const file of e.clipboardData.files) {
@@ -230,14 +205,13 @@ export default function useTextarea({
         handleFiles(timestampedFiles);
       }
     },
-    [handleFiles, setFilesLoading, setPastedValue, textAreaRef],
+    [handleFiles, setFilesLoading, textAreaRef],
   );
 
   return {
     textAreaRef,
-    handleKeyDown,
-    handleKeyUp,
     handlePaste,
+    handleKeyDown,
     handleCompositionStart,
     handleCompositionEnd,
   };
