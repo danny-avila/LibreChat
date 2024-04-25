@@ -5,13 +5,16 @@ import type {
   SettingsConfiguration,
 } from 'librechat-data-provider';
 import { useSetIndexOptions } from '~/hooks';
-import DynamicDropdown from './DynamicDropdown';
-import DynamicCheckbox from './DynamicCheckbox';
-import DynamicTextarea from './DynamicTextarea';
-import DynamicSlider from './DynamicSlider';
-import DynamicSwitch from './DynamicSwitch';
-import DynamicInput from './DynamicInput';
-import DynamicTags from './DynamicTags';
+import { useChatContext } from '~/Providers';
+import {
+  DynamicDropdown,
+  DynamicCheckbox,
+  DynamicTextarea,
+  DynamicSlider,
+  DynamicSwitch,
+  DynamicInput,
+  DynamicTags,
+} from './';
 
 const settingsConfiguration: SettingsConfiguration = [
   {
@@ -159,6 +162,7 @@ const componentMapping: Record<ComponentTypes, React.ComponentType<DynamicSettin
 };
 
 export default function Parameters() {
+  const { conversation } = useChatContext();
   const { setOption } = useSetIndexOptions();
 
   const temperature = settingsConfiguration.find(
@@ -206,36 +210,42 @@ export default function Parameters() {
           defaultValue={inputDefault}
           {...inputSettings}
           setOption={setOption}
+          conversation={conversation}
         />
         <Textarea
           settingKey={textareaKey}
           defaultValue={textareaDefault}
           {...textareaSettings}
           setOption={setOption}
+          conversation={conversation}
         />
         <TempComponent
           settingKey={temp}
           defaultValue={tempDefault}
           {...tempSettings}
           setOption={setOption}
+          conversation={conversation}
         />
         <Switch
           settingKey={switchKey}
           defaultValue={switchDefault}
           {...switchSettings}
           setOption={setOption}
+          conversation={conversation}
         />
         <DetailComponent
           settingKey={detail}
           defaultValue={detailDefault}
           {...detailSettings}
           setOption={setOption}
+          conversation={conversation}
         />
         <Tags
           settingKey={stopKey}
           defaultValue={stopDefault}
           {...stopSettings}
           setOption={setOption}
+          conversation={conversation}
         />
       </div>
     </div>

@@ -146,8 +146,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             placeholderCode={true}
             descriptionSide="right"
             maxTags={isOpenAI ? 4 : undefined}
+            conversation={conversation}
             readonly={readonly}
-            columnSpan={1}
           />
         </div>
       </div>

@@ -24,14 +24,15 @@ function DynamicTags({
   descriptionCode,
   placeholderCode,
   descriptionSide = ESide.Left,
+  conversation,
   minTags,
   maxTags,
 }: DynamicSettingProps) {
   const localize = useLocalize();
+  const { preset } = useChatContext();
   const { showToast } = useToastContext();
   const inputRef = useRef<HTMLInputElement>(null);
   const [tagText, setTagText] = useState<string>('');
-  const { conversation = { conversationId: null }, preset } = useChatContext();
   const [tags, setTags] = useState<string[] | undefined>(
     (defaultValue as string[] | undefined) ?? [],
   );
@@ -107,10 +108,10 @@ function DynamicTags({
     preset,
     settingKey,
     defaultValue: typeof defaultValue === 'undefined' ? [] : defaultValue,
-    conversation,
     inputValue: tags,
     setInputValue: setTags,
     preventDelayedUpdate: true,
+    conversation,
   });
 
   return (
