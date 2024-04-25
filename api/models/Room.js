@@ -101,6 +101,12 @@ const createRoom = async (name, isPrivate, password, user) => {
 const addUserToRoom = async (conversationId, userId, password) => {
   try {
     const room = await Conversation.findOne({ conversationId });
+    console.log(room.bannedUsers, userId);
+    // Check if the user is banned in the room
+    if (room.bannedUsers.indexOf(userId) > -1) {
+      return { error: 'This user is banned in the room' };
+    }
+
     let isPasswordCorrect = false;
     if (room.isPrivate && room.password && password) {
       isPasswordCorrect = await new Promise((resolve, reject) => {
@@ -135,7 +141,7 @@ const addUserToRoom = async (conversationId, userId, password) => {
  * @param {string} userId
  * @returns ConvoSchema
  */
-const removeUserFromRoom = async (conversationId, userId) => {
+const removeUserFromRoom = async (conversationId, userId, isBanned = false) => {
   try {
     const room = await Conversation.findOne({ conversationId });
     if (room.user.toString() === userId.toString()) {
@@ -146,7 +152,9 @@ const removeUserFromRoom = async (conversationId, userId) => {
     } else {
       const userIndex = room.users.map((u) => u.toString()).indexOf(userId);
       room.users.splice(userIndex);
-      console.log('--- room', room);
+      if (isBanned && room.bannedUsers.indexOf(userId) > -1) {
+        room.bannedUsers.push(userId);
+      }
       await room.save();
     }
 
@@ -155,7 +163,7 @@ const removeUserFromRoom = async (conversationId, userId) => {
       .populate('user');
     return result;
   } catch (error) {
-    logger.error('[removeuserFromRoom] Error creating new room', error);
+    logger.error('[removeuserFromRoom] Error remove users in the room', error);
     return { message: 'Error adding user to room' };
   }
 };

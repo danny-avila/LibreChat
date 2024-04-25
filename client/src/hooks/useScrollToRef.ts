@@ -36,3 +36,27 @@ export default function useScrollToRef({ targetRef, callback, smoothCallback }: 
     handleSmoothToRef,
   };
 }
+
+type TUseScrollToID = {
+  id: string;
+  callback?: () => void;
+};
+
+export function useScrollToID({ id, callback }: TUseScrollToID) {
+  const logAndScroll = (behavior: 'instant' | 'smooth', callbackFn?: () => void) => {
+    // Debugging:
+    const targetElement = document.getElementById(id);
+    targetElement?.scrollIntoView({ behavior });
+    callbackFn && callbackFn();
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const scrollToId = useCallback(
+    throttle(() => logAndScroll('instant', callback), 250, { leading: true }),
+    [],
+  );
+
+  return {
+    scrollToId,
+  };
+}

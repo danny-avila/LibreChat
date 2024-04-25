@@ -49,6 +49,12 @@ const convoSchema = mongoose.Schema(
         ref: 'User',
       },
     ],
+    bannedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
     isRoom: {
       type: Boolean,
       default: false,

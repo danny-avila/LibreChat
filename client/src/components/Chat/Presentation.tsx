@@ -6,7 +6,7 @@ import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
 import DragDropOverlay from './Input/Files/DragDropOverlay';
 import { useDeleteFilesMutation } from '~/data-provider';
 import store from '~/store';
-import UserList from '../Room/UserList';
+import UserList from '../Room/Users/UserList';
 import { useParams } from 'react-router-dom';
 
 export default function Presentation({

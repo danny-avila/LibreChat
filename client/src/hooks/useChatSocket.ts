@@ -5,6 +5,7 @@ import store from '~/store';
 import useChatHelpers from './useChatHelpers';
 import { useParams } from 'react-router-dom';
 import { type TMessage } from 'librechat-data-provider';
+import { useScrollToID } from './useScrollToRef';
 
 export const useInitSocket = () => {
   const user = useRecoilValue(store.user);

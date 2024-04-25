@@ -12,7 +12,7 @@ import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import isBotCommand from '~/utils/isBotCommand';
 import { useChatCall } from '~/hooks/useChatCall';
-import { useChatSocket, useInitSocket } from '~/hooks/useChatSocket';
+import { useInitSocket } from '~/hooks/useChatSocket';
 
 const EditMessage = ({
   text,
@@ -25,7 +25,7 @@ const EditMessage = ({
 }: TEditProps) => {
   const { getMessages, setMessages, conversation } = useChatContext();
   const socket = useInitSocket();
-  useChatSocket(socket);
+
   const { updateMessage: updateMessageSocket } = useChatCall(socket);
 
   const [editedText, setEditedText] = useState<string>(text ?? '');

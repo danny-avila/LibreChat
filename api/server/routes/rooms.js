@@ -6,6 +6,7 @@ const {
   createNewMessage,
   joinRoom,
   leaveRoom,
+  kickUser,
 } = require('~/server/controllers/RoomController');
 const { requireJwtAuth } = require('~/server/middleware/');
 
@@ -16,6 +17,7 @@ router.use(requireJwtAuth);
 router.post('/', createNewRoom);
 router.post('/join/:roomId', joinRoom);
 router.post('/leave/:roomId', leaveRoom);
+router.post('/kick/:roomId', kickUser);
 router.post('/:roomId', createNewMessage);
 router.get('/', getRoomByUser);
 router.get('/:roomId', getRoomById);

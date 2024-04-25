@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
@@ -26,6 +26,10 @@ export default function MessagesView({
   } = useMessageScrolling(_messagesTree);
 
   const { conversationId } = conversation ?? {};
+
+  // useEffect(() => {
+  //   handleSmoothToRef();
+  // }, []);
 
   return (
     <div className="flex-1 overflow-hidden overflow-y-auto">

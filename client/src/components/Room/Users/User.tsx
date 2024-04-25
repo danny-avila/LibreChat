@@ -1,6 +1,10 @@
 import { TUser } from 'librechat-data-provider';
 import React from 'react';
 import useAvatar from '~/hooks/Messages/useAvatar';
+import UserKickButton from './UserKickButton';
+import { useChatContext } from '~/Providers';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
 
 export default function User({
   user,
@@ -9,8 +13,10 @@ export default function User({
   user: TUser;
   isCollapsed?: boolean;
 }) {
+  const { conversation } = useChatContext();
   const activeConvo = false;
   const avatarSrc = useAvatar(user);
+  const you = useRecoilValue(store.user);
 
   const aProps = {
     className: `group relative mt-1 flex cursor-pointer items-center gap-2 break-all rounded-lg bg-gray-200 ${
@@ -31,6 +37,7 @@ export default function User({
         className="h-6 w-6 flex-shrink-0 rounded-full"
       />
       {!isCollapsed && user.name}
+      {you.id === conversation?.user._id && you.id !== user._id && <UserKickButton user={user} />}
     </a>
   );
 }

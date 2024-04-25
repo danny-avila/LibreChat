@@ -25,7 +25,7 @@ function ChatView({ index = 0 }: { index?: number }) {
   const submissionAtIndex = useRecoilValue(store.submissionByIndex(0));
   const user = useRecoilValue(store.user);
   const convoType = useRecoilValue(store.convoType);
-  const [hideSidePanel, setHideSidePanel] = useRecoilState(store.hideSidePanel);
+  const [_, setHideSidePanel] = useRecoilState(store.hideSidePanel);
 
   const socket = useInitSocket();
   useChatSocket(socket);
@@ -78,7 +78,7 @@ function ChatView({ index = 0 }: { index?: number }) {
         )}
         {!isLoading && (
           <div className="w-full border-t-0 pl-0 pt-2 dark:border-white/20 md:w-[calc(100%-.5rem)] md:border-t-0 md:border-transparent md:pl-0 md:pt-0 md:dark:border-transparent">
-            {convoType === 'r' && isYou(user, conversation) && (
+            {convoType === 'r' && isYou(user as TUser, conversation as TConversation) && (
               <p className="stretch mx-2 flex flex-row gap-3 pl-3 text-black last:mb-2 dark:text-white md:mx-4 md:last:mb-6 lg:mx-auto lg:max-w-2xl xl:max-w-3xl">
                 To chat with AI models please add a / before your message
               </p>
@@ -93,6 +93,7 @@ function ChatView({ index = 0 }: { index?: number }) {
             <Footer />
           </div>
         )}
+        <div id="here"></div>
       </Presentation>
     </ChatContext.Provider>
   );

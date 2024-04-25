@@ -7,6 +7,7 @@ import { useAuthContext } from '~/hooks';
 import DialogTemplate from '../ui/DialogTemplate';
 import { Dialog, DialogTrigger } from '../ui';
 import store from '~/store';
+import { useToastContext } from '~/Providers';
 
 interface Props {
   conversation: TConversation | null;
@@ -21,6 +22,7 @@ export default function ContinueChat({ conversation, setConversation }: Props) {
   const { conversationId } = useParams();
   const { user, logout } = useAuthContext();
   const location = useLocation();
+  const { showToast } = useToastContext();
 
   const handleContinue = () => {
     if (user?.username === 'guest-user') {
@@ -46,7 +48,11 @@ export default function ContinueChat({ conversation, setConversation }: Props) {
       })
       .catch((error) => {
         if (error.response.status === 400) {
-          setPasswordErr(error.response.data);
+          if (error.response.data === 'Password is incorrect') {
+            setPasswordErr(error.response.data);
+          } else {
+            showToast({ message: 'You are unable to join this room.', status: 'warning' });
+          }
         } else {
           console.error(error);
         }

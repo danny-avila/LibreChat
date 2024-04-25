@@ -96,14 +96,26 @@ const joinRoom = async (req, res) => {
 };
 
 const leaveRoom = async (req, res) => {
-  const { password } = req.body;
   const { roomId } = req.params;
   const userId = req.user._id;
   try {
-    const result = await removeUserFromRoom(roomId, userId, password);
+    const result = await removeUserFromRoom(roomId, userId);
     if (result.error) {
       return res.status(400).json(result.error);
     }
+    res.json(result);
+  } catch (error) {
+    return res.status(500).json(error);
+  }
+};
+
+const kickUser = async (req, res) => {
+  const { roomId } = req.params;
+  const { userId } = req.body;
+
+  try {
+    const result = await removeUserFromRoom(roomId, userId, true);
+
     res.json(result);
   } catch (error) {
     return res.status(500).json(error);
@@ -117,4 +129,5 @@ module.exports = {
   createNewMessage,
   joinRoom,
   leaveRoom,
+  kickUser,
 };

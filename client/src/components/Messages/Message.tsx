@@ -30,7 +30,6 @@ export default function Message(props: TMessageProps) {
   const setLatestMessage = useSetRecoilState(store.latestMessage);
   const [abortScroll, setAbortScroll] = useRecoilState(store.abortScroll);
   const { isSubmitting, ask, regenerate, handleContinue } = useMessageHandler();
-  console.log(isSubmitting);
   const { switchToConversation } = useConversation();
   const { conversationId } = useParams();
   const isSearching = useRecoilValue(store.isSearching);
