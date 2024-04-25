@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { FileSources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
@@ -49,12 +49,16 @@ export default function Presentation({
   }, [mutateAsync]);
 
   const isActive = canDrop && isOver;
-  const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
-  const collapsedPanels = localStorage.getItem('react-resizable-panels:collapsed');
 
-  const defaultLayout = resizableLayout ? JSON.parse(resizableLayout) : undefined;
-  const defaultCollapsed = collapsedPanels ? JSON.parse(collapsedPanels) : undefined;
-  const fullCollapse = localStorage.getItem('fullPanelCollapse') === 'true';
+  const defaultLayout = useMemo(() => {
+    const resizableLayout = localStorage.getItem('react-resizable-panels:layout');
+    return resizableLayout ? JSON.parse(resizableLayout) : undefined;
+  }, []);
+  const defaultCollapsed = useMemo(() => {
+    const collapsedPanels = localStorage.getItem('react-resizable-panels:collapsed');
+    return collapsedPanels ? JSON.parse(collapsedPanels) : undefined;
+  }, []);
+  const fullCollapse = useMemo(() => localStorage.getItem('fullPanelCollapse') === 'true', []);
 
   const layout = () => (
     <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-white pt-0 dark:bg-gray-800">
