@@ -200,16 +200,6 @@ class OpenAIClient extends BaseClient {
 
     this.setupTokens();
 
-    if (!this.modelOptions.stop && !this.isVisionModel) {
-      const stopTokens = [this.startToken];
-      if (this.endToken && this.endToken !== this.startToken) {
-        stopTokens.push(this.endToken);
-      }
-      stopTokens.push(`\n${this.userLabel}:`);
-      stopTokens.push('<|diff_marker|>');
-      this.modelOptions.stop = stopTokens;
-    }
-
     if (reverseProxy) {
       this.completionsUrl = reverseProxy;
       this.langchainProxy = extractBaseURL(reverseProxy);
