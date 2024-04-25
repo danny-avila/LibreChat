@@ -114,6 +114,54 @@ describe('generateDynamicSchema', () => {
 
     expect(result.success).toBeFalsy();
   });
+
+  it('should generate a schema for array settings', () => {
+    const settings: SettingsConfiguration = [
+      {
+        key: 'testArray',
+        description: 'A test array setting',
+        type: 'array',
+        default: ['default', 'values'],
+        component: 'tags', // Assuming 'tags' imply an array of strings
+        optionType: OptionTypes.Custom,
+        columnSpan: 3,
+        label: 'Test Array Tags',
+        minTags: 1, // Minimum number of tags
+        maxTags: 5, // Maximum number of tags
+      },
+    ];
+
+    const schema = generateDynamicSchema(settings);
+    // Testing with right number of tags
+    let result = schema.safeParse({ testArray: ['value1', 'value2', 'value3'] });
+
+    expect(result.success).toBeTruthy();
+    expect(result?.['data']).toEqual({ testArray: ['value1', 'value2', 'value3'] });
+
+    // Testing with too few tags (should fail)
+    result = schema.safeParse({ testArray: [] }); // Assuming minTags is 1, empty array should fail
+    expect(result.success).toBeFalsy();
+    if (!result.success) {
+      // Additional check to ensure the failure is because of the minTags condition
+      const issues = result.error.issues.filter(
+        (issue) => issue.path.includes('testArray') && issue.code === 'too_small',
+      );
+      expect(issues.length).toBeGreaterThan(0); // Ensure there is at least one issue related to 'testArray' being too small
+    }
+
+    // Testing with too many tags (should fail)
+    result = schema.safeParse({
+      testArray: ['value1', 'value2', 'value3', 'value4', 'value5', 'value6'],
+    }); // Assuming maxTags is 5, this should fail
+    expect(result.success).toBeFalsy();
+    if (!result.success) {
+      // Additional check to ensure the failure is because of the maxTags condition
+      const issues = result.error.issues.filter(
+        (issue) => issue.path.includes('testArray') && issue.code === 'too_big',
+      );
+      expect(issues.length).toBeGreaterThan(0); // Ensure there is at least one issue related to 'testArray' being too big
+    }
+  });
 });
 
 describe('validateSettingDefinitions', () => {
@@ -367,6 +415,71 @@ describe('validateSettingDefinitions', () => {
     validateSettingDefinitions(settings); // This would populate default values where missing
 
     expect(settings[0].default).toBe(50); // Expects default to be midpoint of range
+  });
+
+  // Test for validating minTags and maxTags constraints
+  test('should validate minTags and maxTags constraints', () => {
+    const settingsWithTagsConstraints: SettingsConfiguration = [
+      {
+        key: 'selectedTags',
+        component: 'tags',
+        type: 'array',
+        default: ['tag1'], // Only one tag by default
+        minTags: 2, // Requires at least 2 tags, which should cause validation to fail
+        maxTags: 4,
+        optionType: OptionTypes.Custom,
+      },
+    ];
+
+    expect(() => validateSettingDefinitions(settingsWithTagsConstraints)).toThrow(ZodError);
+  });
+
+  // Test for ensuring default values for tags are arrays
+  test('should ensure default values for tags are arrays', () => {
+    const settingsWithInvalidDefaultForTags: SettingsConfiguration = [
+      {
+        key: 'favoriteTags',
+        component: 'tags',
+        type: 'array',
+        default: 'notAnArray', // Incorrect default type
+        optionType: OptionTypes.Custom,
+      },
+    ];
+
+    expect(() => validateSettingDefinitions(settingsWithInvalidDefaultForTags)).toThrow(ZodError);
+  });
+
+  // Test for array settings without default values should not throw if constraints are satisfied
+  test('array settings without defaults should not throw if constraints are met', () => {
+    const settingsWithNoDefaultButValidTags: SettingsConfiguration = [
+      {
+        key: 'userTags',
+        component: 'tags',
+        type: 'array',
+        minTags: 1, // Requires at least 1 tag
+        maxTags: 5, // Allows up to 5 tags
+        optionType: OptionTypes.Custom,
+      },
+    ];
+
+    // No default is set, but since the constraints are potentially met (depends on user input), this should not throw
+    expect(() => validateSettingDefinitions(settingsWithNoDefaultButValidTags)).not.toThrow();
+  });
+
+  // Test for ensuring maxTags is respected in default array values
+  test('should ensure maxTags is respected for default array values', () => {
+    const settingsExceedingMaxTags: SettingsConfiguration = [
+      {
+        key: 'interestTags',
+        component: 'tags',
+        type: 'array',
+        default: ['music', 'movies', 'books', 'travel', 'cooking', 'sports'], // 6 tags
+        maxTags: 5, // Exceeds the maxTags limit
+        optionType: OptionTypes.Custom,
+      },
+    ];
+
+    expect(() => validateSettingDefinitions(settingsExceedingMaxTags)).toThrow(ZodError);
   });
 });
 

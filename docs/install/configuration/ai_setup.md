@@ -159,7 +159,8 @@ For your convenience, these are the latest models as of 4/15/24 that can be used
 GOOGLE_MODELS=gemini-1.0-pro,gemini-1.0-pro-001,gemini-1.0-pro-latest,gemini-1.0-pro-vision-latest,gemini-1.5-pro-latest,gemini-pro,gemini-pro-vision
 ```
 
-Notes:
+**Notes:**
+
 - A gemini-pro model or `gemini-pro-vision` are required in your list for attaching images.
 - Using LibreChat, PaLM2 and Codey models can only be accessed through Vertex AI, not the Generative Language API.
     - Only models that support the `generateContent` method can be used natively with LibreChat + the Gen AI API.

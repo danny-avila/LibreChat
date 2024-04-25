@@ -260,8 +260,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 - API is strict with unrecognized parameters and errors are not descriptive (usually "no body")
 
-    - The use of [`dropParams`](./custom_config.md#dropparams) to drop "stop", "user", "frequency_penalty", "presence_penalty" params is required.
-
+    - The use of [`dropParams`](./custom_config.md#dropparams) to drop "user", "frequency_penalty", "presence_penalty" params is required.
+    - `stop` is no longer included as a default parameter, so there is no longer a need to include it in [`dropParams`](./custom_config.md#dropparams), unless you would like to completely prevent users from configuring this field.
+    
 - Allows fetching the models list, but be careful not to use embedding models for chat.
 
 ```yaml
@@ -289,6 +290,8 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 - **Known:** icon provided.
 - **Known issue:** fetching list of models is not supported. See [Pull Request 2728](https://github.com/ollama/ollama/pull/2728).
 - Download models with ollama run command. See [Ollama Library](https://ollama.com/library)
+- It's recommend to use the value "current_model" for the `titleModel` to avoid loading more than 1 model per conversation.
+    - Doing so will dynamically use the current conversation model for the title generation.
 - The example includes a top 5 popular model list from the Ollama Library, which was last updated on March 1, 2024, for your convenience.
 
 ```yaml
@@ -306,16 +309,18 @@ Some of the endpoints are marked as **Known,** which means they might have speci
           ]
         fetch: false # fetching list of models is not supported
       titleConvo: true
-      titleModel: "llama2"
+      titleModel: "current_model"
       summarize: false
-      summaryModel: "llama2"
+      summaryModel: "current_model"
       forcePrompt: false
       modelDisplayLabel: "Ollama"
 ```
 
 !!! tip "Ollama -> llama3"
     
-    To prevent the behavior where llama3 does not stop generating, add this `addParams` block to the config:
+    Note: Once `stop` was removed from the [default parameters](./custom_config.md#default-parameters), the issue highlighted below should no longer exist.
+
+    However, in case you experience the behavior where `llama3` does not stop generating, add this `addParams` block to the config:
     
     ```yaml
     - name: "Ollama"
@@ -327,9 +332,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
           ]
         fetch: false # fetching list of models is not supported
       titleConvo: true
-      titleModel: "llama3"
+      titleModel: "current_model"
       summarize: false
-      summaryModel: "llama3"
+      summaryModel: "current_model"
       forcePrompt: false
       modelDisplayLabel: "Ollama"
       addParams:
@@ -341,6 +346,31 @@ Some of the endpoints are marked as **Known,** which means they might have speci
             ]
     ```
 
+    If you are only using `llama3` with **Ollama**, it's fine to set the `stop` parameter at the config level via `addParams`.
+
+    However, if you are using multiple models, it's now recommended to add stop sequences from the frontend via conversation parameters and presets.
+
+    For example, we can omit `addParams`:
+
+    ```yaml
+    - name: "Ollama"
+      apiKey: "ollama"
+      baseURL: "http://host.docker.internal:11434/v1/" 
+      models:
+        default: [
+          "llama3:latest",
+          "mistral"
+          ]
+        fetch: false # fetching list of models is not supported
+      titleConvo: true
+      titleModel: "current_model"
+      modelDisplayLabel: "Ollama"
+    ```
+
+    And use these settings (best to also save it):
+
+    ![image](https://github.com/danny-avila/LibreChat/assets/110412045/57460b8c-308a-4d21-9dfe-f48a2ac85099)
+
 ## Openrouter
 > OpenRouter API key: [openrouter.ai/keys](https://openrouter.ai/keys)
 
@@ -348,7 +378,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 - **Known:** icon provided, fetching list of models is recommended as API token rates and pricing used for token credit balances when models are fetched.
 
-- It's recommended, and for some models required, to use [`dropParams`](./custom_config.md#dropparams) to drop the `stop` parameter as Openrouter models use a variety of stop tokens.
+- `stop` is no longer included as a default parameter, so there is no longer a need to include it in [`dropParams`](./custom_config.md#dropparams), unless you would like to completely prevent users from configuring this field.
 
 - **Known issue:** you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
 
