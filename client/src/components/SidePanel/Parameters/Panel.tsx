@@ -136,6 +136,8 @@ const settingsConfiguration: SettingsConfiguration = [
     labelCode: true,
     description: 'com_endpoint_openai_stop',
     descriptionCode: true,
+    placeholder: 'com_endpoint_stop_placeholder',
+    placeholderCode: true,
     type: 'array',
     default: [],
     component: 'tags',

@@ -260,6 +260,7 @@ export default {
   com_endpoint_top_k: 'Top K',
   com_endpoint_max_output_tokens: 'Max Output Tokens',
   com_endpoint_stop: 'Stop Sequences',
+  com_endpoint_stop_placeholder: 'Separate values by pressing `Enter`',
   com_endpoint_openai_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
   com_endpoint_openai_max:

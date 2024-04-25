@@ -142,6 +142,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             labelCode={true}
             description="com_endpoint_openai_stop"
             descriptionCode={true}
+            placeholder="com_endpoint_stop_placeholder"
+            placeholderCode={true}
             descriptionSide="right"
             maxTags={isOpenAI ? 4 : undefined}
             readonly={readonly}
