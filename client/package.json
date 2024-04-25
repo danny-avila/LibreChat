@@ -3,11 +3,6 @@
   "version": "0.7.1",
   "description": "",
   "type": "module",
-  "overrides": {
-    "vite": {
-      "rollup": "4.15.0"
-    }
-  },
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
     "build:file": "cross-env NODE_ENV=production vite build --debug > vite-output.log 2>&1",
