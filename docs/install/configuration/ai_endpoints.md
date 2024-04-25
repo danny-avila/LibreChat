@@ -260,8 +260,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 - API is strict with unrecognized parameters and errors are not descriptive (usually "no body")
 
-    - The use of [`dropParams`](./custom_config.md#dropparams) to drop "stop", "user", "frequency_penalty", "presence_penalty" params is required.
-
+    - The use of [`dropParams`](./custom_config.md#dropparams) to drop "user", "frequency_penalty", "presence_penalty" params is required.
+    - `stop` is no longer included as a default parameter, so there is no longer a need to include it in [`dropParams`](./custom_config.md#dropparams), unless you would like to completely prevent users from configuring this field.
+    
 - Allows fetching the models list, but be careful not to use embedding models for chat.
 
 ```yaml
@@ -317,7 +318,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 !!! tip "Ollama -> llama3"
     
-    To prevent the behavior where llama3 does not stop generating, add this `addParams` block to the config:
+    Note: Once `stop` was removed from the [default parameters](./custom_config.md#default-parameters), the issue highlighted below should no longer exist.
+
+    However, in case you experience the behavior where `llama3` does not stop generating, add this `addParams` block to the config:
     
     ```yaml
     - name: "Ollama"
@@ -366,7 +369,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
     And use these settings (best to also save it):
 
-    [INSERT IMAGE HERE]
+    ![image](https://github.com/danny-avila/LibreChat/assets/110412045/57460b8c-308a-4d21-9dfe-f48a2ac85099)
 
 ## Openrouter
 > OpenRouter API key: [openrouter.ai/keys](https://openrouter.ai/keys)
@@ -375,7 +378,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 - **Known:** icon provided, fetching list of models is recommended as API token rates and pricing used for token credit balances when models are fetched.
 
-- It's recommended, and for some models required, to use [`dropParams`](./custom_config.md#dropparams) to drop the `stop` parameter as Openrouter models use a variety of stop tokens.
+- `stop` is no longer included as a default parameter, so there is no longer a need to include it in [`dropParams`](./custom_config.md#dropparams), unless you would like to completely prevent users from configuring this field.
 
 - **Known issue:** you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
 
