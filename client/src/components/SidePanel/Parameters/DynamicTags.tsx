@@ -138,42 +138,44 @@ function DynamicTags({
               )}
             </Label>
           </div>
-          <div className="mb-4 flex flex-wrap gap-2">
-            {currentTags?.map((tag: string, index: number) => (
-              <Tag
-                key={`${tag}-${index}`}
-                label={tag}
-                onClick={onTagClick}
-                onRemove={() => {
-                  onTagRemove(index);
-                  if (inputRef.current) {
-                    inputRef.current.focus();
+          <div>
+            <div className="bg-muted mb-2 flex flex-wrap gap-1 break-all rounded-lg">
+              {currentTags?.map((tag: string, index: number) => (
+                <Tag
+                  key={`${tag}-${index}`}
+                  label={tag}
+                  onClick={onTagClick}
+                  onRemove={() => {
+                    onTagRemove(index);
+                    if (inputRef.current) {
+                      inputRef.current.focus();
+                    }
+                  }}
+                />
+              ))}
+              <Input
+                ref={inputRef}
+                id={`${settingKey}-dynamic-input`}
+                disabled={readonly}
+                value={tagText}
+                onKeyDown={(e) => {
+                  if (!currentTags) {
+                    return;
+                  }
+                  if (e.key === 'Backspace' && !tagText) {
+                    onTagRemove(currentTags.length - 1);
+                  }
+                  if (e.key === 'Enter') {
+                    onTagAdd();
                   }
                 }}
+                onChange={(e) => setTagText(e.target.value)}
+                placeholder={
+                  placeholderCode ? localize(placeholder ?? '') || placeholder : placeholder
+                }
+                className={cn(defaultTextProps, 'flex h-10 max-h-10 px-3 py-2')}
               />
-            ))}
-            <Input
-              ref={inputRef}
-              id={`${settingKey}-dynamic-input`}
-              disabled={readonly}
-              value={tagText}
-              onKeyDown={(e) => {
-                if (!currentTags) {
-                  return;
-                }
-                if (e.key === 'Backspace' && !tagText) {
-                  onTagRemove(currentTags.length - 1);
-                }
-                if (e.key === 'Enter') {
-                  onTagAdd();
-                }
-              }}
-              onChange={(e) => setTagText(e.target.value)}
-              placeholder={
-                placeholderCode ? localize(placeholder ?? '') || placeholder : placeholder
-              }
-              className={cn(defaultTextProps, 'flex h-10 max-h-10 px-3 py-2')}
-            />
+            </div>
           </div>
         </HoverCardTrigger>
         {description && (

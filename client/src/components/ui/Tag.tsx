@@ -15,11 +15,11 @@ const TagPrimitiveRoot = React.forwardRef<HTMLDivElement, TagProps>(
       ref={ref}
       {...props}
       className={cn(
-        'flex items-center rounded rounded-3xl border-2 border-green-600 bg-green-600/20 text-sm text-xs text-white',
+        'flex max-h-8 items-center overflow-y-hidden rounded rounded-3xl border-2 border-green-600 bg-green-600/20 text-sm text-xs text-white',
         className,
       )}
     >
-      <div className={cn('ml-1 truncate break-all px-2 py-1', labelClassName)}>{label}</div>
+      <div className={cn('ml-1 whitespace-pre-wrap px-2 py-1', labelClassName)}>{label}</div>
       {CancelButton ? (
         CancelButton
       ) : (
