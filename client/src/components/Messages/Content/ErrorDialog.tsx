@@ -143,7 +143,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
             <button
               onClick={handlePurchase}
               disabled={processingTokenAmount !== null}
-              className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"
+              className="focus:bg-blue-650 w-full transform rounded-md bg-blue-600 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-blue-700 focus:outline-none active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-500 disabled:hover:bg-blue-500"
             >
               <span className="inline-flex items-center justify-center">
                 {processingTokenAmount !== null ? (

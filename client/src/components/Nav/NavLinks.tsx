@@ -77,12 +77,12 @@ function NavLinks() {
               <div className="flex items-center text-gray-800 dark:text-gray-200">
                 {`${localize('com_tokens_remaining')} ${formatTokenCount(balanceQuery.data)}`}
               </div>
-              <a href="/token-burn-rates" target="_blank" className="text-xs text-green-600">
+              <a href="/token-burn-rates" target="_blank" className="text-xs text-blue-600">
                 {localize('com_ui_learn_more')}
               </a>
               <button
                 onClick={() => setShowBuyTokens(true)}
-                className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"
+                className="focus:bg-blue-650 mt-2 w-full transform rounded-md bg-blue-600 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-blue-700 focus:outline-none active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-500 disabled:hover:bg-blue-500"
               >
                 {localize('com_ui_buy_token')}
               </button>

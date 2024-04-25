@@ -89,7 +89,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
           aria-label="Sign in"
           data-testid="login-button"
           type="submit"
-          className="hover:bg-blue-650 focus:bg-blue-650 w-full transform rounded-md bg-blue-600 px-4 py-3 tracking-wide text-white transition-colors duration-200 focus:outline-none disabled:cursor-not-allowed disabled:hover:bg-blue-500"
+          className="focus:bg-blue-650 w-full transform rounded-md bg-blue-600 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-blue-700 focus:outline-none active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-500 disabled:hover:bg-blue-500"
         >
           {localize('com_auth_continue')}
         </button>
