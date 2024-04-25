@@ -289,6 +289,8 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 - **Known:** icon provided.
 - **Known issue:** fetching list of models is not supported. See [Pull Request 2728](https://github.com/ollama/ollama/pull/2728).
 - Download models with ollama run command. See [Ollama Library](https://ollama.com/library)
+- It's recommend to use the value "current_model" for the `titleModel` to avoid loading more than 1 model per conversation.
+    - Doing so will dynamically use the current conversation model for the title generation.
 - The example includes a top 5 popular model list from the Ollama Library, which was last updated on March 1, 2024, for your convenience.
 
 ```yaml
@@ -306,9 +308,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
           ]
         fetch: false # fetching list of models is not supported
       titleConvo: true
-      titleModel: "llama2"
+      titleModel: "current_model"
       summarize: false
-      summaryModel: "llama2"
+      summaryModel: "current_model"
       forcePrompt: false
       modelDisplayLabel: "Ollama"
 ```
@@ -327,9 +329,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
           ]
         fetch: false # fetching list of models is not supported
       titleConvo: true
-      titleModel: "llama3"
+      titleModel: "current_model"
       summarize: false
-      summaryModel: "llama3"
+      summaryModel: "current_model"
       forcePrompt: false
       modelDisplayLabel: "Ollama"
       addParams:
@@ -340,6 +342,31 @@ Some of the endpoints are marked as **Known,** which means they might have speci
               "<|reserved_special_token"
             ]
     ```
+
+    If you are only using `llama3` with **Ollama**, it's fine to set the `stop` parameter at the config level via `addParams`.
+
+    However, if you are using multiple models, it's now recommended to add stop sequences from the frontend via conversation parameters and presets.
+
+    For example, we can omit `addParams`:
+
+    ```yaml
+    - name: "Ollama"
+      apiKey: "ollama"
+      baseURL: "http://host.docker.internal:11434/v1/" 
+      models:
+        default: [
+          "llama3:latest",
+          "mistral"
+          ]
+        fetch: false # fetching list of models is not supported
+      titleConvo: true
+      titleModel: "current_model"
+      modelDisplayLabel: "Ollama"
+    ```
+
+    And use these settings (best to also save it):
+
+    [INSERT IMAGE HERE]
 
 ## Openrouter
 > OpenRouter API key: [openrouter.ai/keys](https://openrouter.ai/keys)

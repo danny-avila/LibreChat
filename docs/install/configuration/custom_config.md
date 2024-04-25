@@ -665,6 +665,7 @@ endpoints:
   - Type: String
   - Example: `titleModel: "mistral-tiny"`
   - **Note**: Defaults to "gpt-3.5-turbo" if omitted. May cause issues if "gpt-3.5-turbo" is not available.
+  - **Note**: You can also dynamically use the current conversation model by setting it to "current_model".
 
 ### **summarize**: 
 
