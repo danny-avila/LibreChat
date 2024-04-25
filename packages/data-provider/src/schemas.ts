@@ -337,6 +337,7 @@ export const openAISchema = tConversationSchema
     frequency_penalty: true,
     resendFiles: true,
     imageDetail: true,
+    stop: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -350,6 +351,7 @@ export const openAISchema = tConversationSchema
     resendFiles:
       typeof obj.resendFiles === 'boolean' ? obj.resendFiles : openAISettings.resendFiles.default,
     imageDetail: obj.imageDetail ?? openAISettings.imageDetail.default,
+    stop: obj.stop ?? undefined,
   }))
   .catch(() => ({
     model: openAISettings.model.default,
@@ -361,6 +363,7 @@ export const openAISchema = tConversationSchema
     frequency_penalty: openAISettings.frequency_penalty.default,
     resendFiles: openAISettings.resendFiles.default,
     imageDetail: openAISettings.imageDetail.default,
+    stop: undefined,
   }));
 
 export const googleSchema = tConversationSchema
@@ -569,6 +572,7 @@ export const compactOpenAISchema = tConversationSchema
     frequency_penalty: true,
     resendFiles: true,
     imageDetail: true,
+    stop: true,
   })
   .transform((obj: Partial<TConversation>) => {
     const newObj: Partial<TConversation> = { ...obj };
