@@ -619,6 +619,7 @@ endpoints:
     - "Mistral"
     - "OpenRouter"
     - "Groq"
+    - APIpie
     - "Anyscale"
     - "Fireworks"
     - "Perplexity"
