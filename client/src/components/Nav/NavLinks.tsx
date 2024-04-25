@@ -82,7 +82,7 @@ function NavLinks() {
               </a>
               <button
                 onClick={() => setShowBuyTokens(true)}
-                className="focus:bg-blue-650 mt-2 w-full transform rounded-md bg-blue-600 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-blue-700 focus:outline-none active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-500 disabled:hover:bg-blue-500"
+                className="focus:bg-blue-650 mt-2 w-full rounded bg-blue-600 p-2 text-white transition-colors duration-200 hover:bg-blue-700 focus:outline-none active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-500 disabled:hover:bg-blue-500 dark:hover:bg-blue-700"
               >
                 {localize('com_ui_buy_token')}
               </button>

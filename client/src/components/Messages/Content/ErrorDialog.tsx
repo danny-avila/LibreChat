@@ -96,10 +96,10 @@ export default function ErrorDialog({ open, onOpenChange }) {
                 <button
                   key={tokens}
                   onClick={() => handleSelect(tokens)}
-                  className={`flex h-[100px] flex-col items-center justify-between rounded p-3 text-white ${
+                  className={`flex h-[100px] flex-col items-center justify-between rounded border-2 p-3 text-white ${
                     selectedTokens === tokens
-                      ? 'border-4 border-blue-500 bg-green-500'
-                      : 'border-4-green-500 border-4 bg-green-500 hover:bg-green-600 dark:hover:bg-green-600'
+                      ? 'border-blue-400 bg-blue-600'
+                      : 'bg-blue-600 hover:bg-blue-700 focus:bg-blue-700 focus:ring-2 focus:ring-blue-400 active:bg-blue-800 dark:hover:bg-blue-700'
                   }`}
                 >
                   <div className="text-lg font-bold">{localize(label)}</div>
@@ -143,7 +143,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
             <button
               onClick={handlePurchase}
               disabled={processingTokenAmount !== null}
-              className="focus:bg-blue-650 w-full transform rounded-md bg-blue-600 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-blue-700 focus:outline-none active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-500 disabled:hover:bg-blue-500"
+              className="w-full rounded-md bg-blue-600 px-4 py-2 text-white transition duration-200 ease-in-out hover:bg-blue-700 focus:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-400 disabled:hover:bg-blue-400"
             >
               <span className="inline-flex items-center justify-center">
                 {processingTokenAmount !== null ? (
