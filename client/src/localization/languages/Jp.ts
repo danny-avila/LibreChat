@@ -153,6 +153,8 @@ export default {
     'ファイル "{0}"のアップロードに時間がかかっています。ファイルの検索のためのインデックス作成が完了するまでお待ちください。',
   com_ui_privacy_policy: 'プライバシーポリシー',
   com_ui_terms_of_service: '利用規約',
+  com_ui_min_tags: 'これ以上の値を削除できません。少なくとも {0} が必要です。',
+  com_ui_max_tags: '最新の値を使用した場合、許可される最大数は {0} です。',
   com_auth_error_login:
     '入力された情報ではログインできませんでした。認証情報を確認した上で再度お試しください。',
   com_auth_error_login_rl:
@@ -336,6 +338,9 @@ export default {
   com_endpoint_func_hover: 'プラグインをOpenAIの関数として使えるようにする',
   com_endpoint_skip_hover:
     'コンプリーションのステップをスキップする。(最終的な回答と生成されたステップをレビューする機能)',
+  com_endpoint_stop: 'シーケンスを停止',
+  com_endpoint_stop_placeholder: 'Enterキー押下で値を区切ります',
+  com_endpoint_openai_stop: 'APIがさらにトークンを生成するのを止めるため、最大で4つのシーケンスを設定可能',
   com_endpoint_config_key: 'API Keyを設定',
   com_endpoint_assistant_placeholder: '右側のサイドパネルからアシスタントを選択してください',
   com_endpoint_config_placeholder: 'ヘッダーメニューからAPI Keyを設定してください。',
