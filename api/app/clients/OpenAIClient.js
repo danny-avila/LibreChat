@@ -1,6 +1,7 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
+  Constants,
   ImageDetail,
   EModelEndpoint,
   resolveHeaders,
@@ -20,9 +21,9 @@ const {
 const {
   truncateText,
   formatMessage,
-  createContextHandlers,
   CUT_OFF_PROMPT,
   titleInstruction,
+  createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { handleOpenAIErrors } = require('./tools/util');
@@ -719,7 +720,10 @@ class OpenAIClient extends BaseClient {
 
     const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
-    const model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+    const model =
+      this.options.titleModel === Constants.CURRENT_MODEL
+        ? this.modelOptions.model
+        : this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
 
     const modelOptions = {
       // TODO: remove the gpt fallback and make it specific to endpoint
@@ -841,7 +845,11 @@ ${convo}
 
     // TODO: remove the gpt fallback and make it specific to endpoint
     const { OPENAI_SUMMARY_MODEL = 'gpt-3.5-turbo' } = process.env ?? {};
-    const model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
+    const model =
+      this.options.summaryModel === Constants.CURRENT_MODEL
+        ? this.modelOptions.model
+        : this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
+
     const maxContextTokens =
       getModelMaxTokens(
         model,
