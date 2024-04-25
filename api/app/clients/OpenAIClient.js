@@ -720,10 +720,10 @@ class OpenAIClient extends BaseClient {
 
     const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
-    const model =
-      this.options.titleModel === Constants.CURRENT_MODEL
-        ? this.modelOptions.model
-        : this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+    if (model === Constants.CURRENT_MODEL) {
+      model = this.modelOptions.model;
+    }
 
     const modelOptions = {
       // TODO: remove the gpt fallback and make it specific to endpoint
@@ -845,10 +845,10 @@ ${convo}
 
     // TODO: remove the gpt fallback and make it specific to endpoint
     const { OPENAI_SUMMARY_MODEL = 'gpt-3.5-turbo' } = process.env ?? {};
-    const model =
-      this.options.summaryModel === Constants.CURRENT_MODEL
-        ? this.modelOptions.model
-        : this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
+    let model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
+    if (model === Constants.CURRENT_MODEL) {
+      model = this.modelOptions.model;
+    }
 
     const maxContextTokens =
       getModelMaxTokens(
