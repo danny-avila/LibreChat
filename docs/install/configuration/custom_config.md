@@ -24,7 +24,9 @@ Stay tuned for ongoing enhancements to customize your LibreChat instance!
 
 ## Compatible Endpoints
 
-Any API designed to be compatible with OpenAI's should be supported, but here is a list of **[known compatible endpoints](./ai_endpoints.md) including example setups.**
+Any API designed to be compatible with OpenAI's should be supported
+
+Here is a list of **[known compatible endpoints](./ai_endpoints.md) including example setups.**
 
 ## Setup
 
@@ -665,6 +667,7 @@ endpoints:
   - Type: String
   - Example: `titleModel: "mistral-tiny"`
   - **Note**: Defaults to "gpt-3.5-turbo" if omitted. May cause issues if "gpt-3.5-turbo" is not available.
+  - **Note**: You can also dynamically use the current conversation model by setting it to "current_model".
 
 ### **summarize**: 
 
@@ -752,11 +755,6 @@ Custom endpoints share logic with the OpenAI endpoint, and thus have default par
   "top_p": 1,
   "presence_penalty": 0,
   "frequency_penalty": 0,
-  "stop": [
-    "||>",
-    "\nUser:",
-    "<|diff_marker|>",
-  ],
   "user": "LibreChat_User_ID",
   "stream": true,
   "messages": [
@@ -773,7 +771,6 @@ Custom endpoints share logic with the OpenAI endpoint, and thus have default par
 - `top_p`: Defaults to `1` if not provided via preset,
 - `presence_penalty`: Defaults to `0` if not provided via preset,
 - `frequency_penalty`: Defaults to `0` if not provided via preset,
-- `stop`: Sequences where the AI will stop generating further tokens. By default, uses the start token (`||>`), the user label (`\nUser:`), and end token (`<|diff_marker|>`). Up to 4 sequences can be provided to the [OpenAI API](https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop)
 - `user`: A unique identifier representing your end-user, which can help OpenAI to [monitor and detect abuse](https://platform.openai.com/docs/api-reference/chat/create#chat-create-user).
 - `stream`: If set, partial message deltas will be sent, like in ChatGPT. Otherwise, generation will only be available when completed.
 - `messages`: [OpenAI format for messages](https://platform.openai.com/docs/api-reference/chat/create#chat-create-messages); the `name` field is added to messages with `system` and `assistant` roles when a custom name is specified via preset.

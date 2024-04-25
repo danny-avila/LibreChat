@@ -92,7 +92,7 @@ To properly integrate Azure OpenAI with LibreChat, specific fields must be accur
 
 These settings apply globally to all Azure models and groups within the endpoint. Here are the available fields:
 
-1. **titleModel** (String, Optional): Specifies the model to use for generating conversation titles. If not provided, the default model is set as `gpt-3.5-turbo`, which will result in no titles if lacking this model.
+1. **titleModel** (String, Optional): Specifies the model to use for generating conversation titles. If not provided, the default model is set as `gpt-3.5-turbo`, which will result in no titles if lacking this model. You can also set this to dynamically use the current model by setting it to `current_model`.
 
 2. **plugins** (Boolean, Optional): Enables the use of plugins through Azure. Set to `true` to activate Plugins endpoint support through your Azure config. Default: `false`.
 
@@ -398,8 +398,11 @@ endpoints:
     titleModel: "gpt-3.5-turbo"
 ```
 
-**Note**: "gpt-3.5-turbo" is the default value, so you can omit it if you want to use this exact model and have it configured. If not configured and `titleConvo` is set to `true`, the titling process will result in an error and no title will be generated.
+**Note**: "gpt-3.5-turbo" is the default value, so you can omit it if you want to use this exact model and have it configured. If not configured and `titleConvo` is set to `true`, the titling process will result in an error and no title will be generated. You can also set this to dynamically use the current model by setting it to `current_model`.
 
+```yaml
+    titleModel: "current_model"
+```
 
 ### Using GPT-4 Vision with Azure
 
