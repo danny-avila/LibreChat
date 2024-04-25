@@ -84,7 +84,14 @@ const AuthContextProvider = ({
     loginUser.mutate(data, {
       onSuccess: (data: TLoginResponse) => {
         const { user, token } = data;
-        setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
+        const prevUrl = localStorage.getItem('prevUrl');
+        setUserContext({
+          token,
+          isAuthenticated: true,
+          user,
+          redirect: prevUrl ? prevUrl : '/c/new',
+        });
+        localStorage.removeItem('prevUrl');
       },
       onError: (error: TResError | unknown) => {
         const resError = error as TResError;
@@ -104,6 +111,11 @@ const AuthContextProvider = ({
         const { user, token } = data;
         if (token) {
           setUserContext({ token, isAuthenticated: true, user });
+          const prevUrl = localStorage.getItem('prevUrl');
+          if (prevUrl) {
+            navigate(prevUrl);
+            localStorage.removeItem('prevUrl');
+          }
         } else {
           console.log('Token is not present. User is not authenticated.');
           if (authConfig?.test) {

@@ -5,6 +5,7 @@ import { useChatContext } from '~/Providers';
 import { useNavigate } from 'react-router-dom';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
+import { EndpointsMenu } from '../Chat/Menus';
 
 interface RoomState {
   title: string;
@@ -45,6 +46,8 @@ export default function RoomCreate() {
       }}
       className="mt-10 flex w-1/3 flex-col gap-5"
     >
+      <EndpointsMenu />
+
       <Input
         placeholder="Room Title"
         name="name"

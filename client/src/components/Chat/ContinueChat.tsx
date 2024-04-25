@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button, Input } from '../ui';
 import { TConversation, request } from 'librechat-data-provider';
-import { useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { SetterOrUpdater, useRecoilState } from 'recoil';
 import { useAuthContext } from '~/hooks';
 import DialogTemplate from '../ui/DialogTemplate';
@@ -20,9 +20,11 @@ export default function ContinueChat({ conversation, setConversation }: Props) {
   const [rooms, setRooms] = useRecoilState(store.rooms);
   const { conversationId } = useParams();
   const { user, logout } = useAuthContext();
+  const location = useLocation();
 
   const handleContinue = () => {
     if (user?.username === 'guest-user') {
+      localStorage.setItem('prevUrl', location.pathname);
       logout();
     } else {
       if (conversation?.isPrivate && conversation.password) {

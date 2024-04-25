@@ -20,6 +20,8 @@ export const useChatCall = (socket?: Socket) => {
         await request.post(`/api/rooms/${conversationId}`, message);
       }
 
+      console.log('new message');
+
       socket.emit('new message', {
         userId: user?.id,
         roomId: conversationId,
@@ -32,7 +34,6 @@ export const useChatCall = (socket?: Socket) => {
 
   const updateMessage = useCallback(
     async (message: TMessage | TMessage[]) => {
-      console.log(socket, convoType);
       if (!socket || convoType !== 'r') {
         return null;
       }

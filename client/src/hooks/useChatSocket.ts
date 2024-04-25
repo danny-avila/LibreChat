@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { Socket, io } from 'socket.io-client';
 import store from '~/store';
 import useChatHelpers from './useChatHelpers';
@@ -11,8 +11,9 @@ export const useInitSocket = () => {
   const [socket, setSocket] = useState<Socket>();
 
   useEffect(() => {
+    // console.log('domain server', process.env.DOMAIN_SERVER);
     if (user) {
-      const newSocket = io('https://dev.chatg.com', {
+      const newSocket = io('http://localhost:3090', {
         query: { userId: user.id },
       });
       setSocket(newSocket);
@@ -26,6 +27,8 @@ export const useInitSocket = () => {
 };
 
 export const useChatSocket = (socket?: Socket) => {
+  const [_, setIsSubmitting] = useRecoilState(store.isSubmitting);
+
   const index = 0;
   const { conversationId } = useParams();
 
@@ -35,13 +38,16 @@ export const useChatSocket = (socket?: Socket) => {
 
   useEffect(() => {
     socket?.on('new message', (data) => {
+      console.log('--- new message ---', data);
       if (conversationId === data.roomId) {
+        setIsSubmitting(true);
         const currentMessages: TMessage[] | null = getMessages() ?? [];
         if (data.replace) {
           currentMessages.pop();
         }
         setMessages([...currentMessages, data.message]);
         setLatestMessage(data.message);
+        setIsSubmitting(false);
       }
     });
 
@@ -50,7 +56,6 @@ export const useChatSocket = (socket?: Socket) => {
         const currentMessages: TMessage[] | null = getMessages() ?? [];
         const index = currentMessages.map((i) => i.messageId).indexOf(data.messageId);
         currentMessages[index] = data.message;
-        console.log(currentMessages);
         setMessages(currentMessages);
       }
     });
@@ -59,28 +64,13 @@ export const useChatSocket = (socket?: Socket) => {
       socket?.off('new message');
       socket?.off('update message');
     };
-  }, [socket, setLatestMessage, setMessages, getMessages, conversationId]);
+  }, [socket, setLatestMessage, setMessages, setIsSubmitting, getMessages, conversationId]);
 
   useEffect(() => {
     if (convoType === 'r' && conversationId !== 'new' && conversationId) {
       socket?.emit('move room', { roomId: conversationId });
     }
   }, [conversationId, convoType, socket]);
-
-  // const sendMessage = useCallback(
-  //   (message: TMessage) => {
-  //     if (message.isCreatedByUser) {
-  //       request.post(`/api/rooms/${conversationId}`, message);
-  //     }
-
-  //     socket?.emit('message', {
-  //       userId: user?.id,
-  //       roomId: conversationId,
-  //       messageId: message.messageId,
-  //     });
-  //   },
-  //   [socket, user?.id, conversationId],
-  // );
 
   return { socket };
 };

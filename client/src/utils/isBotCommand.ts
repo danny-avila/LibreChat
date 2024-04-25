@@ -1,5 +1,5 @@
 export enum COMMAND {
-  BOT = '/bot ',
+  BOT = '/ ',
 }
 
 const isBotCommand = (text: string) => {
