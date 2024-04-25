@@ -13,7 +13,7 @@ export const useInitSocket = () => {
 
   useEffect(() => {
     // console.log('domain server', process.env.DOMAIN_SERVER);
-    const domainServer = 'http://localhost:3090';
+    const domainServer = 'https://dev.chatg.com';
     if (user) {
       const newSocket = io(domainServer, {
         query: { userId: user.id },
