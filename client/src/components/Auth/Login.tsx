@@ -177,7 +177,7 @@ function Login() {
 
   const privacyPolicyRender = (
     <a
-      className="text-xs font-medium text-blue-300"
+      className="text-xs font-medium text-blue-500"
       href={privacyPolicy?.externalUrl || 'privacy-policy'}
       target="_blank"
       rel="noreferrer"
@@ -188,7 +188,7 @@ function Login() {
 
   const termsOfServiceRender = (
     <a
-      className="text-xs font-medium text-blue-300"
+      className="text-xs font-medium text-blue-500"
       href={termsOfService?.externalUrl || 'terms-of-service'}
       target="_blank"
       rel="noreferrer"
@@ -213,8 +213,11 @@ function Login() {
 
   return (
     <section className="flex flex-col md:h-screen md:flex-row">
-      <div className="relative z-10 flex w-full flex-col items-center justify-center bg-black p-6 dark:bg-gray-900 md:w-1/2">
-        <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
+      <div className="absolute bottom-0 left-0 z-50 m-4">
+        <ThemeSelector />
+      </div>
+      <div className="relative z-10 flex w-full flex-col items-center justify-center bg-white dark:bg-gray-800 md:w-1/2">
+        <div className="w-full overflow-hidden bg-white px-6 py-4 dark:bg-gray-800 sm:max-w-md sm:rounded-lg">
           <img
             src={`/assets/${logoImageFilename}`}
             className="mx-auto mb-10 h-16 w-auto"
@@ -233,7 +236,7 @@ function Login() {
             <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
               {' '}
               {localize('com_auth_no_account')}{' '}
-              <a href="/register" className="p-1 font-medium text-blue-300">
+              <a href="/register" className="p-1 font-medium text-blue-500">
                 {localize('com_auth_sign_up')}
               </a>
             </p>
