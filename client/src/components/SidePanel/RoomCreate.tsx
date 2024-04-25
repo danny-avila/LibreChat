@@ -29,9 +29,7 @@ export default function RoomCreate() {
     request
       .post('/api/rooms', { ...conversation, ...room, isRoom: true })
       .then((res) => {
-        console.log('---- new room', res);
         setRooms([res, ...rooms]);
-        // location.href = `/r/${res.conversationId}`;
         setConversation(res);
         navigate(`/r/${res.conversationId}`);
       })

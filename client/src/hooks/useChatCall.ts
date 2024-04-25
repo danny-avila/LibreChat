@@ -12,20 +12,20 @@ export const useChatCall = (socket?: Socket) => {
   const { conversationId } = useParams();
   const { scrollToId } = useScrollToID({ id: 'here' });
   const [_, setIsSubmitting] = useRecoilState(store.isSubmitting);
-  console.log('--- isSubmitting ---', _);
 
   const sendMessage = useCallback(
-    async (message: TMessage | TMessage[], bot?: boolean) => {
+    async (message: TMessage | TMessage[], bot = false) => {
       setIsSubmitting(true);
       if (!socket || convoType !== 'r') {
         return null;
       }
 
+      console.log(message);
+
       if (!bot) {
         await request.post(`/api/rooms/${conversationId}`, message);
       }
 
-      console.log('new message');
       scrollToId();
       socket.emit('new message', {
         userId: user?.id,

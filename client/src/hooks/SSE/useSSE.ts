@@ -306,6 +306,8 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
         sendMessage(responseMessage, true);
       } else if (responseMessage) {
         console.log('=== final response ===', requestMessage, responseMessage);
+        console.log('--- messages', requestMessage, responseMessage);
+
         setMessages([...messages, requestMessage, responseMessage]);
         console.log('--- requestmessage', requestMessage);
         sendMessage([requestMessage, responseMessage], true);
@@ -506,6 +508,7 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
           error: true,
         };
         const errorResponse = tMessageSchema.parse(errorMessage);
+        console.log('--- messages', submission.messages, submission.message);
         setMessages([...submission.messages, submission.message, errorResponse]);
         newConversation({
           template: { conversationId: convoId },

@@ -67,19 +67,35 @@ const sendMessage = async (socket, msg, roomId, isBot = false) => {
       message = await getMessageById(message.messageId);
     }
 
+    let messages;
+    if (Array.isArray(message)) {
+      messages[0] = await getMessageById(message[0].messageId);
+      messages[1] = await getMessageById(message[1].messageId);
+    }
+
     if (message) {
       clients
         .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
         .forEach((client) => {
-          if (Array.isArray(message)) {
+          if (messages) {
             console.log('--- array message ---', message);
-            message.forEach((m, i) => {
-              client.socket.emit('new message', {
-                roomId,
-                message: m,
-                replace: i === 0 ? true : false,
-              });
+            client.socket.emit('new message', {
+              roomId,
+              message: message[0],
+              replace: true,
             });
+            client.socket.emit('new message', {
+              roomId,
+              message: message[1],
+              replace: false,
+            });
+            // message.forEach((m, i) => {
+            //   client.socket.emit('new message', {
+            //     roomId,
+            //     message: m,
+            //     replace: i === 0 ? true : false,
+            //   });
+            // });
           } else {
             client.socket.emit('new message', {
               roomId,
