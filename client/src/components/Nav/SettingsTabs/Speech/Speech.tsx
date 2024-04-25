@@ -10,6 +10,8 @@ import ConversationModeSwitch from './ConversationModeSwitch';
 import AutoSendTextSwitch from './AutoSendTextSwitch';
 import AutoTranscribeAudioSwitch from './AutoTranscribeAudioSwitch';
 import DecibelSelector from './DecibelSelector';
+import EngineSTTDropdown from './EngineSTTDropdown';
+import EngineTTSDropdown from './EngineTTSDropdown';
 
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
@@ -30,6 +32,9 @@ function Speech() {
           <SpeechToTextSwitch />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <EngineSTTDropdown />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <AutoTranscribeAudioSwitch />
         </div>
         {autoTranscribeAudio && (
@@ -40,9 +45,12 @@ function Speech() {
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <AutoSendTextSwitch />
         </div>
-        <div className="my-1 h-px bg-black/20 bg-white/20" role="none" />
+        <div className="h-px bg-black/20 bg-white/20" role="none" />
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <TextToSpeechSwitch />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <EngineTTSDropdown />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <ConversationModeSwitch />

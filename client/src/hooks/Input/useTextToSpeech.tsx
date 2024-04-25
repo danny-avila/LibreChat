@@ -1,12 +1,12 @@
-// useTTS.ts
 import { useRef } from 'react';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import useTextToSpeechBrowser from './useTextToSpeechBrowser';
 import useTextToSpeechExternal from './useTextToSpeechExternal';
+import { useRecoilState } from 'recoil';
+import store from '~/store';
 
 const useTextToSpeech = (message: string) => {
-  const { data: startupConfig } = useGetStartupConfig();
-  const useExternalTextToSpeech = startupConfig?.textToSpeechExternal;
+  const [endpointTTS] = useRecoilState<string>(store.endpointTTS);
+  const useExternalTextToSpeech = endpointTTS === 'external';
 
   const {
     generateSpeechLocal: generateSpeechLocal,

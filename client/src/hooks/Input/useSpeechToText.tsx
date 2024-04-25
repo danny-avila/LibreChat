@@ -1,10 +1,11 @@
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import useSpeechToTextBrowser from './useSpeechToTextBrowser';
 import useSpeechToTextExternal from './useSpeechToTextExternal';
+import { useRecoilState } from 'recoil';
+import store from '~/store';
 
 const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) => {
-  const { data: startupConfig } = useGetStartupConfig();
-  const useExternalSpeech = startupConfig?.speechToTextExternal;
+  const [endpointSTT] = useRecoilState<string>(store.endpointSTT);
+  const useExternalSpeechToText = endpointSTT === 'external';
 
   const {
     isListening: speechIsListeningBrowser,
@@ -23,13 +24,15 @@ const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) =>
     clearText,
   } = useSpeechToTextExternal(handleTranscriptionComplete);
 
-  const isListening = useExternalSpeech ? speechIsListeningExternal : speechIsListeningBrowser;
-  const isLoading = useExternalSpeech ? speechIsLoadingExternal : speechIsLoadingBrowser;
-  const speechTextForm = useExternalSpeech ? speechTextExternal : speechTextBrowser;
-  const startRecording = useExternalSpeech
+  const isListening = useExternalSpeechToText
+    ? speechIsListeningExternal
+    : speechIsListeningBrowser;
+  const isLoading = useExternalSpeechToText ? speechIsLoadingExternal : speechIsLoadingBrowser;
+  const speechTextForm = useExternalSpeechToText ? speechTextExternal : speechTextBrowser;
+  const startRecording = useExternalSpeechToText
     ? startSpeechRecordingExternal
     : startSpeechRecordingBrowser;
-  const stopRecording = useExternalSpeech
+  const stopRecording = useExternalSpeechToText
     ? stopSpeechRecordingExternal
     : stopSpeechRecordingBrowser;
   const speechText =

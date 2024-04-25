@@ -21,12 +21,11 @@ export default function AutoSendTextSwitch({
 
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_ui_auto_send_text')}</div>
+      <div>{localize('com_nav_auto_send_text')}</div>
       <Switch
         id="AutoSendText"
         checked={autoSendText}
         onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2"
         data-testid="AutoSendText"
         disabled={!SpeechToText}
       />

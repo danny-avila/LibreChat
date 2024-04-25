@@ -10,7 +10,7 @@ export default function ConversationModeSwitch({
 }) {
   const localize = useLocalize();
   const [conversationMode, setConversationMode] = useRecoilState<boolean>(store.conversationMode);
-  const [TextToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
+  const [textToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
 
   const handleCheckedChange = (value: boolean) => {
     setConversationMode(value);
@@ -21,14 +21,14 @@ export default function ConversationModeSwitch({
 
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_ui_conversation_mode')}</div>
+      <div>{localize('com_nav_conversation_mode')}</div>
       <Switch
         id="ConversationMode"
         checked={conversationMode}
         onCheckedChange={handleCheckedChange}
         className="ml-4 mt-2"
         data-testid="ConversationMode"
-        disabled={!TextToSpeech}
+        disabled={!textToSpeech}
       />
     </div>
   );

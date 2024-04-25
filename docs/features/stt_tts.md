@@ -202,17 +202,18 @@ Create an ElevenLabs api key at [ElevenLabs's website](https://elevenlabs.io/) a
 ```
 TTS_API_KEY=sk-1234
 ```
+Then, click on the "Voices" tab, and copy the ID of the voice that you want to use. If you haven't already added one, click on the "Voice library" where you can find a lot of pre-made voices, add one and copy the ID of the voice that you want to use by clicking the "ID" button
 
-Then, in the `librechat.yaml` file, add the following configuration:
+in the `librechat.yaml` file, add the following configuration:
 
 ```yaml
 tts:
-  url: 'https://api.elevenlabs.io/v1/audio/synthesize'
+  url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice-id}'
   apiKey: '${TTS_API_KEY}'
   model: 'eleven_monolingual_v1'
 ```
 
-where the model is the model that you want to use for the synthesis (not the voice), you can find more information about the models in the [ElevenLabs's documentation](https://elevenlabs.io/docs/api-reference/get-models)
+where the model is the model that you want to use for the synthesis (not the voice), you can find more information about the models in the [ElevenLabs's documentation](https://elevenlabs.io/docs/api-reference/get-models) and the voice-id is the ID of the voice that you want to use
 
 if you want to add custom parameters, you can add them in the `librechat.yaml` file as follows:
 

@@ -48,6 +48,8 @@ const conversationMode = atomWithLocalStorage('conversationMode', false);
 const autoSendText = atomWithLocalStorage('autoSendText', false);
 const autoTranscribeAudio = atomWithLocalStorage('autoTranscribeAudio', false);
 const decibelValue = atomWithLocalStorage('decibelValue', -45);
+const endpointSTT = atomWithLocalStorage('endpointSTT', 'browser');
+const endpointTTS = atomWithLocalStorage('endpointTTS', 'browser');
 
 export default {
   abortScroll,
@@ -71,4 +73,6 @@ export default {
   autoSendText,
   autoTranscribeAudio,
   decibelValue,
+  endpointSTT,
+  endpointTTS,
 };

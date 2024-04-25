@@ -122,6 +122,7 @@ export default {
   com_ui_save: 'Save',
   com_ui_save_submit: 'Save & Submit',
   com_user_message: 'You',
+  com_ui_read_aloud: 'Read aloud',
   com_ui_copy_to_clipboard: 'Copy to clipboard',
   com_ui_copied_to_clipboard: 'Copied to clipboard',
   com_ui_regenerate: 'Regenerate',
@@ -156,10 +157,7 @@ export default {
   com_ui_privacy_policy: 'Privacy policy',
   com_ui_terms_of_service: 'Terms of service',
   com_ui_use_micrphone: 'Use microphone',
-  com_ui_conversation_mode: 'Conversation Mode',
-  com_ui_auto_send_text: 'Auto send text',
-  com_ui_auto_transcribe_audio: 'Auto transcribe audio',
-  com_ui_db_sensitivity: 'Decibel sensitivity',
+
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
@@ -435,6 +433,13 @@ export default {
   com_nav_help_faq: 'Help & FAQ',
   com_nav_settings: 'Settings',
   com_nav_search_placeholder: 'Search messages',
+  com_nav_conversation_mode: 'Conversation Mode',
+  com_nav_auto_send_text: 'Auto send text',
+  com_nav_auto_transcribe_audio: 'Auto transcribe audio',
+  com_nav_db_sensitivity: 'Decibel sensitivity',
+  com_nav_engine: 'Engine',
+  com_nav_browser: 'Browser',
+  com_nav_external: 'External',
   com_nav_setting_general: 'General',
   com_nav_setting_beta: 'Beta features',
   com_nav_setting_data: 'Data controls',

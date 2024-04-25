@@ -80,7 +80,7 @@ export default function HoverButtons({
           onMouseUp={handleMouseUp}
           onClick={toggleSpeech}
           type="button"
-          title={isSpeaking ? localize('com_ui_stop_speaking') : localize('com_ui_speak')}
+          title={isSpeaking ? localize('com_ui_stop') : localize('com_ui_read_aloud')}
         >
           {isLoading ? (
             <Spinner size="19" />
