@@ -21,6 +21,7 @@ const data: TModelSpec[] = [
     // auth: string;
     preset: {
       endpoint: 'Ollama',
+      greeting: 'My fellow Americans,',
       // 'endpointType': EModelEndpoint.custom,
       frequency_penalty: 0,
       // 'imageDetail': 'auto',
@@ -43,6 +44,7 @@ const data: TModelSpec[] = [
     // auth: string;
     preset: {
       chatGptLabel: 'Vision Helper',
+      greeting: 'What\'s up!!',
       endpoint: EModelEndpoint.openAI,
       model: 'gpt-4-turbo',
       promptPrefix:
@@ -65,6 +67,7 @@ export default function ModelSpecsMenu() {
 
   const onSelectSpec = (spec: TModelSpec) => {
     const { preset } = spec;
+    preset.iconURL = spec.iconURL;
     const { endpoint: newEndpoint } = preset;
     if (!newEndpoint) {
       return;

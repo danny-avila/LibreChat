@@ -6,6 +6,7 @@ import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import { icons } from './Menus/Endpoints/Icons';
 import { BirthdayIcon } from '~/components/svg';
 import { getEndpointField } from '~/utils';
+import LandingIcon from './ConversationIcon';
 import { useLocalize } from '~/hooks';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
@@ -51,19 +52,28 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
           <div className="absolute left-0 right-0">{Header && Header}</div>
           <div className="flex h-full flex-col items-center justify-center">
             <div className="relative mb-3 h-[72px] w-[72px]">
-              <div className={className}>
-                {endpoint &&
-                  Icon &&
-                  Icon({
-                    size: 41,
-                    context: 'landing',
-                    className: 'h-2/3 w-2/3',
-                    endpoint: endpoint,
-                    iconURL: iconURL,
-                    assistantName,
-                    avatar,
-                  })}
-              </div>
+              {conversation?.iconURL ? (
+                <LandingIcon
+                  preset={conversation}
+                  endpointIconURL={iconURL}
+                  assistantName={assistantName}
+                  avatar={avatar}
+                />
+              ) : (
+                <div className={className}>
+                  {endpoint &&
+                    Icon &&
+                    Icon({
+                      size: 41,
+                      context: 'landing',
+                      className: 'h-2/3 w-2/3',
+                      iconURL: iconURL,
+                      assistantName,
+                      endpoint,
+                      avatar,
+                    })}
+                </div>
+              )}
               <TooltipTrigger>
                 {(startupConfig?.showBirthdayIcon ?? false) && (
                   <BirthdayIcon className="absolute bottom-12 right-5" />
@@ -88,8 +98,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
             ) : (
               <div className="mb-5 text-2xl font-medium dark:text-white">
                 {endpoint === EModelEndpoint.assistants
-                  ? localize('com_nav_welcome_assistant')
-                  : localize('com_nav_welcome_message')}
+                  ? conversation?.greeting ?? localize('com_nav_welcome_assistant')
+                  : conversation?.greeting ?? localize('com_nav_welcome_message')}
               </div>
             )}
           </div>
