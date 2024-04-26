@@ -32,6 +32,13 @@ export enum IconContext {
   message = 'message',
 }
 
+export type IconMapProps = {
+  className?: string;
+  assistantName?: string;
+  avatar?: string;
+  size?: number;
+};
+
 export type NavLink = {
   title: string;
   label?: string;

@@ -1,5 +1,5 @@
-import { defaultEndpoints } from 'librechat-data-provider';
-import type { EModelEndpoint, TEndpointsConfig, TConfig } from 'librechat-data-provider';
+import { defaultEndpoints, modularEndpoints, EModelEndpoint } from 'librechat-data-provider';
+import type { TEndpointsConfig, TConfig, TPreset, TConversation } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 
 export const getAssistantName = ({
@@ -90,4 +90,68 @@ export function updateLastSelectedModel({
   }
   lastSelectedModels[endpoint] = model;
   localStorage.setItem('lastSelectedModel', JSON.stringify(lastSelectedModels));
+}
+
+interface ConversationInitParams {
+  conversation: TConversation | null;
+  newEndpoint: EModelEndpoint | string;
+  endpointsConfig: TEndpointsConfig;
+  modularChat?: boolean;
+}
+
+interface InitiatedTemplateResult {
+  template: Partial<TPreset>;
+  shouldSwitch: boolean;
+  isExistingConversation: boolean;
+  isCurrentModular: boolean;
+  isNewModular: boolean;
+  newEndpointType: EModelEndpoint | undefined;
+}
+
+/**
+ * Get the conditional logic for switching conversations
+ */
+export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTemplateResult {
+  const { conversation, newEndpoint, endpointsConfig, modularChat } = params;
+
+  const currentEndpoint = conversation?.endpoint;
+  const template: Partial<TPreset> = {
+    ...conversation,
+    endpoint: newEndpoint,
+    conversationId: 'new',
+  };
+
+  const isAssistantSwitch =
+    newEndpoint === EModelEndpoint.assistants &&
+    currentEndpoint === EModelEndpoint.assistants &&
+    currentEndpoint === newEndpoint;
+
+  const conversationId = conversation?.conversationId;
+  const isExistingConversation = !!(conversationId && conversationId !== 'new');
+
+  const currentEndpointType =
+    getEndpointField(endpointsConfig, currentEndpoint, 'type') ?? currentEndpoint;
+  const newEndpointType =
+    getEndpointField(endpointsConfig, newEndpoint, 'type') ??
+    (newEndpoint as EModelEndpoint | undefined);
+
+  const hasEndpoint = modularEndpoints.has(currentEndpoint ?? '');
+  const hasCurrentEndpointType = modularEndpoints.has(currentEndpointType ?? '');
+  const isCurrentModular = hasEndpoint || hasCurrentEndpointType || isAssistantSwitch;
+
+  const hasNewEndpoint = modularEndpoints.has(newEndpoint ?? '');
+  const hasNewEndpointType = modularEndpoints.has(newEndpointType ?? '');
+  const isNewModular = hasNewEndpoint || hasNewEndpointType || isAssistantSwitch;
+
+  const endpointsMatch = currentEndpoint === newEndpoint;
+  const shouldSwitch = endpointsMatch || modularChat || isAssistantSwitch;
+
+  return {
+    template,
+    shouldSwitch,
+    isExistingConversation,
+    isCurrentModular,
+    newEndpointType,
+    isNewModular,
+  };
 }

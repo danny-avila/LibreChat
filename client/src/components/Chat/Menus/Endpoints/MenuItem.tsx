@@ -43,54 +43,54 @@ const MenuItem: FC<MenuItemProps> = ({
   const onSelectEndpoint = (newEndpoint: EModelEndpoint) => {
     if (!newEndpoint) {
       return;
-    } else {
-      if (!expiryTime) {
-        setDialogOpen(true);
-      }
-
-      const currentEndpoint = conversation?.endpoint;
-      const template: Partial<TPreset> = {
-        ...conversation,
-        endpoint: newEndpoint,
-        conversationId: 'new',
-      };
-      const isAssistantSwitch =
-        newEndpoint === EModelEndpoint.assistants &&
-        currentEndpoint === EModelEndpoint.assistants &&
-        currentEndpoint === newEndpoint;
-
-      const { conversationId } = conversation ?? {};
-      const isExistingConversation = conversationId && conversationId !== 'new';
-      const currentEndpointType =
-        getEndpointField(endpointsConfig, currentEndpoint, 'type') ?? currentEndpoint;
-      const newEndpointType = getEndpointField(endpointsConfig, newEndpoint, 'type') ?? newEndpoint;
-
-      const hasEndpoint = modularEndpoints.has(currentEndpoint ?? '');
-      const hasCurrentEndpointType = modularEndpoints.has(currentEndpointType ?? '');
-      const isCurrentModular = hasEndpoint || hasCurrentEndpointType || isAssistantSwitch;
-
-      const hasNewEndpoint = modularEndpoints.has(newEndpoint ?? '');
-      const hasNewEndpointType = modularEndpoints.has(newEndpointType ?? '');
-      const isNewModular = hasNewEndpoint || hasNewEndpointType || isAssistantSwitch;
-
-      const endpointsMatch = currentEndpoint === newEndpoint;
-      const shouldSwitch = endpointsMatch || modularChat || isAssistantSwitch;
-
-      if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
-        template.endpointType = newEndpointType;
-
-        const currentConvo = getDefaultConversation({
-          /* target endpointType is necessary to avoid endpoint mixing */
-          conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
-          preset: template,
-        });
-
-        /* We don't reset the latest message, only when changing settings mid-converstion */
-        newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
-        return;
-      }
-      newConversation({ template: { ...(template as Partial<TConversation>) } });
     }
+
+    if (!expiryTime) {
+      setDialogOpen(true);
+    }
+
+    const currentEndpoint = conversation?.endpoint;
+    const template: Partial<TPreset> = {
+      ...conversation,
+      endpoint: newEndpoint,
+      conversationId: 'new',
+    };
+    const isAssistantSwitch =
+      newEndpoint === EModelEndpoint.assistants &&
+      currentEndpoint === EModelEndpoint.assistants &&
+      currentEndpoint === newEndpoint;
+
+    const { conversationId } = conversation ?? {};
+    const isExistingConversation = conversationId && conversationId !== 'new';
+    const currentEndpointType =
+      getEndpointField(endpointsConfig, currentEndpoint, 'type') ?? currentEndpoint;
+    const newEndpointType = getEndpointField(endpointsConfig, newEndpoint, 'type') ?? newEndpoint;
+
+    const hasEndpoint = modularEndpoints.has(currentEndpoint ?? '');
+    const hasCurrentEndpointType = modularEndpoints.has(currentEndpointType ?? '');
+    const isCurrentModular = hasEndpoint || hasCurrentEndpointType || isAssistantSwitch;
+
+    const hasNewEndpoint = modularEndpoints.has(newEndpoint ?? '');
+    const hasNewEndpointType = modularEndpoints.has(newEndpointType ?? '');
+    const isNewModular = hasNewEndpoint || hasNewEndpointType || isAssistantSwitch;
+
+    const endpointsMatch = currentEndpoint === newEndpoint;
+    const shouldSwitch = endpointsMatch || modularChat || isAssistantSwitch;
+
+    if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
+      template.endpointType = newEndpointType;
+
+      const currentConvo = getDefaultConversation({
+        /* target endpointType is necessary to avoid endpoint mixing */
+        conversation: { ...(conversation ?? {}), endpointType: template.endpointType },
+        preset: template,
+      });
+
+      /* We don't reset the latest message, only when changing settings mid-converstion */
+      newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
+      return;
+    }
+    newConversation({ template: { ...(template as Partial<TConversation>) } });
   };
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');

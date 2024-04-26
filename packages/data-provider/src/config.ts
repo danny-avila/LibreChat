@@ -657,6 +657,12 @@ export enum CohereConstants {
   TITLE_MESSAGE = 'TITLE:',
 }
 
+export enum AuthType {
+  OVERRIDE_AUTH = 'override_auth',
+  USER_PROVIDED = 'user_provided',
+  SYSTEM_PROVIDED = 'system_provided',
+}
+
 export const defaultOrderQuery: {
   order: 'desc';
   limit: 100;
