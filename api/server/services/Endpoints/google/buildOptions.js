@@ -1,5 +1,5 @@
 const buildOptions = (endpoint, parsedBody) => {
-  const { examples, modelLabel, promptPrefix, iconURL, greeting, ...rest } = parsedBody;
+  const { examples, modelLabel, promptPrefix, iconURL, greeting, spec, ...rest } = parsedBody;
   const endpointOption = {
     examples,
     endpoint,
@@ -7,6 +7,7 @@ const buildOptions = (endpoint, parsedBody) => {
     promptPrefix,
     iconURL,
     greeting,
+    spec,
     modelOptions: {
       ...rest,
     },

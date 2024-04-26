@@ -289,6 +289,7 @@ export const tConversationSchema = z.object({
   /* frontend components */
   iconURL: z.string().optional(),
   greeting: z.string().optional(),
+  spec: z.string().optional(),
 });
 
 export const tPresetSchema = tConversationSchema
@@ -345,6 +346,7 @@ export const openAISchema = tConversationSchema
     stop: true,
     iconURL: true,
     greeting: true,
+    spec: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -361,6 +363,7 @@ export const openAISchema = tConversationSchema
     stop: obj.stop ?? undefined,
     iconURL: obj.iconURL ?? undefined,
     greeting: obj.greeting ?? undefined,
+    spec: obj.spec ?? undefined,
   }))
   .catch(() => ({
     model: openAISettings.model.default,
@@ -375,6 +378,7 @@ export const openAISchema = tConversationSchema
     stop: undefined,
     iconURL: undefined,
     greeting: undefined,
+    spec: undefined,
   }));
 
 export const googleSchema = tConversationSchema
@@ -389,6 +393,7 @@ export const googleSchema = tConversationSchema
     topK: true,
     iconURL: true,
     greeting: true,
+    spec: true,
   })
   .transform((obj) => {
     const isGemini = obj?.model?.toLowerCase()?.includes('gemini');
@@ -415,6 +420,7 @@ export const googleSchema = tConversationSchema
       topK: obj.topK ?? google.topK.default,
       iconURL: obj.iconURL ?? undefined,
       greeting: obj.greeting ?? undefined,
+      spec: obj.spec ?? undefined,
     };
   })
   .catch(() => ({
@@ -428,6 +434,7 @@ export const googleSchema = tConversationSchema
     topK: google.topK.default,
     iconURL: undefined,
     greeting: undefined,
+    spec: undefined,
   }));
 
 export const bingAISchema = tConversationSchema
@@ -477,6 +484,7 @@ export const anthropicSchema = tConversationSchema
     resendFiles: true,
     iconURL: true,
     greeting: true,
+    spec: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -490,6 +498,7 @@ export const anthropicSchema = tConversationSchema
     resendFiles: typeof obj.resendFiles === 'boolean' ? obj.resendFiles : true,
     iconURL: obj.iconURL ?? undefined,
     greeting: obj.greeting ?? undefined,
+    spec: obj.spec ?? undefined,
   }))
   .catch(() => ({
     model: 'claude-1',
@@ -502,6 +511,7 @@ export const anthropicSchema = tConversationSchema
     resendFiles: true,
     iconURL: undefined,
     greeting: undefined,
+    spec: undefined,
   }));
 
 export const chatGPTBrowserSchema = tConversationSchema
@@ -529,6 +539,7 @@ export const gptPluginsSchema = tConversationSchema
     agentOptions: true,
     iconURL: true,
     greeting: true,
+    spec: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -548,6 +559,7 @@ export const gptPluginsSchema = tConversationSchema
     },
     iconURL: obj.iconURL ?? undefined,
     greeting: obj.greeting ?? undefined,
+    spec: obj.spec ?? undefined,
   }))
   .catch(() => ({
     model: 'gpt-3.5-turbo',
@@ -566,6 +578,7 @@ export const gptPluginsSchema = tConversationSchema
     },
     iconURL: undefined,
     greeting: undefined,
+    spec: undefined,
   }));
 
 export function removeNullishValues<T extends object>(obj: T): T {
@@ -588,6 +601,7 @@ export const assistantSchema = tConversationSchema
     promptPrefix: true,
     iconURL: true,
     greeting: true,
+    spec: true,
   })
   .transform(removeNullishValues)
   .catch(() => ({}));
@@ -606,6 +620,7 @@ export const compactOpenAISchema = tConversationSchema
     stop: true,
     iconURL: true,
     greeting: true,
+    spec: true,
   })
   .transform((obj: Partial<TConversation>) => {
     const newObj: Partial<TConversation> = { ...obj };
@@ -644,6 +659,7 @@ export const compactGoogleSchema = tConversationSchema
     topK: true,
     iconURL: true,
     greeting: true,
+    spec: true,
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
@@ -676,6 +692,7 @@ export const compactAnthropicSchema = tConversationSchema
     resendFiles: true,
     iconURL: true,
     greeting: true,
+    spec: true,
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
@@ -720,6 +737,9 @@ export const compactPluginsSchema = tConversationSchema
     frequency_penalty: true,
     tools: true,
     agentOptions: true,
+    iconURL: true,
+    greeting: true,
+    spec: true,
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };

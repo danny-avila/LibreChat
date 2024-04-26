@@ -710,6 +710,7 @@ class GoogleClient extends BaseClient {
       modelLabel: this.options.modelLabel,
       iconURL: this.options.iconURL,
       greeting: this.options.greeting,
+      spec: this.options.spec,
       ...this.modelOptions,
     };
   }

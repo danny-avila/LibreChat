@@ -383,6 +383,7 @@ class OpenAIClient extends BaseClient {
       imageDetail: this.options.imageDetail,
       iconURL: this.options.iconURL,
       greeting: this.options.greeting,
+      spec: this.options.spec,
       ...this.modelOptions,
     };
   }

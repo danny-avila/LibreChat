@@ -11,6 +11,7 @@ const buildOptions = (endpoint, parsedBody) => {
     frequency_penalty,
     iconURL,
     greeting,
+    spec,
   } = parsedBody;
   const endpointOption = {
     endpoint,
@@ -20,6 +21,7 @@ const buildOptions = (endpoint, parsedBody) => {
     agentOptions,
     iconURL,
     greeting,
+    spec,
     modelOptions: {
       model,
       temperature,

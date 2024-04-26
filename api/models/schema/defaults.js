@@ -96,6 +96,9 @@ const conversationPreset = {
   greeting: {
     type: String,
   },
+  spec: {
+    type: String,
+  },
 };
 
 const agentOptions = {

@@ -657,6 +657,7 @@ class AnthropicClient extends BaseClient {
       resendFiles: this.options.resendFiles,
       iconURL: this.options.iconURL,
       greeting: this.options.greeting,
+      spec: this.options.spec,
       ...this.modelOptions,
     };
   }
