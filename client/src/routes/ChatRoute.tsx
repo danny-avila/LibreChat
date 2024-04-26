@@ -58,7 +58,7 @@ export default function ChatRoute() {
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
       });
-      hasSetConversation.current = !!assistants;
+      hasSetConversation.current = true;
     } else if (
       initialConvoQuery.data &&
       endpointsQuery.data &&
@@ -73,7 +73,7 @@ export default function ChatRoute() {
         modelsData: modelsQuery.data,
         keepLatestMessage: true,
       });
-      hasSetConversation.current = !!assistants;
+      hasSetConversation.current = true;
     } else if (
       !hasSetConversation.current &&
       !modelsQuery.data?.initial &&
