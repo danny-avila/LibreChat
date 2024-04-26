@@ -139,11 +139,6 @@ function ResetPassword() {
                   type="password"
                   id="confirm_password"
                   aria-label={localize('com_auth_password_confirm')}
-                  // uncomment to prevent pasting in confirm field
-                  onPaste={(e) => {
-                    e.preventDefault();
-                    return false;
-                  }}
                   {...register('confirm_password', {
                     validate: (value) =>
                       value === password || localize('com_auth_password_not_match'),
