@@ -631,6 +631,17 @@ export enum Constants {
   CURRENT_MODEL = 'current_model',
 }
 
+export enum LocalStorageKeys {
+  /** Key for the last conversation setup. */
+  LAST_CONVO_SETUP = 'lastConversationSetup',
+  /** Key for the last selected model. */
+  LAST_MODEL = 'lastSelectedModel',
+  /** Key for the last selected tools. */
+  LAST_TOOLS = 'lastSelectedTools',
+  /** Key for temporary files to delete */
+  FILES_TO_DELETE = 'filesToDelete',
+}
+
 /**
  * Enum for Cohere related constants
  */

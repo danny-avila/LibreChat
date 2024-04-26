@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Content, Portal, Root } from '@radix-ui/react-popover';
 import { EModelEndpoint } from 'librechat-data-provider';
@@ -13,12 +13,12 @@ import store from '~/store';
 import { data } from './fakeData';
 
 export default function ModelSpecsMenu() {
-  const modularChat = useRecoilValue(store.modularChat);
-  const [selectedSpec, setSelectedSpec] = useState<string | undefined>();
-  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
-  const getDefaultConversation = useDefaultConvo();
   const { conversation } = useChatContext();
   const { newConversation } = useNewConvo();
+
+  const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const modularChat = useRecoilValue(store.modularChat);
+  const getDefaultConversation = useDefaultConvo();
   // const { data } = useGetSpecs();
 
   const onSelectSpec = (spec: TModelSpec) => {
@@ -29,8 +29,6 @@ export default function ModelSpecsMenu() {
     if (!newEndpoint) {
       return;
     }
-
-    setSelectedSpec(spec.name);
 
     const {
       shouldSwitch,
@@ -63,14 +61,13 @@ export default function ModelSpecsMenu() {
     newConversation({ template: { ...(template as Partial<TConversation>) }, preset });
   };
 
-  console.log(selectedSpec);
   const selected = useMemo(() => {
-    const spec = data.find((spec) => spec.name === selectedSpec);
+    const spec = data.find((spec) => spec.name === conversation?.spec);
     if (!spec) {
-      return data[0];
+      return undefined;
     }
     return spec;
-  }, [selectedSpec]);
+  }, [conversation?.spec]);
 
   return (
     <Root>

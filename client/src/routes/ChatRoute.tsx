@@ -1,25 +1,21 @@
 import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import {
-  useGetModelsQuery,
-  useGetStartupConfig,
-  useGetEndpointsQuery,
-} from 'librechat-data-provider/react-query';
+import { useGetModelsQuery, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { defaultOrderQuery } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { useGetConvoIdQuery, useListAssistantsQuery } from '~/data-provider';
-import { useNewConvo, useConfigOverride } from '~/hooks';
+import { useNewConvo, useAppStartup } from '~/hooks';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
+import { getDefaultModelSpec } from '~/utils';
 import { Spinner } from '~/components/svg';
 import store from '~/store';
+import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
 
 export default function ChatRoute() {
+  useAppStartup();
   const index = 0;
-
-  useConfigOverride();
   const { conversationId } = useParams();
-  const { data: startupConfig } = useGetStartupConfig();
 
   const { conversation } = store.useCreateConversationAtom(index);
   const { isAuthenticated } = useAuthRedirect();
@@ -40,26 +36,27 @@ export default function ChatRoute() {
   });
 
   useEffect(() => {
-    if (startupConfig?.appTitle) {
-      document.title = startupConfig.appTitle;
-      localStorage.setItem('appTitle', startupConfig.appTitle);
-    }
-  }, [startupConfig]);
-
-  useEffect(() => {
     if (
+      modelSpecs &&
       conversationId === 'new' &&
       endpointsQuery.data &&
       modelsQuery.data &&
       !modelsQuery.data?.initial &&
       !hasSetConversation.current
     ) {
+      const spec = getDefaultModelSpec(modelSpecs);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
+        preset: {
+          ...spec.preset,
+          iconURL: spec.iconURL,
+          spec: spec.name,
+        },
       });
       hasSetConversation.current = true;
     } else if (
+      modelSpecs &&
       initialConvoQuery.data &&
       endpointsQuery.data &&
       modelsQuery.data &&
@@ -75,17 +72,29 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     } else if (
+      modelSpecs &&
       !hasSetConversation.current &&
       !modelsQuery.data?.initial &&
       conversationId === 'new' &&
       assistants
     ) {
+      const spec = getDefaultModelSpec(modelSpecs);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
+        preset: {
+          ...spec.preset,
+          iconURL: spec.iconURL,
+          spec: spec.name,
+        },
       });
       hasSetConversation.current = true;
-    } else if (!hasSetConversation.current && !modelsQuery.data?.initial && assistants) {
+    } else if (
+      modelSpecs &&
+      !hasSetConversation.current &&
+      !modelsQuery.data?.initial &&
+      assistants
+    ) {
       newConversation({
         template: initialConvoQuery.data,
         preset: initialConvoQuery.data as TPreset,

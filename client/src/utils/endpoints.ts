@@ -1,5 +1,16 @@
-import { defaultEndpoints, modularEndpoints, EModelEndpoint } from 'librechat-data-provider';
-import type { TEndpointsConfig, TConfig, TPreset, TConversation } from 'librechat-data-provider';
+import {
+  defaultEndpoints,
+  modularEndpoints,
+  EModelEndpoint,
+  LocalStorageKeys,
+} from 'librechat-data-provider';
+import type {
+  TEndpointsConfig,
+  TConfig,
+  TPreset,
+  TConversation,
+  TModelSpec,
+} from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 
 export const getAssistantName = ({
@@ -82,14 +93,16 @@ export function updateLastSelectedModel({
   if (!model) {
     return;
   }
-  const lastConversationSetup = JSON.parse(localStorage.getItem('lastConversationSetup') || '{}');
-  const lastSelectedModels = JSON.parse(localStorage.getItem('lastSelectedModel') || '{}');
+  const lastConversationSetup = JSON.parse(
+    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP) || '{}',
+  );
+  const lastSelectedModels = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) || '{}');
   if (lastConversationSetup.endpoint === endpoint) {
     lastConversationSetup.model = model;
-    localStorage.setItem('lastConversationSetup', JSON.stringify(lastConversationSetup));
+    localStorage.setItem(LocalStorageKeys.LAST_CONVO_SETUP, JSON.stringify(lastConversationSetup));
   }
   lastSelectedModels[endpoint] = model;
-  localStorage.setItem('lastSelectedModel', JSON.stringify(lastSelectedModels));
+  localStorage.setItem(LocalStorageKeys.LAST_MODEL, JSON.stringify(lastSelectedModels));
 }
 
 interface ConversationInitParams {
@@ -108,9 +121,7 @@ interface InitiatedTemplateResult {
   newEndpointType: EModelEndpoint | undefined;
 }
 
-/**
- * Get the conditional logic for switching conversations
- */
+/** Get the conditional logic for switching conversations */
 export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTemplateResult {
   const { conversation, newEndpoint, endpointsConfig, modularChat } = params;
 
@@ -154,4 +165,15 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
     newEndpointType,
     isNewModular,
   };
+}
+
+/** Gets the default spec by order.
+ *
+ * First, the admin defined default, then last selected spec, followed by first spec
+ */
+export function getDefaultModelSpec(modelSpecs: TModelSpec[]) {
+  const defaultSpec = modelSpecs.find((spec) => spec.default);
+  const lastConvo = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP) || '{}');
+  const lastSelectedSpec = modelSpecs.find((spec) => spec.name === lastConvo.spec);
+  return defaultSpec || lastSelectedSpec || modelSpecs[0];
 }
