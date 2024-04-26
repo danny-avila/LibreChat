@@ -7,12 +7,32 @@ import { useLocalize } from '~/hooks';
 
 const AiTokenBurnRates = () => {
   const localize = useLocalize();
+
+  const domainLogos = {
+    'gptchina.io': 'logo-china.png',
+    'gptafrica.io': 'logo-africa.png',
+    'gptglobal.io': 'logo-global.png',
+    'gptiran.io': 'logo-iran.png',
+    'gptitaly.io': 'logo-italy.png',
+    'gptrussia.io': 'logo-russia.png',
+    'gptusa.io': 'logo-usa.png',
+    'novlisky.io': 'logo-novlisky.png',
+  };
+
+  const currentDomain = window.location.hostname;
+  const logoImageFilename = domainLogos[currentDomain] || 'logo-novlisky.png';
+
   return (
     <div className="relative min-h-screen bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-white">
       <div className="fixed bottom-0 left-0 m-4">
         <ThemeSelector />
       </div>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-center py-10">
+          <Link to="/">
+            <img src={`/assets/${logoImageFilename}`} className="h-16 w-auto" alt="Logo" />
+          </Link>
+        </div>
         <div className="flex items-center justify-between py-4">
           <h1 className="text-2xl font-bold">{localize('com_token_usage_overview')}</h1>
           <Link to="/login" className="text-black-500 hover:text-blue-700">
@@ -41,9 +61,9 @@ const AiTokenBurnRates = () => {
                 <td className="border border-gray-400 px-4 py-2">
                   {localize('com_gpt_3_5_turbo')}
                 </td>
+                <td className="border border-gray-400 px-4 py-2">0.1</td>
                 <td className="border border-gray-400 px-4 py-2">0.3</td>
-                <td className="border border-gray-400 px-4 py-2">0.5</td>
-                <td className="border border-gray-400 px-4 py-2">0.4</td>
+                <td className="border border-gray-400 px-4 py-2">0.2</td>
               </tr>
               <tr>
                 <td className="border border-gray-400 px-4 py-2">{localize('com_gpt_4')}</td>
@@ -55,9 +75,9 @@ const AiTokenBurnRates = () => {
                 <td className="border border-gray-400 px-4 py-2">
                   {localize('com_claude_3_haiku')}
                 </td>
-                <td className="border border-gray-400 px-4 py-2">0.15</td>
-                <td className="border border-gray-400 px-4 py-2">0.75</td>
+                <td className="border border-gray-400 px-4 py-2">0.1</td>
                 <td className="border border-gray-400 px-4 py-2">0.3</td>
+                <td className="border border-gray-400 px-4 py-2">0.2</td>
               </tr>
               <tr>
                 <td className="border border-gray-400 px-4 py-2">

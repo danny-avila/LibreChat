@@ -93,7 +93,10 @@ export default function ErrorDialog({ open, onOpenChange }) {
             </div>
             <div className="grid w-full grid-cols-2 gap-5 p-3">
               {tokenOptionsToUse.map(
-                ({ tokens, label, price, originalPrice, discountedPrice, discountPercentage }) => (
+                (
+                  { tokens, label, price, originalPrice, discountedPrice, discountPercentage },
+                  index,
+                ) => (
                   <button
                     key={tokens}
                     onClick={() => handleSelect(tokens)}
@@ -106,16 +109,22 @@ export default function ErrorDialog({ open, onOpenChange }) {
                     <div className="text-lg font-bold leading-tight">{localize(label)}</div>
                     <div className="leading-tight">{localize('com_ui_payment_tokens')}</div>
                     <div className="flex flex-col items-center space-y-1">
-                      <div className="flex items-center">
-                        <span className="mr-2 text-sm leading-none line-through">
-                          {originalPrice}
-                        </span>
+                      {index === 0 && originalPrice === discountedPrice ? (
                         <span className="text-sm leading-none">{discountedPrice}</span>
-                      </div>
-                      {discountPercentage && (
-                        <span className="text-xs font-bold leading-none text-white">
-                          {discountPercentage}
-                        </span>
+                      ) : (
+                        <>
+                          <div className="flex items-center">
+                            <span className="mr-2 text-sm leading-none line-through">
+                              {originalPrice}
+                            </span>
+                            <span className="text-sm leading-none">{discountedPrice}</span>
+                          </div>
+                          {discountPercentage && (
+                            <span className="text-xs font-bold leading-none text-white">
+                              {discountPercentage}
+                            </span>
+                          )}
+                        </>
                       )}
                     </div>
                   </button>
