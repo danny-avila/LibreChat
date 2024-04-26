@@ -92,21 +92,26 @@ export default function ErrorDialog({ open, onOpenChange }) {
               {localize('com_ui_payment_please_note')}
             </div>
             <div className="grid w-full grid-cols-2 gap-5 p-3">
-              {tokenOptionsToUse.map(({ tokens, label, price }) => (
-                <button
-                  key={tokens}
-                  onClick={() => handleSelect(tokens)}
-                  className={`flex h-[100px] flex-col items-center justify-between rounded border-2 p-3 text-white ${
-                    selectedTokens === tokens
-                      ? 'border-blue-400 bg-blue-600'
-                      : 'bg-blue-600 hover:bg-blue-700 focus:bg-blue-700 focus:ring-2 focus:ring-blue-400 active:bg-blue-800 dark:hover:bg-blue-700'
-                  }`}
-                >
-                  <div className="text-lg font-bold">{localize(label)}</div>
-                  <div>{localize('com_ui_payment_tokens')}</div>
-                  <div className="text-sm">{localize(price)}</div>
-                </button>
-              ))}
+              {tokenOptionsToUse.map(
+                ({ tokens, label, price, originalPrice, discountedPrice }) => (
+                  console.log('tokens', originalPrice),
+                  (
+                    <button
+                      key={tokens}
+                      onClick={() => handleSelect(tokens)}
+                      className={`flex h-[100px] flex-col items-center justify-between rounded border-2 p-3 text-white ${
+                        selectedTokens === tokens
+                          ? 'border-blue-600 bg-blue-700 ring-2 ring-blue-400 ring-offset-2'
+                          : 'bg-blue-600 hover:bg-blue-700 focus:bg-blue-700 focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 active:bg-blue-800 dark:hover:bg-blue-700'
+                      }`}
+                    >
+                      <div className="text-lg font-bold">{localize(label)}</div>
+                      <div>{localize('com_ui_payment_tokens')}</div>
+                      <div className="text-sm">{discountedPrice}</div>
+                    </button>
+                  )
+                ),
+              )}
             </div>
 
             <div className="my-2 flex w-full items-center">
