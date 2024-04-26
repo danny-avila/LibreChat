@@ -1,8 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { errorsToString } = require('librechat-data-provider');
-const { registerSchema } = require('~/strategies/validators');
-const getCustomConfig = require('~/server/services/Config/getCustomConfig');
+const { registerSchema, errorsToString } = require('~/strategies/validators');
+const isDomainAllowed = require('./isDomainAllowed');
 const Token = require('~/models/schema/tokenSchema');
 const { sendEmail } = require('~/server/utils');
 const Session = require('~/models/Session');
@@ -13,27 +12,6 @@ const domains = {
   client: process.env.DOMAIN_CLIENT,
   server: process.env.DOMAIN_SERVER,
 };
-
-async function isDomainAllowed(email) {
-  if (!email) {
-    return false;
-  }
-
-  const domain = email.split('@')[1];
-
-  if (!domain) {
-    return false;
-  }
-
-  const customConfig = await getCustomConfig();
-  if (!customConfig) {
-    return true;
-  } else if (!customConfig?.registration?.allowedDomains) {
-    return true;
-  }
-
-  return customConfig.registration.allowedDomains.includes(domain);
-}
 
 const isProduction = process.env.NODE_ENV === 'production';
 

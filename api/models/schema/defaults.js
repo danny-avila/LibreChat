@@ -88,6 +88,7 @@ const conversationPreset = {
   instructions: {
     type: String,
   },
+  stop: { type: [{ type: String }], default: undefined },
 };
 
 const agentOptions = {

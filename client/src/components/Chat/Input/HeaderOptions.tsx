@@ -104,6 +104,7 @@ export default function HeaderOptions() {
             >
               <div className="px-4 py-4">
                 <EndpointSettings
+                  className="[&::-webkit-scrollbar]:w-2"
                   conversation={conversation}
                   setOption={setOption}
                   isMultiChat={true}

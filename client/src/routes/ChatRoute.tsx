@@ -54,7 +54,10 @@ export default function ChatRoute() {
       !modelsQuery.data?.initial &&
       !hasSetConversation.current
     ) {
-      newConversation({ modelsData: modelsQuery.data });
+      newConversation({
+        modelsData: modelsQuery.data,
+        template: conversation ? conversation : undefined,
+      });
       hasSetConversation.current = !!assistants;
     } else if (
       initialConvoQuery.data &&
@@ -77,7 +80,10 @@ export default function ChatRoute() {
       conversationId === 'new' &&
       assistants
     ) {
-      newConversation({ modelsData: modelsQuery.data });
+      newConversation({
+        modelsData: modelsQuery.data,
+        template: conversation ? conversation : undefined,
+      });
       hasSetConversation.current = true;
     } else if (!hasSetConversation.current && !modelsQuery.data?.initial && assistants) {
       newConversation({
@@ -88,7 +94,7 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     }
-    /* Creates infinite render if all dependencies included */
+    /* Creates infinite render if all dependencies included due to newConversation invocations exceeding call stack before hasSetConversation.current becomes truthy */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConvoQuery.data, endpointsQuery.data, modelsQuery.data, assistants]);
 
