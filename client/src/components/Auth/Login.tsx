@@ -213,7 +213,7 @@ function Login() {
 
   return (
     <section className="flex flex-col md:h-screen md:flex-row">
-      <div className="absolute bottom-0 left-0 z-50 m-4">
+      <div className="fixed bottom-0 left-0 z-50 m-4">
         <ThemeSelector />
       </div>
       <div className="relative z-10 flex w-full flex-col items-center justify-center bg-white dark:bg-gray-800 md:w-1/2">
