@@ -3,10 +3,10 @@ import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provid
 import type { ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import ConversationIcon from './ConversationIcon';
 import { icons } from './Menus/Endpoints/Icons';
 import { BirthdayIcon } from '~/components/svg';
 import { getEndpointField } from '~/utils';
-import LandingIcon from './ConversationIcon';
 import { useLocalize } from '~/hooks';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
@@ -53,10 +53,11 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
           <div className="flex h-full flex-col items-center justify-center">
             <div className="relative mb-3 h-[72px] w-[72px]">
               {conversation?.iconURL ? (
-                <LandingIcon
+                <ConversationIcon
                   preset={conversation}
                   endpointIconURL={iconURL}
                   assistantName={assistantName}
+                  context="landing"
                   avatar={avatar}
                 />
               ) : (

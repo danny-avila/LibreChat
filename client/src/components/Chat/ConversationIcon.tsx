@@ -7,6 +7,7 @@ interface ConversationIconProps {
   preset: TPreset;
   endpointIconURL?: string;
   assistantName?: string;
+  context?: 'landing' | 'menu-item' | 'nav' | 'message';
   avatar?: string;
 }
 
@@ -14,6 +15,7 @@ const ConversationIcon: React.FC<ConversationIconProps> = ({
   preset,
   endpointIconURL,
   assistantName,
+  context,
   avatar,
 }) => {
   const { iconURL = '' } = preset;
@@ -48,7 +50,7 @@ const ConversationIcon: React.FC<ConversationIconProps> = ({
     <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black">
       <Icon
         size={41}
-        context="landing"
+        context={context}
         className="h-2/3 w-2/3"
         iconURL={endpointIconURL}
         assistantName={assistantName}

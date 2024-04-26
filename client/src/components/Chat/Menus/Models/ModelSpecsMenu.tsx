@@ -18,7 +18,6 @@ const data: TModelSpec[] = [
     description:
       'Salute your president, soldier! Salute your president, soldier! Salute your president, soldier!',
     iconURL: 'https://i.kym-cdn.com/entries/icons/facebook/000/017/252/2f0.jpg',
-    // auth: string;
     preset: {
       endpoint: 'Ollama',
       greeting: 'My fellow Americans,',
@@ -41,7 +40,6 @@ const data: TModelSpec[] = [
       'Salute your president, soldier! Salute your president, soldier! Salute your president, soldier!',
     // iconURL: 'https://i.ytimg.com/vi/SaneSRqePVY/maxresdefault.jpg',
     iconURL: EModelEndpoint.openAI, // Allow using project-included icons
-    // auth: string;
     preset: {
       chatGptLabel: 'Vision Helper',
       greeting: 'What\'s up!!',

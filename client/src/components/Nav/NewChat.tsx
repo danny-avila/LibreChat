@@ -3,6 +3,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useLocalize, useNewConvo, useLocalStorage } from '~/hooks';
+import ConversationIcon from '~/components/Chat/ConversationIcon';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import { NewChatIcon } from '~/components/svg';
 import { getEndpointField } from '~/utils';
@@ -19,7 +20,10 @@ export default function NewChat({
   const localize = useLocalize();
 
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const [convo] = useLocalStorage('lastConversationSetup', { endpoint: EModelEndpoint.openAI });
+  const [convo] = useLocalStorage('lastConversationSetup', {
+    endpoint: EModelEndpoint.openAI,
+    iconURL: '',
+  });
   const { endpoint } = convo;
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const iconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
@@ -47,17 +51,21 @@ export default function NewChat({
               className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium hover:bg-gray-200 dark:hover:bg-gray-700"
             >
               <div className="h-7 w-7 flex-shrink-0">
-                <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black dark:bg-white">
-                  {endpoint &&
-                    Icon &&
-                    Icon({
-                      size: 41,
-                      context: 'nav',
-                      className: 'h-2/3 w-2/3',
-                      endpoint: endpoint,
-                      iconURL: iconURL,
-                    })}
-                </div>
+                {convo?.iconURL ? (
+                  <ConversationIcon preset={convo} endpointIconURL={iconURL} context="nav" />
+                ) : (
+                  <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black dark:bg-white">
+                    {endpoint &&
+                      Icon &&
+                      Icon({
+                        size: 41,
+                        context: 'nav',
+                        className: 'h-2/3 w-2/3',
+                        endpoint: endpoint,
+                        iconURL: iconURL,
+                      })}
+                  </div>
+                )}
               </div>
               <div className="text-token-text-primary grow overflow-hidden text-ellipsis whitespace-nowrap text-sm">
                 {localize('com_ui_new_chat')}
