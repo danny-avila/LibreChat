@@ -4,21 +4,21 @@ import type { IconMapProps } from '~/common';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 
 interface ConversationIconProps {
-  preset: TPreset;
+  preset: TPreset | null;
   endpointIconURL?: string;
   assistantName?: string;
   context?: 'landing' | 'menu-item' | 'nav' | 'message';
-  avatar?: string;
+  assistantAvatar?: string;
 }
 
 const ConversationIcon: React.FC<ConversationIconProps> = ({
   preset,
   endpointIconURL,
+  assistantAvatar,
   assistantName,
   context,
-  avatar,
 }) => {
-  const { iconURL = '' } = preset;
+  const { iconURL = '' } = preset ?? {};
   let Icon: (
     props: IconMapProps & {
       context?: string;
@@ -36,7 +36,7 @@ const ConversationIcon: React.FC<ConversationIconProps> = ({
       >
         <img
           src={iconURL}
-          alt={preset.chatGptLabel ?? preset.modelLabel ?? ''}
+          alt={preset?.chatGptLabel ?? preset?.modelLabel ?? ''}
           style={{ width: '100%', height: '100%' }}
           className="object-cover"
         />
@@ -54,7 +54,7 @@ const ConversationIcon: React.FC<ConversationIconProps> = ({
         className="h-2/3 w-2/3"
         iconURL={endpointIconURL}
         assistantName={assistantName}
-        avatar={avatar}
+        avatar={assistantAvatar}
       />
     </div>
   );

@@ -2,8 +2,8 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
+import ConversationIcon from '~/components/Endpoints/ConversationIcon';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import ConversationIcon from './ConversationIcon';
 import { icons } from './Menus/Endpoints/Icons';
 import { BirthdayIcon } from '~/components/svg';
 import { getEndpointField } from '~/utils';
@@ -57,8 +57,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                   preset={conversation}
                   endpointIconURL={iconURL}
                   assistantName={assistantName}
+                  assistantAvatar={avatar}
                   context="landing"
-                  avatar={avatar}
                 />
               ) : (
                 <div className={className}>

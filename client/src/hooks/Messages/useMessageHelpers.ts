@@ -4,6 +4,7 @@ import { EModelEndpoint, ContentTypes } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
+import ConversationIcon from '~/components/Endpoints/ConversationIcon';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import Icon from '~/components/Endpoints/Icon';
 import { getEndpointField } from '~/utils';
@@ -62,17 +63,32 @@ export default function useMessageHelpers(props: TMessageProps) {
   const assistant =
     conversation?.endpoint === EModelEndpoint.assistants && assistantMap?.[message?.model ?? ''];
 
+  const assistantName = assistant ? (assistant.name as string | undefined) : '';
+  const assistantAvatar = assistant ? (assistant.metadata?.avatar as string | undefined) : '';
+
   const iconEndpoint = message?.endpoint ?? conversation?.endpoint;
-  const icon = Icon({
-    ...conversation,
-    ...(message as TMessage),
-    iconURL: !assistant
-      ? getEndpointField(endpointsConfig, iconEndpoint, 'iconURL')
-      : (assistant?.metadata?.avatar as string | undefined) ?? '',
-    model: message?.model ?? conversation?.model,
-    assistantName: assistant ? (assistant.name as string | undefined) : '',
-    size: 28.8,
-  });
+  const endpointIconURL = getEndpointField(endpointsConfig, iconEndpoint, 'iconURL');
+  const iconURL = message?.iconURL ?? conversation?.iconURL;
+
+  let icon: React.ReactNode | null = null;
+  if (iconURL && !message?.isCreatedByUser) {
+    icon = ConversationIcon({
+      preset: conversation,
+      context: 'message',
+      assistantAvatar,
+      endpointIconURL,
+      assistantName,
+    });
+  } else {
+    icon = Icon({
+      ...conversation,
+      ...(message as TMessage),
+      iconURL: !assistant ? endpointIconURL : assistantAvatar,
+      model: message?.model ?? conversation?.model,
+      assistantName,
+      size: 28.8,
+    });
+  }
 
   const regenerateMessage = () => {
     if ((isSubmitting && isCreatedByUser) || !message) {
