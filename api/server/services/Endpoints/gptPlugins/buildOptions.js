@@ -9,6 +9,8 @@ const buildOptions = (endpoint, parsedBody) => {
     top_p,
     presence_penalty,
     frequency_penalty,
+    iconURL,
+    greeting,
   } = parsedBody;
   const endpointOption = {
     endpoint,
@@ -16,6 +18,8 @@ const buildOptions = (endpoint, parsedBody) => {
     chatGptLabel,
     promptPrefix,
     agentOptions,
+    iconURL,
+    greeting,
     modelOptions: {
       model,
       temperature,

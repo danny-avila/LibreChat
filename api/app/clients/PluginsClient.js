@@ -44,6 +44,8 @@ class PluginsClient extends OpenAIClient {
       promptPrefix: this.options.promptPrefix,
       ...this.modelOptions,
       agentOptions: this.agentOptions,
+      iconURL: this.options.iconURL,
+      greeting: this.options.greeting,
     };
   }
 

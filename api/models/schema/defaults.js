@@ -89,6 +89,13 @@ const conversationPreset = {
     type: String,
   },
   stop: { type: [{ type: String }], default: undefined },
+  /* UI Components */
+  iconURL: {
+    type: String,
+  },
+  greeting: {
+    type: String,
+  },
 };
 
 const agentOptions = {

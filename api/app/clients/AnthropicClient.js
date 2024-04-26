@@ -655,6 +655,8 @@ class AnthropicClient extends BaseClient {
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
       resendFiles: this.options.resendFiles,
+      iconURL: this.options.iconURL,
+      greeting: this.options.greeting,
       ...this.modelOptions,
     };
   }

@@ -708,6 +708,8 @@ class GoogleClient extends BaseClient {
     return {
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
+      iconURL: this.options.iconURL,
+      greeting: this.options.greeting,
       ...this.modelOptions,
     };
   }
