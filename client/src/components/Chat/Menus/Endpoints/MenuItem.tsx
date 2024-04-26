@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Settings } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { EModelEndpoint, modularEndpoints } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TPreset, TConversation } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
 import type { FC } from 'react';
+import { cn, getConvoSwitchLogic, getEndpointField } from '~/utils';
 import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
-import { cn, getEndpointField } from '~/utils';
 import { useChatContext } from '~/Providers';
 import { icons } from './Icons';
 import store from '~/store';
@@ -49,33 +49,19 @@ const MenuItem: FC<MenuItemProps> = ({
       setDialogOpen(true);
     }
 
-    const currentEndpoint = conversation?.endpoint;
-    const template: Partial<TPreset> = {
-      ...conversation,
-      endpoint: newEndpoint,
-      conversationId: 'new',
-    };
-    const isAssistantSwitch =
-      newEndpoint === EModelEndpoint.assistants &&
-      currentEndpoint === EModelEndpoint.assistants &&
-      currentEndpoint === newEndpoint;
-
-    const { conversationId } = conversation ?? {};
-    const isExistingConversation = conversationId && conversationId !== 'new';
-    const currentEndpointType =
-      getEndpointField(endpointsConfig, currentEndpoint, 'type') ?? currentEndpoint;
-    const newEndpointType = getEndpointField(endpointsConfig, newEndpoint, 'type') ?? newEndpoint;
-
-    const hasEndpoint = modularEndpoints.has(currentEndpoint ?? '');
-    const hasCurrentEndpointType = modularEndpoints.has(currentEndpointType ?? '');
-    const isCurrentModular = hasEndpoint || hasCurrentEndpointType || isAssistantSwitch;
-
-    const hasNewEndpoint = modularEndpoints.has(newEndpoint ?? '');
-    const hasNewEndpointType = modularEndpoints.has(newEndpointType ?? '');
-    const isNewModular = hasNewEndpoint || hasNewEndpointType || isAssistantSwitch;
-
-    const endpointsMatch = currentEndpoint === newEndpoint;
-    const shouldSwitch = endpointsMatch || modularChat || isAssistantSwitch;
+    const {
+      shouldSwitch,
+      isNewModular,
+      isCurrentModular,
+      isExistingConversation,
+      newEndpointType,
+      template,
+    } = getConvoSwitchLogic({
+      newEndpoint,
+      modularChat,
+      conversation,
+      endpointsConfig,
+    });
 
     if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
       template.endpointType = newEndpointType;
