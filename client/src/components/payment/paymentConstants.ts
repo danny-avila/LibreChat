@@ -53,7 +53,6 @@ export const tokenOptionsChina = [
     priceId: 'price_1ORgxoHKD0byXXClx3u1yLa0', // 10 CNY - only for China users
     originalPrice: '¥10',
     discountedPrice: '¥10',
-    usdEquivalent: '(≈ $1.50)',
   },
   {
     tokens: 500000,
@@ -65,7 +64,6 @@ export const tokenOptionsChina = [
     originalPrice: '¥50',
     discountedPrice: '¥35',
     discountPercentage: '(30% off)',
-    usdEquivalent: '(≈ $5.00)',
   },
   {
     tokens: 1000000,
@@ -77,7 +75,6 @@ export const tokenOptionsChina = [
     originalPrice: '¥100',
     discountedPrice: '¥50',
     discountPercentage: '(50% off)',
-    usdEquivalent: '(≈ $7.50)',
   },
   {
     tokens: 10000000,
@@ -89,7 +86,6 @@ export const tokenOptionsChina = [
     originalPrice: '¥1,000',
     discountedPrice: '¥250',
     discountPercentage: '(75% off)',
-    usdEquivalent: '(≈ $40.00)',
   },
 ];
 
