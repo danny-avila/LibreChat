@@ -78,7 +78,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
         data = response.json()
 
         # extract an ordered list of unique model IDs
-        model_ids = sorted([model["id"] for model in data])
+        model_ids = sorted(set([model["id"] for model in data]))
 
         # write result to a text file
         with open("models.txt", "w") as file:
