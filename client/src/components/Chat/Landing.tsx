@@ -2,7 +2,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
-import ConversationIcon from '~/components/Endpoints/ConversationIcon';
+import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import { icons } from './Menus/Endpoints/Icons';
 import { BirthdayIcon } from '~/components/svg';
@@ -17,7 +17,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
 
   const localize = useLocalize();
 
-  let { endpoint } = conversation ?? {};
+  let { endpoint = '' } = conversation ?? {};
   const { assistant_id = null } = conversation ?? {};
 
   if (
@@ -28,8 +28,11 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
     endpoint = EModelEndpoint.openAI;
   }
 
+  const iconURL = conversation?.iconURL;
+  endpoint = endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint;
+
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-  const iconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
+  const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
   const Icon = icons[iconKey];
 
@@ -52,10 +55,10 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
           <div className="absolute left-0 right-0">{Header && Header}</div>
           <div className="flex h-full flex-col items-center justify-center">
             <div className="relative mb-3 h-[72px] w-[72px]">
-              {conversation?.iconURL ? (
-                <ConversationIcon
+              {iconURL && iconURL.includes('http') ? (
+                <ConvoIconURL
                   preset={conversation}
-                  endpointIconURL={iconURL}
+                  endpointIconURL={endpointIconURL}
                   assistantName={assistantName}
                   assistantAvatar={avatar}
                   context="landing"
@@ -68,7 +71,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
                       size: 41,
                       context: 'landing',
                       className: 'h-2/3 w-2/3',
-                      iconURL: iconURL,
+                      iconURL: endpointIconURL,
                       assistantName,
                       endpoint,
                       avatar,

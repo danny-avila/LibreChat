@@ -2,9 +2,9 @@ import { useNavigate } from 'react-router-dom';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
-import ConversationIcon from '~/components/Endpoints/ConversationIcon';
 import { useLocalize, useNewConvo, useLocalStorage } from '~/hooks';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
+import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { NewChatIcon } from '~/components/svg';
 import { getEndpointField } from '~/utils';
 
@@ -24,9 +24,12 @@ export default function NewChat({
     endpoint: EModelEndpoint.openAI,
     iconURL: '',
   });
-  const { endpoint } = convo;
+  let { endpoint = '' } = convo;
+  const iconURL = convo.iconURL ?? '';
+  endpoint = endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint;
+
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-  const iconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
+  const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
   const Icon = icons[iconKey];
 
@@ -51,8 +54,8 @@ export default function NewChat({
               className="group flex h-10 items-center gap-2 rounded-lg px-2 font-medium hover:bg-gray-200 dark:hover:bg-gray-700"
             >
               <div className="h-7 w-7 flex-shrink-0">
-                {convo?.iconURL ? (
-                  <ConversationIcon preset={convo} endpointIconURL={iconURL} context="nav" />
+                {iconURL && iconURL.includes('http') ? (
+                  <ConvoIconURL preset={convo} endpointIconURL={iconURL} context="nav" />
                 ) : (
                   <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black dark:bg-white">
                     {endpoint &&
@@ -61,8 +64,9 @@ export default function NewChat({
                         size: 41,
                         context: 'nav',
                         className: 'h-2/3 w-2/3',
-                        endpoint: endpoint,
-                        iconURL: iconURL,
+                        endpoint,
+                        endpointType,
+                        iconURL: endpointIconURL,
                       })}
                   </div>
                 )}

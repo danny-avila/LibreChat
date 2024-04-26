@@ -4,8 +4,8 @@ import { EModelEndpoint, ContentTypes } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
-import ConversationIcon from '~/components/Endpoints/ConversationIcon';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import Icon from '~/components/Endpoints/Icon';
 import { getEndpointField } from '~/utils';
 
@@ -66,13 +66,15 @@ export default function useMessageHelpers(props: TMessageProps) {
   const assistantName = assistant ? (assistant.name as string | undefined) : '';
   const assistantAvatar = assistant ? (assistant.metadata?.avatar as string | undefined) : '';
 
-  const iconEndpoint = message?.endpoint ?? conversation?.endpoint;
-  const endpointIconURL = getEndpointField(endpointsConfig, iconEndpoint, 'iconURL');
   const iconURL = message?.iconURL ?? conversation?.iconURL;
+  let endpoint = message?.endpoint ?? conversation?.endpoint;
+  endpoint = endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint;
+
+  const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
 
   let icon: React.ReactNode | null = null;
-  if (iconURL && !message?.isCreatedByUser) {
-    icon = ConversationIcon({
+  if (!message?.isCreatedByUser && iconURL && iconURL.includes('http')) {
+    icon = ConvoIconURL({
       preset: conversation,
       context: 'message',
       assistantAvatar,
@@ -83,6 +85,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     icon = Icon({
       ...conversation,
       ...(message as TMessage),
+      endpoint,
       iconURL: !assistant ? endpointIconURL : assistantAvatar,
       model: message?.model ?? conversation?.model,
       assistantName,

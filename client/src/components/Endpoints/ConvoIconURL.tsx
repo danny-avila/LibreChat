@@ -3,7 +3,7 @@ import type { TPreset } from 'librechat-data-provider';
 import type { IconMapProps } from '~/common';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 
-interface ConversationIconProps {
+interface ConvoIconURLProps {
   preset: TPreset | null;
   endpointIconURL?: string;
   assistantName?: string;
@@ -11,7 +11,22 @@ interface ConversationIconProps {
   assistantAvatar?: string;
 }
 
-const ConversationIcon: React.FC<ConversationIconProps> = ({
+const classMap = {
+  'menu-item': 'relative flex h-full items-center justify-center overflow-hidden rounded-full',
+  message: 'icon-md',
+  default: 'icon-xl relative flex h-full overflow-hidden rounded-full',
+};
+
+const styleMap = {
+  'menu-item': { width: '20px', height: '20px' },
+  default: { width: '100%', height: '100%' },
+};
+
+const styleImageMap = {
+  default: { width: '100%', height: '100%' },
+};
+
+const ConvoIconURL: React.FC<ConvoIconURLProps> = ({
   preset,
   endpointIconURL,
   assistantAvatar,
@@ -31,13 +46,13 @@ const ConversationIcon: React.FC<ConversationIconProps> = ({
   } else {
     Icon = () => (
       <div
-        className="icon-xl relative flex h-full overflow-hidden rounded-full"
-        style={{ width: '100%', height: '100%' }}
+        className={classMap[context ?? 'default'] ?? classMap.default}
+        style={styleMap[context ?? 'default'] ?? styleMap.default}
       >
         <img
           src={iconURL}
           alt={preset?.chatGptLabel ?? preset?.modelLabel ?? ''}
-          style={{ width: '100%', height: '100%' }}
+          style={styleImageMap[context ?? 'default'] ?? styleImageMap.default}
           className="object-cover"
         />
       </div>
@@ -60,4 +75,4 @@ const ConversationIcon: React.FC<ConversationIconProps> = ({
   );
 };
 
-export default ConversationIcon;
+export default ConvoIconURL;
