@@ -1,6 +1,7 @@
 const OpenAI = require('openai');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
+  Constants,
   ImageDetail,
   EModelEndpoint,
   resolveHeaders,
@@ -20,9 +21,9 @@ const {
 const {
   truncateText,
   formatMessage,
-  createContextHandlers,
   CUT_OFF_PROMPT,
   titleInstruction,
+  createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { handleOpenAIErrors } = require('./tools/util');
@@ -199,16 +200,6 @@ class OpenAIClient extends BaseClient {
     this.chatGptLabel = this.options.chatGptLabel || 'Assistant';
 
     this.setupTokens();
-
-    if (!this.modelOptions.stop && !this.isVisionModel) {
-      const stopTokens = [this.startToken];
-      if (this.endToken && this.endToken !== this.startToken) {
-        stopTokens.push(this.endToken);
-      }
-      stopTokens.push(`\n${this.userLabel}:`);
-      stopTokens.push('<|diff_marker|>');
-      this.modelOptions.stop = stopTokens;
-    }
 
     if (reverseProxy) {
       this.completionsUrl = reverseProxy;
@@ -729,7 +720,10 @@ class OpenAIClient extends BaseClient {
 
     const { OPENAI_TITLE_MODEL } = process.env ?? {};
 
-    const model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+    let model = this.options.titleModel ?? OPENAI_TITLE_MODEL ?? 'gpt-3.5-turbo';
+    if (model === Constants.CURRENT_MODEL) {
+      model = this.modelOptions.model;
+    }
 
     const modelOptions = {
       // TODO: remove the gpt fallback and make it specific to endpoint
@@ -851,7 +845,11 @@ ${convo}
 
     // TODO: remove the gpt fallback and make it specific to endpoint
     const { OPENAI_SUMMARY_MODEL = 'gpt-3.5-turbo' } = process.env ?? {};
-    const model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
+    let model = this.options.summaryModel ?? OPENAI_SUMMARY_MODEL;
+    if (model === Constants.CURRENT_MODEL) {
+      model = this.modelOptions.model;
+    }
+
     const maxContextTokens =
       getModelMaxTokens(
         model,

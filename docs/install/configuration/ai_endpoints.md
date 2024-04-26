@@ -14,6 +14,127 @@ In all of the examples, arbitrary environment variable names are defined but you
 
 Some of the endpoints are marked as **Known,** which means they might have special handling and/or an icon already provided in the app for you.
 
+## Anyscale
+> Anyscale API key: [anyscale.com/credentials](https://app.endpoints.anyscale.com/credentials)
+
+**Notes:**
+
+- **Known:** icon provided, fetching list of models is recommended.
+
+```yaml
+    - name: "Anyscale"
+      apiKey: "${ANYSCALE_API_KEY}"
+      baseURL: "https://api.endpoints.anyscale.com/v1"
+      models:
+        default: [
+          "meta-llama/Llama-2-7b-chat-hf",
+          ]
+        fetch: true
+      titleConvo: true
+      titleModel: "meta-llama/Llama-2-7b-chat-hf"
+      summarize: false
+      summaryModel: "meta-llama/Llama-2-7b-chat-hf"
+      forcePrompt: false
+      modelDisplayLabel: "Anyscale"
+```
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/9f2d8ad9-3f49-4fe3-a3ed-c85994c1c85f)
+
+## APIpie
+
+> APIpie API key: [apipie.ai/dashboard/profile/api-keys](https://apipie.ai/dashboard/profile/api-keys)
+
+**Notes:**
+
+- **Known:** icon provided, fetching list of models is recommended as API token rates and pricing used for token credit balances when models are fetched.
+
+- **Known issue:** 
+  - Fetching list of models is not supported.
+  - Your success may vary with conversation titling
+  - Stream isn't currently supported (but is planned as of April 24, 2024)
+  - Certain models may be strict not allow certain fields in which case, you should use [`dropParams`.](./custom_config.md#dropparams)
+
+??? tip "Fetch models"
+    This python script can fetch and order the llm models for you. The output will be saved in models.txt, formated in a way that should make it easier for you to include in the yaml config.
+
+    Replace `<YOUR_API_KEY_HERE>` with your actual APIpie API key
+
+    ```py title="fetch.py"
+    import json
+    import requests
+
+    def fetch_and_order_models():
+        # API endpoint
+        url = "https://apipie.ai/models?type=llm"
+
+        # headers as per request example
+        headers = {
+            'Accept': 'application/json',
+            'X-API-key': '<YOUR_API_KEY_HERE>'
+        }
+
+        # make request
+        response = requests.request("GET", url, headers=headers)
+
+        # parse JSON response
+        data = json.loads(response.text)
+
+        # extract an ordered list of unique model IDs
+        model_ids = sorted(set(model['id'] for model in data))
+
+        # add quotes around model_ids and newlines for each model
+        quoted_model_ids = ['  "' + str(model_id) + '",\n' for model_id in model_ids]
+
+        # construct the output string
+        output_str = 'models:\n  default: [\n' + ''.join(quoted_model_ids) + ']\n'
+
+        # remove last comma and newline
+        output_str = output_str.rstrip(',\n') + '\n'
+
+        # write result to a text file
+        with open('models.txt', 'w') as file:
+            file.write(output_str)
+
+    # execute the function
+    if __name__ == '__main__':
+        fetch_and_order_models()
+    ```
+
+```yaml
+    # APIpie
+    - name: "APIpie"
+      apiKey: "${APIPIE_API_KEY}"
+      baseURL: "https://apipie.ai/v1/"
+      models:
+        default: [
+          "gpt-4",
+          "gpt-4-turbo",
+          "gpt-3.5-turbo",
+          "claude-3-opus",
+          "claude-3-sonnet",
+          "claude-3-haiku",
+          "llama-3-70b-instruct",
+          "llama-3-8b-instruct",
+          "gemini-pro-1.5",
+          "gemini-pro",
+          "mistral-large",
+          "mistral-medium",
+          "mistral-small",
+          "mistral-tiny",
+          "mixtral-8x22b",
+          ]
+        fetch: false
+      titleConvo: true
+      titleModel: "claude-3-haiku"
+      summarize: false
+      summaryModel: "claude-3-haiku"
+      dropParams: ["stream"]
+      modelDisplayLabel: "APIpie"
+```
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/b6a21524-b309-4a51-8b88-c280fb330af4)
+
+
 ## Cohere
 > Cohere API key: [dashboard.cohere.com](https://dashboard.cohere.com/)
 
@@ -47,6 +168,34 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/03549e00-243c-4539-ac9a-0d782af7cd6c)
 
 
+## Fireworks
+> Fireworks API key: [fireworks.ai/api-keys](https://fireworks.ai/api-keys)
+
+**Notes:**
+
+- **Known:** icon provided, fetching list of models is recommended.
+- - API may be strict for some models, and may not allow fields like `user`, in which case, you should use [`dropParams`.](./custom_config.md#dropparams)
+
+```yaml
+    - name: "Fireworks"
+      apiKey: "${FIREWORKS_API_KEY}"
+      baseURL: "https://api.fireworks.ai/inference/v1"
+      models:
+        default: [
+          "accounts/fireworks/models/mixtral-8x7b-instruct",
+          ]
+        fetch: true
+      titleConvo: true
+      titleModel: "accounts/fireworks/models/llama-v2-7b-chat"
+      summarize: false
+      summaryModel: "accounts/fireworks/models/llama-v2-7b-chat"
+      forcePrompt: false
+      modelDisplayLabel: "Fireworks"
+      dropParams: ["user"]
+```
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/e9254681-d4d8-43c7-a3c5-043c32a625a0)
+
 ## Groq
 > groq API key: [wow.groq.com](https://wow.groq.com/)
 
@@ -79,6 +228,29 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/cc4f0710-7e27-4f82-8b4f-81f788a6cb13)
 
 
+## LiteLLM
+> LiteLLM API key: master_key value [LiteLLM](./litellm.md)
+
+**Notes:**
+
+- Reference [LiteLLM](./litellm.md) for configuration.
+
+```yaml
+    - name: "LiteLLM"
+      apiKey: "sk-from-config-file"
+      baseURL: "http://localhost:8000/v1"
+      # if using LiteLLM example in docker-compose.override.yml.example, use "http://litellm:8000/v1"
+      models:
+        default: ["gpt-3.5-turbo"]
+        fetch: true
+      titleConvo: true
+      titleModel: "gpt-3.5-turbo"
+      summarize: false
+      summaryModel: "gpt-3.5-turbo"
+      forcePrompt: false
+      modelDisplayLabel: "LiteLLM"
+```
+
 ## Mistral AI
 > Mistral API key: [console.mistral.ai](https://console.mistral.ai/)
 
@@ -88,8 +260,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 - API is strict with unrecognized parameters and errors are not descriptive (usually "no body")
 
-    - The use of [`dropParams`](./custom_config.md#dropparams) to drop "stop", "user", "frequency_penalty", "presence_penalty" params is required.
-
+    - The use of [`dropParams`](./custom_config.md#dropparams) to drop "user", "frequency_penalty", "presence_penalty" params is required.
+    - `stop` is no longer included as a default parameter, so there is no longer a need to include it in [`dropParams`](./custom_config.md#dropparams), unless you would like to completely prevent users from configuring this field.
+    
 - Allows fetching the models list, but be careful not to use embedding models for chat.
 
 ```yaml
@@ -109,6 +282,94 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/ddb4b2f3-608e-4034-9a27-3e94fc512034)
 
+## Ollama
+> Ollama API key: Required but ignored - [Ollama OpenAI Compatibility](https://github.com/ollama/ollama/blob/main/docs/openai.md)
+
+**Notes:**
+
+- **Known:** icon provided.
+- **Known issue:** fetching list of models is not supported. See [Pull Request 2728](https://github.com/ollama/ollama/pull/2728).
+- Download models with ollama run command. See [Ollama Library](https://ollama.com/library)
+- It's recommend to use the value "current_model" for the `titleModel` to avoid loading more than 1 model per conversation.
+    - Doing so will dynamically use the current conversation model for the title generation.
+- The example includes a top 5 popular model list from the Ollama Library, which was last updated on March 1, 2024, for your convenience.
+
+```yaml
+    - name: "Ollama"
+      apiKey: "ollama"
+      # use 'host.docker.internal' instead of localhost if running LibreChat in a docker container
+      baseURL: "http://localhost:11434/v1/chat/completions" 
+      models:
+        default: [
+          "llama2",
+          "mistral",
+          "codellama",
+          "dolphin-mixtral",
+          "mistral-openorca"
+          ]
+        fetch: false # fetching list of models is not supported
+      titleConvo: true
+      titleModel: "current_model"
+      summarize: false
+      summaryModel: "current_model"
+      forcePrompt: false
+      modelDisplayLabel: "Ollama"
+```
+
+!!! tip "Ollama -> llama3"
+    
+    Note: Once `stop` was removed from the [default parameters](./custom_config.md#default-parameters), the issue highlighted below should no longer exist.
+
+    However, in case you experience the behavior where `llama3` does not stop generating, add this `addParams` block to the config:
+    
+    ```yaml
+    - name: "Ollama"
+      apiKey: "ollama"
+      baseURL: "http://host.docker.internal:11434/v1/" 
+      models:
+        default: [
+          "llama3"
+          ]
+        fetch: false # fetching list of models is not supported
+      titleConvo: true
+      titleModel: "current_model"
+      summarize: false
+      summaryModel: "current_model"
+      forcePrompt: false
+      modelDisplayLabel: "Ollama"
+      addParams:
+            "stop": [
+              "<|start_header_id|>",
+              "<|end_header_id|>",
+              "<|eot_id|>",
+              "<|reserved_special_token"
+            ]
+    ```
+
+    If you are only using `llama3` with **Ollama**, it's fine to set the `stop` parameter at the config level via `addParams`.
+
+    However, if you are using multiple models, it's now recommended to add stop sequences from the frontend via conversation parameters and presets.
+
+    For example, we can omit `addParams`:
+
+    ```yaml
+    - name: "Ollama"
+      apiKey: "ollama"
+      baseURL: "http://host.docker.internal:11434/v1/" 
+      models:
+        default: [
+          "llama3:latest",
+          "mistral"
+          ]
+        fetch: false # fetching list of models is not supported
+      titleConvo: true
+      titleModel: "current_model"
+      modelDisplayLabel: "Ollama"
+    ```
+
+    And use these settings (best to also save it):
+
+    ![image](https://github.com/danny-avila/LibreChat/assets/110412045/57460b8c-308a-4d21-9dfe-f48a2ac85099)
 
 ## Openrouter
 > OpenRouter API key: [openrouter.ai/keys](https://openrouter.ai/keys)
@@ -117,7 +378,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 - **Known:** icon provided, fetching list of models is recommended as API token rates and pricing used for token credit balances when models are fetched.
 
-- It's recommended, and for some models required, to use [`dropParams`](./custom_config.md#dropparams) to drop the `stop` parameter as Openrouter models use a variety of stop tokens.
+- `stop` is no longer included as a default parameter, so there is no longer a need to include it in [`dropParams`](./custom_config.md#dropparams), unless you would like to completely prevent users from configuring this field.
 
 - **Known issue:** you should not use `OPENROUTER_API_KEY` as it will then override the `openAI` endpoint to use OpenRouter as well.
 
@@ -139,86 +400,6 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/c4a0415e-732c-46af-82a6-3598663b7f42)
 
-## Anyscale
-> Anyscale API key: [anyscale.com/credentials](https://app.endpoints.anyscale.com/credentials)
-
-**Notes:**
-
-- **Known:** icon provided, fetching list of models is recommended.
-
-```yaml
-    - name: "Anyscale"
-      apiKey: "${ANYSCALE_API_KEY}"
-      baseURL: "https://api.endpoints.anyscale.com/v1"
-      models:
-        default: [
-          "meta-llama/Llama-2-7b-chat-hf",
-          ]
-        fetch: true
-      titleConvo: true
-      titleModel: "meta-llama/Llama-2-7b-chat-hf"
-      summarize: false
-      summaryModel: "meta-llama/Llama-2-7b-chat-hf"
-      forcePrompt: false
-      modelDisplayLabel: "Anyscale"
-```
-
-![image](https://github.com/danny-avila/LibreChat/assets/32828263/9f2d8ad9-3f49-4fe3-a3ed-c85994c1c85f)
-
-## ShuttleAI
-> ShuttleAI API key: [shuttleai.app/keys](https://shuttleai.app/keys)
-
-**Notes:**
-
-- **Known:** icon provided, fetching list of models is recommended.
-
-```yaml
-    - name: "ShuttleAI"
-      apiKey: "${SHUTTLEAI_API_KEY}"
-      baseURL: "https://api.shuttleai.app/v1"
-      models:
-        default: [
-          "shuttle-1", "shuttle-turbo"
-          ]
-        fetch: true
-      titleConvo: true
-      titleModel: "gemini-pro"
-      summarize: false
-      summaryModel: "llama-summarize"
-      forcePrompt: false
-      modelDisplayLabel: "ShuttleAI"
-      dropParams: ["user"]
-```
-
-![image](https://raw.githubusercontent.com/danny-avila/LibreChat/main/client/public/assets/ShuttleAI_Fibonacci.png)
-
-## Fireworks
-> Fireworks API key: [fireworks.ai/api-keys](https://fireworks.ai/api-keys)
-
-**Notes:**
-
-- **Known:** icon provided, fetching list of models is recommended.
-- - API may be strict for some models, and may not allow fields like `user`, in which case, you should use [`dropParams`.](./custom_config.md#dropparams)
-
-```yaml
-    - name: "Fireworks"
-      apiKey: "${FIREWORKS_API_KEY}"
-      baseURL: "https://api.fireworks.ai/inference/v1"
-      models:
-        default: [
-          "accounts/fireworks/models/mixtral-8x7b-instruct",
-          ]
-        fetch: true
-      titleConvo: true
-      titleModel: "accounts/fireworks/models/llama-v2-7b-chat"
-      summarize: false
-      summaryModel: "accounts/fireworks/models/llama-v2-7b-chat"
-      forcePrompt: false
-      modelDisplayLabel: "Fireworks"
-      dropParams: ["user"]
-```
-
-![image](https://github.com/danny-avila/LibreChat/assets/32828263/e9254681-d4d8-43c7-a3c5-043c32a625a0)
 
 ## Perplexity
 > Perplexity API key: [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)
@@ -253,6 +434,33 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 ```
 
 ![image](https://github.com/danny-avila/LibreChat/assets/32828263/6bf6c121-0895-4210-a1dd-e5e957992fd4)
+
+## ShuttleAI
+> ShuttleAI API key: [shuttleai.app/keys](https://shuttleai.app/keys)
+
+**Notes:**
+
+- **Known:** icon provided, fetching list of models is recommended.
+
+```yaml
+    - name: "ShuttleAI"
+      apiKey: "${SHUTTLEAI_API_KEY}"
+      baseURL: "https://api.shuttleai.app/v1"
+      models:
+        default: [
+          "shuttle-1", "shuttle-turbo"
+          ]
+        fetch: true
+      titleConvo: true
+      titleModel: "gemini-pro"
+      summarize: false
+      summaryModel: "llama-summarize"
+      forcePrompt: false
+      modelDisplayLabel: "ShuttleAI"
+      dropParams: ["user"]
+```
+
+![image](https://github.com/danny-avila/LibreChat/assets/32828263/a694e6d0-5663-4c89-92b5-887742dca876)
 
 ## together.ai
 > together.ai API key: [api.together.xyz/settings/api-keys](https://api.together.xyz/settings/api-keys)
@@ -322,85 +530,3 @@ Some of the endpoints are marked as **Known,** which means they might have speci
       forcePrompt: false
       modelDisplayLabel: "together.ai"
 ```
-## LiteLLM
-> LiteLLM API key: master_key value [LiteLLM](./litellm.md)
-
-**Notes:**
-
-- Reference [LiteLLM](./litellm.md) for configuration.
-
-```yaml
-    - name: "LiteLLM"
-      apiKey: "sk-from-config-file"
-      baseURL: "http://localhost:8000/v1"
-      # if using LiteLLM example in docker-compose.override.yml.example, use "http://litellm:8000/v1"
-      models:
-        default: ["gpt-3.5-turbo"]
-        fetch: true
-      titleConvo: true
-      titleModel: "gpt-3.5-turbo"
-      summarize: false
-      summaryModel: "gpt-3.5-turbo"
-      forcePrompt: false
-      modelDisplayLabel: "LiteLLM"
-```
-
-## Ollama
-> Ollama API key: Required but ignored - [Ollama OpenAI Compatibility](https://github.com/ollama/ollama/blob/main/docs/openai.md)
-
-**Notes:**
-
-- **Known:** icon provided.
-- **Known issue:** fetching list of models is not supported. See [Pull Request 2728](https://github.com/ollama/ollama/pull/2728).
-- Download models with ollama run command. See [Ollama Library](https://ollama.com/library)
-- The example includes a top 5 popular model list from the Ollama Library, which was last updated on March 1, 2024, for your convenience.
-
-```yaml
-    - name: "Ollama"
-      apiKey: "ollama"
-      # use 'host.docker.internal' instead of localhost if running LibreChat in a docker container
-      baseURL: "http://localhost:11434/v1/chat/completions" 
-      models:
-        default: [
-          "llama2",
-          "mistral",
-          "codellama",
-          "dolphin-mixtral",
-          "mistral-openorca"
-          ]
-        fetch: false # fetching list of models is not supported
-      titleConvo: true
-      titleModel: "llama2"
-      summarize: false
-      summaryModel: "llama2"
-      forcePrompt: false
-      modelDisplayLabel: "Ollama"
-```
-
-!!! tip "Ollama -> llama3"
-    
-    To prevent the behavior where llama3 does not stop generating, add this `addParams` block to the config:
-    
-    ```yaml
-    - name: "Ollama"
-      apiKey: "ollama"
-      baseURL: "http://host.docker.internal:11434/v1/" 
-      models:
-        default: [
-          "llama3"
-          ]
-        fetch: false # fetching list of models is not supported
-      titleConvo: true
-      titleModel: "llama3"
-      summarize: false
-      summaryModel: "llama3"
-      forcePrompt: false
-      modelDisplayLabel: "Ollama"
-      addParams:
-            "stop": [
-              "<|start_header_id|>",
-              "<|end_header_id|>",
-              "<|eot_id|>",
-              "<|reserved_special_token"
-            ]
-    ```

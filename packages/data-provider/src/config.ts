@@ -244,16 +244,17 @@ export const configSchema = z.object({
 export type TCustomConfig = z.infer<typeof configSchema>;
 
 export enum KnownEndpoints {
-  mistral = 'mistral',
-  shuttleai = 'shuttleai',
-  openrouter = 'openrouter',
-  groq = 'groq',
   anyscale = 'anyscale',
-  fireworks = 'fireworks',
-  ollama = 'ollama',
-  perplexity = 'perplexity',
-  'together.ai' = 'together.ai',
+  apipie = 'apipie',
   cohere = 'cohere',
+  fireworks = 'fireworks',
+  groq = 'groq',
+  mistral = 'mistral',
+  ollama = 'ollama',
+  openrouter = 'openrouter',
+  perplexity = 'perplexity',
+  shuttleai = 'shuttleai',
+  'together.ai' = 'together.ai',
 }
 
 export enum FetchTokenConfig {
@@ -615,7 +616,7 @@ export enum Constants {
   /**
    * Key for the Custom Config's version (librechat.yaml).
    */
-  CONFIG_VERSION = '1.0.6',
+  CONFIG_VERSION = '1.0.7',
   /**
    * Standard value for the first message's `parentMessageId` value, to indicate no parent exists.
    */
@@ -624,6 +625,10 @@ export enum Constants {
    * Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing.
    */
   ENCODED_DOMAIN_LENGTH = 10,
+  /**
+   * Identifier for using current_model in multi-model requests.
+   */
+  CURRENT_MODEL = 'current_model',
 }
 
 /**

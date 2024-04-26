@@ -22,9 +22,10 @@ function DynamicTextarea({
   labelCode,
   descriptionCode,
   placeholderCode,
+  conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { conversation = { conversationId: null }, preset } = useChatContext();
+  const { preset } = useChatContext();
 
   const [setInputValue, inputValue] = useDebouncedInput<string | null>({
     optionKey: optionType !== OptionTypes.Custom ? settingKey : undefined,
