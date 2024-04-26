@@ -500,7 +500,7 @@ export default {
   com_auth_registration_success: '注册成功。请检查您的电子邮件以验证您的电子邮件地址。',
   com_token_usage_overview: '算力使用概览',
   com_token_usage_description:
-    '算力可以在我们平台上的各种语言模型中使用。每个模型都有一个相关的"燃烧率"（BR），它可以比较不同模型之间的算力消耗率。这个比率为您提供了一个乘数，反映了输入和输出的平均算力消耗。',
+    '算力可以在我们平台上的各种语言模型中使用。每个模型都有一个相应的“燃耗率”（BR），用来比较不同模型间的代币消耗。这个比率为您提供了一个乘数，反映了输入与输出结合后的平均代币消耗量。',
   com_model_consumption_rates: '模型消耗率',
   com_model_rates_table: '下表概述了不同模型的燃烧率：',
   com_model: '模型',

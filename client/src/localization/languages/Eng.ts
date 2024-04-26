@@ -547,7 +547,7 @@ export default {
 
   com_token_usage_overview: 'Token Usage Overview',
   com_token_usage_description:
-    'Tokens can be used with various language models available on our platform. Each model has an associated "burn rate" (BR), which serves as a way to compare token consumption rates across different models. This rate provides you with a multiplier that reflects the average token consumption for both input and output combined.',
+    'Tokens can be used with various language models available on our platform. Each model has an associated "burn rate" (BR), which serves as a way to compare token consumption across different models. This rate provides you with a multiplier that reflects the average token consumption for both input and output combined.',
   com_model_consumption_rates: 'Model Consumption Rates',
   com_model_rates_table: 'Below is a table outlining the burn rates for different models:',
   com_model: 'Model',

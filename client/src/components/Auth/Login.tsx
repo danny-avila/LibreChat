@@ -208,8 +208,20 @@ function Login() {
     'novlisky.io': 'logo-novlisky.png',
   };
 
+  const domainTitles = {
+    'gptchina.io': 'GPT China',
+    'gptafrica.io': 'GPT Africa',
+    'gptglobal.io': 'GPT Global',
+    'gptiran.io': 'GPT Iran',
+    'gptitaly.io': 'GPT Italy',
+    'gptrussia.io': 'GPT Russia',
+    'gptusa.io': 'GPT USA',
+    'novlisky.io': 'Novlisky',
+  };
+
   const currentDomain = window.location.hostname;
   const logoImageFilename = domainLogos[currentDomain] || 'logo-novlisky.png';
+  const domainTitle = domainTitles[currentDomain] || 'Novlisky';
 
   return (
     <section className="flex flex-col md:h-screen md:flex-row">
@@ -279,7 +291,7 @@ function Login() {
             <TypeAnimation
               sequence={[
                 // Same substring at the start will only be typed once, initially
-                'Welcome to Novlisky',
+                `Welcome to ${domainTitle}`,
                 1000,
               ]}
               speed={50}
