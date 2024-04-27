@@ -199,6 +199,12 @@ export enum EImageOutputType {
   JPEG = 'jpeg',
 }
 
+export const specsConfigSchema = z.object({
+  enforce: z.boolean().optional().default(false),
+  prioritize: z.boolean().optional().default(true),
+  list: z.array(tModelSpecSchema).optional(),
+});
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().optional().default(true),
@@ -229,7 +235,7 @@ export const configSchema = z.object({
     .optional(),
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
-  modelSpecs: z.array(tModelSpecSchema).optional(),
+  modelSpecs: specsConfigSchema.optional(),
   endpoints: z
     .object({
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
