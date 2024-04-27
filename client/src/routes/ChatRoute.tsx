@@ -10,7 +10,8 @@ import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
 import { Spinner } from '~/components/svg';
 import store from '~/store';
-import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
+// import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
+const modelSpecs = [];
 
 export default function ChatRoute() {
   useAppStartup();
@@ -57,7 +58,7 @@ export default function ChatRoute() {
               spec: spec.name,
             },
           }
-          : undefined),
+          : {}),
       });
 
       hasSetConversation.current = true;
@@ -96,7 +97,7 @@ export default function ChatRoute() {
               spec: spec.name,
             },
           }
-          : undefined),
+          : {}),
       });
       hasSetConversation.current = true;
     } else if (

@@ -10,7 +10,8 @@ import { useChatContext } from '~/Providers';
 import MenuButton from './MenuButton';
 import ModelSpecs from './ModelSpecs';
 import store from '~/store';
-import { data } from './fakeData';
+// import { data } from './fakeData';
+const modelSpecs: TModelSpec[] = [];
 
 export default function ModelSpecsMenu() {
   const { conversation } = useChatContext();
@@ -62,7 +63,7 @@ export default function ModelSpecsMenu() {
   };
 
   const selected = useMemo(() => {
-    const spec = data.find((spec) => spec.name === conversation?.spec);
+    const spec = modelSpecs.find((spec) => spec.name === conversation?.spec);
     if (!spec) {
       return undefined;
     }
@@ -73,29 +74,31 @@ export default function ModelSpecsMenu() {
     <Root>
       <MenuButton primaryText={selected?.label ?? ''} selected={selected} />
       <Portal>
-        <div
-          style={{
-            position: 'fixed',
-            left: '0px',
-            top: '0px',
-            transform: 'translate3d(268px, 50px, 0px)',
-            minWidth: 'max-content',
-            zIndex: 'auto',
-          }}
-        >
-          <Content
-            side="bottom"
-            align="start"
-            className="models-scrollbar mt-2 max-h-[65vh] min-w-[340px] max-w-xs overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white lg:max-h-[75vh]"
+        {modelSpecs && modelSpecs?.length && (
+          <div
+            style={{
+              position: 'fixed',
+              left: '0px',
+              top: '0px',
+              transform: 'translate3d(268px, 50px, 0px)',
+              minWidth: 'max-content',
+              zIndex: 'auto',
+            }}
           >
-            <ModelSpecs
-              specs={data}
-              selected={selected}
-              setSelected={onSelectSpec}
-              endpointsConfig={endpointsConfig}
-            />
-          </Content>
-        </div>
+            <Content
+              side="bottom"
+              align="start"
+              className="models-scrollbar mt-2 max-h-[65vh] min-w-[340px] max-w-xs overflow-y-auto rounded-lg border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white lg:max-h-[75vh]"
+            >
+              <ModelSpecs
+                specs={modelSpecs}
+                selected={selected}
+                setSelected={onSelectSpec}
+                endpointsConfig={endpointsConfig}
+              />
+            </Content>
+          </div>
+        )}
       </Portal>
     </Root>
   );
