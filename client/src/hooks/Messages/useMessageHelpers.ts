@@ -62,11 +62,12 @@ export default function useMessageHelpers(props: TMessageProps) {
   const assistant =
     conversation?.endpoint === EModelEndpoint.assistants && assistantMap?.[message?.model ?? ''];
 
+  const iconEndpoint = message?.endpoint ?? conversation?.endpoint;
   const icon = Icon({
     ...conversation,
     ...(message as TMessage),
     iconURL: !assistant
-      ? getEndpointField(endpointsConfig, conversation?.endpoint, 'iconURL')
+      ? getEndpointField(endpointsConfig, iconEndpoint, 'iconURL')
       : (assistant?.metadata?.avatar as string | undefined) ?? '',
     model: message?.model ?? conversation?.model,
     assistantName: assistant ? (assistant.name as string | undefined) : '',

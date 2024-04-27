@@ -27,9 +27,7 @@ export default function Settings({
 
   if (OptionComponent) {
     return (
-      <div
-        className={cn('hide-scrollbar h-[500px] overflow-y-auto md:mb-2 md:h-[350px]', className)}
-      >
+      <div className={cn('h-[500px] overflow-y-auto md:mb-2 md:h-[350px]', className)}>
         <OptionComponent
           conversation={conversation}
           setOption={setOption}

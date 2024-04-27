@@ -96,7 +96,7 @@ function NavLinks() {
                 className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-black dark:text-white"
                 style={{ marginTop: '0', marginLeft: '0' }}
               >
-                {user?.name || localize('com_nav_user')}
+                {user?.name || user?.username || localize('com_nav_user')}
               </div>
             </Menu.Button>
 

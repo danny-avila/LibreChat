@@ -27,6 +27,7 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
       const assistant_id =
         localStorage.getItem(`assistant_id__${index}`) ?? assistants[0]?.id ?? '';
       const assistant = assistantMap?.[assistant_id];
+
       if (!assistant) {
         return;
       }
@@ -34,6 +35,7 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
       if (endpoint !== EModelEndpoint.assistants) {
         return;
       }
+
       setOption('model')(assistant.model);
       setOption('assistant_id')(assistant_id);
     }

@@ -5,12 +5,16 @@ import type {
   SettingsConfiguration,
 } from 'librechat-data-provider';
 import { useSetIndexOptions } from '~/hooks';
-import DynamicDropdown from './DynamicDropdown';
-import DynamicCheckbox from './DynamicCheckbox';
-import DynamicTextarea from './DynamicTextarea';
-import DynamicSlider from './DynamicSlider';
-import DynamicSwitch from './DynamicSwitch';
-import DynamicInput from './DynamicInput';
+import { useChatContext } from '~/Providers';
+import {
+  DynamicDropdown,
+  DynamicCheckbox,
+  DynamicTextarea,
+  DynamicSlider,
+  DynamicSwitch,
+  DynamicInput,
+  DynamicTags,
+} from './';
 
 const settingsConfiguration: SettingsConfiguration = [
   {
@@ -129,6 +133,22 @@ const settingsConfiguration: SettingsConfiguration = [
     showDefault: false,
     columnSpan: 2,
   },
+  {
+    key: 'stop',
+    label: 'com_endpoint_stop',
+    labelCode: true,
+    description: 'com_endpoint_openai_stop',
+    descriptionCode: true,
+    placeholder: 'com_endpoint_stop_placeholder',
+    placeholderCode: true,
+    type: 'array',
+    default: [],
+    component: 'tags',
+    optionType: 'conversation',
+    columnSpan: 4,
+    minTags: 1,
+    maxTags: 4,
+  },
 ];
 
 const componentMapping: Record<ComponentTypes, React.ComponentType<DynamicSettingProps>> = {
@@ -138,9 +158,11 @@ const componentMapping: Record<ComponentTypes, React.ComponentType<DynamicSettin
   [ComponentTypes.Textarea]: DynamicTextarea,
   [ComponentTypes.Input]: DynamicInput,
   [ComponentTypes.Checkbox]: DynamicCheckbox,
+  [ComponentTypes.Tags]: DynamicTags,
 };
 
 export default function Parameters() {
+  const { conversation } = useChatContext();
   const { setOption } = useSetIndexOptions();
 
   const temperature = settingsConfiguration.find(
@@ -173,6 +195,10 @@ export default function Parameters() {
   const Input = componentMapping[chatGptLabel.component];
   const { key: inputKey, default: inputDefault, ...inputSettings } = chatGptLabel;
 
+  const stop = settingsConfiguration.find((setting) => setting.key === 'stop') as SettingDefinition;
+  const Tags = componentMapping[stop.component];
+  const { key: stopKey, default: stopDefault, ...stopSettings } = stop;
+
   return (
     <div className="h-auto max-w-full overflow-x-hidden p-3">
       <div className="grid grid-cols-4 gap-6">
@@ -184,30 +210,42 @@ export default function Parameters() {
           defaultValue={inputDefault}
           {...inputSettings}
           setOption={setOption}
+          conversation={conversation}
         />
         <Textarea
           settingKey={textareaKey}
           defaultValue={textareaDefault}
           {...textareaSettings}
           setOption={setOption}
+          conversation={conversation}
         />
         <TempComponent
           settingKey={temp}
           defaultValue={tempDefault}
           {...tempSettings}
           setOption={setOption}
+          conversation={conversation}
         />
         <Switch
           settingKey={switchKey}
           defaultValue={switchDefault}
           {...switchSettings}
           setOption={setOption}
+          conversation={conversation}
         />
         <DetailComponent
           settingKey={detail}
           defaultValue={detailDefault}
           {...detailSettings}
           setOption={setOption}
+          conversation={conversation}
+        />
+        <Tags
+          settingKey={stopKey}
+          defaultValue={stopDefault}
+          {...stopSettings}
+          setOption={setOption}
+          conversation={conversation}
         />
       </div>
     </div>
