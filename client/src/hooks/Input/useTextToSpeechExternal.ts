@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTextToSpeechMutation } from '~/data-provider';
+import { TextToSpeechResponse } from 'librechat-data-provider';
 import { useToastContext } from '~/Providers';
 
 function useTextToSpeechExternal() {
@@ -40,7 +41,7 @@ function useTextToSpeechExternal() {
   };
 
   const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
-    onSuccess: async (data: ArrayBuffer) => {
+    onSuccess: async (data) => {
       try {
         const audioBlob = new Blob([data], { type: 'audio/mpeg' });
         const blobUrl = URL.createObjectURL(audioBlob);
@@ -62,8 +63,8 @@ function useTextToSpeechExternal() {
         });
       }
     },
-    onError: (error: Error) => {
-      showToast({ message: `Error: ${error.message}`, status: 'error' });
+    onError: (error: unknown) => {
+      showToast({ message: `Error: ${(error as Error).message}`, status: 'error' });
     },
   });
 

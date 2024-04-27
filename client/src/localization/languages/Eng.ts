@@ -444,6 +444,7 @@ export default {
   com_nav_engine: 'Engine',
   com_nav_browser: 'Browser',
   com_nav_external: 'External',
+  com_nav_delete_cache_storage: 'Delete cache storage',
   com_nav_setting_general: 'General',
   com_nav_setting_beta: 'Beta features',
   com_nav_setting_data: 'Data controls',
