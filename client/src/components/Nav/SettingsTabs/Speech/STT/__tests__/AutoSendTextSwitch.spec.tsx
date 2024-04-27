@@ -1,7 +1,7 @@
 import React from 'react';
 import '@testing-library/jest-dom/extend-expect';
 import { render, fireEvent } from 'test/layout-test-utils';
-import AutoSendTextSwitch from '../AutoSendTextSwitch';
+import AutoSendTextSwitch from '../STT/AutoSendTextSwitch';
 import { RecoilRoot } from 'recoil';
 
 describe('AutoSendTextSwitch', () => {

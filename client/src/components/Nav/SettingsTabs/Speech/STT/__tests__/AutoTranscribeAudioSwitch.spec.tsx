@@ -1,7 +1,7 @@
 import React from 'react';
 import '@testing-library/jest-dom/extend-expect';
 import { render, fireEvent } from 'test/layout-test-utils';
-import AutoTranscribeAudioSwitch from '../AutoTranscribeAudioSwitch';
+import AutoTranscribeAudioSwitch from '../STT/AutoTranscribeAudioSwitch';
 import { RecoilRoot } from 'recoil';
 
 describe('AutoTranscribeAudioSwitch', () => {

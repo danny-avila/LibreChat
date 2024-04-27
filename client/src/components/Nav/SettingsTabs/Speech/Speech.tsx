@@ -4,14 +4,15 @@ import React, { useState, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { useOnClickOutside } from '~/hooks';
 import store from '~/store';
-import TextToSpeechSwitch from './TextToSpeechSwitch';
-import SpeechToTextSwitch from './SpeechToTextSwitch';
 import ConversationModeSwitch from './ConversationModeSwitch';
-import AutoSendTextSwitch from './AutoSendTextSwitch';
-import AutoTranscribeAudioSwitch from './AutoTranscribeAudioSwitch';
-import DecibelSelector from './DecibelSelector';
-import EngineSTTDropdown from './EngineSTTDropdown';
-import EngineTTSDropdown from './EngineTTSDropdown';
+import { TextToSpeechSwitch, EngineTTSDropdown, CacheTTSSwitch } from './TTS';
+import {
+  SpeechToTextSwitch,
+  AutoSendTextSwitch,
+  AutoTranscribeAudioSwitch,
+  DecibelSelector,
+  EngineSTTDropdown,
+} from './STT';
 
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
@@ -61,6 +62,11 @@ function Speech() {
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <EngineTTSDropdown />
         </div>
+        {advancedMode && (
+          <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <CacheTTSSwitch />
+          </div>
+        )}
       </div>
     </Tabs.Content>
   );

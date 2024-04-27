@@ -41,9 +41,9 @@ const hideSidePanel = atomWithLocalStorage('hideSidePanel', false);
 const modularChat = atomWithLocalStorage('modularChat', false);
 const LaTeXParsing = atomWithLocalStorage('LaTeXParsing', true);
 const UsernameDisplay = atomWithLocalStorage('UsernameDisplay', true);
-const TextToSpeech = atomWithLocalStorage('TextToSpeech', true);
+const TextToSpeech = atomWithLocalStorage('textToSpeech', true);
 const enterToSend = atomWithLocalStorage('enterToSend', true);
-const SpeechToText = atomWithLocalStorage('SpeechToText', true);
+const SpeechToText = atomWithLocalStorage('speechToText', true);
 const conversationMode = atomWithLocalStorage('conversationMode', false);
 const advancedMode = atomWithLocalStorage('advancedMode', false);
 const autoSendText = atomWithLocalStorage('autoSendText', false);
@@ -51,6 +51,7 @@ const autoTranscribeAudio = atomWithLocalStorage('autoTranscribeAudio', false);
 const decibelValue = atomWithLocalStorage('decibelValue', -45);
 const endpointSTT = atomWithLocalStorage('endpointSTT', 'browser');
 const endpointTTS = atomWithLocalStorage('endpointTTS', 'browser');
+const cacheTTS = atomWithLocalStorage('cacheTTS', true);
 
 export default {
   abortScroll,
@@ -77,4 +78,5 @@ export default {
   decibelValue,
   endpointSTT,
   endpointTTS,
+  cacheTTS,
 };
