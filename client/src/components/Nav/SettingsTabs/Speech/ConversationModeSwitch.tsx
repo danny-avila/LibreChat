@@ -12,11 +12,9 @@ export default function ConversationModeSwitch({
   const [conversationMode, setConversationMode] = useRecoilState<boolean>(store.conversationMode);
   const [advancedMode, setAdvancedMode] = useRecoilState<boolean>(store.advancedMode);
   const [textToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
-  const [autoSendText, setAutoSendText] = useRecoilState<boolean>(store.autoSendText);
-  const [decibelValue, setDecibelValue] = useRecoilState(store.decibelValue);
-  const [autoTranscribeAudio, setAutoTranscribeAudio] = useRecoilState<boolean>(
-    store.autoTranscribeAudio,
-  );
+  const [, setAutoSendText] = useRecoilState<boolean>(store.autoSendText);
+  const [, setDecibelValue] = useRecoilState(store.decibelValue);
+  const [, setAutoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
   const handleCheckedChange = (value: boolean) => {
     if (!advancedMode) {
@@ -40,7 +38,7 @@ export default function ConversationModeSwitch({
           className="flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
           onClick={() => setAdvancedMode(!advancedMode)}
         >
-          <span>{advancedMode ? 'Simple Mode' : 'Advanced Mode'}</span>
+          <span>{advancedMode ? 'Advanced Mode' : 'Simple Mode'}</span>
         </label>
         <div className="w-2" />
         <Switch
