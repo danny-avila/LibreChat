@@ -10,8 +10,8 @@ import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
 import { Spinner } from '~/components/svg';
 import store from '~/store';
-// import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
-const modelSpecs = [];
+import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
+// const modelSpecs = [];
 
 export default function ChatRoute() {
   useAppStartup();

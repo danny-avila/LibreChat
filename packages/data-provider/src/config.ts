@@ -4,6 +4,7 @@ import type { ZodError } from 'zod';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
 import { FileSources } from './types/files';
+import { tModelSpecSchema } from './models';
 import { TModelsConfig } from './types';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
@@ -228,6 +229,7 @@ export const configSchema = z.object({
     .optional(),
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
+  modelSpecs: z.array(tModelSpecSchema).optional(),
   endpoints: z
     .object({
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
@@ -666,44 +668,4 @@ export enum CohereConstants {
    * Title message as required by Cohere
    */
   TITLE_MESSAGE = 'TITLE:',
-}
-
-export enum AuthType {
-  OVERRIDE_AUTH = 'override_auth',
-  USER_PROVIDED = 'user_provided',
-  SYSTEM_PROVIDED = 'system_provided',
-}
-
-export const defaultOrderQuery: {
-  order: 'desc';
-  limit: 100;
-} = {
-  order: 'desc',
-  limit: 100,
-};
-
-export enum AssistantStreamEvents {
-  ThreadCreated = 'thread.created',
-  ThreadRunCreated = 'thread.run.created',
-  ThreadRunQueued = 'thread.run.queued',
-  ThreadRunInProgress = 'thread.run.in_progress',
-  ThreadRunRequiresAction = 'thread.run.requires_action',
-  ThreadRunCompleted = 'thread.run.completed',
-  ThreadRunFailed = 'thread.run.failed',
-  ThreadRunCancelling = 'thread.run.cancelling',
-  ThreadRunCancelled = 'thread.run.cancelled',
-  ThreadRunExpired = 'thread.run.expired',
-  ThreadRunStepCreated = 'thread.run.step.created',
-  ThreadRunStepInProgress = 'thread.run.step.in_progress',
-  ThreadRunStepCompleted = 'thread.run.step.completed',
-  ThreadRunStepFailed = 'thread.run.step.failed',
-  ThreadRunStepCancelled = 'thread.run.step.cancelled',
-  ThreadRunStepExpired = 'thread.run.step.expired',
-  ThreadRunStepDelta = 'thread.run.step.delta',
-  ThreadMessageCreated = 'thread.message.created',
-  ThreadMessageInProgress = 'thread.message.in_progress',
-  ThreadMessageCompleted = 'thread.message.completed',
-  ThreadMessageIncomplete = 'thread.message.incomplete',
-  ThreadMessageDelta = 'thread.message.delta',
-  ErrorEvent = 'error',
 }

@@ -1,6 +1,12 @@
+import { z } from 'zod';
 import type { TPreset } from './schemas';
-import { EModelEndpoint } from './schemas';
-import { AuthType } from './config';
+import {
+  EModelEndpoint,
+  tPresetSchema,
+  eModelEndpointSchema,
+  AuthType,
+  authTypeSchema,
+} from './schemas';
 
 export type TModelSpec = {
   name: string;
@@ -14,3 +20,16 @@ export type TModelSpec = {
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType: AuthType;
 };
+
+export const tModelSpecSchema = z.object({
+  name: z.string(),
+  label: z.string(),
+  preset: tPresetSchema,
+  order: z.number().optional(),
+  default: z.boolean().optional(),
+  description: z.string().optional(),
+  showIconInMenu: z.boolean().optional(),
+  showIconInHeader: z.boolean().optional(),
+  iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
+  authType: authTypeSchema.optional(),
+});

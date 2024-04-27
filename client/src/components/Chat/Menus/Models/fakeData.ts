@@ -22,7 +22,7 @@ export const data: TModelSpec[] = [
       temperature: 0.8,
       top_p: 0.5,
     },
-    authType: AuthType.SYSTEM_PROVIDED,
+    authType: AuthType.SYSTEM_DEFINED,
   },
   {
     name: 'vision_pro',
@@ -41,6 +41,6 @@ export const data: TModelSpec[] = [
       temperature: 0.8,
       top_p: 1,
     },
-    authType: AuthType.SYSTEM_PROVIDED,
+    authType: AuthType.SYSTEM_DEFINED,
   },
 ];

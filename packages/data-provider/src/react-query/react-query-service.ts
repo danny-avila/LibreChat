@@ -6,7 +6,8 @@ import {
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
-import { defaultOrderQuery, initialModelsConfig } from '../config';
+import { defaultOrderQuery } from '../types/assistants';
+import { initialModelsConfig } from '../config';
 import * as dataService from '../data-service';
 import * as m from '../types/mutations';
 import { QueryKeys } from '../keys';

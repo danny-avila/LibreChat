@@ -5,6 +5,14 @@ import type { TFile } from './types/files';
 
 export const isUUID = z.string().uuid();
 
+export enum AuthType {
+  OVERRIDE_AUTH = 'override_auth',
+  USER_PROVIDED = 'user_provided',
+  SYSTEM_DEFINED = 'SYSTEM_DEFINED',
+}
+
+export const authTypeSchema = z.nativeEnum(AuthType);
+
 export enum EModelEndpoint {
   azureOpenAI = 'azureOpenAI',
   openAI = 'openAI',

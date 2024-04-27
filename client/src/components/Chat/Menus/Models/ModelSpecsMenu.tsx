@@ -10,8 +10,8 @@ import { useChatContext } from '~/Providers';
 import MenuButton from './MenuButton';
 import ModelSpecs from './ModelSpecs';
 import store from '~/store';
-// import { data } from './fakeData';
-const modelSpecs: TModelSpec[] = [];
+import { data as modelSpecs } from './fakeData';
+// const modelSpecs: TModelSpec[] = [];
 
 export default function ModelSpecsMenu() {
   const { conversation } = useChatContext();
