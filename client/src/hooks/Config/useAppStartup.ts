@@ -1,13 +1,12 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import type { TStartupConfig } from 'librechat-data-provider';
+import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
 import useConfigOverride from './useConfigOverride';
 import store from '~/store';
-import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
 
-export default function useAppStartup() {
+export default function useAppStartup(startupConfig?: TStartupConfig) {
   useConfigOverride();
-  const { data: startupConfig } = useGetStartupConfig();
   const [defaultPreset, setDefaultPreset] = useRecoilState(store.defaultPreset);
 
   /** Set the app title */

@@ -1,7 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { useGetModelsQuery, useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { defaultOrderQuery } from 'librechat-data-provider';
+import {
+  useGetModelsQuery,
+  useGetEndpointsQuery,
+  useGetStartupConfig,
+} from 'librechat-data-provider/react-query';
 import type { TPreset } from 'librechat-data-provider';
 import { useGetConvoIdQuery, useListAssistantsQuery } from '~/data-provider';
 import { getDefaultModelSpec, getModelSpecIconURL } from '~/utils';
@@ -10,11 +14,10 @@ import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
 import { Spinner } from '~/components/svg';
 import store from '~/store';
-import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
-// const modelSpecs = [];
 
 export default function ChatRoute() {
-  useAppStartup();
+  const { data: startupConfig } = useGetStartupConfig();
+  useAppStartup(startupConfig);
   const index = 0;
   const { conversationId } = useParams();
 
@@ -38,14 +41,14 @@ export default function ChatRoute() {
 
   useEffect(() => {
     if (
-      modelSpecs &&
+      startupConfig &&
       conversationId === 'new' &&
       endpointsQuery.data &&
       modelsQuery.data &&
       !modelsQuery.data?.initial &&
       !hasSetConversation.current
     ) {
-      const spec = getDefaultModelSpec(modelSpecs);
+      const spec = getDefaultModelSpec(startupConfig.modelSpecs);
 
       newConversation({
         modelsData: modelsQuery.data,
@@ -63,7 +66,7 @@ export default function ChatRoute() {
 
       hasSetConversation.current = true;
     } else if (
-      modelSpecs &&
+      startupConfig &&
       initialConvoQuery.data &&
       endpointsQuery.data &&
       modelsQuery.data &&
@@ -79,13 +82,13 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     } else if (
-      modelSpecs &&
+      startupConfig &&
       !hasSetConversation.current &&
       !modelsQuery.data?.initial &&
       conversationId === 'new' &&
       assistants
     ) {
-      const spec = getDefaultModelSpec(modelSpecs);
+      const spec = getDefaultModelSpec(startupConfig.modelSpecs);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
@@ -101,7 +104,7 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     } else if (
-      modelSpecs &&
+      startupConfig &&
       !hasSetConversation.current &&
       !modelsQuery.data?.initial &&
       assistants
@@ -116,7 +119,7 @@ export default function ChatRoute() {
     }
     /* Creates infinite render if all dependencies included due to newConversation invocations exceeding call stack before hasSetConversation.current becomes truthy */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialConvoQuery.data, endpointsQuery.data, modelsQuery.data, assistants]);
+  }, [startupConfig, initialConvoQuery.data, endpointsQuery.data, modelsQuery.data, assistants]);
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
     return <Spinner className="m-auto text-black dark:text-white" />;

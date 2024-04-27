@@ -79,6 +79,7 @@ const AppService = async (app) => {
     availableTools,
     imageOutputType,
     interface: config?.interface,
+    modelSpecs: config.modelSpecs,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
     ...endpointLocals,
