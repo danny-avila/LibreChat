@@ -3,8 +3,58 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 const { EModelEndpoint, defaultModels, CacheKeys } = require('librechat-data-provider');
 const { extractBaseURL, inputSchema, processModelData, logAxiosError } = require('~/utils');
 const getLogStores = require('~/cache/getLogStores');
+const { logger } = require('~/config');
 
 const { openAIApiKey, userProvidedOpenAI } = require('./Config/EndpointService').config;
+
+/**
+ * Extracts the base URL from the provided URL.
+ * @param {string} fullURL - The full URL.
+ * @returns {string} The base URL.
+ */
+function deriveBaseURL(fullURL) {
+  try {
+    const parsedUrl = new URL(fullURL);
+    const protocol = parsedUrl.protocol;
+    const hostname = parsedUrl.hostname;
+    const port = parsedUrl.port;
+
+    // Check if the parsed URL components are meaningful
+    if (!protocol || !hostname) {
+      return fullURL;
+    }
+
+    // Reconstruct the base URL
+    return `${protocol}//${hostname}${port ? `:${port}` : ''}`;
+  } catch (error) {
+    logger.error('Failed to derive base URL', error);
+    return fullURL; // Return the original URL in case of any exception
+  }
+}
+
+/**
+ * Fetches Ollama models from the specified base API path.
+ * @param {string} baseURL
+ * @returns {Promise<string[]>} The Ollama models.
+ */
+const fetchOllamaModels = async (baseURL) => {
+  let models = [];
+  if (!baseURL) {
+    return models;
+  }
+  try {
+    const ollamaEndpoint = deriveBaseURL(baseURL);
+    /** @type {Promise<AxiosResponse<OllamaListResponse>>} */
+    const response = await axios.get(`${ollamaEndpoint}/api/tags`);
+    models = response.data.models.map((tag) => tag.name);
+    return models;
+  } catch (error) {
+    const logMessage =
+      'Failed to fetch models from Ollama API. If you are not using Ollama directly, and instead, through some aggregator or reverse proxy that handles fetching via OpenAI spec, ensure the name of the endpoint doesn\'t start with `ollama` (case-insensitive).';
+    logger.error(logMessage, error);
+    return [];
+  }
+};
 
 /**
  * Fetches OpenAI models from the specified base API path or Azure, based on the provided configuration.
@@ -39,6 +89,10 @@ const fetchModels = async ({
 
   if (!apiKey) {
     return models;
+  }
+
+  if (name && name.toLowerCase().startsWith('ollama')) {
+    return await fetchOllamaModels(baseURL);
   }
 
   try {
@@ -227,6 +281,7 @@ const getGoogleModels = () => {
 
 module.exports = {
   fetchModels,
+  deriveBaseURL,
   getOpenAIModels,
   getChatGPTBrowserModels,
   getAnthropicModels,
