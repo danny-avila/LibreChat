@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useRecoilState } from 'recoil';
 import { useTextToSpeechMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
+import store from '~/store';
 
 function useTextToSpeechExternal() {
   const { showToast } = useToastContext();
+  const [cacheTTS] = useRecoilState<boolean>(store.cacheTTS);
   const [downloadFile, setDownloadFile] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
@@ -45,9 +48,11 @@ function useTextToSpeechExternal() {
         const audioBlob = new Blob([data], { type: 'audio/mpeg' });
         const blobUrl = URL.createObjectURL(audioBlob);
 
-        const cache = await caches.open('tts-responses');
-        const request = new Request(text!);
-        cache.put(request, new Response(audioBlob));
+        if (cacheTTS) {
+          const cache = await caches.open('tts-responses');
+          const request = new Request(text!);
+          cache.put(request, new Response(audioBlob));
+        }
 
         if (downloadFile === true) {
           downloadAudio(blobUrl);
@@ -71,7 +76,7 @@ function useTextToSpeechExternal() {
     setText(text);
     const cachedResponse = await caches.match(text);
 
-    if (cachedResponse) {
+    if (cachedResponse && cacheTTS) {
       const audioBlob = await cachedResponse.blob();
       const blobUrl = URL.createObjectURL(audioBlob);
       if (download) {
