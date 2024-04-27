@@ -64,6 +64,13 @@ model_list:
       aws_access_key_id: A...
       aws_secret_access_key: ...
 
+  - model_name: claude-3-opus
+    litellm_params:
+      model: bedrock/anthropic.claude-3-opus-20240229-v1:0
+      aws_region_name: us-west-2
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
   - model_name: claude-v2
     litellm_params:
       model: bedrock/anthropic.claude-v2:1
@@ -92,6 +99,21 @@ model_list:
       aws_access_key_id: A...
       aws_secret_access_key: ...
 
+  - model_name: llama3-8b
+    litellm_params:
+      model: bedrock/meta.llama3-8b-instruct-v1:0
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: llama3-70b
+    litellm_params:
+      model: bedrock/meta.llama3-70b-instruct-v1:0
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+
   - model_name: mistral-7b-instruct
     litellm_params:
       model: bedrock/mistral.mistral-7b-instruct-v0:2
@@ -106,89 +128,156 @@ model_list:
       aws_access_key_id: A...
       aws_secret_access_key: ...
 
+  - model_name: mixtral-large
+    litellm_params:
+      model: bedrock/mistral.mistral-large-2402-v1:0
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: cohere-command-v14
+    litellm_params:
+      model: bedrock/cohere.command-text-v14
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: cohere-command-light-v14
+    litellm_params:
+      model: bedrock/cohere.command-light-text-v14
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: ai21-j2-mid
+    litellm_params:
+      model: bedrock/ai21.j2-mid-v1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: ai21-j2-ultra
+    litellm_params:
+      model: bedrock/ai21.j2-ultra-v1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: amazon-titan-lite
+    litellm_params:
+      model: bedrock/amazon.titan-text-lite-v1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+  - model_name: amazon-titan-express
+    litellm_params:
+      model: bedrock/amazon.titan-text-express-v1
+      aws_region_name: us-east-1
+      aws_access_key_id: A...
+      aws_secret_access_key: ...
+
+
+
 
   - model_name: azure-gpt-4-turbo-preview
     litellm_params:
       model: azure/gpt-4-turbo-preview
-      api_base: https://tenant.openai.azure.com/
+      api_base: https://tenant-name.openai.azure.com/
       api_key: ...
 
   - model_name: azure-gpt-3.5-turbo
     litellm_params:
       model: azure/gpt-35-turbo
-      api_base: https://tenant.openai.azure.com/
+      api_base: https://tenant-name.openai.azure.com/
       api_key: ...
 
   - model_name: azure-gpt-4
     litellm_params:
       model: azure/gpt-4
-      api_base: https://tenant.openai.azure.com/
+      api_base: https://tenant-name.openai.azure.com/
       api_key: ...
 
   - model_name: azure-gpt-3.5-turbo-16k
     litellm_params:
       model: azure/gpt-35-turbo-16k
-      api_base: https://tenant.openai.azure.com/
+      api_base: https://tenant-name.openai.azure.com/
       api_key: ...
 
   - model_name: azure-gpt-4-32k
     litellm_params:
       model: azure/gpt-4-32k
-      api_base: https://tenant.openai.azure.com/
+      api_base: https://tenant-name.openai.azure.com/
       api_key: ...
 
 
-  - model_name: openai-gpt-4-turbo-preview
+
+  - model_name: gpt-4-turbo
+    litellm_params:
+      model: gpt-4-turbo
+      api_key: ...
+
+  - model_name: old-gpt-4-turbo-preview
     litellm_params:
       model: gpt-4-turbo-preview
-      api_key: sk-...
+      api_key: ...
 
-  - model_name: openai-gpt-3.5-turbo
+  - model_name: gpt-3.5-turbo
     litellm_params:
       model: gpt-3.5-turbo
-      api_key: sk-...
+      api_key: ...
 
-  - model_name: openai-gpt-4
+  - model_name: gpt-4
     litellm_params:
       model: gpt-4
-      api_key: sk-...
+      api_key: ...
 
-  - model_name: openai-gpt-3.5-turbo-16k
+  - model_name: gpt-3.5-turbo-16k
     litellm_params:
       model: gpt-3.5-turbo-16k
-      api_key: sk-...
+      api_key: ...
 
-  - model_name: openai-gpt-4-32k
+  - model_name: gpt-4-32k
     litellm_params:
       model: gpt-4-32k
-      api_key: sk-...
+      api_key: ...
 
-  - model_name: openai-gpt-4-vision-preview
+  - model_name: gpt-4-vision-preview
     litellm_params:
       model: gpt-4-vision-preview
-      api_key: sk-...
+      api_key: ...
+
+
 
   # NOTE: For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
   - model_name: google-chat-bison
     litellm_params:
       model: vertex_ai/chat-bison
-      vertex_project: ...
+      vertex_project: gcp-proj-name
       vertex_location: us-central1
 
   # NOTE: For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
   - model_name: google-chat-bison-32k
     litellm_params:
       model: vertex_ai/chat-bison-32k
-      vertex_project: ...
+      vertex_project: gcp-proj-name
       vertex_location: us-central1
 
   # NOTE: For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
-  - model_name: google-gemini-pro
+  - model_name: google-gemini-pro-1.0
     litellm_params:
       model: vertex_ai/gemini-pro
-      vertex_project: ...
+      vertex_project: gcp-proj-name
       vertex_location: us-central1
 
+  # NOTE: For Google - see above about required auth "GOOGLE_APPLICATION_CREDENTIALS" envronment and volume mount
+  - model_name: google-gemini-pro-1.5-preview
+    litellm_params:
+      model: vertex_ai/gemini-1.5-pro-preview-0409
+      vertex_project: gcp-proj-name
+      vertex_location: us-central1
+
+# NOTE: It may be a good idea to comment out "success_callback", "cache", "cache_params" (both lines under) when you first start until this works!
 litellm_settings:
   success_callback: ["langfuse"]
   cache: True
