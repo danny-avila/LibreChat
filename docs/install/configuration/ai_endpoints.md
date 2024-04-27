@@ -288,7 +288,6 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 **Notes:**
 
 - **Known:** icon provided.
-- **Known issue:** fetching list of models is not supported. See [Pull Request 2728](https://github.com/ollama/ollama/pull/2728).
 - Download models with ollama run command. See [Ollama Library](https://ollama.com/library)
 - It's recommend to use the value "current_model" for the `titleModel` to avoid loading more than 1 model per conversation.
     - Doing so will dynamically use the current conversation model for the title generation.
@@ -307,7 +306,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
           "dolphin-mixtral",
           "mistral-openorca"
           ]
-        fetch: false # fetching list of models is not supported
+      # fetching list of models is supported but the `name` field must start
+      # with `ollama` (case-insensitive), as it does in this example.
+        fetch: true
       titleConvo: true
       titleModel: "current_model"
       summarize: false
