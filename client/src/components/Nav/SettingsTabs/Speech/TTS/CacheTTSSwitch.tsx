@@ -8,8 +8,9 @@ export default function CacheTTSSwitch({
 }: {
   onCheckedChange?: (value: boolean) => void;
 }) {
-  const [cacheTTS, setCacheTTS] = useRecoilState<boolean>(store.cacheTTS);
   const localize = useLocalize();
+  const [cacheTTS, setCacheTTS] = useRecoilState<boolean>(store.cacheTTS);
+  const [textToSpeech] = useRecoilState<boolean>(store.TextToSpeech);
 
   const handleCheckedChange = (value: boolean) => {
     setCacheTTS(value);
@@ -27,6 +28,7 @@ export default function CacheTTSSwitch({
         onCheckedChange={handleCheckedChange}
         className="ml-4"
         data-testid="CacheTTS"
+        disabled={!textToSpeech}
       />
     </div>
   );

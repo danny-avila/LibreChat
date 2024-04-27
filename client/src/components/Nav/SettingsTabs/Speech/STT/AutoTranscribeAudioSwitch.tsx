@@ -1,4 +1,3 @@
-import React from 'react';
 import { useRecoilState } from 'recoil';
 import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
