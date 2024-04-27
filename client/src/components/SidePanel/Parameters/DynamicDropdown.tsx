@@ -22,9 +22,10 @@ function DynamicDropdown({
   showDefault = true,
   labelCode,
   descriptionCode,
+  conversation,
 }: DynamicSettingProps) {
   const localize = useLocalize();
-  const { conversation = { conversationId: null }, preset } = useChatContext();
+  const { preset } = useChatContext();
   const [inputValue, setInputValue] = useState<string | null>(null);
 
   const selectedValue = useMemo(() => {

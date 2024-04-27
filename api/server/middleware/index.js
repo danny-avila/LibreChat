@@ -1,5 +1,6 @@
 const abortMiddleware = require('./abortMiddleware');
 const checkBan = require('./checkBan');
+const checkDomainAllowed = require('./checkDomainAllowed');
 const uaParser = require('./uaParser');
 const setHeaders = require('./setHeaders');
 const loginLimiter = require('./loginLimiter');
@@ -38,4 +39,5 @@ module.exports = {
   validateModel,
   moderateText,
   noIndex,
+  checkDomainAllowed,
 };

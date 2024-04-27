@@ -3,16 +3,17 @@ import { CustomMinimalIcon } from '~/components/svg';
 import { IconContext } from '~/common';
 
 const knownEndpointAssets = {
-  [KnownEndpoints.mistral]: '/assets/mistral.png',
-  [KnownEndpoints.openrouter]: '/assets/openrouter.png',
-  [KnownEndpoints.groq]: '/assets/groq.png',
-  [KnownEndpoints.shuttleai]: '/assets/shuttleai.png',
   [KnownEndpoints.anyscale]: '/assets/anyscale.png',
-  [KnownEndpoints.fireworks]: '/assets/fireworks.png',
-  [KnownEndpoints.ollama]: '/assets/ollama.png',
-  [KnownEndpoints.perplexity]: '/assets/perplexity.png',
-  [KnownEndpoints['together.ai']]: '/assets/together.png',
+  [KnownEndpoints.apipie]: '/assets/apipie.png',
   [KnownEndpoints.cohere]: '/assets/cohere.png',
+  [KnownEndpoints.fireworks]: '/assets/fireworks.png',
+  [KnownEndpoints.groq]: '/assets/groq.png',
+  [KnownEndpoints.mistral]: '/assets/mistral.png',
+  [KnownEndpoints.ollama]: '/assets/ollama.png',
+  [KnownEndpoints.openrouter]: '/assets/openrouter.png',
+  [KnownEndpoints.perplexity]: '/assets/perplexity.png',
+  [KnownEndpoints.shuttleai]: '/assets/shuttleai.png',
+  [KnownEndpoints['together.ai']]: '/assets/together.png',
 };
 
 const knownEndpointClasses = {
