@@ -26,6 +26,7 @@ export default function AutoSendTextSwitch({
         id="AutoSendText"
         checked={autoSendText}
         onCheckedChange={handleCheckedChange}
+        className="ml-4"
         data-testid="AutoSendText"
         disabled={!SpeechToText}
       />

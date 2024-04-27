@@ -438,7 +438,7 @@ export default {
   com_nav_settings: 'Settings',
   com_nav_search_placeholder: 'Search messages',
   com_nav_conversation_mode: 'Conversation Mode',
-  com_nav_auto_send_text: 'Auto send text',
+  com_nav_auto_send_text: 'Auto send text (after 3 sec)',
   com_nav_auto_transcribe_audio: 'Auto transcribe audio',
   com_nav_db_sensitivity: 'Decibel sensitivity',
   com_nav_engine: 'Engine',

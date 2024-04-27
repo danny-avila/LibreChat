@@ -29,7 +29,7 @@ export default function AutoTranscribeAudioSwitch({
         id="AutoTranscribeAudio"
         checked={autoTranscribeAudio}
         onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2"
+        className="ml-4"
         data-testid="AutoTranscribeAudio"
         disabled={!speechToText}
       />

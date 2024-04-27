@@ -27,7 +27,7 @@ export default function SpeechToTextSwitch({
         id="SpeechToText"
         checked={speechToText}
         onCheckedChange={handleCheckedChange}
-        className="ml-4 mt-2"
+        className="ml-4"
         data-testid="SpeechToText"
       />
     </div>

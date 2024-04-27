@@ -16,6 +16,7 @@ import EngineTTSDropdown from './EngineTTSDropdown';
 function Speech() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
+  const [advancedMode] = useRecoilState<boolean>(store.advancedMode);
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
@@ -29,31 +30,36 @@ function Speech() {
     >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <ConversationModeSwitch />
+        </div>
+        <div className="h-px bg-black/20 bg-white/20" role="none" />
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <SpeechToTextSwitch />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <EngineSTTDropdown />
         </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <AutoTranscribeAudioSwitch />
-        </div>
-        {autoTranscribeAudio && (
+        {advancedMode && (
+          <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <AutoTranscribeAudioSwitch />
+          </div>
+        )}
+        {autoTranscribeAudio && advancedMode && (
           <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
             <DecibelSelector />
           </div>
         )}
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <AutoSendTextSwitch />
-        </div>
+        {advancedMode && (
+          <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+            <AutoSendTextSwitch />
+          </div>
+        )}
         <div className="h-px bg-black/20 bg-white/20" role="none" />
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <TextToSpeechSwitch />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <EngineTTSDropdown />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <ConversationModeSwitch />
         </div>
       </div>
     </Tabs.Content>
