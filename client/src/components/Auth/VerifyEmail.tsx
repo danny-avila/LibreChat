@@ -4,7 +4,7 @@ import type { TVerifyEmail } from 'librechat-data-provider';
 import { ThemeSelector } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { Spinner } from '~/components/svg';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 function RequestPasswordReset() {
   const localize = useLocalize();
@@ -13,6 +13,8 @@ function RequestPasswordReset() {
   const [verificationStatus, setVerificationStatus] = useState<boolean>(false);
   const [verificationInProgress, setVerificationInProgress] = useState<boolean>(false);
   const [headerText, setHeaderText] = useState<string>('');
+  const [countdown, setCountdown] = useState<number>(5);
+  const navigate = useNavigate();
   const data: TVerifyEmail = {
     token: params.get('token') || '',
     userId: params.get('userId') || '',
@@ -23,6 +25,13 @@ function RequestPasswordReset() {
       onSuccess: () => {
         setHeaderText(localize('com_auth_email_verification_success') + ' 🎉');
         setVerificationStatus(true);
+        const timer = setInterval(() => {
+          setCountdown((prevCountdown) => prevCountdown - 1);
+        }, 1000);
+        setTimeout(() => {
+          clearInterval(timer);
+          navigate('/c/new', { replace: true });
+        }, 5000);
       },
       onError: () => {
         setVerificationStatus(true);
@@ -51,10 +60,15 @@ function RequestPasswordReset() {
         <ThemeSelector />
       </div>
       {verificationStatus ? (
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center justify-center">
           <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
             {headerText}
           </h1>
+          {countdown > 0 && (
+            <p className="text-center text-lg text-gray-600 dark:text-gray-400">
+              {localize('com_auth_email_verification_redirecting', countdown.toString())}
+            </p>
+          )}
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center">

@@ -290,6 +290,8 @@ export default {
   com_auth_username_max_length: 'Username must be less than 20 characters',
   com_auth_already_have_account: 'Already have an account?',
   com_auth_login: 'Login',
+  com_auth_registration_success:
+    'Registration successful. Please check your email to verify your email address.',
   com_auth_reset_password: 'Reset your password',
   com_auth_click: 'Click',
   com_auth_here: 'HERE',
@@ -311,6 +313,7 @@ export default {
   com_auth_email_verification_failed: 'Email verification failed',
   com_auth_email_verification_invalid: 'Invalid email verification token',
   com_auth_email_verification_in_progress: 'Email verification in progress',
+  com_auth_email_verification_redirecting: 'Redirecting in {0} seconds...',
   com_endpoint_open_menu: 'Open Menu',
   com_endpoint_bing_enable_sydney: 'Enable Sydney',
   com_endpoint_bing_to_enable_sydney: 'To enable Sydney',
