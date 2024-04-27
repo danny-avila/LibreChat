@@ -11,6 +11,6 @@ export type TModelSpec = {
   description?: string;
   showIconInMenu?: boolean;
   showIconInHeader?: boolean;
-  iconURL: string | EModelEndpoint; // Allow using project-included icons
+  iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType: AuthType;
 };

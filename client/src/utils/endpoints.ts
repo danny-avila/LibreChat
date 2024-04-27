@@ -171,9 +171,17 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
  *
  * First, the admin defined default, then last selected spec, followed by first spec
  */
-export function getDefaultModelSpec(modelSpecs: TModelSpec[]) {
-  const defaultSpec = modelSpecs.find((spec) => spec.default);
+export function getDefaultModelSpec(modelSpecs?: TModelSpec[]) {
+  const defaultSpec = modelSpecs?.find((spec) => spec.default);
   const lastConvo = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP) || '{}');
-  const lastSelectedSpec = modelSpecs.find((spec) => spec.name === lastConvo.spec);
-  return defaultSpec || lastSelectedSpec || modelSpecs[0];
+  const lastSelectedSpec = modelSpecs?.find((spec) => spec.name === lastConvo.spec);
+  return defaultSpec || lastSelectedSpec || modelSpecs?.[0];
+}
+
+/** Gets the default spec iconURL by order or definition.
+ *
+ * First, the admin defined default, then last selected spec, followed by first spec
+ */
+export function getModelSpecIconURL(modelSpec: TModelSpec) {
+  return modelSpec.iconURL ?? modelSpec.preset.iconURL ?? modelSpec.preset.endpoint ?? '';
 }

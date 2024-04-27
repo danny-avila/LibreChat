@@ -2,13 +2,14 @@ import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { IconMapProps } from '~/common';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
+import { getModelSpecIconURL } from '~/utils';
 
 interface IconComponentProps {
   currentSpec: TModelSpec;
 }
 
 const IconComponent: React.FC<IconComponentProps> = ({ currentSpec }) => {
-  const iconURL = currentSpec.iconURL ?? '';
+  const iconURL = getModelSpecIconURL(currentSpec);
   let Icon: (props: IconMapProps) => React.JSX.Element;
 
   if (!iconURL?.includes('http')) {

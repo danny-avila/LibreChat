@@ -4,8 +4,8 @@ import { Content, Portal, Root } from '@radix-ui/react-popover';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TModelSpec, TConversation, TEndpointsConfig } from 'librechat-data-provider';
+import { getConvoSwitchLogic, getModelSpecIconURL } from '~/utils';
 import { useDefaultConvo, useNewConvo } from '~/hooks';
-import { getConvoSwitchLogic } from '~/utils';
 import { useChatContext } from '~/Providers';
 import MenuButton from './MenuButton';
 import ModelSpecs from './ModelSpecs';
@@ -23,7 +23,7 @@ export default function ModelSpecsMenu() {
 
   const onSelectSpec = (spec: TModelSpec) => {
     const { preset } = spec;
-    preset.iconURL = spec.iconURL;
+    preset.iconURL = getModelSpecIconURL(spec);
     preset.spec = spec.name;
     const { endpoint: newEndpoint } = preset;
     if (!newEndpoint) {

@@ -4,10 +4,10 @@ import { useGetModelsQuery, useGetEndpointsQuery } from 'librechat-data-provider
 import { defaultOrderQuery } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { useGetConvoIdQuery, useListAssistantsQuery } from '~/data-provider';
+import { getDefaultModelSpec, getModelSpecIconURL } from '~/utils';
 import { useNewConvo, useAppStartup } from '~/hooks';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
-import { getDefaultModelSpec } from '~/utils';
 import { Spinner } from '~/components/svg';
 import store from '~/store';
 import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
@@ -45,15 +45,21 @@ export default function ChatRoute() {
       !hasSetConversation.current
     ) {
       const spec = getDefaultModelSpec(modelSpecs);
+
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        preset: {
-          ...spec.preset,
-          iconURL: spec.iconURL,
-          spec: spec.name,
-        },
+        ...(spec
+          ? {
+            preset: {
+              ...spec.preset,
+              iconURL: getModelSpecIconURL(spec),
+              spec: spec.name,
+            },
+          }
+          : undefined),
       });
+
       hasSetConversation.current = true;
     } else if (
       modelSpecs &&
@@ -82,11 +88,15 @@ export default function ChatRoute() {
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
-        preset: {
-          ...spec.preset,
-          iconURL: spec.iconURL,
-          spec: spec.name,
-        },
+        ...(spec
+          ? {
+            preset: {
+              ...spec.preset,
+              iconURL: getModelSpecIconURL(spec),
+              spec: spec.name,
+            },
+          }
+          : undefined),
       });
       hasSetConversation.current = true;
     } else if (
