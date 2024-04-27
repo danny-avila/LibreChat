@@ -70,7 +70,7 @@ function ResetPassword() {
               role="alert"
             >
               {localize('com_auth_error_invalid_reset_token')}{' '}
-              <a className="font-semibold text-green-600 hover:underline" href="/forgot-password">
+              <a className="font-semibold text-blue-600 hover:underline" href="/forgot-password">
                 {localize('com_auth_click_here')}
               </a>{' '}
               {localize('com_auth_to_try_again')}

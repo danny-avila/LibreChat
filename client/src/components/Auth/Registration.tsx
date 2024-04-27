@@ -1,18 +1,31 @@
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRegisterUserMutation, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { TRegisterUser } from 'librechat-data-provider';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
 import { ThemeSelector } from '~/components/ui';
 import SocialButton from './SocialButton';
 import { useLocalize } from '~/hooks';
+import Particles, { initParticlesEngine } from '@tsparticles/react';
+import { type Container, type ISourceOptions, MoveDirection, OutMode } from '@tsparticles/engine';
+import { loadSlim } from '@tsparticles/slim';
+import { TypeAnimation } from 'react-type-animation';
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
   const { data: startupConfig } = useGetStartupConfig();
   const localize = useLocalize();
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
+  const [init, setInit] = useState(false);
+
+  useEffect(() => {
+    initParticlesEngine(async (engine) => {
+      await loadSlim(engine);
+    }).then(() => {
+      setInit(true);
+    });
+  }, []);
 
   const {
     register,
@@ -20,6 +33,71 @@ const Registration: React.FC = () => {
     handleSubmit,
     formState: { errors },
   } = useForm<TRegisterUser>({ mode: 'onChange' });
+
+  const particlesLoaded = async (container?: Container): Promise<void> => {
+    console.log(container);
+  };
+
+  const options: ISourceOptions = useMemo(
+    () => ({
+      background: {
+        color: {
+          value: '#2563eb',
+        },
+      },
+      fpsLimit: 120,
+      interactivity: {
+        events: {
+          onClick: {
+            enable: true,
+            mode: 'push',
+          },
+        },
+        modes: {
+          push: {
+            quantity: 1,
+          },
+          repulse: {
+            distance: 100,
+            duration: 0.5,
+          },
+        },
+      },
+      particles: {
+        color: {
+          value: '#ffffff',
+        },
+        links: {
+          color: '#ffffff',
+          distance: 250,
+          enable: true,
+          opacity: 0.6,
+          width: 0.5,
+        },
+        number: {
+          density: {
+            enable: true,
+          },
+          value: 130,
+        },
+        shape: {
+          type: 'line',
+        },
+        size: {
+          value: { min: 1, max: 5 },
+        },
+        move: {
+          direction: 'none',
+          random: true,
+          enable: true,
+          speed: 1.5,
+          straight: false,
+        },
+      },
+      detectRetina: false,
+    }),
+    [],
+  );
 
   const [error, setError] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -153,7 +231,7 @@ const Registration: React.FC = () => {
 
   const privacyPolicyRender = (
     <a
-      className="text-xs font-medium text-green-500"
+      className="text-xs font-medium text-blue-500"
       href={privacyPolicy?.externalUrl || 'privacy-policy'}
       target="_blank"
       rel="noreferrer"
@@ -164,7 +242,7 @@ const Registration: React.FC = () => {
 
   const termsOfServiceRender = (
     <a
-      className="text-xs font-medium text-green-500"
+      className="text-xs font-medium text-blue-500"
       href={termsOfService?.externalUrl || 'terms-of-service'}
       target="_blank"
       rel="noreferrer"
@@ -184,141 +262,189 @@ const Registration: React.FC = () => {
     'novlisky.io': 'logo-novlisky.png',
   };
 
+  const domainTitles = {
+    'gptchina.io': 'GPT China',
+    'gptafrica.io': 'GPT Africa',
+    'gptglobal.io': 'GPT Global',
+    'gptiran.io': 'GPT Iran',
+    'gptitaly.io': 'GPT Italy',
+    'gptrussia.io': 'GPT Russia',
+    'gptusa.io': 'GPT USA',
+    'novlisky.io': 'Novlisky',
+  };
+
   const currentDomain = window.location.hostname;
-  const logoImageFilename = domainLogos[currentDomain] || 'logo-global.png';
+  const logoImageFilename = domainLogos[currentDomain] || 'logo-novlisky.png';
+  const domainTitle = domainTitles[currentDomain] || 'Novlisky';
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
-      <div className="absolute bottom-0 left-0 m-4">
+    <section className="flex flex-col md:h-screen md:flex-row">
+      <div className="fixed bottom-0 left-0 z-50 m-4">
         <ThemeSelector />
       </div>
-      <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
-        <img src={`/assets/${logoImageFilename}`} className="mx-auto mb-6 h-16 w-auto" alt="Logo" />
-        <h1
-          className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
-          style={{ userSelect: 'none' }}
-        >
-          {localize('com_auth_create_account')}
-        </h1>
-        {registrationSuccess && (
-          <div
-            className="rounded-md border border-green-500 bg-green-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
-            role="alert"
+      <div className="relative z-10 flex w-full flex-col items-center justify-center bg-white dark:bg-gray-800 md:w-1/2">
+        <div className="w-full overflow-hidden bg-white px-6 py-4 dark:bg-gray-800 sm:max-w-md sm:rounded-lg">
+          <img
+            src={`/assets/${logoImageFilename}`}
+            className="mx-auto mb-10 h-16 w-auto"
+            alt="Logo"
+          />
+          <h1
+            className="mb-4 text-center text-3xl font-semibold text-black dark:text-white"
+            style={{ userSelect: 'none' }}
           >
-            {localize('com_auth_registration_success')}
-          </div>
-        )}
-        {error && (
-          <div
-            className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
-            role="alert"
-            data-testid="registration-error"
-          >
-            {localize('com_auth_error_create')} {errorMessage}
-          </div>
-        )}
-        <form
-          className="mt-6"
-          aria-label="Registration form"
-          method="POST"
-          onSubmit={handleSubmit(onRegisterUserFormSubmit)}
-        >
-          {renderInput('name', 'com_auth_full_name', 'text', {
-            required: localize('com_auth_name_required'),
-            minLength: {
-              value: 3,
-              message: localize('com_auth_name_min_length'),
-            },
-            maxLength: {
-              value: 80,
-              message: localize('com_auth_name_max_length'),
-            },
-          })}
-          {renderInput('username', 'com_auth_username', 'text', {
-            minLength: {
-              value: 2,
-              message: localize('com_auth_username_min_length'),
-            },
-            maxLength: {
-              value: 80,
-              message: localize('com_auth_username_max_length'),
-            },
-          })}
-          {renderInput('email', 'com_auth_email', 'email', {
-            required: localize('com_auth_email_required'),
-            minLength: {
-              value: 1,
-              message: localize('com_auth_email_min_length'),
-            },
-            maxLength: {
-              value: 120,
-              message: localize('com_auth_email_max_length'),
-            },
-            pattern: {
-              value: /\S+@\S+\.\S+/,
-              message: localize('com_auth_email_pattern'),
-            },
-          })}
-          {renderInput('password', 'com_auth_password', 'password', {
-            required: localize('com_auth_password_required'),
-            minLength: {
-              value: 8,
-              message: localize('com_auth_password_min_length'),
-            },
-            maxLength: {
-              value: 128,
-              message: localize('com_auth_password_max_length'),
-            },
-          })}
-          {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
-            validate: (value) => value === password || localize('com_auth_password_not_match'),
-          })}
-          <div className="mt-6">
-            <button
-              disabled={Object.keys(errors).length > 0}
-              type="submit"
-              aria-label="Submit registration"
-              className="w-full transform rounded-md bg-green-500 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-green-550 focus:bg-green-550 focus:outline-none disabled:cursor-not-allowed disabled:hover:bg-green-500"
+            {localize('com_auth_create_account')}
+          </h1>
+          {registrationSuccess && (
+            <div
+              className="rounded-md border border-blue-500 bg-green-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
+              role="alert"
             >
-              {localize('com_auth_continue')}
-            </button>
-          </div>
-        </form>
-        <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
-          {localize('com_auth_already_have_account')}{' '}
-          <a href="/login" aria-label="Login" className="p-1 font-medium text-green-500">
-            {localize('com_auth_login')}
-          </a>
-        </p>
-        {startupConfig.socialLoginEnabled && (
-          <>
-            {startupConfig.emailLoginEnabled && (
-              <>
-                <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
-                  <div className="absolute bg-white px-3 text-xs text-black dark:bg-gray-900 dark:text-white">
-                    Or
-                  </div>
-                </div>
-                <div className="mt-8" />
-              </>
-            )}
-            <div className="mt-2">
-              {socialLogins.map((provider) => providerComponents[provider] || null)}
+              {localize('com_auth_registration_success')}
             </div>
-          </>
-        )}
+          )}
+          {error && (
+            <div
+              className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
+              role="alert"
+              data-testid="registration-error"
+            >
+              {localize('com_auth_error_create')} {errorMessage}
+            </div>
+          )}
+          <form
+            className="mt-6"
+            aria-label="Registration form"
+            method="POST"
+            onSubmit={handleSubmit(onRegisterUserFormSubmit)}
+          >
+            {renderInput('name', 'com_auth_full_name', 'text', {
+              required: localize('com_auth_name_required'),
+              minLength: {
+                value: 3,
+                message: localize('com_auth_name_min_length'),
+              },
+              maxLength: {
+                value: 80,
+                message: localize('com_auth_name_max_length'),
+              },
+            })}
+            {renderInput('username', 'com_auth_username', 'text', {
+              minLength: {
+                value: 2,
+                message: localize('com_auth_username_min_length'),
+              },
+              maxLength: {
+                value: 80,
+                message: localize('com_auth_username_max_length'),
+              },
+            })}
+            {renderInput('email', 'com_auth_email', 'email', {
+              required: localize('com_auth_email_required'),
+              minLength: {
+                value: 1,
+                message: localize('com_auth_email_min_length'),
+              },
+              maxLength: {
+                value: 120,
+                message: localize('com_auth_email_max_length'),
+              },
+              pattern: {
+                value: /\S+@\S+\.\S+/,
+                message: localize('com_auth_email_pattern'),
+              },
+            })}
+            {renderInput('password', 'com_auth_password', 'password', {
+              required: localize('com_auth_password_required'),
+              minLength: {
+                value: 8,
+                message: localize('com_auth_password_min_length'),
+              },
+              maxLength: {
+                value: 128,
+                message: localize('com_auth_password_max_length'),
+              },
+            })}
+            {renderInput('confirm_password', 'com_auth_password_confirm', 'password', {
+              validate: (value) => value === password || localize('com_auth_password_not_match'),
+            })}
+            <div className="mt-6">
+              <button
+                disabled={Object.keys(errors).length > 0}
+                type="submit"
+                aria-label="Submit registration"
+                className="focus:bg-blue-650 w-full transform rounded-md bg-blue-600 px-4 py-3 tracking-wide text-white transition-colors duration-200 hover:bg-blue-700 focus:outline-none active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-500 disabled:hover:bg-blue-500"
+              >
+                {localize('com_auth_continue')}
+              </button>
+            </div>
+          </form>
+          <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
+            {localize('com_auth_already_have_account')}{' '}
+            <a href="/login" aria-label="Login" className="p-1 font-medium text-blue-500">
+              {localize('com_auth_login')}
+            </a>
+          </p>
+          {startupConfig.socialLoginEnabled && (
+            <>
+              {startupConfig.emailLoginEnabled && (
+                <>
+                  <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+                    <div className="absolute bg-white px-3 text-xs text-black dark:bg-gray-900 dark:text-white">
+                      Or
+                    </div>
+                  </div>
+                  <div className="mt-8" />
+                </>
+              )}
+              <div className="mt-2">
+                {socialLogins.map((provider) => providerComponents[provider] || null)}
+              </div>
+            </>
+          )}
+          <div className="mt-4 flex justify-center gap-4 align-middle">
+            {privacyPolicyRender}
+            {privacyPolicyRender && termsOfServiceRender && (
+              <div className="border-r-[1px] border-gray-300" />
+            )}
+            {termsOfServiceRender}
+          </div>
+        </div>
       </div>
-      <div className="flex justify-center gap-4 align-middle">
-        {privacyPolicyRender}
-        {privacyPolicyRender && termsOfServiceRender && (
-          <div className="border-r-[1px] border-gray-300" />
-        )}
-        {termsOfServiceRender}
+      <div className="relative flex w-full flex-col justify-center bg-blue-500 p-24 dark:bg-blue-600 md:w-1/2">
+        <Particles
+          id="tsparticles"
+          particlesLoaded={particlesLoaded}
+          options={options}
+          className="absolute inset-0"
+        />
+        <div className="z-10 text-left">
+          <div className="z-10 text-left">
+            <TypeAnimation
+              sequence={[
+                // Same substring at the start will only be typed once, initially
+                `Welcome to ${domainTitle}`,
+                1000,
+              ]}
+              speed={50}
+              repeat={Infinity}
+              cursor={true}
+              className="mb-4 text-5xl font-bold text-white"
+            />
+          </div>
+          <p className="mb-4 text-lg text-white">
+            Unleash the power of advanced language models like Anthropic, Mistral, GPT-3, and GPT-4
+            with Novliskys cutting-edge AI chat platform. Experience seamless, intelligent
+            conversations tailored to your needs.
+          </p>
+          <p className="mb-4 text-lg text-white">
+            With our pay-as-you-go pricing model, you can access this revolutionary technology
+            without breaking the bank. Sign up now and explore the future of AI-driven
+            communication.
+          </p>
+        </div>
       </div>
-      <p className="mt-8 text-center text-xs text-gray-500 dark:text-gray-400">
-        By signing up, you agree to our Terms of Service and Privacy Policy.
-      </p>
-    </div>
+    </section>
   );
 };
 

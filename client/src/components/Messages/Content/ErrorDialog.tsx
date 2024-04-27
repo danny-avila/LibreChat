@@ -92,21 +92,44 @@ export default function ErrorDialog({ open, onOpenChange }) {
               {localize('com_ui_payment_please_note')}
             </div>
             <div className="grid w-full grid-cols-2 gap-5 p-3">
-              {tokenOptionsToUse.map(({ tokens, label, price }) => (
-                <button
-                  key={tokens}
-                  onClick={() => handleSelect(tokens)}
-                  className={`flex h-[100px] flex-col items-center justify-between rounded p-3 text-white ${
-                    selectedTokens === tokens
-                      ? 'border-4 border-blue-500 bg-green-500'
-                      : 'border-4-green-500 border-4 bg-green-500 hover:bg-green-600 dark:hover:bg-green-600'
-                  }`}
-                >
-                  <div className="text-lg font-bold">{localize(label)}</div>
-                  <div>{localize('com_ui_payment_tokens')}</div>
-                  <div className="text-sm">{localize(price)}</div>
-                </button>
-              ))}
+              {tokenOptionsToUse.map(
+                (
+                  { tokens, label, price, originalPrice, discountedPrice, discountPercentage },
+                  index,
+                ) => (
+                  <button
+                    key={tokens}
+                    onClick={() => handleSelect(tokens)}
+                    className={`flex h-[120px] flex-col items-center justify-center space-y-1 rounded border-2 p-3 text-white ${
+                      selectedTokens === tokens
+                        ? 'border-blue-600 bg-blue-700 ring-2 ring-blue-400 ring-offset-2'
+                        : 'bg-blue-600 hover:bg-blue-700 focus:bg-blue-700 focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 active:bg-blue-800 dark:hover:bg-blue-700'
+                    }`}
+                  >
+                    <div className="text-lg font-bold leading-tight">{localize(label)}</div>
+                    <div className="leading-tight">{localize('com_ui_payment_tokens')}</div>
+                    <div className="flex flex-col items-center space-y-1">
+                      {index === 0 && originalPrice === discountedPrice ? (
+                        <span className="text-sm leading-none">{discountedPrice}</span>
+                      ) : (
+                        <>
+                          <div className="flex items-center">
+                            <span className="mr-2 text-sm leading-none line-through">
+                              {originalPrice}
+                            </span>
+                            <span className="text-sm leading-none">{discountedPrice}</span>
+                          </div>
+                          {discountPercentage && (
+                            <span className="text-xs font-bold leading-none text-white">
+                              {discountPercentage}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </button>
+                ),
+              )}
             </div>
 
             <div className="my-2 flex w-full items-center">
@@ -143,7 +166,7 @@ export default function ErrorDialog({ open, onOpenChange }) {
             <button
               onClick={handlePurchase}
               disabled={processingTokenAmount !== null}
-              className="mt-2 w-full rounded bg-green-500 p-2 text-white hover:bg-green-600 dark:hover:bg-green-600"
+              className="w-full rounded-md bg-blue-600 px-4 py-2 text-white transition duration-200 ease-in-out hover:bg-blue-700 focus:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 active:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-400 disabled:hover:bg-blue-400"
             >
               <span className="inline-flex items-center justify-center">
                 {processingTokenAmount !== null ? (
