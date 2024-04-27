@@ -211,6 +211,7 @@ tts:
   url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice-id}'
   apiKey: '${TTS_API_KEY}'
   model: 'eleven_monolingual_v1'
+  compatibility: 'elevenlabs'
 ```
 
 where the model is the model that you want to use for the synthesis (not the voice), you can find more information about the models in the [ElevenLabs's documentation](https://elevenlabs.io/docs/api-reference/get-models) and the voice-id is the ID of the voice that you want to use
@@ -231,4 +232,8 @@ if you want to add custom parameters, you can add them in the `librechat.yaml` f
 
 ### OpenAI compatible TTS services
 
-check the [OpenAI TTS](#openai-tts) section, just change the `url` and `model` variables to the ones that you want to use
+check the [OpenAI TTS](#openai-tts) section, just change the `url` variables to the ones that you want to use
+
+### ElevenLabs compatible TTS services
+
+check the [ElevenLabs](#elevenlabs) section, just change the `url` variables to the ones that you want to use

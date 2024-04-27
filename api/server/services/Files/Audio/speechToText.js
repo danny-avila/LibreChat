@@ -4,6 +4,14 @@ const { logger } = require('~/config');
 const getCustomConfig = require('~/server/services/Config/getCustomConfig');
 const { extractEnvVariable } = require('librechat-data-provider');
 
+/**
+ * Handle the response from the STT API
+ * @param {Object} response - The response from the STT API
+ *
+ * @returns {string} The text from the response data
+ *
+ * @throws Will throw an error if the response status is not 200 or the response data is missing
+ */
 async function handleResponse(response) {
   if (response.status !== 200) {
     throw new Error('Invalid response from the STT API');
@@ -16,6 +24,15 @@ async function handleResponse(response) {
   return response.data.text.trim();
 }
 
+/**
+ * Convert speech to text
+ * @param {Object} req - The request object
+ * @param {Object} res - The response object
+ *
+ * @returns {Object} The response object with the text from the STT API
+ *
+ * @throws Will throw an error if an error occurs while processing the audio
+ */
 async function speechToText(req, res) {
   const customConfig = await getCustomConfig();
   if (!customConfig) {

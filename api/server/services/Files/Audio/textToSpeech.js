@@ -37,7 +37,7 @@ async function textToSpeech(req, res) {
     delete data['backend'];
   }
 
-  if (url.includes('api.elevenlabs.io')) {
+  if (customConfig.tts.compatibility === 'elevenlabs') {
     delete headers['Authorization'];
     delete data['model'];
     delete data['voice'];

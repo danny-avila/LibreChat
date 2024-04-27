@@ -29,6 +29,9 @@ registration:
 #   url: ''
 #   apiKey: '${TTS_API_KEY}'
 #   model: ''
+#   backend: ''
+#   voice: ''
+#   compatibility: ''
 #   voice_settings:
 #     similarity_boost: ''
 #     stability: ''

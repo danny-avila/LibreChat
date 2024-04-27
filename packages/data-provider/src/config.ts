@@ -233,6 +233,7 @@ export const configSchema = z.object({
       model: z.string(),
       backend: z.string().optional(),
       voice: z.string().optional(),
+      compatibility: z.string().optional(),
       voice_settings: z
         .object({
           similarity_boost: z.number().optional(),
