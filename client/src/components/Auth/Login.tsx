@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import { GoogleIcon, FacebookIcon, OpenIDIcon, GithubIcon, DiscordIcon } from '~/components';
@@ -15,12 +15,22 @@ function Login() {
   const localize = useLocalize();
   const navigate = useNavigate();
 
+  const [customError, setCustomError] = useState<string | undefined>(undefined);
+
   useEffect(() => {
     if (isAuthenticated) {
       navigate('/c/new', { replace: true });
     }
   }, [isAuthenticated, navigate]);
 
+  useEffect(() => {
+    if (window?.location?.search?.includes('error')) {
+      const errorParam = new URLSearchParams(window.location.search).get('error');
+      if (errorParam) {
+        setCustomError(errorParam);
+      }
+    }
+  }, []);
   if (!startupConfig) {
     return null;
   }
@@ -134,6 +144,14 @@ function Login() {
             role="alert"
           >
             {localize(getLoginError(error))}
+          </div>
+        )}
+        {customError && (
+          <div
+            className="my-4 rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
+            role="alert"
+          >
+            {customError}
           </div>
         )}
         {startupConfig.emailLoginEnabled && <LoginForm onSubmit={login} />}
