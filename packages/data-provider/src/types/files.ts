@@ -75,7 +75,7 @@ export type SpeechToTextResponse = {
 };
 
 export type TextToSpeechResponse = {
-  audio: Blob;
+  audio: ArrayBuffer;
 };
 
 export type FileUploadBody = {

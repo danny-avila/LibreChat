@@ -8,57 +8,83 @@ function useTextToSpeechExternal() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [text, setText] = useState<string | null>(null);
+
+  const playAudio = (blobUrl: string) => {
+    const audio = new Audio(blobUrl);
+
+    audio
+      .play()
+      .then(() => {
+        setIsSpeaking(true);
+      })
+      .catch((error: Error) => {
+        showToast({ message: `Error playing audio: ${error.message}`, status: 'error' });
+      });
+
+    audio.onended = () => {
+      URL.revokeObjectURL(blobUrl);
+      setIsSpeaking(false);
+    };
+
+    setAudio(audio);
+    setBlobUrl(blobUrl);
+  };
+
+  const downloadAudio = (blobUrl: string) => {
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = 'audio.mp3';
+    a.click();
+    setDownloadFile(false);
+  };
 
   const { mutate: processAudio, isLoading: isProcessing } = useTextToSpeechMutation({
-    onSuccess: (data) => {
+    onSuccess: async (data: ArrayBuffer) => {
       try {
-        // Convert the ArrayBuffer to a Blob
         const audioBlob = new Blob([data], { type: 'audio/mpeg' });
         const blobUrl = URL.createObjectURL(audioBlob);
 
+        const cache = await caches.open('tts-responses');
+        const request = new Request(text!);
+        cache.put(request, new Response(audioBlob));
+
         if (downloadFile === true) {
-          const a = document.createElement('a');
-          a.href = blobUrl;
-          a.download = 'audio.mp3';
-          a.click();
-          setDownloadFile(false);
+          downloadAudio(blobUrl);
           return;
         }
 
-        const audio = new Audio(blobUrl);
-
-        audio
-          .play()
-          .then(() => {
-            setIsSpeaking(true);
-          })
-          .catch((error) => {
-            console.error('Error playing audio:', error);
-            showToast({ message: `Error playing audio: ${error.message}`, status: 'error' });
-          });
-
-        audio.onended = () => {
-          URL.revokeObjectURL(blobUrl);
-          setIsSpeaking(false);
-        };
-
-        setAudio(audio);
-        setBlobUrl(blobUrl);
+        playAudio(blobUrl);
       } catch (error) {
-        console.error('Error processing audio:', error);
-        showToast({ message: `Error processing audio: ${error.message}`, status: 'error' });
+        showToast({
+          message: `Error processing audio: ${(error as Error).message}`,
+          status: 'error',
+        });
       }
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       showToast({ message: `Error: ${error.message}`, status: 'error' });
     },
   });
 
-  const generateSpeechExternal = (text, download) => {
-    const formData = new FormData();
-    formData.append('input', text);
-    setDownloadFile(download);
-    processAudio(formData);
+  const generateSpeechExternal = async (text, download) => {
+    setText(text);
+    const cachedResponse = await caches.match(text);
+
+    if (cachedResponse) {
+      const audioBlob = await cachedResponse.blob();
+      const blobUrl = URL.createObjectURL(audioBlob);
+      if (download) {
+        downloadAudio(blobUrl);
+      } else {
+        playAudio(blobUrl);
+      }
+    } else {
+      const formData = new FormData();
+      formData.append('input', text);
+      setDownloadFile(download);
+      processAudio(formData);
+    }
   };
 
   const cancelSpeech = () => {
