@@ -35,16 +35,7 @@ const AppService = async (app) => {
   }
 
   /** @type {Record<string, FunctionTool} */
-  const availableTools = loadAndFormatTools({
-    directory: paths.structuredTools,
-    filter: new Set([
-      'ChatTool.js',
-      'CodeSherpa.js',
-      'CodeSherpaTools.js',
-      'E2BTools.js',
-      'extractionChain.js',
-    ]),
-  });
+  const availableTools = loadAndFormatTools({ directory: paths.structuredTools });
 
   const socialLogins = config?.registration?.socialLogins ?? defaultSocialLogins;
 
