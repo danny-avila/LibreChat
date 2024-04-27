@@ -57,46 +57,35 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 ??? tip "Fetch models"
     This python script can fetch and order the llm models for you. The output will be saved in models.txt, formated in a way that should make it easier for you to include in the yaml config.
 
-    Replace `<YOUR_API_KEY_HERE>` with your actual APIpie API key
-
     ```py title="fetch.py"
     import json
     import requests
 
     def fetch_and_order_models():
         # API endpoint
-        url = "https://apipie.ai/models?type=llm"
+        url = "https://apipie.ai/models"
 
         # headers as per request example
-        headers = {
-            'Accept': 'application/json',
-            'X-API-key': '<YOUR_API_KEY_HERE>'
-        }
+        headers = {"Accept": "application/json"}
+
+        # request parameters
+        params = {"type": "llm"}
 
         # make request
-        response = requests.request("GET", url, headers=headers)
+        response = requests.get(url, headers=headers, params=params)
 
         # parse JSON response
-        data = json.loads(response.text)
+        data = response.json()
 
         # extract an ordered list of unique model IDs
-        model_ids = sorted(set(model['id'] for model in data))
-
-        # add quotes around model_ids and newlines for each model
-        quoted_model_ids = ['  "' + str(model_id) + '",\n' for model_id in model_ids]
-
-        # construct the output string
-        output_str = 'models:\n  default: [\n' + ''.join(quoted_model_ids) + ']\n'
-
-        # remove last comma and newline
-        output_str = output_str.rstrip(',\n') + '\n'
+        model_ids = sorted(set([model["id"] for model in data]))
 
         # write result to a text file
-        with open('models.txt', 'w') as file:
-            file.write(output_str)
+        with open("models.txt", "w") as file:
+            json.dump(model_ids, file, indent=2)
 
     # execute the function
-    if __name__ == '__main__':
+    if __name__ == "__main__":
         fetch_and_order_models()
     ```
 
