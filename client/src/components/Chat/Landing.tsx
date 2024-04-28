@@ -4,9 +4,9 @@ import type { ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
+import { getEndpointField, getIconEndpoint } from '~/utils';
 import { icons } from './Menus/Endpoints/Icons';
 import { BirthdayIcon } from '~/components/svg';
-import { getEndpointField } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
@@ -29,7 +29,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   }
 
   const iconURL = conversation?.iconURL;
-  endpoint = endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint;
+  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');

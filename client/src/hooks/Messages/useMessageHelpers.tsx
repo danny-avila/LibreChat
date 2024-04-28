@@ -6,8 +6,8 @@ import type { TMessage, TPreset } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
+import { getEndpointField, getIconEndpoint } from '~/utils';
 import Icon from '~/components/Endpoints/Icon';
-import { getEndpointField } from '~/utils';
 
 export default function useMessageHelpers(props: TMessageProps) {
   const latestText = useRef<string | number>('');
@@ -76,7 +76,7 @@ export default function useMessageHelpers(props: TMessageProps) {
 
   const iconURL = messageSettings?.iconURL;
   let endpoint = messageSettings?.endpoint;
-  endpoint = endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint;
+  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
 

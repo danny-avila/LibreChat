@@ -7,10 +7,10 @@ import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { MinimalIcon, ConvoIconURL } from '~/components/Endpoints';
 import { useUpdateConversationMutation } from '~/data-provider';
 import { useConversations, useNavigateToConvo } from '~/hooks';
+import { getEndpointField, getIconEndpoint } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from './DeleteButton';
-import { getEndpointField } from '~/utils';
 import RenameButton from './RenameButton';
 import store from '~/store';
 
@@ -97,7 +97,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
 
   const iconURL = conversation.iconURL ?? '';
   let endpoint = conversation.endpoint;
-  endpoint = endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint;
+  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');

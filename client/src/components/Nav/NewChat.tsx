@@ -5,8 +5,8 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/comp
 import { useLocalize, useNewConvo, useLocalStorage } from '~/hooks';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
+import { getEndpointField, getIconEndpoint } from '~/utils';
 import { NewChatIcon } from '~/components/svg';
-import { getEndpointField } from '~/utils';
 
 export default function NewChat({
   toggleNav,
@@ -26,7 +26,7 @@ export default function NewChat({
   });
   let { endpoint = '' } = convo;
   const iconURL = convo.iconURL ?? '';
-  endpoint = endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint;
+  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');

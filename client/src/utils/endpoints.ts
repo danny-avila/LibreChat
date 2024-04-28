@@ -59,6 +59,7 @@ export const getAvailableEndpoints = (
   return availableEndpoints;
 };
 
+/** Get the specified field from the endpoint config */
 export function getEndpointField<K extends keyof TConfig>(
   endpointsConfig: TEndpointsConfig | undefined,
   endpoint: EModelEndpoint | string | null | undefined,
@@ -184,4 +185,20 @@ export function getDefaultModelSpec(modelSpecs?: TModelSpec[]) {
  */
 export function getModelSpecIconURL(modelSpec: TModelSpec) {
   return modelSpec.iconURL ?? modelSpec.preset.iconURL ?? modelSpec.preset.endpoint ?? '';
+}
+
+/** Gets the default frontend-facing endpoint, dependent on iconURL definition.
+ *
+ * If the iconURL is defined in the endpoint config, use it, otherwise use the endpoint
+ */
+export function getIconEndpoint({
+  endpointsConfig,
+  iconURL,
+  endpoint,
+}: {
+  endpointsConfig: TEndpointsConfig | undefined;
+  iconURL: string | undefined;
+  endpoint: string | null | undefined;
+}) {
+  return (endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint) ?? '';
 }
