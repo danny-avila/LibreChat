@@ -9,6 +9,9 @@ function loadDefaultInterface(config, configDefaults) {
   const { interface: defaults } = configDefaults;
   const hasModelSpecs = config?.modelSpecs?.list?.length > 0;
 
+  // warn about config.modelSpecs.prioritize if true and presets are enabled, that default presets will conflict with prioritizing model specs.
+  // warn about config.modelSpecs.enforce if true and if any of these, endpointsMenu, modelSelect, presets, or parameters are enabled, that enforcing model specs can conflict with these options.
+
   return {
     endpointsMenu: interface?.endpointsMenu ?? (hasModelSpecs ? false : defaults.endpointsMenu),
     modelSelect: interface?.modelSelect ?? (hasModelSpecs ? false : defaults.modelSelect),
