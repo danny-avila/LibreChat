@@ -48,7 +48,7 @@ export default function ChatRoute() {
       !modelsQuery.data?.initial &&
       !hasSetConversation.current
     ) {
-      const spec = getDefaultModelSpec(startupConfig.modelSpecs);
+      const spec = getDefaultModelSpec(startupConfig.modelSpecs?.list);
 
       newConversation({
         modelsData: modelsQuery.data,
@@ -88,7 +88,7 @@ export default function ChatRoute() {
       conversationId === 'new' &&
       assistants
     ) {
-      const spec = getDefaultModelSpec(startupConfig.modelSpecs);
+      const spec = getDefaultModelSpec(startupConfig.modelSpecs?.list);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,

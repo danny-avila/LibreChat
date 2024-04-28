@@ -3,8 +3,8 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
+import { specsConfigSchema } from './models';
 import { FileSources } from './types/files';
-import { tModelSpecSchema } from './models';
 import { TModelsConfig } from './types';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord'];
@@ -198,12 +198,6 @@ export enum EImageOutputType {
   WEBP = 'webp',
   JPEG = 'jpeg',
 }
-
-export const specsConfigSchema = z.object({
-  enforce: z.boolean().optional().default(false),
-  prioritize: z.boolean().optional().default(true),
-  list: z.array(tModelSpecSchema).optional(),
-});
 
 export const configSchema = z.object({
   version: z.string(),

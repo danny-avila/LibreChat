@@ -17,7 +17,7 @@ export default function ModelSpecsMenu() {
 
   const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
-  const modelSpecs = useMemo(() => startupConfig?.modelSpecs, [startupConfig]);
+  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list, [startupConfig]);
   const modularChat = useRecoilValue(store.modularChat);
   const getDefaultConversation = useDefaultConvo();
 

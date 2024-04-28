@@ -14,6 +14,7 @@ router.get('/', async function (req, res) {
   };
 
   try {
+    /** @type {TStartupConfig} */
     const payload = {
       appTitle: process.env.APP_TITLE || 'LibreChat',
       socialLogins: req.app.locals.socialLogins ?? defaultSocialLogins,
@@ -45,7 +46,7 @@ router.get('/', async function (req, res) {
         process.env.SHOW_BIRTHDAY_ICON === '',
       helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
       interface: req.app.locals.interface,
-      modelSpecs: req.app.locals.modelSpecs?.list,
+      modelSpecs: req.app.locals.modelSpecs,
     };
 
     if (typeof process.env.CUSTOM_FOOTER === 'string') {

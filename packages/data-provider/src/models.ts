@@ -18,7 +18,7 @@ export type TModelSpec = {
   showIconInMenu?: boolean;
   showIconInHeader?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
-  authType: AuthType;
+  authType?: AuthType;
 };
 
 export const tModelSpecSchema = z.object({
@@ -33,3 +33,11 @@ export const tModelSpecSchema = z.object({
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
 });
+
+export const specsConfigSchema = z.object({
+  enforce: z.boolean().optional().default(false),
+  prioritize: z.boolean().optional().default(true),
+  list: z.array(tModelSpecSchema).optional(),
+});
+
+export type TSpecsConfig = z.infer<typeof specsConfigSchema>;

@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import type { TResPlugin, TMessage, TConversation, EModelEndpoint, ImageDetail } from './schemas';
-import type { TModelSpec } from './models';
+import type { TSpecsConfig } from './models';
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
 export type TOpenAIFunctionCall = OpenAI.Chat.ChatCompletionCreateParams.FunctionCallOption;
@@ -226,7 +226,7 @@ export type TStartupConfig = {
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   customFooter?: string;
-  modelSpecs?: TModelSpec[];
+  modelSpecs?: TSpecsConfig;
 };
 
 export type TRefreshTokenResponse = {
