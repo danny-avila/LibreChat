@@ -1,6 +1,11 @@
 import { useCallback, useRef } from 'react';
-import { EModelEndpoint, FileSources, defaultOrderQuery } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetModelsQuery } from 'librechat-data-provider/react-query';
+import {
+  EModelEndpoint,
+  FileSources,
+  defaultOrderQuery,
+  LocalStorageKeys,
+} from 'librechat-data-provider';
 import {
   useSetRecoilState,
   useResetRecoilState,
@@ -9,10 +14,10 @@ import {
   useRecoilValue,
 } from 'recoil';
 import type {
-  TConversation,
-  TSubmission,
   TPreset,
+  TSubmission,
   TModelsConfig,
+  TConversation,
   TEndpointsConfig,
 } from 'librechat-data-provider';
 import {
@@ -94,7 +99,8 @@ const useNewConvo = (index = 0) => {
 
           if (!conversation.assistant_id && isAssistantEndpoint) {
             conversation.assistant_id =
-              localStorage.getItem(`assistant_id__${index}`) ?? assistants[0]?.id;
+              localStorage.getItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}`) ??
+              assistants[0]?.id;
           }
 
           if (

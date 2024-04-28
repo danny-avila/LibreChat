@@ -6,6 +6,7 @@ import {
   useRecoilValue,
   useSetRecoilState,
 } from 'recoil';
+import { LocalStorageKeys } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import { useEffect } from 'react';
@@ -18,7 +19,7 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
       onSet(async (newValue: TConversation | null) => {
         const index = Number(node.key.split('__')[1]);
         if (newValue?.assistant_id) {
-          localStorage.setItem(`assistant_id__${index}`, newValue.assistant_id);
+          localStorage.setItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}`, newValue.assistant_id);
         }
       });
     },

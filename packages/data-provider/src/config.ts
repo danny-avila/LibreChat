@@ -642,6 +642,8 @@ export enum LocalStorageKeys {
   LAST_TOOLS = 'lastSelectedTools',
   /** Key for temporary files to delete */
   FILES_TO_DELETE = 'filesToDelete',
+  /** Prefix key for the last selected assistant ID by index */
+  ASST_ID_PREFIX = 'assistant_id__',
 }
 
 /**
