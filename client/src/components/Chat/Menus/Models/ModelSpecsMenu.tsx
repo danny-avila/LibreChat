@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Content, Portal, Root } from '@radix-ui/react-popover';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { Content, Portal, Root } from '@radix-ui/react-popover';
+import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TModelSpec, TConversation, TEndpointsConfig } from 'librechat-data-provider';
 import { getConvoSwitchLogic, getModelSpecIconURL } from '~/utils';
 import { useDefaultConvo, useNewConvo } from '~/hooks';
@@ -11,13 +11,11 @@ import MenuButton from './MenuButton';
 import ModelSpecs from './ModelSpecs';
 import store from '~/store';
 
-export default function ModelSpecsMenu() {
+export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[] }) {
   const { conversation } = useChatContext();
   const { newConversation } = useNewConvo();
 
-  const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
-  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list, [startupConfig]);
   const modularChat = useRecoilValue(store.modularChat);
   const getDefaultConversation = useDefaultConvo();
 

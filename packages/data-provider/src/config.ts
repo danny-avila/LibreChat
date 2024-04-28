@@ -28,6 +28,39 @@ export enum SettingsViews {
 
 export const fileSourceSchema = z.nativeEnum(FileSources);
 
+// Helper type to extract the shape of the Zod object schema
+type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
+
+// Helper type to determine the default value or undefined based on whether the field has a default
+type DefaultValue<T> = T extends z.ZodDefault<z.ZodTypeAny>
+  ? ReturnType<T['_def']['defaultValue']>
+  : undefined;
+
+// Extract default values or undefined from the schema shape
+type ExtractDefaults<T> = {
+  [P in keyof T]: DefaultValue<T[P]>;
+};
+
+export type SchemaDefaults<T> = ExtractDefaults<SchemaShape<T>>;
+
+export type TConfigDefaults = SchemaDefaults<typeof configSchema>;
+
+export function getSchemaDefaults<Schema extends z.AnyZodObject>(
+  schema: Schema,
+): ExtractDefaults<SchemaShape<Schema>> {
+  const shape = schema.shape;
+  const entries = Object.entries(shape).map(([key, value]) => {
+    if (value instanceof z.ZodDefault) {
+      // Extract default value if it exists
+      return [key, value._def.defaultValue()];
+    }
+    return [key, undefined];
+  });
+
+  // Create the object with the right types
+  return Object.fromEntries(entries) as ExtractDefaults<SchemaShape<Schema>>;
+}
+
 export const modelConfigSchema = z
   .object({
     deploymentName: z.string().optional(),
@@ -201,9 +234,9 @@ export enum EImageOutputType {
 
 export const configSchema = z.object({
   version: z.string(),
-  cache: z.boolean().optional().default(true),
+  cache: z.boolean().default(true),
   secureImageLinks: z.boolean().optional(),
-  imageOutputType: z.nativeEnum(EImageOutputType).optional().default(EImageOutputType.PNG),
+  imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   interface: z
     .object({
       privacyPolicy: z
@@ -218,15 +251,26 @@ export const configSchema = z.object({
           openNewTab: z.boolean().optional(),
         })
         .optional(),
+      endpointsMenu: z.boolean().optional(),
+      modelSelect: z.boolean().optional(),
+      parameters: z.boolean().optional(),
+      sidePanel: z.boolean().optional(),
+      presets: z.boolean().optional(),
     })
-    .optional(),
-  fileStrategy: fileSourceSchema.optional(),
+    .default({
+      endpointsMenu: true,
+      modelSelect: true,
+      parameters: true,
+      sidePanel: true,
+      presets: true,
+    }),
+  fileStrategy: fileSourceSchema.default(FileSources.local),
   registration: z
     .object({
       socialLogins: z.array(z.string()).optional(),
       allowedDomains: z.array(z.string()).optional(),
     })
-    .optional(),
+    .default({ socialLogins: defaultSocialLogins }),
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
@@ -242,6 +286,8 @@ export const configSchema = z.object({
     })
     .optional(),
 });
+
+export const getConfigDefaults = () => getSchemaDefaults(configSchema);
 
 export type TCustomConfig = z.infer<typeof configSchema>;
 
@@ -607,29 +653,17 @@ export enum SettingsTabValues {
   ACCOUNT = 'account',
 }
 
-/**
- * Enum for app-wide constants
- */
+/** Enum for app-wide constants */
 export enum Constants {
-  /**
-   * Key for the app's version.
-   */
+  /** Key for the app's version. */
   VERSION = 'v0.7.1',
-  /**
-   * Key for the Custom Config's version (librechat.yaml).
-   */
-  CONFIG_VERSION = '1.0.7',
-  /**
-   * Standard value for the first message's `parentMessageId` value, to indicate no parent exists.
-   */
+  /** Key for the Custom Config's version (librechat.yaml). */
+  CONFIG_VERSION = '1.0.8',
+  /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
-  /**
-   * Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing.
-   */
+  /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
   ENCODED_DOMAIN_LENGTH = 10,
-  /**
-   * Identifier for using current_model in multi-model requests.
-   */
+  /** Identifier for using current_model in multi-model requests. */
   CURRENT_MODEL = 'current_model',
 }
 

@@ -204,6 +204,11 @@ export type TInterfaceConfig = {
     externalUrl?: string;
     openNewTab?: boolean;
   };
+  endpointsMenu: boolean;
+  modelSelect: boolean;
+  parameters: boolean;
+  sidePanel: boolean;
+  presets: boolean;
 };
 
 export type TStartupConfig = {
