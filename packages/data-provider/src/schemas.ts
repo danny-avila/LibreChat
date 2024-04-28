@@ -611,6 +611,37 @@ export const assistantSchema = tConversationSchema
     greeting: true,
     spec: true,
   })
+  .transform((obj) => ({
+    ...obj,
+    model: obj.model ?? openAISettings.model.default,
+    assistant_id: obj.assistant_id ?? undefined,
+    instructions: obj.instructions ?? undefined,
+    promptPrefix: obj.promptPrefix ?? null,
+    iconURL: obj.iconURL ?? undefined,
+    greeting: obj.greeting ?? undefined,
+    spec: obj.spec ?? undefined,
+  }))
+  .catch(() => ({
+    model: openAISettings.model.default,
+    assistant_id: undefined,
+    instructions: undefined,
+    promptPrefix: null,
+    iconURL: undefined,
+    greeting: undefined,
+    spec: undefined,
+  }));
+
+export const compactAssistantSchema = tConversationSchema
+  .pick({
+    model: true,
+    assistant_id: true,
+    instructions: true,
+    promptPrefix: true,
+    iconURL: true,
+    greeting: true,
+    spec: true,
+  })
+  // will change after adding temperature
   .transform(removeNullishValues)
   .catch(() => ({}));
 
