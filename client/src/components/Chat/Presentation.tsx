@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { FileSources } from 'librechat-data-provider';
+import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDragHelpers, useSetFilesToDelete } from '~/hooks';
 import DragDropOverlay from './Input/Files/DragDropOverlay';
@@ -31,7 +31,7 @@ export default function Presentation({
   });
 
   useEffect(() => {
-    const filesToDelete = localStorage.getItem('filesToDelete');
+    const filesToDelete = localStorage.getItem(LocalStorageKeys.FILES_TO_DELETE);
     const map = JSON.parse(filesToDelete ?? '{}') as Record<string, ExtendedFile>;
     const files = Object.values(map)
       .filter((file) => file.filepath && file.source && !file.embedded && file.temp_file_id)

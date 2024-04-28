@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
+import { LocalStorageKeys } from 'librechat-data-provider';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { data as modelSpecs } from '~/components/Chat/Menus/Models/fakeData';
 import useConfigOverride from './useConfigOverride';
@@ -13,7 +14,7 @@ export default function useAppStartup(startupConfig?: TStartupConfig) {
   useEffect(() => {
     if (startupConfig?.appTitle) {
       document.title = startupConfig.appTitle;
-      localStorage.setItem('appTitle', startupConfig.appTitle);
+      localStorage.setItem(LocalStorageKeys.APP_TITLE, startupConfig.appTitle);
     }
   }, [startupConfig]);
 

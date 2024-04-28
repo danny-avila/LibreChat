@@ -634,6 +634,8 @@ export enum Constants {
 }
 
 export enum LocalStorageKeys {
+  /** Key for the admin defined App Title */
+  APP_TITLE = 'appTitle',
   /** Key for the last conversation setup. */
   LAST_CONVO_SETUP = 'lastConversationSetup',
   /** Key for the last selected model. */
@@ -644,6 +646,8 @@ export enum LocalStorageKeys {
   FILES_TO_DELETE = 'filesToDelete',
   /** Prefix key for the last selected assistant ID by index */
   ASST_ID_PREFIX = 'assistant_id__',
+  /** Prefix key for the last selected spec name by index */
+  SPEC_PREFIX = 'spec__',
 }
 
 /**
