@@ -456,6 +456,7 @@ class BaseClient {
       sender: this.sender,
       text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
+      iconURL: this.options.iconURL,
       ...(this.metadata ?? {}),
     };
 

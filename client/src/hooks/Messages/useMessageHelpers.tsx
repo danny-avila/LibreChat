@@ -1,8 +1,8 @@
 import copy from 'copy-to-clipboard';
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useMemo, useCallback } from 'react';
 import { EModelEndpoint, ContentTypes } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TPreset } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
@@ -66,31 +66,42 @@ export default function useMessageHelpers(props: TMessageProps) {
   const assistantName = assistant ? (assistant.name as string | undefined) : '';
   const assistantAvatar = assistant ? (assistant.metadata?.avatar as string | undefined) : '';
 
-  const iconURL = message?.iconURL ?? conversation?.iconURL;
-  let endpoint = message?.endpoint ?? conversation?.endpoint;
+  const messageSettings = useMemo(
+    () => ({
+      ...(conversation ?? {}),
+      ...(message as TMessage),
+    }),
+    [conversation, message],
+  );
+
+  const iconURL = messageSettings?.iconURL;
+  let endpoint = messageSettings?.endpoint;
   endpoint = endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint;
 
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
 
   let icon: React.ReactNode | null = null;
   if (!message?.isCreatedByUser && iconURL && iconURL.includes('http')) {
-    icon = ConvoIconURL({
-      preset: conversation,
-      context: 'message',
-      assistantAvatar,
-      endpointIconURL,
-      assistantName,
-    });
+    icon = (
+      <ConvoIconURL
+        preset={messageSettings as typeof messageSettings & TPreset}
+        context="message"
+        assistantAvatar={assistantAvatar}
+        endpointIconURL={endpointIconURL}
+        assistantName={assistantName}
+      />
+    );
   } else {
-    icon = Icon({
-      ...conversation,
-      ...(message as TMessage),
-      endpoint,
-      iconURL: !assistant ? endpointIconURL : assistantAvatar,
-      model: message?.model ?? conversation?.model,
-      assistantName,
-      size: 28.8,
-    });
+    icon = (
+      <Icon
+        {...messageSettings}
+        endpoint={endpoint}
+        iconURL={!assistant ? endpointIconURL : assistantAvatar}
+        model={message?.model ?? conversation?.model}
+        assistantName={assistantName}
+        size={28.8}
+      />
+    );
   }
 
   const regenerateMessage = () => {
