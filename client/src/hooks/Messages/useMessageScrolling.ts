@@ -7,6 +7,7 @@ import store from '~/store';
 
 export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const autoScroll = useRecoilValue(store.autoScroll);
+  console.log('--- autoScroll', autoScroll);
 
   const timeoutIdRef = useRef<NodeJS.Timeout>();
   const scrollableRef = useRef<HTMLDivElement | null>(null);
@@ -60,9 +61,9 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       return;
     }
 
-    if (isSubmitting && scrollToBottom && !abortScroll) {
-      scrollToBottom();
-    }
+    // if (isSubmitting && scrollToBottom && !abortScroll) {
+    scrollToBottom();
+    // }
 
     return () => {
       if (abortScroll) {

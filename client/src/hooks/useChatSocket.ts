@@ -37,7 +37,6 @@ export const useChatSocket = (socket?: Socket) => {
   const convoType = useRecoilValue(store.convoType);
 
   const { getMessages, setMessages, setLatestMessage } = useChatHelpers(index, conversationId);
-  console.log('isSubmitting ----', _);
 
   useEffect(() => {
     socket?.on('new message', (data) => {
