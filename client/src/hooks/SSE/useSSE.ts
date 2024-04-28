@@ -63,6 +63,7 @@ type TSyncData = {
 export default function useSSE(submission: TSubmission | null, index = 0, socket?: Socket) {
   const setStorage = useSetStorage();
   const queryClient = useQueryClient();
+  const convoType = useRecoilValue(store.convoType);
   const genTitle = useGenTitleMutation();
   const [user, setUser] = useRecoilState(store.user);
 
@@ -159,7 +160,11 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
       }
 
       // refresh title
-      if (isNewConvo && requestMessage?.parentMessageId === Constants.NO_PARENT) {
+      if (
+        isNewConvo &&
+        requestMessage?.parentMessageId === Constants.NO_PARENT &&
+        convoType !== 'r'
+      ) {
         setTimeout(() => {
           genTitle.mutate({ conversationId: convoUpdate.conversationId as string });
         }, 2500);
@@ -306,10 +311,8 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
         sendMessage(responseMessage, true);
       } else if (responseMessage) {
         console.log('=== final response ===', requestMessage, responseMessage);
-        console.log('--- messages', requestMessage, responseMessage);
 
         setMessages([...messages, requestMessage, responseMessage]);
-        console.log('--- requestmessage', requestMessage);
         sendMessage([requestMessage, responseMessage], true);
       }
 
@@ -546,7 +549,8 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
     const { isRegenerate } = submission;
 
     if (!isRegenerate) {
-      sendMessage({ ...message }, true);
+      console.log('---- !isRegenerate ---', message);
+      sendMessage({ ...message, user }, true);
     }
 
     events.onmessage = (e: MessageEvent) => {

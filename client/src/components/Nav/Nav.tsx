@@ -176,8 +176,8 @@ const Nav = ({ navVisible, setNavVisible }) => {
                         </>
                       ) : (
                         <>
-                          {isPremiumUser(user as TUser) && <NewRoom toggleNav={itemToggleNav} />}
-
+                          {/* {isPremiumUser(user as TUser) && <NewRoom toggleNav={itemToggleNav} />} */}
+                          <NewRoom toggleNav={itemToggleNav} />
                           <Rooms toggleNav={itemToggleNav} moveToTop={moveToTop} />
                         </>
                       )}

@@ -20,8 +20,6 @@ export const useChatCall = (socket?: Socket) => {
         return null;
       }
 
-      console.log(message);
-
       if (!bot) {
         await request.post(`/api/rooms/${conversationId}`, message);
       }

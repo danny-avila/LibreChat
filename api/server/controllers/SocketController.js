@@ -26,6 +26,7 @@ const setupWebSocket = (server) => {
 
     socket.on('new message', (data) => sendMessage(socket, data.message, data.roomId, data.bot));
     socket.on('udpate message', (data) => updateMessage(socket, data.message, data.roomId));
+    socket.on('new user', (data) => joinRoom(socket, data.user, data.roomId));
 
     socket.on('move room', (data) => moveRoom(socket.id, data.roomId));
   });
@@ -67,35 +68,26 @@ const sendMessage = async (socket, msg, roomId, isBot = false) => {
       message = await getMessageById(message.messageId);
     }
 
-    let messages;
+    let aiMessages = [];
     if (Array.isArray(message)) {
-      messages[0] = await getMessageById(message[0].messageId);
-      messages[1] = await getMessageById(message[1].messageId);
+      const botMessage = await getMessageById(message[1].messageId);
+      aiMessages[0] = {
+        ...(await getMessageById(botMessage.parentMessageId)),
+        fakeMessageId: message[0].messageId,
+      };
+      aiMessages[1] = botMessage;
     }
 
     if (message) {
       clients
         .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
         .forEach((client) => {
-          if (messages) {
-            console.log('--- array message ---', message);
-            client.socket.emit('new message', {
+          if (aiMessages.length !== 0) {
+            console.log('--- array message ---', aiMessages);
+            client.socket.emit('ai response message', {
               roomId,
-              message: message[0],
-              replace: true,
+              messages: aiMessages,
             });
-            client.socket.emit('new message', {
-              roomId,
-              message: message[1],
-              replace: false,
-            });
-            // message.forEach((m, i) => {
-            //   client.socket.emit('new message', {
-            //     roomId,
-            //     message: m,
-            //     replace: i === 0 ? true : false,
-            //   });
-            // });
           } else {
             client.socket.emit('new message', {
               roomId,
@@ -105,6 +97,7 @@ const sendMessage = async (socket, msg, roomId, isBot = false) => {
         });
     }
   } catch (error) {
+    console.error(error);
     throw new Error('[sendMessage] Error in Send Message');
   }
 };
@@ -164,6 +157,23 @@ const moveRoom = (socketId, roomId) => {
     console.log(`=== User moved the room to ${clients[clientIndex].roomId} ===`);
   } catch (error) {
     throw new Error(`[moveRoom] Error in moverRoom ${error}`);
+  }
+};
+
+/**
+ * New User Joining
+ * @param {*} socketId
+ * @param {*} roomId
+ */
+const joinRoom = (socket, user, roomId) => {
+  try {
+    clients
+      .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
+      .forEach((client) => {
+        client.socket.emit('new user', { user });
+      });
+  } catch (error) {
+    throw new Error(`[joinRoom] Error in join room ${error}`);
   }
 };
 

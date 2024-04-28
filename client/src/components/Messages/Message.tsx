@@ -51,7 +51,6 @@ export default function Message(props: TMessageProps) {
   });
 
   const autoScroll = useRecoilValue(store.autoScroll);
-
   useEffect(() => {
     if (isSubmitting && scrollToBottom && !abortScroll) {
       scrollToBottom();

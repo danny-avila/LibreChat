@@ -27,10 +27,6 @@ export default function MessagesView({
 
   const { conversationId } = conversation ?? {};
 
-  // useEffect(() => {
-  //   handleSmoothToRef();
-  // }, []);
-
   return (
     <div className="flex-1 overflow-hidden overflow-y-auto">
       <div className="dark:gpt-dark-gray relative h-full">
