@@ -21,6 +21,9 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
         if (newValue?.assistant_id) {
           localStorage.setItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}`, newValue.assistant_id);
         }
+        if (newValue?.spec) {
+          localStorage.setItem(LocalStorageKeys.LAST_SPEC, newValue.spec);
+        }
       });
     },
   ] as const,

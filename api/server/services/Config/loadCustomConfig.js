@@ -84,6 +84,10 @@ Please specify a correct \`imageOutputType\` value (case-sensitive).
     await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
   }
 
+  if (result.data.modelSpecs) {
+    customConfig.modelSpecs = result.data.modelSpecs;
+  }
+
   return customConfig;
 }
 

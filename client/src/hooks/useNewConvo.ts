@@ -1,17 +1,21 @@
 import { useCallback, useRef } from 'react';
-import { useGetEndpointsQuery, useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
-  EModelEndpoint,
+  useGetModelsQuery,
+  useGetStartupConfig,
+  useGetEndpointsQuery,
+} from 'librechat-data-provider/react-query';
+import {
   FileSources,
-  defaultOrderQuery,
+  EModelEndpoint,
   LocalStorageKeys,
+  defaultOrderQuery,
 } from 'librechat-data-provider';
 import {
-  useSetRecoilState,
-  useResetRecoilState,
-  useRecoilCallback,
   useRecoilState,
   useRecoilValue,
+  useSetRecoilState,
+  useRecoilCallback,
+  useResetRecoilState,
 } from 'recoil';
 import type {
   TPreset,
@@ -21,9 +25,11 @@ import type {
   TEndpointsConfig,
 } from 'librechat-data-provider';
 import {
+  getEndpointField,
   buildDefaultConvo,
   getDefaultEndpoint,
-  getEndpointField,
+  getDefaultModelSpec,
+  getModelSpecIconURL,
   updateLastSelectedModel,
 } from '~/utils';
 import { useDeleteFilesMutation, useListAssistantsQuery } from '~/data-provider';
@@ -35,6 +41,7 @@ import store from '~/store';
 const useNewConvo = (index = 0) => {
   const setStorage = useSetStorage();
   const navigate = useOriginNavigate();
+  const { data: startupConfig } = useGetStartupConfig();
   const defaultPreset = useRecoilValue(store.defaultPreset);
   const { setConversation } = store.useCreateConversationAtom(index);
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
@@ -108,9 +115,7 @@ const useNewConvo = (index = 0) => {
             isAssistantEndpoint &&
             conversation.conversationId === 'new'
           ) {
-            const assistant = assistants.find(
-              (assistant) => assistant.id === conversation.assistant_id,
-            );
+            const assistant = assistants.find((asst) => asst.id === conversation.assistant_id);
             conversation.model = assistant?.model;
             updateLastSelectedModel({
               endpoint: EModelEndpoint.assistants,
@@ -139,7 +144,7 @@ const useNewConvo = (index = 0) => {
         }
 
         if (conversation.conversationId === 'new' && !modelsData) {
-          const appTitle = localStorage.getItem('appTitle');
+          const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE);
           if (appTitle) {
             document.title = appTitle;
           }
@@ -160,7 +165,7 @@ const useNewConvo = (index = 0) => {
   const newConversation = useCallback(
     ({
       template = {},
-      preset,
+      preset: _preset,
       modelsData,
       buildDefault = true,
       keepLatestMessage = false,
@@ -180,6 +185,16 @@ const useNewConvo = (index = 0) => {
         updatedAt: '',
       };
 
+      let preset = _preset;
+      const defaultModelSpec = getDefaultModelSpec(startupConfig?.modelSpecs?.list);
+      if (!preset && startupConfig && startupConfig.modelSpecs?.prioritize && defaultModelSpec) {
+        preset = {
+          ...defaultModelSpec.preset,
+          iconURL: getModelSpecIconURL(defaultModelSpec),
+          spec: defaultModelSpec.name,
+        } as TConversation;
+      }
+
       if (conversation.conversationId === 'new' && !modelsData) {
         const filesToDelete = Array.from(files.values())
           .filter((file) => file.filepath && file.source && !file.embedded && file.temp_file_id)
@@ -191,7 +206,7 @@ const useNewConvo = (index = 0) => {
           }));
 
         setFiles(new Map());
-        localStorage.setItem('filesToDelete', JSON.stringify({}));
+        localStorage.setItem(LocalStorageKeys.FILES_TO_DELETE, JSON.stringify({}));
 
         if (filesToDelete.length > 0) {
           mutateAsync({ files: filesToDelete });
@@ -200,7 +215,7 @@ const useNewConvo = (index = 0) => {
 
       switchToConversation(conversation, preset, modelsData, buildDefault, keepLatestMessage);
     },
-    [switchToConversation, files, mutateAsync, setFiles],
+    [switchToConversation, files, mutateAsync, setFiles, startupConfig],
   );
 
   return {

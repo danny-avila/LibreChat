@@ -174,8 +174,8 @@ export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTe
  */
 export function getDefaultModelSpec(modelSpecs?: TModelSpec[]) {
   const defaultSpec = modelSpecs?.find((spec) => spec.default);
-  const lastConvo = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP) || '{}');
-  const lastSelectedSpec = modelSpecs?.find((spec) => spec.name === lastConvo.spec);
+  const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
+  const lastSelectedSpec = modelSpecs?.find((spec) => spec.name === lastSelectedSpecName);
   return defaultSpec || lastSelectedSpec || modelSpecs?.[0];
 }
 
