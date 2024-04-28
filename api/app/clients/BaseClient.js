@@ -536,7 +536,6 @@ class BaseClient {
     await saveMessage({
       ...message,
       endpoint: this.options.endpoint,
-      iconURL: message.isCreatedByUser ? undefined : this.options.iconURL,
       unfinished: false,
       user,
     });
