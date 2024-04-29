@@ -98,6 +98,32 @@ export const useUpdateConversationMutation = (
   );
 };
 
+export const useArchiveConversationMutation = (
+  id: string,
+): UseMutationResult<
+  t.TArchiveConversationResponse,
+  unknown,
+  t.TArchiveConversationRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TArchiveConversationRequest) => dataService.updateConversation(payload),
+    {
+      onSuccess: (updatedConvo) => {
+        queryClient.setQueryData([QueryKeys.conversation, id], null);
+        queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+          if (!convoData) {
+            return convoData;
+          }
+          const update = deleteConversation(convoData, id as string);
+          return update;
+        });
+      },
+    },
+  );
+};
+
 export const useDeleteConversationMutation = (
   options?: DeleteConversationOptions,
 ): UseMutationResult<

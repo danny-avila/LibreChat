@@ -125,6 +125,13 @@ export type TDeleteConversationResponse = {
   };
 };
 
+export type TArchiveConversationRequest = {
+  conversationId: string;
+  is_archived: boolean;
+};
+
+export type TArchiveConversationResponse = TConversation;
+
 export type TSearchResults = {
   conversations: TConversation[];
   messages: TMessage[];
