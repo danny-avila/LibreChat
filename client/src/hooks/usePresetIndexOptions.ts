@@ -7,7 +7,7 @@ import store from '~/store';
 
 type TUsePresetOptions = (preset?: TPreset | boolean | null) => TSetOptionsPayload | boolean;
 
-const usePresetOptions: TUsePresetOptions = (_preset) => {
+const usePresetIndexOptions: TUsePresetOptions = (_preset) => {
   const setShowPluginStoreDialog = useSetRecoilState(store.showPluginStoreDialog);
   const availableTools = useRecoilValue(store.availableTools);
   const { preset, setPreset } = useChatContext();
@@ -163,4 +163,4 @@ const usePresetOptions: TUsePresetOptions = (_preset) => {
   };
 };
 
-export default usePresetOptions;
+export default usePresetIndexOptions;
