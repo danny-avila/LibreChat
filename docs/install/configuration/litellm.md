@@ -19,6 +19,16 @@ The override file contains sections for the below LiteLLM features
 Minimum working `docker-compose.override.yml` Example:
 
 ```yaml
+
+# USE LIBRECHAT CONFIG FILE
+# NOTE: It is critical to uncomment this, otherwise LibreChat will not register LiteLLM
+  api:
+    volumes:
+    - type: bind
+      source: ./librechat.yaml
+      target: /app/librechat.yaml
+
+
 litellm:
     image: ghcr.io/berriai/litellm:main-latest
     volumes:
