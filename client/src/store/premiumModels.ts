@@ -1,28 +1,26 @@
 import { atom } from 'recoil';
 
-// const fitlerAssistantModels = (str: string) => {
-//   return /gpt-4|gpt-3\\.5/i.test(str) && !/vision|instruct/i.test(str);
-// };
-
-// const openAIModels = defaultModels[EModelEndpoint.openAI];
-
 const premiumModelsConfig = atom<string[]>({
   key: 'premiumModels',
   default: [
     // OpenAI Premium Models
+    'gpt-3.5-turbo',
+    'gpt-3.5-turbo-0125',
+    'gpt-3.5-turbo-1106',
+    'gpt-3.5-turbo-instruct',
     'gpt-4',
-    'gpt-4-32k',
     'gpt-4-vision-preview',
     'gpt-4-0125-preview',
     'gpt-4-turbo-preview',
     'gpt-4-1106-preview',
     // Anthropic Premium Models
+    'claude-2.1',
+    'claude-2,claude-instant-1',
+    'claude-1.2,claude-1',
+    'claude-1-100k',
     'claude-3-opus-20240229',
     'claude-3-sonnet-20240229',
     'claude-instant-1-100k',
-    'claude-1.2',
-    'claude-1',
-    'claude-1-100k',
     // Gemini Premium Models
     'gemini-pro',
     'gemini-pro-vision',
@@ -34,6 +32,8 @@ const premiumModelsConfig = atom<string[]>({
     'text-bison-32k',
     'text-unicorn',
     'code-gecko',
+    'code-bison',
+    'code-bison-32k',
     // SdImage Premium Models
     'AUTOMATIC1111',
     'Stable Diffusion XL',
