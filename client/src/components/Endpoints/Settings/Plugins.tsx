@@ -106,10 +106,7 @@ export default function Settings({
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
               {localize('com_endpoint_custom_name')}{' '}
-              <small className="opacity-40">
-                ({localize('com_endpoint_default_empty')} |{' '}
-                {localize('com_endpoint_disabled_with_tools')})
-              </small>
+              <small className="opacity-40">{localize('com_endpoint_default_empty')}</small>
             </Label>
             <Input
               id="chatGptLabel"
@@ -127,10 +124,7 @@ export default function Settings({
           <div className="grid w-full items-center gap-2">
             <Label htmlFor="promptPrefix" className="text-left text-sm font-medium">
               {localize('com_endpoint_prompt_prefix')}{' '}
-              <small className="opacity-40">
-                ({localize('com_endpoint_default_empty')} |{' '}
-                {localize('com_endpoint_disabled_with_tools')})
-              </small>
+              <small className="opacity-40">{localize('com_endpoint_default_empty')}</small>
             </Label>
             <TextareaAutosize
               id="promptPrefix"
