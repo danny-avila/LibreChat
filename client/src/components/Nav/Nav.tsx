@@ -161,7 +161,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       onMouseLeave={() => setIsHovering(false)}
                       ref={containerRef}
                     >
-                      <CategorySwitch convoType={convoType} setConvoType={setConvoType} />
+                      {/* <CategorySwitch convoType={convoType} setConvoType={setConvoType} /> */}
                       {convoType === 'c' ? (
                         <>
                           <NewChat
