@@ -99,6 +99,7 @@ const conversationPreset = {
   spec: {
     type: String,
   },
+  tools: { type: [{ type: String }], default: undefined },
 };
 
 const agentOptions = {

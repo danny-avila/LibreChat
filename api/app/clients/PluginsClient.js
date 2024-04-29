@@ -42,6 +42,7 @@ class PluginsClient extends OpenAIClient {
     return {
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
+      tools: this.options.tools,
       ...this.modelOptions,
       agentOptions: this.agentOptions,
       iconURL: this.options.iconURL,

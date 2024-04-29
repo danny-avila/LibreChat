@@ -256,7 +256,7 @@ export const tConversationSchema = z.object({
   endpointType: eModelEndpointSchema.optional(),
   suggestions: z.array(z.string()).optional(),
   messages: z.array(z.string()).optional(),
-  tools: z.array(tPluginSchema).optional(),
+  tools: z.union([z.array(tPluginSchema), z.array(z.string())]).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   systemMessage: z.string().nullable().optional(),
