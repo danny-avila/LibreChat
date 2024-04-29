@@ -23,7 +23,6 @@ export { default as useScrollToRef } from './useScrollToRef';
 export { default as useLocalStorage } from './useLocalStorage';
 export { default as useConversation } from './useConversation';
 export { default as useDefaultConvo } from './useDefaultConvo';
-export { default as useServerStream } from './useServerStream';
 export { default as useConversations } from './useConversations';
 export { default as useDelayedRender } from './useDelayedRender';
 export { default as useOnClickOutside } from './useOnClickOutside';
