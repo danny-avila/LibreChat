@@ -87,20 +87,6 @@ export default function Settings({
             className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
             containerClassName="flex w-full resize-none"
           />
-          <MultiSelectDropDown
-            showAbove={false}
-            showLabel={false}
-            setSelected={setTools}
-            value={conversationTools}
-            optionValueKey="pluginKey"
-            availableValues={availablePlugins}
-            isSelected={checkPluginSelection}
-            searchPlaceholder={localize('com_ui_select_search_plugin')}
-            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
-            optionsClassName="w-full max-h-[229px] dark:bg-gray-700 z-10 border dark:border-gray-600"
-            containerClassName="flex w-full resize-none border border-transparent"
-            labelClassName="dark:text-white"
-          />
         </div>
         <>
           <div className="grid w-full items-center gap-2">
@@ -143,6 +129,20 @@ export default function Settings({
         </>
       </div>
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 px-3 sm:col-span-2">
+        <MultiSelectDropDown
+          showAbove={false}
+          showLabel={false}
+          setSelected={setTools}
+          value={conversationTools}
+          optionValueKey="pluginKey"
+          availableValues={availablePlugins}
+          isSelected={checkPluginSelection}
+          searchPlaceholder={localize('com_ui_select_search_plugin')}
+          className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
+          optionsClassName="w-full max-h-[275px] dark:bg-gray-700 z-10 border dark:border-gray-600"
+          containerClassName="flex w-full resize-none border border-transparent"
+          labelClassName="dark:text-white"
+        />
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
