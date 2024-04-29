@@ -84,6 +84,9 @@ export function mapEndpoints(endpointsConfig: TEndpointsConfig) {
   );
 }
 
+/**
+ * Ensures the last selected model stays up to date, as conversation may
+ * update without updating last convo setup when same endpoint */
 export function updateLastSelectedModel({
   endpoint,
   model,
@@ -97,11 +100,13 @@ export function updateLastSelectedModel({
   const lastConversationSetup = JSON.parse(
     localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP) || '{}',
   );
-  const lastSelectedModels = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) || '{}');
+
   if (lastConversationSetup.endpoint === endpoint) {
     lastConversationSetup.model = model;
     localStorage.setItem(LocalStorageKeys.LAST_CONVO_SETUP, JSON.stringify(lastConversationSetup));
   }
+
+  const lastSelectedModels = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) || '{}');
   lastSelectedModels[endpoint] = model;
   localStorage.setItem(LocalStorageKeys.LAST_MODEL, JSON.stringify(lastSelectedModels));
 }
