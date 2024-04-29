@@ -133,7 +133,10 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
     agentOptions[param] = newValue;
 
     if (param === 'model' && typeof newValue === 'string') {
-      const lastModelUpdate = { ...lastModel, [EModelEndpoint.gptPlugins]: newValue };
+      const lastModelUpdate = {
+        ...lastModel,
+        [EModelEndpoint.gptPlugins]: lastModel?.[EModelEndpoint.gptPlugins] ?? newValue,
+      };
       lastModelUpdate.secondaryModel = newValue;
       setLastModel(lastModelUpdate);
     }
