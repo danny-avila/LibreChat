@@ -672,6 +672,8 @@ export enum LocalStorageKeys {
   APP_TITLE = 'appTitle',
   /** Key for the last conversation setup. */
   LAST_CONVO_SETUP = 'lastConversationSetup',
+  /** Key for the last BingAI Settings */
+  LAST_BING = 'lastBingSettings',
   /** Key for the last selected model. */
   LAST_MODEL = 'lastSelectedModel',
   /** Key for the last selected tools. */
