@@ -17,7 +17,6 @@ export { default as useTimeout } from './useTimeout';
 export { default as useNewConvo } from './useNewConvo';
 export { default as useLocalize } from './useLocalize';
 export { default as useMediaQuery } from './useMediaQuery';
-export { default as useSetOptions } from './useSetOptions';
 export { default as useSetStorage } from './useSetStorage';
 export { default as useChatHelpers } from './useChatHelpers';
 export { default as useGenerations } from './useGenerations';
