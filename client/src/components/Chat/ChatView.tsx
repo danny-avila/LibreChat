@@ -57,6 +57,11 @@ function ChatView({ index = 0 }: { index?: number }) {
     }
   }, [convoType, setHideSidePanel, user, conversation]);
 
+  console.log(
+    'checking values',
+    user && conversation && isYou(user, conversation) && conversationId !== 'new',
+  );
+
   return (
     <ChatContext.Provider value={chatHelpers}>
       <Presentation useSidePanel={true}>

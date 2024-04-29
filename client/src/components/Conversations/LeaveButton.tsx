@@ -3,12 +3,10 @@ import { Dialog, DialogTrigger, Label } from '../ui';
 import DialogTemplate from '../ui/DialogTemplate';
 import { LogOutIcon } from 'lucide-react';
 import { request } from 'librechat-data-provider';
-import { useChatContext } from '~/Providers';
 import { useRecoilState } from 'recoil';
 import store from '~/store';
 
-export default function LeaveButton({ conversationId }) {
-  const { conversation } = useChatContext();
+export default function LeaveButton({ conversationId, title }) {
   const [rooms, setRooms] = useRecoilState(store.rooms);
 
   const confirmLeave = () => {
@@ -27,14 +25,14 @@ export default function LeaveButton({ conversationId }) {
       </DialogTrigger>
       <DialogTemplate
         showCloseButton={false}
-        title={'leave'}
+        title={'Leave Room'}
         className="max-w-[450px]"
         main={
           <>
             <div className="flex w-full flex-col items-center gap-2">
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                  Leave {conversation?.title}
+                  Are you sure you want to leave this room? &quot;<strong>{title}&quot;</strong>
                 </Label>
               </div>
             </div>

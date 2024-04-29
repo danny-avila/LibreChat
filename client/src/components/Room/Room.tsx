@@ -179,7 +179,7 @@ export default function Room({ room, toggleNav, retainView }) {
               />
             </>
           )}
-          <LeaveButton conversationId={conversationId} />
+          <LeaveButton conversationId={conversationId} title={title} />
         </div>
       ) : (
         <div className="absolute bottom-0 right-0 top-0 w-14 rounded-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 dark:from-gray-750 dark:group-hover:from-gray-800" />

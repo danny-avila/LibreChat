@@ -7,7 +7,6 @@ import store from '~/store';
 
 export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const autoScroll = useRecoilValue(store.autoScroll);
-  console.log('--- autoScroll', autoScroll);
 
   const timeoutIdRef = useRef<NodeJS.Timeout>();
   const scrollableRef = useRef<HTMLDivElement | null>(null);
@@ -15,6 +14,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const { conversation, setAbortScroll, isSubmitting, abortScroll } = useChatContext();
   const { conversationId } = conversation ?? {};
+  const convoType = useRecoilValue(store.convoType);
 
   const checkIfAtBottom = useCallback(() => {
     if (!scrollableRef.current) {
@@ -61,16 +61,20 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       return;
     }
 
-    // if (isSubmitting && scrollToBottom && !abortScroll) {
-    scrollToBottom();
-    // }
+    if (convoType === 'r') {
+      scrollToBottom();
+    } else {
+      if (isSubmitting && scrollToBottom && !abortScroll) {
+        scrollToBottom();
+      }
+    }
 
     return () => {
       if (abortScroll) {
         scrollToBottom && scrollToBottom?.cancel();
       }
     };
-  }, [isSubmitting, messagesTree, scrollToBottom, abortScroll]);
+  }, [isSubmitting, messagesTree, scrollToBottom, abortScroll, convoType]);
 
   useEffect(() => {
     if (scrollToBottom && autoScroll && conversationId !== 'new') {

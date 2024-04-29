@@ -18,7 +18,7 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
   const { conversationId: currentConvoId } = useParams();
   const deleteConvoMutation = useDeleteConversationMutation();
   const convoType = useRecoilValue(store.convoType);
-  const [rooms, setRooms] = useRecoilState(store.rooms);
+  const [_, setRooms] = useRecoilState(store.rooms);
   const navigate = useNavigate();
 
   const confirmDelete = () => {
@@ -54,14 +54,17 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
       </DialogTrigger>
       <DialogTemplate
         showCloseButton={false}
-        title={localize('com_ui_delete_conversation')}
+        title={convoType === 'c' ? localize('com_ui_delete_conversation') : 'Delete Chat Room'}
         className="max-w-[450px]"
         main={
           <>
             <div className="flex w-full flex-col items-center gap-2">
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                  {localize('com_ui_delete_conversation_confirm')} <strong>{title}</strong>
+                  {convoType === 'r'
+                    ? localize('com_ui_delete_conversation_confirm')
+                    : 'This will delete your room'}{' '}
+                  <strong>&quot;{title}&quot;</strong>
                 </Label>
               </div>
             </div>

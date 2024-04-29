@@ -111,9 +111,10 @@ const MenuItem: FC<MenuItemProps> = ({
         {...rest}
         onClick={() => {
           if (
-            (endpoint === EModelEndpoint.google ||
-              endpoint === EModelEndpoint.assistants ||
-              endpoint === EModelEndpoint.sdImage) &&
+            // (
+            // endpoint === EModelEndpoint.google ||
+            // endpoint === EModelEndpoint.assistants ||
+            // endpoint === EModelEndpoint.sdImage) &&
             !isPremiumUser(user as TUser)
           ) {
             showToast({
@@ -139,11 +140,12 @@ const MenuItem: FC<MenuItemProps> = ({
               )}
               <div className="flex items-center gap-3">
                 {title}
-                {(endpoint === EModelEndpoint.google ||
-                  endpoint === EModelEndpoint.assistants ||
-                  endpoint === EModelEndpoint.sdImage) && (
+                {
+                  // (endpoint === EModelEndpoint.google ||
+                  //   endpoint === EModelEndpoint.assistants ||
+                  //   endpoint === EModelEndpoint.sdImage) &&
                   <img src="/assets/premium.png" alt="premium" className="h-4 w-4" />
-                )}
+                }
                 <div className="text-token-text-tertiary">{description}</div>
               </div>
             </div>
