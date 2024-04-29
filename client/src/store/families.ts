@@ -24,8 +24,11 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
         if (newValue?.spec) {
           localStorage.setItem(LocalStorageKeys.LAST_SPEC, newValue.spec);
         }
-        if (newValue?.tools) {
-          localStorage.setItem(LocalStorageKeys.LAST_TOOLS, JSON.stringify(newValue.tools));
+        if (newValue?.tools && newValue.tools.length) {
+          localStorage.setItem(
+            LocalStorageKeys.LAST_TOOLS,
+            JSON.stringify(newValue.tools.filter((el) => !!el)),
+          );
         }
       });
     },
