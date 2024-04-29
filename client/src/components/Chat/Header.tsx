@@ -11,7 +11,7 @@ const defaultInterface = getConfigDefaults().interface;
 export default function Header() {
   const { data: startupConfig } = useGetStartupConfig();
   const { navVisible } = useOutletContext<ContextType>();
-  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list, [startupConfig]);
+  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
@@ -23,7 +23,7 @@ export default function Header() {
         {!navVisible && <HeaderNewChat />}
         {interfaceConfig.endpointsMenu && <EndpointsMenu />}
         {modelSpecs?.length && <ModelSpecsMenu modelSpecs={modelSpecs} />}
-        {interfaceConfig.parameters && <HeaderOptions />}
+        {<HeaderOptions interfaceConfig={interfaceConfig} />}
         {interfaceConfig.presets && <PresetsMenu />}
       </div>
       {/* Empty div for spacing */}
