@@ -1,4 +1,4 @@
-import type { TFile, Assistant } from 'librechat-data-provider';
+import type { TFile, Assistant, TPlugin } from 'librechat-data-provider';
 
 /** Maps Files by `file_id` for quick lookup */
 export function mapFiles(files: TFile[]) {
@@ -20,4 +20,12 @@ export function mapAssistants(assistants: Assistant[]) {
   }
 
   return assistantMap;
+}
+
+/** Maps Plugins by `pluginKey` for quick lookup */
+export function mapPlugins(plugins: TPlugin[]): Record<string, TPlugin> {
+  return plugins.reduce((acc, plugin) => {
+    acc[plugin.pluginKey] = plugin;
+    return acc;
+  }, {} as Record<string, TPlugin>);
 }
