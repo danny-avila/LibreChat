@@ -198,11 +198,37 @@ export const tExampleSchema = z.object({
 
 export type TExample = z.infer<typeof tExampleSchema>;
 
+export enum EAgent {
+  functions = 'functions',
+  classic = 'classic',
+}
+
+export const agentOptionSettings = {
+  model: {
+    default: 'gpt-4-turbo',
+  },
+  temperature: {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    default: 0,
+  },
+  agent: {
+    default: EAgent.functions,
+    options: [EAgent.functions, EAgent.classic],
+  },
+  skipCompletion: {
+    default: true,
+  },
+};
+
+export const eAgentOptionsSchema = z.nativeEnum(EAgent);
+
 export const tAgentOptionsSchema = z.object({
-  agent: z.string(),
-  skipCompletion: z.boolean(),
+  agent: eAgentOptionsSchema.default(EAgent.functions),
+  skipCompletion: z.boolean().default(agentOptionSettings.skipCompletion.default),
   model: z.string(),
-  temperature: z.number(),
+  temperature: z.number().default(agentOptionSettings.temperature.default),
 });
 
 export const tMessageSchema = z.object({
@@ -560,7 +586,7 @@ export const gptPluginsSchema = tConversationSchema
     frequency_penalty: obj.frequency_penalty ?? 0,
     tools: obj.tools ?? [],
     agentOptions: obj.agentOptions ?? {
-      agent: 'functions',
+      agent: EAgent.functions,
       skipCompletion: true,
       model: 'gpt-3.5-turbo',
       temperature: 0,
@@ -579,7 +605,7 @@ export const gptPluginsSchema = tConversationSchema
     frequency_penalty: 0,
     tools: [],
     agentOptions: {
-      agent: 'functions',
+      agent: EAgent.functions,
       skipCompletion: true,
       model: 'gpt-3.5-turbo',
       temperature: 0,
@@ -806,7 +832,7 @@ export const compactPluginsSchema = tConversationSchema
 
     if (
       newObj.agentOptions &&
-      newObj.agentOptions.agent === 'functions' &&
+      newObj.agentOptions.agent === EAgent.functions &&
       newObj.agentOptions.skipCompletion === true &&
       newObj.agentOptions.model === 'gpt-3.5-turbo' &&
       newObj.agentOptions.temperature === 0
