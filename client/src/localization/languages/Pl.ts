@@ -30,6 +30,10 @@ export default {
   com_ui_entries: 'wpisów',
   com_ui_pay_per_call:
     'Wszystkie rozmowy z AI w jednym miejscu. Płatność za połączenie, a nie za miesiąc',
+  com_ui_rename: 'Zmień nazwę',
+  com_ui_archive: 'Archiwum',
+  com_ui_archive_error: 'failed to archive conversation',
+  com_ui_more_options: 'Więcej',
   com_auth_error_login:
     'Nie udało się zalogować przy użyciu podanych danych. Sprawdź swoje dane logowania i spróbuj ponownie.',
   com_auth_no_account: 'Nie masz konta?',

@@ -52,6 +52,10 @@ export default {
   com_ui_delete: 'Verwijderen',
   com_ui_delete_conversation: 'Chat verwijderen?',
   com_ui_delete_conversation_confirm: 'Hiermee wordt',
+  com_ui_rename: 'Hernoemen',
+  com_ui_archive: 'Archi',
+  com_ui_archive_error: 'failed to archive conversation',
+  com_ui_more_options: 'Meer',
   com_auth_error_login:
     'Kan niet inloggen met de verstrekte informatie. Controleer uw referenties en probeer het opnieuw.',
   com_auth_error_login_rl: 'Te veel inlogpogingen in een korte tijd. Probeer het later nog eens.',

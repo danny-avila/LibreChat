@@ -135,6 +135,10 @@ export default {
   com_ui_delete_conversation_confirm: 'Isso excluirá',
   com_ui_delete_assistant_confirm:
     'Tem certeza de que deseja excluir este Assistente? Esta ação não pode ser desfeita.',
+  com_ui_rename: 'Renomear',
+  com_ui_archive: 'Arquivar',
+  com_ui_archive_error: 'Ocorreu um erro ao arquivar a conversa.',
+  com_ui_more_options: 'Mais',
   com_ui_preview: 'Visualizar',
   com_ui_upload: 'Carregar',
   com_ui_connect: 'Conectar',

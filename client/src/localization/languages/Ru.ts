@@ -64,6 +64,10 @@ export default {
   com_ui_connect: 'Подключить',
   com_ui_delete_conversation: 'Удалить чат?',
   com_ui_delete_conversation_confirm: 'Будет удален следующий чат: ',
+  com_ui_rename: 'Переименовать',
+  com_ui_archive: 'Архивировать',
+  com_ui_archive_error: 'failed to archive conversation',
+  com_ui_more_options: 'Еще',
   com_auth_error_login:
     'Не удалось войти с предоставленной информацией. Пожалуйста, проверьте ваши учетные данные и попробуйте снова.',
   com_auth_error_login_rl:

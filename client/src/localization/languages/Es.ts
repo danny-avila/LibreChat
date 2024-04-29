@@ -137,6 +137,10 @@ export default {
   com_ui_delete_conversation_confirm: 'Esto eliminará',
   com_ui_delete_assistant_confirm:
     '¿Está seguro de que desea eliminar este Asistente? Esta acción no se puede deshacer.',
+  com_ui_rename: 'Renombrar',
+  com_ui_archive: 'Archivar',
+  com_ui_archive_error: 'Error al archivar la conversación',
+  com_ui_more_options: 'Más',
   com_ui_preview: 'Previsualizar',
   com_ui_upload: 'Subir',
   com_ui_connect: 'Conectar',

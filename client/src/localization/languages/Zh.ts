@@ -136,6 +136,10 @@ export default {
   com_ui_delete_conversation_confirm: '这将删除',
   com_ui_delete_assistant_confirm:
     '确定要删除此助手吗？该操作无法撤销。',
+  com_ui_rename: '重命名',
+  com_ui_archive: '归档',
+  com_ui_archive_error: 'failed to archive conversation',
+  com_ui_more_options: '更多',
   com_ui_preview: '预览',
   com_ui_upload: '上传',
   com_ui_connect: '连接',

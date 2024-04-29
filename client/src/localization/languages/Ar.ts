@@ -50,6 +50,10 @@ export default {
   com_ui_delete: 'حذف',
   com_ui_delete_conversation: 'حذف الدردشة؟',
   com_ui_delete_conversation_confirm: 'سيتم حذف هذا',
+  com_ui_rename: 'إعادة تسمية',
+  com_ui_archive: 'أرشفة',
+  com_ui_archive_error: 'فشل في أرشفة المحادثة',
+  com_ui_more_options: 'المزيد',
   com_auth_error_login:
     'تعذر تسجيل الدخول باستخدام المعلومات المقدمة. يرجى التحقق من بيانات الاعتماد الخاصة بك والمحاولة مرة أخرى.',
   com_auth_error_login_rl:

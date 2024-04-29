@@ -91,6 +91,10 @@ export default {
   com_ui_delete_conversation_confirm: 'זה ימחק',
   com_ui_delete_assistant_confirm:
     'האם אתה בטוח שאתה רוצה למחוק את הסייען הזה? אי אפשר לבטל את זה.',
+  com_ui_rename: 'שם מחדש',
+  com_ui_archive: 'ארכיון',
+  com_ui_archive_error: 'אירעה שגיאה בארכיון השיחה',
+  com_ui_more_options: 'עוד',
   _ui_preview: 'תצוגה מקדימה',
   com_ui_upload: 'העלה',
   com_ui_connect: 'התחבר',

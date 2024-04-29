@@ -50,6 +50,10 @@ export default {
   com_ui_delete: 'Radera',
   com_ui_delete_conversation: 'Radera chatt?',
   com_ui_delete_conversation_confirm: 'Detta kommer att radera',
+  com_ui_rename: 'byta namn på',
+  com_ui_archive: 'Arkiv',
+  com_ui_archive_error: 'failed to archive conversation',
+  com_ui_more_options: 'Mer',
   com_auth_error_login:
     'Kunde inte logga in med den angivna informationen. Kontrollera dina uppgifter och försök igen.',
   com_auth_error_login_rl:

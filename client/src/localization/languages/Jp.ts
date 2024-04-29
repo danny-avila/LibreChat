@@ -146,6 +146,10 @@ export default {
   com_ui_delete_conversation_confirm: 'このチャットは削除されます。',
   com_ui_delete_assistant_confirm:
     'このアシスタントを削除しますか？ この操作は元に戻せません。',
+  com_ui_rename: 'タイトル変更',
+  com_ui_archive: 'アーカイブ',
+  com_ui_archive_error: 'アーカイブに失敗しました。',
+  com_ui_more_options: 'More',
   com_ui_preview: 'プレビュー',
   com_ui_upload: 'アップロード',
   com_ui_connect: '接続',

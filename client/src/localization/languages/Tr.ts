@@ -52,6 +52,10 @@ export default {
   com_ui_delete: 'Sil',
   com_ui_delete_conversation: 'Sohbet silinecek?',
   com_ui_delete_conversation_confirm: 'Bu silinecek',
+  com_ui_rename: 'Yeniden adlandır',
+  com_ui_archive: 'Arşivle',
+  com_ui_archive_error: 'failed to archive conversation',
+  com_ui_more_options: 'Daha fazla',
   com_auth_error_login:
     'Sağlanan bilgilerle giriş yapılamıyor. Lütfen kimlik bilgilerinizi kontrol edip tekrar deneyin.',
   com_auth_error_login_rl:

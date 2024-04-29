@@ -141,6 +141,10 @@ export default {
   com_ui_delete_conversation_confirm: 'Damit wird gelöscht',
   com_ui_delete_assistant_confirm:
     'Bist du sicher, dass du diesen Assistenten löschen willst? Dies kann nicht rückgängig gemacht werden.',
+  com_ui_rename: 'Umbenennen',
+  com_ui_archive: 'Archiv',
+  com_ui_archive_error: 'Fehler beim Archivieren der Konversation',
+  com_ui_more_options: 'Mehr',
   com_ui_preview: 'Vorschau',
   com_ui_upload: 'Hochladen',
   com_ui_connect: 'Verbinden',

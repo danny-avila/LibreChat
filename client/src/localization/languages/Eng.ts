@@ -148,6 +148,10 @@ export default {
   com_ui_delete_conversation_confirm: 'This will delete',
   com_ui_delete_assistant_confirm:
     'Are you sure you want to delete this Assistant? This cannot be undone.',
+  com_ui_rename: 'Rename',
+  com_ui_archive: 'Archive',
+  com_ui_archive_error: 'Failed to archive conversation',
+  com_ui_more_options: 'More',
   com_ui_preview: 'Preview',
   com_ui_upload: 'Upload',
   com_ui_connect: 'Connect',
