@@ -1,7 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
 import { MinimalIcon, ConvoIconURL } from '~/components/Endpoints';
@@ -51,11 +51,15 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     if (conversation?.endpoint === EModelEndpoint.gptPlugins) {
       let lastSelectedTools = [];
       try {
-        lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') ?? [];
+        lastSelectedTools =
+          JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_TOOLS) ?? '') ?? [];
       } catch (e) {
         // console.error(e);
       }
-      navigateToConvo({ ...conversation, tools: lastSelectedTools });
+      navigateToConvo({
+        ...conversation,
+        tools: conversation?.tools?.length ? conversation?.tools : lastSelectedTools,
+      });
     } else {
       navigateToConvo(conversation);
     }
