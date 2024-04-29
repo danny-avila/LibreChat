@@ -76,9 +76,7 @@ export default function PluginsByIndex({
     localStorage.setItem('lastSelectedTools', JSON.stringify(filteredTools));
 
     setAvailableTools([...tools, pluginStore]);
-    // setAvailableTools is a recoil state setter, so it's safe to use it in useEffect
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allPlugins, user]);
+  }, [allPlugins, user, setAvailableTools]);
 
   if (!conversation) {
     return null;
