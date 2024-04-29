@@ -107,10 +107,17 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
         setSearchChanged(false);
       }
     }
-
-    // Disabled due to state setters erroneously being flagged as dependencies
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availablePlugins, itemsPerPage, user, searchValue, filteredPlugins, searchChanged]);
+  }, [
+    availablePlugins,
+    itemsPerPage,
+    user,
+    searchValue,
+    filteredPlugins,
+    searchChanged,
+    setMaxPage,
+    setCurrentPage,
+    setSearchChanged,
+  ]);
 
   return (
     <Dialog
