@@ -118,7 +118,6 @@ const useSetOptions: TUseSetOptions = (preset = false) => {
       update['tools'] = [...current, tool];
     }
 
-    localStorage.setItem('lastSelectedTools', JSON.stringify(update['tools']));
     setConversation((prevState) =>
       tConversationSchema.parse({
         ...prevState,
