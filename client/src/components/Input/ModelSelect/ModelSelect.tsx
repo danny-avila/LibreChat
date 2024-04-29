@@ -13,9 +13,15 @@ type TSelectProps = {
   setOption: TSetOption;
   extraProps?: TGoogleProps;
   showAbove?: boolean;
+  popover?: boolean;
 };
 
-export default function ModelSelect({ conversation, setOption, showAbove = true }: TSelectProps) {
+export default function ModelSelect({
+  conversation,
+  setOption,
+  popover = false,
+  showAbove = true,
+}: TSelectProps) {
   const modelsQuery = useGetModelsQuery();
 
   if (!conversation?.endpoint) {
@@ -38,6 +44,7 @@ export default function ModelSelect({ conversation, setOption, showAbove = true 
       setOption={setOption}
       models={models}
       showAbove={showAbove}
+      popover={popover}
     />
   );
 }
