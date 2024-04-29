@@ -3,7 +3,7 @@ const { createAbortController, handleAbortError } = require('~/server/middleware
 const { sendMessage, createOnProgress, countTokens } = require('~/server/utils');
 const { saveMessage, getConvo, User, ConvoToken } = require('~/models');
 const { logger } = require('~/config');
-const { isPremiumModel } = require('~/config/premiumModels');
+// const { isPremiumModel } = require('~/config/premiumModels');
 const { decreaseUnpremiumUserCredit } = require('~/utils/creditCheck');
 
 const AskController = async (req, res, next, initializeClient, addTitle) => {
@@ -19,7 +19,7 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   logger.debug('[AskController]', { text, conversationId, ...endpointOption });
   const user = req.user.id;
 
-  const credits = (await User.findById(user)).credits;
+  const { credits, subscription } = await User.findById(user);
 
   let metadata;
   let userMessage;
@@ -56,9 +56,15 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   let getText;
 
   try {
-    if (isPremiumModel(endpointOption.modelOptions.model) && credits <= 0) {
+    if (!(subscription && subscription.active) && !credits <= 0) {
       throw new Error(
-        'You have run out of credits. If you want to continue chatting with the premium models, you need to purchase more credits. Simply click the "Add Credits" button on the left to do so. Alternatively, you can continue chatting with our free models.',
+        'You have run out of credits. If you want to continue chatting with the premium models, you need to purchase more credits. Simply click the "Add Credits" button on the left to add more credits. ',
+      );
+    }
+    // if (isPremiumModel(endpointOption.modelOptions.model) && credits <= 0) {
+    if (credits <= 0) {
+      throw new Error(
+        'You have run out of credits. If you want to continue chatting with the premium models, you need to subscribe. Simply click the "Subscribe" button on the left to add more credits.',
       );
     }
     const { client } = await initializeClient({ req, res, endpointOption });

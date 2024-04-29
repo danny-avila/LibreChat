@@ -110,19 +110,19 @@ const MenuItem: FC<MenuItemProps> = ({
         tabIndex={-1}
         {...rest}
         onClick={() => {
-          if (
-            // (
-            // endpoint === EModelEndpoint.google ||
-            // endpoint === EModelEndpoint.assistants ||
-            // endpoint === EModelEndpoint.sdImage) &&
-            !isPremiumUser(user as TUser)
-          ) {
-            showToast({
-              message: 'This is premium AI provider ' + localize('com_premium_warning'),
-              status: 'info',
-            });
-            return;
-          }
+          // if (
+          //   // (
+          //   // endpoint === EModelEndpoint.google ||
+          //   // endpoint === EModelEndpoint.assistants ||
+          //   // endpoint === EModelEndpoint.sdImage) &&
+          //   !isPremiumUser(user as TUser)
+          // ) {
+          //   showToast({
+          //     message: 'This is premium AI provider ' + localize('com_premium_warning'),
+          //     status: 'info',
+          //   });
+          //   return;
+          // }
           onSelectEndpoint(endpoint);
         }}
       >
