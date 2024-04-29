@@ -225,7 +225,7 @@ export const agentOptionSettings = {
 export const eAgentOptionsSchema = z.nativeEnum(EAgent);
 
 export const tAgentOptionsSchema = z.object({
-  agent: eAgentOptionsSchema.default(EAgent.functions),
+  agent: z.string().default(EAgent.functions),
   skipCompletion: z.boolean().default(agentOptionSettings.skipCompletion.default),
   model: z.string(),
   temperature: z.number().default(agentOptionSettings.temperature.default),
