@@ -56,16 +56,12 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   let getText;
 
   try {
-    if (!(subscription && subscription.active) && !credits <= 0) {
-      throw new Error(
-        'You have run out of credits. If you want to continue chatting with the premium models, you need to purchase more credits. Simply click the "Add Credits" button on the left to add more credits. ',
-      );
+    if (!subscription.active && credits <= 0) {
+      throw new Error('unsubscribed error');
     }
     // if (isPremiumModel(endpointOption.modelOptions.model) && credits <= 0) {
     if (credits <= 0) {
-      throw new Error(
-        'You have run out of credits. If you want to continue chatting with the premium models, you need to subscribe. Simply click the "Subscribe" button on the left to add more credits.',
-      );
+      throw new Error('credits error');
     }
     const { client } = await initializeClient({ req, res, endpointOption });
 
