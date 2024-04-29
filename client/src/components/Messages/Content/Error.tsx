@@ -4,6 +4,8 @@ import React from 'react';
 import type { TOpenAIMessage } from 'librechat-data-provider';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import CodeBlock from './CodeBlock';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
 
 type TConcurrent = {
   limit: number;
@@ -70,13 +72,14 @@ const errorMessages = {
 };
 
 const Error = ({ text }: { text: string }) => {
+  const convoType = useRecoilValue(store.convoType);
   const jsonString = extractJson(text);
   const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
   let defaultResponse = '';
 
-  console.log('--- Error encountered ---', errorMessage);
-
-  if (errorMessage === 'unsubscribed error') {
+  if (convoType === 'r') {
+    defaultResponse = 'Room Error';
+  } else if (errorMessage === 'unsubscribed error') {
     defaultResponse =
       'You have run out of credits. If you want to continue chatting with the premium models, you need to subscribe. Simply click the "Subscribe" button on the left to add more credits.';
   } else if (errorMessage === 'credits error') {

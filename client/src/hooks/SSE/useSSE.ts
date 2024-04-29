@@ -371,24 +371,6 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
     ({ data, submission }: { data?: TResData; submission: TSubmission }) => {
       const { messages, message, initialResponse } = submission;
 
-      if (convoType === 'r') {
-        if (data) {
-          if (data.text === 'credits error') {
-            showToast({
-              message:
-                'You have run out of credits. If you want to continue chatting with the premium models, you need to purchase more credits. Simply click the "Add Credits" button on the left to add more credits.',
-              status: 'error',
-            });
-          } else if (data.text === 'unsubscribed error') {
-            showToast({
-              message:
-                'You have run out of credits. If you want to continue chatting with the premium models, you need to subscribe. Simply click the "Subscribe" button on the left to add more credits.',
-              status: 'error',
-            });
-          }
-        }
-      }
-
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
 
       const conversationId = message?.conversationId ?? submission?.conversationId;
@@ -445,11 +427,7 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
         parentMessageId: message?.messageId,
       });
 
-      if (convoType === 'r') {
-        setMessages([...messages, message]);
-      } else {
-        setMessages([...messages, message, errorResponse]);
-      }
+      setMessages([...messages, message, errorResponse]);
 
       if (data.conversationId && paramId === 'new') {
         newConversation({
@@ -650,7 +628,37 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
         return;
       }
 
-      errorHandler({ data, submission: { ...submission, message } });
+      if (convoType === 'r') {
+        if (data) {
+          if (data.text === 'credits error') {
+            showToast({
+              message:
+                'You have run out of credits. If you want to continue chatting with the premium models, you need to purchase more credits. Simply click the "Add Credits" button on the left to add more credits.',
+              status: 'error',
+            });
+          } else if (data.text === 'unsubscribed error') {
+            showToast({
+              message:
+                'You have run out of credits. If you want to continue chatting with the premium models, you need to subscribe. Simply click the "Subscribe" button on the left to add more credits.',
+              status: 'error',
+            });
+          }
+        }
+        console.log('--- errorHandler ---', message);
+
+        setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
+
+        setMessages([...submission.messages, message]);
+        // newConversation({
+        //   template: { conversationId: convoId },
+        //   preset: tPresetSchema.parse(submission?.conversation),
+        // });
+        setIsSubmitting(false);
+        return;
+        // sendMessage(message)
+      } else {
+        errorHandler({ data, submission: { ...submission, message } });
+      }
     };
 
     setIsSubmitting(true);
