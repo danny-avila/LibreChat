@@ -35,7 +35,6 @@ import { useGenTitleMutation } from '~/data-provider';
 import useContentHandler from './useContentHandler';
 import { useAuthContext } from '../AuthContext';
 import useChatHelpers from '../useChatHelpers';
-import useSetStorage from '../useSetStorage';
 import store from '~/store';
 
 type TResData = {
@@ -60,7 +59,6 @@ type TSyncData = {
 };
 
 export default function useSSE(submission: TSubmission | null, index = 0) {
-  const setStorage = useSetStorage();
   const queryClient = useQueryClient();
   const genTitle = useGenTitleMutation();
 
@@ -166,13 +164,12 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           ...convoUpdate,
         };
 
-        setStorage(update);
         return update;
       });
 
       setIsSubmitting(false);
     },
-    [setMessages, setConversation, setStorage, genTitle, queryClient, setIsSubmitting],
+    [setMessages, setConversation, genTitle, queryClient, setIsSubmitting],
   );
 
   const syncHandler = useCallback(
@@ -209,7 +206,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           messages: [requestMessage.messageId, responseMessage.messageId],
         }) as TConversation;
 
-        setStorage(update);
         return update;
       });
 
@@ -228,7 +224,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
 
       resetLatestMessage();
     },
-    [setMessages, setConversation, setStorage, queryClient, setShowStopButton, resetLatestMessage],
+    [setMessages, setConversation, queryClient, setShowStopButton, resetLatestMessage],
   );
 
   const createdHandler = useCallback(
@@ -274,7 +270,6 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           title,
         }) as TConversation;
 
-        setStorage(update);
         return update;
       });
 
@@ -290,7 +285,7 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
       });
       resetLatestMessage();
     },
-    [setMessages, setConversation, setStorage, queryClient, resetLatestMessage],
+    [setMessages, setConversation, queryClient, resetLatestMessage],
   );
 
   const finalHandler = useCallback(
@@ -337,21 +332,12 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
           update.model = prevState.model;
         }
 
-        setStorage(update);
         return update;
       });
 
       setIsSubmitting(false);
     },
-    [
-      setMessages,
-      setConversation,
-      setStorage,
-      genTitle,
-      queryClient,
-      setIsSubmitting,
-      setShowStopButton,
-    ],
+    [genTitle, queryClient, setMessages, setConversation, setIsSubmitting, setShowStopButton],
   );
 
   const errorHandler = useCallback(

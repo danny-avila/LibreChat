@@ -9,6 +9,7 @@ import {
 import { LocalStorageKeys } from 'librechat-data-provider';
 import type { TMessage, TPreset, TConversation, TSubmission } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
+import { storeEndpointSettings } from '~/utils';
 import { useEffect } from 'react';
 
 const conversationByIndex = atomFamily<TConversation | null, string | number>({
@@ -16,7 +17,7 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
   default: null,
   effects: [
     ({ onSet, node }) => {
-      onSet(async (newValue: TConversation | null) => {
+      onSet(async (newValue) => {
         const index = Number(node.key.split('__')[1]);
         if (newValue?.assistant_id) {
           localStorage.setItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}`, newValue.assistant_id);
@@ -30,6 +31,9 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
             JSON.stringify(newValue.tools.filter((el) => !!el)),
           );
         }
+
+        storeEndpointSettings(newValue);
+        localStorage.setItem(LocalStorageKeys.LAST_CONVO_SETUP, JSON.stringify(newValue));
       });
     },
   ] as const,

@@ -34,12 +34,10 @@ import {
 } from '~/utils';
 import { useDeleteFilesMutation, useListAssistantsQuery } from '~/data-provider';
 import useOriginNavigate from './useOriginNavigate';
-import useSetStorage from './useSetStorage';
 import { mainTextareaId } from '~/common';
 import store from '~/store';
 
 const useNewConvo = (index = 0) => {
-  const setStorage = useSetStorage();
   const navigate = useOriginNavigate();
   const { data: startupConfig } = useGetStartupConfig();
   const defaultPreset = useRecoilValue(store.defaultPreset);
@@ -136,7 +134,6 @@ const useNewConvo = (index = 0) => {
           });
         }
 
-        setStorage(conversation);
         setConversation(conversation);
         setSubmission({} as TSubmission);
         if (!keepLatestMessage) {
