@@ -1,21 +1,58 @@
+import { useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import TextareaAutosize from 'react-textarea-autosize';
+import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
+import type { TPlugin } from 'librechat-data-provider';
+import type { TModelSelectProps } from '~/common';
 import {
-  SelectDropDown,
   Input,
   Label,
   Slider,
-  InputNumber,
   HoverCard,
+  InputNumber,
+  SelectDropDown,
   HoverCardTrigger,
-} from '~/components';
+  MultiSelectDropDown,
+} from '~/components/ui';
+import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils';
+import { processPlugins, selectPlugins } from '~/utils';
 import OptionHover from './OptionHover';
-import type { TModelSelectProps } from '~/common';
-import { ESide } from '~/common';
-import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils/';
 import { useLocalize } from '~/hooks';
+import { ESide } from '~/common';
+import store from '~/store';
 
-export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
+export default function Settings({
+  conversation,
+  setOption,
+  setTools,
+  checkPluginSelection,
+  models,
+  readonly,
+}: TModelSelectProps & {
+  setTools: (newValue: string, remove?: boolean | undefined) => void;
+  checkPluginSelection: (value: string) => boolean;
+}) {
   const localize = useLocalize();
+  const availableTools = useRecoilValue(store.availableTools);
+  const { data: allPlugins } = useAvailablePluginsQuery({
+    select: selectPlugins,
+  });
+
+  const conversationTools: TPlugin[] = useMemo(() => {
+    if (!conversation?.tools) {
+      return [];
+    }
+    return processPlugins(conversation.tools, allPlugins?.map);
+  }, [conversation, allPlugins]);
+
+  const availablePlugins = useMemo(() => {
+    if (!availableTools) {
+      return [];
+    }
+
+    return Object.values(availableTools);
+  }, [availableTools]);
+
   if (!conversation) {
     return null;
   }
@@ -52,6 +89,20 @@ export default function Settings({ conversation, setOption, models, readonly }: 
             disabled={readonly}
             className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
             containerClassName="flex w-full resize-none"
+          />
+          <MultiSelectDropDown
+            showAbove={false}
+            showLabel={false}
+            setSelected={setTools}
+            value={conversationTools}
+            optionValueKey="pluginKey"
+            availableValues={availablePlugins}
+            isSelected={checkPluginSelection}
+            searchPlaceholder={localize('com_ui_select_search_plugin')}
+            className={cn(defaultTextProps, 'flex w-full resize-none', removeFocusOutlines)}
+            optionsClassName="w-full max-h-[229px] dark:bg-gray-700 z-10 border dark:border-gray-600"
+            containerClassName="flex w-full resize-none border border-transparent"
+            labelClassName="dark:text-white"
           />
         </div>
         <>
