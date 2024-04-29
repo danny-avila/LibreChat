@@ -9,7 +9,14 @@ import DialogTemplate from '~/components/ui/DialogTemplate';
 import { TrashIcon, CrossIcon } from '~/components/svg';
 import { useLocalize, useNewConvo } from '~/hooks';
 
-export default function DeleteButton({ conversationId, renaming, retainView, title }) {
+export default function DeleteButton({
+  conversationId,
+  renaming,
+  retainView,
+  title,
+  twcss,
+  appendLabel = false,
+}) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
@@ -30,11 +37,26 @@ export default function DeleteButton({ conversationId, renaming, retainView, tit
     deleteConvoMutation.mutate({ conversationId, thread_id, source: 'button' });
   }, [conversationId, deleteConvoMutation, queryClient]);
 
+  const classProp: { className?: string } = {
+    className: 'p-1 hover:text-black dark:hover:text-white',
+  };
+  if (twcss) {
+    classProp.className = twcss;
+  }
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <button className="p-1 hover:text-black dark:hover:text-white">
-          {renaming ? <CrossIcon /> : <TrashIcon />}
+        <button {...classProp}>
+          {renaming ? (
+            <CrossIcon />
+          ) : appendLabel ? (
+            <>
+              <TrashIcon />
+              {localize('com_ui_delete')}
+            </>
+          ) : (
+            <TrashIcon />
+          )}
         </button>
       </DialogTrigger>
       <DialogTemplate
