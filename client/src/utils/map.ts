@@ -31,6 +31,26 @@ export function mapPlugins(plugins: TPlugin[]): TPluginMap {
   }, {} as TPluginMap);
 }
 
+/** Transform query data to object with list and map fields */
+export const selectPlugins = (
+  data: TPlugin[] | undefined,
+): {
+  list: TPlugin[];
+  map: TPluginMap;
+} => {
+  if (!data) {
+    return {
+      list: [],
+      map: {},
+    };
+  }
+
+  return {
+    list: data,
+    map: mapPlugins(data),
+  };
+};
+
 /** Transform array to TPlugin values */
 export function processPlugins(tools: (string | TPlugin)[], allPlugins?: TPluginMap): TPlugin[] {
   return tools

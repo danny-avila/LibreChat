@@ -17,12 +17,13 @@ import store from '~/store';
 
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
-  useAppStartup(startupConfig);
+  const { isAuthenticated, user } = useAuthRedirect();
+  useAppStartup({ startupConfig, user });
+
   const index = 0;
   const { conversationId } = useParams();
 
   const { conversation } = store.useCreateConversationAtom(index);
-  const { isAuthenticated } = useAuthRedirect();
   const { newConversation } = useNewConvo();
   const hasSetConversation = useRef(false);
 

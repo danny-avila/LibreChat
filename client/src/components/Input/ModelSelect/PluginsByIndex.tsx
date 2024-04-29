@@ -1,30 +1,19 @@
-import { useRecoilState } from 'recoil';
+import { useRecoilValue } from 'recoil';
 import { ChevronDownIcon } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { LocalStorageKeys } from 'librechat-data-provider';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TPlugin } from 'librechat-data-provider';
-import type { TModelSelectProps, TPluginMap } from '~/common';
+import type { TModelSelectProps } from '~/common';
 import {
+  Button,
+  MultiSelectPop,
   SelectDropDown,
   SelectDropDownPop,
   MultiSelectDropDown,
-  MultiSelectPop,
-  Button,
 } from '~/components/ui';
 import { useSetIndexOptions, useAuthContext, useMediaQuery, useLocalize } from '~/hooks';
-import { cn, cardStyle, mapPlugins, processPlugins } from '~/utils';
+import { cn, cardStyle, selectPlugins, processPlugins } from '~/utils';
 import store from '~/store';
-
-const pluginStore: TPlugin = {
-  name: 'Plugin store',
-  pluginKey: 'pluginStore',
-  isButton: true,
-  description: '',
-  icon: '',
-  authConfig: [],
-  authenticated: false,
-};
 
 export default function PluginsByIndex({
   conversation,
@@ -37,28 +26,12 @@ export default function PluginsByIndex({
   const { user } = useAuthContext();
   const [visible, setVisibility] = useState<boolean>(true);
   const isSmallScreen = useMediaQuery('(max-width: 640px)');
+  const availableTools = useRecoilValue(store.availableTools);
   const { checkPluginSelection, setTools } = useSetIndexOptions();
-  const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
+
   const { data: allPlugins } = useAvailablePluginsQuery({
     enabled: !!user?.plugins,
-    select: (
-      data,
-    ): {
-      list: TPlugin[];
-      map: TPluginMap;
-    } => {
-      if (!data) {
-        return {
-          list: [],
-          map: {},
-        };
-      }
-
-      return {
-        list: data,
-        map: mapPlugins(data),
-      };
-    },
+    select: selectPlugins,
   });
 
   useEffect(() => {
@@ -66,40 +39,6 @@ export default function PluginsByIndex({
       setVisibility(false);
     }
   }, [isSmallScreen]);
-
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    if (!allPlugins) {
-      return;
-    }
-
-    if (!user.plugins || user.plugins.length === 0) {
-      setAvailableTools({ pluginStore });
-      return;
-    }
-
-    const tools = [...user.plugins]
-      .map((el) => allPlugins.map[el])
-      .filter((el): el is TPlugin => el !== undefined);
-
-    /* Filter Last Selected Tools */
-    const localStorageItem = localStorage.getItem(LocalStorageKeys.LAST_TOOLS);
-    if (!localStorageItem) {
-      return setAvailableTools({ pluginStore, ...mapPlugins(tools) });
-    }
-    const lastSelectedTools = processPlugins(JSON.parse(localStorageItem) ?? [], allPlugins.map);
-    const filteredTools = lastSelectedTools
-      .filter((tool: TPlugin) =>
-        tools.some((existingTool) => existingTool.pluginKey === tool.pluginKey),
-      )
-      .filter((tool: TPlugin) => !!tool);
-    localStorage.setItem(LocalStorageKeys.LAST_TOOLS, JSON.stringify(filteredTools));
-
-    setAvailableTools({ pluginStore, ...mapPlugins(tools) });
-  }, [allPlugins, user, setAvailableTools]);
 
   const conversationTools: TPlugin[] = useMemo(() => {
     if (!conversation?.tools) {
