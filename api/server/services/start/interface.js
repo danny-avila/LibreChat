@@ -11,6 +11,7 @@ function loadDefaultInterface(config, configDefaults) {
 
   // warn about config.modelSpecs.prioritize if true and presets are enabled, that default presets will conflict with prioritizing model specs.
   // warn about config.modelSpecs.enforce if true and if any of these, endpointsMenu, modelSelect, presets, or parameters are enabled, that enforcing model specs can conflict with these options.
+  // warn if enforce is true and prioritize is not, that enforcing model specs without prioritizing them can lead to unexpected behavior.
 
   return {
     endpointsMenu: interface?.endpointsMenu ?? (hasModelSpecs ? false : defaults.endpointsMenu),
