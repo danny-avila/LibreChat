@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { useLocalize, useNewConvo, useLocalStorage } from '~/hooks';
@@ -20,7 +20,7 @@ export default function NewChat({
   const localize = useLocalize();
 
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const [convo] = useLocalStorage('lastConversationSetup', {
+  const [convo] = useLocalStorage(LocalStorageKeys.LAST_CONVO_SETUP, {
     endpoint: EModelEndpoint.openAI,
     iconURL: '',
   });

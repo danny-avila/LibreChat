@@ -7,12 +7,13 @@ import {
   /* @ts-ignore */
   SSE,
   QueryKeys,
-  EndpointURLs,
   Constants,
+  EndpointURLs,
   createPayload,
   tPresetSchema,
   tMessageSchema,
   EModelEndpoint,
+  LocalStorageKeys,
   tConvoUpdateSchema,
   removeNullishValues,
 } from 'librechat-data-provider';
@@ -430,8 +431,9 @@ export default function useSSE(submission: TSubmission | null, index = 0) {
     async (conversationId = '', submission: TSubmission) => {
       let runAbortKey = '';
       try {
-        const conversation = (JSON.parse(localStorage.getItem('lastConversationSetup') ?? '') ??
-          {}) as TConversation;
+        const conversation = (JSON.parse(
+          localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP) ?? '',
+        ) ?? {}) as TConversation;
         const { conversationId, messages } = conversation;
         runAbortKey = `${conversationId}:${messages?.[messages.length - 1]}`;
       } catch (error) {
