@@ -148,9 +148,11 @@ class PluginsClient extends OpenAIClient {
       signal,
       pastMessages,
       tools: this.tools,
-      currentDateString: this.currentDateString,
       verbose: this.options.debug,
       returnIntermediateSteps: true,
+      customName: this.options.chatGptLabel,
+      currentDateString: this.currentDateString,
+      customInstructions: this.options.promptPrefix,
       callbackManager: CallbackManager.fromHandlers({
         async handleAgentAction(action, runId) {
           handleAction(action, runId, onAgentAction);
