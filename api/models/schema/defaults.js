@@ -89,6 +89,10 @@ const conversationPreset = {
     type: String,
   },
   stop: { type: [{ type: String }], default: undefined },
+  is_archived: {
+    type: Boolean,
+    default: false,
+  },
 };
 
 const agentOptions = {

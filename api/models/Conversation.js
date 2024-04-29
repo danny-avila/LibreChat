@@ -31,10 +31,14 @@ module.exports = {
     }
   },
   getConvosByPage: async (user, pageNumber = 1, pageSize = 25) => {
+    const query = {
+      user,
+      $or: [{ is_archived: false }, { is_archived: { $exists: false } }],
+    };
     try {
-      const totalConvos = (await Conversation.countDocuments({ user })) || 1;
+      const totalConvos = (await Conversation.countDocuments(query)) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
-      const convos = await Conversation.find({ user })
+      const convos = await Conversation.find(query)
         .sort({ updatedAt: -1 })
         .skip((pageNumber - 1) * pageSize)
         .limit(pageSize)
