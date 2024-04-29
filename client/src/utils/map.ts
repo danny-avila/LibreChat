@@ -1,4 +1,5 @@
 import type { TFile, Assistant, TPlugin } from 'librechat-data-provider';
+import type { TPluginMap } from '~/common';
 
 /** Maps Files by `file_id` for quick lookup */
 export function mapFiles(files: TFile[]) {
@@ -23,9 +24,21 @@ export function mapAssistants(assistants: Assistant[]) {
 }
 
 /** Maps Plugins by `pluginKey` for quick lookup */
-export function mapPlugins(plugins: TPlugin[]): Record<string, TPlugin> {
+export function mapPlugins(plugins: TPlugin[]): TPluginMap {
   return plugins.reduce((acc, plugin) => {
     acc[plugin.pluginKey] = plugin;
     return acc;
-  }, {} as Record<string, TPlugin>);
+  }, {} as TPluginMap);
+}
+
+/** Transform array to TPlugin values */
+export function processPlugins(tools: (string | TPlugin)[], allPlugins?: TPluginMap): TPlugin[] {
+  return tools
+    .map((tool: string | TPlugin) => {
+      if (typeof tool === 'string') {
+        return allPlugins?.[tool];
+      }
+      return tool;
+    })
+    .filter((tool: TPlugin | undefined): tool is TPlugin => tool !== undefined);
 }

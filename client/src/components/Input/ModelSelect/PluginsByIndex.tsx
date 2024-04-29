@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { LocalStorageKeys } from 'librechat-data-provider';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TPlugin } from 'librechat-data-provider';
-import type { TModelSelectProps } from '~/common';
+import type { TModelSelectProps, TPluginMap } from '~/common';
 import {
   SelectDropDown,
   SelectDropDownPop,
@@ -13,7 +13,7 @@ import {
   Button,
 } from '~/components/ui';
 import { useSetIndexOptions, useAuthContext, useMediaQuery, useLocalize } from '~/hooks';
-import { cn, cardStyle, mapPlugins } from '~/utils';
+import { cn, cardStyle, mapPlugins, processPlugins } from '~/utils';
 import store from '~/store';
 
 const pluginStore: TPlugin = {
@@ -45,7 +45,7 @@ export default function PluginsByIndex({
       data,
     ): {
       list: TPlugin[];
-      map: Record<string, TPlugin>;
+      map: TPluginMap;
     } => {
       if (!data) {
         return {
@@ -90,7 +90,7 @@ export default function PluginsByIndex({
     if (!localStorageItem) {
       return setAvailableTools({ pluginStore, ...mapPlugins(tools) });
     }
-    const lastSelectedTools = JSON.parse(localStorageItem);
+    const lastSelectedTools = processPlugins(JSON.parse(localStorageItem) ?? [], allPlugins.map);
     const filteredTools = lastSelectedTools
       .filter((tool: TPlugin) =>
         tools.some((existingTool) => existingTool.pluginKey === tool.pluginKey),
@@ -105,14 +105,7 @@ export default function PluginsByIndex({
     if (!conversation?.tools) {
       return [];
     }
-    return conversation.tools
-      .map((tool: string | TPlugin) => {
-        if (typeof tool === 'string') {
-          return allPlugins?.map?.[tool];
-        }
-        return tool;
-      })
-      .filter((tool): tool is TPlugin => tool !== undefined);
+    return processPlugins(conversation.tools, allPlugins?.map);
   }, [conversation, allPlugins]);
 
   const availablePlugins = useMemo(() => {

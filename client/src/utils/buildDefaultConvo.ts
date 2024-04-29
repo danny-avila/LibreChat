@@ -64,7 +64,7 @@ const buildDefaultConvo = ({
     endpoint,
   };
 
-  defaultConvo.tools = lastSelectedTools ?? defaultConvo.tools;
+  defaultConvo.tools = lastConversationSetup?.tools ?? lastSelectedTools ?? defaultConvo.tools;
   defaultConvo.jailbreak = jailbreak ?? defaultConvo.jailbreak;
   defaultConvo.toneStyle = toneStyle ?? defaultConvo.toneStyle;
 

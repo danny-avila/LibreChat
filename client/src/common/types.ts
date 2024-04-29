@@ -2,20 +2,23 @@ import { FileSources } from 'librechat-data-provider';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { SetterOrUpdater } from 'recoil';
 import type {
-  TSetOption as SetOption,
-  TConversation,
-  TMessage,
-  TPreset,
-  TLoginUser,
   TUser,
-  EModelEndpoint,
   Action,
+  TPreset,
+  TPlugin,
+  TMessage,
+  TLoginUser,
   AuthTypeEnum,
+  TConversation,
+  EModelEndpoint,
   AuthorizationTypeEnum,
+  TSetOption as SetOption,
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
+
+export type TPluginMap = Record<string, TPlugin>;
 
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
