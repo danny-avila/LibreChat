@@ -15,8 +15,10 @@ const premiumModelsConfig = atom<string[]>({
     'gpt-4-1106-preview',
     // Anthropic Premium Models
     'claude-2.1',
-    'claude-2,claude-instant-1',
-    'claude-1.2,claude-1',
+    'claude-2',
+    'claude-instant-1',
+    'claude-1.2',
+    'claude-1',
     'claude-1-100k',
     'claude-3-opus-20240229',
     'claude-3-sonnet-20240229',
