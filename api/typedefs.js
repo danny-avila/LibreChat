@@ -7,6 +7,11 @@
  * @typedef {import('openai').OpenAI} OpenAI
  * @memberof typedefs
  */
+/**
+ * @exports AxiosResponse
+ * @typedef {import('axios').AxiosResponse} AxiosResponse
+ * @memberof typedefs
+ */
 
 /**
  * @exports Anthropic
@@ -1143,5 +1148,33 @@
  * @param {object} params
  * @param {CohereChatStreamRequest | CohereChatRequest} params.payload
  * @param {onTokenProgress} params.onTokenProgress
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} OllamaModelDetails
+ * @property {string} parent_model - The identifier for the parent model, if any.
+ * @property {string} format - The format of the model.
+ * @property {string} family - The primary family to which the model belongs.
+ * @property {string[]} families - An array of families that include the model.
+ * @property {string} parameter_size - The size of the parameters of the model.
+ * @property {string} quantization_level - The level of quantization of the model.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} OllamaModel
+ * @property {string} name - The name of the model, including version tag.
+ * @property {string} model - A redundant copy of the name, including version tag.
+ * @property {string} modified_at - The ISO string representing the last modification date.
+ * @property {number} size - The size of the model in bytes.
+ * @property {string} digest - The digest hash of the model.
+ * @property {OllamaModelDetails} details - Detailed information about the model.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} OllamaListResponse
+ * @property {OllamaModel[]} models - the list of models available.
  * @memberof typedefs
  */
