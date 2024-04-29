@@ -42,6 +42,12 @@ async function loadCustomConfig() {
       i === 0 && i++;
       return null;
     }
+
+    if (customConfig.reason || customConfig.stack) {
+      i === 0 && logger.error('Config file YAML format is invalid:', customConfig);
+      i === 0 && i++;
+      return null;
+    }
   }
 
   if (typeof customConfig === 'string') {
