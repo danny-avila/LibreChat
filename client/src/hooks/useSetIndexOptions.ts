@@ -116,7 +116,14 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
     if (!conversation?.tools) {
       return false;
     }
-    return conversation.tools.find((el) => el.pluginKey === value) ? true : false;
+    return conversation.tools.find((el) => {
+      if (typeof el === 'string') {
+        return el === value;
+      }
+      return el.pluginKey === value;
+    })
+      ? true
+      : false;
   }
 
   const setAgentOption: TSetOption = (param) => (newValue) => {
@@ -124,7 +131,7 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
     const convo = JSON.parse(editableConvo);
     const { agentOptions } = convo;
     agentOptions[param] = newValue;
-    console.log('agentOptions', agentOptions, param, newValue);
+
     if (param === 'model' && typeof newValue === 'string') {
       const lastModelUpdate = { ...lastModel, [EModelEndpoint.gptPlugins]: newValue };
       lastModelUpdate.secondaryModel = newValue;
@@ -146,10 +153,17 @@ const useSetIndexOptions: TUseSetOptions = (preset = false) => {
     }
 
     const update = {};
-    const current = conversation?.tools || [];
+    const current =
+      conversation?.tools
+        ?.map((tool: string | TPlugin) => {
+          if (typeof tool === 'string') {
+            return availableTools[tool];
+          }
+          return tool;
+        })
+        ?.filter((el) => !!el) || [];
     const isSelected = checkPluginSelection(newValue);
-    const tool =
-      availableTools[availableTools.findIndex((el: TPlugin) => el.pluginKey === newValue)];
+    const tool = availableTools[newValue];
     if (isSelected || remove) {
       update['tools'] = current.filter((el) => el.pluginKey !== newValue);
     } else {

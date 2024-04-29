@@ -1,6 +1,7 @@
 import { useRecoilState } from 'recoil';
-import { useState, useEffect } from 'react';
 import { ChevronDownIcon } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { LocalStorageKeys } from 'librechat-data-provider';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
@@ -12,7 +13,7 @@ import {
   Button,
 } from '~/components/ui';
 import { useSetIndexOptions, useAuthContext, useMediaQuery, useLocalize } from '~/hooks';
-import { cn, cardStyle } from '~/utils/';
+import { cn, cardStyle, mapPlugins } from '~/utils';
 import store from '~/store';
 
 const pluginStore: TPlugin = {
@@ -33,12 +34,32 @@ export default function PluginsByIndex({
   popover = false,
 }: TModelSelectProps) {
   const localize = useLocalize();
-  const { data: allPlugins } = useAvailablePluginsQuery();
-  const [visible, setVisibility] = useState<boolean>(true);
-  const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
-  const { checkPluginSelection, setTools } = useSetIndexOptions();
   const { user } = useAuthContext();
+  const [visible, setVisibility] = useState<boolean>(true);
   const isSmallScreen = useMediaQuery('(max-width: 640px)');
+  const { checkPluginSelection, setTools } = useSetIndexOptions();
+  const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
+  const { data: allPlugins } = useAvailablePluginsQuery({
+    enabled: !!user?.plugins,
+    select: (
+      data,
+    ): {
+      list: TPlugin[];
+      map: Record<string, TPlugin>;
+    } => {
+      if (!data) {
+        return {
+          list: [],
+          map: {},
+        };
+      }
+
+      return {
+        list: data,
+        map: mapPlugins(data),
+      };
+    },
+  });
 
   useEffect(() => {
     if (isSmallScreen) {
@@ -56,27 +77,51 @@ export default function PluginsByIndex({
     }
 
     if (!user.plugins || user.plugins.length === 0) {
-      setAvailableTools([pluginStore]);
+      setAvailableTools({ pluginStore });
       return;
     }
 
     const tools = [...user.plugins]
-      .map((el) => allPlugins.find((plugin: TPlugin) => plugin.pluginKey === el))
+      .map((el) => allPlugins.map[el])
       .filter((el): el is TPlugin => el !== undefined);
 
     /* Filter Last Selected Tools */
-    const localStorageItem = localStorage.getItem('lastSelectedTools');
+    const localStorageItem = localStorage.getItem(LocalStorageKeys.LAST_TOOLS);
     if (!localStorageItem) {
-      return setAvailableTools([...tools, pluginStore]);
+      return setAvailableTools({ pluginStore, ...mapPlugins(tools) });
     }
     const lastSelectedTools = JSON.parse(localStorageItem);
-    const filteredTools = lastSelectedTools.filter((tool: TPlugin) =>
-      tools.some((existingTool) => existingTool.pluginKey === tool.pluginKey),
-    );
-    localStorage.setItem('lastSelectedTools', JSON.stringify(filteredTools));
+    const filteredTools = lastSelectedTools
+      .filter((tool: TPlugin) =>
+        tools.some((existingTool) => existingTool.pluginKey === tool.pluginKey),
+      )
+      .filter((tool: TPlugin) => !!tool);
+    localStorage.setItem(LocalStorageKeys.LAST_TOOLS, JSON.stringify(filteredTools));
 
-    setAvailableTools([...tools, pluginStore]);
+    setAvailableTools({ pluginStore, ...mapPlugins(tools) });
   }, [allPlugins, user, setAvailableTools]);
+
+  const conversationTools: TPlugin[] = useMemo(() => {
+    if (!conversation?.tools) {
+      return [];
+    }
+    return conversation.tools
+      .map((tool: string | TPlugin) => {
+        if (typeof tool === 'string') {
+          return allPlugins?.map?.[tool];
+        }
+        return tool;
+      })
+      .filter((tool): tool is TPlugin => tool !== undefined);
+  }, [conversation, allPlugins]);
+
+  const availablePlugins = useMemo(() => {
+    if (!availableTools) {
+      return [];
+    }
+
+    return Object.values(availableTools);
+  }, [availableTools]);
 
   if (!conversation) {
     return null;
@@ -110,15 +155,19 @@ export default function PluginsByIndex({
             availableValues={models}
             showAbove={showAbove}
             showLabel={false}
+            className={cn(
+              cardStyle,
+              'z-50 flex h-[40px] w-48 min-w-48 flex-none items-center justify-center px-4 hover:cursor-pointer',
+            )}
           />
           <PluginsMenu
-            value={conversation.tools || []}
-            isSelected={checkPluginSelection}
-            setSelected={setTools}
-            availableValues={availableTools}
-            optionValueKey="pluginKey"
             showAbove={false}
             showLabel={false}
+            setSelected={setTools}
+            value={conversationTools}
+            optionValueKey="pluginKey"
+            availableValues={availablePlugins}
+            isSelected={checkPluginSelection}
             searchPlaceholder={localize('com_ui_select_search_plugin')}
           />
         </>
