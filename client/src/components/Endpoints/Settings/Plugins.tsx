@@ -15,9 +15,9 @@ import {
   MultiSelectDropDown,
 } from '~/components/ui';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils';
+import { useLocalize, useDebouncedInput } from '~/hooks';
 import { processPlugins, selectPlugins } from '~/utils';
 import OptionHover from './OptionHover';
-import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 import store from '~/store';
 
@@ -53,26 +53,53 @@ export default function Settings({
     return Object.values(availableTools);
   }, [availableTools]);
 
-  if (!conversation) {
-    return null;
-  }
   const {
     model,
+    modelLabel,
     chatGptLabel,
     promptPrefix,
     temperature,
     top_p: topP,
     frequency_penalty: freqP,
     presence_penalty: presP,
-  } = conversation;
+  } = conversation ?? {};
+
+  const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput<string | null | undefined>({
+    setOption,
+    optionKey: 'chatGptLabel',
+    initialValue: modelLabel ?? chatGptLabel,
+  });
+  const [setPromptPrefix, promptPrefixValue] = useDebouncedInput<string | null | undefined>({
+    setOption,
+    optionKey: 'promptPrefix',
+    initialValue: promptPrefix,
+  });
+  const [setTemperature, temperatureValue] = useDebouncedInput<number | null | undefined>({
+    setOption,
+    optionKey: 'temperature',
+    initialValue: temperature,
+  });
+  const [setTopP, topPValue] = useDebouncedInput<number | null | undefined>({
+    setOption,
+    optionKey: 'top_p',
+    initialValue: topP,
+  });
+  const [setFreqP, freqPValue] = useDebouncedInput<number | null | undefined>({
+    setOption,
+    optionKey: 'frequency_penalty',
+    initialValue: freqP,
+  });
+  const [setPresP, presPValue] = useDebouncedInput<number | null | undefined>({
+    setOption,
+    optionKey: 'presence_penalty',
+    initialValue: presP,
+  });
 
   const setModel = setOption('model');
-  const setChatGptLabel = setOption('chatGptLabel');
-  const setPromptPrefix = setOption('promptPrefix');
-  const setTemperature = setOption('temperature');
-  const setTopP = setOption('top_p');
-  const setFreqP = setOption('frequency_penalty');
-  const setPresP = setOption('presence_penalty');
+
+  if (!conversation) {
+    return null;
+  }
 
   return (
     <div className="grid grid-cols-5 gap-6">
@@ -97,7 +124,7 @@ export default function Settings({
             <Input
               id="chatGptLabel"
               disabled={readonly}
-              value={chatGptLabel || ''}
+              value={chatGptLabelValue || ''}
               onChange={(e) => setChatGptLabel(e.target.value ?? null)}
               placeholder={localize('com_endpoint_openai_custom_name_placeholder')}
               className={cn(
@@ -115,7 +142,7 @@ export default function Settings({
             <TextareaAutosize
               id="promptPrefix"
               disabled={readonly}
-              value={promptPrefix || ''}
+              value={promptPrefixValue || ''}
               onChange={(e) => setPromptPrefix(e.target.value ?? null)}
               placeholder={localize(
                 'com_endpoint_plug_set_custom_instructions_for_gpt_placeholder',
@@ -155,7 +182,7 @@ export default function Settings({
               <InputNumber
                 id="temp-int"
                 disabled={readonly}
-                value={temperature}
+                value={temperatureValue}
                 onChange={(value) => setTemperature(Number(value))}
                 max={2}
                 min={0}
@@ -172,7 +199,7 @@ export default function Settings({
             </div>
             <Slider
               disabled={readonly}
-              value={[temperature ?? 0.8]}
+              value={[temperatureValue ?? 0.8]}
               onValueChange={(value) => setTemperature(value[0])}
               doubleClickHandler={() => setTemperature(0.8)}
               max={2}
@@ -195,7 +222,7 @@ export default function Settings({
               <InputNumber
                 id="top-p-int"
                 disabled={readonly}
-                value={topP}
+                value={topPValue}
                 onChange={(value) => setTopP(Number(value))}
                 max={1}
                 min={0}
@@ -212,7 +239,7 @@ export default function Settings({
             </div>
             <Slider
               disabled={readonly}
-              value={[topP ?? 1]}
+              value={[topPValue ?? 1]}
               onValueChange={(value) => setTopP(value[0])}
               doubleClickHandler={() => setTopP(1)}
               max={1}
@@ -236,7 +263,7 @@ export default function Settings({
               <InputNumber
                 id="freq-penalty-int"
                 disabled={readonly}
-                value={freqP}
+                value={freqPValue}
                 onChange={(value) => setFreqP(Number(value))}
                 max={2}
                 min={-2}
@@ -253,7 +280,7 @@ export default function Settings({
             </div>
             <Slider
               disabled={readonly}
-              value={[freqP ?? 0]}
+              value={[freqPValue ?? 0]}
               onValueChange={(value) => setFreqP(value[0])}
               doubleClickHandler={() => setFreqP(0)}
               max={2}
@@ -277,7 +304,7 @@ export default function Settings({
               <InputNumber
                 id="pres-penalty-int"
                 disabled={readonly}
-                value={presP}
+                value={presPValue}
                 onChange={(value) => setPresP(Number(value))}
                 max={2}
                 min={-2}
@@ -294,7 +321,7 @@ export default function Settings({
             </div>
             <Slider
               disabled={readonly}
-              value={[presP ?? 0]}
+              value={[presPValue ?? 0]}
               onValueChange={(value) => setPresP(value[0])}
               doubleClickHandler={() => setPresP(0)}
               max={2}

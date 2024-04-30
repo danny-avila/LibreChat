@@ -369,6 +369,7 @@ export type TConversation = z.infer<typeof tConversationSchema> & {
 export const openAISchema = tConversationSchema
   .pick({
     model: true,
+    modelLabel: true,
     chatGptLabel: true,
     promptPrefix: true,
     temperature: true,
@@ -385,7 +386,7 @@ export const openAISchema = tConversationSchema
   .transform((obj) => ({
     ...obj,
     model: obj.model ?? openAISettings.model.default,
-    chatGptLabel: obj.chatGptLabel ?? null,
+    chatGptLabel: obj.modelLabel ?? obj.chatGptLabel ?? null,
     promptPrefix: obj.promptPrefix ?? null,
     temperature: obj.temperature ?? openAISettings.temperature.default,
     top_p: obj.top_p ?? openAISettings.top_p.default,
@@ -563,6 +564,7 @@ export const chatGPTBrowserSchema = tConversationSchema
 export const gptPluginsSchema = tConversationSchema
   .pick({
     model: true,
+    modelLabel: true,
     chatGptLabel: true,
     promptPrefix: true,
     temperature: true,
@@ -578,7 +580,7 @@ export const gptPluginsSchema = tConversationSchema
   .transform((obj) => ({
     ...obj,
     model: obj.model ?? 'gpt-3.5-turbo',
-    chatGptLabel: obj.chatGptLabel ?? null,
+    chatGptLabel: obj.modelLabel ?? obj.chatGptLabel ?? null,
     promptPrefix: obj.promptPrefix ?? null,
     temperature: obj.temperature ?? 0.8,
     top_p: obj.top_p ?? 1,
