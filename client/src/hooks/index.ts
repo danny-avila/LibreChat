@@ -21,7 +21,6 @@ export { default as useChatHelpers } from './useChatHelpers';
 export { default as useGenerations } from './useGenerations';
 export { default as useScrollToRef } from './useScrollToRef';
 export { default as useLocalStorage } from './useLocalStorage';
-export { default as useDefaultConvo } from './useDefaultConvo';
 export { default as useDelayedRender } from './useDelayedRender';
 export { default as useOnClickOutside } from './useOnClickOutside';
 export { default as useOriginNavigate } from './useOriginNavigate';
