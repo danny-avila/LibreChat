@@ -81,6 +81,10 @@ const userSchema = mongoose.Schema(
     refreshToken: {
       type: [Session],
     },
+    lastTokenClaimTimestamp: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true },
 );

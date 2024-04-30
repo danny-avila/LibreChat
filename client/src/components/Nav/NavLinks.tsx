@@ -18,7 +18,7 @@ import Logout from './Logout';
 import { cn } from '~/utils/';
 import ErrorDialog from '~/components/Messages/Content/ErrorDialog';
 import numeral from 'numeral';
-import { Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui/Tooltip';
+import ClaimTokensButton from '~/components/ClaimTokensButton/ClaimTokensButton';
 
 import store from '~/store';
 
@@ -74,6 +74,7 @@ function NavLinks() {
         {({ open }) => (
           <>
             <div className="m-1 ml-3 flex flex-col items-start whitespace-nowrap text-left text-sm text-gray-100">
+              <ClaimTokensButton />
               <div className="flex items-center text-gray-800 dark:text-gray-200">
                 {`${localize('com_tokens_remaining')} ${formatTokenCount(balanceQuery.data)}`}
               </div>

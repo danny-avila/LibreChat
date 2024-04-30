@@ -20,6 +20,7 @@ const registrationController = async (req, res) => {
       let newUser = await User.findOne({ _id: user._id });
       if (!newUser) {
         newUser = new User(user);
+        newUser.lastTokenClaimTimestamp = new Date();
         await newUser.save();
       }
 

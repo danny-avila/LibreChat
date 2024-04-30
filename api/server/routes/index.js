@@ -21,6 +21,7 @@ const paypalPayment = require('./paypalPayment');
 const assistants = require('./assistants');
 const files = require('./files');
 const staticRoute = require('./static');
+const claimTokens = require('./claimTokens');
 
 module.exports = {
   search,
@@ -46,4 +47,5 @@ module.exports = {
   assistants,
   files,
   staticRoute,
+  claimTokens,
 };
