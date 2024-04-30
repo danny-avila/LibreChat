@@ -80,7 +80,7 @@ const SidePanel = ({
     panelRef.current?.collapse();
   }, []);
 
-  const Links = useSideNavLinks({ hidePanel, assistants, keyProvided, endpoint });
+  const Links = useSideNavLinks({ hidePanel, assistants, keyProvided, endpoint, interfaceConfig });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
