@@ -76,7 +76,7 @@ const ClaimTokensButton = ({ refetchBalance }) => {
   return (
     <>
       <button
-        className={`relative w-full rounded px-4 py-2 transition-colors duration-300 ${
+        className={`relative mb-1 w-full rounded py-1 transition-colors duration-300 ${
           isSuccess
             ? 'bg-green-600 text-white'
             : isActive
