@@ -5,6 +5,7 @@ import store from '~/store';
 import useChatHelpers from './useChatHelpers';
 import { useParams } from 'react-router-dom';
 import { request, type TMessage } from 'librechat-data-provider';
+import { useToastContext } from '~/Providers';
 
 export const useInitSocket = () => {
   const user = useRecoilValue(store.user);
@@ -32,6 +33,7 @@ export const useChatSocket = (socket?: Socket) => {
   const { conversationId } = useParams();
   const chatHelpers = useChatHelpers(0, conversationId, socket);
   const { conversation, setConversation } = chatHelpers;
+  const { showToast } = useToastContext();
 
   const convoType = useRecoilValue(store.convoType);
 
@@ -83,6 +85,7 @@ export const useChatSocket = (socket?: Socket) => {
       if (conversationId === data.roomId) {
         // eslint-disable-next-line no-unsafe-optional-chaining
         setConversation({ ...conversation, users: [...conversation?.users, data.user] });
+        showToast({ message: `@${data.user.username} joined the room` });
       }
     });
 
