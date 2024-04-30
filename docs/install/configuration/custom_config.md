@@ -627,7 +627,8 @@ endpoints:
     - "Perplexity"
     - "together.ai"
     - "Ollama"
-
+    - "MLX"
+  
 ### **models**:
 
   > Configuration for models.

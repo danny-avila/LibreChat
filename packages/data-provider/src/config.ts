@@ -250,6 +250,7 @@ export enum KnownEndpoints {
   fireworks = 'fireworks',
   groq = 'groq',
   mistral = 'mistral',
+  mlx = 'mlx',
   ollama = 'ollama',
   openrouter = 'openrouter',
   perplexity = 'perplexity',
