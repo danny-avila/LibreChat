@@ -13,6 +13,7 @@ weight: -10
 - Now ensures the following fields always have defaults set:
     - `cache`, `imageOutputType`, `fileStrategy`, `registration`
 - Added [`modelSpecs`](./custom_config.md#model-specs-object-structure) for a configurable UI experience, simplifying model selection with specific presets and tools.
+- Invalid YAML format is now logged for easier debugging
 
 ## v1.0.7
 
