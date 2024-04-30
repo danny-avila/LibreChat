@@ -2,7 +2,7 @@ import { Search, X } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import { useState, useEffect, useCallback } from 'react';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
-import type { TError, TPluginAction } from 'librechat-data-provider';
+import type { TError, TPlugin, TPluginAction } from 'librechat-data-provider';
 import type { TPluginStoreDialogProps } from '~/common/types';
 import {
   usePluginDialogHelpers,
@@ -68,21 +68,27 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     },
   });
 
-  const handleInstall = (pluginAction: TPluginAction) => {
-    installPlugin(pluginAction);
+  const handleInstall = (pluginAction: TPluginAction, plugin?: TPlugin) => {
+    if (!plugin) {
+      return;
+    }
+    installPlugin(pluginAction, plugin);
     setShowPluginAuthForm(false);
   };
 
   const onPluginInstall = (pluginKey: string) => {
-    const getAvailablePluginFromKey = availablePlugins?.find((p) => p.pluginKey === pluginKey);
-    setSelectedPlugin(getAvailablePluginFromKey);
+    const plugin = availablePlugins?.find((p) => p.pluginKey === pluginKey);
+    if (!plugin) {
+      return;
+    }
+    setSelectedPlugin(plugin);
 
-    const { authConfig, authenticated } = getAvailablePluginFromKey ?? {};
+    const { authConfig, authenticated } = plugin ?? {};
 
     if (authConfig && authConfig.length > 0 && !authenticated) {
       setShowPluginAuthForm(true);
     } else {
-      handleInstall({ pluginKey, action: 'install', auth: null });
+      handleInstall({ pluginKey, action: 'install', auth: null }, plugin);
     }
   };
 
@@ -167,7 +173,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
             <div className="p-4 sm:p-6 sm:pt-4">
               <PluginAuthForm
                 plugin={selectedPlugin}
-                onSubmit={(installActionData: TPluginAction) => handleInstall(installActionData)}
+                onSubmit={(action: TPluginAction) => handleInstall(action, selectedPlugin)}
               />
             </div>
           )}

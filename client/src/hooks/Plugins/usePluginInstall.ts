@@ -1,7 +1,15 @@
 // hooks/Plugins/usePluginInstall.ts
 import { useCallback } from 'react';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import type { TError, TUser, TUpdateUserPlugins, TPluginAction } from 'librechat-data-provider';
+import type {
+  TError,
+  TUser,
+  TUpdateUserPlugins,
+  TPlugin,
+  TPluginAction,
+} from 'librechat-data-provider';
+import { useSetRecoilState } from 'recoil';
+import store from '~/store';
 
 interface PluginStoreHandlers {
   onInstallError?: (error: TError) => void;
@@ -11,11 +19,12 @@ interface PluginStoreHandlers {
 }
 
 export default function usePluginInstall(handlers: PluginStoreHandlers = {}) {
+  const setAvailableTools = useSetRecoilState(store.availableTools);
   const { onInstallError, onInstallSuccess, onUninstallError, onUninstallSuccess } = handlers;
   const updateUserPlugins = useUpdateUserPluginsMutation();
 
   const installPlugin = useCallback(
-    (pluginAction: TPluginAction) => {
+    (pluginAction: TPluginAction, plugin: TPlugin) => {
       updateUserPlugins.mutate(pluginAction, {
         onError: (error: unknown) => {
           if (onInstallError) {
@@ -23,13 +32,16 @@ export default function usePluginInstall(handlers: PluginStoreHandlers = {}) {
           }
         },
         onSuccess: (...rest) => {
+          setAvailableTools((prev) => {
+            return { ...prev, [plugin.pluginKey]: plugin };
+          });
           if (onInstallSuccess) {
             onInstallSuccess(...rest);
           }
         },
       });
     },
-    [updateUserPlugins, onInstallError, onInstallSuccess],
+    [updateUserPlugins, onInstallError, onInstallSuccess, setAvailableTools],
   );
 
   const uninstallPlugin = useCallback(
@@ -43,6 +55,11 @@ export default function usePluginInstall(handlers: PluginStoreHandlers = {}) {
             }
           },
           onSuccess: (...rest) => {
+            setAvailableTools((prev) => {
+              const newAvailableTools = { ...prev };
+              delete newAvailableTools[plugin];
+              return newAvailableTools;
+            });
             if (onUninstallSuccess) {
               onUninstallSuccess(...rest);
             }
@@ -50,7 +67,7 @@ export default function usePluginInstall(handlers: PluginStoreHandlers = {}) {
         },
       );
     },
-    [updateUserPlugins, onUninstallError, onUninstallSuccess],
+    [updateUserPlugins, onUninstallError, onUninstallSuccess, setAvailableTools],
   );
 
   return {
