@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { FaRegThumbsUp, FaSpinner } from 'react-icons/fa';
 
 const ClaimTokensButton = ({ refetchBalance }) => {
   const [isActive, setIsActive] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const fetchLastTokenClaimTimestamp = async () => {
@@ -42,12 +45,22 @@ const ClaimTokensButton = ({ refetchBalance }) => {
 
   const handleClaimTokens = async () => {
     try {
+      setIsLoading(true);
+      await new Promise((resolve) => setTimeout(resolve, 100)); // Fake 100ms delay
       await axios.post('/api/user/claim-tokens');
       setIsActive(false);
       setCountdown(24 * 60 * 60 * 1000);
+      setIsSuccess(true);
       refetchBalance(); // Refetch the user's balance
+
+      // Reset success state after 2 seconds
+      setTimeout(() => {
+        setIsSuccess(false);
+      }, 2500);
     } catch (error) {
       console.error('Error claiming tokens:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -61,17 +74,39 @@ const ClaimTokensButton = ({ refetchBalance }) => {
   };
 
   return (
-    <button
-      className={`rounded px-4 py-2 ${
-        isActive
-          ? 'bg-blue-500 text-white hover:bg-blue-600'
-          : 'cursor-not-allowed bg-gray-300 text-gray-500'
-      }`}
-      onClick={handleClaimTokens}
-      disabled={!isActive}
-    >
-      {isActive ? 'Claim Tokens' : `Claim in ${formatTime(countdown)}`}
-    </button>
+    <>
+      <button
+        className={`relative w-full rounded px-4 py-2 transition-colors duration-300 ${
+          isSuccess
+            ? 'bg-green-600 text-white'
+            : isActive
+              ? 'bg-blue-600 text-white hover:bg-blue-600'
+              : 'cursor-not-allowed bg-gray-300 text-gray-500'
+        }`}
+        onClick={handleClaimTokens}
+        disabled={!isActive || isSuccess || isLoading}
+      >
+        <div className="flex h-6 items-center justify-center">
+          {isLoading ? (
+            <span className="flex items-center">
+              <FaSpinner className="mr-2 animate-spin" />
+              Loading...
+            </span>
+          ) : (
+            <>
+              <span className={`${isSuccess ? 'invisible' : ''}`}>
+                {isActive ? 'Claim 20K Tokens' : `Claim in ${formatTime(countdown)}`}
+              </span>
+              {isSuccess && (
+                <span className="absolute inset-0 flex items-center justify-center animate-in fade-in">
+                  <FaRegThumbsUp />
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </button>
+    </>
   );
 };
 
