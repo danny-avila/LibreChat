@@ -22,7 +22,7 @@ export default function Header() {
       <div className="hide-scrollbar flex items-center gap-2 overflow-x-auto">
         {!navVisible && <HeaderNewChat />}
         {interfaceConfig.endpointsMenu && <EndpointsMenu />}
-        {modelSpecs?.length && <ModelSpecsMenu modelSpecs={modelSpecs} />}
+        {modelSpecs?.length > 0 && <ModelSpecsMenu modelSpecs={modelSpecs} />}
         {<HeaderOptions interfaceConfig={interfaceConfig} />}
         {interfaceConfig.presets && <PresetsMenu />}
       </div>
