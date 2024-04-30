@@ -15,6 +15,8 @@ weight: -10
 - Added [`modelSpecs`](./custom_config.md#model-specs-object-structure) for a configurable UI experience, simplifying model selection with specific presets and tools.
 - Added [`filteredTools`](./custom_config.md#filteredtools) to disable specific plugins/tools without any changes to the codebase
     - Affects both `gptPlugins` and `assistants` endpoints
+- [`iconURL`](./custom_config.md#iconurl) can now be to set to one of the main endpoints to use existing project icons
+    - "openAI" | "azureOpenAI" | "google" | "anthropic" | "assistants" | "gptPlugins"
 - Invalid YAML format is now logged for easier debugging
 
 ## v1.0.7
