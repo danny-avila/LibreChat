@@ -20,7 +20,10 @@ export default function MessageIcon(
   const messageSettings = useMemo(
     () => ({
       ...(conversation ?? {}),
-      ...(message as TMessage),
+      ...({
+        ...message,
+        iconURL: message?.iconURL ?? '',
+      } as TMessage),
     }),
     [conversation, message],
   );
