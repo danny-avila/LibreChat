@@ -1,16 +1,14 @@
-import { request, type TMessage } from 'librechat-data-provider';
+import { TConversation, TUser, request, type TMessage } from 'librechat-data-provider';
 import { useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Socket } from 'socket.io-client';
 import store from '~/store';
-import { useScrollToID } from './useScrollToRef';
 
 export const useChatCall = (socket?: Socket) => {
   const user = useRecoilValue(store.user);
   const convoType = useRecoilValue(store.convoType);
   const { conversationId } = useParams();
-  const { scrollToId } = useScrollToID({ id: 'here' });
   const [_, setIsSubmitting] = useRecoilState(store.isSubmitting);
 
   const sendMessage = useCallback(
@@ -24,7 +22,6 @@ export const useChatCall = (socket?: Socket) => {
         await request.post(`/api/rooms/${conversationId}`, message);
       }
 
-      scrollToId();
       socket.emit('new message', {
         userId: user?.id,
         roomId: conversationId,
@@ -33,7 +30,7 @@ export const useChatCall = (socket?: Socket) => {
       });
       setIsSubmitting(false);
     },
-    [socket, user, conversationId, convoType, scrollToId, setIsSubmitting],
+    [socket, user, conversationId, convoType, setIsSubmitting],
   );
 
   const updateMessage = useCallback(
@@ -51,5 +48,21 @@ export const useChatCall = (socket?: Socket) => {
     [socket, user, conversationId, convoType],
   );
 
-  return { socket, sendMessage, updateMessage };
+  const joinRoom = useCallback(
+    async (user: TUser, room: TConversation) => {
+      if (!socket || convoType !== 'r') {
+        return null;
+      }
+
+      console.log('--- join room event emitter ---', user, room.conversationId);
+
+      socket.emit('join room', {
+        user,
+        roomId: room.conversationId,
+      });
+    },
+    [socket, convoType],
+  );
+
+  return { socket, sendMessage, updateMessage, joinRoom };
 };

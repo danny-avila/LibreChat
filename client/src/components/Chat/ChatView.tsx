@@ -96,7 +96,11 @@ function ChatView({ index = 0 }: { index?: number }) {
               <ChatForm index={index} />
             ) : (
               conversationId !== 'new' && (
-                <ContinueChat conversation={conversation} setConversation={setConversation} />
+                <ContinueChat
+                  conversation={conversation}
+                  setConversation={setConversation}
+                  socket={socket}
+                />
               )
             )}
             <Footer />

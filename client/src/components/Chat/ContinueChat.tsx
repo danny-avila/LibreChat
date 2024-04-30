@@ -8,13 +8,16 @@ import DialogTemplate from '../ui/DialogTemplate';
 import { Dialog, DialogTrigger } from '../ui';
 import store from '~/store';
 import { useToastContext } from '~/Providers';
+import { Socket } from 'socket.io-client';
+import { useChatCall } from '~/hooks/useChatCall';
 
 interface Props {
   conversation: TConversation | null;
   setConversation: SetterOrUpdater<TConversation | null>;
+  socket?: Socket;
 }
 
-export default function ContinueChat({ conversation, setConversation }: Props) {
+export default function ContinueChat({ conversation, setConversation, socket }: Props) {
   const [password, setPassword] = useState<string>('');
   const [passwordErr, setPasswordErr] = useState<string>('');
   const [passwordOpen, setPasswordOpen] = useState<boolean>(false);
@@ -23,6 +26,7 @@ export default function ContinueChat({ conversation, setConversation }: Props) {
   const { user, logout } = useAuthContext();
   const location = useLocation();
   const { showToast } = useToastContext();
+  const { joinRoom } = useChatCall(socket);
 
   const handleContinue = () => {
     if (user?.username === 'guest-user') {
@@ -45,6 +49,7 @@ export default function ContinueChat({ conversation, setConversation }: Props) {
         setPasswordOpen(false);
         setConversation(responseData);
         setRooms([responseData, ...rooms]);
+        joinRoom(user, responseData);
       })
       .catch((error) => {
         if (error.response.status === 400) {

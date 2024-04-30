@@ -26,7 +26,7 @@ const setupWebSocket = (server) => {
 
     socket.on('new message', (data) => sendMessage(socket, data.message, data.roomId, data.bot));
     socket.on('udpate message', (data) => updateMessage(socket, data.message, data.roomId));
-    socket.on('new user', (data) => joinRoom(socket, data.user, data.roomId));
+    socket.on('join room', (data) => joinRoom(socket, data.user, data.roomId));
 
     socket.on('move room', (data) => moveRoom(socket.id, data.roomId));
   });
@@ -166,11 +166,12 @@ const moveRoom = (socketId, roomId) => {
  * @param {*} roomId
  */
 const joinRoom = (socket, user, roomId) => {
+  console.log('--- join room event ---', user, roomId);
   try {
     clients
       .filter((c) => c.roomId === roomId && socket.id !== c.socket.id)
       .forEach((client) => {
-        client.socket.emit('new user', { user });
+        client.socket.emit('join room', { user, roomId });
       });
   } catch (error) {
     throw new Error(`[joinRoom] Error in join room ${error}`);

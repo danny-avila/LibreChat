@@ -635,12 +635,14 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
               message:
                 'You have run out of credits. If you want to continue chatting with the premium models, you need to purchase more credits. Simply click the "Add Credits" button on the left to add more credits.',
               status: 'error',
+              duration: 5,
             });
           } else if (data.text === 'unsubscribed error') {
             showToast({
               message:
                 'You have run out of credits. If you want to continue chatting with the premium models, you need to subscribe. Simply click the "Subscribe" button on the left to add more credits.',
               status: 'error',
+              duration: 5,
             });
           }
         }
