@@ -296,6 +296,45 @@ docker compose up
         - `allowedDomains`: [More info](#allowedDomains)
     - [Registration Object Structure](#registration-object-structure)
 
+### interface
+!!! tip "interface"
+
+    - **Key**: `interface`
+    
+        - **Type**: Object
+        - **Description**: Configures user interface elements within the application, allowing for customization of visibility and behavior of various components.
+        - <u>**Sub-keys:**</u>
+        - `privacyPolicy`
+            - **Type**: Object
+            - **Description**: Contains settings related to the privacy policy link provided in the user interface.
+        
+        - `termsOfService`
+            - **Type**: Object
+            - **Description**: Contains settings related to the terms of service link provided in the user interface.
+
+        - `endpointsMenu`
+            - **Type**: Boolean
+            - **Description**: Controls the visibility of the endpoints dropdown menu in the interface.
+
+        - `modelSelect`
+            - **Type**: Boolean
+            - **Description**: Determines whether the model selection feature is available in the UI.
+            - **Note**: Also disables the model and assistants selection dropdown from the right-most side panel.
+
+        - `parameters`
+            - **Type**: Boolean
+            - **Description**: Toggles the visibility of parameter configuration options AKA conversation settings.
+
+        - `sidePanel`
+            - **Type**: Boolean
+            - **Description**: Controls the visibility of the right-most side panel in the application's interface.
+
+        - `presets`
+            - **Type**: Boolean
+            - **Description**: Enables or disables the presets menu in the application's UI.
+
+    - [Interface Object Structure](#interface-object-structure)
+
 ### endpoints
 !!! tip "endpoints"
     - **Key**: `endpoints`
@@ -319,16 +358,13 @@ docker compose up
 
 ### **Overview**
 
-  - `disabled`
-      - Whether file handling is disabled for the endpoint.
-  - `fileLimit`
-      - The maximum number of files allowed per upload request.
-  - `fileSizeLimit`
-      - The maximum size for a single file. In units of MB (e.g. use `20` for 20 megabytes)
-  - `totalSizeLimit`
-      - The total maximum size for all files in a single request. In units of MB (e.g. use `20` for 20 megabytes)
-  - `supportedMimeTypes`
-      - A list of [Regular Expressions](https://en.wikipedia.org/wiki/Regular_expression) specifying what MIME types are allowed for upload. This can be customized to restrict file types.
+The `fileConfig` object allows you to configure file handling settings for the application, including size limits and MIME type restrictions. This section provides a detailed breakdown of the `fileConfig` object structure.
+
+There are 3 main fields under `fileConfig`:
+
+  - `endpoints`
+  - `serverFileSizeLimit`
+  - `avatarSizeLimit`
 
 **Notes:**
 
@@ -373,82 +409,6 @@ docker compose up
       avatarSizeLimit: 2
     ```
 
-### **disabled**
-!!! tip "fileConfig / disabled"
-
-    > Indicates whether file uploading is disabled for a specific endpoint.
-
-    - Type: Boolean
-    - Default: `false` (i.e., uploading is enabled by default)
-    - Example: 
-      ```yaml
-      openAI:
-        disabled: true
-      ```
-    - **Note**: Setting this to `true` prevents any file uploads to the specified endpoint, overriding any other file-related settings.
-
-### **fileLimit**
-
-!!! tip "fileConfig / fileLimit"
-
-    > The maximum number of files allowed in a single upload request.
-
-    - Type: Integer
-    - Default: Varies by endpoint
-    - Example: 
-      ```yaml
-      assistants:
-        fileLimit: 5
-      ```
-    - **Note**: Helps control the volume of uploads and manage server load.
-
-### **fileSizeLimit**
-
-!!! tip "fileConfig / fileSizeLimit"
-
-    > The maximum size allowed for each individual file, specified in megabytes (MB).
-
-    - Type: Integer
-    - Default: Varies by endpoint
-    - Example: 
-      ```yaml
-      YourCustomEndpointName:
-        fileSizeLimit: 1000
-      ```
-    - **Note**: This limit ensures that no single file exceeds the specified size, allowing for better resource allocation and management.
-
-### **totalSizeLimit**
-
-!!! tip "fileConfig / totalSizeLimit"
-
-    > The total maximum size allowed for all files in a single request, specified in megabytes (MB).
-
-    - Type: Integer
-    - Default: Varies by endpoint
-    - Example: 
-      ```yaml
-      assistants:
-        totalSizeLimit: 50
-      ```
-    - **Note**: This setting is crucial for preventing excessive bandwidth and storage usage by any single upload request.
-
-### **supportedMimeTypes**
-
-!!! tip "fileConfig / supportedMimeTypes"
-
-    > A list of regular expressions defining the MIME types permitted for upload.
-
-    - Type: Array of Strings
-    - Default: Varies by endpoint
-    - Example: 
-      ```yaml
-      assistants:
-        supportedMimeTypes:
-          - "image/.*"
-          - "application/pdf"
-      ```
-    - **Note**: This allows for precise control over the types of files that can be uploaded. Invalid regex is ignored.
-
 ### **serverFileSizeLimit**
 
 !!! tip "fileConfig / serverFileSizeLimit"
@@ -476,6 +436,254 @@ docker compose up
         avatarSizeLimit: 2
       ```
     - **Note**: Specifically tailored for user avatar uploads, allowing for control over image sizes to maintain consistent quality and loading times.
+
+### **endpoints**
+
+!!! tip "fileConfig / endpoints"
+
+    > Configures file handling settings for individual endpoints, allowing customization per endpoint basis.
+
+    - Type: Record/Object
+    - **Description**: Specifies file handling configurations for individual endpoints, allowing customization per endpoint basis.
+
+Each object under endpoints is a record that can have the following settings:
+
+#### **Overview**
+
+  - `disabled`
+      - Whether file handling is disabled for the endpoint.
+  - `fileLimit`
+      - The maximum number of files allowed per upload request.
+  - `fileSizeLimit`
+      - The maximum size for a single file. In units of MB (e.g. use `20` for 20 megabytes)
+  - `totalSizeLimit`
+      - The total maximum size for all files in a single request. In units of MB (e.g. use `20` for 20 megabytes)
+  - `supportedMimeTypes`
+      - A list of [Regular Expressions](https://en.wikipedia.org/wiki/Regular_expression) specifying what MIME types are allowed for upload. This can be customized to restrict file types.
+
+### **disabled**
+
+!!! tip "fileConfig / endpoints / {endpoint_record} / disabled"
+
+    > Indicates whether file uploading is disabled for a specific endpoint.
+
+    - Type: Boolean
+    - Default: `false` (i.e., uploading is enabled by default)
+    - Example: 
+      ```yaml
+      openAI:
+        disabled: true
+      ```
+    - **Note**: Setting this to `true` prevents any file uploads to the specified endpoint, overriding any other file-related settings.
+
+### **fileLimit**
+
+!!! tip "fileConfig / endpoints / {endpoint_record} / fileLimit"
+
+    > The maximum number of files allowed in a single upload request.
+
+    - Type: Integer
+    - Default: Varies by endpoint
+    - Example: 
+      ```yaml
+      assistants:
+        fileLimit: 5
+      ```
+    - **Note**: Helps control the volume of uploads and manage server load.
+
+### **fileSizeLimit**
+
+!!! tip "fileConfig / endpoints / {endpoint_record} / fileSizeLimit"
+
+    > The maximum size allowed for each individual file, specified in megabytes (MB).
+
+    - Type: Integer
+    - Default: Varies by endpoint
+    - Example: 
+      ```yaml
+      YourCustomEndpointName:
+        fileSizeLimit: 1000
+      ```
+    - **Note**: This limit ensures that no single file exceeds the specified size, allowing for better resource allocation and management.
+
+### **totalSizeLimit**
+
+!!! tip "fileConfig / endpoints / {endpoint_record} / totalSizeLimit"
+
+    > The total maximum size allowed for all files in a single request, specified in megabytes (MB).
+
+    - Type: Integer
+    - Default: Varies by endpoint
+    - Example: 
+      ```yaml
+      assistants:
+        totalSizeLimit: 50
+      ```
+    - **Note**: This setting is crucial for preventing excessive bandwidth and storage usage by any single upload request.
+
+### **supportedMimeTypes**
+
+!!! tip "fileConfig / endpoints / {endpoint_record} / supportedMimeTypes"
+
+    > A list of regular expressions defining the MIME types permitted for upload.
+
+    - Type: Array of Strings
+    - Default: Varies by endpoint
+    - Example: 
+      ```yaml
+      assistants:
+        supportedMimeTypes:
+          - "image/.*"
+          - "application/pdf"
+      ```
+    - **Note**: This allows for precise control over the types of files that can be uploaded. Invalid regex is ignored.
+
+## Interface Object Structure
+
+### **Overview**
+
+The `interface` object allows for customization of various user interface elements within the application, including visibility and behavior settings for components such as menus, panels, and links. This section provides a detailed breakdown of the `interface` object structure.
+
+There are 7 main fields under `interface`:
+
+  - `privacyPolicy`
+  - `termsOfService`
+  - `endpointsMenu`
+  - `modelSelect`
+  - `parameters`
+  - `sidePanel`
+  - `presets`
+
+**Notes:**
+
+- The `interface` configurations are applied globally within the application.
+- Default values are provided for most settings but can be overridden based on specific requirements or conditions.
+- Conditional logic in the application can further modify these settings based on other configurations like model specifications.
+
+### Example
+
+??? tip "Click here to expand/collapse example"
+    ```yaml
+    interface:
+      privacyPolicy:
+        externalUrl: "https://example.com/privacy"
+        openNewTab: true
+      termsOfService:
+        externalUrl: "https://example.com/terms"
+        openNewTab: true
+      endpointsMenu: true
+      modelSelect: false
+      parameters: true
+      sidePanel: true
+      presets: false
+    ```
+
+### **privacyPolicy**
+
+!!! tip "interface / privacyPolicy"
+
+    > Contains settings related to the privacy policy link provided in the user interface.
+
+    - Type: Object
+    - **Description**: Allows for the specification of a custom URL and the option to open it in a new tab.
+    - **Sub-keys**:
+        - `externalUrl`
+            - Type: String (URL)
+            - Description: The URL pointing to the privacy policy document.
+        - `openNewTab`
+            - Type: Boolean
+            - Description: Specifies whether the link should open in a new tab.
+
+### **termsOfService**
+
+!!! tip "interface / termsOfService"
+
+    > Contains settings related to the terms of service link provided in the user interface.
+
+    - Type: Object
+    - **Description**: Allows for the specification of a custom URL and the option to open it in a new tab.
+    - **Sub-keys**:
+        - `externalUrl`
+            - Type: String (URL)
+            - Description: The URL pointing to the terms of service document.
+        - `openNewTab`
+            - Type: Boolean
+            - Description: Specifies whether the link should open in a new tab.
+
+### **endpointsMenu**
+
+!!! tip "interface / endpointsMenu"
+
+    > Controls the visibility of the endpoints menu in the interface.
+
+    - Type: Boolean
+    - Default: `true`
+    - Example: 
+      ```yaml
+      interface:
+        endpointsMenu: false
+      ```
+    - **Note**: Toggling this setting allows administrators to customize the availability of endpoint selections within the application.
+
+### **modelSelect**
+
+!!! tip "interface / modelSelect"
+
+    > Determines whether the model selection feature is available in the UI.
+
+    - Type: Boolean
+    - Default: `true`
+    - Example:
+      ```yaml
+      interface:
+        modelSelect: true
+      ```
+    - **Note**: Enabling this feature allows users to select different models directly from the interface.
+
+### **parameters**
+
+!!! tip "interface / parameters"
+
+    > Toggles the visibility of parameter configuration options within the interface.
+
+    - Type: Boolean
+    - Default: `true`
+    - Example:
+      ```yaml
+      interface:
+        parameters: false
+      ```
+    - **Note**: This setting is crucial for users who need to adjust parameters for specific functionalities within the application.
+
+### **sidePanel**
+
+!!! tip "interface / sidePanel"
+
+    > Controls the visibility of the side panel in the application's interface.
+
+    - Type: Boolean
+    - Default: `true`
+    - Example:
+      ```yaml
+      interface:
+        sidePanel: true
+      ```
+    - **Note**: The side panel typically contains additional navigation or information relevant to the application's context.
+
+### **presets**
+
+!!! tip "interface / presets"
+
+    > Enables or disables the use of presets in the application's UI.
+
+    - Type: Boolean
+    - Default: `true`
+    - Example:
+      ```yaml
+      interface:
+        presets: true
+      ```
+    - **Note**: Presets can simplify user interactions by providing pre-configured settings or operations, enhancing user experience and efficiency.
 
 ## Registration Object Structure
 
@@ -913,13 +1121,13 @@ Integrating Azure OpenAI Service with your application allows you to seamlessly 
     - **Description**: Each item in the `groups` array configures a set of models under a certain grouping, often by geographic region or distinct configuration.
     - **Example**: [See example above.](#example-configuration)
 
-### Group Configuration Parameters
+### Group Object Structure
 
 Each item under `groups` is part of a list of records, each with the following fields:
 
 #### **group**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / group"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / group"
 
     > Identifier for a group of models.
 
@@ -929,7 +1137,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 #### **apiKey**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / apiKey"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / apiKey"
 
     > The API key for accessing the Azure OpenAI Service.
 
@@ -940,7 +1148,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 #### **instanceName**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / instanceName"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / instanceName"
 
     > Name of the Azure instance.
 
@@ -952,7 +1160,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 #### **version**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / version"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / version"
 
     > API version.
 
@@ -963,7 +1171,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 #### **baseURL**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / baseURL"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / baseURL"
 
     > The base URL for the Azure OpenAI Service.
 
@@ -974,7 +1182,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 #### **additionalHeaders**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / additionalHeaders"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / additionalHeaders"
 
     > Additional headers for API requests.
 
@@ -990,7 +1198,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 #### **serverless**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / serverless"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / serverless"
 
     > Indicates the use of a serverless inference endpoint for Azure OpenAI chat completions.
 
@@ -1002,7 +1210,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 #### **addParams**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / addParams"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / addParams"
 
     > Adds additional parameters to requests.
 
@@ -1016,7 +1224,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 #### **dropParams**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / apiKey"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / apiKey"
 
     > Removes [default parameters](#default-parameters) from requests.
 
@@ -1027,7 +1235,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 #### **forcePrompt**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / forcePrompt"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / forcePrompt"
 
     > If `true`, sends a `prompt` parameter instead of `messages`.
 
@@ -1037,7 +1245,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 #### **models**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / models"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / models"
 
     > Configuration for individual models within a group.
 
@@ -1053,11 +1261,13 @@ Each item under `groups` is part of a list of records, each with the following f
         version: "2024-02-15-preview" # version can be any that supports vision
     ```
 
-### Model Configuration Parameters
+### Model Config Structure
+
+Each item under `models` is part of a list of records, either a boolean value or Object:
 
 **When specifying a model as an object:**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / models / {item=Object}"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / models / {model_item=Object}"
 
     An object allows for detailed configuration of the model, including its `deploymentName` and/or `version`. This mode is used for more granular control over the models, especially when working with multiple versions or deployments under one instance or resource group.
 
@@ -1069,12 +1279,14 @@ Each item under `groups` is part of a list of records, each with the following f
         version: "2024-02-15-preview"
     ```
 
-    ### Notes:
-    - **Deployment Names** and **Versions** are critical for ensuring that the correct model is used. Double-check these values for accuracy to prevent unexpected behavior.
+    Notes:
+
+    - **Deployment Names** and **Versions** are critical for ensuring that the correct model is used.
+        - Double-check these values for accuracy to prevent unexpected behavior.
 
 #### **deploymentName**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / models / {item=Object} / deploymentName"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / models / {model_item=Object} / deploymentName"
 
     > The name of the deployment for the model.
 
@@ -1086,7 +1298,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 #### **version**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / models / {item=Object} / version"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / models / {model_item=Object} / version"
 
     > Specifies the version of the model.
 
@@ -1097,7 +1309,7 @@ Each item under `groups` is part of a list of records, each with the following f
 
 **When specifying a model as a boolean (`true`):**
 
-!!! tip "endpoints / azureOpenAI / groups / {item} / models / {item=true}"
+!!! tip "endpoints / azureOpenAI / groups / {group_item} / models / {model_item=true}"
 
     When a model is enabled (`true`) without using an object, it uses the group's configuration values for deployment name and version.
 
@@ -1128,7 +1340,7 @@ Custom endpoints share logic with the OpenAI endpoint, and thus have default par
   ],
 }
 ```
-### Breakdown of Default Params
+#### Breakdown
 - `model`: The selected model from list of models.
 - `temperature`: Defaults to `1` if not provided via preset,
 - `top_p`: Defaults to `1` if not provided via preset,
