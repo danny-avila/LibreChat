@@ -1,13 +1,16 @@
 import { Search, X } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
-import { useState, useEffect } from 'react';
-import {
-  useAvailablePluginsQuery,
-  useUpdateUserPluginsMutation,
-} from 'librechat-data-provider/react-query';
+import { useState, useEffect, useCallback } from 'react';
+import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TError, TPluginAction } from 'librechat-data-provider';
 import type { TPluginStoreDialogProps } from '~/common/types';
-import { useLocalize, usePluginDialogHelpers, useSetIndexOptions, useAuthContext } from '~/hooks';
+import {
+  useLocalize,
+  usePluginDialogHelpers,
+  useSetIndexOptions,
+  useAuthContext,
+  usePluginInstall,
+} from '~/hooks';
 import PluginPagination from './PluginPagination';
 import PluginStoreItem from './PluginStoreItem';
 import PluginAuthForm from './PluginAuthForm';
@@ -16,7 +19,6 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { data: availablePlugins } = useAvailablePluginsQuery();
-  const updateUserPlugins = useUpdateUserPluginsMutation();
   const { setTools } = useSetIndexOptions();
 
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
@@ -44,38 +46,31 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     setSelectedPlugin,
   } = usePluginDialogHelpers();
 
-  const handleInstallError = (error: TError) => {
-    setError(true);
-    if (error.response?.data?.message) {
-      setErrorMessage(error.response?.data?.message);
-    }
-    setTimeout(() => {
-      setError(false);
-      setErrorMessage('');
-    }, 5000);
-  };
+  const handleInstallError = useCallback(
+    (error: TError) => {
+      setError(true);
+      if (error.response?.data?.message) {
+        setErrorMessage(error.response?.data?.message);
+      }
+      setTimeout(() => {
+        setError(false);
+        setErrorMessage('');
+      }, 5000);
+    },
+    [setError, setErrorMessage],
+  );
+
+  const { installPlugin, uninstallPlugin } = usePluginInstall({
+    onInstallError: handleInstallError,
+    onUninstallError: handleInstallError,
+    onUninstallSuccess: (_data, variables) => {
+      setTools(variables.pluginKey, true);
+    },
+  });
 
   const handleInstall = (pluginAction: TPluginAction) => {
-    updateUserPlugins.mutate(pluginAction, {
-      onError: (error: unknown) => {
-        handleInstallError(error as TError);
-      },
-    });
+    installPlugin(pluginAction);
     setShowPluginAuthForm(false);
-  };
-
-  const onPluginUninstall = (plugin: string) => {
-    updateUserPlugins.mutate(
-      { pluginKey: plugin, action: 'uninstall', auth: null },
-      {
-        onError: (error: unknown) => {
-          handleInstallError(error as TError);
-        },
-        onSuccess: () => {
-          setTools(plugin, true);
-        },
-      },
-    );
   };
 
   const onPluginInstall = (pluginKey: string) => {
@@ -204,7 +199,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                         plugin={plugin}
                         isInstalled={userPlugins.includes(plugin.pluginKey)}
                         onInstall={() => onPluginInstall(plugin.pluginKey)}
-                        onUninstall={() => onPluginUninstall(plugin.pluginKey)}
+                        onUninstall={() => uninstallPlugin(plugin.pluginKey)}
                       />
                     ))}
               </div>
