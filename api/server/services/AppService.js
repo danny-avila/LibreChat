@@ -20,6 +20,7 @@ const AppService = async (app) => {
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
 
+  const filteredTools = config.filteredTools;
   const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
   const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
 
@@ -33,7 +34,10 @@ const AppService = async (app) => {
   }
 
   /** @type {Record<string, FunctionTool} */
-  const availableTools = loadAndFormatTools({ directory: paths.structuredTools });
+  const availableTools = loadAndFormatTools({
+    directory: paths.structuredTools,
+    adminFilter: filteredTools,
+  });
 
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
@@ -44,6 +48,7 @@ const AppService = async (app) => {
       paths,
       fileStrategy,
       socialLogins,
+      filteredTools,
       availableTools,
       imageOutputType,
       interfaceConfig,
@@ -77,6 +82,7 @@ const AppService = async (app) => {
     paths,
     socialLogins,
     fileStrategy,
+    filteredTools,
     availableTools,
     imageOutputType,
     interfaceConfig,

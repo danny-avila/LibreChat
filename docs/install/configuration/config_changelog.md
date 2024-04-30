@@ -13,6 +13,8 @@ weight: -10
 - Now ensures the following fields always have defaults set:
     - `cache`, `imageOutputType`, `fileStrategy`, `registration`
 - Added [`modelSpecs`](./custom_config.md#model-specs-object-structure) for a configurable UI experience, simplifying model selection with specific presets and tools.
+- Added [`filteredTools`](./custom_config.md#filteredtools) to disable specific plugins/tools without any changes to the codebase
+    - Affects both `gptPlugins` and `assistants` endpoints
 - Invalid YAML format is now logged for easier debugging
 
 ## v1.0.7

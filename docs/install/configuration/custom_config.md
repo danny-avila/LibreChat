@@ -214,6 +214,22 @@ docker compose up
         - **Description**: Determines where to save user uploaded/generated files. Defaults to `"local"` if omitted.
         - **Example**: `fileStrategy: "firebase"`
 
+### filteredTools
+!!! tip "filteredTools"
+    - **Key**: `filteredTools`
+    - Type: Array of Strings
+    - Example: 
+      ```yaml
+      filteredTools: ["scholarai", "calculator"]
+      ```
+    - **Description**: Filters out specific tools from both Plugins and OpenAI Assistants endpoints
+    - **Notes**:
+        - Affects both `gptPlugins` and `assistants` endpoints
+        - You can find the names of the tools to filter in [`api/app/clients/tools/manifest.json`](https://github.com/danny-avila/LibreChat/blob/main/api/app/clients/tools/manifest.json)
+            - Use the `pluginKey` value
+        - Also, any listed under the ".well-known" directory [`api/app/clients/tools/.well-known`](https://github.com/danny-avila/LibreChat/blob/main/api/app/clients/tools/.well-known)
+            - Use the `name_for_model` value
+
 ### secureImageLinks
 !!! tip "secureImageLinks"
     - **Key**: `secureImageLinks`
@@ -938,7 +954,7 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
 
 !!! tip "modelSpecs / list / {spec_item} / preset / tools"
 
-    > Specific to `gptPlugins` endpoint. List of pluginKeys. Search `pluginKey` within the project to view a comprehensive list, found in [`api/app/clients/tools/manifest.json`](https://github.com/danny-avila/LibreChat/blob/main/api/app/clients/tools/manifest.json).
+    > Specific to `gptPlugins` endpoint. List of tool/plugin names.
 
     - Type: Array of Strings
     - Optional
@@ -948,7 +964,13 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
         tools: ["dalle", "tavily_search_results_json", "azure-ai-search", "traversaal_search"]
       ```
 
-      **Note**: At the moment, only tools that have credentials provided for them via .env file can be used with modelSpecs, unless the user already had the tool installed.
+      **Notes**:
+
+      - At the moment, only tools that have credentials provided for them via .env file can be used with modelSpecs, unless the user already had the tool installed.
+      - You can find the names of the tools to filter in [`api/app/clients/tools/manifest.json`](https://github.com/danny-avila/LibreChat/blob/main/api/app/clients/tools/manifest.json)
+          - Use the `pluginKey` value
+      - Also, any listed under the ".well-known" directory [`api/app/clients/tools/.well-known`](https://github.com/danny-avila/LibreChat/blob/main/api/app/clients/tools/.well-known)
+          - Use the `name_for_model` value
 
 #### **assistant_options**
 

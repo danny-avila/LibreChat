@@ -38,10 +38,11 @@ const filteredTools = new Set([
  *
  * @param {object} params - The parameters for the function.
  * @param {string} params.directory - The directory path where the tools are located.
- * @param {Set<string>} [params.filter=new Set()] - A set of filenames to exclude from loading.
+ * @param {Array<string>} [params.adminFilter=[]] - Array of admin-defined tool keys to exclude from loading.
  * @returns {Record<string, FunctionTool>} An object mapping each tool's plugin key to its instance.
  */
-function loadAndFormatTools({ directory, filter = filteredTools }) {
+function loadAndFormatTools({ directory, adminFilter = [] }) {
+  const filter = new Set([...adminFilter, ...filteredTools]);
   const tools = [];
   /* Structured Tools Directory */
   const files = fs.readdirSync(directory);

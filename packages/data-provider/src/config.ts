@@ -237,6 +237,7 @@ export const configSchema = z.object({
   cache: z.boolean().default(true),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
+  filteredTools: z.array(z.string()).optional(),
   interface: z
     .object({
       privacyPolicy: z
