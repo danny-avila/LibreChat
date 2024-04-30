@@ -63,7 +63,7 @@ const MenuItem: FC<MenuItemProps> = ({
         <div className="flex grow items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              {showIconInMenu && <SpecIcon currentSpec={spec} />}
+              {showIconInMenu && <SpecIcon currentSpec={spec} endpointsConfig={endpointsConfig} />}
               <div>
                 {title}
                 <div className="text-token-text-tertiary">{description}</div>

@@ -37,6 +37,9 @@ export enum IconContext {
 
 export type IconMapProps = {
   className?: string;
+  iconURL?: string;
+  context?: 'landing' | 'menu-item' | 'nav' | 'message';
+  endpoint?: string | null;
   assistantName?: string;
   avatar?: string;
   size?: number;

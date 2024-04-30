@@ -69,7 +69,11 @@ export default function ModelSpecsMenu({ modelSpecs }: { modelSpecs: TModelSpec[
 
   return (
     <Root>
-      <MenuButton primaryText={selected?.label ?? ''} selected={selected} />
+      <MenuButton
+        primaryText={selected?.label ?? ''}
+        selected={selected}
+        endpointsConfig={endpointsConfig}
+      />
       <Portal>
         {modelSpecs && modelSpecs?.length && (
           <div

@@ -1,16 +1,18 @@
 import { Trigger } from '@radix-ui/react-popover';
-import type { TModelSpec } from 'librechat-data-provider';
+import type { TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import SpecIcon from './SpecIcon';
 
 export default function MenuButton({
+  selected,
   primaryText = '',
   secondaryText = '',
-  selected,
+  endpointsConfig,
 }: {
   selected?: TModelSpec;
   primaryText?: string;
   secondaryText?: string;
+  endpointsConfig: TEndpointsConfig;
 }) {
   const localize = useLocalize();
   return (
@@ -19,7 +21,9 @@ export default function MenuButton({
         className="group flex cursor-pointer items-center gap-1 rounded-xl px-3 py-2 text-lg font-medium hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700"
         // type="button"
       >
-        {selected && selected.showIconInHeader && <SpecIcon currentSpec={selected} />}
+        {selected && selected.showIconInHeader && (
+          <SpecIcon currentSpec={selected} endpointsConfig={endpointsConfig} />
+        )}
         <div>
           {!selected ? localize('com_ui_none_selected') : primaryText}{' '}
           {!!secondaryText && <span className="text-token-text-secondary">{secondaryText}</span>}
