@@ -1,31 +1,31 @@
 import { useNavigate } from 'react-router-dom';
-import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 import { getEndpointField, getIconEndpoint, getIconKey } from '~/utils';
-import { useLocalize, useNewConvo, useLocalStorage } from '~/hooks';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
+import { useLocalize, useNewConvo } from '~/hooks';
 import { NewChatIcon } from '~/components/svg';
+import store from '~/store';
 
 export default function NewChat({
+  index = 0,
   toggleNav,
   subHeaders,
 }: {
+  index?: number;
   toggleNav: () => void;
   subHeaders?: React.ReactNode;
 }) {
-  const { newConversation: newConvo } = useNewConvo();
+  /** Note: this component needs an explicit index passed if using more than one */
+  const { newConversation: newConvo } = useNewConvo(index);
   const navigate = useNavigate();
   const localize = useLocalize();
 
   const { data: endpointsConfig } = useGetEndpointsQuery();
-  const [convo] = useLocalStorage(LocalStorageKeys.LAST_CONVO_SETUP, {
-    endpoint: EModelEndpoint.openAI,
-    iconURL: '',
-  });
-  let { endpoint = '' } = convo;
-  const iconURL = convo.iconURL ?? '';
+  const { conversation } = store.useCreateConversationAtom(index);
+  let { endpoint = '' } = conversation ?? {};
+  const iconURL = conversation?.iconURL ?? '';
   endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
@@ -55,7 +55,7 @@ export default function NewChat({
             >
               <div className="h-7 w-7 flex-shrink-0">
                 {iconURL && iconURL.includes('http') ? (
-                  <ConvoIconURL preset={convo} endpointIconURL={iconURL} context="nav" />
+                  <ConvoIconURL preset={conversation} endpointIconURL={iconURL} context="nav" />
                 ) : (
                   <div className="shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black dark:bg-white">
                     {endpoint &&
