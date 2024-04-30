@@ -118,7 +118,7 @@ const initializeClient = async ({ req, res, endpointOption, initAppClient = fals
 
   /** @type {OpenAIClient} */
   const openai = new OpenAI({
-    apiKey,
+    apiKey, defaultHeaders: {"OpenAI-Beta": "assistants=v1"},
     ...opts,
   });
 
