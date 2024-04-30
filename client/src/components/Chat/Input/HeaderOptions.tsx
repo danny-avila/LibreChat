@@ -100,8 +100,9 @@ export default function HeaderOptions({
               <OptionsPopover
                 visible={showPopover}
                 saveAsPreset={saveAsPreset}
-                closePopover={() => setShowPopover(false)}
+                presetsDisabled={!interfaceConfig?.presets}
                 PopoverButtons={<PopoverButtons />}
+                closePopover={() => setShowPopover(false)}
               >
                 <div className="px-4 py-4">
                   <EndpointSettings
