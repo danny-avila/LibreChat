@@ -785,7 +785,7 @@ There are 3 main fields under `modelSpecs`:
     - Type: Array of Objects
     - **Description**: Each object in the list details the configuration for a specific model, including its behaviors, appearance, and capabilities related to the application's functionality.
 
-Each object in the `list` can have the following settings:
+Each spec object in the `list` can have the following settings:
 
 #### **Overview**
 
@@ -798,9 +798,7 @@ Each object in the `list` can have the following settings:
   - `iconURL`
       - URL or a predefined endpoint name for the model's icon.
   - `default`
-      - Specifies if this model is the default selection.
-  - `order`
-      - Determines the order of appearance or priority among multiple models.
+      - Specifies if this model spec is the default selection, to be auto-selected on every new chat.
   - `showIconInMenu`
       - Controls whether the model's icon appears in the header dropdown menu.
   - `showIconInHeader`
@@ -814,7 +812,7 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
 
 #### **modelLabel**
 
-!!! tip "modelSpecs / list / {list_item} / preset / modelLabel"
+!!! tip "modelSpecs / list / {spec_item} / preset / modelLabel"
 
     > The label used to identify the model in user interfaces or logs. It provides a human-readable name for the model, which is displayed in the UI, as well as made aware to the AI.
 
@@ -828,7 +826,7 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
 
 #### **endpoint**
 
-!!! tip "modelSpecs / list / {list_item} / preset / endpoint"
+!!! tip "modelSpecs / list / {spec_item} / preset / endpoint"
 
     > Specifies the endpoint the model communicates with to execute operations. This setting determines the external or internal service that the model interfaces with.
 
@@ -841,7 +839,7 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
 
 #### **greeting**
 
-!!! tip "modelSpecs / list / {list_item} / preset / greeting"
+!!! tip "modelSpecs / list / {spec_item} / preset / greeting"
 
     > A predefined message that is visible in the UI before a new chat is started.
 
@@ -854,7 +852,7 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
 
 #### **promptPrefix**
 
-!!! tip "modelSpecs / list / {list_item} / preset / promptPrefix"
+!!! tip "modelSpecs / list / {spec_item} / preset / promptPrefix"
 
     > A static text prepended to every prompt sent to the model, setting a consistent context for responses.
 
@@ -868,7 +866,7 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
 
 #### **model_options**
 
-!!! tip "modelSpecs / list / {list_item} / preset / {model_option}"
+!!! tip "modelSpecs / list / {spec_item} / preset / {model_option}"
 
     > These settings control the stochastic nature and behavior of model responses, affecting creativity, relevance, and variability.
 
@@ -889,7 +887,7 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
 
 #### **resendFiles**
 
-!!! tip "modelSpecs / list / {list_item} / preset / resendFiles"
+!!! tip "modelSpecs / list / {spec_item} / preset / resendFiles"
 
     > Indicates whether files should be resent in scenarios where persistent sessions are not maintained.
 
@@ -902,7 +900,7 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
 
 #### **imageDetail**
 
-!!! tip "modelSpecs / list / {list_item} / preset / imageDetail"
+!!! tip "modelSpecs / list / {spec_item} / preset / imageDetail"
 
     > Specifies the level of detail required in image analysis tasks, applicable to models with vision capabilities (OpenAI spec).
 
@@ -915,7 +913,7 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
 
 #### **agentOptions**
 
-!!! tip "modelSpecs / list / {list_item} / preset / agentOptions"
+!!! tip "modelSpecs / list / {spec_item} / preset / agentOptions"
 
     > Specific to `gptPlugins` endpoint. Can be omitted either partially or completely for default settings
 
@@ -938,9 +936,9 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
 
 #### **tools**
 
-!!! tip "modelSpecs / list / {list_item} / preset / tools"
+!!! tip "modelSpecs / list / {spec_item} / preset / tools"
 
-    > Specific to `gptPlugins` endpoint. List of pluginKeys. Search `pluginKey` within the project to view a comprehensive list in the manifest.json file.
+    > Specific to `gptPlugins` endpoint. List of pluginKeys. Search `pluginKey` within the project to view a comprehensive list, found in [`api/app/clients/tools/manifest.json`](https://github.com/danny-avila/LibreChat/blob/main/api/app/clients/tools/manifest.json).
 
     - Type: Array of Strings
     - Optional
@@ -950,9 +948,11 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
         tools: ["dalle", "tavily_search_results_json", "azure-ai-search", "traversaal_search"]
       ```
 
+      **Note**: At the moment, only tools that have credentials provided for them via .env file can be used with modelSpecs, unless the user already had the tool installed.
+
 #### **assistant_options**
 
-!!! tip "modelSpecs / list / {list_item} / preset / {assistant_option}"
+!!! tip "modelSpecs / list / {spec_item} / preset / {assistant_option}"
 
     > Configurations specific to assistants, such as identifying an assistant, overriding the assistant's instructions.
 
