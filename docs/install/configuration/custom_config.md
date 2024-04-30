@@ -335,6 +335,28 @@ docker compose up
 
     - [Interface Object Structure](#interface-object-structure)
 
+### modelSpecs
+!!! tip "modelSpecs"
+
+    - **Key**: `modelSpecs`
+    
+        - **Type**: Object
+        - **Description**: Configures model specifications, allowing for detailed setup and customization of AI models and their behaviors within the application.
+        - <u>**Sub-keys:**</u>
+        - `enforce`
+            - **Type**: Boolean
+            - **Description**: Determines whether the model specifications should strictly override other configuration settings.
+        
+        - `prioritize`
+            - **Type**: Boolean
+            - **Description**: Specifies if model specifications should take priority over the default configuration when both are applicable.
+        
+        - `list`
+            - **Type**: Array of Objects
+            - **Description**: Contains a list of individual model specifications detailing various configurations and behaviors.
+
+    - [Model Specs Object Structure](#model-specs-object-structure)
+
 ### endpoints
 !!! tip "endpoints"
     - **Key**: `endpoints`
@@ -684,6 +706,267 @@ There are 7 main fields under `interface`:
         presets: true
       ```
     - **Note**: Presets can simplify user interactions by providing pre-configured settings or operations, enhancing user experience and efficiency.
+
+
+## Model Specs Object Structure
+
+### **Overview**
+
+The `modelSpecs` object helps you provide a simpler UI experience for AI models within your application.
+
+There are 3 main fields under `modelSpecs`:
+
+  - `enforce` (optional; default: false)
+  - `prioritize` (optional; default: true)
+  - `list` (required)
+
+**Notes:**
+
+- If `enforce` is set to true, model specifications can potentially conflict with other interface settings such as `endpointsMenu`, `modelSelect`, `presets`, and `parameters`.
+- The `list` array contains detailed configurations for each model, including presets that dictate specific behaviors, appearances, and capabilities.
+- If interface fields are not specified, having a list of model specs will disable the following interface elements:
+    - `endpointsMenu`
+    - `modelSelect`
+    - `parameters`
+    - `presets`
+- If you would like to enable these interface elements along with model specs, you can set them to `true` in the `interface` object.
+
+### Example
+
+??? tip "Click here to expand/collapse example"
+    ```yaml
+    modelSpecs:
+      enforce: true
+      prioritize: true
+      list:
+        - name: "commander_01"
+          label: "Commander in Chief"
+          description: "An AI roleplaying as the 50th President."
+          iconURL: "https://example.com/icon.jpg"
+          preset: {Refer to the detailed preset configuration example below}
+    ```
+
+### **enforce**
+
+!!! tip "modelSpecs / enforce"
+
+    > Determines whether the model specifications should strictly override other configuration settings.
+
+    - Type: Boolean
+    - Default: `false`
+    - Example: 
+      ```yaml
+      modelSpecs:
+        enforce: true
+      ```
+    - **Note**: Setting this to `true` can lead to conflicts with interface options if not managed carefully.
+
+### **prioritize**
+
+!!! tip "modelSpecs / prioritize"
+
+    > Specifies if model specifications should take priority over the default configuration when both are applicable.
+
+    - Type: Boolean
+    - Default: `true`
+    - Example:
+      ```yaml
+      modelSpecs:
+        prioritize: false
+      ```
+    - **Note**: When set to `true`, it ensures that a modelSpec is always selected in the UI. Doing this may prevent users from selecting different endpoints for the selected spec.
+
+### **list**
+
+!!! tip "modelSpecs / list"
+
+    > Contains a list of individual model specifications detailing various configurations and behaviors.
+
+    - Type: Array of Objects
+    - **Description**: Each object in the list details the configuration for a specific model, including its behaviors, appearance, and capabilities related to the application's functionality.
+
+Each object in the `list` can have the following settings:
+
+#### **Overview**
+
+  - `name`
+      - Unique identifier for the model.
+  - `label`
+      - A user-friendly name or label for the model, shown in the header dropdown.
+  - `description`
+      - A brief description of the model and its intended use or role, shown in the header dropdown menu.
+  - `iconURL`
+      - URL or a predefined endpoint name for the model's icon.
+  - `default`
+      - Specifies if this model is the default selection.
+  - `order`
+      - Determines the order of appearance or priority among multiple models.
+  - `showIconInMenu`
+      - Controls whether the model's icon appears in the header dropdown menu.
+  - `showIconInHeader`
+      - Controls whether the model's icon appears in the header dropdown button, left of its name.
+  - `preset`
+      - Detailed preset configurations that define the behavior and capabilities of the model (see preset object structure section below for more details).
+
+### Preset Object Structure
+
+The preset field for a modelSpec list item is made up of a comprehensive configuration blueprint for AI models within the system. It is designed to specify the operational settings of AI models, tailoring their behavior, outputs, and interactions with other system components and endpoints.
+
+#### **modelLabel**
+
+!!! tip "modelSpecs / list / {list_item} / preset / modelLabel"
+
+    > The label used to identify the model in user interfaces or logs. It provides a human-readable name for the model, which is displayed in the UI, as well as made aware to the AI.
+
+    - Type: String (nullable, optional)
+    - Default: None
+    - Example:
+      ```yaml
+      preset:
+        modelLabel: "Customer Support Bot"
+      ```
+
+#### **endpoint**
+
+!!! tip "modelSpecs / list / {list_item} / preset / endpoint"
+
+    > Specifies the endpoint the model communicates with to execute operations. This setting determines the external or internal service that the model interfaces with.
+
+    - Type: Enum (`EModelEndpoint`) or String (nullable)
+    - Example:
+      ```yaml
+      preset:
+        endpoint: "openAI"
+      ```
+
+#### **greeting**
+
+!!! tip "modelSpecs / list / {list_item} / preset / greeting"
+
+    > A predefined message that is visible in the UI before a new chat is started.
+
+    - Type: String (optional)
+    - Example:
+      ```yaml
+      preset:
+        greeting: "Hello! How can I assist you today?"
+      ```
+
+#### **promptPrefix**
+
+!!! tip "modelSpecs / list / {list_item} / preset / promptPrefix"
+
+    > A static text prepended to every prompt sent to the model, setting a consistent context for responses.
+
+    - Type: String (nullable, optional)
+    - Example:
+      ```yaml
+      preset:
+        promptPrefix: "As a financial advisor, ..."
+      ```
+    - **Note**: When using "assistants" as the endpoint, this becomes the OpenAI field `additional_instructions`
+
+#### **model_options**
+
+!!! tip "modelSpecs / list / {list_item} / preset / {model_option}"
+
+    > These settings control the stochastic nature and behavior of model responses, affecting creativity, relevance, and variability.
+
+    - Types:
+      - `temperature`: Number (optional)
+      - `top_p`: Number (optional)
+      - `top_k`: Number (optional)
+      - `frequency_penalty`: Number (optional)
+      - `presence_penalty`: Number (optional)
+      - `stop`: Array of Strings (optional)
+
+    - Examples:
+      ```yaml
+      preset:
+        temperature: 0.7
+        top_p: 0.9
+      ```
+
+#### **resendFiles**
+
+!!! tip "modelSpecs / list / {list_item} / preset / resendFiles"
+
+    > Indicates whether files should be resent in scenarios where persistent sessions are not maintained.
+
+    - Type: Boolean (optional)
+    - Example:
+      ```yaml
+      preset:
+        resendFiles: true
+      ```
+
+#### **imageDetail**
+
+!!! tip "modelSpecs / list / {list_item} / preset / imageDetail"
+
+    > Specifies the level of detail required in image analysis tasks, applicable to models with vision capabilities (OpenAI spec).
+
+    - Type: `eImageDetailSchema` (optional)
+    - Example:
+      ```yaml
+      preset:
+        imageDetail: "high"
+      ```
+
+#### **agentOptions**
+
+!!! tip "modelSpecs / list / {list_item} / preset / agentOptions"
+
+    > Specific to `gptPlugins` endpoint. Can be omitted either partially or completely for default settings
+
+    - Type: Record/Object (optional)
+    - Sub-fields include:
+      - `agent`: Type of agent (either "functions" or "classic"; default: "functions")
+      - `skipCompletion`: Whether to skip automatic completion suggestions (default: true)
+      - `model`: Model version or identifier (default: "gpt-4-turbo")
+      - `temperature`: Randomness in the model's responses (default: 0)
+
+    - Example:
+      ```yaml
+      preset:
+        agentOptions:
+          agent: "functions"
+          skipCompletion: false
+          model: "gpt-4-turbo"
+          temperature: 0.5
+      ```
+
+#### **tools**
+
+!!! tip "modelSpecs / list / {list_item} / preset / tools"
+
+    > Specific to `gptPlugins` endpoint. List of pluginKeys. Search `pluginKey` within the project to view a comprehensive list in the manifest.json file.
+
+    - Type: Array of Strings
+    - Optional
+    - Example:
+      ```yaml
+      preset:
+        tools: ["dalle", "tavily_search_results_json", "azure-ai-search", "traversaal_search"]
+      ```
+
+#### **assistant_options**
+
+!!! tip "modelSpecs / list / {list_item} / preset / {assistant_option}"
+
+    > Configurations specific to assistants, such as identifying an assistant, overriding the assistant's instructions.
+
+    - Types:
+      - `assistant_id`: String (optional)
+      - `instructions`: String (optional)
+
+    - Examples:
+      ```yaml
+      preset:
+        assistant_id: "asst_98765"
+        # Overrides the assistant's default instructions
+        instructions: "Please handle customer queries regarding order status."
+      ```
 
 ## Registration Object Structure
 
