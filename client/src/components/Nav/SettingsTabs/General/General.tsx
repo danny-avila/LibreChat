@@ -19,6 +19,7 @@ import ShowCodeSwitch from './ShowCodeSwitch';
 import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
 import store from '~/store';
+import ArchivedChats from './ArchivedChats';
 
 export const ThemeSelector = ({
   theme,
@@ -195,6 +196,9 @@ function General() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <HideSidePanelSwitch />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <ArchivedChats />
         </div>
         {/* Clear Chats should be last */}
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
