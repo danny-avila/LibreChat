@@ -26,7 +26,6 @@ export { default as useDefaultConvo } from './useDefaultConvo';
 export { default as useConversations } from './useConversations';
 export { default as useDelayedRender } from './useDelayedRender';
 export { default as useOnClickOutside } from './useOnClickOutside';
-export { default as useMessageHandler } from './useMessageHandler';
 export { default as useOriginNavigate } from './useOriginNavigate';
 export { default as useNavigateToConvo } from './useNavigateToConvo';
 export { default as useSetIndexOptions } from './useSetIndexOptions';
