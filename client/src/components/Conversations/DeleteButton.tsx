@@ -4,7 +4,15 @@ import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import { useDeleteConversationMutation } from '~/data-provider';
-import { Dialog, DialogTrigger, Label } from '~/components/ui';
+import {
+  Dialog,
+  DialogTrigger,
+  Label,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { TrashIcon, CrossIcon } from '~/components/svg';
 import { useLocalize, useNewConvo } from '~/hooks';
@@ -43,21 +51,35 @@ export default function DeleteButton({
   if (twcss) {
     classProp.className = twcss;
   }
+
+  const renderDeleteButton = () => {
+    if (appendLabel) {
+      return (
+        <>
+          <TrashIcon /> {localize('com_ui_delete')}
+        </>
+      );
+    }
+    return (
+      <TooltipProvider delayDuration={250}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>
+              <TrashIcon />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={0}>
+            {localize('com_ui_delete')}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  };
+
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <button {...classProp}>
-          {renaming ? (
-            <CrossIcon />
-          ) : appendLabel ? (
-            <>
-              <TrashIcon />
-              {localize('com_ui_delete')}
-            </>
-          ) : (
-            <TrashIcon />
-          )}
-        </button>
+        <button {...classProp}>{renaming ? <CrossIcon /> : renderDeleteButton()}</button>
       </DialogTrigger>
       <DialogTemplate
         showCloseButton={false}
