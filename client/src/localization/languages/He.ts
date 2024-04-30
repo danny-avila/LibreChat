@@ -94,6 +94,8 @@ export default {
   com_ui_rename: 'שם מחדש',
   com_ui_archive: 'ארכיון',
   com_ui_archive_error: 'אירעה שגיאה בארכיון השיחה',
+  com_ui_unarchive: 'לארכיון',
+  com_ui_unarchive_error: 'אירעה שגיאה בארכיון השיחה',
   com_ui_more_options: 'עוד',
   _ui_preview: 'תצוגה מקדימה',
   com_ui_upload: 'העלה',

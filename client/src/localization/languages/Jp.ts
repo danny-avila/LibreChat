@@ -429,6 +429,12 @@ export default {
   com_nav_send_message: 'メッセージを送信する',
   com_nav_log_out: 'ログアウト',
   com_nav_user: 'ユーザー',
+  com_nav_archived_chats: 'アーカイブされたチャット',
+  com_nav_archived_chats_manage: '管理',
+  com_nav_archive_all_chats: 'すべてのチャットをアーカイブ',
+  com_nav_archive_all: 'すべてアーカイブする',
+  com_nav_archive_name: '名前',
+  com_nav_archive_created_at: '作成日',
   com_nav_clear_conversation: '会話を削除する',
   com_nav_clear_conversation_confirm_message:
     '本当にすべての会話を削除しますか？ この操作は取り消せません。',

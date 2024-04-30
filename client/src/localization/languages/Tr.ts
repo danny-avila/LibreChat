@@ -282,6 +282,12 @@ export default {
   com_nav_send_message: 'Mesaj gönder',
   com_nav_log_out: 'Çıkış yap',
   com_nav_user: 'KULLANICI',
+  com_nav_archived_chats: 'Arşivlenmiş Sohbetler',
+  com_nav_archived_chats_manage: 'Ynetmek',
+  com_nav_archive_all_chats: 'Tm sohbetleri arşivle',
+  com_nav_archive_all: 'Tmn arşivle',
+  com_nav_archive_name: 'İsim',
+  com_nav_archive_created_at: 'DateCreated',
   com_nav_clear_conversation: 'Sohbetleri Temizle',
   com_nav_clear_conversation_confirm_message:
     'Tüm sohbetleri temizlemek istediğinizden emin misiniz? Bu geri alınamaz.',

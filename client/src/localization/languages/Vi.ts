@@ -54,7 +54,9 @@ export default {
   com_ui_delete_conversation_confirm: 'Điều này sẽ xóa',
   com_ui_rename: 'Đổi tên',
   com_ui_archive: 'Lưu trữ',
-  com_ui_archive_error: 'failed to archive conversation',
+  com_ui_archive_error: 'Không thể lưu trữ cuộc trò chuyện',
+  com_ui_unarchive: 'Bỏ lưu trữ',
+  com_ui_unarchive_error: 'Không thể bỏ lưu trữ cuộc trò chuyện',
   com_ui_more_options: 'Thêm',
   com_auth_error_login:
     'Không thể đăng nhập với thông tin được cung cấp. Vui lòng kiểm tra thông tin đăng nhập và thử lại.',
