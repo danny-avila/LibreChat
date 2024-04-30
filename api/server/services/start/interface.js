@@ -5,7 +5,7 @@
  * @returns {TCustomConfig['interface']} The default interface object.
  */
 function loadDefaultInterface(config, configDefaults) {
-  const { interface } = config ?? {};
+  const { interface: interfaceConfig } = config ?? {};
   const { interface: defaults } = configDefaults;
   const hasModelSpecs = config?.modelSpecs?.list?.length > 0;
 
@@ -14,13 +14,14 @@ function loadDefaultInterface(config, configDefaults) {
   // warn if enforce is true and prioritize is not, that enforcing model specs without prioritizing them can lead to unexpected behavior.
 
   return {
-    endpointsMenu: interface?.endpointsMenu ?? (hasModelSpecs ? false : defaults.endpointsMenu),
-    modelSelect: interface?.modelSelect ?? (hasModelSpecs ? false : defaults.modelSelect),
-    parameters: interface?.parameters ?? (hasModelSpecs ? false : defaults.parameters),
-    presets: interface?.presets ?? (hasModelSpecs ? false : defaults.presets),
-    sidePanel: interface?.sidePanel ?? defaults.sidePanel,
-    privacyPolicy: interface?.privacyPolicy ?? defaults.privacyPolicy,
-    termsOfService: interface?.termsOfService ?? defaults.termsOfService,
+    endpointsMenu:
+      interfaceConfig?.endpointsMenu ?? (hasModelSpecs ? false : defaults.endpointsMenu),
+    modelSelect: interfaceConfig?.modelSelect ?? (hasModelSpecs ? false : defaults.modelSelect),
+    parameters: interfaceConfig?.parameters ?? (hasModelSpecs ? false : defaults.parameters),
+    presets: interfaceConfig?.presets ?? (hasModelSpecs ? false : defaults.presets),
+    sidePanel: interfaceConfig?.sidePanel ?? defaults.sidePanel,
+    privacyPolicy: interfaceConfig?.privacyPolicy ?? defaults.privacyPolicy,
+    termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
   };
 }
 

@@ -37,16 +37,16 @@ const AppService = async (app) => {
 
   const socialLogins =
     config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
-  const interface = loadDefaultInterface(config, configDefaults);
+  const interfaceConfig = loadDefaultInterface(config, configDefaults);
 
   if (!Object.keys(config).length) {
     app.locals = {
       paths,
-      interface,
       fileStrategy,
       socialLogins,
       availableTools,
       imageOutputType,
+      interfaceConfig,
     };
 
     return;
@@ -75,11 +75,11 @@ const AppService = async (app) => {
 
   app.locals = {
     paths,
-    interface,
     socialLogins,
     fileStrategy,
     availableTools,
     imageOutputType,
+    interfaceConfig,
     modelSpecs: config.modelSpecs,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
