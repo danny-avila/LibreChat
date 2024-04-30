@@ -19,7 +19,8 @@ export const revokeAllUserKeys = () => `${keysEndpoint}?all=true`;
 
 export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
-export const conversations = (pageNumber: string) => `/api/convos?pageNumber=${pageNumber}`;
+export const conversations = (pageNumber: string, isArchived?: boolean) =>
+  `/api/convos?pageNumber=${pageNumber}${isArchived ? '&isArchived=true' : ''}`;
 
 export const conversationById = (id: string) => `/api/convos/${id}`;
 

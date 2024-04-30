@@ -89,7 +89,7 @@ const conversationPreset = {
     type: String,
   },
   stop: { type: [{ type: String }], default: undefined },
-  is_archived: {
+  isArchived: {
     type: Boolean,
     default: false,
   },

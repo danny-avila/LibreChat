@@ -127,7 +127,7 @@ export type TDeleteConversationResponse = {
 
 export type TArchiveConversationRequest = {
   conversationId: string;
-  is_archived: boolean;
+  isArchived: boolean;
 };
 
 export type TArchiveConversationResponse = TConversation;

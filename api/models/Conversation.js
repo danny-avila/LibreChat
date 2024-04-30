@@ -30,11 +30,14 @@ module.exports = {
       return { message: 'Error saving conversation' };
     }
   },
-  getConvosByPage: async (user, pageNumber = 1, pageSize = 25) => {
-    const query = {
-      user,
-      $or: [{ is_archived: false }, { is_archived: { $exists: false } }],
-    };
+  getConvosByPage: async (user, pageNumber = 1, pageSize = 25, isArchived = false) => {
+    const query = { user };
+    if (isArchived) {
+      query.isArchived = true;
+    } else {
+      query.$or = [{ isArchived: false }, { isArchived: { $exists: false } }];
+    }
+
     try {
       const totalConvos = (await Conversation.countDocuments(query)) || 1;
       const totalPages = Math.ceil(totalConvos / pageSize);
