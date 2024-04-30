@@ -74,7 +74,7 @@ function NavLinks() {
         {({ open }) => (
           <>
             <div className="m-1 ml-3 flex flex-col items-start whitespace-nowrap text-left text-sm text-gray-100">
-              <ClaimTokensButton />
+              <ClaimTokensButton refetchBalance={balanceQuery.refetch} />
               <div className="flex items-center text-gray-800 dark:text-gray-200">
                 {`${localize('com_tokens_remaining')} ${formatTokenCount(balanceQuery.data)}`}
               </div>

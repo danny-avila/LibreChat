@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 
-const ClaimTokensButton = () => {
+const ClaimTokensButton = ({ refetchBalance }) => {
   const [isActive, setIsActive] = useState(false);
   const [countdown, setCountdown] = useState(0);
 
@@ -31,7 +31,6 @@ const ClaimTokensButton = () => {
     const timer = setInterval(() => {
       setCountdown((prevCountdown) => {
         const newCountdown = Math.max(0, prevCountdown - 1000);
-        console.log('Updated countdown:', newCountdown);
         return newCountdown;
       });
     }, 1000);
@@ -46,6 +45,7 @@ const ClaimTokensButton = () => {
       await axios.post('/api/user/claim-tokens');
       setIsActive(false);
       setCountdown(24 * 60 * 60 * 1000);
+      refetchBalance(); // Refetch the user's balance
     } catch (error) {
       console.error('Error claiming tokens:', error);
     }
