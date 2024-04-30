@@ -1,17 +1,11 @@
 import copy from 'copy-to-clipboard';
-import { useEffect, useRef, useMemo, useCallback } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { EModelEndpoint, ContentTypes } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TMessage, TPreset } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
-import { getEndpointField, getIconEndpoint } from '~/utils';
-import Icon from '~/components/Endpoints/Icon';
 
 export default function useMessageHelpers(props: TMessageProps) {
   const latestText = useRef<string | number>('');
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const { message, currentEditId, setCurrentEditId } = props;
 
   const {
@@ -63,47 +57,6 @@ export default function useMessageHelpers(props: TMessageProps) {
   const assistant =
     conversation?.endpoint === EModelEndpoint.assistants && assistantMap?.[message?.model ?? ''];
 
-  const assistantName = assistant ? (assistant.name as string | undefined) : '';
-  const assistantAvatar = assistant ? (assistant.metadata?.avatar as string | undefined) : '';
-
-  const messageSettings = useMemo(
-    () => ({
-      ...(conversation ?? {}),
-      ...(message as TMessage),
-    }),
-    [conversation, message],
-  );
-
-  const iconURL = messageSettings?.iconURL;
-  let endpoint = messageSettings?.endpoint;
-  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
-
-  const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
-
-  let icon: React.ReactNode | null = null;
-  if (!message?.isCreatedByUser && iconURL && iconURL.includes('http')) {
-    icon = (
-      <ConvoIconURL
-        preset={messageSettings as typeof messageSettings & TPreset}
-        context="message"
-        assistantAvatar={assistantAvatar}
-        endpointIconURL={endpointIconURL}
-        assistantName={assistantName}
-      />
-    );
-  } else {
-    icon = (
-      <Icon
-        {...messageSettings}
-        endpoint={endpoint}
-        iconURL={!assistant ? endpointIconURL : assistantAvatar}
-        model={message?.model ?? conversation?.model}
-        assistantName={assistantName}
-        size={28.8}
-      />
-    );
-  }
-
   const regenerateMessage = () => {
     if ((isSubmitting && isCreatedByUser) || !message) {
       return;
@@ -135,7 +88,6 @@ export default function useMessageHelpers(props: TMessageProps) {
 
   return {
     ask,
-    icon,
     edit,
     isLast,
     assistant,
