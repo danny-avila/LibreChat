@@ -3,7 +3,7 @@ import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
-import useOriginNavigate from './useOriginNavigate';
+import useOriginNavigate from '../useOriginNavigate';
 import store from '~/store';
 
 const useNavigateToConvo = (index = 0) => {

@@ -4,5 +4,6 @@ export { default as useDefaultConvo } from './useDefaultConvo';
 export { default as useConversation } from './useConversation';
 export { default as useConversations } from './useConversations';
 export { default as useDebouncedInput } from './useDebouncedInput';
+export { default as useNavigateToConvo } from './useNavigateToConvo';
 export { default as useSetIndexOptions } from './useSetIndexOptions';
 export { default as useParameterEffects } from './useParameterEffects';

@@ -24,5 +24,4 @@ export { default as useLocalStorage } from './useLocalStorage';
 export { default as useDelayedRender } from './useDelayedRender';
 export { default as useOnClickOutside } from './useOnClickOutside';
 export { default as useOriginNavigate } from './useOriginNavigate';
-export { default as useNavigateToConvo } from './useNavigateToConvo';
 export { default as useGenerationsByLatest } from './useGenerationsByLatest';
