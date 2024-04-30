@@ -10,6 +10,8 @@ import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
 import { cn } from '~/utils';
 import store from '~/store';
+import { isPremiumUser } from '~/utils/checkUserValid';
+import { TUser } from 'librechat-data-provider';
 
 export default function Message(props: TMessageProps) {
   const UsernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
@@ -89,7 +91,14 @@ export default function Message(props: TMessageProps) {
           <div className="final-completion group mx-auto flex flex-1 gap-3 text-base md:max-w-3xl md:px-5 lg:max-w-[40rem] lg:px-1 xl:max-w-[48rem] xl:px-5">
             <div className="relative flex flex-shrink-0 flex-col items-end">
               <div>
-                <div className="pt-0.5">
+                <div className="relative pt-0.5">
+                  {isPremiumUser(user as TUser) && (
+                    <img
+                      src="/assets/premium.png"
+                      alt="premium"
+                      className="absolute -right-1 -top-1 h-4 w-4"
+                    />
+                  )}
                   <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
                     {userAvatar ? (
                       <img src={userAvatar} />

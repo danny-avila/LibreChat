@@ -9,7 +9,6 @@ import { ScreenshotProvider, ThemeProvider, useApiErrorBoundary } from './hooks'
 import { ToastProvider } from './Providers';
 import Toast from './components/ui/Toast';
 import { router } from './routes';
-
 const App = () => {
   const { setError } = useApiErrorBoundary();
 
