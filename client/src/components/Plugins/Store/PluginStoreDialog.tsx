@@ -5,11 +5,11 @@ import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TError, TPluginAction } from 'librechat-data-provider';
 import type { TPluginStoreDialogProps } from '~/common/types';
 import {
-  useLocalize,
   usePluginDialogHelpers,
   useSetIndexOptions,
-  useAuthContext,
   usePluginInstall,
+  useAuthContext,
+  useLocalize,
 } from '~/hooks';
 import PluginPagination from './PluginPagination';
 import PluginStoreItem from './PluginStoreItem';
