@@ -2,10 +2,10 @@ import { useNavigate } from 'react-router-dom';
 import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
+import { getEndpointField, getIconEndpoint, getIconKey } from '~/utils';
 import { useLocalize, useNewConvo, useLocalStorage } from '~/hooks';
 import { icons } from '~/components/Chat/Menus/Endpoints/Icons';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
-import { getEndpointField, getIconEndpoint } from '~/utils';
 import { NewChatIcon } from '~/components/svg';
 
 export default function NewChat({
@@ -30,7 +30,7 @@ export default function NewChat({
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
-  const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
+  const iconKey = getIconKey({ endpoint, endpointsConfig, endpointType, endpointIconURL });
   const Icon = icons[iconKey];
 
   const clickHandler = (event: React.MouseEvent<HTMLAnchorElement>) => {

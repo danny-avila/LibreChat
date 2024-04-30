@@ -5,7 +5,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { TConversation } from 'librechat-data-provider';
 import type { FC } from 'react';
-import { cn, getConvoSwitchLogic, getEndpointField } from '~/utils';
+import { cn, getConvoSwitchLogic, getEndpointField, getIconKey } from '~/utils';
 import { useLocalize, useUserKey, useDefaultConvo } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 import { useChatContext } from '~/Providers';
@@ -80,7 +80,7 @@ const MenuItem: FC<MenuItemProps> = ({
   };
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-  const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
+  const iconKey = getIconKey({ endpoint, endpointsConfig, endpointType });
   const Icon = icons[iconKey];
 
   return (

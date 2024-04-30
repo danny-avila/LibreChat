@@ -4,11 +4,11 @@ import { Flipper, Flipped } from 'react-flip-toolkit';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { FC } from 'react';
 import type { TPreset } from 'librechat-data-provider';
+import { getPresetTitle, getEndpointField, getIconKey } from '~/utils';
 import FileUpload from '~/components/Chat/Input/Files/FileUpload';
 import { PinIcon, EditIcon, TrashIcon } from '~/components/svg';
+import { Dialog, DialogTrigger, Label } from '~/components/ui';
 import DialogTemplate from '~/components/ui/DialogTemplate';
-import { getPresetTitle, getEndpointField } from '~/utils';
-import { Dialog, DialogTrigger, Label } from '~/components/ui/';
 import { MenuSeparator, MenuItem } from '../UI';
 import { icons } from '../Endpoints/Icons';
 import { useLocalize } from '~/hooks';
@@ -115,9 +115,7 @@ const PresetItems: FC<{
               return null;
             }
 
-            const iconKey = getEndpointField(endpointsConfig, preset.endpoint, 'type')
-              ? 'unknown'
-              : preset.endpointType ?? preset.endpoint ?? 'unknown';
+            const iconKey = getIconKey({ endpoint: preset.endpoint, endpointsConfig });
             const Icon = icons[iconKey];
 
             return (

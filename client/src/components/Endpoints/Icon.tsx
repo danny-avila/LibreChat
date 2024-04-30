@@ -21,14 +21,15 @@ import { cn } from '~/utils';
 const Icon: React.FC<IconProps> = (props) => {
   const { user } = useAuthContext();
   const {
-    size = 30,
-    isCreatedByUser,
-    button,
-    model = '',
-    endpoint,
     error,
+    button,
+    iconURL,
+    endpoint,
     jailbreak,
+    size = 30,
+    model = '',
     assistantName,
+    isCreatedByUser,
   } = props;
 
   const avatarSrc = useAvatar(user);
@@ -167,8 +168,12 @@ const Icon: React.FC<IconProps> = (props) => {
     },
   };
 
-  const { icon, bg, name } =
+  let { icon, bg, name } =
     endpoint && endpointIcons[endpoint] ? endpointIcons[endpoint] : endpointIcons.default;
+
+  if (iconURL && endpointIcons[iconURL]) {
+    ({ icon, bg, name } = endpointIcons[iconURL]);
+  }
 
   if (endpoint === EModelEndpoint.assistants) {
     return icon;

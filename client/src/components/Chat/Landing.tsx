@@ -2,18 +2,18 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { ReactNode } from 'react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
-import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
+import { getEndpointField, getIconEndpoint, getIconKey } from '~/utils';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import { getEndpointField, getIconEndpoint } from '~/utils';
+import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { icons } from './Menus/Endpoints/Icons';
 import { BirthdayIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 
 export default function Landing({ Header }: { Header?: ReactNode }) {
   const { conversation } = useChatContext();
-  const { data: endpointsConfig } = useGetEndpointsQuery();
-  const { data: startupConfig } = useGetStartupConfig();
   const assistantMap = useAssistantsMapContext();
+  const { data: startupConfig } = useGetStartupConfig();
+  const { data: endpointsConfig } = useGetEndpointsQuery();
 
   const localize = useLocalize();
 
@@ -31,9 +31,8 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
   const iconURL = conversation?.iconURL;
   endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
 
-  const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
-  const iconKey = endpointType ? 'unknown' : endpoint ?? 'unknown';
+  const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
   const Icon = icons[iconKey];
 
   const assistant = endpoint === EModelEndpoint.assistants && assistantMap?.[assistant_id ?? ''];

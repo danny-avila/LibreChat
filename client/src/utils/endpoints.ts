@@ -207,3 +207,23 @@ export function getIconEndpoint({
 }) {
   return (endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint) ?? '';
 }
+
+/** Gets the key to use for the default endpoint iconURL, as defined by the custom config */
+export function getIconKey({
+  endpoint,
+  endpointType: _eType,
+  endpointsConfig,
+  endpointIconURL: iconURL,
+}: {
+  endpoint?: string | null;
+  endpointsConfig?: TEndpointsConfig | undefined;
+  endpointType?: string | null;
+  endpointIconURL?: string;
+}) {
+  const endpointType = _eType ?? getEndpointField(endpointsConfig, endpoint, 'type');
+  const endpointIconURL = iconURL ?? getEndpointField(endpointsConfig, endpoint, 'iconURL');
+  if (endpointIconURL && EModelEndpoint[endpointIconURL]) {
+    return endpointIconURL;
+  }
+  return endpointType ? 'unknown' : endpoint ?? 'unknown';
+}
