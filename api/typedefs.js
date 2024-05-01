@@ -301,6 +301,18 @@
  */
 
 /**
+ * @exports TStartupConfig
+ * @typedef {import('librechat-data-provider').TStartupConfig} TStartupConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TConfigDefaults
+ * @typedef {import('librechat-data-provider').TConfigDefaults} TConfigDefaults
+ * @memberof typedefs
+ */
+
+/**
  * @exports TPlugin
  * @typedef {import('librechat-data-provider').TPlugin} TPlugin
  * @memberof typedefs
@@ -339,6 +351,18 @@
 /**
  * @exports TMessage
  * @typedef {import('librechat-data-provider').TMessage} TMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TConversation
+ * @typedef {import('librechat-data-provider').TConversation} TConversation
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TModelSpec
+ * @typedef {import('librechat-data-provider').TModelSpec} TModelSpec
  * @memberof typedefs
  */
 

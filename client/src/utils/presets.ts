@@ -1,4 +1,4 @@
-import type { TPreset } from 'librechat-data-provider';
+import type { TPreset, TPlugin } from 'librechat-data-provider';
 import { EModelEndpoint } from 'librechat-data-provider';
 
 export const getPresetIcon = (preset: TPreset, Icon) => {
@@ -52,4 +52,34 @@ export const getPresetTitle = (preset: TPreset) => {
   }
 
   return `${title}${modelInfo}${label ? ` (${label})` : ''}`.trim();
+};
+
+/** Remove unavailable tools from the preset */
+export const removeUnavailableTools = (
+  preset: TPreset,
+  availableTools: Record<string, TPlugin>,
+) => {
+  const newPreset = { ...preset };
+
+  if (newPreset.tools && newPreset.tools.length > 0) {
+    newPreset.tools = newPreset.tools
+      .filter((tool) => {
+        let pluginKey: string;
+        if (typeof tool === 'string') {
+          pluginKey = tool;
+        } else {
+          ({ pluginKey } = tool);
+        }
+
+        return !!availableTools[pluginKey];
+      })
+      .map((tool) => {
+        if (typeof tool === 'string') {
+          return tool;
+        }
+        return tool.pluginKey;
+      });
+  }
+
+  return newPreset;
 };

@@ -1,5 +1,16 @@
-import { defaultEndpoints } from 'librechat-data-provider';
-import type { EModelEndpoint, TEndpointsConfig, TConfig } from 'librechat-data-provider';
+import {
+  EModelEndpoint,
+  defaultEndpoints,
+  modularEndpoints,
+  LocalStorageKeys,
+} from 'librechat-data-provider';
+import type {
+  TConfig,
+  TPreset,
+  TModelSpec,
+  TConversation,
+  TEndpointsConfig,
+} from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 
 export const getAssistantName = ({
@@ -48,6 +59,7 @@ export const getAvailableEndpoints = (
   return availableEndpoints;
 };
 
+/** Get the specified field from the endpoint config */
 export function getEndpointField<K extends keyof TConfig>(
   endpointsConfig: TEndpointsConfig | undefined,
   endpoint: EModelEndpoint | string | null | undefined,
@@ -72,6 +84,9 @@ export function mapEndpoints(endpointsConfig: TEndpointsConfig) {
   );
 }
 
+/**
+ * Ensures the last selected model stays up to date, as conversation may
+ * update without updating last convo setup when same endpoint */
 export function updateLastSelectedModel({
   endpoint,
   model,
@@ -82,12 +97,133 @@ export function updateLastSelectedModel({
   if (!model) {
     return;
   }
-  const lastConversationSetup = JSON.parse(localStorage.getItem('lastConversationSetup') || '{}');
-  const lastSelectedModels = JSON.parse(localStorage.getItem('lastSelectedModel') || '{}');
+  const lastConversationSetup = JSON.parse(
+    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP) || '{}',
+  );
+
   if (lastConversationSetup.endpoint === endpoint) {
     lastConversationSetup.model = model;
-    localStorage.setItem('lastConversationSetup', JSON.stringify(lastConversationSetup));
+    localStorage.setItem(LocalStorageKeys.LAST_CONVO_SETUP, JSON.stringify(lastConversationSetup));
   }
+
+  const lastSelectedModels = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) || '{}');
   lastSelectedModels[endpoint] = model;
-  localStorage.setItem('lastSelectedModel', JSON.stringify(lastSelectedModels));
+  localStorage.setItem(LocalStorageKeys.LAST_MODEL, JSON.stringify(lastSelectedModels));
+}
+
+interface ConversationInitParams {
+  conversation: TConversation | null;
+  newEndpoint: EModelEndpoint | string;
+  endpointsConfig: TEndpointsConfig;
+  modularChat?: boolean;
+}
+
+interface InitiatedTemplateResult {
+  template: Partial<TPreset>;
+  shouldSwitch: boolean;
+  isExistingConversation: boolean;
+  isCurrentModular: boolean;
+  isNewModular: boolean;
+  newEndpointType: EModelEndpoint | undefined;
+}
+
+/** Get the conditional logic for switching conversations */
+export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTemplateResult {
+  const { conversation, newEndpoint, endpointsConfig, modularChat } = params;
+
+  const currentEndpoint = conversation?.endpoint;
+  const template: Partial<TPreset> = {
+    ...conversation,
+    endpoint: newEndpoint,
+    conversationId: 'new',
+  };
+
+  const isAssistantSwitch =
+    newEndpoint === EModelEndpoint.assistants &&
+    currentEndpoint === EModelEndpoint.assistants &&
+    currentEndpoint === newEndpoint;
+
+  const conversationId = conversation?.conversationId;
+  const isExistingConversation = !!(conversationId && conversationId !== 'new');
+
+  const currentEndpointType =
+    getEndpointField(endpointsConfig, currentEndpoint, 'type') ?? currentEndpoint;
+  const newEndpointType =
+    getEndpointField(endpointsConfig, newEndpoint, 'type') ??
+    (newEndpoint as EModelEndpoint | undefined);
+
+  const hasEndpoint = modularEndpoints.has(currentEndpoint ?? '');
+  const hasCurrentEndpointType = modularEndpoints.has(currentEndpointType ?? '');
+  const isCurrentModular = hasEndpoint || hasCurrentEndpointType || isAssistantSwitch;
+
+  const hasNewEndpoint = modularEndpoints.has(newEndpoint ?? '');
+  const hasNewEndpointType = modularEndpoints.has(newEndpointType ?? '');
+  const isNewModular = hasNewEndpoint || hasNewEndpointType || isAssistantSwitch;
+
+  const endpointsMatch = currentEndpoint === newEndpoint;
+  const shouldSwitch = endpointsMatch || modularChat || isAssistantSwitch;
+
+  return {
+    template,
+    shouldSwitch,
+    isExistingConversation,
+    isCurrentModular,
+    newEndpointType,
+    isNewModular,
+  };
+}
+
+/** Gets the default spec by order.
+ *
+ * First, the admin defined default, then last selected spec, followed by first spec
+ */
+export function getDefaultModelSpec(modelSpecs?: TModelSpec[]) {
+  const defaultSpec = modelSpecs?.find((spec) => spec.default);
+  const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
+  const lastSelectedSpec = modelSpecs?.find((spec) => spec.name === lastSelectedSpecName);
+  return defaultSpec || lastSelectedSpec || modelSpecs?.[0];
+}
+
+/** Gets the default spec iconURL by order or definition.
+ *
+ * First, the admin defined default, then last selected spec, followed by first spec
+ */
+export function getModelSpecIconURL(modelSpec: TModelSpec) {
+  return modelSpec.iconURL ?? modelSpec.preset.iconURL ?? modelSpec.preset.endpoint ?? '';
+}
+
+/** Gets the default frontend-facing endpoint, dependent on iconURL definition.
+ *
+ * If the iconURL is defined in the endpoint config, use it, otherwise use the endpoint
+ */
+export function getIconEndpoint({
+  endpointsConfig,
+  iconURL,
+  endpoint,
+}: {
+  endpointsConfig: TEndpointsConfig | undefined;
+  iconURL: string | undefined;
+  endpoint: string | null | undefined;
+}) {
+  return (endpointsConfig?.[iconURL ?? ''] ? iconURL ?? endpoint : endpoint) ?? '';
+}
+
+/** Gets the key to use for the default endpoint iconURL, as defined by the custom config */
+export function getIconKey({
+  endpoint,
+  endpointType: _eType,
+  endpointsConfig,
+  endpointIconURL: iconURL,
+}: {
+  endpoint?: string | null;
+  endpointsConfig?: TEndpointsConfig | undefined;
+  endpointType?: string | null;
+  endpointIconURL?: string;
+}) {
+  const endpointType = _eType ?? getEndpointField(endpointsConfig, endpoint, 'type');
+  const endpointIconURL = iconURL ?? getEndpointField(endpointsConfig, endpoint, 'iconURL');
+  if (endpointIconURL && EModelEndpoint[endpointIconURL]) {
+    return endpointIconURL;
+  }
+  return endpointType ? 'unknown' : endpoint ?? 'unknown';
 }
