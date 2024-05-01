@@ -1213,6 +1213,7 @@ Each endpoint in the `custom` array should have the following structure:
             - "Perplexity"
             - "together.ai"
             - "Ollama"
+            - "MLX"
 
 ### **models**
 
