@@ -127,7 +127,7 @@ async function importLibreChatConvo(
 
     await importBatchBuilder.finishConversation(jsonData.title, firstMessageDate);
     await importBatchBuilder.saveBatch();
-    logger.debug(`user: ${requestUserId} | Conversation ${jsonData.title} imported`);
+    logger.debug(`user: ${requestUserId} | Conversation "${jsonData.title}" imported`);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from LibreChat file`, error);
   }
