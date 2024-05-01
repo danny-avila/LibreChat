@@ -25,7 +25,7 @@ const authenticate = (strategy, options) => {
         req.user = user;
       }
 
-      if (info) {
+      if (!user && info) {
         const message = info.message || info;
         if (typeof message === 'string') {
           return res.redirect(`${domains.client}/login?error=${message}`);
