@@ -113,13 +113,13 @@ docker compose up
         # Rate limit window for file uploads per user
         userWindowInMinutes: 60  
       conversationsImport:
-    ipMax: 100
-    # Rate limit window for file uploads per IP
-    ipWindowInMinutes: 60 
-    userMax: 50
-    # Rate limit window for file uploads per user
-    userWindowInMinutes: 60  
-registration:
+        ipMax: 100
+        # Rate limit window for file uploads per IP
+        ipWindowInMinutes: 60 
+        userMax: 50
+        # Rate limit window for file uploads per user
+        userWindowInMinutes: 60  
+    registration:
       socialLogins: ["google", "facebook", "github", "discord", "openid"]
       allowedDomains:
         - "example.com"
@@ -330,8 +330,8 @@ registration:
         - **Type**: Object
         - **Description**: Configures registration-related settings for the application.
         - <u>**Sub-keys:**</u>
-        - `socialLogins`: [More info](#socialLogins)
-        - `allowedDomains`: [More info](#allowedDomains)
+        - `socialLogins`: [More info](#sociallogins)
+        - `allowedDomains`: [More info](#alloweddomains)
     - [Registration Object Structure](#registration-object-structure)
 
 ### interface
@@ -1037,7 +1037,7 @@ The preset field for a modelSpec list item is made up of a comprehensive configu
         ```yaml
         socialLogins: ["google", "facebook", "github", "discord", "openid"]
         ```
-      - **Note**: The order of the providers in the list determines their appearance order on the login/registration page. Each provider listed must be [properly configured](./user_auth_system.md#social-authentication-setup-and-configuration) within the system to be active and available for users. This configuration allows for a tailored authentication experience, emphasizing the most relevant or preferred social login options for your user base.
+      - **Note**: The order of the providers in the list determines their appearance order on the login/registration page. Each provider listed must be [properly configured](./user_auth_system.md#social-authentication) within the system to be active and available for users. This configuration allows for a tailored authentication experience, emphasizing the most relevant or preferred social login options for your user base.
 
 ### **allowedDomains**
 
@@ -1678,7 +1678,7 @@ Custom endpoints share logic with the OpenAI endpoint, and thus have default par
 - `stream`: If set, partial message deltas will be sent, like in ChatGPT. Otherwise, generation will only be available when completed.
 - `messages`: [OpenAI format for messages](https://platform.openai.com/docs/api-reference/chat/create#chat-create-messages); the `name` field is added to messages with `system` and `assistant` roles when a custom name is specified via preset.
 
-**Note:** The `max_tokens` field is not sent to use the maximum amount of tokens available, which is default OpenAI API behavior. Some alternate APIs require this field, or it may default to a very low value and your responses may appear cut off; in this case, you should add it to `addParams` field as shown in the [Endpoint Object Structure](#endpoint-object-structure).
+**Note:** The `max_tokens` field is not sent to use the maximum amount of tokens available, which is default OpenAI API behavior. Some alternate APIs require this field, or it may default to a very low value and your responses may appear cut off; in this case, you should add it to `addParams` field as shown in the [Custom Endpoint Object Structure](#custom-endpoint-object-structure).
 
 ### Additional Notes
 
