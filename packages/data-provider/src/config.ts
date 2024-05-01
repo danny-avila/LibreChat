@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import { EModelEndpoint, eModelEndpointSchema } from './schemas';
 import { fileConfigSchema } from './file-config';
+import { specsConfigSchema } from './models';
 import { FileSources } from './types/files';
 import { TModelsConfig } from './types';
 
@@ -26,6 +27,39 @@ export enum SettingsViews {
 }
 
 export const fileSourceSchema = z.nativeEnum(FileSources);
+
+// Helper type to extract the shape of the Zod object schema
+type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
+
+// Helper type to determine the default value or undefined based on whether the field has a default
+type DefaultValue<T> = T extends z.ZodDefault<z.ZodTypeAny>
+  ? ReturnType<T['_def']['defaultValue']>
+  : undefined;
+
+// Extract default values or undefined from the schema shape
+type ExtractDefaults<T> = {
+  [P in keyof T]: DefaultValue<T[P]>;
+};
+
+export type SchemaDefaults<T> = ExtractDefaults<SchemaShape<T>>;
+
+export type TConfigDefaults = SchemaDefaults<typeof configSchema>;
+
+export function getSchemaDefaults<Schema extends z.AnyZodObject>(
+  schema: Schema,
+): ExtractDefaults<SchemaShape<Schema>> {
+  const shape = schema.shape;
+  const entries = Object.entries(shape).map(([key, value]) => {
+    if (value instanceof z.ZodDefault) {
+      // Extract default value if it exists
+      return [key, value._def.defaultValue()];
+    }
+    return [key, undefined];
+  });
+
+  // Create the object with the right types
+  return Object.fromEntries(entries) as ExtractDefaults<SchemaShape<Schema>>;
+}
 
 export const modelConfigSchema = z
   .object({
@@ -200,9 +234,10 @@ export enum EImageOutputType {
 
 export const configSchema = z.object({
   version: z.string(),
-  cache: z.boolean().optional().default(true),
+  cache: z.boolean().default(true),
   secureImageLinks: z.boolean().optional(),
-  imageOutputType: z.nativeEnum(EImageOutputType).optional().default(EImageOutputType.PNG),
+  imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
+  filteredTools: z.array(z.string()).optional(),
   interface: z
     .object({
       privacyPolicy: z
@@ -217,17 +252,29 @@ export const configSchema = z.object({
           openNewTab: z.boolean().optional(),
         })
         .optional(),
+      endpointsMenu: z.boolean().optional(),
+      modelSelect: z.boolean().optional(),
+      parameters: z.boolean().optional(),
+      sidePanel: z.boolean().optional(),
+      presets: z.boolean().optional(),
     })
-    .optional(),
-  fileStrategy: fileSourceSchema.optional(),
+    .default({
+      endpointsMenu: true,
+      modelSelect: true,
+      parameters: true,
+      sidePanel: true,
+      presets: true,
+    }),
+  fileStrategy: fileSourceSchema.default(FileSources.local),
   registration: z
     .object({
       socialLogins: z.array(z.string()).optional(),
       allowedDomains: z.array(z.string()).optional(),
     })
-    .optional(),
+    .default({ socialLogins: defaultSocialLogins }),
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
+  modelSpecs: specsConfigSchema.optional(),
   endpoints: z
     .object({
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
@@ -240,6 +287,8 @@ export const configSchema = z.object({
     })
     .optional(),
 });
+
+export const getConfigDefaults = () => getSchemaDefaults(configSchema);
 
 export type TCustomConfig = z.infer<typeof configSchema>;
 
@@ -605,30 +654,37 @@ export enum SettingsTabValues {
   ACCOUNT = 'account',
 }
 
-/**
- * Enum for app-wide constants
- */
+/** Enum for app-wide constants */
 export enum Constants {
-  /**
-   * Key for the app's version.
-   */
+  /** Key for the app's version. */
   VERSION = 'v0.7.1',
-  /**
-   * Key for the Custom Config's version (librechat.yaml).
-   */
-  CONFIG_VERSION = '1.0.7',
-  /**
-   * Standard value for the first message's `parentMessageId` value, to indicate no parent exists.
-   */
+  /** Key for the Custom Config's version (librechat.yaml). */
+  CONFIG_VERSION = '1.0.8',
+  /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
-  /**
-   * Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing.
-   */
+  /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
   ENCODED_DOMAIN_LENGTH = 10,
-  /**
-   * Identifier for using current_model in multi-model requests.
-   */
+  /** Identifier for using current_model in multi-model requests. */
   CURRENT_MODEL = 'current_model',
+}
+
+export enum LocalStorageKeys {
+  /** Key for the admin defined App Title */
+  APP_TITLE = 'appTitle',
+  /** Key for the last conversation setup. */
+  LAST_CONVO_SETUP = 'lastConversationSetup',
+  /** Key for the last BingAI Settings */
+  LAST_BING = 'lastBingSettings',
+  /** Key for the last selected model. */
+  LAST_MODEL = 'lastSelectedModel',
+  /** Key for the last selected tools. */
+  LAST_TOOLS = 'lastSelectedTools',
+  /** Key for the last selected spec by name*/
+  LAST_SPEC = 'lastSelectedSpec',
+  /** Key for temporary files to delete */
+  FILES_TO_DELETE = 'filesToDelete',
+  /** Prefix key for the last selected assistant ID by index */
+  ASST_ID_PREFIX = 'assistant_id__',
 }
 
 /**
@@ -655,38 +711,4 @@ export enum CohereConstants {
    * Title message as required by Cohere
    */
   TITLE_MESSAGE = 'TITLE:',
-}
-
-export const defaultOrderQuery: {
-  order: 'desc';
-  limit: 100;
-} = {
-  order: 'desc',
-  limit: 100,
-};
-
-export enum AssistantStreamEvents {
-  ThreadCreated = 'thread.created',
-  ThreadRunCreated = 'thread.run.created',
-  ThreadRunQueued = 'thread.run.queued',
-  ThreadRunInProgress = 'thread.run.in_progress',
-  ThreadRunRequiresAction = 'thread.run.requires_action',
-  ThreadRunCompleted = 'thread.run.completed',
-  ThreadRunFailed = 'thread.run.failed',
-  ThreadRunCancelling = 'thread.run.cancelling',
-  ThreadRunCancelled = 'thread.run.cancelled',
-  ThreadRunExpired = 'thread.run.expired',
-  ThreadRunStepCreated = 'thread.run.step.created',
-  ThreadRunStepInProgress = 'thread.run.step.in_progress',
-  ThreadRunStepCompleted = 'thread.run.step.completed',
-  ThreadRunStepFailed = 'thread.run.step.failed',
-  ThreadRunStepCancelled = 'thread.run.step.cancelled',
-  ThreadRunStepExpired = 'thread.run.step.expired',
-  ThreadRunStepDelta = 'thread.run.step.delta',
-  ThreadMessageCreated = 'thread.message.created',
-  ThreadMessageInProgress = 'thread.message.in_progress',
-  ThreadMessageCompleted = 'thread.message.completed',
-  ThreadMessageIncomplete = 'thread.message.incomplete',
-  ThreadMessageDelta = 'thread.message.delta',
-  ErrorEvent = 'error',
 }

@@ -10,7 +10,7 @@ export default function AlternativeSettings({
   setOption,
   isPreset = false,
   className = '',
-}: TSettingsProps & { isMultiChat?: boolean }) {
+}: TSettingsProps) {
   const currentSettingsView = useRecoilValue(store.currentSettingsView);
   if (!conversation?.endpoint || currentSettingsView === SettingsViews.default) {
     return null;

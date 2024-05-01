@@ -1,3 +1,4 @@
+import { LocalStorageKeys } from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
@@ -264,10 +265,10 @@ export const useLogoutUserMutation = (
     onMutate: (...args) => {
       setDefaultPreset(null);
       queryClient.removeQueries();
-      localStorage.removeItem('lastConversationSetup');
-      localStorage.removeItem('lastSelectedModel');
-      localStorage.removeItem('lastSelectedTools');
-      localStorage.removeItem('filesToDelete');
+      localStorage.removeItem(LocalStorageKeys.LAST_CONVO_SETUP);
+      localStorage.removeItem(LocalStorageKeys.LAST_MODEL);
+      localStorage.removeItem(LocalStorageKeys.LAST_TOOLS);
+      localStorage.removeItem(LocalStorageKeys.FILES_TO_DELETE);
       // localStorage.removeItem('lastAssistant');
       options?.onMutate?.(...args);
     },
