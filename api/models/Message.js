@@ -32,6 +32,11 @@ module.exports = {
       if (!validConvoId.success) {
         return;
       }
+      console.log('[savemessage]', text);
+
+      if (text === 'credits error' || text === 'unsubscribed error') {
+        return;
+      }
 
       const update = {
         user,

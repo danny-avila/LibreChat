@@ -47,7 +47,7 @@ export default function UserKickButton({ user }) {
             <div className="flex w-full flex-col items-center gap-2">
               <div className="grid w-full items-center gap-2">
                 <Label htmlFor="chatGptLabel" className="text-left text-sm font-medium">
-                  Are you sure to kick @{user.username} in the Room?
+                  Are you sure you want to kick @{user.username} from the Room?
                 </Label>
               </div>
             </div>

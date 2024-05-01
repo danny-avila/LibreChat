@@ -129,14 +129,14 @@ function SelectDropDownPop({
                     selected={!!(value && value === option)}
                     onClick={() => {
                       if (premiumModels.indexOf(option) > -1) {
-                        if (isPremiumUser(user as TUser)) {
-                          setValue(option);
-                        } else {
-                          showToast({
-                            message: 'This is premium AI Model ' + localize('com_premium_warning'),
-                            status: 'info',
-                          });
-                        }
+                        // if (isPremiumUser(user as TUser)) {
+                        setValue(option);
+                        // } else {
+                        //   showToast({
+                        //     message: 'This is premium AI Model ' + localize('com_premium_warning'),
+                        //     status: 'info',
+                        //   });
+                        // }
                       } else {
                         setValue(option);
                       }

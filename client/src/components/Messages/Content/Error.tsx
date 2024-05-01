@@ -4,6 +4,8 @@ import React from 'react';
 import type { TOpenAIMessage } from 'librechat-data-provider';
 import { formatJSON, extractJson, isJson } from '~/utils/json';
 import CodeBlock from './CodeBlock';
+import { useRecoilValue } from 'recoil';
+import store from '~/store';
 
 type TConcurrent = {
   limit: number;
@@ -32,7 +34,7 @@ const errorMessages = {
   insufficient_quota:
     'We apologize for any inconvenience caused. The default API key has reached its limit. To continue using this service, please set up your own API key. You can do this by clicking on the model logo in the left corner of the textbox and selecting "Set Token" for the current selected endpoint. Thank you for your understanding.',
   moderation:
-    'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
+    "It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We're unable to proceed with this specific topic. If you have any other questions or topics you'd like to explore, please edit your message, or create a new conversation.",
   concurrent: (json: TConcurrent) => {
     const { limit } = json;
     const plural = limit > 1 ? 's' : '';
@@ -70,9 +72,22 @@ const errorMessages = {
 };
 
 const Error = ({ text }: { text: string }) => {
+  const convoType = useRecoilValue(store.convoType);
   const jsonString = extractJson(text);
   const errorMessage = text.length > 512 && !jsonString ? text.slice(0, 512) + '...' : text;
-  const defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
+  let defaultResponse = '';
+
+  if (convoType === 'r') {
+    defaultResponse = 'Room Error';
+  } else if (errorMessage === 'unsubscribed error') {
+    defaultResponse =
+      'You have run out of credits. If you want to continue chatting with the premium models, you need to subscribe. Simply click the "Subscribe" button on the left to add more credits.';
+  } else if (errorMessage === 'credits error') {
+    defaultResponse =
+      'You have run out of credits. If you want to continue chatting with the premium models, you need to purchase more credits. Simply click the "Add Credits" button on the left to add more credits.';
+  } else {
+    defaultResponse = `Something went wrong. Here's the specific error message we encountered: ${errorMessage}`;
+  }
 
   if (!isJson(jsonString)) {
     return defaultResponse;

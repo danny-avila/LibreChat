@@ -21,7 +21,7 @@ export default function User({
   const aProps = {
     className: `group relative mt-1 flex cursor-pointer items-center gap-2 break-all rounded-lg bg-gray-200 ${
       isCollapsed ? 'px-0 py-0' : 'px-2 py-2'
-    } active:opacity-50 dark:bg-gray-700`,
+    } active:opacity-50 dark:bg-gray-700 w-full flex justify-between`,
   };
 
   if (!activeConvo) {
@@ -31,13 +31,15 @@ export default function User({
 
   return (
     <a data-testid="convo-item" {...aProps}>
-      <img
-        src={user && user.avatar ? user.avatar : avatarSrc}
-        alt={user.name}
-        className="h-6 w-6 flex-shrink-0 rounded-full"
-      />
-      {!isCollapsed && user.name}
-      {you.id === conversation?.user._id && you.id !== user._id && <UserKickButton user={user} />}
+      <div className="flex">
+        <img
+          src={user && user.avatar ? user.avatar : avatarSrc}
+          alt={user.name}
+          className="h-6 w-6 flex-shrink-0 rounded-full"
+        />
+        {!isCollapsed && user.name}
+      </div>
+      {you?.id === conversation?.user._id && you.id !== user._id && <UserKickButton user={user} />}
     </a>
   );
 }

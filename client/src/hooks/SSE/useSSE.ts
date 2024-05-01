@@ -3,6 +3,8 @@ import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, useCallback } from 'react';
+import { useToastContext } from '~/Providers';
+
 import {
   /* @ts-ignore */
   SSE,
@@ -62,6 +64,7 @@ type TSyncData = {
 
 export default function useSSE(submission: TSubmission | null, index = 0, socket?: Socket) {
   const setStorage = useSetStorage();
+  const { showToast } = useToastContext();
   const queryClient = useQueryClient();
   const convoType = useRecoilValue(store.convoType);
   const genTitle = useGenTitleMutation();
@@ -395,6 +398,7 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
           ...submission,
           conversationId: convoId,
         });
+
         setMessages([...messages, message, errorResponse]);
         newConversation({
           template: { conversationId: convoId },
@@ -424,6 +428,7 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
       });
 
       setMessages([...messages, message, errorResponse]);
+
       if (data.conversationId && paramId === 'new') {
         newConversation({
           template: { conversationId: data.conversationId },
@@ -623,7 +628,39 @@ export default function useSSE(submission: TSubmission | null, index = 0, socket
         return;
       }
 
-      errorHandler({ data, submission: { ...submission, message } });
+      if (convoType === 'r') {
+        if (data) {
+          if (data.text === 'credits error') {
+            showToast({
+              message:
+                'You have run out of credits. If you want to continue chatting with the premium models, you need to purchase more credits. Simply click the "Add Credits" button on the left to add more credits.',
+              status: 'error',
+              duration: 5000,
+            });
+          } else if (data.text === 'unsubscribed error') {
+            showToast({
+              message:
+                'You have run out of credits. If you want to continue chatting with the premium models, you need to subscribe. Simply click the "Subscribe" button on the left to add more credits.',
+              status: 'error',
+              duration: 5000,
+            });
+          }
+        }
+        console.log('--- errorHandler ---', message);
+
+        setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
+
+        setMessages([...submission.messages, message]);
+        // newConversation({
+        //   template: { conversationId: convoId },
+        //   preset: tPresetSchema.parse(submission?.conversation),
+        // });
+        setIsSubmitting(false);
+        return;
+        // sendMessage(message)
+      } else {
+        errorHandler({ data, submission: { ...submission, message } });
+      }
     };
 
     setIsSubmitting(true);
