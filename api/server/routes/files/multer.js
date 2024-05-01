@@ -23,6 +23,8 @@ const storage = multer.diskStorage({
 const importFileFilter = (req, file, cb) => {
   if (file.mimetype === 'application/json') {
     cb(null, true);
+  } else if (path.extname(file.originalname).toLowerCase() === '.json') {
+    cb(null, true);
   } else {
     cb(new Error('Only JSON files are allowed'), false);
   }
