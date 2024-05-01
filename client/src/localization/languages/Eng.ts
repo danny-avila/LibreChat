@@ -115,6 +115,7 @@ export default {
   com_ui_new_footer: 'All AI conversations in one place.',
   com_ui_enter: 'Enter',
   com_ui_submit: 'Submit',
+  com_ui_none_selected: 'None selected',
   com_ui_upload_success: 'Successfully uploaded file',
   com_ui_upload_error: 'There was an error uploading your file',
   com_ui_upload_invalid: 'Invalid file for upload. Must be an image not exceeding 2 MB',

@@ -1,28 +1,29 @@
 import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import { defaultOrderQuery } from 'librechat-data-provider';
 import {
   useGetModelsQuery,
   useGetStartupConfig,
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
-import { defaultOrderQuery } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { useGetConvoIdQuery, useListAssistantsQuery } from '~/data-provider';
-import { useNewConvo, useConfigOverride } from '~/hooks';
+import { getDefaultModelSpec, getModelSpecIconURL } from '~/utils';
+import { useNewConvo, useAppStartup } from '~/hooks';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
 import { Spinner } from '~/components/svg';
 import store from '~/store';
 
 export default function ChatRoute() {
-  const index = 0;
-
-  useConfigOverride();
-  const { conversationId } = useParams();
   const { data: startupConfig } = useGetStartupConfig();
+  const { isAuthenticated, user } = useAuthRedirect();
+  useAppStartup({ startupConfig, user });
+
+  const index = 0;
+  const { conversationId } = useParams();
 
   const { conversation } = store.useCreateConversationAtom(index);
-  const { isAuthenticated } = useAuthRedirect();
   const { newConversation } = useNewConvo();
   const hasSetConversation = useRef(false);
 
@@ -40,26 +41,33 @@ export default function ChatRoute() {
   });
 
   useEffect(() => {
-    if (startupConfig?.appTitle) {
-      document.title = startupConfig.appTitle;
-      localStorage.setItem('appTitle', startupConfig.appTitle);
-    }
-  }, [startupConfig]);
-
-  useEffect(() => {
     if (
+      startupConfig &&
       conversationId === 'new' &&
       endpointsQuery.data &&
       modelsQuery.data &&
       !modelsQuery.data?.initial &&
       !hasSetConversation.current
     ) {
+      const spec = getDefaultModelSpec(startupConfig.modelSpecs?.list);
+
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
+        ...(spec
+          ? {
+            preset: {
+              ...spec.preset,
+              iconURL: getModelSpecIconURL(spec),
+              spec: spec.name,
+            },
+          }
+          : {}),
       });
+
       hasSetConversation.current = true;
     } else if (
+      startupConfig &&
       initialConvoQuery.data &&
       endpointsQuery.data &&
       modelsQuery.data &&
@@ -75,17 +83,33 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     } else if (
+      startupConfig &&
       !hasSetConversation.current &&
       !modelsQuery.data?.initial &&
       conversationId === 'new' &&
       assistants
     ) {
+      const spec = getDefaultModelSpec(startupConfig.modelSpecs?.list);
       newConversation({
         modelsData: modelsQuery.data,
         template: conversation ? conversation : undefined,
+        ...(spec
+          ? {
+            preset: {
+              ...spec.preset,
+              iconURL: getModelSpecIconURL(spec),
+              spec: spec.name,
+            },
+          }
+          : {}),
       });
       hasSetConversation.current = true;
-    } else if (!hasSetConversation.current && !modelsQuery.data?.initial && assistants) {
+    } else if (
+      startupConfig &&
+      !hasSetConversation.current &&
+      !modelsQuery.data?.initial &&
+      assistants
+    ) {
       newConversation({
         template: initialConvoQuery.data,
         preset: initialConvoQuery.data as TPreset,
@@ -96,7 +120,7 @@ export default function ChatRoute() {
     }
     /* Creates infinite render if all dependencies included due to newConversation invocations exceeding call stack before hasSetConversation.current becomes truthy */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialConvoQuery.data, endpointsQuery.data, modelsQuery.data, assistants]);
+  }, [startupConfig, initialConvoQuery.data, endpointsQuery.data, modelsQuery.data, assistants]);
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
     return <Spinner className="m-auto text-black dark:text-white" />;

@@ -1,13 +1,16 @@
 import { Search, X } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
-import { useState, useEffect } from 'react';
-import {
-  useAvailablePluginsQuery,
-  useUpdateUserPluginsMutation,
-} from 'librechat-data-provider/react-query';
-import type { TError, TPluginAction } from 'librechat-data-provider';
+import { useState, useEffect, useCallback } from 'react';
+import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
+import type { TError, TPlugin, TPluginAction } from 'librechat-data-provider';
 import type { TPluginStoreDialogProps } from '~/common/types';
-import { useLocalize, usePluginDialogHelpers, useSetIndexOptions, useAuthContext } from '~/hooks';
+import {
+  usePluginDialogHelpers,
+  useSetIndexOptions,
+  usePluginInstall,
+  useAuthContext,
+  useLocalize,
+} from '~/hooks';
 import PluginPagination from './PluginPagination';
 import PluginStoreItem from './PluginStoreItem';
 import PluginAuthForm from './PluginAuthForm';
@@ -16,7 +19,6 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { data: availablePlugins } = useAvailablePluginsQuery();
-  const updateUserPlugins = useUpdateUserPluginsMutation();
   const { setTools } = useSetIndexOptions();
 
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
@@ -44,50 +46,49 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     setSelectedPlugin,
   } = usePluginDialogHelpers();
 
-  const handleInstallError = (error: TError) => {
-    setError(true);
-    if (error.response?.data?.message) {
-      setErrorMessage(error.response?.data?.message);
-    }
-    setTimeout(() => {
-      setError(false);
-      setErrorMessage('');
-    }, 5000);
-  };
+  const handleInstallError = useCallback(
+    (error: TError) => {
+      setError(true);
+      if (error.response?.data?.message) {
+        setErrorMessage(error.response?.data?.message);
+      }
+      setTimeout(() => {
+        setError(false);
+        setErrorMessage('');
+      }, 5000);
+    },
+    [setError, setErrorMessage],
+  );
 
-  const handleInstall = (pluginAction: TPluginAction) => {
-    updateUserPlugins.mutate(pluginAction, {
-      onError: (error: unknown) => {
-        handleInstallError(error as TError);
-      },
-    });
+  const { installPlugin, uninstallPlugin } = usePluginInstall({
+    onInstallError: handleInstallError,
+    onUninstallError: handleInstallError,
+    onUninstallSuccess: (_data, variables) => {
+      setTools(variables.pluginKey, true);
+    },
+  });
+
+  const handleInstall = (pluginAction: TPluginAction, plugin?: TPlugin) => {
+    if (!plugin) {
+      return;
+    }
+    installPlugin(pluginAction, plugin);
     setShowPluginAuthForm(false);
   };
 
-  const onPluginUninstall = (plugin: string) => {
-    updateUserPlugins.mutate(
-      { pluginKey: plugin, action: 'uninstall', auth: null },
-      {
-        onError: (error: unknown) => {
-          handleInstallError(error as TError);
-        },
-        onSuccess: () => {
-          setTools(plugin, true);
-        },
-      },
-    );
-  };
-
   const onPluginInstall = (pluginKey: string) => {
-    const getAvailablePluginFromKey = availablePlugins?.find((p) => p.pluginKey === pluginKey);
-    setSelectedPlugin(getAvailablePluginFromKey);
+    const plugin = availablePlugins?.find((p) => p.pluginKey === pluginKey);
+    if (!plugin) {
+      return;
+    }
+    setSelectedPlugin(plugin);
 
-    const { authConfig, authenticated } = getAvailablePluginFromKey ?? {};
+    const { authConfig, authenticated } = plugin ?? {};
 
     if (authConfig && authConfig.length > 0 && !authenticated) {
       setShowPluginAuthForm(true);
     } else {
-      handleInstall({ pluginKey, action: 'install', auth: null });
+      handleInstall({ pluginKey, action: 'install', auth: null }, plugin);
     }
   };
 
@@ -107,10 +108,17 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
         setSearchChanged(false);
       }
     }
-
-    // Disabled due to state setters erroneously being flagged as dependencies
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availablePlugins, itemsPerPage, user, searchValue, filteredPlugins, searchChanged]);
+  }, [
+    availablePlugins,
+    itemsPerPage,
+    user,
+    searchValue,
+    filteredPlugins,
+    searchChanged,
+    setMaxPage,
+    setCurrentPage,
+    setSearchChanged,
+  ]);
 
   return (
     <Dialog
@@ -165,7 +173,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
             <div className="p-4 sm:p-6 sm:pt-4">
               <PluginAuthForm
                 plugin={selectedPlugin}
-                onSubmit={(installActionData: TPluginAction) => handleInstall(installActionData)}
+                onSubmit={(action: TPluginAction) => handleInstall(action, selectedPlugin)}
               />
             </div>
           )}
@@ -197,7 +205,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                         plugin={plugin}
                         isInstalled={userPlugins.includes(plugin.pluginKey)}
                         onInstall={() => onPluginInstall(plugin.pluginKey)}
-                        onUninstall={() => onPluginUninstall(plugin.pluginKey)}
+                        onUninstall={() => uninstallPlugin(plugin.pluginKey)}
                       />
                     ))}
               </div>

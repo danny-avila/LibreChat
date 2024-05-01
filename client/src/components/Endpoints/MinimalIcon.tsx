@@ -55,7 +55,10 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     },
   };
 
-  const { icon, name } = endpointIcons[endpoint] ?? endpointIcons.default;
+  let { icon, name } = endpointIcons[endpoint] ?? endpointIcons.default;
+  if (props.iconURL && endpointIcons[props.iconURL]) {
+    ({ icon, name } = endpointIcons[props.iconURL]);
+  }
 
   return (
     <div

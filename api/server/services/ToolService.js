@@ -20,6 +20,14 @@ const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 
+const filteredTools = new Set([
+  'ChatTool.js',
+  'CodeSherpa.js',
+  'CodeSherpaTools.js',
+  'E2BTools.js',
+  'extractionChain.js',
+]);
+
 /**
  * Loads and formats tools from the specified tool directory.
  *
@@ -30,10 +38,11 @@ const { logger } = require('~/config');
  *
  * @param {object} params - The parameters for the function.
  * @param {string} params.directory - The directory path where the tools are located.
- * @param {Set<string>} [params.filter=new Set()] - A set of filenames to exclude from loading.
+ * @param {Array<string>} [params.adminFilter=[]] - Array of admin-defined tool keys to exclude from loading.
  * @returns {Record<string, FunctionTool>} An object mapping each tool's plugin key to its instance.
  */
-function loadAndFormatTools({ directory, filter = new Set() }) {
+function loadAndFormatTools({ directory, adminFilter = [] }) {
+  const filter = new Set([...adminFilter, ...filteredTools]);
   const tools = [];
   /* Structured Tools Directory */
   const files = fs.readdirSync(directory);
