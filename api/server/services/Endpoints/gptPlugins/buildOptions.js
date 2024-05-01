@@ -4,25 +4,24 @@ const buildOptions = (endpoint, parsedBody) => {
     promptPrefix,
     agentOptions,
     tools,
-    model,
-    temperature,
-    top_p,
-    presence_penalty,
-    frequency_penalty,
+    iconURL,
+    greeting,
+    spec,
+    ...modelOptions
   } = parsedBody;
   const endpointOption = {
     endpoint,
-    tools: tools.map((tool) => tool.pluginKey) ?? [],
+    tools:
+      tools
+        .map((tool) => tool?.pluginKey ?? tool)
+        .filter((toolName) => typeof toolName === 'string') ?? [],
     chatGptLabel,
     promptPrefix,
     agentOptions,
-    modelOptions: {
-      model,
-      temperature,
-      top_p,
-      presence_penalty,
-      frequency_penalty,
-    },
+    iconURL,
+    greeting,
+    spec,
+    modelOptions,
   };
 
   return endpointOption;

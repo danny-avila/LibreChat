@@ -10,7 +10,7 @@ import type {
   TEndpointsConfig,
 } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
-import useOriginNavigate from './useOriginNavigate';
+import useOriginNavigate from '../useOriginNavigate';
 import store from '~/store';
 
 const useConversation = () => {

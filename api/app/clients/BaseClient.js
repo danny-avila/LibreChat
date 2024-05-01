@@ -456,6 +456,8 @@ class BaseClient {
       sender: this.sender,
       text: addSpaceIfNeeded(generation) + completion,
       promptTokens,
+      iconURL: this.options.iconURL,
+      endpoint: this.options.endpoint,
       ...(this.metadata ?? {}),
     };
 
@@ -525,8 +527,19 @@ class BaseClient {
     return _messages;
   }
 
+  /**
+   * Save a message to the database.
+   * @param {TMessage} message
+   * @param {Partial<TConversation>} endpointOptions
+   * @param {string | null} user
+   */
   async saveMessageToDatabase(message, endpointOptions, user = null) {
-    await saveMessage({ ...message, endpoint: this.options.endpoint, user, unfinished: false });
+    await saveMessage({
+      ...message,
+      endpoint: this.options.endpoint,
+      unfinished: false,
+      user,
+    });
     await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,

@@ -42,6 +42,12 @@ async function loadCustomConfig() {
       i === 0 && i++;
       return null;
     }
+
+    if (customConfig.reason || customConfig.stack) {
+      i === 0 && logger.error('Config file YAML format is invalid:', customConfig);
+      i === 0 && i++;
+      return null;
+    }
   }
 
   if (typeof customConfig === 'string') {
@@ -82,6 +88,10 @@ Please specify a correct \`imageOutputType\` value (case-sensitive).
   if (customConfig.cache) {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
+  }
+
+  if (result.data.modelSpecs) {
+    customConfig.modelSpecs = result.data.modelSpecs;
   }
 
   return customConfig;

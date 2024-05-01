@@ -1,16 +1,11 @@
 import copy from 'copy-to-clipboard';
 import { useEffect, useRef, useCallback } from 'react';
 import { EModelEndpoint, ContentTypes } from 'librechat-data-provider';
-import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
-import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
-import Icon from '~/components/Endpoints/Icon';
-import { getEndpointField } from '~/utils';
 
 export default function useMessageHelpers(props: TMessageProps) {
   const latestText = useRef<string | number>('');
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const { message, currentEditId, setCurrentEditId } = props;
 
   const {
@@ -62,18 +57,6 @@ export default function useMessageHelpers(props: TMessageProps) {
   const assistant =
     conversation?.endpoint === EModelEndpoint.assistants && assistantMap?.[message?.model ?? ''];
 
-  const iconEndpoint = message?.endpoint ?? conversation?.endpoint;
-  const icon = Icon({
-    ...conversation,
-    ...(message as TMessage),
-    iconURL: !assistant
-      ? getEndpointField(endpointsConfig, iconEndpoint, 'iconURL')
-      : (assistant?.metadata?.avatar as string | undefined) ?? '',
-    model: message?.model ?? conversation?.model,
-    assistantName: assistant ? (assistant.name as string | undefined) : '',
-    size: 28.8,
-  });
-
   const regenerateMessage = () => {
     if ((isSubmitting && isCreatedByUser) || !message) {
       return;
@@ -105,7 +88,6 @@ export default function useMessageHelpers(props: TMessageProps) {
 
   return {
     ask,
-    icon,
     edit,
     isLast,
     assistant,

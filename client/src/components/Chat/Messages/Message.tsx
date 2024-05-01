@@ -1,6 +1,7 @@
 import { useRecoilValue } from 'recoil';
 import { useAuthContext, useMessageHelpers, useLocalize } from '~/hooks';
 import type { TMessageProps } from '~/common';
+import Icon from '~/components/Chat/Messages/MessageIcon';
 import { Plugin } from '~/components/Messages/Content';
 import MessageContent from './Content/MessageContent';
 import SiblingSwitch from './SiblingSwitch';
@@ -18,7 +19,6 @@ export default function Message(props: TMessageProps) {
 
   const {
     ask,
-    icon,
     edit,
     isLast,
     enterEdit,
@@ -60,11 +60,7 @@ export default function Message(props: TMessageProps) {
               <div>
                 <div className="pt-0.5">
                   <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-                    {typeof icon === 'string' && /[^\\x00-\\x7F]+/.test(icon as string) ? (
-                      <span className=" direction-rtl w-40 overflow-x-scroll">{icon}</span>
-                    ) : (
-                      icon
-                    )}
+                    <Icon message={message} conversation={conversation} />
                   </div>
                 </div>
               </div>
