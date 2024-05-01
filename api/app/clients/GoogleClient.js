@@ -732,26 +732,30 @@ class GoogleClient extends BaseClient {
   }
 
   async sendCompletion(payload, opts = {}) {
-    let safetySettings = [
-      {
-        category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-        threshold: GOOGLE_SAFETY_SEXUALLY_EXPLICIT,
-      },
-      {
-        category: 'HARM_CATEGORY_HATE_SPEECH',
-        threshold: GOOGLE_SAFETY_HATE_SPEECH,
-      },
-      {
-        category: 'HARM_CATEGORY_HARASSMENT',
-        threshold: GOOGLE_SAFETY_HARASSMENT,
-      },
-      {
-        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-        threshold: GOOGLE_SAFETY_DANGEROUS_CONTENT,
-      },
-    ];
+    const modelName = payload.parameters?.model;
   
-    payload.safetySettings = safetySettings;
+    if (modelName && modelName.toLowerCase().includes('gemini')) {
+      const safetySettings = [
+        {
+          category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+          threshold: GOOGLE_SAFETY_SEXUALLY_EXPLICIT,
+        },
+        {
+          category: 'HARM_CATEGORY_HATE_SPEECH',
+          threshold: GOOGLE_SAFETY_HATE_SPEECH,
+        },
+        {
+          category: 'HARM_CATEGORY_HARASSMENT',
+          threshold: GOOGLE_SAFETY_HARASSMENT,
+        },
+        {
+          category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+          threshold: GOOGLE_SAFETY_DANGEROUS_CONTENT,
+        },
+      ];
+  
+      payload.safetySettings = safetySettings;
+    }
   
     let reply = '';
     reply = await this.getCompletion(payload, opts);
