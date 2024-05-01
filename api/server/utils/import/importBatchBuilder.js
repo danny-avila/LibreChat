@@ -125,13 +125,13 @@ class ImportBatchBuilder {
   }) {
     const newMessageId = messageId ?? uuidv4();
     const message = {
+      parentMessageId,
       messageId: newMessageId,
-      parentMessageId: parentMessageId,
       conversationId: this.conversationId,
       isCreatedByUser: isCreatedByUser,
+      model: model || this.model,
       user: this.requestUserId,
       endpoint: this.endpoint,
-      model: model || this.model,
       unfinished: false,
       isEdited: false,
       error: false,
