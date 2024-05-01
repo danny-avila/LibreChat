@@ -24,6 +24,7 @@ weight: 1
   * 🤖 [AI Setup](./configuration/ai_setup.md)
   * 🚅 [LiteLLM](./configuration/litellm.md)
   * 🦙 [Ollama](./configuration/ollama.md)
+  * 🍎 [Apple MLX](./configuration/mlx.md)
   * 💸 [Free AI APIs](./configuration/free_ai_apis.md) 
   * 🛂 [Authentication System](./configuration/user_auth_system.md) 
   * 🍃 [Online MongoDB](./configuration/mongodb.md) 

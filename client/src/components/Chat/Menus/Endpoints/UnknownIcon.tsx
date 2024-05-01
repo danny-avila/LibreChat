@@ -9,6 +9,7 @@ const knownEndpointAssets = {
   [KnownEndpoints.fireworks]: '/assets/fireworks.png',
   [KnownEndpoints.groq]: '/assets/groq.png',
   [KnownEndpoints.mistral]: '/assets/mistral.png',
+  [KnownEndpoints.mlx]: '/assets/mlx.png',
   [KnownEndpoints.ollama]: '/assets/ollama.png',
   [KnownEndpoints.openrouter]: '/assets/openrouter.png',
   [KnownEndpoints.perplexity]: '/assets/perplexity.png',

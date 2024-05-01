@@ -271,6 +271,40 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/ddb4b2f3-608e-4034-9a27-3e94fc512034)
 
+## Apple MLX
+> MLX API key: ignored - [MLX OpenAI Compatibility](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/SERVER.md)
+
+**Notes:**
+
+- **Known:** icon provided.
+
+- API is mostly strict with unrecognized parameters.
+- Support only one model at a time, otherwise you'll need to run a different endpoint with a different `baseURL`.
+
+```yaml
+    - name: "MLX"
+      apiKey: "mlx"
+      baseURL: "http://localhost:8080/v1/" 
+      models:
+        default: [
+          "Meta-Llama-3-8B-Instruct-4bit"
+          ]
+        fetch: false # fetching list of models is not supported
+      titleConvo: true
+      titleModel: "current_model"
+      summarize: false
+      summaryModel: "current_model"
+      forcePrompt: false
+      modelDisplayLabel: "Apple MLX"
+      addParams:
+            max_tokens: 2000
+            "stop": [
+              "<|eot_id|>"
+            ]
+```
+
+![image](https://github.com/danny-avila/LibreChat/blob/ae9d88b68c95fdb46787bca1df69407d2dd4e8dc/client/public/assets/mlx.png)
+
 ## Ollama
 > Ollama API key: Required but ignored - [Ollama OpenAI Compatibility](https://github.com/ollama/ollama/blob/main/docs/openai.md)
 
