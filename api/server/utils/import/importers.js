@@ -88,20 +88,28 @@ async function importLibreChatConvo(
 
     let firstMessageDate = null;
 
-    const traverseMessages = async (messages) => {
+    const traverseMessages = async (messages, parentMessageId = null) => {
       for (const message of messages) {
-        // Leaf node: actual message
         if (!message.text) {
           continue;
         }
 
+        let savedMessage;
         if (message.sender?.toLowerCase() === 'user') {
-          await importBatchBuilder.addUserMessage(message.text);
-        } else {
-          await importBatchBuilder.addGptMessage(
+          savedMessage = await importBatchBuilder.saveMessage(
             message.text,
-            jsonData.options.model,
+            'user',
+            true,
+            undefined,
+            parentMessageId,
+          );
+        } else {
+          savedMessage = await importBatchBuilder.saveMessage(
+            message.text,
             message.sender,
+            false,
+            jsonData.options.model,
+            parentMessageId,
           );
         }
 
@@ -109,9 +117,8 @@ async function importLibreChatConvo(
           firstMessageDate = new Date(message.createdAt);
         }
 
-        // Recursively handle child messages if any
         if (message.children) {
-          await traverseMessages(message.children);
+          await traverseMessages(message.children, savedMessage.messageId);
         }
       }
     };

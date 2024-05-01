@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { Constants } = require('librechat-data-provider');
+const { Constants, EModelEndpoint } = require('librechat-data-provider');
 const { bulkSaveConvos } = require('~/models/Conversation');
 const { bulkSaveMessages } = require('~/models/Message');
 const { logger } = require('~/config');
@@ -38,7 +38,7 @@ class ImportBatchBuilder {
   async startConversation(endpoint) {
     // we are simplifying by using a single model for the entire conversation
 
-    this.endpoint = endpoint || 'openAI';
+    this.endpoint = endpoint || EModelEndpoint.openAI;
     this.conversationId = uuidv4();
     this.lastMessageId = Constants.NO_PARENT;
   }
@@ -108,28 +108,28 @@ class ImportBatchBuilder {
    * @param {string} text - The text of the message.
    * @param {string} sender - The sender of the message.
    * @param {boolean} isCreatedByUser - Indicates whether the message is created by the user.
+   * @param {string} [model] - The model used for generating the message.
+   * @param {string} [parentMessageId=this.lastMessageId] - The ID of the parent message. Defaults to the last message ID.
    * @returns {object} The saved message object.
    */
-  saveMessage(text, sender, isCreatedByUser) {
+  saveMessage(text, sender, isCreatedByUser, model, parentMessageId = this.lastMessageId) {
     const newMessageId = uuidv4();
     const message = {
       messageId: newMessageId,
-      parentMessageId: this.lastMessageId,
+      parentMessageId: parentMessageId,
       conversationId: this.conversationId,
       isCreatedByUser: isCreatedByUser,
       user: this.requestUserId,
       endpoint: this.endpoint,
-      model: this.model,
-      text: text,
+      model: model || this.model,
       unfinished: false,
-      error: false,
       isEdited: false,
-      sender: sender,
+      error: false,
+      sender,
+      text,
     };
     this.lastMessageId = newMessageId;
-
     this.messages.push(message);
-
     return message;
   }
 }
