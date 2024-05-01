@@ -11,7 +11,7 @@ weight: 1
   * 🐳 [Docker Compose (✨ Recommended)](./installation/docker_compose_install.md)
   * 🦦 [Container (Podman)](./installation/container_install.md)
   * 🐧 [Linux](./installation/linux_install.md) 
-  *  [Mac](./installation/mac_install.md) 
+  * 🍎 [Mac](./installation/mac_install.md) 
   * 🪟 [Windows](./installation/windows_install.md) 
 
 ## **[Configuration](./configuration/index.md)**
@@ -24,7 +24,7 @@ weight: 1
   * 🤖 [AI Setup](./configuration/ai_setup.md)
   * 🚅 [LiteLLM](./configuration/litellm.md)
   * 🦙 [Ollama](./configuration/ollama.md)
-  *   [Apple MLX](./configuration/mlx.md)
+  * 🍎 [Apple MLX](./configuration/mlx.md)
   * 💸 [Free AI APIs](./configuration/free_ai_apis.md) 
   * 🛂 [Authentication System](./configuration/user_auth_system.md) 
   * 🍃 [Online MongoDB](./configuration/mongodb.md) 

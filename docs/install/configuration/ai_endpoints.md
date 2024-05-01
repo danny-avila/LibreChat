@@ -303,7 +303,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
             ]
 ```
 
-![image]()
+![image](https://github.com/danny-avila/LibreChat/blob/ae9d88b68c95fdb46787bca1df69407d2dd4e8dc/client/public/assets/mlx.png)
 
 ## Ollama
 > Ollama API key: Required but ignored - [Ollama OpenAI Compatibility](https://github.com/ollama/ollama/blob/main/docs/openai.md)
