@@ -16,13 +16,20 @@ router.use(loginLimiter);
 
 const authenticate = (strategy, options) => {
   return (req, res, next) =>
-    passport.authenticate(strategy, options, (err, _user, info) => {
+    passport.authenticate(strategy, options, (err, user, info) => {
       if (err) {
         return next(err);
       }
 
+      if (user) {
+        req.user = user;
+      }
+
       if (info) {
-        return res.redirect(`${domains.client}/login?error=${info.message || info}`);
+        const message = info.message || info;
+        if (typeof message === 'string') {
+          return res.redirect(`${domains.client}/login?error=${message}`);
+        }
       }
 
       next();
