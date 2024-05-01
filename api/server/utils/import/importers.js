@@ -1,3 +1,4 @@
+const { EModelEndpoint } = require('librechat-data-provider');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const logger = require('~/config/winston');
 
@@ -52,7 +53,7 @@ async function importChatBotUiConvo(
     const importBatchBuilder = builderFactory(requestUserId);
 
     for (const historyItem of jsonData.history) {
-      importBatchBuilder.startConversation('openAI');
+      importBatchBuilder.startConversation(EModelEndpoint.openAI);
       for (const message of historyItem.messages) {
         if (message.role === 'assistant') {
           await importBatchBuilder.addGptMessage(message.content, historyItem.model.id);
@@ -84,7 +85,7 @@ async function importLibreChatConvo(
 ) {
   try {
     const importBatchBuilder = builderFactory(requestUserId);
-    importBatchBuilder.startConversation('openAI');
+    importBatchBuilder.startConversation(EModelEndpoint.openAI);
 
     let firstMessageDate = null;
 
@@ -167,7 +168,7 @@ async function importChatGptConvo(
  * @returns {Promise<void>} - Promise that resolves when the conversation has been fully processed.
  */
 async function processConversation(conv, importBatchBuilder) {
-  importBatchBuilder.startConversation('openAI');
+  importBatchBuilder.startConversation(EModelEndpoint.openAI);
 
   for (const [, value] of Object.entries(conv.mapping)) {
     if (!value.message || value.message.content?.content_type !== 'text') {
