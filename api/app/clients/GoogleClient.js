@@ -29,6 +29,13 @@ const tokenizersCache = {};
 
 const settings = endpointSettings[EModelEndpoint.google];
 
+require('dotenv').config();
+
+let GOOGLE_SAFETY_SEXUALLY_EXPLICIT = process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
+let GOOGLE_SAFETY_HATE_SPEECH = process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
+let GOOGLE_SAFETY_HARASSMENT = process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
+let GOOGLE_SAFETY_DANGEROUS_CONTENT = process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
+
 class GoogleClient extends BaseClient {
   constructor(credentials, options = {}) {
     super('apiKey', options);
@@ -610,11 +617,11 @@ class GoogleClient extends BaseClient {
     const { onProgress, abortController } = options;
     const { parameters, instances } = _payload;
     const { messages: _messages, context, examples: _examples } = instances?.[0] ?? {};
-
+  
     let examples;
-
+  
     let clientOptions = { ...parameters, maxRetries: 2 };
-
+  
     if (this.project_id) {
       clientOptions['authOptions'] = {
         credentials: {
@@ -623,16 +630,16 @@ class GoogleClient extends BaseClient {
         projectId: this.project_id,
       };
     }
-
+  
     if (!parameters) {
       clientOptions = { ...clientOptions, ...this.modelOptions };
     }
-
+  
     if (this.isGenerativeModel && !this.project_id) {
       clientOptions.modelName = clientOptions.model;
       delete clientOptions.model;
     }
-
+  
     if (_examples && _examples.length) {
       examples = _examples
         .map((ex) => {
@@ -646,19 +653,19 @@ class GoogleClient extends BaseClient {
           };
         })
         .filter((ex) => ex);
-
+  
       clientOptions.examples = examples;
     }
-
+  
     const model = this.createLLM(clientOptions);
-
+  
     let reply = '';
     const messages = this.isTextModel ? _payload.trim() : _messages;
-
+  
     if (!this.isVisionModel && context && messages?.length > 0) {
       messages.unshift(new SystemMessage(context));
     }
-
+  
     const modelName = clientOptions.modelName ?? clientOptions.model ?? '';
     if (modelName?.includes('1.5') && !this.project_id) {
       /** @type {GenerativeModel} */
@@ -666,7 +673,7 @@ class GoogleClient extends BaseClient {
       const requestOptions = {
         contents: _payload,
       };
-
+  
       if (this.options?.promptPrefix?.length) {
         requestOptions.systemInstruction = {
           parts: [
@@ -676,7 +683,10 @@ class GoogleClient extends BaseClient {
           ],
         };
       }
-
+  
+      const safetySettings = _payload.safetySettings;
+      requestOptions.safetySettings = safetySettings;
+  
       const result = await client.generateContentStream(requestOptions);
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();
@@ -687,12 +697,14 @@ class GoogleClient extends BaseClient {
       }
       return reply;
     }
-
+  
+    const safetySettings = _payload.safetySettings;
     const stream = await model.stream(messages, {
       signal: abortController.signal,
       timeout: 7000,
+      safetySettings: safetySettings,
     });
-
+  
     for await (const chunk of stream) {
       const chunkText = chunk?.content ?? chunk;
       this.generateTextStream(chunkText, onProgress, {
@@ -700,7 +712,7 @@ class GoogleClient extends BaseClient {
       });
       reply += chunkText;
     }
-
+  
     return reply;
   }
 
@@ -720,6 +732,27 @@ class GoogleClient extends BaseClient {
   }
 
   async sendCompletion(payload, opts = {}) {
+    let safetySettings = [
+      {
+        category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+        threshold: GOOGLE_SAFETY_SEXUALLY_EXPLICIT,
+      },
+      {
+        category: 'HARM_CATEGORY_HATE_SPEECH',
+        threshold: GOOGLE_SAFETY_HATE_SPEECH,
+      },
+      {
+        category: 'HARM_CATEGORY_HARASSMENT',
+        threshold: GOOGLE_SAFETY_HARASSMENT,
+      },
+      {
+        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+        threshold: GOOGLE_SAFETY_DANGEROUS_CONTENT,
+      },
+    ];
+  
+    payload.safetySettings = safetySettings;
+  
     let reply = '';
     reply = await this.getCompletion(payload, opts);
     return reply.trim();
