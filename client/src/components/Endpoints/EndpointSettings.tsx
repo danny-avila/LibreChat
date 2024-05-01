@@ -11,15 +11,14 @@ export default function Settings({
   setOption,
   isPreset = false,
   className = '',
-  isMultiChat = false,
-}: TSettingsProps & { isMultiChat?: boolean }) {
+}: TSettingsProps) {
   const modelsQuery = useGetModelsQuery();
   const currentSettingsView = useRecoilValue(store.currentSettingsView);
   if (!conversation?.endpoint || currentSettingsView !== SettingsViews.default) {
     return null;
   }
 
-  const { settings, multiViewSettings } = getSettings(isMultiChat);
+  const { settings, multiViewSettings } = getSettings();
   const { endpoint: _endpoint, endpointType } = conversation;
   const models = modelsQuery?.data?.[_endpoint] ?? [];
   const endpoint = endpointType ?? _endpoint;

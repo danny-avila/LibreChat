@@ -1,14 +1,10 @@
-const {
-  FileSources,
-  EModelEndpoint,
-  EImageOutputType,
-  defaultSocialLogins,
-} = require('librechat-data-provider');
+const { FileSources, EModelEndpoint, getConfigDefaults } = require('librechat-data-provider');
 const { checkVariables, checkHealth, checkConfig, checkAzureVariables } = require('./start/checks');
 const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
 const loadCustomConfig = require('./Config/loadCustomConfig');
 const handleRateLimits = require('./Config/handleRateLimits');
+const { loadDefaultInterface } = require('./start/interface');
 const { azureConfigSetup } = require('./start/azureOpenAI');
 const { loadAndFormatTools } = require('./ToolService');
 const paths = require('~/config/paths');
@@ -22,9 +18,12 @@ const paths = require('~/config/paths');
 const AppService = async (app) => {
   /** @type {TCustomConfig}*/
   const config = (await loadCustomConfig()) ?? {};
+  const configDefaults = getConfigDefaults();
 
-  const fileStrategy = config.fileStrategy ?? FileSources.local;
-  const imageOutputType = config?.imageOutputType ?? EImageOutputType.PNG;
+  const filteredTools = config.filteredTools;
+  const fileStrategy = config.fileStrategy ?? configDefaults.fileStrategy;
+  const imageOutputType = config?.imageOutputType ?? configDefaults.imageOutputType;
+
   process.env.CDN_PROVIDER = fileStrategy;
 
   checkVariables();
@@ -37,24 +36,22 @@ const AppService = async (app) => {
   /** @type {Record<string, FunctionTool} */
   const availableTools = loadAndFormatTools({
     directory: paths.structuredTools,
-    filter: new Set([
-      'ChatTool.js',
-      'CodeSherpa.js',
-      'CodeSherpaTools.js',
-      'E2BTools.js',
-      'extractionChain.js',
-    ]),
+    adminFilter: filteredTools,
   });
 
-  const socialLogins = config?.registration?.socialLogins ?? defaultSocialLogins;
+  const socialLogins =
+    config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
+  const interfaceConfig = loadDefaultInterface(config, configDefaults);
 
   if (!Object.keys(config).length) {
     app.locals = {
       paths,
       fileStrategy,
       socialLogins,
+      filteredTools,
       availableTools,
       imageOutputType,
+      interfaceConfig,
     };
 
     return;
@@ -85,9 +82,11 @@ const AppService = async (app) => {
     paths,
     socialLogins,
     fileStrategy,
+    filteredTools,
     availableTools,
     imageOutputType,
-    interface: config?.interface,
+    interfaceConfig,
+    modelSpecs: config.modelSpecs,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
     ...endpointLocals,

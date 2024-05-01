@@ -39,6 +39,12 @@ module.exports = {
     try {
       const setter = { $set: {} };
       const update = { presetId, ...preset };
+      if (preset.tools && Array.isArray(preset.tools)) {
+        update.tools =
+          preset.tools
+            .map((tool) => tool?.pluginKey ?? tool)
+            .filter((toolName) => typeof toolName === 'string') ?? [];
+      }
       if (newPresetId) {
         update.presetId = newPresetId;
       }
