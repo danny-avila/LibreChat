@@ -285,7 +285,7 @@ docker compose up
         - `fileUploads`
             - **Type**: Object
             - **Description**: Configures rate limits specifically for file upload operations.
-            - **Sub-keys:**
+            - <u>**Sub-keys:**</u>
             - `ipMax`
                 - **Type**: Number
                 - **Description**: Maximum number of uploads allowed per IP address per window.
@@ -298,26 +298,32 @@ docker compose up
             - `userWindowInMinutes`
                 - **Type**: Number
                 - **Description**: Time window in minutes for the user-based upload limit.
-  - **Sub-Key**: `conversationsImport`
-  - **Type**: Object
-  - **Description**: Configures rate limits specifically for conversation import operations.
-    - **Sub-Key**: `ipMax`
-      - **Type**: Number
-      - **Description**: Maximum number of imports allowed per IP address per window.
-    - **Sub-Key**: `ipWindowInMinutes`
-      - **Type**: Number
-      - **Description**: Time window in minutes for the IP-based imports limit.
-    - **Sub-Key**: `userMax`
-      - **Type**: Number
-      - **Description**: Maximum number of imports per user per window.
-    - **Sub-Key**: `userWindowInMinutes`
-      - **Type**: Number
-      - **Description**: Time window in minutes for the user-based imports limit.
+        - `conversationsImport`
+            - **Type**: Object
+            - **Description**: Configures rate limits specifically for conversation import operations.
+            - <u>**Sub-keys:**</u>
+            - `ipMax`
+                - **Type**: Number
+                - **Description**: Maximum number of imports allowed per IP address per window.
+            - `ipWindowInMinutes`
+                - **Type**: Number
+                - **Description**: Time window in minutes for the IP-based imports limit.
+            - `userMax`
+                - **Type**: Number
+                - **Description**: Maximum number of imports per user per window.
+            - `userWindowInMinutes`
+                - **Type**: Number
+                - **Description**: Time window in minutes for the user-based imports limit.
 
     - **Example**:
     ```yaml
     rateLimits:
       fileUploads:
+        ipMax: 100
+        ipWindowInMinutes: 60
+        userMax: 50
+        userWindowInMinutes: 60
+      conversationsImport:
         ipMax: 100
         ipWindowInMinutes: 60
         userMax: 50
