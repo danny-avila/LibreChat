@@ -1,4 +1,5 @@
-const { EModelEndpoint } = require('librechat-data-provider');
+const { v4: uuidv4 } = require('uuid');
+const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const logger = require('~/config/winston');
 
@@ -50,18 +51,19 @@ async function importChatBotUiConvo(
 ) {
   // this have been tested with chatbot-ui V1 export https://github.com/mckaywrigley/chatbot-ui/tree/b865b0555f53957e96727bc0bbb369c9eaecd83b#legacy-code
   try {
+    /** @type {import('./importBatchBuilder').ImportBatchBuilder} */
     const importBatchBuilder = builderFactory(requestUserId);
 
     for (const historyItem of jsonData.history) {
       importBatchBuilder.startConversation(EModelEndpoint.openAI);
       for (const message of historyItem.messages) {
         if (message.role === 'assistant') {
-          await importBatchBuilder.addGptMessage(message.content, historyItem.model.id);
+          importBatchBuilder.addGptMessage(message.content, historyItem.model.id);
         } else if (message.role === 'user') {
-          await importBatchBuilder.addUserMessage(message.content);
+          importBatchBuilder.addUserMessage(message.content);
         }
       }
-      await importBatchBuilder.finishConversation(historyItem.name, new Date());
+      importBatchBuilder.finishConversation(historyItem.name, new Date());
     }
     await importBatchBuilder.saveBatch();
     logger.info(`user: ${requestUserId} | ChatbotUI conversation imported`);
@@ -84,12 +86,13 @@ async function importLibreChatConvo(
   builderFactory = createImportBatchBuilder,
 ) {
   try {
+    /** @type {import('./importBatchBuilder').ImportBatchBuilder} */
     const importBatchBuilder = builderFactory(requestUserId);
     importBatchBuilder.startConversation(EModelEndpoint.openAI);
 
     let firstMessageDate = null;
 
-    const traverseMessages = async (messages, parentMessageId = null) => {
+    const traverseMessages = (messages, parentMessageId = null) => {
       for (const message of messages) {
         if (!message.text) {
           continue;
@@ -97,14 +100,14 @@ async function importLibreChatConvo(
 
         let savedMessage;
         if (message.sender?.toLowerCase() === 'user') {
-          savedMessage = await importBatchBuilder.saveMessage({
+          savedMessage = importBatchBuilder.saveMessage({
             text: message.text,
             sender: 'user',
             isCreatedByUser: true,
             parentMessageId: parentMessageId,
           });
         } else {
-          savedMessage = await importBatchBuilder.saveMessage({
+          savedMessage = importBatchBuilder.saveMessage({
             text: message.text,
             sender: message.sender,
             isCreatedByUser: false,
@@ -118,14 +121,14 @@ async function importLibreChatConvo(
         }
 
         if (message.children) {
-          await traverseMessages(message.children, savedMessage.messageId);
+          traverseMessages(message.children, savedMessage.messageId);
         }
       }
     };
 
-    await traverseMessages(jsonData.messagesTree);
+    traverseMessages(jsonData.messagesTree);
 
-    await importBatchBuilder.finishConversation(jsonData.title, firstMessageDate);
+    importBatchBuilder.finishConversation(jsonData.title, firstMessageDate);
     await importBatchBuilder.saveBatch();
     logger.debug(`user: ${requestUserId} | Conversation "${jsonData.title}" imported`);
   } catch (error) {
@@ -150,7 +153,7 @@ async function importChatGptConvo(
   try {
     const importBatchBuilder = builderFactory(requestUserId);
     for (const conv of jsonData) {
-      await processConversation(conv, importBatchBuilder);
+      processConversation(conv, importBatchBuilder, requestUserId);
     }
     await importBatchBuilder.saveBatch();
   } catch (error) {
@@ -163,30 +166,67 @@ async function importChatGptConvo(
  * It directly manages the addition of messages for different roles and handles citations for assistant messages.
  *
  * @param {ChatGPTConvo} conv - A single conversation object that contains multiple messages and other details.
- * @param {any} importBatchBuilder - The batch builder instance used to manage and batch conversation data.
- * @returns {Promise<void>} - Promise that resolves when the conversation has been fully processed.
+ * @param {import('./importBatchBuilder').ImportBatchBuilder} importBatchBuilder - The batch builder instance used to manage and batch conversation data.
+ * @param {string} requestUserId - The ID of the user who initiated the import process.
+ * @returns {void}
  */
-async function processConversation(conv, importBatchBuilder) {
+function processConversation(conv, importBatchBuilder, requestUserId) {
   importBatchBuilder.startConversation(EModelEndpoint.openAI);
 
-  for (const [, value] of Object.entries(conv.mapping)) {
-    if (!value.message || value.message.content?.content_type !== 'text') {
-      continue;
-    }
-
-    let messageText = value.message.content.parts.join(' ');
-
-    if (value.message.author?.role === 'assistant') {
-      messageText = processAssistantMessage(value.message, messageText);
-      await importBatchBuilder.addGptMessage(messageText, value.message.metadata.model_slug);
-    } else if (value.message.author?.role === 'system') {
-      // System messages processing can be implemented here if necessary
-    } else {
-      await importBatchBuilder.addUserMessage(messageText);
+  // First, map all message IDs to new UUIDs
+  const messageMap = new Map();
+  for (const [id, mapping] of Object.entries(conv.mapping)) {
+    if (mapping.message && mapping.message.content.content_type === 'text') {
+      const newMessageId = uuidv4();
+      messageMap.set(id, newMessageId);
     }
   }
 
-  await importBatchBuilder.finishConversation(conv.title, new Date(conv.create_time * 1000));
+  // Next, create and save messages using the mapped IDs
+  const messages = [];
+  for (const [id, mapping] of Object.entries(conv.mapping)) {
+    const role = mapping.message?.author?.role;
+    if (!mapping.message) {
+      continue;
+    } else if (mapping.message.content.content_type !== 'text') {
+      continue;
+    } else if (role === 'system') {
+      logger.info(`Skipping system message: "${mapping.message.content.parts.join(' ').trim()}"`);
+      continue;
+    }
+
+    const newMessageId = messageMap.get(id);
+    const parentMessageId =
+      mapping.parent && messageMap.has(mapping.parent)
+        ? messageMap.get(mapping.parent)
+        : Constants.NO_PARENT;
+
+    let messageText = mapping.message.content.parts.join(' ');
+    const isCreatedByUser = role === 'user';
+    const sender = isCreatedByUser ? 'user' : 'GPT-3.5';
+    const model = mapping.message.metadata.model_slug || openAISettings.model.default;
+
+    if (!isCreatedByUser) {
+      messageText = processAssistantMessage(mapping.message, messageText);
+    }
+
+    messages.push({
+      messageId: newMessageId,
+      parentMessageId,
+      text: messageText,
+      sender,
+      isCreatedByUser,
+      model,
+      user: requestUserId,
+      endpoint: EModelEndpoint.openAI,
+    });
+  }
+
+  for (const message of messages) {
+    importBatchBuilder.saveMessage(message);
+  }
+
+  importBatchBuilder.finishConversation(conv.title, new Date(conv.create_time * 1000));
 }
 
 /**
