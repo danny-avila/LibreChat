@@ -152,10 +152,11 @@ async function importChatGptConvo(
             let messageText = messageData.content.parts.join(' ');
 
             // Insert citation links
-            messageData.metadata.citations?.forEach((citation) => {
-              const { metadata = {} } = citation;
-              if (metadata.type && metadata.type !== 'webpage') {
-                return;
+            for (const citation of messageData.metadata.citations ?? []) {
+              const { metadata } = citation;
+              // Skip processing if metadata is undefined or the type is not 'webpage'
+              if (!metadata || (metadata.type && metadata.type !== 'webpage')) {
+                continue;
               }
               const pattern = new RegExp(
                 `\\u3010${metadata.extra.cited_message_idx}\\u2020.+?\\u3011`,
@@ -163,7 +164,7 @@ async function importChatGptConvo(
               );
               const replacement = ` ([${metadata.title}](${metadata.url}))`;
               messageText = messageText.replace(pattern, replacement);
-            });
+            }
 
             await importBatchBuilder.addGptMessage(messageText, messageData.metadata.model_slug);
           } else if (messageData.author && messageData.author.role === 'system') {
