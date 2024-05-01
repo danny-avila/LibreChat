@@ -32,7 +32,7 @@ class ImportBatchBuilder {
 
   /**
    * Starts a new conversation in the batch.
-   * @param {string} [endpoint='openAI'] - The endpoint for the conversation. Defaults to 'openAI'.
+   * @param {string} [endpoint=EModelEndpoint.openAI] - The endpoint for the conversation. Defaults to EModelEndpoint.openAI.
    * @returns {Promise<void>} A promise that resolves when the conversation is started.
    */
   async startConversation(endpoint) {
@@ -49,7 +49,7 @@ class ImportBatchBuilder {
    * @returns {Promise<object>} A promise that resolves with the saved message object.
    */
   async addUserMessage(text) {
-    const message = await this.saveMessage(text, 'user', true);
+    const message = await this.saveMessage({ text, sender: 'user', isCreatedByUser: true });
     return message;
   }
 
@@ -61,7 +61,12 @@ class ImportBatchBuilder {
    * @returns {Promise<object>} A promise that resolves with the saved message object.
    */
   async addGptMessage(text, model, sender = 'GPT-3.5') {
-    const message = await this.saveMessage(text, sender, false, model || defaultModel);
+    const message = await this.saveMessage({
+      text,
+      sender,
+      isCreatedByUser: false,
+      model: model || defaultModel,
+    });
     return message;
   }
 
@@ -104,15 +109,16 @@ class ImportBatchBuilder {
   }
 
   /**
-   * Adds a message to the current conversation. It's supposed to be used internally by the class.
-   * @param {string} text - The text of the message.
-   * @param {string} sender - The sender of the message.
-   * @param {boolean} isCreatedByUser - Indicates whether the message is created by the user.
-   * @param {string} [model] - The model used for generating the message.
-   * @param {string} [parentMessageId=this.lastMessageId] - The ID of the parent message. Defaults to the last message ID.
+   * Saves a message to the current conversation.
+   * @param {object} messageDetails - The details of the message.
+   * @param {string} messageDetails.text - The text of the message.
+   * @param {string} messageDetails.sender - The sender of the message.
+   * @param {boolean} messageDetails.isCreatedByUser - Indicates whether the message is created by the user.
+   * @param {string} [messageDetails.model] - The model used for generating the message.
+   * @param {string} [messageDetails.parentMessageId=this.lastMessageId] - The ID of the parent message.
    * @returns {object} The saved message object.
    */
-  saveMessage(text, sender, isCreatedByUser, model, parentMessageId = this.lastMessageId) {
+  saveMessage({ text, sender, isCreatedByUser, model, parentMessageId = this.lastMessageId }) {
     const newMessageId = uuidv4();
     const message = {
       messageId: newMessageId,

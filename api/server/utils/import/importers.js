@@ -64,9 +64,9 @@ async function importChatBotUiConvo(
       await importBatchBuilder.finishConversation(historyItem.name, new Date());
     }
     await importBatchBuilder.saveBatch();
-    logger.info('ChatbotUI conversation imported');
+    logger.info(`user: ${requestUserId} | ChatbotUI conversation imported`);
   } catch (error) {
-    console.error('Error creating conversation from ChatbotUI file', error);
+    logger.error(`user: ${requestUserId} | Error creating conversation from ChatbotUI file`, error);
   }
 }
 
@@ -97,21 +97,20 @@ async function importLibreChatConvo(
 
         let savedMessage;
         if (message.sender?.toLowerCase() === 'user') {
-          savedMessage = await importBatchBuilder.saveMessage(
-            message.text,
-            'user',
-            true,
-            undefined,
-            parentMessageId,
-          );
+          savedMessage = await importBatchBuilder.saveMessage({
+            text: message.text,
+            sender: 'user',
+            isCreatedByUser: true,
+            parentMessageId: parentMessageId,
+          });
         } else {
-          savedMessage = await importBatchBuilder.saveMessage(
-            message.text,
-            message.sender,
-            false,
-            jsonData.options.model,
-            parentMessageId,
-          );
+          savedMessage = await importBatchBuilder.saveMessage({
+            text: message.text,
+            sender: message.sender,
+            isCreatedByUser: false,
+            model: jsonData.options.model,
+            parentMessageId: parentMessageId,
+          });
         }
 
         if (!firstMessageDate) {
@@ -128,9 +127,9 @@ async function importLibreChatConvo(
 
     await importBatchBuilder.finishConversation(jsonData.title, firstMessageDate);
     await importBatchBuilder.saveBatch();
-    console.log(`Conversation ${jsonData.title} imported`);
+    logger.debug(`user: ${requestUserId} | Conversation ${jsonData.title} imported`);
   } catch (error) {
-    console.error('Error creating conversation from LibreChat file', error);
+    logger.error(`user: ${requestUserId} | Error creating conversation from LibreChat file`, error);
   }
 }
 
@@ -155,7 +154,7 @@ async function importChatGptConvo(
     }
     await importBatchBuilder.saveBatch();
   } catch (error) {
-    logger.error('Error creating conversation from imported file', error);
+    logger.error(`user: ${requestUserId} | Error creating conversation from imported file`, error);
   }
 }
 
