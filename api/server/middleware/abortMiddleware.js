@@ -73,6 +73,8 @@ const createAbortController = (req, res, getAbortData) => {
       ...responseData,
       conversationId,
       finish_reason: 'incomplete',
+      endpoint: endpointOption.endpoint,
+      iconURL: endpointOption.iconURL,
       model: endpointOption.modelOptions.model,
       unfinished: false,
       error: false,

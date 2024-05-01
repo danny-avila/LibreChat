@@ -6,7 +6,7 @@ function loadYaml(filepath) {
     let fileContents = fs.readFileSync(filepath, 'utf8');
     return yaml.load(fileContents);
   } catch (e) {
-    // console.error(e);
+    return e;
   }
 }
 

@@ -7,6 +7,8 @@ const anthropic = require('~/server/services/Endpoints/anthropic');
 const openAI = require('~/server/services/Endpoints/openAI');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
+const enforceModelSpec = require('./enforceModelSpec');
+const { handleError } = require('~/server/utils');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
@@ -21,6 +23,31 @@ const buildFunction = {
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
   const parsedBody = parseConvo({ endpoint, endpointType, conversation: req.body });
+
+  if (req.app.locals.modelSpecs?.list && req.app.locals.modelSpecs?.enforce) {
+    /** @type {{ list: TModelSpec[] }}*/
+    const { list } = req.app.locals.modelSpecs;
+    const { spec } = parsedBody;
+
+    if (!spec) {
+      return handleError(res, { text: 'No model spec selected' });
+    }
+
+    const currentModelSpec = list.find((s) => s.name === spec);
+    if (!currentModelSpec) {
+      return handleError(res, { text: 'Invalid model spec' });
+    }
+
+    if (endpoint !== currentModelSpec.preset.endpoint) {
+      return handleError(res, { text: 'Model spec mismatch' });
+    }
+
+    const isValidModelSpec = enforceModelSpec(currentModelSpec, parsedBody);
+    if (!isValidModelSpec) {
+      return handleError(res, { text: 'Model spec mismatch' });
+    }
+  }
+
   req.body.endpointOption = buildFunction[endpointType ?? endpoint](
     endpoint,
     parsedBody,

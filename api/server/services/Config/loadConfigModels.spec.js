@@ -46,6 +46,15 @@ const exampleConfig = {
           fetch: false,
         },
       },
+      {
+        name: 'MLX',
+        apiKey: 'user_provided',
+        baseURL: 'http://localhost:8080/v1/',
+        models: {
+          default: ['Meta-Llama-3-8B-Instruct-4bit'],
+          fetch: false,
+        },
+      },
     ],
   },
 };

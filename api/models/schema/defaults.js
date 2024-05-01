@@ -93,6 +93,17 @@ const conversationPreset = {
     type: Boolean,
     default: false,
   },
+  /* UI Components */
+  iconURL: {
+    type: String,
+  },
+  greeting: {
+    type: String,
+  },
+  spec: {
+    type: String,
+  },
+  tools: { type: [{ type: String }], default: undefined },
 };
 
 const agentOptions = {
