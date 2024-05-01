@@ -15,7 +15,7 @@ function getImporter(jsonData) {
   // For ChatGPT
   if (Array.isArray(jsonData)) {
     logger.info('Importing ChatGPT conversation');
-    return importChatGtpConvo;
+    return importChatGptConvo;
   }
 
   // For ChatbotUI
@@ -135,7 +135,7 @@ async function importLibreChatConvo(
  * @returns {Promise<void>} - A promise that resolves when the import is complete.
  * @throws {Error} - If there is an error creating the conversation from the imported file.
  */
-async function importChatGtpConvo(
+async function importChatGptConvo(
   jsonData,
   requestUserId,
   builderFactory = createImportBatchBuilder,
@@ -153,8 +153,8 @@ async function importChatGtpConvo(
 
             // Insert citation links
             messageData.metadata.citations?.forEach((citation) => {
-              const { metadata } = citation;
-              if (metadata.type !== 'webpage') {
+              const { metadata = {} } = citation;
+              if (metadata.type && metadata.type !== 'webpage') {
                 return;
               }
               const pattern = new RegExp(

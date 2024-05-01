@@ -18,7 +18,7 @@ jest.mock('./importBatchBuilder', () => {
   };
 });
 
-describe('importChatGtpConvo', () => {
+describe('importChatGptConvo', () => {
   it('should import conversation correctly', async () => {
     // Given
     const jsonData = JSON.parse(
