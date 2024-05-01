@@ -191,7 +191,6 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
     } else if (mapping.message.content.content_type !== 'text') {
       continue;
     } else if (role === 'system') {
-      logger.info(`Skipping system message: "${mapping.message.content.parts.join(' ').trim()}"`);
       continue;
     }
 
