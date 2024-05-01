@@ -82,14 +82,14 @@ export default function AssistantTool({
           </DialogTrigger>
           <DialogTemplate
             showCloseButton={false}
-            title={localize('com_ui_delete_conversation')}
+            title={localize('com_ui_delete_tool')}
             className="max-w-[450px]"
             main={
               <>
                 <div className="flex w-full flex-col items-center gap-2">
                   <div className="grid w-full items-center gap-2">
                     <Label className="text-left text-sm font-medium">
-                      {localize('com_ui_delete_conversation_confirm')}
+                      {localize('com_ui_delete_tool_confirm')}
                     </Label>
                   </div>
                 </div>
