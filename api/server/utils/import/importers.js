@@ -91,17 +91,20 @@ async function importLibreChatConvo(
     const traverseMessages = async (messages) => {
       for (const message of messages) {
         // Leaf node: actual message
-        if (message.text) {
-          if (message.sender === 'user') {
-            await importBatchBuilder.addUserMessage(message.text);
-          } else {
-            await importBatchBuilder.addGptMessage(
-              message.text,
-              jsonData.options.model,
-              message.sender,
-            );
-          }
+        if (!message.text) {
+          continue;
         }
+
+        if (message.sender?.toLowerCase() === 'user') {
+          await importBatchBuilder.addUserMessage(message.text);
+        } else {
+          await importBatchBuilder.addGptMessage(
+            message.text,
+            jsonData.options.model,
+            message.sender,
+          );
+        }
+
         if (!firstMessageDate) {
           firstMessageDate = new Date(message.createdAt);
         }
