@@ -258,6 +258,7 @@ export default {
   com_nav_user: 'ANVÄNDARE',
   com_nav_archived_chats: 'Arkiverade chattar',
   com_nav_archived_chats_manage: 'Hantera',
+  com_nav_archived_chats_empty: 'Du har inga arkiverade chattar.',
   com_nav_archive_all_chats: 'Arkivera alla chattar',
   com_nav_archive_all: 'Arkivera alla',
   com_nav_archive_name: 'Namn',

@@ -37,7 +37,7 @@ export default function ArchivedChatsTable({ className }: { className?: string }
   }
 
   if (!conversations || conversations.length === 0) {
-    return <div className="text-gray-300">You have no archived conversations.</div>;
+    return <div className="text-gray-300">{localize('com_nav_archived_chats_empty')}</div>;
   }
 
   return (

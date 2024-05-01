@@ -435,6 +435,7 @@ export default {
   com_nav_user: 'USER',
   com_nav_archived_chats: 'Archived chats',
   com_nav_archived_chats_manage: 'Manage',
+  com_nav_archived_chats_empty: 'You have no archived conversations.',
   com_nav_archive_all_chats: 'Archive all chats',
   com_nav_archive_all: 'Archive all',
   com_nav_archive_name: 'Name',

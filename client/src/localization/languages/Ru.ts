@@ -319,6 +319,7 @@ export default {
   com_nav_user: 'ПОЛЬЗОВАТЕЛЬ',
   com_nav_archived_chats: 'Архивированные чаты',
   com_nav_archived_chats_manage: 'Управление',
+  com_nav_archived_chats_empty: 'У вас нет архивированных разговоров.',
   com_nav_archive_all_chats: 'Архивировать все чаты',
   com_nav_archive_all: 'Архивировать все',
   com_nav_archive_name: 'Имя',

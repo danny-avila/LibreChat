@@ -422,6 +422,7 @@ export default {
   com_nav_user: 'NUTZER',
   com_nav_archived_chats: 'Archivierte Chats',
   com_nav_archived_chats_manage: 'Verwalten',
+  com_nav_archived_chats_empty: 'Keine archivierten Chats',
   com_nav_archive_all_chats: 'Alle Chats archivieren',
   com_nav_archive_all: 'Archivieren',
   com_nav_archive_name: 'Name',

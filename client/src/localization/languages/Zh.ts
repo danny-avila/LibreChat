@@ -417,6 +417,7 @@ export default {
   com_nav_user: '默认用户',
   com_nav_archived_chats: '归档的对话',
   com_nav_archived_chats_manage: '管理',
+  com_nav_archived_chats_empty: '您没有归档的对话。',
   com_nav_archive_all_chats: '归档所有对话',
   com_nav_archive_all: '归档所有',
   com_nav_archive_name: '名称',

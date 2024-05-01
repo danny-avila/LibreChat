@@ -429,6 +429,7 @@ export default {
   com_nav_user: 'USUÁRIO',
   com_nav_archived_chats: 'Conversas Arquivadas',
   com_nav_archived_chats_manage: 'Gerenciar',
+  com_nav_archived_chats_empty: 'Você não tem nenhuma conversa arquivada.',
   com_nav_archive_all_chats: 'Arquivar todas as conversas',
   com_nav_archive_all: 'Arquivar todas',
   com_nav_archive_name: 'Nome',

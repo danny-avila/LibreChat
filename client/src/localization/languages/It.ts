@@ -313,6 +313,13 @@ export default {
   com_nav_send_message: 'Invia messaggio',
   com_nav_log_out: 'Disconnettiti',
   com_nav_user: 'UTENTE',
+  com_nav_archived_chats: 'Chat archiviate',
+  com_nav_archived_chats_manage: 'Gestisci',
+  com_nav_archived_chats_empty: 'Non hai chat archiviate.',
+  com_nav_archive_all_chats: 'Archivia tutte le chat',
+  com_nav_archive_all: 'Archivia tutto',
+  com_nav_archive_name: 'Nome',
+  com_nav_archive_created_at: 'DateCreated',
   com_nav_clear_conversation: 'Elimina conversazioni',
   com_nav_clear_conversation_confirm_message:
     'Sei sicuro di voler eliminare tutte le conversazioni? Questa operazione è irreversibile.',

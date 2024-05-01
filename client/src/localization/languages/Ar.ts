@@ -262,6 +262,7 @@ export default {
   com_nav_user: 'المستخدم',
   com_nav_archived_chats: 'الدردشات المؤرشفة',
   com_nav_archived_chats_manage: 'إدارة',
+  com_nav_archived_chats_empty: 'ليس لديك أي دردشات مؤرشفة.',
   com_nav_archive_all_chats: 'الأرشفة على كل الدردشات',
   com_nav_archive_all: 'الأرشفة على كل الدردشات',
   com_nav_archive_name: 'الاسم',

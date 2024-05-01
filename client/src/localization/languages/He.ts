@@ -353,6 +353,13 @@ export default {
   com_nav_send_message: 'שלח הודעה',
   com_nav_log_out: 'צא',
   com_nav_user: 'USER',
+  com_nav_archived_chats: 'שיחות מארכיון',
+  com_nav_archived_chats_manage: 'ניהול',
+  com_nav_archived_chats_empty: 'אין שיחות מארכיון.',
+  com_nav_archive_all_chats: 'ארכין כל השיחות',
+  com_nav_archive_all: 'ארכין כל',
+  com_nav_archive_name: 'שם',
+  com_nav_archive_created_at: 'תאריך יצרן',
   com_nav_clear_conversation: 'נקה שיחות',
   com_nav_clear_conversation_confirm_message:
     'אתה בטוח שאתה רוצה לנקות את כל השיחות? זה בלתי הפיך.',

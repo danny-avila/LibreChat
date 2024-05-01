@@ -54,7 +54,9 @@ export default {
   com_ui_delete_conversation_confirm: 'Bu silinecek',
   com_ui_rename: 'Yeniden adlandır',
   com_ui_archive: 'Arşivle',
-  com_ui_archive_error: 'failed to archive conversation',
+  com_ui_archive_error: 'Sohbet arşivlemeye çalışırken bir hata oluştu',
+  com_ui_unarchive: 'Arşivden Çıkar',
+  com_ui_unarchive_error: 'Sohbet arşivden çıkarılamadı',
   com_ui_more_options: 'Daha fazla',
   com_auth_error_login:
     'Sağlanan bilgilerle giriş yapılamıyor. Lütfen kimlik bilgilerinizi kontrol edip tekrar deneyin.',
@@ -284,6 +286,7 @@ export default {
   com_nav_user: 'KULLANICI',
   com_nav_archived_chats: 'Arşivlenmiş Sohbetler',
   com_nav_archived_chats_manage: 'Ynetmek',
+  com_nav_archived_chats_empty: 'Sizin hiçbir arşivlenmiş sohbetiniz yok.',
   com_nav_archive_all_chats: 'Tm sohbetleri arşivle',
   com_nav_archive_all: 'Tmn arşivle',
   com_nav_archive_name: 'İsim',

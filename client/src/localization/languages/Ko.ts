@@ -243,6 +243,7 @@ export default {
   com_nav_user: '사용자',
   com_nav_archived_chats: '아카이브된 채팅',
   com_nav_archived_chats_manage: '관리',
+  com_nav_archived_chats_empty: '아카이브된 채팅이 없습니다',
   com_nav_archive_all_chats: '모든 채팅 아카이브',
   com_nav_archive_all: '모든 채팅 아카이브',
   com_nav_archive_name: '이름',

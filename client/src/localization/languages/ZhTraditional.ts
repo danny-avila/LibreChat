@@ -249,6 +249,7 @@ export default {
   com_nav_user: '使用者',
   com_nav_archived_chats: '封存的對話',
   com_nav_archived_chats_manage: '管理',
+  com_nav_archived_chats_empty: '您沒有任何封存的對話。',
   com_nav_archive_all_chats: '封存所有對話',
   com_nav_archive_all: '封存所有',
   com_nav_archive_name: '名稱',

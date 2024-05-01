@@ -206,6 +206,7 @@ export default {
   com_nav_user: 'Użytkownik',
   com_nav_archived_chats: 'Zarchiwizowane rozmowy',
   com_nav_archived_chats_manage: 'Zarządzaj',
+  com_nav_archived_chats_empty: 'Nie masz żadnych zarchiwizowanych rozmów.',
   com_nav_archive_all_chats: 'Archiwizuj wszystkie rozmowy',
   com_nav_archive_all: 'Archiwizuj wszystkie',
   com_nav_archive_name: 'Nazwa',

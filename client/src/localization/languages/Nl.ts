@@ -269,6 +269,7 @@ export default {
   com_nav_user: 'GEBRUIKER',
   com_nav_archived_chats: 'Gearchiveerde chats',
   com_nav_archived_chats_manage: 'Beheren',
+  com_nav_archived_chats_empty: 'Geen gearchiveerde chats',
   com_nav_archive_all_chats: 'Alle chats archiveren',
   com_nav_archive_all: 'Alle archiveren',
   com_nav_archive_name: 'Naam',

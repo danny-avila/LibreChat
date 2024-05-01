@@ -314,6 +314,7 @@ export default {
   com_nav_user: 'PENGGUNA',
   com_nav_archived_chats: 'Percakapan Arsip',
   com_nav_archived_chats_manage: 'Pengelolaan',
+  com_nav_archived_chats_empty: 'Tidak ada percakapan yang diarsipkan.',
   com_nav_archive_all_chats: 'Arsipkan semua percakapan',
   com_nav_archive_all: 'Arsipkan semua',
   com_nav_archive_name: 'Nama',
