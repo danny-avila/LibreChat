@@ -57,46 +57,35 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 ??? tip "Fetch models"
     This python script can fetch and order the llm models for you. The output will be saved in models.txt, formated in a way that should make it easier for you to include in the yaml config.
 
-    Replace `<YOUR_API_KEY_HERE>` with your actual APIpie API key
-
     ```py title="fetch.py"
     import json
     import requests
 
     def fetch_and_order_models():
         # API endpoint
-        url = "https://apipie.ai/models?type=llm"
+        url = "https://apipie.ai/models"
 
         # headers as per request example
-        headers = {
-            'Accept': 'application/json',
-            'X-API-key': '<YOUR_API_KEY_HERE>'
-        }
+        headers = {"Accept": "application/json"}
+
+        # request parameters
+        params = {"type": "llm"}
 
         # make request
-        response = requests.request("GET", url, headers=headers)
+        response = requests.get(url, headers=headers, params=params)
 
         # parse JSON response
-        data = json.loads(response.text)
+        data = response.json()
 
         # extract an ordered list of unique model IDs
-        model_ids = sorted(set(model['id'] for model in data))
-
-        # add quotes around model_ids and newlines for each model
-        quoted_model_ids = ['  "' + str(model_id) + '",\n' for model_id in model_ids]
-
-        # construct the output string
-        output_str = 'models:\n  default: [\n' + ''.join(quoted_model_ids) + ']\n'
-
-        # remove last comma and newline
-        output_str = output_str.rstrip(',\n') + '\n'
+        model_ids = sorted(set([model["id"] for model in data]))
 
         # write result to a text file
-        with open('models.txt', 'w') as file:
-            file.write(output_str)
+        with open("models.txt", "w") as file:
+            json.dump(model_ids, file, indent=2)
 
     # execute the function
-    if __name__ == '__main__':
+    if __name__ == "__main__":
         fetch_and_order_models()
     ```
 
@@ -282,13 +271,46 @@ Some of the endpoints are marked as **Known,** which means they might have speci
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/ddb4b2f3-608e-4034-9a27-3e94fc512034)
 
+## Apple MLX
+> MLX API key: ignored - [MLX OpenAI Compatibility](https://github.com/ml-explore/mlx-examples/blob/main/llms/mlx_lm/SERVER.md)
+
+**Notes:**
+
+- **Known:** icon provided.
+
+- API is mostly strict with unrecognized parameters.
+- Support only one model at a time, otherwise you'll need to run a different endpoint with a different `baseURL`.
+
+```yaml
+    - name: "MLX"
+      apiKey: "mlx"
+      baseURL: "http://localhost:8080/v1/" 
+      models:
+        default: [
+          "Meta-Llama-3-8B-Instruct-4bit"
+          ]
+        fetch: false # fetching list of models is not supported
+      titleConvo: true
+      titleModel: "current_model"
+      summarize: false
+      summaryModel: "current_model"
+      forcePrompt: false
+      modelDisplayLabel: "Apple MLX"
+      addParams:
+            max_tokens: 2000
+            "stop": [
+              "<|eot_id|>"
+            ]
+```
+
+![image](https://github.com/danny-avila/LibreChat/blob/ae9d88b68c95fdb46787bca1df69407d2dd4e8dc/client/public/assets/mlx.png)
+
 ## Ollama
 > Ollama API key: Required but ignored - [Ollama OpenAI Compatibility](https://github.com/ollama/ollama/blob/main/docs/openai.md)
 
 **Notes:**
 
 - **Known:** icon provided.
-- **Known issue:** fetching list of models is not supported. See [Pull Request 2728](https://github.com/ollama/ollama/pull/2728).
 - Download models with ollama run command. See [Ollama Library](https://ollama.com/library)
 - It's recommend to use the value "current_model" for the `titleModel` to avoid loading more than 1 model per conversation.
     - Doing so will dynamically use the current conversation model for the title generation.
@@ -307,7 +329,9 @@ Some of the endpoints are marked as **Known,** which means they might have speci
           "dolphin-mixtral",
           "mistral-openorca"
           ]
-        fetch: false # fetching list of models is not supported
+      # fetching list of models is supported but the `name` field must start
+      # with `ollama` (case-insensitive), as it does in this example.
+        fetch: true
       titleConvo: true
       titleModel: "current_model"
       summarize: false

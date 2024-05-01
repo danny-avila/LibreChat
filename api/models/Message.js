@@ -10,6 +10,7 @@ module.exports = {
   async saveMessage({
     user,
     endpoint,
+    iconURL,
     messageId,
     newMessageId,
     conversationId,
@@ -35,6 +36,7 @@ module.exports = {
 
       const update = {
         user,
+        iconURL,
         endpoint,
         messageId: newMessageId || messageId,
         conversationId,

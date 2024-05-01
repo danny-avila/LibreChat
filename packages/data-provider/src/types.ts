@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import type { TResPlugin, TMessage, TConversation, EModelEndpoint, ImageDetail } from './schemas';
-
+import type { TSpecsConfig } from './models';
 export type TOpenAIMessage = OpenAI.Chat.ChatCompletionMessageParam;
 export type TOpenAIFunction = OpenAI.Chat.ChatCompletionCreateParams.Function;
 export type TOpenAIFunctionCall = OpenAI.Chat.ChatCompletionCreateParams.FunctionCallOption;
@@ -204,6 +204,11 @@ export type TInterfaceConfig = {
     externalUrl?: string;
     openNewTab?: boolean;
   };
+  endpointsMenu: boolean;
+  modelSelect: boolean;
+  parameters: boolean;
+  sidePanel: boolean;
+  presets: boolean;
 };
 
 export type TStartupConfig = {
@@ -226,6 +231,7 @@ export type TStartupConfig = {
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   customFooter?: string;
+  modelSpecs?: TSpecsConfig;
 };
 
 export type TRefreshTokenResponse = {

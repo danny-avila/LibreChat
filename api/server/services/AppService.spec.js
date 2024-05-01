@@ -93,6 +93,16 @@ describe('AppService', () => {
     expect(app.locals).toEqual({
       socialLogins: ['testLogin'],
       fileStrategy: 'testStrategy',
+      interfaceConfig: expect.objectContaining({
+        privacyPolicy: undefined,
+        termsOfService: undefined,
+        endpointsMenu: true,
+        modelSelect: true,
+        parameters: true,
+        sidePanel: true,
+        presets: true,
+      }),
+      modelSpecs: undefined,
       availableTools: {
         ExampleTool: {
           type: 'function',
@@ -109,7 +119,6 @@ describe('AppService', () => {
       },
       paths: expect.anything(),
       imageOutputType: expect.any(String),
-      interface: undefined,
       fileConfig: undefined,
       secureImageLinks: undefined,
     });
@@ -181,7 +190,6 @@ describe('AppService', () => {
 
     expect(loadAndFormatTools).toHaveBeenCalledWith({
       directory: expect.anything(),
-      filter: expect.anything(),
     });
 
     expect(app.locals.availableTools.ExampleTool).toBeDefined();

@@ -1,13 +1,17 @@
 import throttle from 'lodash/throttle';
+import { EModelEndpoint, getConfigDefaults } from 'librechat-data-provider';
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
-import { useGetEndpointsQuery, useUserKeyQuery } from 'librechat-data-provider/react-query';
+import {
+  useGetEndpointsQuery,
+  useGetStartupConfig,
+  useUserKeyQuery,
+} from 'librechat-data-provider/react-query';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
-import { EModelEndpoint, type TEndpointsConfig } from 'librechat-data-provider';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useMediaQuery, useLocalStorage } from '~/hooks';
-import { Separator } from '~/components/ui/Separator';
 import NavToggle from '~/components/Nav/NavToggle';
 import { useChatContext } from '~/Providers';
 import Switcher from './Switcher';
@@ -23,6 +27,7 @@ interface SidePanelProps {
 }
 
 const defaultMinSize = 20;
+const defaultInterface = getConfigDefaults().interface;
 
 const SidePanel = ({
   defaultLayout = [97, 3],
@@ -38,6 +43,12 @@ const SidePanel = ({
   const [fullCollapse, setFullCollapse] = useState(fullPanelCollapse);
   const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const { data: startupConfig } = useGetStartupConfig();
+  const interfaceConfig = useMemo(
+    () => startupConfig?.interface ?? defaultInterface,
+    [startupConfig],
+  );
+
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const { conversation } = useChatContext();
   const { endpoint } = conversation ?? {};
@@ -69,7 +80,7 @@ const SidePanel = ({
     panelRef.current?.collapse();
   }, []);
 
-  const Links = useSideNavLinks({ hidePanel, assistants, keyProvided, endpoint });
+  const Links = useSideNavLinks({ hidePanel, assistants, keyProvided, endpoint, interfaceConfig });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const throttledSaveLayout = useCallback(
@@ -181,19 +192,20 @@ const SidePanel = ({
                 : 'opacity-100',
             )}
           >
-            <div
-              className={cn(
-                'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-gray-850',
-                isCollapsed ? 'h-[52px]' : 'px-2',
-              )}
-            >
-              <Switcher
-                isCollapsed={isCollapsed}
-                endpointKeyProvided={keyProvided}
-                endpoint={endpoint}
-              />
-              <Separator className="bg-gray-100/50 dark:bg-gray-600" />
-            </div>
+            {interfaceConfig.modelSelect && (
+              <div
+                className={cn(
+                  'sticky left-0 right-0 top-0 z-[100] flex h-[52px] flex-wrap items-center justify-center bg-white dark:bg-gray-850',
+                  isCollapsed ? 'h-[52px]' : 'px-2',
+                )}
+              >
+                <Switcher
+                  isCollapsed={isCollapsed}
+                  endpointKeyProvided={keyProvided}
+                  endpoint={endpoint}
+                />
+              </div>
+            )}
             <Nav
               resize={panelRef.current?.resize}
               isCollapsed={isCollapsed}
