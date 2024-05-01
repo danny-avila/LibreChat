@@ -7,6 +7,7 @@ const anthropic = require('~/server/services/Endpoints/anthropic');
 const openAI = require('~/server/services/Endpoints/openAI');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
+const enforceModelSpec = require('./enforceModelSpec');
 const { handleError } = require('~/server/utils');
 
 const buildFunction = {
@@ -41,13 +42,9 @@ async function buildEndpointOption(req, res, next) {
       return handleError(res, { text: 'Model spec mismatch' });
     }
 
-    for (const [key, value] of Object.entries(currentModelSpec.preset)) {
-      if (key === 'endpoint') {
-        continue;
-      }
-      if (parsedBody[key] !== value) {
-        return handleError(res, { text: 'Model spec mismatch' });
-      }
+    const isValidModelSpec = enforceModelSpec(currentModelSpec, parsedBody);
+    if (!isValidModelSpec) {
+      return handleError(res, { text: 'Model spec mismatch' });
     }
   }
 
