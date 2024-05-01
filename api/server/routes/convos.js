@@ -1,19 +1,19 @@
+const multer = require('multer');
 const express = require('express');
 const { CacheKeys } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
+const { IMPORT_CONVERSATION_JOB_NAME } = require('~/server/utils/import/jobDefinition');
+const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { createImportLimiters } = require('~/server/middleware');
+const jobScheduler = require('~/server/utils/jobScheduler');
 const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
-const multer = require('multer');
-const jobScheduler = require('~/server/utils/jobScheduler');
-const { IMPORT_CONVERSATION_JOB_NAME } = require('~/server/utils/import/jobDefinition');
-const { createImportLimiters } = require('~/server/middleware');
 
 const router = express.Router();
 router.use(requireJwtAuth);
-router.use(multer().single('file'));
 
 router.get('/', async (req, res) => {
   let pageNumber = req.query.pageNumber || 1;
@@ -105,19 +105,31 @@ router.post('/update', async (req, res) => {
 });
 
 const { importIpLimiter, importUserLimiter } = createImportLimiters();
+const upload = multer({ storage: storage, fileFilter: importFileFilter });
 
-// imports Json with conversation data and saves it to the database
-router.post('/import', importIpLimiter, importUserLimiter, async (req, res) => {
-  try {
-    const content = req.file.buffer.toString();
-    const job = await jobScheduler.now(IMPORT_CONVERSATION_JOB_NAME, content, req.user.id);
+/**
+ * Imports a conversation from a JSON file and saves it to the database.
+ * @route POST /import
+ * @param {Express.Multer.File} req.file - The JSON file to import.
+ * @returns {object} 201 - success response - application/json
+ */
+router.post(
+  '/import',
+  importIpLimiter,
+  importUserLimiter,
+  upload.single('file'),
+  async (req, res) => {
+    try {
+      const filepath = req.file.path;
+      const job = await jobScheduler.now(IMPORT_CONVERSATION_JOB_NAME, filepath, req.user.id);
 
-    res.status(200).json({ message: 'Import started', jobId: job.id });
-  } catch (error) {
-    console.error('Error processing file', error);
-    res.status(500).send('Error processing file');
-  }
-});
+      res.status(201).json({ message: 'Import started', jobId: job.id });
+    } catch (error) {
+      logger.error('Error processing file', error);
+      res.status(500).send('Error processing file');
+    }
+  },
+);
 
 // Get the status of an import job for polling
 router.get('/import/jobs/:jobId', async (req, res) => {
@@ -134,7 +146,7 @@ router.get('/import/jobs/:jobId', async (req, res) => {
 
     res.json(jobStatus);
   } catch (error) {
-    console.error('Error getting job details', error);
+    logger.error('Error getting job details', error);
     res.status(500).send('Error getting job details');
   }
 });

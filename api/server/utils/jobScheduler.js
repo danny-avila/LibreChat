@@ -27,14 +27,14 @@ class JobScheduler {
   /**
    * Schedules a job to start immediately.
    * @param {string} jobName - The name of the job to schedule.
-   * @param {Object} data - The data to pass to the job.
+   * @param {string} filepath - The filepath to pass to the job.
    * @param {string} userId - The ID of the user requesting the job.
    * @returns {Promise<{ id: string }>} - A promise that resolves with the ID of the scheduled job.
    * @throws {Error} - If the job fails to schedule.
    */
-  async now(jobName, data, userId) {
+  async now(jobName, filepath, userId) {
     try {
-      const job = await this.agenda.now(jobName, { data: data, requestUserId: userId });
+      const job = await this.agenda.now(jobName, { filepath, requestUserId: userId });
       logger.debug(`Job '${job.attrs.name}' scheduled successfully.`);
       return { id: job.attrs._id.toString() };
     } catch (error) {

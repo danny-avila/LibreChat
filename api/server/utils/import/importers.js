@@ -176,7 +176,7 @@ async function importChatGtpConvo(
       }
 
       await importBatchBuilder.finishConversation(conv.title, new Date(conv.create_time * 1000));
-      logger.info(`Conversation ${conv.title} imported`);
+      logger.debug(`Conversation ${conv.title} imported`);
     }
     await importBatchBuilder.saveBatch();
   } catch (error) {
