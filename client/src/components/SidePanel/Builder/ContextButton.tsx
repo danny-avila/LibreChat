@@ -6,7 +6,7 @@ import DialogTemplate from '~/components/ui/DialogTemplate';
 import { useDeleteAssistantMutation } from '~/data-provider';
 import { useLocalize, useSetIndexOptions } from '~/hooks';
 import { cn, removeFocusOutlines } from '~/utils/';
-import { NewTrashIcon } from '~/components/svg';
+import { TrashIcon } from '~/components/svg';
 import { useChatContext } from '~/Providers';
 
 export default function ContextButton({
@@ -117,7 +117,7 @@ export default function ContextButton({
                 className="group m-1.5 flex w-full cursor-pointer gap-2 rounded p-2.5 text-sm text-red-500 hover:bg-black/5 focus:ring-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-white/5"
                 tabIndex={-1}
               >
-                <NewTrashIcon />
+                <TrashIcon />
                 {localize('com_ui_delete') + ' ' + localize('com_ui_assistant')}
               </Popover.Close>
             </DialogTrigger>
