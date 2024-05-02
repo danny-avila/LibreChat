@@ -232,7 +232,7 @@ AZURE_OPENAI_BASEURL=https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/az
 - Sets the base URL for Azure OpenAI API requests.
 - Can include `${INSTANCE_NAME}` and `${DEPLOYMENT_NAME}` placeholders or specific credentials.
 - Example: "https://gateway.ai.cloudflare.com/v1/ACCOUNT_TAG/GATEWAY/azure-openai/${INSTANCE_NAME}/${DEPLOYMENT_NAME}"
-- [More info about `AZURE_OPENAI_BASEURL` here](./ai_setup.md#using-a-specified-base-url-with-azure)
+- [More info about `AZURE_OPENAI_BASEURL` here](./azure_openai.md#using-a-specified-base-url-with-azure)
 
 > Note: as deployment names can't have periods, they will be removed when the endpoint is generated.
 
@@ -412,7 +412,7 @@ ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
 - There is additional, optional configuration, depending on your needs, such as disabling the assistant builder UI, and determining which assistants can be used, that are available via the [`librechat.yaml` custom config file](./custom_config.md#assistants-endpoint-object-structure).
 
 ### OpenRouter
-See [OpenRouter](./free_ai_apis.md#openrouter-preferred) for more info.
+See [OpenRouter](./ai_endpoints.md#openrouter) for more info.
 
 - OpenRouter is a legitimate proxy service to a multitude of LLMs, both closed and open source, including: OpenAI models, Anthropic models, Meta's Llama models, pygmalionai/mythalion-13b and many more open source models. Newer integrations are usually discounted, too!
 

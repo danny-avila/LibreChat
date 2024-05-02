@@ -267,8 +267,8 @@ client:
       - /etc/letsencrypt/ssl-dhparams.pem:/etc/letsencrypt/ssl-dhparams.pem
 ```
 
-after you changed them you should follow the instruction from [Part V: Editing the NGINX file](digitalocean.md#part-v-editing-the-nginx-file-for-custom-domains-and-advanced-configs)\*\*
-in order to update the git and deploy from a rebased branch.
+after you changed them you should follow the instruction from [Part V: Editing the NGINX file](./docker_ubuntu_deploy.md#part-iv-editing-the-nginx-file-for-custom-domains-and-advanced-configs) in order to update the git and deploy from a rebased branch.
+
 [TBA: TO ADD HERE a simple explanation based on that explanation]
 
 #### Option B: Configure NGINX without Basic Authentication on the host
