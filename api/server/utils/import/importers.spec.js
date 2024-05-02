@@ -75,31 +75,31 @@ describe('importChatGptConvo', () => {
     // Expect the saveMessage to be called for each valid entry
     expect(mockImportBatchBuilder.saveMessage).toHaveBeenCalledTimes(messageEntries.length);
 
-    const idToUuidMap = new Map();
+    const idToUUIDMap = new Map();
     // Map original IDs to dynamically generated UUIDs
     mockImportBatchBuilder.saveMessage.mock.calls.forEach((call, index) => {
       const originalId = messageEntries[index];
-      idToUuidMap.set(originalId, call[0].messageId);
+      idToUUIDMap.set(originalId, call[0].messageId);
     });
 
     // Validate the UUID map contains all expected entries
-    expect(idToUuidMap.size).toBe(messageEntries.length);
+    expect(idToUUIDMap.size).toBe(messageEntries.length);
 
     // Validate correct parent-child relationships
     messageEntries.forEach((id) => {
       const { parent } = jsonData[0].mapping[id];
 
-      const expectedParentUuid = parent
-        ? idToUuidMap.get(parent) ?? Constants.NO_PARENT
+      const expectedParentId = parent
+        ? idToUUIDMap.get(parent) ?? Constants.NO_PARENT
         : Constants.NO_PARENT;
 
-      const actualParentUuid = idToUuidMap.get(id)
+      const actualParentId = idToUUIDMap.get(id)
         ? mockImportBatchBuilder.saveMessage.mock.calls.find(
-          (call) => call[0].messageId === idToUuidMap.get(id),
+          (call) => call[0].messageId === idToUUIDMap.get(id),
         )[0].parentMessageId
         : Constants.NO_PARENT;
 
-      expect(actualParentUuid).toBe(expectedParentUuid);
+      expect(actualParentId).toBe(expectedParentId);
     });
 
     expect(mockImportBatchBuilder.saveBatch).toHaveBeenCalled();
@@ -129,6 +129,51 @@ describe('importLibreChatConvo', () => {
     expect(mockImportBatchBuilder.finishConversation).toHaveBeenCalledTimes(
       expectedNumberOfConversations,
     ); // Adjust expected number
+    expect(mockImportBatchBuilder.saveBatch).toHaveBeenCalled();
+  });
+  it('should maintain correct message hierarchy (tree parent/children relationship)', async () => {
+    // Load test data
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'librechat-tree.json'), 'utf8'),
+    );
+    const requestUserId = 'user-123';
+    const mockedBuilderFactory = jest.fn().mockReturnValue(new ImportBatchBuilder(requestUserId));
+
+    // When
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, mockedBuilderFactory);
+
+    // Then
+    const mockImportBatchBuilder = mockedBuilderFactory.mock.results[0].value;
+
+    // Create a map to track original message IDs to new UUIDs
+    const idToUUIDMap = new Map();
+    mockImportBatchBuilder.saveMessage.mock.calls.forEach((call) => {
+      const message = call[0];
+      idToUUIDMap.set(message.originalMessageId, message.messageId);
+    });
+
+    // Function to recursively check children
+    const checkChildren = (children, parentId) => {
+      children.forEach((child) => {
+        const childUUID = idToUUIDMap.get(child.messageId);
+        const expectedParentId = idToUUIDMap.get(parentId) ?? null;
+        const messageCall = mockImportBatchBuilder.saveMessage.mock.calls.find(
+          (call) => call[0].messageId === childUUID,
+        );
+
+        const actualParentId = messageCall[0].parentMessageId;
+        expect(actualParentId).toBe(expectedParentId);
+
+        if (child.children && child.children.length > 0) {
+          checkChildren(child.children, child.messageId);
+        }
+      });
+    };
+
+    // Start hierarchy validation from root messages
+    checkChildren(jsonData.messagesTree, null); // Assuming root messages have no parent
+
     expect(mockImportBatchBuilder.saveBatch).toHaveBeenCalled();
   });
 });
