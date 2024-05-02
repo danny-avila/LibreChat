@@ -210,21 +210,21 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
 
     if (isText && mapping.message.content.parts) {
       messageText = mapping.message.content.parts.join(' ');
+    } else if (mapping.message.content.content_type === 'code') {
+      messageText = `\`\`\`${mapping.message.content.language}\n${mapping.message.content.text}\n\`\`\``;
+    } else if (mapping.message.content.content_type === 'execution_output') {
+      messageText = `Execution Output:\n> ${mapping.message.content.text}`;
     } else if (mapping.message.content.parts) {
       for (const part of mapping.message.content.parts) {
         if (typeof part === 'string') {
           messageText += part + ' ';
         } else if (typeof part === 'object') {
-          messageText = `\`\`\`json
-${JSON.stringify(part, null, 2)}
-\`\`\``;
+          messageText = `\`\`\`json\n${JSON.stringify(part, null, 2)}\n\`\`\`\n`;
         }
       }
       messageText = messageText.trim();
     } else {
-      messageText = `\`\`\`json
-${JSON.stringify(mapping.message.content, null, 2)}
-\`\`\``;
+      messageText = `\`\`\`json\n${JSON.stringify(mapping.message.content, null, 2)}\n\`\`\``;
     }
 
     const isCreatedByUser = role === 'user';
