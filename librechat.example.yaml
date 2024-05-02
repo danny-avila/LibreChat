@@ -31,6 +31,11 @@ registration:
 #     ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
 #     userMax: 50
 #     userWindowInMinutes: 60  # Rate limit window for file uploads per user
+#   conversationsImport:
+#     ipMax: 100
+#     ipWindowInMinutes: 60  # Rate limit window for conversation imports per IP
+#     userMax: 50
+#     userWindowInMinutes: 60  # Rate limit window for conversation imports per user
 
 # Definition of custom endpoints
 endpoints:

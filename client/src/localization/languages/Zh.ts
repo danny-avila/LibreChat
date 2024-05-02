@@ -13,14 +13,12 @@ export default {
   com_sidepanel_manage_files: '管理文件',
   com_assistants_capabilities: '功能',
   com_assistants_knowledge: '知识',
-  com_assistants_knowledge_info:
-    '如果您在“知识”中上传文件，与助手的对话可能包括文件内容。',
+  com_assistants_knowledge_info: '如果您在“知识”中上传文件，与助手的对话可能包括文件内容。',
   com_assistants_knowledge_disabled:
     '必须创建助手，且启用并保存代码解释器或检索，才能将文件作为知识上传。',
   com_assistants_image_vision: '识图',
   com_assistants_code_interpreter: '代码解释器',
-  com_assistants_code_interpreter_files:
-    '以下文件仅适用于代码解释器：',
+  com_assistants_code_interpreter_files: '以下文件仅适用于代码解释器：',
   com_assistants_retrieval: '检索',
   com_assistants_search_name: '按名称搜索助手',
   com_assistants_tools: '工具',
@@ -50,8 +48,7 @@ export default {
   com_ui_download_error: '下载文件时出错，该文件可能已被删除。',
   com_ui_attach_error_type: '渠道不支持的文件类型:',
   com_ui_attach_error_size: '超出渠道规定的文件大小:',
-  com_ui_attach_error:
-    '无法附加文件，请创建或选择一个对话，或尝试刷新页面。',
+  com_ui_attach_error: '无法附加文件，请创建或选择一个对话，或尝试刷新页面。',
   com_ui_examples: '示例',
   com_ui_new_chat: '创建新对话',
   com_ui_happy_birthday: '这是我的第一个生日！',
@@ -64,8 +61,7 @@ export default {
   com_ui_capability_decline_requests: '限制不当信息',
   com_ui_limitations: '局限性',
   com_ui_limitation_incorrect_info: '可能会不时出现错误信息',
-  com_ui_limitation_harmful_biased:
-    '可能会提供有害指示或者偏见',
+  com_ui_limitation_harmful_biased: '可能会提供有害指示或者偏见',
   com_ui_limitation_limited_2021: '基于2021年以前信息训练',
   com_ui_experimental: '实验性',
   com_ui_ascending: '升序',
@@ -120,6 +116,10 @@ export default {
   com_ui_clear: '清除',
   com_ui_revoke: '撤销',
   com_ui_revoke_info: '撤销所有用户提供的凭据',
+  com_ui_import_conversation: '导入',
+  com_ui_import_conversation_info: '从JSON文件导入对话',
+  com_ui_import_conversation_success: '对话导入成功',
+  com_ui_import_conversation_error: '导入对话时发生错误',
   com_ui_confirm_action: '确认执行',
   com_ui_chats: '聊天',
   com_ui_avatar: '头像',
@@ -134,23 +134,17 @@ export default {
   com_ui_create: '创建',
   com_ui_delete_conversation: '删除对话？',
   com_ui_delete_conversation_confirm: '这将删除',
-  com_ui_delete_assistant_confirm:
-    '确定要删除此助手吗？该操作无法撤销。',
+  com_ui_delete_assistant_confirm: '确定要删除此助手吗？该操作无法撤销。',
   com_ui_preview: '预览',
   com_ui_upload: '上传',
   com_ui_connect: '连接',
-  com_ui_upload_delay:
-    '上传 "{0}" 时比预期花了更长时间。 文件正在进行检索索引，请稍候。',
+  com_ui_upload_delay: '上传 "{0}" 时比预期花了更长时间。 文件正在进行检索索引，请稍候。',
   com_ui_privacy_policy: '隐私政策',
   com_ui_terms_of_service: '服务政策',
-  com_auth_error_login:
-    '无法登录，请确认提供的账户密码正确，并重新尝试。',
-  com_auth_error_login_rl:
-    '尝试登录次数过多，请稍后再试。',
-  com_auth_error_login_ban:
-    '根据我们的服务规则，您的帐号被暂时禁用。',
-  com_auth_error_login_server:
-    '内部服务器错误，请稍后再试。',
+  com_auth_error_login: '无法登录，请确认提供的账户密码正确，并重新尝试。',
+  com_auth_error_login_rl: '尝试登录次数过多，请稍后再试。',
+  com_auth_error_login_ban: '根据我们的服务规则，您的帐号被暂时禁用。',
+  com_auth_error_login_server: '内部服务器错误，请稍后再试。',
   com_auth_no_account: '新用户注册',
   com_auth_sign_up: '注册',
   com_auth_sign_in: '登录',
@@ -173,8 +167,7 @@ export default {
   com_auth_password_not_match: '密码不一致',
   com_auth_continue: '继续',
   com_auth_create_account: '创建账号',
-  com_auth_error_create:
-    '注册账户过程中出现错误，请重试。',
+  com_auth_error_create: '注册账户过程中出现错误，请重试。',
   com_auth_full_name: '姓名',
   com_auth_name_required: '姓名为必填项',
   com_auth_name_min_length: '姓名至少3个字符',
@@ -190,10 +183,8 @@ export default {
   com_auth_here: '这里',
   com_auth_to_reset_your_password: '重置密码。',
   com_auth_reset_password_link_sent: '重置密码链接已发送至邮箱',
-  com_auth_reset_password_email_sent:
-    '重置密码邮件已发送至邮箱',
-  com_auth_error_reset_password: 
-    '重置密码出现错误，未找到对应的邮箱地址，请重新输入。',
+  com_auth_reset_password_email_sent: '重置密码邮件已发送至邮箱',
+  com_auth_error_reset_password: '重置密码出现错误，未找到对应的邮箱地址，请重新输入。',
   com_auth_reset_password_success: '密码重置成功',
   com_auth_login_with_new_password: '现在你可以使用你的新密码登录。',
   com_auth_error_invalid_reset_token: '重置密码的密钥已失效。',
@@ -247,8 +238,7 @@ export default {
   com_endpoint_max_output_tokens: '最大输出词元数',
   com_endpoint_openai_temp:
     '值越高表示输出越随机，值越低表示输出越确定。建议不要同时改变此值和Top P。',
-  com_endpoint_openai_max:
-    '最大生成词元数。输入词元长度由模型的上下文长度决定。',
+  com_endpoint_openai_max: '最大生成词元数。输入词元长度由模型的上下文长度决定。',
   com_endpoint_openai_topp:
     '相较于随机性的另一个取样方法，称为核采样，模型选取输出词元中大于P值（概率密度在整个概率分布中的比例）的结果。比如 top_p=0.1 表示只有概率占比为前10%的词元才会被考虑作为输出。建议不要同时改变此值和随机性。',
   com_endpoint_openai_freq:
@@ -262,8 +252,7 @@ export default {
   com_endpoint_openai_detail:
     '发送给Vision的图像分辨率。 “Low”更便宜且更快，“High”更详细但更昂贵，“Auto”将基于图像分辨率自动在两者之间进行选择。',
   com_endpoint_openai_custom_name_placeholder: '为ChatGPT设置一个名称',
-  com_endpoint_openai_prompt_prefix_placeholder:
-    '在消息开头添加系统级提示词，默认为空',
+  com_endpoint_openai_prompt_prefix_placeholder: '在消息开头添加系统级提示词，默认为空',
   com_endpoint_anthropic_temp:
     '值介于0到1之间。 对于分析性/选择性任务，值应更接近0；对于创造性和生成性任务，值应更接近1。我们建议更改该参数或Top-p，但不要同时更改这两个参数。',
   com_endpoint_anthropic_topp:
@@ -316,8 +305,7 @@ export default {
   com_endpoint_use_active_assistant: '使用激活的助手',
   com_endpoint_assistant_model: '助手模型',
   com_endpoint_save_as_preset: '保存为预设',
-  com_endpoint_presets_clear_warning:
-    '确定要清除所有预设吗？此操作不可逆。',
+  com_endpoint_presets_clear_warning: '确定要清除所有预设吗？此操作不可逆。',
   com_endpoint_not_implemented: '未实现功能',
   com_endpoint_no_presets: '暂无预设，使用设置按钮创建一个。',
   com_endpoint_not_available: '无可用渠道',
@@ -327,8 +315,7 @@ export default {
   com_endpoint_agent_model: '代理模型 (推荐: GPT-3.5)',
   com_endpoint_completion_model: '补全模型 (推荐: GPT-4)',
   com_endpoint_func_hover: '将插件作为OpenAI函数使用',
-  com_endpoint_skip_hover:
-    '跳过补全步骤， 检查最终答案和生成步骤',
+  com_endpoint_skip_hover: '跳过补全步骤， 检查最终答案和生成步骤',
   com_endpoint_config_key: '设置API Key',
   com_endpoint_assistant_placeholder: '请从右侧面板中选择助手',
   com_endpoint_config_placeholder: '在顶部菜单设置API KEY',
@@ -346,8 +333,7 @@ export default {
   com_endpoint_config_google_api_info: '获取您的生成式语言API密钥(Gemini),',
   com_endpoint_config_key_import_json_key: '导入服务账号JSON密钥',
   com_endpoint_config_key_import_json_key_success: '成功导入服务账号JSON密钥',
-  com_endpoint_config_key_import_json_key_invalid:
-    '无效的服务账号JSON密钥，您是否导入正确的文件？',
+  com_endpoint_config_key_import_json_key_invalid: '无效的服务账号JSON密钥，您是否导入正确的文件？',
   com_endpoint_config_key_get_edge_key: '为获得Bing访问凭证（Access token），请登录：',
   com_endpoint_config_key_get_edge_key_dev_tool:
     '登录网站后，使用开发工具或扩展程序复制 _U cookie 的内容。如果失败，请按照以下步骤操作：',
@@ -383,8 +369,7 @@ export default {
   com_show_examples: '显示样例',
   com_nav_plugin_search: '搜索插件',
   com_nav_tool_search: '搜索工具',
-  com_nav_plugin_auth_error:
-    '尝试验证此插件时出错。请重试。',
+  com_nav_plugin_auth_error: '尝试验证此插件时出错。请重试。',
   com_nav_export_filename: '文件名',
   com_nav_export_filename_placeholder: '设置文件名',
   com_nav_export_type: '类型',
@@ -410,8 +395,7 @@ export default {
   com_nav_log_out: '注销',
   com_nav_user: '默认用户',
   com_nav_clear_conversation: '清空对话',
-  com_nav_clear_conversation_confirm_message:
-    '请是否清空所有对话？该操作无法撤销',
+  com_nav_clear_conversation_confirm_message: '请是否清空所有对话？该操作无法撤销',
   com_nav_help_faq: '帮助',
   com_nav_settings: '设置',
   com_nav_search_placeholder: '搜索对话及对话内容',
