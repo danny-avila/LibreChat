@@ -20,9 +20,14 @@ jest.mock('uuid', () => {
   };
 });
 
-const { forkConversation, getMessagesUpToTargetLevel } = require('./fork');
+const {
+  forkConversation,
+  getAllMessagesUpToParent,
+  getMessagesUpToTargetLevel,
+} = require('./fork');
 const { getConvo, bulkSaveConvos } = require('~/models/Conversation');
 const { getMessages, bulkSaveMessages } = require('~/models/Message');
+const BaseClient = require('~/app/clients/BaseClient');
 
 /**
  *
@@ -180,8 +185,77 @@ describe('getMessagesUpToTargetLevel', () => {
       '[getMessagesUpToTargetLevel] should get all messages up to target level\n',
       mappedResult,
     );
-    console.debug('mockMessage\n', printMessageTree(mockMessages));
+    console.debug('mockMessages\n', printMessageTree(mockMessages));
     console.debug('result\n', printMessageTree(result));
     expect(mappedResult).toEqual(['Message 7', 'Message 8', 'Message 5', 'Message 6', 'Message 9']);
+  });
+
+  test('should get all messages if target is deepest level', async () => {
+    const result = getMessagesUpToTargetLevel(mockMessages, '10');
+    expect(result.length).toEqual(mockMessages.length);
+  });
+});
+
+describe('getAllMessagesUpToParent', () => {
+  const mockMessages = [
+    { messageId: '11', parentMessageId: Constants.NO_PARENT, text: 'Message 11' },
+    { messageId: '12', parentMessageId: Constants.NO_PARENT, text: 'Message 12' },
+    { messageId: '13', parentMessageId: '11', text: 'Message 13' },
+    { messageId: '14', parentMessageId: '12', text: 'Message 14' },
+    { messageId: '15', parentMessageId: '13', text: 'Message 15' },
+    { messageId: '16', parentMessageId: '13', text: 'Message 16' },
+    { messageId: '21', parentMessageId: '13', text: 'Message 21' },
+    { messageId: '17', parentMessageId: '14', text: 'Message 17' },
+    { messageId: '18', parentMessageId: '16', text: 'Message 18' },
+    { messageId: '19', parentMessageId: '18', text: 'Message 19' },
+    { messageId: '20', parentMessageId: '19', text: 'Message 20' },
+  ];
+  test('should retrieve all messages from the target to the root (including indirect ancestors)', async () => {
+    const result = getAllMessagesUpToParent(mockMessages, '18');
+    const mappedResult = result.map((msg) => msg.text);
+    console.debug(
+      '[getAllMessagesUpToParent] should retrieve all messages from the target to the root\n',
+      mappedResult,
+    );
+    console.debug('mockMessages\n', printMessageTree(mockMessages));
+    console.debug('result\n', printMessageTree(result));
+    expect(mappedResult).toEqual([
+      'Message 11',
+      'Message 13',
+      'Message 15',
+      'Message 16',
+      'Message 21',
+      'Message 18',
+    ]);
+  });
+});
+
+describe('getMessagesForConversation', () => {
+  const mockMessages = [
+    { messageId: '11', parentMessageId: Constants.NO_PARENT, text: 'Message 11' },
+    { messageId: '12', parentMessageId: Constants.NO_PARENT, text: 'Message 12' },
+    { messageId: '13', parentMessageId: '11', text: 'Message 13' },
+    { messageId: '14', parentMessageId: '12', text: 'Message 14' },
+    { messageId: '15', parentMessageId: '13', text: 'Message 15' },
+    { messageId: '16', parentMessageId: '13', text: 'Message 16' },
+    { messageId: '21', parentMessageId: '13', text: 'Message 21' },
+    { messageId: '17', parentMessageId: '14', text: 'Message 17' },
+    { messageId: '18', parentMessageId: '16', text: 'Message 18' },
+    { messageId: '19', parentMessageId: '18', text: 'Message 19' },
+    { messageId: '20', parentMessageId: '19', text: 'Message 20' },
+  ];
+  test('should provide the direct path to the target without branches', async () => {
+    const result = BaseClient.getMessagesForConversation({
+      messages: mockMessages,
+      parentMessageId: '18',
+    });
+    const mappedResult = result.map((msg) => msg.text);
+    console.debug(
+      '[getMessagesForConversation] should provide the direct path to the target without branches\n',
+      mappedResult,
+    );
+    console.debug('mockMessages\n', printMessageTree(mockMessages));
+    console.debug('result\n', printMessageTree(result));
+    expect(mappedResult).toEqual(['Message 11', 'Message 13', 'Message 16', 'Message 18']);
   });
 });
