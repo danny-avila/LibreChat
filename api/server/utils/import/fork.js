@@ -22,6 +22,7 @@ async function forkConversation({
   requestUserId,
   newTitle,
   includeBranches = true,
+  includeAllDescendants = true,
   builderFactory = createImportBatchBuilder,
 }) {
   try {
@@ -34,18 +35,25 @@ async function forkConversation({
     const importBatchBuilder = builderFactory(requestUserId);
     importBatchBuilder.startConversation(EModelEndpoint.openAI);
 
-    // Determine the set of messages to fork
-    const messagesToClone = includeBranches
-      ? getAllMessagesUpToParent(originalMessages, targetMessageId)
-      : BaseClient.getMessagesForConversation({
+    let messagesToClone = [];
+
+    if (!includeBranches) {
+      // Direct path only
+      messagesToClone = BaseClient.getMessagesForConversation({
         messages: originalMessages,
         parentMessageId: targetMessageId,
       });
+    } else if (includeBranches && !includeAllDescendants) {
+      // Direct path and siblings
+      messagesToClone = getAllMessagesUpToParent(originalMessages, targetMessageId);
+    } else {
+      // Direct path, siblings, and all descendants
+      messagesToClone = getMessagesUpToTargetLevel(originalMessages, targetMessageId);
+    }
 
     let firstMessageDate = null;
     const idMapping = new Map();
 
-    // Clone and save the determined messages
     for (const message of messagesToClone) {
       const newMessageId = uuidv4();
       idMapping.set(message.messageId, newMessageId);
@@ -113,4 +121,57 @@ function getAllMessagesUpToParent(messages, targetMessageId) {
   );
 }
 
-module.exports = { forkConversation, getAllMessagesUpToParent };
+/**
+ * Retrieves all messages up to the root from the target message and its neighbors.
+ * @param {TMessage[]} messages - The list of messages to search.
+ * @param {string} targetMessageId - The ID of the target message.
+ * @returns {TMessage[]} The list of inclusive messages up to the root from the target message.
+ */
+function getMessagesUpToTargetLevel(messages, targetMessageId) {
+  // Create a map of parentMessageId to children messages
+  const parentToChildrenMap = new Map();
+  for (const message of messages) {
+    if (!parentToChildrenMap.has(message.parentMessageId)) {
+      parentToChildrenMap.set(message.parentMessageId, []);
+    }
+    parentToChildrenMap.get(message.parentMessageId).push(message);
+  }
+
+  // Retrieve the target message
+  const targetMessage = messages.find((msg) => msg.messageId === targetMessageId);
+  if (!targetMessage) {
+    logger.error('Target message not found.');
+    return [];
+  }
+
+  // Initialize the first level with the root messages
+  const rootMessages = parentToChildrenMap.get(Constants.NO_PARENT) || [];
+  let currentLevel = [...rootMessages];
+  const results = new Set(currentLevel);
+
+  // Check if the target message is at the root level
+  if (currentLevel.some((msg) => msg.messageId === targetMessageId)) {
+    return Array.from(results);
+  }
+
+  // Iterate level by level until the target is found
+  let targetFound = false;
+  while (!targetFound && currentLevel.length > 0) {
+    const nextLevel = [];
+    for (const node of currentLevel) {
+      const children = parentToChildrenMap.get(node.messageId) || [];
+      for (const child of children) {
+        nextLevel.push(child);
+        results.add(child);
+        if (child.messageId === targetMessageId) {
+          targetFound = true;
+        }
+      }
+    }
+    currentLevel = nextLevel;
+  }
+
+  return Array.from(results);
+}
+
+module.exports = { forkConversation, getAllMessagesUpToParent, getMessagesUpToTargetLevel };

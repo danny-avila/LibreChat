@@ -20,9 +20,9 @@ jest.mock('uuid', () => {
   };
 });
 
+const { forkConversation, getMessagesUpToTargetLevel } = require('./fork');
 const { getConvo, bulkSaveConvos } = require('~/models/Conversation');
 const { getMessages, bulkSaveMessages } = require('~/models/Message');
-const { forkConversation } = require('./fork');
 
 /**
  *
@@ -85,7 +85,7 @@ describe('forkConversation', () => {
 
   test('visualize message tree structure', () => {
     const visual = printMessageTree(mockMessages);
-    console.log(visual);
+    console.debug(visual);
     expect(visual).toBeTruthy();
   });
 
@@ -96,7 +96,7 @@ describe('forkConversation', () => {
       requestUserId: 'user1',
       includeBranches: false,
     });
-    console.log(printMessageTree(result.messages));
+    console.debug(printMessageTree(result.messages));
 
     // Reversed order due to setup in function
     const expectedMessagesTexts = ['Child of 1', 'Root message 2'];
@@ -115,7 +115,7 @@ describe('forkConversation', () => {
       requestUserId: 'user1',
       includeBranches: false,
     });
-    console.log(printMessageTree(result.messages));
+    console.debug(printMessageTree(result.messages));
 
     const expectedMessagesTexts = ['Child of 7', 'Child of 3', 'Child of 1', 'Root message 2'];
     expect(getMessages).toHaveBeenCalled();
@@ -126,15 +126,16 @@ describe('forkConversation', () => {
     );
   });
 
-  test('should fork conversation with branches', async () => {
+  test('should fork conversation with branches (direct path)', async () => {
     const result = await forkConversation({
       originalConvoId: 'abc123',
       targetMessageId: '3',
       requestUserId: 'user1',
       includeBranches: true,
+      includeAllDescendants: false,
     });
 
-    console.log(printMessageTree(result.messages));
+    console.debug(printMessageTree(result.messages));
 
     const expectedMessagesTexts = ['Root message 2', 'Child of 1', 'Child of 1'];
     expect(getMessages).toHaveBeenCalled();
@@ -156,5 +157,31 @@ describe('forkConversation', () => {
         includeBranches: true,
       }),
     ).rejects.toThrow('Failed to fetch messages');
+  });
+});
+
+describe('getMessagesUpToTargetLevel', () => {
+  const mockMessages = [
+    { messageId: '7', parentMessageId: Constants.NO_PARENT, text: 'Message 7' },
+    { messageId: '8', parentMessageId: Constants.NO_PARENT, text: 'Message 8' },
+    { messageId: '5', parentMessageId: '7', text: 'Message 5' },
+    { messageId: '6', parentMessageId: '7', text: 'Message 6' },
+    { messageId: '9', parentMessageId: '8', text: 'Message 9' },
+    { messageId: '2', parentMessageId: '5', text: 'Message 2' },
+    { messageId: '3', parentMessageId: '5', text: 'Message 3' },
+    { messageId: '1', parentMessageId: '6', text: 'Message 1' },
+    { messageId: '4', parentMessageId: '6', text: 'Message 4' },
+    { messageId: '10', parentMessageId: '3', text: 'Message 10' },
+  ];
+  test('should get all messages up to target level', async () => {
+    const result = getMessagesUpToTargetLevel(mockMessages, '5');
+    const mappedResult = result.map((msg) => msg.text);
+    console.debug(
+      '[getMessagesUpToTargetLevel] should get all messages up to target level\n',
+      mappedResult,
+    );
+    console.debug('mockMessage\n', printMessageTree(mockMessages));
+    console.debug('result\n', printMessageTree(result));
+    expect(mappedResult).toEqual(['Message 7', 'Message 8', 'Message 5', 'Message 6', 'Message 9']);
   });
 });
