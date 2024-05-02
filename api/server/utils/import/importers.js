@@ -3,7 +3,6 @@ const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-pr
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const logger = require('~/config/winston');
 
-// naive detection of export file type based on JSON structure
 /**
  * Returns the appropriate importer function based on the provided JSON data.
  *
@@ -12,8 +11,6 @@ const logger = require('~/config/winston');
  * @throws {Error} - If the import type is not supported.
  */
 function getImporter(jsonData) {
-  // this is a naive detection of export file type based on JSON structure
-
   // For ChatGPT
   if (Array.isArray(jsonData)) {
     logger.info('Importing ChatGPT conversation');
@@ -173,7 +170,7 @@ async function importChatGptConvo(
 function processConversation(conv, importBatchBuilder, requestUserId) {
   importBatchBuilder.startConversation(EModelEndpoint.openAI);
 
-  // First, map all message IDs to new UUIDs
+  // Map all message IDs to new UUIDs
   const messageMap = new Map();
   for (const [id, mapping] of Object.entries(conv.mapping)) {
     if (mapping.message && mapping.message.content.content_type) {
@@ -182,19 +179,14 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
     }
   }
 
-  // Next, create and save messages using the mapped IDs
+  // Create and save messages using the mapped IDs
   const messages = [];
   for (const [id, mapping] of Object.entries(conv.mapping)) {
     const role = mapping.message?.author?.role;
     if (!mapping.message) {
       messageMap.delete(id);
       continue;
-    }
-    // else if (mapping.message.content.content_type !== 'text') {
-    //   messageMap.delete(id);
-    //   continue;
-    // }
-    else if (role === 'system') {
+    } else if (role === 'system') {
       messageMap.delete(id);
       continue;
     }
@@ -205,37 +197,13 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
         ? messageMap.get(mapping.parent)
         : Constants.NO_PARENT;
 
-    const isText = mapping.message.content.content_type === 'text';
-    let messageText = '';
-
-    if (isText && mapping.message.content.parts) {
-      messageText = mapping.message.content.parts.join(' ');
-    } else if (mapping.message.content.content_type === 'code') {
-      messageText = `\`\`\`${mapping.message.content.language}\n${mapping.message.content.text}\n\`\`\``;
-    } else if (mapping.message.content.content_type === 'execution_output') {
-      messageText = `Execution Output:\n> ${mapping.message.content.text}`;
-    } else if (mapping.message.content.parts) {
-      for (const part of mapping.message.content.parts) {
-        if (typeof part === 'string') {
-          messageText += part + ' ';
-        } else if (typeof part === 'object') {
-          messageText = `\`\`\`json\n${JSON.stringify(part, null, 2)}\n\`\`\`\n`;
-        }
-      }
-      messageText = messageText.trim();
-    } else {
-      messageText = `\`\`\`json\n${JSON.stringify(mapping.message.content, null, 2)}\n\`\`\``;
-    }
+    const messageText = formatMessageText(mapping.message);
 
     const isCreatedByUser = role === 'user';
     let sender = isCreatedByUser ? 'user' : 'GPT-3.5';
     const model = mapping.message.metadata.model_slug || openAISettings.model.default;
     if (model === 'gpt-4') {
       sender = 'GPT-4';
-    }
-
-    if (!isCreatedByUser && isText) {
-      messageText = processAssistantMessage(mapping.message, messageText);
     }
 
     messages.push({
@@ -284,6 +252,41 @@ function processAssistantMessage(messageData, messageText) {
     );
     const replacement = ` ([${citation.metadata.title}](${citation.metadata.url}))`;
     messageText = messageText.replace(pattern, replacement);
+  }
+
+  return messageText;
+}
+
+/**
+ * Formats the text content of a message based on its content type and author role.
+ * @param {ChatGPTMessage} messageData - The message data.
+ * @returns {string} - The updated message text after processing.
+ */
+function formatMessageText(messageData) {
+  const isText = messageData.content.content_type === 'text';
+  let messageText = '';
+
+  if (isText && messageData.content.parts) {
+    messageText = messageData.content.parts.join(' ');
+  } else if (messageData.content.content_type === 'code') {
+    messageText = `\`\`\`${messageData.content.language}\n${messageData.content.text}\n\`\`\``;
+  } else if (messageData.content.content_type === 'execution_output') {
+    messageText = `Execution Output:\n> ${messageData.content.text}`;
+  } else if (messageData.content.parts) {
+    for (const part of messageData.content.parts) {
+      if (typeof part === 'string') {
+        messageText += part + ' ';
+      } else if (typeof part === 'object') {
+        messageText = `\`\`\`json\n${JSON.stringify(part, null, 2)}\n\`\`\`\n`;
+      }
+    }
+    messageText = messageText.trim();
+  } else {
+    messageText = `\`\`\`json\n${JSON.stringify(messageData.content, null, 2)}\n\`\`\``;
+  }
+
+  if (isText && messageData.author.role !== 'user') {
+    messageText = processAssistantMessage(messageData, messageText);
   }
 
   return messageText;
