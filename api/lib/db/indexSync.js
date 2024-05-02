@@ -57,8 +57,22 @@ async function indexSync(req, res, next) {
       Conversation.syncWithMeili();
     }
   } catch (err) {
-    logger.error('[indexSync] error', err);
-    // Handle specific errors appropriately
+    if (err.message.includes('not found')) {
+      logger.debug('[indexSync] Creating indices...');
+      currentTimeout = setTimeout(async () => {
+        try {
+          await Message.syncWithMeili();
+          await Conversation.syncWithMeili();
+        } catch (err) {
+          logger.error('[indexSync] Trouble creating indices, try restarting the server.', err);
+        }
+      }, 750);
+    } else if (err.message.includes('Meilisearch not configured')) {
+      logger.info('[indexSync] Meilisearch not configured, search will be disabled.');
+    } else {
+      logger.error('[indexSync] error', err);
+      // res.status(500).json({ error: 'Server error' });
+    }
   }
 }
 
