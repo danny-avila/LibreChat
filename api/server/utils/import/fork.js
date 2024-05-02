@@ -115,12 +115,11 @@ function getAllMessagesUpToParent(messages, targetMessageId) {
 
   // Include all messages that are in the path or whose parent is in the path
   // Exclude children of the target message
-  return messages.filter((msg) => {
-    return (
+  return messages.filter(
+    (msg) =>
       (pathToRoot.has(msg.messageId) && msg.messageId !== targetMessageId) ||
-      (pathToRoot.has(msg.parentMessageId) && msg.parentMessageId !== targetMessageId)
-    );
-  });
+      (pathToRoot.has(msg.parentMessageId) && msg.parentMessageId !== targetMessageId),
+  );
 }
 
 /**
