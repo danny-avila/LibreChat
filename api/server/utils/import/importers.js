@@ -189,8 +189,10 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
     if (!mapping.message) {
       continue;
     } else if (mapping.message.content.content_type !== 'text') {
+      messageMap.delete(mapping.message.id);
       continue;
     } else if (role === 'system') {
+      messageMap.delete(mapping.message.id);
       continue;
     }
 

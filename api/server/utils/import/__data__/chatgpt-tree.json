@@ -1,0 +1,429 @@
+[
+  {
+    "title": "Assist user with summary",
+    "create_time": 1714585031.148505,
+    "update_time": 1714585060.879308,
+    "mapping": {
+      "d38605d2-7b2c-43de-b044-22ce472c749b": {
+        "id": "d38605d2-7b2c-43de-b044-22ce472c749b",
+        "message": {
+          "id": "d38605d2-7b2c-43de-b044-22ce472c749b",
+          "author": {
+            "role": "system",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": null,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [""]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 0,
+          "metadata": {
+            "is_visually_hidden_from_conversation": true
+          },
+          "recipient": "all"
+        },
+        "parent": "aaa1f70c-100e-46f0-999e-10c8565f047f",
+        "children": ["aaa297ba-e2da-440e-84f4-e62e7be8b003"]
+      },
+      "aaa1f70c-100e-46f0-999e-10c8565f047f": {
+        "id": "aaa1f70c-100e-46f0-999e-10c8565f047f",
+        "message": null,
+        "parent": null,
+        "children": ["d38605d2-7b2c-43de-b044-22ce472c749b"]
+      },
+      "aaa297ba-e2da-440e-84f4-e62e7be8b003": {
+        "id": "aaa297ba-e2da-440e-84f4-e62e7be8b003",
+        "message": {
+          "id": "aaa297ba-e2da-440e-84f4-e62e7be8b003",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1714585031.150442,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["hi there"]
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 1,
+          "metadata": {
+            "request_id": "87d189bb49d412c5-IAD",
+            "timestamp_": "absolute",
+            "message_type": null
+          },
+          "recipient": "all"
+        },
+        "parent": "d38605d2-7b2c-43de-b044-22ce472c749b",
+        "children": ["bda8a275-886d-4f59-b38c-d7037144f0d5"]
+      },
+      "bda8a275-886d-4f59-b38c-d7037144f0d5": {
+        "id": "bda8a275-886d-4f59-b38c-d7037144f0d5",
+        "message": {
+          "id": "bda8a275-886d-4f59-b38c-d7037144f0d5",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1714585031.757056,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["Hello! How can I assist you today?"]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100260]
+            },
+            "citations": [],
+            "gizmo_id": null,
+            "message_type": null,
+            "model_slug": "text-davinci-002-render-sha",
+            "default_model_slug": "text-davinci-002-render-sha",
+            "pad": "AAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "parent_id": "aaa297ba-e2da-440e-84f4-e62e7be8b003",
+            "is_complete": true,
+            "request_id": "87d189bb49d412c5-IAD",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "aaa297ba-e2da-440e-84f4-e62e7be8b003",
+        "children": ["aaa24023-b02f-4d49-b568-5856b41750c0", "aaa236a3-cdfc-4eb1-b5c5-790c6641f880"]
+      },
+      "aaa24023-b02f-4d49-b568-5856b41750c0": {
+        "id": "aaa24023-b02f-4d49-b568-5856b41750c0",
+        "message": {
+          "id": "aaa24023-b02f-4d49-b568-5856b41750c0",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1714585034.306995,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["so cool bro"]
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 1,
+          "metadata": {
+            "request_id": "87d189cf3df512c5-IAD",
+            "timestamp_": "absolute",
+            "message_type": null
+          },
+          "recipient": "all"
+        },
+        "parent": "bda8a275-886d-4f59-b38c-d7037144f0d5",
+        "children": ["23afbea9-ca08-49f2-b417-e7ae58a1c97d"]
+      },
+      "23afbea9-ca08-49f2-b417-e7ae58a1c97d": {
+        "id": "23afbea9-ca08-49f2-b417-e7ae58a1c97d",
+        "message": {
+          "id": "23afbea9-ca08-49f2-b417-e7ae58a1c97d",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1714585034.755907,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["Thanks! What brings you here today?"]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100260]
+            },
+            "citations": [],
+            "gizmo_id": null,
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "text-davinci-002-render-sha",
+            "default_model_slug": "text-davinci-002-render-sha",
+            "pad": "AAAAAAAAAAAAAAAAAAAAAAAAA",
+            "parent_id": "aaa24023-b02f-4d49-b568-5856b41750c0",
+            "request_id": "87d189cf3df512c5-IAD",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "aaa24023-b02f-4d49-b568-5856b41750c0",
+        "children": ["aaa292cc-1842-4dbf-bd79-13cf7150366a"]
+      },
+      "aaa292cc-1842-4dbf-bd79-13cf7150366a": {
+        "id": "aaa292cc-1842-4dbf-bd79-13cf7150366a",
+        "message": {
+          "id": "aaa292cc-1842-4dbf-bd79-13cf7150366a",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1714585037.56986,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["tell me a story"]
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 1,
+          "metadata": {
+            "request_id": "87d189e3dac712c5-IAD",
+            "timestamp_": "absolute",
+            "message_type": null
+          },
+          "recipient": "all"
+        },
+        "parent": "23afbea9-ca08-49f2-b417-e7ae58a1c97d",
+        "children": ["ada93f81-f59e-4b31-933d-1357efd68bfc"]
+      },
+      "ada93f81-f59e-4b31-933d-1357efd68bfc": {
+        "id": "ada93f81-f59e-4b31-933d-1357efd68bfc",
+        "message": {
+          "id": "ada93f81-f59e-4b31-933d-1357efd68bfc",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1714585045.606752,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "Sure! Here's a short story for you:\n\n---\n\nOnce upon a time, in a small village nestled between rolling"
+            ]
+          },
+          "status": "in_progress",
+          "end_turn": null,
+          "weight": 1,
+          "metadata": {
+            "citations": [],
+            "gizmo_id": null,
+            "message_type": null,
+            "model_slug": "text-davinci-002-render-sha",
+            "default_model_slug": "text-davinci-002-render-sha",
+            "pad": "AAAAAAAAAAAAAAAAAA",
+            "parent_id": "aaa292cc-1842-4dbf-bd79-13cf7150366a",
+            "finish_details": {
+              "type": "interrupted"
+            },
+            "request_id": "87d189e3dac712c5-IAD",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "aaa292cc-1842-4dbf-bd79-13cf7150366a",
+        "children": []
+      },
+      "aaa236a3-cdfc-4eb1-b5c5-790c6641f880": {
+        "id": "aaa236a3-cdfc-4eb1-b5c5-790c6641f880",
+        "message": {
+          "id": "aaa236a3-cdfc-4eb1-b5c5-790c6641f880",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1714585050.906034,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["hi again"]
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 1,
+          "metadata": {
+            "request_id": "87d18a36cf9312c5-IAD",
+            "timestamp_": "absolute",
+            "message_type": null
+          },
+          "recipient": "all"
+        },
+        "parent": "bda8a275-886d-4f59-b38c-d7037144f0d5",
+        "children": ["db88eddf-3622-4246-8527-b6eaf0e9e8cd"]
+      },
+      "db88eddf-3622-4246-8527-b6eaf0e9e8cd": {
+        "id": "db88eddf-3622-4246-8527-b6eaf0e9e8cd",
+        "message": {
+          "id": "db88eddf-3622-4246-8527-b6eaf0e9e8cd",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1714585051.690729,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["Hey! Welcome back. What's on your mind?"]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100260]
+            },
+            "citations": [],
+            "gizmo_id": null,
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "text-davinci-002-render-sha",
+            "default_model_slug": "text-davinci-002-render-sha",
+            "pad": "AAAAAAAAAAAAAAAAAAAAA",
+            "parent_id": "aaa236a3-cdfc-4eb1-b5c5-790c6641f880",
+            "request_id": "87d18a36cf9312c5-IAD",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "aaa236a3-cdfc-4eb1-b5c5-790c6641f880",
+        "children": ["aaa20127-b9e3-44f6-afbe-a2475838625a"]
+      },
+      "aaa20127-b9e3-44f6-afbe-a2475838625a": {
+        "id": "aaa20127-b9e3-44f6-afbe-a2475838625a",
+        "message": {
+          "id": "aaa20127-b9e3-44f6-afbe-a2475838625a",
+          "author": {
+            "role": "user",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1714585055.908847,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": ["tell me a joke"]
+          },
+          "status": "finished_successfully",
+          "end_turn": null,
+          "weight": 1,
+          "metadata": {
+            "request_id": "87d18a6e39a312c5-IAD",
+            "timestamp_": "absolute",
+            "message_type": null
+          },
+          "recipient": "all"
+        },
+        "parent": "db88eddf-3622-4246-8527-b6eaf0e9e8cd",
+        "children": ["d0d2a7df-d2fc-4df9-bf0a-1c5121e227ae", "f63b8e17-aa5c-4ca6-a1bf-d4d285e269b8"]
+      },
+      "d0d2a7df-d2fc-4df9-bf0a-1c5121e227ae": {
+        "id": "d0d2a7df-d2fc-4df9-bf0a-1c5121e227ae",
+        "message": {
+          "id": "d0d2a7df-d2fc-4df9-bf0a-1c5121e227ae",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1714585056.580956,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "Sure, here's one for you:\n\nWhy don't scientists trust atoms?\n\nBecause they make up everything!"
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100260]
+            },
+            "citations": [],
+            "gizmo_id": null,
+            "message_type": null,
+            "model_slug": "text-davinci-002-render-sha",
+            "default_model_slug": "text-davinci-002-render-sha",
+            "pad": "AAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "parent_id": "aaa20127-b9e3-44f6-afbe-a2475838625a",
+            "is_complete": true,
+            "request_id": "87d18a55ca6212c5-IAD",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "aaa20127-b9e3-44f6-afbe-a2475838625a",
+        "children": []
+      },
+      "f63b8e17-aa5c-4ca6-a1bf-d4d285e269b8": {
+        "id": "f63b8e17-aa5c-4ca6-a1bf-d4d285e269b8",
+        "message": {
+          "id": "f63b8e17-aa5c-4ca6-a1bf-d4d285e269b8",
+          "author": {
+            "role": "assistant",
+            "name": null,
+            "metadata": {}
+          },
+          "create_time": 1714585060.598792,
+          "update_time": null,
+          "content": {
+            "content_type": "text",
+            "parts": [
+              "Sure, here's one for you:\n\nWhy don't scientists trust atoms?\n\nBecause they make up everything!"
+            ]
+          },
+          "status": "finished_successfully",
+          "end_turn": true,
+          "weight": 1,
+          "metadata": {
+            "finish_details": {
+              "type": "stop",
+              "stop_tokens": [100260]
+            },
+            "citations": [],
+            "gizmo_id": null,
+            "is_complete": true,
+            "message_type": null,
+            "model_slug": "text-davinci-002-render-sha",
+            "default_model_slug": "text-davinci-002-render-sha",
+            "pad": "AAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "parent_id": "aaa20127-b9e3-44f6-afbe-a2475838625a",
+            "request_id": "87d18a6e39a312c5-IAD",
+            "timestamp_": "absolute"
+          },
+          "recipient": "all"
+        },
+        "parent": "aaa20127-b9e3-44f6-afbe-a2475838625a",
+        "children": []
+      }
+    },
+    "moderation_results": [],
+    "current_node": "f63b8e17-aa5c-4ca6-a1bf-d4d285e269b8",
+    "plugin_ids": null,
+    "conversation_id": "d5dc5307-6807-41a0-8b04-4acee626eeb7",
+    "conversation_template_id": null,
+    "gizmo_id": null,
+    "is_archived": false,
+    "safe_urls": [],
+    "default_model_slug": "text-davinci-002-render-sha",
+    "id": "d5dc5307-6807-41a0-8b04-4acee626eeb7"
+  }
+]
