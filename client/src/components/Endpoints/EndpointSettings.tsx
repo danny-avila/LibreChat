@@ -11,15 +11,14 @@ export default function Settings({
   setOption,
   isPreset = false,
   className = '',
-  isMultiChat = false,
-}: TSettingsProps & { isMultiChat?: boolean }) {
+}: TSettingsProps) {
   const modelsQuery = useGetModelsQuery();
   const currentSettingsView = useRecoilValue(store.currentSettingsView);
   if (!conversation?.endpoint || currentSettingsView !== SettingsViews.default) {
     return null;
   }
 
-  const { settings, multiViewSettings } = getSettings(isMultiChat);
+  const { settings, multiViewSettings } = getSettings();
   const { endpoint: _endpoint, endpointType } = conversation;
   const models = modelsQuery?.data?.[_endpoint] ?? [];
   const endpoint = endpointType ?? _endpoint;
@@ -27,9 +26,7 @@ export default function Settings({
 
   if (OptionComponent) {
     return (
-      <div
-        className={cn('hide-scrollbar h-[500px] overflow-y-auto md:mb-2 md:h-[350px]', className)}
-      >
+      <div className={cn('h-[500px] overflow-y-auto md:mb-2 md:h-[350px]', className)}>
         <OptionComponent
           conversation={conversation}
           setOption={setOption}

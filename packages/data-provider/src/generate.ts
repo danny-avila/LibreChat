@@ -1,12 +1,19 @@
-import { z, ZodError, ZodIssueCode } from 'zod';
+import { z, ZodArray, ZodError, ZodIssueCode } from 'zod';
 import { tConversationSchema, googleSettings as google, openAISettings as openAI } from './schemas';
 import type { ZodIssue } from 'zod';
-import type { TConversation, TSetOption } from './schemas';
+import type { TConversation, TSetOption, TPreset } from './schemas';
 
 export type GoogleSettings = Partial<typeof google>;
 export type OpenAISettings = Partial<typeof google>;
 
-export type ComponentType = 'input' | 'textarea' | 'slider' | 'checkbox' | 'switch' | 'dropdown';
+export type ComponentType =
+  | 'input'
+  | 'textarea'
+  | 'slider'
+  | 'checkbox'
+  | 'switch'
+  | 'dropdown'
+  | 'tags';
 
 export type OptionType = 'conversation' | 'model' | 'custom';
 
@@ -17,6 +24,15 @@ export enum ComponentTypes {
   Checkbox = 'checkbox',
   Switch = 'switch',
   Dropdown = 'dropdown',
+  Tags = 'tags',
+}
+
+export enum SettingTypes {
+  Number = 'number',
+  Boolean = 'boolean',
+  String = 'string',
+  Enum = 'enum',
+  Array = 'array',
 }
 
 export enum OptionTypes {
@@ -27,8 +43,8 @@ export enum OptionTypes {
 export interface SettingDefinition {
   key: string;
   description?: string;
-  type: 'number' | 'boolean' | 'string' | 'enum';
-  default?: number | boolean | string;
+  type: 'number' | 'boolean' | 'string' | 'enum' | 'array';
+  default?: number | boolean | string | string[];
   showDefault?: boolean;
   options?: string[];
   range?: SettingRange;
@@ -44,14 +60,18 @@ export interface SettingDefinition {
   descriptionCode?: boolean;
   minText?: number;
   maxText?: number;
+  minTags?: number; // Specific to tags component
+  maxTags?: number; // Specific to tags component
   includeInput?: boolean; // Specific to slider component
+  descriptionSide?: 'top' | 'right' | 'bottom' | 'left';
 }
 
 export type DynamicSettingProps = Partial<SettingDefinition> & {
   readonly?: boolean;
   settingKey: string;
   setOption: TSetOption;
-  defaultValue?: number | boolean | string;
+  conversation: TConversation | TPreset | null;
+  defaultValue?: number | boolean | string | string[];
 };
 
 const requiredSettingFields = ['key', 'type', 'component'];
@@ -68,9 +88,19 @@ export function generateDynamicSchema(settings: SettingsConfiguration) {
   const schemaFields: { [key: string]: z.ZodTypeAny } = {};
 
   for (const setting of settings) {
-    const { key, type, default: defaultValue, range, options, minText, maxText } = setting;
+    const {
+      key,
+      type,
+      default: defaultValue,
+      range,
+      options,
+      minText,
+      maxText,
+      minTags,
+      maxTags,
+    } = setting;
 
-    if (type === 'number') {
+    if (type === SettingTypes.Number) {
       let schema = z.number();
       if (range) {
         schema = schema.min(range.min);
@@ -84,7 +114,7 @@ export function generateDynamicSchema(settings: SettingsConfiguration) {
       continue;
     }
 
-    if (type === 'boolean') {
+    if (type === SettingTypes.Boolean) {
       const schema = z.boolean();
       if (typeof defaultValue === 'boolean') {
         schemaFields[key] = schema.default(defaultValue);
@@ -94,7 +124,7 @@ export function generateDynamicSchema(settings: SettingsConfiguration) {
       continue;
     }
 
-    if (type === 'string') {
+    if (type === SettingTypes.String) {
       let schema = z.string();
       if (minText) {
         schema = schema.min(minText);
@@ -110,7 +140,7 @@ export function generateDynamicSchema(settings: SettingsConfiguration) {
       continue;
     }
 
-    if (type === 'enum') {
+    if (type === SettingTypes.Enum) {
       if (!options || options.length === 0) {
         console.warn(`Missing or empty 'options' for enum setting '${key}'.`);
         continue;
@@ -122,6 +152,23 @@ export function generateDynamicSchema(settings: SettingsConfiguration) {
       } else {
         schemaFields[key] = schema;
       }
+      continue;
+    }
+
+    if (type === SettingTypes.Array) {
+      let schema: z.ZodSchema = z.array(z.string().or(z.number()));
+      if (minTags && schema instanceof ZodArray) {
+        schema = schema.min(minTags);
+      }
+      if (maxTags && schema instanceof ZodArray) {
+        schema = schema.max(maxTags);
+      }
+
+      if (defaultValue && Array.isArray(defaultValue)) {
+        schema = schema.default(defaultValue);
+      }
+
+      schemaFields[key] = schema;
       continue;
     }
 
@@ -178,17 +225,75 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     }
 
     // check accepted types
-    if (!['number', 'boolean', 'string', 'enum'].includes(setting.type)) {
+    const settingTypes = Object.values(SettingTypes);
+    if (!settingTypes.includes(setting.type as SettingTypes)) {
       errors.push({
         code: ZodIssueCode.custom,
-        message: `Invalid type for setting ${setting.key}. Must be one of 'number', 'boolean', 'string', 'enum'.`,
+        message: `Invalid type for setting ${setting.key}. Must be one of ${settingTypes.join(
+          ', ',
+        )}.`,
         path: ['type'],
       });
     }
 
     // Predefined constraints based on components
-    if (setting.component === 'input' || setting.component === 'textarea') {
-      if (setting.type === 'number' && setting.component === 'textarea') {
+    if (
+      (setting.component === ComponentTypes.Tags && setting.type !== SettingTypes.Array) ||
+      (setting.component !== ComponentTypes.Tags && setting.type === SettingTypes.Array)
+    ) {
+      errors.push({
+        code: ZodIssueCode.custom,
+        message: `Tags component for setting ${setting.key} must have type array.`,
+        path: ['type'],
+      });
+    }
+
+    if (setting.component === ComponentTypes.Tags) {
+      if (setting.minTags !== undefined && setting.minTags < 0) {
+        errors.push({
+          code: ZodIssueCode.custom,
+          message: `Invalid minTags value for setting ${setting.key}. Must be non-negative.`,
+          path: ['minTags'],
+        });
+      }
+      if (setting.maxTags !== undefined && setting.maxTags < 0) {
+        errors.push({
+          code: ZodIssueCode.custom,
+          message: `Invalid maxTags value for setting ${setting.key}. Must be non-negative.`,
+          path: ['maxTags'],
+        });
+      }
+      if (setting.default && !Array.isArray(setting.default)) {
+        errors.push({
+          code: ZodIssueCode.custom,
+          message: `Invalid default value for setting ${setting.key}. Must be an array.`,
+          path: ['default'],
+        });
+      }
+      if (setting.default && setting.maxTags && (setting.default as []).length > setting.maxTags) {
+        errors.push({
+          code: ZodIssueCode.custom,
+          message: `Invalid default value for setting ${setting.key}. Must have at most ${setting.maxTags} tags.`,
+          path: ['default'],
+        });
+      }
+      if (setting.default && setting.minTags && (setting.default as []).length < setting.minTags) {
+        errors.push({
+          code: ZodIssueCode.custom,
+          message: `Invalid default value for setting ${setting.key}. Must have at least ${setting.minTags} tags.`,
+          path: ['default'],
+        });
+      }
+      if (!setting.default) {
+        setting.default = [];
+      }
+    }
+
+    if (
+      setting.component === ComponentTypes.Input ||
+      setting.component === ComponentTypes.Textarea
+    ) {
+      if (setting.type === SettingTypes.Number && setting.component === ComponentTypes.Textarea) {
         errors.push({
           code: ZodIssueCode.custom,
           message: `Textarea component for setting ${setting.key} must have type string.`,
@@ -214,8 +319,8 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
       } // Default placeholder
     }
 
-    if (setting.component === 'slider') {
-      if (setting.type === 'number' && !setting.range) {
+    if (setting.component === ComponentTypes.Slider) {
+      if (setting.type === SettingTypes.Number && !setting.range) {
         errors.push({
           code: ZodIssueCode.custom,
           message: `Slider component for setting ${setting.key} must have a range if type is number.`,
@@ -224,7 +329,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
         // continue;
       }
       if (
-        setting.type === 'enum' &&
+        setting.type === SettingTypes.Enum &&
         (!setting.options || setting.options.length < minSliderOptions)
       ) {
         errors.push({
@@ -234,17 +339,21 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
         });
         // continue;
       }
-      setting.includeInput = setting.type === 'number' ? setting.includeInput ?? true : false; // Default to true if type is number
+      setting.includeInput =
+        setting.type === SettingTypes.Number ? setting.includeInput ?? true : false; // Default to true if type is number
     }
 
-    if (setting.component === 'slider' && setting.type === 'number') {
+    if (setting.component === ComponentTypes.Slider && setting.type === SettingTypes.Number) {
       if (setting.default === undefined && setting.range) {
         // Set default to the middle of the range if unspecified
         setting.default = Math.round((setting.range.min + setting.range.max) / 2);
       }
     }
 
-    if (setting.component === 'checkbox' || setting.component === 'switch') {
+    if (
+      setting.component === ComponentTypes.Checkbox ||
+      setting.component === ComponentTypes.Switch
+    ) {
       if (setting.options && setting.options.length > 2) {
         errors.push({
           code: ZodIssueCode.custom,
@@ -253,12 +362,12 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
         });
         // continue;
       }
-      if (!setting.default && setting.type === 'boolean') {
+      if (!setting.default && setting.type === SettingTypes.Boolean) {
         setting.default = false; // Default to false if type is boolean
       }
     }
 
-    if (setting.component === 'dropdown') {
+    if (setting.component === ComponentTypes.Dropdown) {
       if (!setting.options || setting.options.length < minDropdownOptions) {
         errors.push({
           code: ZodIssueCode.custom,
@@ -283,7 +392,10 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     }
 
     // Validate minText and maxText for input/textarea
-    if (setting.component === 'input' || setting.component === 'textarea') {
+    if (
+      setting.component === ComponentTypes.Input ||
+      setting.component === ComponentTypes.Textarea
+    ) {
       if (setting.minText !== undefined && setting.minText < 0) {
         errors.push({
           code: ZodIssueCode.custom,
@@ -323,7 +435,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     }
 
     /* Default value checks */
-    if (setting.type === 'number' && isNaN(setting.default as number)) {
+    if (setting.type === SettingTypes.Number && isNaN(setting.default as number)) {
       errors.push({
         code: ZodIssueCode.custom,
         message: `Invalid default value for setting ${setting.key}. Must be a number.`,
@@ -331,7 +443,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
       });
     }
 
-    if (setting.type === 'boolean' && typeof setting.default !== 'boolean') {
+    if (setting.type === SettingTypes.Boolean && typeof setting.default !== 'boolean') {
       errors.push({
         code: ZodIssueCode.custom,
         message: `Invalid default value for setting ${setting.key}. Must be a boolean.`,
@@ -340,7 +452,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     }
 
     if (
-      (setting.type === 'string' || setting.type === 'enum') &&
+      (setting.type === SettingTypes.String || setting.type === SettingTypes.Enum) &&
       typeof setting.default !== 'string'
     ) {
       errors.push({
@@ -351,7 +463,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     }
 
     if (
-      setting.type === 'enum' &&
+      setting.type === SettingTypes.Enum &&
       setting.options &&
       !setting.options.includes(setting.default as string)
     ) {
@@ -365,7 +477,7 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     }
 
     if (
-      setting.type === 'number' &&
+      setting.type === SettingTypes.Number &&
       setting.range &&
       typeof setting.default === 'number' &&
       (setting.default < setting.range.min || setting.default > setting.range.max)
@@ -437,13 +549,13 @@ export const generateGoogleSchema = (customGoogle: GoogleSettings) => {
       topK: true,
     })
     .transform((obj) => {
-      const isGeminiPro = obj?.model?.toLowerCase()?.includes('gemini-pro');
+      const isGemini = obj?.model?.toLowerCase()?.includes('gemini');
 
-      const maxOutputTokensMax = isGeminiPro
-        ? defaults.maxOutputTokens.maxGeminiPro
+      const maxOutputTokensMax = isGemini
+        ? defaults.maxOutputTokens.maxGemini
         : defaults.maxOutputTokens.max;
-      const maxOutputTokensDefault = isGeminiPro
-        ? defaults.maxOutputTokens.defaultGeminiPro
+      const maxOutputTokensDefault = isGemini
+        ? defaults.maxOutputTokens.defaultGemini
         : defaults.maxOutputTokens.default;
 
       let maxOutputTokens = obj.maxOutputTokens ?? maxOutputTokensDefault;

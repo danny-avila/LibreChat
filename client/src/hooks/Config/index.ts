@@ -1,1 +1,1 @@
-export { default as useConfigOverride } from './useConfigOverride';
+export { default as useAppStartup } from './useAppStartup';

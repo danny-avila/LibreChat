@@ -1,10 +1,27 @@
 const { MeiliSearch } = require('meilisearch');
-const Message = require('~/models/schema/messageSchema');
 const Conversation = require('~/models/schema/convoSchema');
+const Message = require('~/models/schema/messageSchema');
 const { logger } = require('~/config');
 
 const searchEnabled = process.env?.SEARCH?.toLowerCase() === 'true';
 let currentTimeout = null;
+
+class MeiliSearchClient {
+  static instance = null;
+
+  static getInstance() {
+    if (!MeiliSearchClient.instance) {
+      if (!process.env.MEILI_HOST || !process.env.MEILI_MASTER_KEY) {
+        throw new Error('Meilisearch configuration is missing.');
+      }
+      MeiliSearchClient.instance = new MeiliSearch({
+        host: process.env.MEILI_HOST,
+        apiKey: process.env.MEILI_MASTER_KEY,
+      });
+    }
+    return MeiliSearchClient.instance;
+  }
+}
 
 // eslint-disable-next-line no-unused-vars
 async function indexSync(req, res, next) {
@@ -13,20 +30,10 @@ async function indexSync(req, res, next) {
   }
 
   try {
-    if (!process.env.MEILI_HOST || !process.env.MEILI_MASTER_KEY || !searchEnabled) {
-      throw new Error('Meilisearch not configured, search will be disabled.');
-    }
-
-    const client = new MeiliSearch({
-      host: process.env.MEILI_HOST,
-      apiKey: process.env.MEILI_MASTER_KEY,
-    });
+    const client = MeiliSearchClient.getInstance();
 
     const { status } = await client.health();
-    // logger.debug(`[indexSync] Meilisearch: ${status}`);
-    const result = status === 'available' && !!process.env.SEARCH;
-
-    if (!result) {
+    if (status !== 'available' || !process.env.SEARCH) {
       throw new Error('Meilisearch not available');
     }
 
@@ -37,12 +44,8 @@ async function indexSync(req, res, next) {
     const messagesIndexed = messages.numberOfDocuments;
     const convosIndexed = convos.numberOfDocuments;
 
-    logger.debug(
-      `[indexSync] There are ${messageCount} messages in the database, ${messagesIndexed} indexed`,
-    );
-    logger.debug(
-      `[indexSync] There are ${convoCount} convos in the database, ${convosIndexed} indexed`,
-    );
+    logger.debug(`[indexSync] There are ${messageCount} messages and ${messagesIndexed} indexed`);
+    logger.debug(`[indexSync] There are ${convoCount} convos and ${convosIndexed} indexed`);
 
     if (messageCount !== messagesIndexed) {
       logger.debug('[indexSync] Messages out of sync, indexing');
@@ -54,7 +57,6 @@ async function indexSync(req, res, next) {
       Conversation.syncWithMeili();
     }
   } catch (err) {
-    // logger.debug('[indexSync] in index sync');
     if (err.message.includes('not found')) {
       logger.debug('[indexSync] Creating indices...');
       currentTimeout = setTimeout(async () => {

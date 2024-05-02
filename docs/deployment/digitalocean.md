@@ -31,7 +31,7 @@ _Note: you will need a credit card or PayPal to sign up. I'm able to use a prepa
   - [2. Access console](#2-access-your-droplet-console)
   - [3. Console user setup](#3-once-you-have-logged-in-immediately-create-a-new-non-root-user)
   - [4. Firewall Setup](#4-firewall-setup)
-- **[Part II: Installing Docker & Other Dependencies](#part-ii-installing-docker-and-other-dependencies)**
+- **[Part II: Installing Docker & Other Dependencies](./docker_ubuntu_deploy.md)**
 
 ## Part I: Starting from Zero:
 

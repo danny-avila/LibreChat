@@ -20,6 +20,14 @@ const { redactMessage } = require('~/config/parsers');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
 
+const filteredTools = new Set([
+  'ChatTool.js',
+  'CodeSherpa.js',
+  'CodeSherpaTools.js',
+  'E2BTools.js',
+  'extractionChain.js',
+]);
+
 /**
  * Loads and formats tools from the specified tool directory.
  *
@@ -30,10 +38,11 @@ const { logger } = require('~/config');
  *
  * @param {object} params - The parameters for the function.
  * @param {string} params.directory - The directory path where the tools are located.
- * @param {Set<string>} [params.filter=new Set()] - A set of filenames to exclude from loading.
+ * @param {Array<string>} [params.adminFilter=[]] - Array of admin-defined tool keys to exclude from loading.
  * @returns {Record<string, FunctionTool>} An object mapping each tool's plugin key to its instance.
  */
-function loadAndFormatTools({ directory, filter = new Set() }) {
+function loadAndFormatTools({ directory, adminFilter = [] }) {
+  const filter = new Set([...adminFilter, ...filteredTools]);
   const tools = [];
   /* Structured Tools Directory */
   const files = fs.readdirSync(directory);
@@ -274,9 +283,16 @@ async function processRequiredActions(client, requiredActions) {
           })) ?? [];
       }
 
-      const actionSet = actionSets.find((action) =>
-        currentAction.tool.includes(domainParser(client.req, action.metadata.domain, true)),
-      );
+      let actionSet = null;
+      let currentDomain = '';
+      for (let action of actionSets) {
+        const domain = await domainParser(client.req, action.metadata.domain, true);
+        if (currentAction.tool.includes(domain)) {
+          currentDomain = domain;
+          actionSet = action;
+          break;
+        }
+      }
 
       if (!actionSet) {
         // TODO: try `function` if no action set is found
@@ -298,10 +314,8 @@ async function processRequiredActions(client, requiredActions) {
         builders = requestBuilders;
       }
 
-      const functionName = currentAction.tool.replace(
-        `${actionDelimiter}${domainParser(client.req, actionSet.metadata.domain, true)}`,
-        '',
-      );
+      const functionName = currentAction.tool.replace(`${actionDelimiter}${currentDomain}`, '');
+
       const requestBuilder = builders[functionName];
 
       if (!requestBuilder) {

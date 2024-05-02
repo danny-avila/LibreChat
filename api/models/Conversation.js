@@ -30,6 +30,24 @@ module.exports = {
       return { message: 'Error saving conversation' };
     }
   },
+  bulkSaveConvos: async (conversations) => {
+    try {
+      const bulkOps = conversations.map((convo) => ({
+        updateOne: {
+          filter: { conversationId: convo.conversationId, user: convo.user },
+          update: convo,
+          upsert: true,
+          timestamps: false,
+        },
+      }));
+
+      const result = await Conversation.bulkWrite(bulkOps);
+      return result;
+    } catch (error) {
+      logger.error('[saveBulkConversations] Error saving conversations in bulk', error);
+      throw new Error('Failed to save conversations in bulk.');
+    }
+  },
   getConvosByPage: async (user, pageNumber = 1, pageSize = 25) => {
     try {
       const totalConvos = (await Conversation.countDocuments({ user })) || 1;

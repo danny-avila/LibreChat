@@ -339,3 +339,37 @@ export enum FilePurpose {
   Assistants = 'assistants',
   AssistantsOutput = 'assistants_output',
 }
+
+export const defaultOrderQuery: {
+  order: 'desc';
+  limit: 100;
+} = {
+  order: 'desc',
+  limit: 100,
+};
+
+export enum AssistantStreamEvents {
+  ThreadCreated = 'thread.created',
+  ThreadRunCreated = 'thread.run.created',
+  ThreadRunQueued = 'thread.run.queued',
+  ThreadRunInProgress = 'thread.run.in_progress',
+  ThreadRunRequiresAction = 'thread.run.requires_action',
+  ThreadRunCompleted = 'thread.run.completed',
+  ThreadRunFailed = 'thread.run.failed',
+  ThreadRunCancelling = 'thread.run.cancelling',
+  ThreadRunCancelled = 'thread.run.cancelled',
+  ThreadRunExpired = 'thread.run.expired',
+  ThreadRunStepCreated = 'thread.run.step.created',
+  ThreadRunStepInProgress = 'thread.run.step.in_progress',
+  ThreadRunStepCompleted = 'thread.run.step.completed',
+  ThreadRunStepFailed = 'thread.run.step.failed',
+  ThreadRunStepCancelled = 'thread.run.step.cancelled',
+  ThreadRunStepExpired = 'thread.run.step.expired',
+  ThreadRunStepDelta = 'thread.run.step.delta',
+  ThreadMessageCreated = 'thread.message.created',
+  ThreadMessageInProgress = 'thread.message.in_progress',
+  ThreadMessageCompleted = 'thread.message.completed',
+  ThreadMessageIncomplete = 'thread.message.incomplete',
+  ThreadMessageDelta = 'thread.message.delta',
+  ErrorEvent = 'error',
+}

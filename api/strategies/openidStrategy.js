@@ -1,9 +1,7 @@
-const fs = require('fs');
-const path = require('path');
-const axios = require('axios');
 const passport = require('passport');
 const jwtDecode = require('jsonwebtoken/decode');
 const { Issuer, Strategy: OpenIDStrategy } = require('openid-client');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logger } = require('~/config');
 const User = require('~/models/User');
 
@@ -13,22 +11,31 @@ try {
 } catch (err) {
   logger.error('[openidStrategy] crypto support is disabled!', err);
 }
+/**
+ * Downloads an image from a URL using an access token.
+ * @param {string} url
+ * @param {string} accessToken
+ * @returns {Promise<Buffer>}
+ */
+const downloadImage = async (url, accessToken) => {
+  if (!url) {
+    return '';
+  }
 
-const downloadImage = async (url, imagePath, accessToken) => {
   try {
-    const response = await axios.get(url, {
+    const response = await fetch(url, {
+      method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
-      responseType: 'arraybuffer',
     });
 
-    fs.mkdirSync(path.dirname(imagePath), { recursive: true });
-    fs.writeFileSync(imagePath, response.data);
-
-    const fileName = path.basename(imagePath);
-
-    return `/images/openid/${fileName}`;
+    if (response.ok) {
+      const buffer = await response.buffer();
+      return buffer;
+    } else {
+      throw new Error(`${response.statusText} (HTTP ${response.status})`);
+    }
   } catch (error) {
     logger.error(
       `[openidStrategy] downloadImage: Error downloading image at URL "${url}": ${error}`,
@@ -145,6 +152,7 @@ async function setupOpenId() {
           }
 
           if (userinfo.picture) {
+            /** @type {string | undefined} */
             const imageUrl = userinfo.picture;
 
             let fileName;
@@ -156,24 +164,18 @@ async function setupOpenId() {
               fileName = userinfo.sub + '.png';
             }
 
-            const imagePath = path.join(
-              __dirname,
-              '..',
-              '..',
-              'client',
-              'public',
-              'images',
-              'openid',
-              fileName,
-            );
-
-            const imagePathOrEmpty = await downloadImage(
-              imageUrl,
-              imagePath,
-              tokenset.access_token,
-            );
-
-            user.avatar = imagePathOrEmpty;
+            const imageBuffer = await downloadImage(imageUrl, tokenset.access_token);
+            const { saveBuffer } = getStrategyFunctions(process.env.CDN_PROVIDER);
+            if (imageBuffer) {
+              const imagePath = await saveBuffer({
+                fileName,
+                userId: user._id.toString(),
+                buffer: imageBuffer,
+              });
+              user.avatar = imagePath ?? '';
+            } else {
+              user.avatar = '';
+            }
           } else {
             user.avatar = '';
           }

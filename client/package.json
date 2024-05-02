@@ -1,10 +1,11 @@
 {
   "name": "@librechat/frontend",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "",
   "type": "module",
   "scripts": {
     "data-provider": "cd .. && npm run build:data-provider",
+    "build:file": "cross-env NODE_ENV=production vite build --debug > vite-output.log 2>&1",
     "build": "cross-env NODE_ENV=production vite build",
     "build:ci": "cross-env NODE_ENV=development vite build --mode ci",
     "dev": "cross-env NODE_ENV=development vite",
@@ -127,7 +128,7 @@
     "ts-jest": "^29.1.0",
     "typescript": "^5.0.4",
     "vite": "^5.1.1",
-    "vite-plugin-html": "^3.2.0",
-    "vite-plugin-node-polyfills": "^0.17.0"
+    "vite-plugin-node-polyfills": "^0.17.0",
+    "vite-plugin-pwa": "^0.19.8"
   }
 }

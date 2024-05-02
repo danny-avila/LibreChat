@@ -1,15 +1,10 @@
 // file deepcode ignore HardcodedNonCryptoSecret: No hardcoded secrets
-
+const { getUserKey } = require('~/server/services/UserService');
 const initializeClient = require('./initializeClient');
 const { GoogleClient } = require('~/app');
-const { checkUserKeyExpiry, getUserKey } = require('../../UserService');
 
-jest.mock('../../UserService', () => ({
-  checkUserKeyExpiry: jest.fn().mockImplementation((expiresAt, errorMessage) => {
-    if (new Date(expiresAt) < new Date()) {
-      throw new Error(errorMessage);
-    }
-  }),
+jest.mock('~/server/services/UserService', () => ({
+  checkUserKeyExpiry: jest.requireActual('~/server/services/UserService').checkUserKeyExpiry,
   getUserKey: jest.fn().mockImplementation(() => ({})),
 }));
 
@@ -74,13 +69,8 @@ describe('google/initializeClient', () => {
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
-
-    checkUserKeyExpiry.mockImplementation((expiresAt, errorMessage) => {
-      throw new Error(errorMessage);
-    });
-
     await expect(initializeClient({ req, res, endpointOption })).rejects.toThrow(
-      /Your Google Credentials have expired/,
+      /expired_user_key/,
     );
   });
 });

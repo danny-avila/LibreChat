@@ -121,7 +121,7 @@ ASSISTANTS_BASE_URL=http://your-alt-baseURL:3080/
 
 ## Google
 
-For the Google Endpoint, you can either use the **Generative Language API** (for Gemini models), or the **Vertex AI API** (for PaLM2 & Codey models, Gemini support coming soon).
+For the Google Endpoint, you can either use the **Generative Language API** (for Gemini models), or the **Vertex AI API** (for Gemini, PaLM2 & Codey models).
 
 The Generative Language API uses an API key, which you can get from **Google AI Studio**.
 
@@ -131,12 +131,12 @@ Instructions for both are given below.
 
 ### Generative Language API (Gemini)
 
-**60 Gemini requests/minute are currently free until early next year when it enters general availability.**
+**[See here for Gemini API pricing and rate limits](https://ai.google.dev/pricing)**
 
-⚠️ Google will be using that free input/output to help improve the model, with data de-identified from your Google Account and API key.
+⚠️ While Google models are free, they are using your input/output to help improve the model, with data de-identified from your Google Account and API key.
 ⚠️ During this period, your messages “may be accessible to trained reviewers.”
 
-To use Gemini models, you'll need an API key. If you don't already have one, create a key in Google AI Studio.
+To use Gemini models through Google AI Studio, you'll need an API key. If you don't already have one, create a key in Google AI Studio.
 
 Get an API key here: **[makersuite.google.com](https://makersuite.google.com/app/apikey)**
 
@@ -151,16 +151,31 @@ Or, you can make users provide it from the frontend by setting the following:
 GOOGLE_KEY=user_provided
 ```
 
-Notes:
-- PaLM2 and Codey models cannot be accessed through the Generative Language API, only through Vertex AI.
+Since fetching the models list isn't yet supported, you should set the models you want to use in the .env file.
+
+For your convenience, these are the latest models as of 4/15/24 that can be used with the Generative Language API:
+
+```bash
+GOOGLE_MODELS=gemini-1.0-pro,gemini-1.0-pro-001,gemini-1.0-pro-latest,gemini-1.0-pro-vision-latest,gemini-1.5-pro-latest,gemini-pro,gemini-pro-vision
+```
+
+**Notes:**
+
+- A gemini-pro model or `gemini-pro-vision` are required in your list for attaching images.
+- Using LibreChat, PaLM2 and Codey models can only be accessed through Vertex AI, not the Generative Language API.
+    - Only models that support the `generateContent` method can be used natively with LibreChat + the Gen AI API.
 - Selecting `gemini-pro-vision` for messages with attachments is not necessary as it will be switched behind the scenes for you
 - Since `gemini-pro-vision`does not accept non-attachment messages, messages without attachments are automatically switched to use `gemini-pro` (otherwise, Google responds with an error)
+- With the Google endpoint, you cannot use both Vertex AI and Generative Language API at the same time. You must choose one or the other.
+- Some PaLM/Codey models and `gemini-pro-vision` may fail when `maxOutputTokens` is set to a high value. If you encounter this issue, try reducing the value through the conversation parameters.
 
-Setting `GOOGLE_KEY=user_provided` in your .env file will configure both the Vertex AI Service Account JSON key file and the Generative Language API key to be provided from the frontend like so:
+Setting `GOOGLE_KEY=user_provided` in your .env file sets both the Vertex AI Service Account JSON key file and the Generative Language API key to be provided from the frontend like so:
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/728cbc04-4180-45a8-848c-ae5de2b02996)
 
-### Vertex AI (PaLM 2 & Codey)
+### Vertex AI
+
+**[See here for Vertex API pricing and rate limits](https://cloud.google.com/vertex-ai/generative-ai/pricing)**
 
 To setup Google LLMs (via Google Cloud Vertex AI), first, signup for Google Cloud: **[cloud.google.com](https://cloud.google.com/)**
 
@@ -199,7 +214,13 @@ Alternatively, you can make users provide it from the frontend by setting the fo
 GOOGLE_KEY=user_provided
 ```
 
-Note: Using Gemini models through Vertex AI is possible but not yet supported.
+Since fetching the models list isn't yet supported, you should set the models you want to use in the .env file.
+
+For your convenience, these are the latest models as of 4/15/24 that can be used with the Generative Language API:
+
+```bash
+GOOGLE_MODELS=gemini-1.5-pro-preview-0409,gemini-1.0-pro-vision-001,gemini-pro,gemini-pro-vision,chat-bison,chat-bison-32k,codechat-bison,codechat-bison-32k,text-bison,text-bison-32k,text-unicorn,code-gecko,code-bison,code-bison-32k
+```
 
 ---
 
@@ -271,72 +292,6 @@ I recommend using Microsoft Edge for this:
 <p align="left">
     <img src="https://github.com/danny-avila/LibreChat/assets/32828263/d4dfd370-eddc-4694-ab16-076f913ff430" width="50%"/>
 </p>
-
-### copilot-gpt4-service
-For this setup, an additional docker container will need to be setup.
-
-***It is necessary to obtain your token first.***
-
-Follow these instructions provided at **[copilot-gpt4-service#obtaining-token](https://github.com/aaamoon/copilot-gpt4-service#obtaining-copilot-token)** and keep your token for use within the service. Additionally, more detailed instructions for setting copilot-gpt4-service are available at the [GitHub repo](https://github.com/aaamoon/copilot-gpt4-service). 
-
-It is *not* recommended to use the copilot token obtained directly, instead use the `SUPER_TOKEN` variable. (You can generate your own `SUPER_TOKEN` with the OpenSSL command `openssl rand -hex 16` and set the `ENABLE_SUPER_TOKEN` variable to `true`)
-
-1. Once your Docker environment is ready and your tokens are generated, proceed with this Docker run command to start the service:
-    ```
-    docker run -d \
-      --name copilot-gpt4-service \
-      -e HOST=0.0.0.0 \
-      -e COPILOT_TOKEN=ghp_xxxxxxx \
-      -e SUPER_TOKEN=your_super_token \
-      -e ENABLE_SUPER_TOKEN=true \
-      --restart always \
-      -p 8080:8080 \
-      aaamoon/copilot-gpt4-service:latest
-    ```
-
-2. For Docker Compose users, use the equivalent yaml configuration provided below:
-    ```yaml
-    version: '3.8'
-    services:
-      copilot-gpt4-service:
-        image: aaamoon/copilot-gpt4-service:latest
-        environment:
-          - HOST=0.0.0.0
-          - COPILOT_TOKEN=ghp_xxxxxxx # Default GitHub Copilot Token, if this item is set, the Token carried with the request will be ignored. Default is empty.
-          - SUPER_TOKEN=your_super_token # Super Token is a user-defined standalone token that can access COPILOT_TOKEN above. This allows you to share the service without exposing your COPILOT_TOKEN. Multiple tokens are separated by commas. Default is empty.
-          - ENABLE_SUPER_TOKEN=true # Whether to enable SUPER_TOKEN, default is false. If false, but COPILOT_TOKEN is not empty, COPILOT_TOKEN will be used without any authentication for all requests.
-        ports:
-          - 8080:8080
-        restart: unless-stopped
-        container_name: copilot-gpt4-service
-    ```
-
-3. After setting up the Docker container for `copilot-gpt4-service`, you can add it to your `librechat.yaml` configuration. Here is an example configuration:
-    ```yaml
-    version: 1.0.1
-    cache: true
-    endpoints:
-      custom:
-        - name: "OpenAI via Copilot"
-          apiKey: "your_super_token"
-          baseURL: "http://[copilotgpt4service_host_ip]:8080/v1"
-          models:
-            default: ["gpt-4", "gpt-3.5-turbo"] # *See Notes
-          titleConvo: true
-          titleModel: "gpt-3.5-turbo"
-          summarize: true
-          summaryModel: "gpt-3.5-turbo"
-          forcePrompt: false
-          modelDisplayLabel: "OpenAI"
-          dropParams: ["user"]
-    ```
-    Replace `your_super_token` with the token you obtained following the instructions highlighted above and `[copilotgpt4service_host_ip]` with the IP of your Docker host. *****See Notes***
-
-    Restart Librechat after adding the needed configuration, and select `OpenAI via Copilot` to start using!
-
-    >Notes: 
-    > - *Only allowed models are `gpt-4` and `gpt-3.5-turbo`. 
-    > - **Advanced users can add this to their existing docker-compose file/existing docker network and avoid having to expose port 8080 (or any port) to the copilot-gpt4-service container. 
 
 ---
 

@@ -1,13 +1,14 @@
 import {
-  parseISO,
+  format,
   isToday,
-  isWithinInterval,
   subDays,
   getYear,
+  parseISO,
   startOfDay,
   startOfYear,
-  format,
+  isWithinInterval,
 } from 'date-fns';
+import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type {
   TConversation,
   ConversationData,
@@ -182,3 +183,29 @@ export const getConversationById = (
   }
   return undefined;
 };
+
+export function storeEndpointSettings(conversation: TConversation | null) {
+  if (!conversation) {
+    return;
+  }
+  const { endpoint, model, agentOptions, jailbreak, toneStyle } = conversation;
+
+  if (!endpoint) {
+    return;
+  }
+
+  if (endpoint === EModelEndpoint.bingAI) {
+    const settings = { jailbreak, toneStyle };
+    localStorage.setItem(LocalStorageKeys.LAST_BING, JSON.stringify(settings));
+    return;
+  }
+
+  const lastModel = JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_MODEL) || '{}');
+  lastModel[endpoint] = model;
+
+  if (endpoint === EModelEndpoint.gptPlugins) {
+    lastModel.secondaryModel = agentOptions?.model || model || '';
+  }
+
+  localStorage.setItem(LocalStorageKeys.LAST_MODEL, JSON.stringify(lastModel));
+}

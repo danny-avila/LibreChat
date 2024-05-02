@@ -1,5 +1,5 @@
 // import { useState, useEffect } from 'react';
-import { actionDelimiter, actionDomainSeparator } from 'librechat-data-provider';
+import { actionDelimiter, actionDomainSeparator, Constants } from 'librechat-data-provider';
 import * as Popover from '@radix-ui/react-popover';
 import useLocalize from '~/hooks/useLocalize';
 import ProgressCircle from './ProgressCircle';
@@ -63,7 +63,7 @@ export default function ToolCall({
           onClick={() => ({})}
           inProgressText={localize('com_assistants_running_action')}
           finishedText={
-            domain
+            domain && domain.length !== Constants.ENCODED_DOMAIN_LENGTH
               ? localize('com_assistants_completed_action', domain)
               : localize('com_assistants_completed_function', function_name)
           }

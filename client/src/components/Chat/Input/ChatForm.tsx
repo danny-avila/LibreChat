@@ -29,14 +29,11 @@ const ChatForm = ({ index = 0 }) => {
     defaultValues: { text: '' },
   });
 
-  const { handlePaste, handleKeyUp, handleKeyDown, handleCompositionStart, handleCompositionEnd } =
-    useTextarea({
-      textAreaRef,
-      submitButtonRef,
-      disabled: !!requiresKey,
-      setValue: methods.setValue,
-      getValues: methods.getValues,
-    });
+  const { handlePaste, handleKeyDown, handleCompositionStart, handleCompositionEnd } = useTextarea({
+    textAreaRef,
+    submitButtonRef,
+    disabled: !!requiresKey,
+  });
 
   const {
     ask,
@@ -58,9 +55,6 @@ const ChatForm = ({ index = 0 }) => {
       }
       ask({ text: data.text });
       methods.reset();
-      if (textAreaRef.current) {
-        textAreaRef.current.value = '';
-      }
     },
     [ask, methods],
   );
@@ -84,6 +78,13 @@ const ChatForm = ({ index = 0 }) => {
     [requiresKey, invalidAssistant],
   );
 
+  const { ref, ...registerProps } = methods.register('text', {
+    required: true,
+    onChange: (e) => {
+      methods.setValue('text', e.target.value);
+    },
+  });
+
   return (
     <form
       onSubmit={methods.handleSubmit((data) => submitMessage(data))}
@@ -104,19 +105,14 @@ const ChatForm = ({ index = 0 }) => {
             />
             {endpoint && (
               <TextareaAutosize
-                {...methods.register('text', {
-                  required: true,
-                  onChange: (e) => {
-                    methods.setValue('text', e.target.value);
-                  },
-                })}
+                {...registerProps}
                 autoFocus
                 ref={(e) => {
+                  ref(e);
                   textAreaRef.current = e;
                 }}
                 disabled={disableInputs}
                 onPaste={handlePaste}
-                onKeyUp={handleKeyUp}
                 onKeyDown={handleKeyDown}
                 onCompositionStart={handleCompositionStart}
                 onCompositionEnd={handleCompositionEnd}
