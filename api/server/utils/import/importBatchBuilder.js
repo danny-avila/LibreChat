@@ -84,7 +84,6 @@ class ImportBatchBuilder {
       model: openAISettings.model.default,
     };
     this.conversations.push(convo);
-    logger.debug(`Conversation added to the batch: ${convo.conversationId}`);
 
     return convo;
   }
@@ -98,6 +97,9 @@ class ImportBatchBuilder {
     try {
       await bulkSaveConvos(this.conversations);
       await bulkSaveMessages(this.messages);
+      logger.debug(
+        `user: ${this.requestUserId} | Added ${this.conversations.length} conversations and ${this.messages.length} messages to the DB.`,
+      );
     } catch (error) {
       logger.error('Error saving batch', error);
       throw error;
