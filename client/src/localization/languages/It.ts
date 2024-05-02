@@ -53,6 +53,11 @@ export default {
   com_ui_clear: 'Pulisci',
   com_ui_revoke: 'Revoca',
   com_ui_revoke_info: 'Revoca tutte le credenziali fornite dall\'utente',
+  com_ui_import_conversation: 'Importa',
+  com_ui_import_conversation_info: 'Importa conversazioni da un file JSON',
+  com_ui_import_conversation_success: 'Conversazioni importate con successo',
+  com_ui_import_conversation_error:
+    'Si è verificato un errore durante l’importazione delle tue conversazioni',
   com_ui_confirm_action: 'Conferma azione',
   com_ui_chats: 'chat',
   com_ui_delete: 'Elimina',

@@ -115,6 +115,7 @@ export default {
   com_ui_new_footer: 'All AI conversations in one place.',
   com_ui_enter: 'Enter',
   com_ui_submit: 'Submit',
+  com_ui_none_selected: 'None selected',
   com_ui_upload_success: 'Successfully uploaded file',
   com_ui_upload_error: 'There was an error uploading your file',
   com_ui_upload_invalid: 'Invalid file for upload. Must be an image not exceeding 2 MB',
@@ -132,6 +133,11 @@ export default {
   com_ui_clear: 'Clear',
   com_ui_revoke: 'Revoke',
   com_ui_revoke_info: 'Revoke all user provided credentials',
+  com_ui_import_conversation: 'Import',
+  com_ui_import_conversation_info: 'Import conversations from a JSON file',
+  com_ui_import_conversation_success: 'Conversations imported successfully',
+  com_ui_import_conversation_error: 'There was an error importing your conversations',
+  com_ui_import_conversation_file_type_error: 'Unsupported import type',
   com_ui_confirm_action: 'Confirm Action',
   com_ui_chats: 'chats',
   com_ui_avatar: 'Avatar',
@@ -155,6 +161,8 @@ export default {
     'Uploading "{0}" is taking more time than anticipated. Please wait while the file finishes indexing for retrieval.',
   com_ui_privacy_policy: 'Privacy policy',
   com_ui_terms_of_service: 'Terms of service',
+  com_ui_min_tags: 'Cannot remove more values, a minimum of {0} are required.',
+  com_ui_max_tags: 'Maximum number allowed is {0}, using latest values.',
   com_auth_error_login:
     'Unable to login with the information provided. Please check your credentials and try again.',
   com_auth_error_login_rl:
@@ -257,6 +265,8 @@ export default {
   com_endpoint_top_p: 'Top P',
   com_endpoint_top_k: 'Top K',
   com_endpoint_max_output_tokens: 'Max Output Tokens',
+  com_endpoint_stop: 'Stop Sequences',
+  com_endpoint_stop_placeholder: 'Separate values by pressing `Enter`',
   com_endpoint_openai_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
   com_endpoint_openai_max:
@@ -273,6 +283,7 @@ export default {
     'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
   com_endpoint_openai_detail:
     'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
+  com_endpoint_openai_stop: 'Up to 4 sequences where the API will stop generating further tokens.',
   com_endpoint_openai_custom_name_placeholder: 'Set a custom name for the AI',
   com_endpoint_openai_prompt_prefix_placeholder:
     'Set custom instructions to include in System Message. Default: none',

@@ -1,4 +1,5 @@
 import { EModelEndpoint } from 'librechat-data-provider';
+import type { IconMapProps } from '~/common';
 import {
   MinimalPlugin,
   GPTIcon,
@@ -23,17 +24,7 @@ export const icons = {
   [EModelEndpoint.google]: GoogleMinimalIcon,
   [EModelEndpoint.bingAI]: BingAIMinimalIcon,
   [EModelEndpoint.custom]: CustomMinimalIcon,
-  [EModelEndpoint.assistants]: ({
-    className = '',
-    assistantName,
-    avatar,
-    size,
-  }: {
-    className?: string;
-    assistantName?: string;
-    avatar?: string;
-    size?: number;
-  }) => {
+  [EModelEndpoint.assistants]: ({ className = '', assistantName, avatar, size }: IconMapProps) => {
     if (assistantName && avatar) {
       return (
         <img

@@ -12,7 +12,7 @@ function useParameterEffects<T = unknown>({
   preventDelayedUpdate = false,
 }: Pick<DynamicSettingProps, 'settingKey' | 'defaultValue'> & {
   preset: TPreset | null;
-  conversation: TConversation | { conversationId: null } | null;
+  conversation?: TConversation | TPreset | null;
   inputValue: T;
   setInputValue: (inputValue: T) => void;
   preventDelayedUpdate?: boolean;
