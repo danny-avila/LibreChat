@@ -668,7 +668,7 @@ export enum Constants {
   /** Key for the app's version. */
   VERSION = 'v0.7.1',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.0.8',
+  CONFIG_VERSION = '1.0.9',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Fixed, encoded domain length for Azure OpenAI Assistants Function name parsing. */
