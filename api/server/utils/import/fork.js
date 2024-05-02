@@ -13,7 +13,8 @@ const logger = require('~/config/winston');
  * @param {string} params.targetMessageId - The ID of the message to fork from.
  * @param {string} params.requestUserId - The ID of the user making the request.
  * @param {string} [params.newTitle] - Optional new title for the forked conversation uses old title if not provided
- * @param {boolean} [params.includeBranches=true] - Optional flag to include branches in the forked conversation; otherwise, only the main line thread will be forked.
+ * @param {boolean} [params.directPath=false] - Optional flag to only fork the main line thread.
+ * @param {boolean} [params.includeBranches=false] - Optional flag to include branches in the forked conversation.
  * @param {(userId: string) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
  */
 async function forkConversation({
@@ -21,8 +22,9 @@ async function forkConversation({
   targetMessageId,
   requestUserId,
   newTitle,
-  includeBranches = true,
-  includeAllDescendants = true,
+  directPath = false,
+  includeBranches = false,
+  // includeAllLevels = true,
   builderFactory = createImportBatchBuilder,
 }) {
   try {
@@ -37,13 +39,13 @@ async function forkConversation({
 
     let messagesToClone = [];
 
-    if (!includeBranches) {
+    if (directPath) {
       // Direct path only
       messagesToClone = BaseClient.getMessagesForConversation({
         messages: originalMessages,
         parentMessageId: targetMessageId,
       });
-    } else if (includeBranches && !includeAllDescendants) {
+    } else if (includeBranches) {
       // Direct path and siblings
       messagesToClone = getAllMessagesUpToParent(originalMessages, targetMessageId);
     } else {
@@ -61,9 +63,10 @@ async function forkConversation({
       const clonedMessage = {
         ...message,
         messageId: newMessageId,
-        parentMessageId: message.parentMessageId
-          ? idMapping.get(message.parentMessageId)
-          : Constants.NO_PARENT,
+        parentMessageId:
+          message.parentMessageId && message.parentMessageId !== Constants.NO_PARENT
+            ? idMapping.get(message.parentMessageId)
+            : Constants.NO_PARENT,
       };
 
       importBatchBuilder.saveMessage(clonedMessage);

@@ -88,20 +88,14 @@ describe('forkConversation', () => {
     bulkSaveMessages.mockResolvedValue(null);
   });
 
-  test('visualize message tree structure', () => {
-    const visual = printMessageTree(mockMessages);
-    console.debug(visual);
-    expect(visual).toBeTruthy();
-  });
-
   test('should fork conversation without branches', async () => {
     const result = await forkConversation({
       originalConvoId: 'abc123',
       targetMessageId: '3',
       requestUserId: 'user1',
-      includeBranches: false,
+      directPath: true,
     });
-    console.debug(printMessageTree(result.messages));
+    console.debug('forkConversation: direct path\n', printMessageTree(result.messages));
 
     // Reversed order due to setup in function
     const expectedMessagesTexts = ['Child of 1', 'Root message 2'];
@@ -118,9 +112,9 @@ describe('forkConversation', () => {
       originalConvoId: 'abc123',
       targetMessageId: '8',
       requestUserId: 'user1',
-      includeBranches: false,
+      directPath: true,
     });
-    console.debug(printMessageTree(result.messages));
+    console.debug('forkConversation: direct path (deeper)\n', printMessageTree(result.messages));
 
     const expectedMessagesTexts = ['Child of 7', 'Child of 3', 'Child of 1', 'Root message 2'];
     expect(getMessages).toHaveBeenCalled();
@@ -131,18 +125,35 @@ describe('forkConversation', () => {
     );
   });
 
-  test('should fork conversation with branches (direct path)', async () => {
+  test('should fork conversation with branches', async () => {
     const result = await forkConversation({
       originalConvoId: 'abc123',
       targetMessageId: '3',
       requestUserId: 'user1',
       includeBranches: true,
-      includeAllDescendants: false,
     });
 
-    console.debug(printMessageTree(result.messages));
+    console.debug('forkConversation: include branches\n', printMessageTree(result.messages));
 
     const expectedMessagesTexts = ['Root message 2', 'Child of 1', 'Child of 1'];
+    expect(getMessages).toHaveBeenCalled();
+    expect(bulkSaveMessages).toHaveBeenCalledWith(
+      expect.arrayContaining(
+        expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
+      ),
+    );
+  });
+
+  test('should fork conversation up to target level', async () => {
+    const result = await forkConversation({
+      originalConvoId: 'abc123',
+      targetMessageId: '3',
+      requestUserId: 'user1',
+    });
+
+    console.debug('forkConversation: target level\n', printMessageTree(result.messages));
+
+    const expectedMessagesTexts = ['Root message 1', 'Root message 2', 'Child of 1', 'Child of 1'];
     expect(getMessages).toHaveBeenCalled();
     expect(bulkSaveMessages).toHaveBeenCalledWith(
       expect.arrayContaining(
@@ -159,7 +170,6 @@ describe('forkConversation', () => {
         originalConvoId: 'abc123',
         targetMessageId: '3',
         requestUserId: 'user1',
-        includeBranches: true,
       }),
     ).rejects.toThrow('Failed to fetch messages');
   });
