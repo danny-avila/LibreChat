@@ -3,7 +3,7 @@ import { Settings2 } from 'lucide-react';
 import { Root, Anchor } from '@radix-ui/react-popover';
 import { useState, useEffect, useMemo } from 'react';
 import { tPresetUpdateSchema, EModelEndpoint } from 'librechat-data-provider';
-import type { TPreset } from 'librechat-data-provider';
+import type { TPreset, TInterfaceConfig } from 'librechat-data-provider';
 import { EndpointSettings, SaveAsPresetDialog, AlternativeSettings } from '~/components/Endpoints';
 import { ModelSelect } from '~/components/Input/ModelSelect';
 import { PluginStoreDialog } from '~/components';
@@ -15,7 +15,11 @@ import { Button } from '~/components/ui';
 import { cn, cardStyle } from '~/utils/';
 import store from '~/store';
 
-export default function HeaderOptions() {
+export default function HeaderOptions({
+  interfaceConfig,
+}: {
+  interfaceConfig?: Partial<TInterfaceConfig>;
+}) {
   const [saveAsDialogShow, setSaveAsDialogShow] = useState<boolean>(false);
   const [showPluginStoreDialog, setShowPluginStoreDialog] = useRecoilState(
     store.showPluginStoreDialog,
@@ -70,13 +74,15 @@ export default function HeaderOptions() {
         <div className="my-auto lg:max-w-2xl xl:max-w-3xl">
           <span className="flex w-full flex-col items-center justify-center gap-0 md:order-none md:m-auto md:gap-2">
             <div className="z-[61] flex w-full items-center justify-center gap-2">
-              <ModelSelect
-                conversation={conversation}
-                setOption={setOption}
-                isMultiChat={true}
-                showAbove={false}
-              />
-              {!noSettings[endpoint] && (
+              {interfaceConfig?.modelSelect && (
+                <ModelSelect
+                  conversation={conversation}
+                  setOption={setOption}
+                  showAbove={false}
+                  popover={true}
+                />
+              )}
+              {!noSettings[endpoint] && interfaceConfig?.parameters && (
                 <Button
                   type="button"
                   className={cn(
@@ -90,35 +96,41 @@ export default function HeaderOptions() {
                 </Button>
               )}
             </div>
-            <OptionsPopover
-              visible={showPopover}
-              saveAsPreset={saveAsPreset}
-              closePopover={() => setShowPopover(false)}
-              PopoverButtons={<PopoverButtons />}
-            >
-              <div className="px-4 py-4">
-                <EndpointSettings
-                  className="[&::-webkit-scrollbar]:w-2"
-                  conversation={conversation}
-                  setOption={setOption}
-                  isMultiChat={true}
-                />
-                <AlternativeSettings conversation={conversation} setOption={setOption} />
-              </div>
-            </OptionsPopover>
-            <SaveAsPresetDialog
-              open={saveAsDialogShow}
-              onOpenChange={setSaveAsDialogShow}
-              preset={
-                tPresetUpdateSchema.parse({
-                  ...conversation,
-                }) as TPreset
-              }
-            />
-            <PluginStoreDialog
-              isOpen={showPluginStoreDialog}
-              setIsOpen={setShowPluginStoreDialog}
-            />
+            {interfaceConfig?.parameters && (
+              <OptionsPopover
+                visible={showPopover}
+                saveAsPreset={saveAsPreset}
+                presetsDisabled={!interfaceConfig?.presets}
+                PopoverButtons={<PopoverButtons />}
+                closePopover={() => setShowPopover(false)}
+              >
+                <div className="px-4 py-4">
+                  <EndpointSettings
+                    className="[&::-webkit-scrollbar]:w-2"
+                    conversation={conversation}
+                    setOption={setOption}
+                  />
+                  <AlternativeSettings conversation={conversation} setOption={setOption} />
+                </div>
+              </OptionsPopover>
+            )}
+            {interfaceConfig?.presets && (
+              <SaveAsPresetDialog
+                open={saveAsDialogShow}
+                onOpenChange={setSaveAsDialogShow}
+                preset={
+                  tPresetUpdateSchema.parse({
+                    ...conversation,
+                  }) as TPreset
+                }
+              />
+            )}
+            {interfaceConfig?.parameters && (
+              <PluginStoreDialog
+                isOpen={showPluginStoreDialog}
+                setIsOpen={setShowPluginStoreDialog}
+              />
+            )}
           </span>
         </div>
       </Anchor>

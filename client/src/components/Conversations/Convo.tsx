@@ -1,16 +1,16 @@
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
-import { useConversations, useNavigateToConvo } from '~/hooks';
+import { MinimalIcon, ConvoIconURL } from '~/components/Endpoints';
 import { useUpdateConversationMutation } from '~/data-provider';
-import { MinimalIcon } from '~/components/Endpoints';
+import { useConversations, useNavigateToConvo } from '~/hooks';
+import { getEndpointField, getIconEndpoint } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from './DeleteButton';
-import { getEndpointField } from '~/utils';
 import RenameButton from './RenameButton';
 import store from '~/store';
 
@@ -51,11 +51,15 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     if (conversation?.endpoint === EModelEndpoint.gptPlugins) {
       let lastSelectedTools = [];
       try {
-        lastSelectedTools = JSON.parse(localStorage.getItem('lastSelectedTools') ?? '') ?? [];
+        lastSelectedTools =
+          JSON.parse(localStorage.getItem(LocalStorageKeys.LAST_TOOLS) ?? '') ?? [];
       } catch (e) {
         // console.error(e);
       }
-      navigateToConvo({ ...conversation, tools: lastSelectedTools });
+      navigateToConvo({
+        ...conversation,
+        tools: conversation?.tools?.length ? conversation?.tools : lastSelectedTools,
+      });
     } else {
       navigateToConvo(conversation);
     }
@@ -95,19 +99,35 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     );
   };
 
-  const icon = MinimalIcon({
-    size: 20,
-    iconURL: getEndpointField(endpointsConfig, conversation.endpoint, 'iconURL'),
-    endpoint: conversation.endpoint,
-    endpointType: conversation.endpointType,
-    model: conversation.model,
-    error: false,
-    className: 'mr-0',
-    isCreatedByUser: false,
-    chatGptLabel: undefined,
-    modelLabel: undefined,
-    jailbreak: undefined,
-  });
+  const iconURL = conversation.iconURL ?? '';
+  let endpoint = conversation.endpoint;
+  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
+
+  const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
+  const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
+
+  let icon: React.ReactNode | null = null;
+  if (iconURL && iconURL.includes('http')) {
+    icon = ConvoIconURL({
+      preset: conversation,
+      context: 'menu-item',
+      endpointIconURL,
+    });
+  } else {
+    icon = MinimalIcon({
+      size: 20,
+      iconURL: endpointIconURL,
+      endpoint,
+      endpointType,
+      model: conversation.model,
+      error: false,
+      className: 'mr-0',
+      isCreatedByUser: false,
+      chatGptLabel: undefined,
+      modelLabel: undefined,
+      jailbreak: undefined,
+    });
+  }
 
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Enter') {

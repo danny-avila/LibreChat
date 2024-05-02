@@ -4,6 +4,8 @@ export * from './config';
 export * from './file-config';
 /* schema helpers  */
 export * from './parsers';
+/* custom/dynamic configurations  */
+export * from './models';
 export * from './generate';
 /* types (exports schemas from `./types` as they contain needed in other defs) */
 export * from './types';

@@ -55,6 +55,9 @@ const getAvailablePluginsController = async (req, res) => {
       return;
     }
 
+    /** @type {{ filteredTools: string[] }} */
+    const { filteredTools = [] } = req.app.locals;
+
     const pluginManifest = await fs.readFile(req.app.locals.paths.pluginManifest, 'utf8');
 
     const jsonData = JSON.parse(pluginManifest);
@@ -67,7 +70,10 @@ const getAvailablePluginsController = async (req, res) => {
         return plugin;
       }
     });
-    const plugins = await addOpenAPISpecs(authenticatedPlugins);
+
+    let plugins = await addOpenAPISpecs(authenticatedPlugins);
+    plugins = plugins.filter((plugin) => !filteredTools.includes(plugin.pluginKey));
+
     await cache.set(CacheKeys.PLUGINS, plugins);
     res.status(200).json(plugins);
   } catch (error) {

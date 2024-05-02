@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
+import { useOnClickOutside } from '~/hooks';
 import { RevokeKeysButton } from './RevokeKeysButton';
 import { DeleteCacheButton } from './DeleteCacheButton';
+import ImportConversations from './ImportConversations';
 
 function Data() {
   return (
@@ -17,6 +19,9 @@ function Data() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <DeleteCacheButton />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+          <ImportConversations />
         </div>
       </div>
     </Tabs.Content>

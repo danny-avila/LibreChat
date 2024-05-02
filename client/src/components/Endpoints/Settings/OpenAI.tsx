@@ -32,6 +32,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     endpoint,
     endpointType,
     model,
+    modelLabel,
     chatGptLabel,
     promptPrefix,
     temperature,
@@ -41,32 +42,33 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     resendFiles,
     imageDetail,
   } = conversation ?? {};
-  const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput({
+
+  const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput<string | null | undefined>({
     setOption,
     optionKey: 'chatGptLabel',
-    initialValue: chatGptLabel,
+    initialValue: modelLabel ?? chatGptLabel,
   });
-  const [setPromptPrefix, promptPrefixValue] = useDebouncedInput({
+  const [setPromptPrefix, promptPrefixValue] = useDebouncedInput<string | null | undefined>({
     setOption,
     optionKey: 'promptPrefix',
     initialValue: promptPrefix,
   });
-  const [setTemperature, temperatureValue] = useDebouncedInput({
+  const [setTemperature, temperatureValue] = useDebouncedInput<number | null | undefined>({
     setOption,
     optionKey: 'temperature',
     initialValue: temperature,
   });
-  const [setTopP, topPValue] = useDebouncedInput({
+  const [setTopP, topPValue] = useDebouncedInput<number | null | undefined>({
     setOption,
     optionKey: 'top_p',
     initialValue: topP,
   });
-  const [setFreqP, freqPValue] = useDebouncedInput({
+  const [setFreqP, freqPValue] = useDebouncedInput<number | null | undefined>({
     setOption,
     optionKey: 'frequency_penalty',
     initialValue: freqP,
   });
-  const [setPresP, presPValue] = useDebouncedInput({
+  const [setPresP, presPValue] = useDebouncedInput<number | null | undefined>({
     setOption,
     optionKey: 'presence_penalty',
     initialValue: presP,

@@ -3,17 +3,14 @@ import { useSetRecoilState, useResetRecoilState } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { buildDefaultConvo, getDefaultEndpoint, getEndpointField } from '~/utils';
-import useOriginNavigate from './useOriginNavigate';
-import useSetStorage from './useSetStorage';
+import useOriginNavigate from '../useOriginNavigate';
 import store from '~/store';
 
 const useNavigateToConvo = (index = 0) => {
-  const setStorage = useSetStorage();
   const queryClient = useQueryClient();
   const navigate = useOriginNavigate();
   const { setConversation } = store.useCreateConversationAtom(index);
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
-  // const setConversation = useSetRecoilState(store.conversationByIndex(index));
   const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
 
   const navigateToConvo = (conversation: TConversation, _resetLatestMessage = true) => {
@@ -50,7 +47,6 @@ const useNavigateToConvo = (index = 0) => {
         models,
       });
     }
-    setStorage(convo);
     setConversation(convo);
     navigate(convo?.conversationId);
   };

@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { Combobox } from '~/components/ui';
-import { EModelEndpoint, defaultOrderQuery } from 'librechat-data-provider';
+import { EModelEndpoint, defaultOrderQuery, LocalStorageKeys } from 'librechat-data-provider';
 import type { SwitcherProps } from '~/common';
 import { useSetIndexOptions, useSelectAssistant, useLocalize } from '~/hooks';
 import { useChatContext, useAssistantsMapContext } from '~/Providers';
@@ -25,8 +25,11 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
   useEffect(() => {
     if (!selectedAssistant && assistants && assistants.length && assistantMap) {
       const assistant_id =
-        localStorage.getItem(`assistant_id__${index}`) ?? assistants[0]?.id ?? '';
+        localStorage.getItem(`${LocalStorageKeys.ASST_ID_PREFIX}${index}`) ??
+        assistants[0]?.id ??
+        '';
       const assistant = assistantMap?.[assistant_id];
+
       if (!assistant) {
         return;
       }
@@ -34,6 +37,7 @@ export default function AssistantSwitcher({ isCollapsed }: SwitcherProps) {
       if (endpoint !== EModelEndpoint.assistants) {
         return;
       }
+
       setOption('model')(assistant.model);
       setOption('assistant_id')(assistant_id);
     }
