@@ -215,13 +215,15 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
         if (typeof part === 'string') {
           messageText += part + ' ';
         } else if (typeof part === 'object') {
-          continue;
+          messageText = `\`\`\`json
+${JSON.stringify(part, null, 2)}
+\`\`\``;
         }
       }
       messageText = messageText.trim();
     } else {
       messageText = `\`\`\`json
-      ${JSON.stringify(mapping.message.content, null, 2)}
+${JSON.stringify(mapping.message.content, null, 2)}
 \`\`\``;
     }
 
