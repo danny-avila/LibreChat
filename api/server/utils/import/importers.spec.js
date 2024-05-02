@@ -22,7 +22,7 @@ jest.mock('./importBatchBuilder', () => {
 
 describe('importChatGptConvo', () => {
   it('should import conversation correctly', async () => {
-    const expectedNumberOfMessages = 10;
+    const expectedNumberOfMessages = 19;
     const expectedNumberOfConversations = 2;
     // Given
     const jsonData = JSON.parse(
@@ -69,7 +69,7 @@ describe('importChatGptConvo', () => {
       (id) =>
         jsonData[0].mapping[id].message &&
         jsonData[0].mapping[id].message.author.role !== 'system' &&
-        jsonData[0].mapping[id].message.content.parts.join('').trim() !== '',
+        jsonData[0].mapping[id].message.content,
     );
 
     // Expect the saveMessage to be called for each valid entry

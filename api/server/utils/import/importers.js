@@ -176,7 +176,7 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
   // First, map all message IDs to new UUIDs
   const messageMap = new Map();
   for (const [id, mapping] of Object.entries(conv.mapping)) {
-    if (mapping.message && mapping.message.content.content_type === 'text') {
+    if (mapping.message && mapping.message.content.content_type) {
       const newMessageId = uuidv4();
       messageMap.set(id, newMessageId);
     }
@@ -187,12 +187,15 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
   for (const [id, mapping] of Object.entries(conv.mapping)) {
     const role = mapping.message?.author?.role;
     if (!mapping.message) {
+      messageMap.delete(id);
       continue;
-    } else if (mapping.message.content.content_type !== 'text') {
-      messageMap.delete(mapping.message.id);
-      continue;
-    } else if (role === 'system') {
-      messageMap.delete(mapping.message.id);
+    }
+    // else if (mapping.message.content.content_type !== 'text') {
+    //   messageMap.delete(id);
+    //   continue;
+    // }
+    else if (role === 'system') {
+      messageMap.delete(id);
       continue;
     }
 
@@ -202,12 +205,34 @@ function processConversation(conv, importBatchBuilder, requestUserId) {
         ? messageMap.get(mapping.parent)
         : Constants.NO_PARENT;
 
-    let messageText = mapping.message.content.parts.join(' ');
-    const isCreatedByUser = role === 'user';
-    const sender = isCreatedByUser ? 'user' : 'GPT-3.5';
-    const model = mapping.message.metadata.model_slug || openAISettings.model.default;
+    const isText = mapping.message.content.content_type === 'text';
+    let messageText = '';
 
-    if (!isCreatedByUser) {
+    if (isText && mapping.message.content.parts) {
+      messageText = mapping.message.content.parts.join(' ');
+    } else if (mapping.message.content.parts) {
+      for (const part of mapping.message.content.parts) {
+        if (typeof part === 'string') {
+          messageText += part + ' ';
+        } else if (typeof part === 'object') {
+          continue;
+        }
+      }
+      messageText = messageText.trim();
+    } else {
+      messageText = `\`\`\`json
+      ${JSON.stringify(mapping.message.content, null, 2)}
+\`\`\``;
+    }
+
+    const isCreatedByUser = role === 'user';
+    let sender = isCreatedByUser ? 'user' : 'GPT-3.5';
+    const model = mapping.message.metadata.model_slug || openAISettings.model.default;
+    if (model === 'gpt-4') {
+      sender = 'GPT-4';
+    }
+
+    if (!isCreatedByUser && isText) {
       messageText = processAssistantMessage(mapping.message, messageText);
     }
 
