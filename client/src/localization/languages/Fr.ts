@@ -58,6 +58,11 @@ export default {
   com_ui_revoke: 'Révoquer',
   com_ui_revoke_info:
     'Révoquer toutes les informations d\'identification fournies par l\'utilisateur',
+  com_ui_import_conversation: 'Importer',
+  com_ui_import_conversation_info: 'Importer des conversations à partir d’un fichier JSON',
+  com_ui_import_conversation_success: 'Conversations importées avec succès',
+  com_ui_import_conversation_error:
+    'Une erreur s’est produite lors de l’importation de vos conversations',
   com_ui_confirm_action: 'Confirmer l\'action',
   com_ui_chats: 'discussions',
   com_ui_delete: 'Supprimer',

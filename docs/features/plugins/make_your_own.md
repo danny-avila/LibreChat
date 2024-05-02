@@ -30,7 +30,7 @@ Here are the key takeaways for creating your own plugin:
 
 **3.** [**Define Helper Methods:**](make_your_own.md#step-3-define-helper-methods) Define helper methods within your class to handle specific tasks if needed.
 
-**4.** [**Implement the `_call` Method:**](make_your_own.md#step-4-implement-the-_call-method) Implement the `_call` method where the main functionality of your plugin is defined. This method is called when the language model decides to use your plugin. It should take an `input` parameter and return a result. If an error occurs, the function should return a string representing an error, rather than throwing an error. If your plugin requires multiple inputs from the LLM, read the [StructuredTools](#StructuredTools) section.
+**4.** [**Implement the `_call` Method:**](make_your_own.md#step-4-implement-the-_call-method) Implement the `_call` method where the main functionality of your plugin is defined. This method is called when the language model decides to use your plugin. It should take an `input` parameter and return a result. If an error occurs, the function should return a string representing an error, rather than throwing an error. If your plugin requires multiple inputs from the LLM, read the [StructuredTools](#structuredtools) section.
 
 **5.** [**Export Your Plugin and Import into handleTools.js:**](make_your_own.md#step-5-export-your-plugin-and-import-into-handletoolsjs) Export your plugin and import it into `handleTools.js`. Add your plugin to the `toolConstructors` object in the `loadTools` function. If your plugin requires more advanced initialization, add it to the `customConstructors` object.
 
@@ -132,7 +132,7 @@ class StableDiffusionAPI extends Tool {
 
 The `_call` method is where the main functionality of your plugin is implemented. This method is called when the language model decides to use your plugin. It should take an `input` parameter and return a result.
 
-> In a basic Tool, the LLM will generate one string value as an input. If your plugin requires multiple inputs from the LLM, read the **[StructuredTools](#StructuredTools)** section.
+> In a basic Tool, the LLM will generate one string value as an input. If your plugin requires multiple inputs from the LLM, read the **[StructuredTools](#structuredtools)** section.
 
 ```javascript
 class StableDiffusionAPI extends Tool {

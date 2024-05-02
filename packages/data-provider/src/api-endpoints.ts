@@ -19,16 +19,23 @@ export const revokeAllUserKeys = () => `${keysEndpoint}?all=true`;
 
 export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
+export const conversationsRoot = '/api/convos';
+
 export const conversations = (pageNumber: string, isArchived?: boolean) =>
-  `/api/convos?pageNumber=${pageNumber}${isArchived ? '&isArchived=true' : ''}`;
+  `${conversationsRoot}?pageNumber=${pageNumber}${isArchived ? '&isArchived=true' : ''}`;
 
-export const conversationById = (id: string) => `/api/convos/${id}`;
+export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
-export const genTitle = () => '/api/convos/gen_title';
+export const genTitle = () => `${conversationsRoot}/gen_title`;
 
-export const updateConversation = () => '/api/convos/update';
+export const updateConversation = () => `${conversationsRoot}/update`;
 
-export const deleteConversation = () => '/api/convos/clear';
+export const deleteConversation = () => `${conversationsRoot}/clear`;
+
+export const importConversation = () => `${conversationsRoot}/import`;
+
+export const importConversationJobStatus = (jobId: string) =>
+  `${conversationsRoot}/import/jobs/${jobId}`;
 
 export const search = (q: string, pageNumber: string) =>
   `/api/search?q=${q}&pageNumber=${pageNumber}`;

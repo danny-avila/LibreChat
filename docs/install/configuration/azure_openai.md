@@ -239,7 +239,7 @@ Applying these setup requirements thoughtfully will ensure a correct and efficie
 
 ### Model Deployments
 
-The list of models available to your users are determined by the model groupings specified in your [`azureOpenAI` endpoint config.](./custom_config.md#models-1)
+The list of models available to your users are determined by the model groupings specified in your [`azureOpenAI` endpoint config.](./custom_config.md#models_1)
 
 For example:
 
@@ -408,7 +408,7 @@ endpoints:
 
 To use Vision (image analysis) with Azure OpenAI, you need to make sure `gpt-4-vision-preview` is a specified model [in one of your groupings](#model-deployments)
 
-This will work seamlessly as it does with the [OpenAI endpoint](#openai) (no need to select the vision model, it will be switched behind the scenes)
+This will work seamlessly as it does with the [OpenAI endpoint](./ai_setup.md#openai) (no need to select the vision model, it will be switched behind the scenes)
 
 ### Generate images with Azure OpenAI Service (DALL-E)
 
@@ -639,15 +639,15 @@ In any case, you can adjust the title model as such: `OPENAI_TITLE_MODEL=your-ti
 
 Currently, the best way to setup Vision is to use your deployment names as the model names, as [shown here](#model-deployments)
 
-This will work seamlessly as it does with the [OpenAI endpoint](#openai) (no need to select the vision model, it will be switched behind the scenes)
+This will work seamlessly as it does with the [OpenAI endpoint](./ai_setup.md#openai) (no need to select the vision model, it will be switched behind the scenes)
 
-Alternatively, you can set the [required variables](#required-variables) to explicitly use your vision deployment, but this may limit you to exclusively using your vision deployment for all Azure chat settings.
+Alternatively, you can set the [required variables](#required-fields) to explicitly use your vision deployment, but this may limit you to exclusively using your vision deployment for all Azure chat settings.
 
 
 **Notes:**
 
 - If using `AZURE_OPENAI_BASEURL`, you should not specify instance and deployment names instead of placeholders as the vision request will fail.
-- As of December 18th, 2023, Vision models seem to have degraded performance with Azure OpenAI when compared to [OpenAI](#openai)
+- As of December 18th, 2023, Vision models seem to have degraded performance with Azure OpenAI when compared to [OpenAI](./ai_setup.md#openai)
 
 ![image](https://github.com/danny-avila/LibreChat/assets/110412045/7306185f-c32c-4483-9167-af514cc1c2dd)
 
