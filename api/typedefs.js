@@ -645,6 +645,12 @@
  */
 
 /**
+ * @exports ImportBatchBuilder
+ * @typedef {import('./server/utils/import/importBatchBuilder.js').ImportBatchBuilder} ImportBatchBuilder
+ * @memberof typedefs
+ */
+
+/**
  * @exports Thread
  * @typedef {Object} Thread
  * @property {string} id - The identifier of the thread.
