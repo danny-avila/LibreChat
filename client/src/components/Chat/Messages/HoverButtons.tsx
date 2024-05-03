@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { GitFork } from 'lucide-react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { Fork } from '~/components/Conversations';
 import { cn } from '~/utils';
 
 type THoverButtons = {
@@ -34,13 +36,14 @@ export default function HoverButtons({
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
-  const { hideEditButton, regenerateEnabled, continueSupported } = useGenerationsByLatest({
-    isEditing,
-    isSubmitting,
-    message,
-    endpoint: endpoint ?? '',
-    latestMessage,
-  });
+  const { hideEditButton, regenerateEnabled, continueSupported, forkingSupported } =
+    useGenerationsByLatest({
+      isEditing,
+      isSubmitting,
+      message,
+      endpoint: endpoint ?? '',
+      latestMessage,
+    });
   if (!conversation) {
     return null;
   }
@@ -112,6 +115,24 @@ export default function HoverButtons({
         >
           <ContinueIcon className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
+      ) : null}
+      {forkingSupported ? (
+        <Fork>
+          <button
+            className={cn(
+              'hover-button active rounded-md p-1 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',
+              'data-[state=open]:active data-[state=open]:bg-gray-200 data-[state=open]:text-gray-700 data-[state=open]:dark:bg-gray-700 data-[state=open]:dark:text-gray-200',
+              !isLast
+                ? 'data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100'
+                : '',
+            )}
+            onClick={() => console.log('Forking')}
+            type="button"
+            title={localize('com_ui_continue')}
+          >
+            <GitFork className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+          </button>
+        </Fork>
       ) : null}
     </div>
   );
