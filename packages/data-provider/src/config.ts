@@ -345,6 +345,9 @@ export const alternateName = {
 
 export const defaultModels = {
   [EModelEndpoint.assistants]: [
+    'gpt-4-turbo',
+    'gpt-4-turbo-2024-04-09',
+    'gpt-4-0125',
     'gpt-3.5-turbo-0125',
     'gpt-4-0125-preview',
     'gpt-4-turbo-preview',
@@ -386,6 +389,8 @@ export const defaultModels = {
     'claude-instant-1-100k',
   ],
   [EModelEndpoint.openAI]: [
+    'gpt-4-turbo',
+    'gpt-4-turbo-2024-04-09',
     'gpt-3.5-turbo-0125',
     'gpt-3.5-turbo-16k-0613',
     'gpt-3.5-turbo-16k',
