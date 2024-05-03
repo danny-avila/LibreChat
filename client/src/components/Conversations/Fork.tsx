@@ -1,19 +1,19 @@
-import { useState, useRef } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useState, useRef, useMemo } from 'react';
+import { GitFork } from 'lucide-react';
+import { useRecoilState } from 'recoil';
 import * as Popover from '@radix-ui/react-popover';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
 import { Checkbox } from '~/components/ui';
-import type { SetterOrUpdater } from 'recoil';
 // import type { UseMutationResult } from '@tanstack/react-query';
 // import { useDeleteAssistantMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import store from '~/store';
 
 interface PopoverButtonProps {
   children: React.ReactNode;
   setting: string;
-  remember: boolean;
-  setForkSetting: SetterOrUpdater<string>;
+  onClick: (setting: string) => void;
   setActiveSetting: React.Dispatch<React.SetStateAction<string>>;
   timeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
 }
@@ -27,18 +27,13 @@ const settingMap = {
 const PopoverButton: React.FC<PopoverButtonProps> = ({
   children,
   setting,
-  remember,
-  setForkSetting,
+  onClick,
   setActiveSetting,
   timeoutRef,
 }) => {
   return (
     <Popover.Close
-      onClick={() => {
-        if (remember) {
-          setForkSetting(settingMap[setting]);
-        }
-      }}
+      onClick={() => onClick(setting)}
       onMouseEnter={() => {
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
@@ -62,13 +57,39 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
   );
 };
 
-export default function Fork({ children }: { children: React.ReactNode }) {
+export default function Fork({
+  isLast,
+  messageId,
+  conversationId,
+  forkingSupported,
+}: {
+  isLast?: boolean;
+  messageId: string;
+  conversationId: string | null;
+  forkingSupported?: boolean;
+}) {
   const localize = useLocalize();
   const [remember, setRemember] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const setForkSetting = useSetRecoilState(store.forkSetting);
+  const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
+  const [rememberGlobal, setRememberGlobal] = useRecoilState(store.rememberForkOption);
   const [activeSetting, setActiveSetting] = useState('com_ui_fork_from_message');
 
+  const forkDisabled = useMemo(
+    () => !forkingSupported || !conversationId || !messageId,
+    [forkingSupported, conversationId, messageId],
+  );
+
+  if (!forkingSupported) {
+    return null;
+  }
+
+  const onClick = (setting: string) => {
+    if (remember) {
+      setRememberGlobal(true);
+      setForkSetting(settingMap[setting]);
+    }
+  };
   // const mutation = useSomeMutation({
   //   onSuccess: (_, vars, context) => {
   //   },
@@ -76,7 +97,25 @@ export default function Fork({ children }: { children: React.ReactNode }) {
 
   return (
     <Popover.Root>
-      <Popover.Trigger asChild>{children}</Popover.Trigger>
+      <Popover.Trigger asChild>
+        <button
+          className={cn(
+            'hover-button active rounded-md p-1 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:invisible md:group-hover:visible ',
+            'data-[state=open]:active data-[state=open]:bg-gray-200 data-[state=open]:text-gray-700 data-[state=open]:dark:bg-gray-700 data-[state=open]:dark:text-gray-200',
+            !isLast ? 'data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100' : '',
+          )}
+          onClick={(e) => {
+            if (rememberGlobal) {
+              e.preventDefault();
+            }
+          }}
+          disabled={forkDisabled}
+          type="button"
+          title={localize('com_ui_continue')}
+        >
+          <GitFork className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
+        </button>
+      </Popover.Trigger>
       <Popover.Portal>
         <div dir="ltr">
           <Popover.Content
@@ -95,8 +134,7 @@ export default function Fork({ children }: { children: React.ReactNode }) {
               <PopoverButton
                 setActiveSetting={setActiveSetting}
                 timeoutRef={timeoutRef}
-                remember={remember}
-                setForkSetting={setForkSetting}
+                onClick={onClick}
                 setting={'com_ui_fork_visible'}
               >
                 <GitCommit className="h-full w-full rotate-90 p-2" />
@@ -104,8 +142,7 @@ export default function Fork({ children }: { children: React.ReactNode }) {
               <PopoverButton
                 setActiveSetting={setActiveSetting}
                 timeoutRef={timeoutRef}
-                remember={remember}
-                setForkSetting={setForkSetting}
+                onClick={onClick}
                 setting={'com_ui_fork_branches'}
               >
                 <GitBranchPlus className="h-full w-full p-2" />
@@ -113,8 +150,7 @@ export default function Fork({ children }: { children: React.ReactNode }) {
               <PopoverButton
                 setActiveSetting={setActiveSetting}
                 timeoutRef={timeoutRef}
-                remember={remember}
-                setForkSetting={setForkSetting}
+                onClick={onClick}
                 setting={'com_ui_fork_all_target'}
               >
                 <ListTree className="h-full w-full p-2" />
@@ -123,10 +159,15 @@ export default function Fork({ children }: { children: React.ReactNode }) {
             <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300">
               <Checkbox
                 checked={remember}
-                onCheckedChange={(checked: boolean) => setRemember(checked)}
+                onCheckedChange={(checked: boolean) => {
+                  if (checked) {
+                    // show Toast
+                  }
+                  setRemember(checked);
+                }}
                 className="m-2 transition duration-300 ease-in-out"
               />
-              {localize('com_ui_remember_setting')}
+              {localize('com_ui_fork_remember_setting')}
             </div>
           </Popover.Content>
         </div>

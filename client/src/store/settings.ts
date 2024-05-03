@@ -156,6 +156,25 @@ const forkSetting = atom<string>({
   ] as const,
 });
 
+const rememberForkOption = atom<boolean>({
+  key: LocalStorageKeys.REMEMBER_FORK_OPTION,
+  default: false,
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem(LocalStorageKeys.REMEMBER_FORK_OPTION);
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem(LocalStorageKeys.REMEMBER_FORK_OPTION, newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 const UsernameDisplay = atom<boolean>({
   key: 'UsernameDisplay',
   default: localStorage.getItem('UsernameDisplay') === 'true',
@@ -211,4 +230,5 @@ export default {
   LaTeXParsing,
   UsernameDisplay,
   forkSetting,
+  rememberForkOption,
 };

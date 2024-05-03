@@ -700,6 +700,8 @@ export enum LocalStorageKeys {
   ASST_ID_PREFIX = 'assistant_id__',
   /** Key for the last selected fork setting */
   FORK_SETTING = 'forkSetting',
+  /** Key for remembering the last selected option, instead of manually selecting */
+  REMEMBER_FORK_OPTION = 'rememberForkOption',
 }
 
 /**
