@@ -26,7 +26,7 @@ export default function AudioRecorder({
           <button
             onClick={isListening ? handleStopRecording : handleStartRecording}
             disabled={disabled}
-            className="absolute bottom-1.5 right-12 flex h-[30px] w-[30px] items-center justify-center rounded-lg p-0.5 transition-colors md:bottom-3 md:right-12"
+            className="absolute bottom-1.5 right-12 flex h-[30px] w-[30px] items-center justify-center rounded-lg p-0.5 transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 md:bottom-3 md:right-12"
             type="button"
           >
             {isListening ? (

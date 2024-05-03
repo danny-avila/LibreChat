@@ -1,7 +1,6 @@
 import { useRecoilState } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { memo, useCallback, useRef, useMemo, useEffect } from 'react';
-import type { ChangeEvent } from 'react';
 import {
   supportsFiles,
   EModelEndpoint,

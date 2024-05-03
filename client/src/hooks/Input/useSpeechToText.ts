@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import useSpeechToTextBrowser from './useSpeechToTextBrowser';
 import useSpeechToTextExternal from './useSpeechToTextExternal';
 import { useRecoilState } from 'recoil';
@@ -6,6 +7,7 @@ import store from '~/store';
 const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) => {
   const [endpointSTT] = useRecoilState<string>(store.endpointSTT);
   const useExternalSpeechToText = endpointSTT === 'external';
+  const [animatedText, setAnimatedText] = useState('');
 
   const {
     isListening: speechIsListeningBrowser,
@@ -40,12 +42,40 @@ const useSpeechToText = (handleTranscriptionComplete: (text: string) => void) =>
       ? speechTextExternal
       : speechTextForm || '';
 
+  const animateTextTyping = (text: string) => {
+    const totalDuration = 2000;
+    const frameRate = 60;
+    const totalFrames = totalDuration / (1000 / frameRate);
+    const charsPerFrame = Math.ceil(text.length / totalFrames);
+    let currentIndex = 0;
+
+    const animate = () => {
+      currentIndex += charsPerFrame;
+      const currentText = text.substring(0, currentIndex);
+      setAnimatedText(currentText);
+
+      if (currentIndex < text.length) {
+        requestAnimationFrame(animate);
+      } else {
+        setAnimatedText(text);
+      }
+    };
+
+    requestAnimationFrame(animate);
+  };
+
+  useEffect(() => {
+    if (speechText) {
+      animateTextTyping(speechText);
+    }
+  }, [speechText]);
+
   return {
     isListening,
     isLoading,
     startRecording,
     stopRecording,
-    speechText,
+    speechText: animatedText,
     clearText,
   };
 };
