@@ -698,6 +698,8 @@ export enum LocalStorageKeys {
   FILES_TO_DELETE = 'filesToDelete',
   /** Prefix key for the last selected assistant ID by index */
   ASST_ID_PREFIX = 'assistant_id__',
+  /** Key for the last selected fork setting */
+  FORK_SETTING = 'forkSetting',
 }
 
 /**

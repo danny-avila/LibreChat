@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { GitFork } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import { cn } from '~/utils';
+import store from '~/store';
 
 type THoverButtons = {
   isEditing: boolean;
@@ -33,6 +35,7 @@ export default function HoverButtons({
   isLast,
 }: THoverButtons) {
   const localize = useLocalize();
+  const forkSetting = useRecoilValue(store.forkSetting);
   const { endpoint: _endpoint, endpointType } = conversation ?? {};
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
@@ -126,7 +129,11 @@ export default function HoverButtons({
                 ? 'data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100'
                 : '',
             )}
-            onClick={() => console.log('Forking')}
+            onClick={(e) => {
+              if (forkSetting) {
+                e.preventDefault();
+              }
+            }}
             type="button"
             title={localize('com_ui_continue')}
           >

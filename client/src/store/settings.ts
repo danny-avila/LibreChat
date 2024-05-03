@@ -1,5 +1,5 @@
 import { atom } from 'recoil';
-import { SettingsViews } from 'librechat-data-provider';
+import { SettingsViews, LocalStorageKeys } from 'librechat-data-provider';
 import type { TOptionSettings } from '~/common';
 
 const abortScroll = atom<boolean>({
@@ -137,6 +137,25 @@ const LaTeXParsing = atom<boolean>({
   ] as const,
 });
 
+const forkSetting = atom<string>({
+  key: LocalStorageKeys.FORK_SETTING,
+  default: '',
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem(LocalStorageKeys.FORK_SETTING);
+      if (savedValue != null) {
+        setSelf(savedValue);
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'string') {
+          localStorage.setItem(LocalStorageKeys.FORK_SETTING, newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 const UsernameDisplay = atom<boolean>({
   key: 'UsernameDisplay',
   default: localStorage.getItem('UsernameDisplay') === 'true',
@@ -191,4 +210,5 @@ export default {
   modularChat,
   LaTeXParsing,
   UsernameDisplay,
+  forkSetting,
 };
