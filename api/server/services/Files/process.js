@@ -514,6 +514,10 @@ function filterFile({ req, file, image }) {
     throw new Error('No file_id provided');
   }
 
+  if (file.size === 0) {
+    throw new Error('Empty file uploaded');
+  }
+
   /* parse to validate api call, throws error on fail */
   isUUID.parse(file_id);
 
