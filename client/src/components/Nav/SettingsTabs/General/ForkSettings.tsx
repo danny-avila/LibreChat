@@ -1,6 +1,7 @@
-import { useLocalize } from '~/hooks';
 import { useRecoilState } from 'recoil';
+import { ForkOptions } from 'librechat-data-provider';
 import { Dropdown, Switch } from '~/components/ui';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 export const ForkSettings = () => {
@@ -9,8 +10,8 @@ export const ForkSettings = () => {
   const [remember, setRemember] = useRecoilState<boolean>(store.rememberForkOption);
 
   const forkOptions = [
-    { value: 'directPath', display: localize('com_ui_fork_visible') },
-    { value: 'includeBranches', display: localize('com_ui_fork_branches') },
+    { value: ForkOptions.DIRECT_PATH, display: localize('com_ui_fork_visible') },
+    { value: ForkOptions.INCLUDE_BRANCHES, display: localize('com_ui_fork_branches') },
     { value: '', display: localize('com_ui_fork_all_target') },
   ];
 
