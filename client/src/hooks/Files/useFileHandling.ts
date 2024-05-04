@@ -123,7 +123,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       return;
     }
 
-    startUploadTimer(extendedFile.file_id, extendedFile.file?.name || 'File');
+    startUploadTimer(extendedFile.file_id, extendedFile.file?.name || 'File', extendedFile.size);
 
     const formData = new FormData();
     formData.append(
