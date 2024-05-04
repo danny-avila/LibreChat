@@ -70,10 +70,12 @@ class ImportBatchBuilder {
    * Finishes the current conversation and adds it to the batch.
    * @param {string} [title='Imported Chat'] - The title of the conversation. Defaults to 'Imported Chat'.
    * @param {Date} [createdAt] - The creation date of the conversation.
+   * @param {TConversation} [originalConvo] - The original conversation.
    * @returns {{ conversation: TConversation, messages: TMessage[] }} The resulting conversation and messages.
    */
-  finishConversation(title, createdAt) {
+  finishConversation(title, createdAt, originalConvo = {}) {
     const convo = {
+      ...originalConvo,
       user: this.requestUserId,
       conversationId: this.conversationId,
       title: title || 'Imported Chat',
@@ -81,8 +83,9 @@ class ImportBatchBuilder {
       updatedAt: createdAt,
       overrideTimestamp: true,
       endpoint: this.endpoint,
-      model: openAISettings.model.default,
+      model: originalConvo.model ?? openAISettings.model.default,
     };
+    convo._id && delete convo._id;
     this.conversations.push(convo);
 
     return { conversation: convo, messages: this.messages };
@@ -114,6 +117,7 @@ class ImportBatchBuilder {
    * @param {string} [messageDetails.messageId] - The ID of the current message.
    * @param {boolean} messageDetails.isCreatedByUser - Indicates whether the message is created by the user.
    * @param {string} [messageDetails.model] - The model used for generating the message.
+   * @param {string} [messageDetails.endpoint] - The endpoint used for generating the message.
    * @param {string} [messageDetails.parentMessageId=this.lastMessageId] - The ID of the parent message.
    * @param {Partial<TMessage>} messageDetails.rest - Additional properties that may be included in the message.
    * @returns {object} The saved message object.
@@ -125,6 +129,7 @@ class ImportBatchBuilder {
     model,
     messageId,
     parentMessageId = this.lastMessageId,
+    endpoint,
     ...rest
   }) {
     const newMessageId = messageId ?? uuidv4();
@@ -136,13 +141,14 @@ class ImportBatchBuilder {
       isCreatedByUser: isCreatedByUser,
       model: model || this.model,
       user: this.requestUserId,
-      endpoint: this.endpoint,
+      endpoint: endpoint ?? this.endpoint,
       unfinished: false,
       isEdited: false,
       error: false,
       sender,
       text,
     };
+    message._id && delete message._id;
     this.lastMessageId = newMessageId;
     this.messages.push(message);
     return message;

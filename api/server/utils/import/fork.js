@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { EModelEndpoint, Constants } = require('librechat-data-provider');
+const { EModelEndpoint, Constants, ForkOptions } = require('librechat-data-provider');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getConvo } = require('~/models/Conversation');
@@ -12,19 +12,19 @@ const logger = require('~/config/winston');
  * @param {string} params.originalConvoId - The ID of the conversation to fork.
  * @param {string} params.targetMessageId - The ID of the message to fork from.
  * @param {string} params.requestUserId - The ID of the user making the request.
+ * @param {boolean} [params.records=false] - Optional flag for returning actual database records or resulting conversation and messages.
  * @param {string} [params.newTitle] - Optional new title for the forked conversation uses old title if not provided
- * @param {boolean} [params.directPath=false] - Optional flag to only fork the main line thread.
- * @param {boolean} [params.includeBranches=false] - Optional flag to include branches in the forked conversation.
+ * @param {string} [params.option=''] - Optional flag for fork option
  * @param {(userId: string) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
+ * @returns {Promise<TForkConvoResponse>} The response after forking the conversation.
  */
 async function forkConversation({
   originalConvoId,
   targetMessageId,
   requestUserId,
   newTitle,
-  directPath = false,
-  includeBranches = false,
-  // includeAllLevels = true,
+  option = '',
+  records = false,
   builderFactory = createImportBatchBuilder,
 }) {
   try {
@@ -35,17 +35,17 @@ async function forkConversation({
     });
 
     const importBatchBuilder = builderFactory(requestUserId);
-    importBatchBuilder.startConversation(EModelEndpoint.openAI);
+    importBatchBuilder.startConversation(originalConvo.endpoint ?? EModelEndpoint.openAI);
 
     let messagesToClone = [];
 
-    if (directPath) {
+    if (option === ForkOptions.DIRECT_PATH) {
       // Direct path only
       messagesToClone = BaseClient.getMessagesForConversation({
         messages: originalMessages,
         parentMessageId: targetMessageId,
       });
-    } else if (includeBranches) {
+    } else if (option === ForkOptions.INCLUDE_BRANCHES) {
       // Direct path and siblings
       messagesToClone = getAllMessagesUpToParent(originalMessages, targetMessageId);
     } else {
@@ -53,7 +53,6 @@ async function forkConversation({
       messagesToClone = getMessagesUpToTargetLevel(originalMessages, targetMessageId);
     }
 
-    let firstMessageDate = null;
     const idMapping = new Map();
 
     for (const message of messagesToClone) {
@@ -70,14 +69,12 @@ async function forkConversation({
       };
 
       importBatchBuilder.saveMessage(clonedMessage);
-      if (!firstMessageDate || new Date(message.createdAt) < firstMessageDate) {
-        firstMessageDate = new Date(message.createdAt);
-      }
     }
 
     const result = importBatchBuilder.finishConversation(
       newTitle || originalConvo.title,
-      firstMessageDate,
+      new Date(),
+      originalConvo,
     );
     await importBatchBuilder.saveBatch();
     logger.debug(
@@ -85,7 +82,21 @@ async function forkConversation({
         newTitle || originalConvo.title
       }" forked from conversation ID ${originalConvoId}`,
     );
-    return result;
+
+    if (!records) {
+      return result;
+    }
+
+    const conversation = await getConvo(requestUserId, result.conversation.conversationId);
+    const messages = await getMessages({
+      user: requestUserId,
+      conversationId: conversation.conversationId,
+    });
+
+    return {
+      conversation,
+      messages,
+    };
   } catch (error) {
     logger.error(
       `user: ${requestUserId} | Error forking conversation from original ID ${originalConvoId}`,

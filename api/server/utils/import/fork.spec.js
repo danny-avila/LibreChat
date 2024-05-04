@@ -1,4 +1,4 @@
-const { Constants } = require('librechat-data-provider');
+const { Constants, ForkOptions } = require('librechat-data-provider');
 
 jest.mock('~/models/Conversation', () => ({
   getConvo: jest.fn(),
@@ -93,7 +93,7 @@ describe('forkConversation', () => {
       originalConvoId: 'abc123',
       targetMessageId: '3',
       requestUserId: 'user1',
-      directPath: true,
+      option: ForkOptions.DIRECT_PATH,
     });
     console.debug('forkConversation: direct path\n', printMessageTree(result.messages));
 
@@ -112,7 +112,7 @@ describe('forkConversation', () => {
       originalConvoId: 'abc123',
       targetMessageId: '8',
       requestUserId: 'user1',
-      directPath: true,
+      option: ForkOptions.DIRECT_PATH,
     });
     console.debug('forkConversation: direct path (deeper)\n', printMessageTree(result.messages));
 
@@ -130,7 +130,7 @@ describe('forkConversation', () => {
       originalConvoId: 'abc123',
       targetMessageId: '3',
       requestUserId: 'user1',
-      includeBranches: true,
+      option: ForkOptions.INCLUDE_BRANCHES,
     });
 
     console.debug('forkConversation: include branches\n', printMessageTree(result.messages));
