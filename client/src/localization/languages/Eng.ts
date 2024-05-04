@@ -128,6 +128,8 @@ export default {
   com_ui_fork_change_default: 'Change default fork option',
   com_ui_fork_default: 'Use default fork option',
   com_ui_fork_remember_setting: 'Remember this option',
+  com_ui_fork_remember_checked:
+    'Your selection will be remembered after usage. Change this at any time in the settings.',
   com_ui_fork_all_target: 'Include all up to here',
   com_ui_fork_branches: 'Include related branches',
   com_ui_fork_visible: 'Visible messages only',

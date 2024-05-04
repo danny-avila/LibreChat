@@ -4,9 +4,10 @@ import { useRecoilState } from 'recoil';
 import * as Popover from '@radix-ui/react-popover';
 import { ForkOptions } from 'librechat-data-provider';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
+import { useForkConvoMutation } from '~/data-provider';
+import { useToastContext } from '~/Providers';
 import { Checkbox } from '~/components/ui';
 // import type { UseMutationResult } from '@tanstack/react-query';
-import { useForkConvoMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -18,6 +19,13 @@ interface PopoverButtonProps {
   setActiveSetting: React.Dispatch<React.SetStateAction<string>>;
   timeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
 }
+
+const optionLabels = {
+  [ForkOptions.DIRECT_PATH]: 'com_ui_fork_visible',
+  [ForkOptions.INCLUDE_BRANCHES]: 'com_ui_fork_branches',
+  [ForkOptions.TARGET_LEVEL]: 'com_ui_fork_all_target',
+  default: 'com_ui_fork_from_message',
+};
 
 const PopoverButton: React.FC<PopoverButtonProps> = ({
   children,
@@ -34,14 +42,14 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
           clearTimeout(timeoutRef.current);
           timeoutRef.current = null;
         }
-        setActiveSetting(setting);
+        setActiveSetting(optionLabels[setting]);
       }}
       onMouseLeave={() => {
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
         }
         timeoutRef.current = setTimeout(() => {
-          setActiveSetting('com_ui_fork_from_message');
+          setActiveSetting(optionLabels.default);
         }, 175);
       }}
       className="mx-1 h-full flex-1 rounded-lg border-2 bg-white transition duration-300 ease-in-out hover:bg-black dark:border-gray-400 dark:bg-gray-700/95 dark:text-gray-400 hover:dark:border-gray-200 hover:dark:text-gray-200"
@@ -64,11 +72,12 @@ export default function Fork({
   forkingSupported?: boolean;
 }) {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const [remember, setRemember] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
   const [rememberGlobal, setRememberGlobal] = useRecoilState(store.rememberForkOption);
-  const [activeSetting, setActiveSetting] = useState('com_ui_fork_from_message');
+  const [activeSetting, setActiveSetting] = useState(optionLabels.default);
   const forkConvo = useForkConvoMutation();
 
   if (!forkingSupported || !conversationId || !messageId) {
@@ -149,7 +158,10 @@ export default function Fork({
                 checked={remember}
                 onCheckedChange={(checked: boolean) => {
                   if (checked) {
-                    // show Toast
+                    showToast({
+                      message: localize('com_ui_fork_remember_checked'),
+                      status: 'info',
+                    });
                   }
                   setRemember(checked);
                 }}
