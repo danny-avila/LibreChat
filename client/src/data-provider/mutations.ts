@@ -2,8 +2,13 @@ import { LocalStorageKeys } from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
+import {
+  addConversation,
+  updateConversation,
+  deleteConversation,
+  updateConvoFields,
+} from '~/utils';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
-import { updateConversation, deleteConversation, updateConvoFields } from '~/utils';
 import { useSetRecoilState } from 'recoil';
 import store from '~/store';
 
@@ -100,22 +105,28 @@ export const useDeleteConversationMutation = (
 export const useForkConvoMutation = (
   options?: t.ForkConvoOptions,
 ): UseMutationResult<t.TForkConvoResponse, unknown, t.TForkConvoRequest, unknown> => {
-  // const queryClient = useQueryClient();
+  const queryClient = useQueryClient();
   const { onSuccess, ..._options } = options || {};
   return useMutation((payload: t.TForkConvoRequest) => dataService.forkConversation(payload), {
-    onSuccess: (_data, vars, context) => {
+    onSuccess: (data, vars, context) => {
       if (!vars.conversationId) {
         return;
       }
-      // queryClient.setQueryData([QueryKeys.conversation, vars.conversationId], null);
-      // queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
-      //   if (!convoData) {
-      //     return convoData;
-      //   }
-      //   const update = deleteConversation(convoData, vars.conversationId as string);
-      //   return update;
-      // });
-      onSuccess?.(_data, vars, context);
+      queryClient.setQueryData(
+        [QueryKeys.conversation, data.conversation.conversationId],
+        data.conversation,
+      );
+      queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+        if (!convoData) {
+          return convoData;
+        }
+        return addConversation(convoData, data.conversation);
+      });
+      queryClient.setQueryData<t.TMessage[]>(
+        [QueryKeys.messages, data.conversation.conversationId],
+        data.messages,
+      );
+      onSuccess?.(data, vars, context);
     },
     ...(_options || {}),
   });

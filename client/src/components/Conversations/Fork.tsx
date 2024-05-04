@@ -4,11 +4,10 @@ import { useRecoilState } from 'recoil';
 import * as Popover from '@radix-ui/react-popover';
 import { ForkOptions, TMessage } from 'librechat-data-provider';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
+import { useToastContext, useChatContext } from '~/Providers';
+import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
-import { useToastContext } from '~/Providers';
 import { Checkbox } from '~/components/ui';
-// import type { UseMutationResult } from '@tanstack/react-query';
-import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -74,14 +73,38 @@ export default function Fork({
   latestMessage: TMessage | null;
 }) {
   const localize = useLocalize();
+  const { index } = useChatContext();
   const { showToast } = useToastContext();
   const [remember, setRemember] = useState(false);
+  const { navigateToConvo } = useNavigateToConvo(index);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
   const [activeSetting, setActiveSetting] = useState(optionLabels.default);
   const [splitAtTarget, setSplitAtTarget] = useRecoilState(store.splitAtTarget);
   const [rememberGlobal, setRememberGlobal] = useRecoilState(store.rememberForkOption);
-  const forkConvo = useForkConvoMutation();
+  const forkConvo = useForkConvoMutation({
+    onSuccess: (data) => {
+      if (data) {
+        navigateToConvo(data.conversation);
+        showToast({
+          message: localize('com_ui_fork_success'),
+          status: 'success',
+        });
+      }
+    },
+    onMutate: () => {
+      showToast({
+        message: localize('com_ui_fork_processing'),
+        status: 'info',
+      });
+    },
+    onError: () => {
+      showToast({
+        message: localize('com_ui_fork_error'),
+        status: 'error',
+      });
+    },
+  });
 
   if (!forkingSupported || !conversationId || !messageId) {
     return null;
