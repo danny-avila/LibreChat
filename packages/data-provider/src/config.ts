@@ -709,6 +709,8 @@ export enum ForkOptions {
   DIRECT_PATH = 'directPath',
   /** Key for including branches */
   INCLUDE_BRANCHES = 'includeBranches',
+  /** Key for target level fork (default) */
+  TARGET_LEVEL = '',
 }
 
 /**

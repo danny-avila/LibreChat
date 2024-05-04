@@ -48,7 +48,7 @@ async function forkConversation({
     } else if (option === ForkOptions.INCLUDE_BRANCHES) {
       // Direct path and siblings
       messagesToClone = getAllMessagesUpToParent(originalMessages, targetMessageId);
-    } else {
+    } else if (option === ForkOptions.TARGET_LEVEL || !option) {
       // Direct path, siblings, and all descendants
       messagesToClone = getMessagesUpToTargetLevel(originalMessages, targetMessageId);
     }

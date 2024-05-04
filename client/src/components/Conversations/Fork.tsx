@@ -19,12 +19,6 @@ interface PopoverButtonProps {
   timeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
 }
 
-const settingMap = {
-  com_ui_fork_visible: ForkOptions.DIRECT_PATH,
-  com_ui_fork_branches: ForkOptions.INCLUDE_BRANCHES,
-  com_ui_fork_all_target: '',
-};
-
 const PopoverButton: React.FC<PopoverButtonProps> = ({
   children,
   setting,
@@ -81,8 +75,7 @@ export default function Fork({
     return null;
   }
 
-  const onClick = (setting: string) => {
-    const option = settingMap[setting];
+  const onClick = (option: string) => {
     if (remember) {
       setRememberGlobal(true);
       setForkSetting(option);
@@ -130,7 +123,7 @@ export default function Fork({
                 setActiveSetting={setActiveSetting}
                 timeoutRef={timeoutRef}
                 onClick={onClick}
-                setting={'com_ui_fork_visible'}
+                setting={ForkOptions.DIRECT_PATH}
               >
                 <GitCommit className="h-full w-full rotate-90 p-2" />
               </PopoverButton>
@@ -138,7 +131,7 @@ export default function Fork({
                 setActiveSetting={setActiveSetting}
                 timeoutRef={timeoutRef}
                 onClick={onClick}
-                setting={'com_ui_fork_branches'}
+                setting={ForkOptions.INCLUDE_BRANCHES}
               >
                 <GitBranchPlus className="h-full w-full p-2" />
               </PopoverButton>
@@ -146,7 +139,7 @@ export default function Fork({
                 setActiveSetting={setActiveSetting}
                 timeoutRef={timeoutRef}
                 onClick={onClick}
-                setting={'com_ui_fork_all_target'}
+                setting={ForkOptions.TARGET_LEVEL}
               >
                 <ListTree className="h-full w-full p-2" />
               </PopoverButton>

@@ -149,6 +149,7 @@ describe('forkConversation', () => {
       originalConvoId: 'abc123',
       targetMessageId: '3',
       requestUserId: 'user1',
+      option: ForkOptions.TARGET_LEVEL,
     });
 
     console.debug('forkConversation: target level\n', printMessageTree(result.messages));

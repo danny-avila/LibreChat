@@ -12,7 +12,7 @@ export const ForkSettings = () => {
   const forkOptions = [
     { value: ForkOptions.DIRECT_PATH, display: localize('com_ui_fork_visible') },
     { value: ForkOptions.INCLUDE_BRANCHES, display: localize('com_ui_fork_branches') },
-    { value: '', display: localize('com_ui_fork_all_target') },
+    { value: ForkOptions.TARGET_LEVEL, display: localize('com_ui_fork_all_target') },
   ];
 
   return (
