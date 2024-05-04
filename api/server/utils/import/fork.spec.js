@@ -22,6 +22,7 @@ jest.mock('uuid', () => {
 
 const {
   forkConversation,
+  splitAtTargetLevel,
   getAllMessagesUpToParent,
   getMessagesUpToTargetLevel,
 } = require('./fork');
@@ -176,34 +177,34 @@ describe('forkConversation', () => {
   });
 });
 
+const mockMessagesComplex = [
+  { messageId: '7', parentMessageId: Constants.NO_PARENT, text: 'Message 7' },
+  { messageId: '8', parentMessageId: Constants.NO_PARENT, text: 'Message 8' },
+  { messageId: '5', parentMessageId: '7', text: 'Message 5' },
+  { messageId: '6', parentMessageId: '7', text: 'Message 6' },
+  { messageId: '9', parentMessageId: '8', text: 'Message 9' },
+  { messageId: '2', parentMessageId: '5', text: 'Message 2' },
+  { messageId: '3', parentMessageId: '5', text: 'Message 3' },
+  { messageId: '1', parentMessageId: '6', text: 'Message 1' },
+  { messageId: '4', parentMessageId: '6', text: 'Message 4' },
+  { messageId: '10', parentMessageId: '3', text: 'Message 10' },
+];
 describe('getMessagesUpToTargetLevel', () => {
-  const mockMessages = [
-    { messageId: '7', parentMessageId: Constants.NO_PARENT, text: 'Message 7' },
-    { messageId: '8', parentMessageId: Constants.NO_PARENT, text: 'Message 8' },
-    { messageId: '5', parentMessageId: '7', text: 'Message 5' },
-    { messageId: '6', parentMessageId: '7', text: 'Message 6' },
-    { messageId: '9', parentMessageId: '8', text: 'Message 9' },
-    { messageId: '2', parentMessageId: '5', text: 'Message 2' },
-    { messageId: '3', parentMessageId: '5', text: 'Message 3' },
-    { messageId: '1', parentMessageId: '6', text: 'Message 1' },
-    { messageId: '4', parentMessageId: '6', text: 'Message 4' },
-    { messageId: '10', parentMessageId: '3', text: 'Message 10' },
-  ];
   test('should get all messages up to target level', async () => {
-    const result = getMessagesUpToTargetLevel(mockMessages, '5');
+    const result = getMessagesUpToTargetLevel(mockMessagesComplex, '5');
     const mappedResult = result.map((msg) => msg.text);
     console.debug(
       '[getMessagesUpToTargetLevel] should get all messages up to target level\n',
       mappedResult,
     );
-    console.debug('mockMessages\n', printMessageTree(mockMessages));
+    console.debug('mockMessages\n', printMessageTree(mockMessagesComplex));
     console.debug('result\n', printMessageTree(result));
     expect(mappedResult).toEqual(['Message 7', 'Message 8', 'Message 5', 'Message 6', 'Message 9']);
   });
 
   test('should get all messages if target is deepest level', async () => {
-    const result = getMessagesUpToTargetLevel(mockMessages, '10');
-    expect(result.length).toEqual(mockMessages.length);
+    const result = getMessagesUpToTargetLevel(mockMessagesComplex, '10');
+    expect(result.length).toEqual(mockMessagesComplex.length);
   });
 });
 
@@ -268,5 +269,95 @@ describe('getMessagesForConversation', () => {
     console.debug('mockMessages\n', printMessageTree(mockMessages));
     console.debug('result\n', printMessageTree(result));
     expect(mappedResult).toEqual(['Message 11', 'Message 13', 'Message 16', 'Message 18']);
+  });
+});
+
+describe('splitAtTargetLevel', () => {
+  /* const mockMessagesComplex = [
+    { messageId: '7', parentMessageId: Constants.NO_PARENT, text: 'Message 7' },
+    { messageId: '8', parentMessageId: Constants.NO_PARENT, text: 'Message 8' },
+    { messageId: '5', parentMessageId: '7', text: 'Message 5' },
+    { messageId: '6', parentMessageId: '7', text: 'Message 6' },
+    { messageId: '9', parentMessageId: '8', text: 'Message 9' },
+    { messageId: '2', parentMessageId: '5', text: 'Message 2' },
+    { messageId: '3', parentMessageId: '5', text: 'Message 3' },
+    { messageId: '1', parentMessageId: '6', text: 'Message 1' },
+    { messageId: '4', parentMessageId: '6', text: 'Message 4' },
+    { messageId: '10', parentMessageId: '3', text: 'Message 10' },
+  ];
+
+     mockMessages
+    ├── [7]: Root
+    |   ├── [5]: Child of 7
+    |   |   ├── [2]: Child of 5
+    |   |   └── [3]: Child of 5
+    |   |       └── [10]: Child of 3
+    |   └── [6]: Child of 7
+    |       ├── [1]: Child of 6
+    |       └── [4]: Child of 6
+    └── [8]: Root
+        └── [9]: Child of 8
+  */
+  test('should include target message level and all descendants (1/2)', () => {
+    console.debug('splitAtTargetLevel: mockMessages\n', printMessageTree(mockMessagesComplex));
+    const result = splitAtTargetLevel(mockMessagesComplex, '2');
+    const mappedResult = result.map((msg) => msg.messageId);
+    console.debug(
+      'splitAtTargetLevel: include target message level and all descendants (1/2)\n',
+      printMessageTree(result),
+    );
+    expect(mappedResult).toEqual(['2', '3', '1', '4', '10']);
+  });
+
+  test('should include target message level and all descendants (2/2)', () => {
+    console.debug('splitAtTargetLevel: mockMessages\n', printMessageTree(mockMessagesComplex));
+    const result = splitAtTargetLevel(mockMessagesComplex, '5');
+    const mappedResult = result.map((msg) => msg.messageId);
+    console.debug(
+      'splitAtTargetLevel: include target message level and all descendants (2/2)\n',
+      printMessageTree(result),
+    );
+    expect(mappedResult).toEqual(['5', '6', '9', '2', '3', '1', '4', '10']);
+  });
+
+  test('should handle when target message is root', () => {
+    const result = splitAtTargetLevel(mockMessagesComplex, '7');
+    console.debug('splitAtTargetLevel: target level is root message\n', printMessageTree(result));
+    expect(result.length).toBe(mockMessagesComplex.length);
+  });
+
+  test('should handle when target message is deepest, lonely child', () => {
+    const result = splitAtTargetLevel(mockMessagesComplex, '10');
+    const mappedResult = result.map((msg) => msg.messageId);
+    console.debug(
+      'splitAtTargetLevel: target message is deepest, lonely child\n',
+      printMessageTree(result),
+    );
+    expect(mappedResult).toEqual(['10']);
+  });
+
+  test('should handle when target level is last with many neighbors', () => {
+    const mockMessages = [
+      ...mockMessagesComplex,
+      { messageId: '11', parentMessageId: '10', text: 'Message 11' },
+      { messageId: '12', parentMessageId: '10', text: 'Message 12' },
+      { messageId: '13', parentMessageId: '10', text: 'Message 13' },
+      { messageId: '14', parentMessageId: '10', text: 'Message 14' },
+      { messageId: '15', parentMessageId: '4', text: 'Message 15' },
+      { messageId: '16', parentMessageId: '15', text: 'Message 15' },
+    ];
+    const result = splitAtTargetLevel(mockMessages, '11');
+    const mappedResult = result.map((msg) => msg.messageId);
+    console.debug(
+      'splitAtTargetLevel: should handle when target level is last with many neighbors\n',
+      printMessageTree(result),
+    );
+    expect(mappedResult).toEqual(['11', '12', '13', '14', '16']);
+  });
+
+  test('should handle non-existent target message', () => {
+    // Non-existent message ID
+    const result = splitAtTargetLevel(mockMessagesComplex, '99');
+    expect(result.length).toBe(0);
   });
 });

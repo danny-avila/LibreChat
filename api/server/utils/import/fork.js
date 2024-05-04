@@ -12,9 +12,10 @@ const logger = require('~/config/winston');
  * @param {string} params.originalConvoId - The ID of the conversation to fork.
  * @param {string} params.targetMessageId - The ID of the message to fork from.
  * @param {string} params.requestUserId - The ID of the user making the request.
- * @param {boolean} [params.records=false] - Optional flag for returning actual database records or resulting conversation and messages.
  * @param {string} [params.newTitle] - Optional new title for the forked conversation uses old title if not provided
  * @param {string} [params.option=''] - Optional flag for fork option
+ * @param {boolean} [params.records=false] - Optional flag for returning actual database records or resulting conversation and messages.
+ * @param {boolean} [params.splitAtTarget=false] - Optional flag for splitting the messages at the target message level.
  * @param {(userId: string) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
  * @returns {Promise<TForkConvoResponse>} The response after forking the conversation.
  */
@@ -25,14 +26,19 @@ async function forkConversation({
   newTitle,
   option = '',
   records = false,
+  splitAtTarget = false,
   builderFactory = createImportBatchBuilder,
 }) {
   try {
     const originalConvo = await getConvo(requestUserId, originalConvoId);
-    const originalMessages = await getMessages({
+    let originalMessages = await getMessages({
       user: requestUserId,
       conversationId: originalConvoId,
     });
+
+    if (splitAtTarget) {
+      originalMessages = splitAtTargetLevel(originalMessages, targetMessageId);
+    }
 
     const importBatchBuilder = builderFactory(requestUserId);
     importBatchBuilder.startConversation(originalConvo.endpoint ?? EModelEndpoint.openAI);
@@ -189,4 +195,85 @@ function getMessagesUpToTargetLevel(messages, targetMessageId) {
   return Array.from(results);
 }
 
-module.exports = { forkConversation, getAllMessagesUpToParent, getMessagesUpToTargetLevel };
+/**
+ * Splits the conversation at the targeted message level, including the target, its siblings, and all descendant messages.
+ * All target level messages have their parentMessageId set to the root.
+ * @param {TMessage[]} messages - The list of messages to analyze.
+ * @param {string} targetMessageId - The ID of the message to start the split from.
+ * @returns {TMessage[]} The list of messages at and below the target level.
+ */
+function splitAtTargetLevel(messages, targetMessageId) {
+  // Create a map of parentMessageId to children messages
+  const parentToChildrenMap = new Map();
+  for (const message of messages) {
+    if (!parentToChildrenMap.has(message.parentMessageId)) {
+      parentToChildrenMap.set(message.parentMessageId, []);
+    }
+    parentToChildrenMap.get(message.parentMessageId).push(message);
+  }
+
+  // Retrieve the target message
+  const targetMessage = messages.find((msg) => msg.messageId === targetMessageId);
+  if (!targetMessage) {
+    logger.error('Target message not found.');
+    return [];
+  }
+
+  // Initialize the search with root messages
+  const rootMessages = parentToChildrenMap.get(Constants.NO_PARENT) || [];
+  let currentLevel = [...rootMessages];
+  let currentLevelIndex = 0;
+  const levelMap = {};
+
+  // Map messages to their levels
+  rootMessages.forEach((msg) => {
+    levelMap[msg.messageId] = 0;
+  });
+
+  // Search for the target level
+  while (currentLevel.length > 0) {
+    const nextLevel = [];
+    for (const node of currentLevel) {
+      const children = parentToChildrenMap.get(node.messageId) || [];
+      for (const child of children) {
+        nextLevel.push(child);
+        levelMap[child.messageId] = currentLevelIndex + 1;
+      }
+    }
+    currentLevel = nextLevel;
+    currentLevelIndex++;
+  }
+
+  // Determine the target level
+  const targetLevel = levelMap[targetMessageId];
+  if (targetLevel === undefined) {
+    logger.error('Target level not found.');
+    return [];
+  }
+
+  // Filter messages at or below the target level
+  const filteredMessages = messages
+    .map((msg) => {
+      const messageLevel = levelMap[msg.messageId];
+      if (messageLevel < targetLevel) {
+        return null;
+      } else if (messageLevel === targetLevel) {
+        return {
+          ...msg,
+          parentMessageId: Constants.NO_PARENT,
+        };
+      }
+
+      return msg;
+    })
+    .filter((msg) => msg !== null);
+
+  return filteredMessages;
+}
+
+module.exports = {
+  forkConversation,
+  splitAtTargetLevel,
+  getAllMessagesUpToParent,
+  getMessagesUpToTargetLevel,
+};
