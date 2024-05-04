@@ -120,6 +120,7 @@ export default function HoverButtons({
         messageId={message.messageId}
         conversationId={conversation.conversationId}
         forkingSupported={forkingSupported}
+        latestMessage={latestMessage}
       />
     </div>
   );

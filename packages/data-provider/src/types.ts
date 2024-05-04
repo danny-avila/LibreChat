@@ -129,6 +129,8 @@ export type TForkConvoRequest = {
   messageId: string;
   conversationId: string;
   option?: string;
+  splitAtTarget?: boolean;
+  latestMessageId?: string;
 };
 
 export type TForkConvoResponse = {

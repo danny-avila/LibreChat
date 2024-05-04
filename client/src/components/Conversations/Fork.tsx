@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { GitFork } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import * as Popover from '@radix-ui/react-popover';
-import { ForkOptions } from 'librechat-data-provider';
+import { ForkOptions, TMessage } from 'librechat-data-provider';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
 import { useForkConvoMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
@@ -52,7 +52,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
           setActiveSetting(optionLabels.default);
         }, 175);
       }}
-      className="mx-1 h-full flex-1 rounded-lg border-2 bg-white transition duration-300 ease-in-out hover:bg-black dark:border-gray-400 dark:bg-gray-700/95 dark:text-gray-400 hover:dark:border-gray-200 hover:dark:text-gray-200"
+      className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white transition duration-300 ease-in-out hover:bg-black dark:border-gray-400 dark:bg-gray-700/95 dark:text-gray-400 hover:dark:border-gray-200 hover:dark:text-gray-200"
       type="button"
     >
       {children}
@@ -65,19 +65,22 @@ export default function Fork({
   messageId,
   conversationId,
   forkingSupported,
+  latestMessage,
 }: {
   isLast?: boolean;
   messageId: string;
   conversationId: string | null;
   forkingSupported?: boolean;
+  latestMessage: TMessage | null;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const [remember, setRemember] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
-  const [rememberGlobal, setRememberGlobal] = useRecoilState(store.rememberForkOption);
   const [activeSetting, setActiveSetting] = useState(optionLabels.default);
+  const [splitAtTarget, setSplitAtTarget] = useRecoilState(store.splitAtTarget);
+  const [rememberGlobal, setRememberGlobal] = useRecoilState(store.rememberForkOption);
   const forkConvo = useForkConvoMutation();
 
   if (!forkingSupported || !conversationId || !messageId) {
@@ -89,7 +92,14 @@ export default function Fork({
       setRememberGlobal(true);
       setForkSetting(option);
     }
-    forkConvo.mutate({ messageId, conversationId, option });
+
+    forkConvo.mutate({
+      messageId,
+      conversationId,
+      option,
+      splitAtTarget,
+      latestMessageId: latestMessage?.messageId,
+    });
   };
 
   return (
@@ -104,7 +114,13 @@ export default function Fork({
           onClick={(e) => {
             if (rememberGlobal) {
               e.preventDefault();
-              forkConvo.mutate({ messageId, conversationId, option: forkSetting });
+              forkConvo.mutate({
+                messageId,
+                splitAtTarget,
+                conversationId,
+                option: forkSetting,
+                latestMessageId: latestMessage?.messageId,
+              });
             }
           }}
           type="button"
@@ -142,7 +158,7 @@ export default function Fork({
                 onClick={onClick}
                 setting={ForkOptions.INCLUDE_BRANCHES}
               >
-                <GitBranchPlus className="h-full w-full p-2" />
+                <GitBranchPlus className="h-full w-full rotate-180 p-2" />
               </PopoverButton>
               <PopoverButton
                 setActiveSetting={setActiveSetting}
@@ -153,7 +169,15 @@ export default function Fork({
                 <ListTree className="h-full w-full p-2" />
               </PopoverButton>
             </div>
-            <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300">
+            <div className="flex h-6 w-full items-center justify-start text-xs dark:text-gray-300">
+              <Checkbox
+                checked={splitAtTarget}
+                onCheckedChange={(checked: boolean) => setSplitAtTarget(checked)}
+                className="m-2 transition duration-300 ease-in-out"
+              />
+              {localize('com_ui_fork_split_target')}
+            </div>
+            <div className="flex h-6 w-full items-center justify-start text-xs dark:text-gray-300">
               <Checkbox
                 checked={remember}
                 onCheckedChange={(checked: boolean) => {
@@ -167,7 +191,7 @@ export default function Fork({
                 }}
                 className="m-2 transition duration-300 ease-in-out"
               />
-              {localize('com_ui_fork_remember_setting')}
+              {localize('com_ui_fork_remember')}
             </div>
           </Popover.Content>
         </div>

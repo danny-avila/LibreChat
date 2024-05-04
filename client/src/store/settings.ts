@@ -175,6 +175,25 @@ const rememberForkOption = atom<boolean>({
   ] as const,
 });
 
+const splitAtTarget = atom<boolean>({
+  key: LocalStorageKeys.FORK_SPLIT_AT_TARGET,
+  default: false,
+  effects: [
+    ({ setSelf, onSet }) => {
+      const savedValue = localStorage.getItem(LocalStorageKeys.FORK_SPLIT_AT_TARGET);
+      if (savedValue != null) {
+        setSelf(savedValue === 'true');
+      }
+
+      onSet((newValue: unknown) => {
+        if (typeof newValue === 'boolean') {
+          localStorage.setItem(LocalStorageKeys.FORK_SPLIT_AT_TARGET, newValue.toString());
+        }
+      });
+    },
+  ] as const,
+});
+
 const UsernameDisplay = atom<boolean>({
   key: 'UsernameDisplay',
   default: localStorage.getItem('UsernameDisplay') === 'true',
@@ -230,5 +249,6 @@ export default {
   LaTeXParsing,
   UsernameDisplay,
   forkSetting,
+  splitAtTarget,
   rememberForkOption,
 };

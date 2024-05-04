@@ -1,6 +1,6 @@
 const multer = require('multer');
 const express = require('express');
-const { CacheKeys, ForkOptions } = require('librechat-data-provider');
+const { CacheKeys } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
 const { IMPORT_CONVERSATION_JOB_NAME } = require('~/server/utils/import/jobDefinition');
@@ -143,12 +143,14 @@ router.post(
 router.post('/fork', async (req, res) => {
   try {
     /** @type {TForkConvoRequest} */
-    const { conversationId, messageId, option = ForkOptions.TARGET_LEVEL } = req.body;
+    const { conversationId, messageId, option, splitAtTarget, latestMessageId } = req.body;
     const result = await forkConversation({
       requestUserId: req.user.id,
       originalConvoId: conversationId,
       targetMessageId: messageId,
+      latestMessageId,
       records: true,
+      splitAtTarget,
       option,
     });
 

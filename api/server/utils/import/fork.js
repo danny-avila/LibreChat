@@ -16,17 +16,19 @@ const logger = require('~/config/winston');
  * @param {string} [params.option=''] - Optional flag for fork option
  * @param {boolean} [params.records=false] - Optional flag for returning actual database records or resulting conversation and messages.
  * @param {boolean} [params.splitAtTarget=false] - Optional flag for splitting the messages at the target message level.
+ * @param {string} [params.latestMessageId] - latestMessageId - Required if splitAtTarget is true.
  * @param {(userId: string) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
  * @returns {Promise<TForkConvoResponse>} The response after forking the conversation.
  */
 async function forkConversation({
   originalConvoId,
-  targetMessageId,
+  targetMessageId: targetId,
   requestUserId,
   newTitle,
-  option = '',
+  option = ForkOptions.TARGET_LEVEL,
   records = false,
   splitAtTarget = false,
+  latestMessageId,
   builderFactory = createImportBatchBuilder,
 }) {
   try {
@@ -36,8 +38,12 @@ async function forkConversation({
       conversationId: originalConvoId,
     });
 
-    if (splitAtTarget) {
-      originalMessages = splitAtTargetLevel(originalMessages, targetMessageId);
+    let targetMessageId = targetId;
+    if (splitAtTarget && !latestMessageId) {
+      throw new Error('Latest `messageId` is required for forking from target message.');
+    } else if (splitAtTarget) {
+      originalMessages = splitAtTargetLevel(originalMessages, targetId);
+      targetMessageId = latestMessageId;
     }
 
     const importBatchBuilder = builderFactory(requestUserId);

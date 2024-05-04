@@ -702,6 +702,8 @@ export enum LocalStorageKeys {
   FORK_SETTING = 'forkSetting',
   /** Key for remembering the last selected option, instead of manually selecting */
   REMEMBER_FORK_OPTION = 'rememberForkOption',
+  /** Key for remembering the split at target fork option modifier */
+  FORK_SPLIT_AT_TARGET = 'splitAtTarget',
 }
 
 export enum ForkOptions {

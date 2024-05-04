@@ -7,6 +7,7 @@ import store from '~/store';
 export const ForkSettings = () => {
   const localize = useLocalize();
   const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
+  const [splitAtTarget, setSplitAtTarget] = useRecoilState(store.splitAtTarget);
   const [remember, setRemember] = useRecoilState<boolean>(store.rememberForkOption);
 
   const forkOptions = [
@@ -38,6 +39,18 @@ export const ForkSettings = () => {
             onCheckedChange={setRemember}
             className="ml-4 mt-2"
             data-testid="rememberForkOption"
+          />
+        </div>
+      </div>
+      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <div className="flex items-center justify-between">
+          <div> {localize('com_ui_fork_split_target_setting')} </div>
+          <Switch
+            id="splitAtTarget"
+            checked={splitAtTarget}
+            onCheckedChange={setSplitAtTarget}
+            className="ml-4 mt-2"
+            data-testid="splitAtTarget"
           />
         </div>
       </div>
