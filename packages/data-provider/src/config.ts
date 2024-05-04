@@ -704,6 +704,13 @@ export enum LocalStorageKeys {
   REMEMBER_FORK_OPTION = 'rememberForkOption',
 }
 
+export enum ForkOptions {
+  /** Key for direct path option */
+  DIRECT_PATH = 'directPath',
+  /** Key for including branches */
+  INCLUDE_BRANCHES = 'includeBranches',
+}
+
 /**
  * Enum for Cohere related constants
  */
