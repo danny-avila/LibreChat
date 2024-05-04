@@ -1,11 +1,12 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef } from 'react';
 import { GitFork } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import * as Popover from '@radix-ui/react-popover';
+import { ForkOptions } from 'librechat-data-provider';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
 import { Checkbox } from '~/components/ui';
 // import type { UseMutationResult } from '@tanstack/react-query';
-// import { useDeleteAssistantMutation } from '~/data-provider';
+import { useForkConvoMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -19,8 +20,8 @@ interface PopoverButtonProps {
 }
 
 const settingMap = {
-  com_ui_fork_visible: 'directPath',
-  com_ui_fork_branches: 'includeBranches',
+  com_ui_fork_visible: ForkOptions.DIRECT_PATH,
+  com_ui_fork_branches: ForkOptions.INCLUDE_BRANCHES,
   com_ui_fork_all_target: '',
 };
 
@@ -74,26 +75,20 @@ export default function Fork({
   const [forkSetting, setForkSetting] = useRecoilState(store.forkSetting);
   const [rememberGlobal, setRememberGlobal] = useRecoilState(store.rememberForkOption);
   const [activeSetting, setActiveSetting] = useState('com_ui_fork_from_message');
+  const forkConvo = useForkConvoMutation();
 
-  const forkDisabled = useMemo(
-    () => !forkingSupported || !conversationId || !messageId,
-    [forkingSupported, conversationId, messageId],
-  );
-
-  if (!forkingSupported) {
+  if (!forkingSupported || !conversationId || !messageId) {
     return null;
   }
 
   const onClick = (setting: string) => {
+    const option = settingMap[setting];
     if (remember) {
       setRememberGlobal(true);
-      setForkSetting(settingMap[setting]);
+      setForkSetting(option);
     }
+    forkConvo.mutate({ messageId, conversationId, option });
   };
-  // const mutation = useSomeMutation({
-  //   onSuccess: (_, vars, context) => {
-  //   },
-  // });
 
   return (
     <Popover.Root>
@@ -107,9 +102,9 @@ export default function Fork({
           onClick={(e) => {
             if (rememberGlobal) {
               e.preventDefault();
+              forkConvo.mutate({ messageId, conversationId, option: forkSetting });
             }
           }}
-          disabled={forkDisabled}
           type="button"
           title={localize('com_ui_continue')}
         >

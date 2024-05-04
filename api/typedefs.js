@@ -1263,3 +1263,17 @@
  * @property {Object.<string, ChatGPTMapping>} mapping - Mapping of message nodes within the conversation.
  * @memberof typedefs
  */
+
+/** Mutations */
+
+/**
+ * @exports TForkConvoResponse
+ * @typedef {import('librechat-data-provider').TForkConvoResponse} TForkConvoResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TForkConvoRequest
+ * @typedef {import('librechat-data-provider').TForkConvoRequest} TForkConvoRequest
+ * @memberof typedefs
+ */
