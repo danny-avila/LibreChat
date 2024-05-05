@@ -41,6 +41,14 @@
 # 📃 Features
 
 - 🖥️ UI matching ChatGPT, including Dark mode, Streaming, and latest updates
+- 🤖 AI model selection:
+  - OpenAI, Azure OpenAI, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins, Assistants API (including Azure Assistants)
+- ✅ Compatible across both **[Remote & Local AI services](https://docs.librechat.ai/install/configuration/ai_endpoints.html#intro):**
+  - groq, Ollama, Cohere, Mistral AI, Apple MLX, koboldcpp, OpenRouter, together.ai, Perplexity, ShuttleAI, and more
+- 💾 Create, Save, & Share Custom Presets
+- 🔀 Switch between AI Endpoints and Presets, mid-chat
+- 🔄 Edit, Resubmit, and Continue Messages with Conversation branching
+- 🌿 Fork Messages & Conversations for Advanced Context control
 - 💬 Multimodal Chat:
     - Upload and analyze images with Claude 3, GPT-4, and Gemini Vision 📸
     - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, & Google. 🗃️
@@ -50,11 +58,7 @@
 - 🌎 Multilingual UI:
   - English, 中文, Deutsch, Español, Français, Italiano, Polski, Português Brasileiro,
   - Русский, 日本語, Svenska, 한국어, Tiếng Việt, 繁體中文, العربية, Türkçe, Nederlands, עברית
-- 🤖 AI model selection: OpenAI, Azure OpenAI, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins, Assistants API (including Azure Assistants)
-- 💾 Create, Save, & Share Custom Presets
 - 🎨 Customizable Dropdown & Interface: Adapts to both power users and newcomers.
-- 🔄 Edit, Resubmit, and Continue Messages with Conversation branching
-- 🌿 Fork Messages & Conversations for Advanced Context control
 - 📥 Import Conversations from LibreChat, ChatGPT, Chatbot UI
 - 📤 Export conversations as screenshots, markdown, text, json.
 - 🔍 Search all messages/conversations
