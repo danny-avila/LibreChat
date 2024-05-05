@@ -42,7 +42,7 @@ export const ThemeSelector = ({
         value={theme}
         onChange={onChange}
         options={themeOptions}
-        width={150}
+        width={220}
         testId="theme-selector"
       />
     </div>
