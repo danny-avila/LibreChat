@@ -53,7 +53,8 @@
 - 🤖 AI model selection: OpenAI, Azure OpenAI, BingAI, ChatGPT, Google Vertex AI, Anthropic (Claude), Plugins, Assistants API (including Azure Assistants)
 - 💾 Create, Save, & Share Custom Presets
 - 🎨 Customizable Dropdown & Interface: Adapts to both power users and newcomers.
-- 🔄 Edit, Resubmit, and Continue messages with conversation branching
+- 🔄 Edit, Resubmit, and Continue Messages with Conversation branching
+- 🌿 Fork Messages & Conversations for Advanced Context control
 - 📥 Import Conversations from LibreChat, ChatGPT, Chatbot UI
 - 📤 Export conversations as screenshots, markdown, text, json.
 - 🔍 Search all messages/conversations
