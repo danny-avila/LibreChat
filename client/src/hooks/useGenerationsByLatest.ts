@@ -58,7 +58,10 @@ export default function useGenerationsByLatest({
     !branchingSupported ||
     (!isEditableEndpoint && !isCreatedByUser);
 
+  const forkingSupported = endpoint !== EModelEndpoint.assistants && !searchResult;
+
   return {
+    forkingSupported,
     continueSupported,
     regenerateEnabled,
     hideEditButton,
