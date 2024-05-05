@@ -81,7 +81,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit }) => {
         </div>
         {renderError('password')}
       </div>
-      <a href="/forgot-password" className="text-sm font-medium text-green-500">
+      <a href="/forgot-password" className="text-sm text-green-500">
         {localize('com_auth_password_forgot')}
       </a>
       <div className="mt-6">
