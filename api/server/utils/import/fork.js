@@ -125,6 +125,10 @@ async function forkConversation({
  * @returns {TMessage[]} The list of messages up to the root from the target message.
  */
 function getAllMessagesUpToParent(messages, targetMessageId) {
+  if (messages.length === 1 && messages[0] && messages[0].messageId === targetMessageId) {
+    return messages;
+  }
+
   const targetMessage = messages.find((msg) => msg.messageId === targetMessageId);
   if (!targetMessage) {
     return [];
@@ -155,6 +159,10 @@ function getAllMessagesUpToParent(messages, targetMessageId) {
  * @returns {TMessage[]} The list of inclusive messages up to the root from the target message.
  */
 function getMessagesUpToTargetLevel(messages, targetMessageId) {
+  if (messages.length === 1 && messages[0] && messages[0].messageId === targetMessageId) {
+    return messages;
+  }
+
   // Create a map of parentMessageId to children messages
   const parentToChildrenMap = new Map();
   for (const message of messages) {

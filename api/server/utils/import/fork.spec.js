@@ -189,6 +189,7 @@ const mockMessagesComplex = [
   { messageId: '4', parentMessageId: '6', text: 'Message 4' },
   { messageId: '10', parentMessageId: '3', text: 'Message 10' },
 ];
+
 describe('getMessagesUpToTargetLevel', () => {
   test('should get all messages up to target level', async () => {
     const result = getMessagesUpToTargetLevel(mockMessagesComplex, '5');
@@ -206,6 +207,21 @@ describe('getMessagesUpToTargetLevel', () => {
     const result = getMessagesUpToTargetLevel(mockMessagesComplex, '10');
     expect(result.length).toEqual(mockMessagesComplex.length);
   });
+
+  test('should return target if only message', async () => {
+    const result = getMessagesUpToTargetLevel(
+      [mockMessagesComplex[mockMessagesComplex.length - 1]],
+      '10',
+    );
+    const mappedResult = result.map((msg) => msg.messageId);
+    console.debug(
+      '[getMessagesUpToTargetLevel] should return target if only message\n',
+      mappedResult,
+    );
+    console.debug('mockMessages\n', printMessageTree(mockMessages));
+    console.debug('result\n', printMessageTree(result));
+    expect(mappedResult).toEqual(['10']);
+  });
 });
 
 describe('getAllMessagesUpToParent', () => {
@@ -222,23 +238,29 @@ describe('getAllMessagesUpToParent', () => {
     { messageId: '19', parentMessageId: '18', text: 'Message 19' },
     { messageId: '20', parentMessageId: '19', text: 'Message 20' },
   ];
+
   test('should retrieve all messages from the target to the root (including indirect ancestors)', async () => {
     const result = getAllMessagesUpToParent(mockMessages, '18');
-    const mappedResult = result.map((msg) => msg.text);
+    const mappedResult = result.map((msg) => msg.messageId);
     console.debug(
       '[getAllMessagesUpToParent] should retrieve all messages from the target to the root\n',
       mappedResult,
     );
     console.debug('mockMessages\n', printMessageTree(mockMessages));
     console.debug('result\n', printMessageTree(result));
-    expect(mappedResult).toEqual([
-      'Message 11',
-      'Message 13',
-      'Message 15',
-      'Message 16',
-      'Message 21',
-      'Message 18',
-    ]);
+    expect(mappedResult).toEqual(['11', '13', '15', '16', '21', '18']);
+  });
+
+  test('should return target if only message', async () => {
+    const result = getAllMessagesUpToParent([mockMessages[mockMessages.length - 1]], '20');
+    const mappedResult = result.map((msg) => msg.messageId);
+    console.debug(
+      '[getAllMessagesUpToParent] should return target if only message\n',
+      mappedResult,
+    );
+    console.debug('mockMessages\n', printMessageTree(mockMessages));
+    console.debug('result\n', printMessageTree(result));
+    expect(mappedResult).toEqual(['20']);
   });
 });
 
@@ -256,19 +278,35 @@ describe('getMessagesForConversation', () => {
     { messageId: '19', parentMessageId: '18', text: 'Message 19' },
     { messageId: '20', parentMessageId: '19', text: 'Message 20' },
   ];
+
   test('should provide the direct path to the target without branches', async () => {
     const result = BaseClient.getMessagesForConversation({
       messages: mockMessages,
       parentMessageId: '18',
     });
-    const mappedResult = result.map((msg) => msg.text);
+    const mappedResult = result.map((msg) => msg.messageId);
     console.debug(
       '[getMessagesForConversation] should provide the direct path to the target without branches\n',
       mappedResult,
     );
     console.debug('mockMessages\n', printMessageTree(mockMessages));
     console.debug('result\n', printMessageTree(result));
-    expect(mappedResult).toEqual(['Message 11', 'Message 13', 'Message 16', 'Message 18']);
+    expect(mappedResult).toEqual(['11', '13', '16', '18']);
+  });
+
+  test('should return target if only message', async () => {
+    const result = BaseClient.getMessagesForConversation({
+      messages: [mockMessages[mockMessages.length - 1]],
+      parentMessageId: '20',
+    });
+    const mappedResult = result.map((msg) => msg.messageId);
+    console.debug(
+      '[getMessagesForConversation] should return target if only message\n',
+      mappedResult,
+    );
+    console.debug('mockMessages\n', printMessageTree(mockMessages));
+    console.debug('result\n', printMessageTree(result));
+    expect(mappedResult).toEqual(['20']);
   });
 });
 
