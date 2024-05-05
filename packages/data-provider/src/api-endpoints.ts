@@ -36,6 +36,8 @@ export const deleteConversation = () => `${conversationsRoot}/clear`;
 
 export const importConversation = () => `${conversationsRoot}/import`;
 
+export const forkConversation = () => `${conversationsRoot}/fork`;
+
 export const importConversationJobStatus = (jobId: string) =>
   `${conversationsRoot}/import/jobs/${jobId}`;
 

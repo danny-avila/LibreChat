@@ -6,6 +6,7 @@ import { Switch } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import Avatar from './Avatar';
 import store from '~/store';
+import DeleteAccount from './DeleteAccount';
 
 function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => void }) {
   const [UsernameDisplay, setUsernameDisplay] = useRecoilState<boolean>(store.UsernameDisplay);
@@ -38,6 +39,9 @@ function Account({ onCheckedChange }: { onCheckedChange?: (value: boolean) => vo
             data-testid="UsernameDisplay"
           />
         </div>
+      </div>
+      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <DeleteAccount />
       </div>
       <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700"></div>
     </Tabs.Content>
