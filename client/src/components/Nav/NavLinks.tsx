@@ -68,8 +68,8 @@ function NavLinks() {
             )}
             <Menu.Button
               className={cn(
-                'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm mb-1 flex h-11 w-full items-center gap-2 rounded-lg px-3 py-3 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700',
-                open ? 'bg-gray-100 dark:bg-gray-700' : '',
+                'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm flex h-auto w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800',
+                open ? 'bg-gray-100 dark:bg-gray-800' : '',
               )}
               data-testid="nav-user"
             >
@@ -93,7 +93,7 @@ function NavLinks() {
                 </div>
               </div>
               <div
-                className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-black dark:text-white"
+                className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-black dark:text-gray-100"
                 style={{ marginTop: '0', marginLeft: '0' }}
               >
                 {user?.name || user?.username || localize('com_nav_user')}
@@ -109,7 +109,11 @@ function NavLinks() {
               leaveFrom="translate-y-0 opacity-100"
               leaveTo="translate-y-2 opacity-0"
             >
-              <Menu.Items className="absolute bottom-full left-0 z-20 mb-1 mt-1 w-full translate-y-0 overflow-hidden rounded-lg border bg-white p-1.5 opacity-100 shadow-lg outline-none dark:bg-gray-800">
+              <Menu.Items className="absolute bottom-full left-0 z-20 mb-1 mt-1 w-full translate-y-0 overflow-hidden rounded-lg border border-gray-300 bg-white p-1.5 opacity-100 shadow-lg outline-none dark:border-gray-600 dark:bg-gray-700">
+                <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="none">
+                  {user?.email || localize('com_nav_user')}
+                </div>
+                <div className="my-1.5 h-px bg-black/10 dark:bg-white/10" role="none" />
                 <Menu.Item as="div" disabled={!exportable}>
                   <NavLink
                     disabled={!exportable}
@@ -118,7 +122,7 @@ function NavLinks() {
                     clickHandler={clickHandler}
                   />
                 </Menu.Item>
-                <div className="my-1 h-px bg-black/20 dark:bg-white/20" role="none" />
+                <div className="my-1.5 h-px bg-black/10 dark:bg-white/10" role="none" />
                 <Menu.Item as="div">
                   <NavLink
                     svg={() => <FileText className="icon-md" />}
@@ -142,7 +146,7 @@ function NavLinks() {
                     clickHandler={() => setShowSettings(true)}
                   />
                 </Menu.Item>
-                <div className="my-1 h-px bg-black/20 dark:bg-white/20" role="none" />
+                <div className="my-1.5 h-px bg-black/10 dark:bg-white/10" role="none" />
                 <Menu.Item as="div">
                   <Logout />
                 </Menu.Item>
