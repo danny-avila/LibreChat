@@ -281,7 +281,7 @@ export default function Fork({
             </div>
             <HoverCard openDelay={50}>
               <HoverCardTrigger asChild>
-                <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300">
+                <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300 dark:hover:text-gray-200">
                   <Checkbox
                     checked={splitAtTarget}
                     onCheckedChange={(checked: boolean) => setSplitAtTarget(checked)}
@@ -299,7 +299,7 @@ export default function Fork({
             </HoverCard>
             <HoverCard openDelay={50}>
               <HoverCardTrigger asChild>
-                <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300">
+                <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300 dark:hover:text-gray-200">
                   <Checkbox
                     checked={remember}
                     onCheckedChange={(checked: boolean) => {
