@@ -131,12 +131,22 @@ function getAllMessagesUpToParent(messages, targetMessageId) {
   }
 
   const pathToRoot = new Set();
+  const visited = new Set();
   let current = targetMessage;
 
-  // Traverse up to root to capture the path
   while (current) {
+    if (visited.has(current.messageId)) {
+      break;
+    }
+
+    visited.add(current.messageId);
     pathToRoot.add(current.messageId);
+
     const currentParentId = current.parentMessageId ?? Constants.NO_PARENT;
+    if (currentParentId === Constants.NO_PARENT) {
+      break;
+    }
+
     current = messages.find((msg) => msg.messageId === currentParentId);
   }
 

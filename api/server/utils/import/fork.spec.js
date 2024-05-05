@@ -344,6 +344,21 @@ describe('getAllMessagesUpToParent', () => {
     expect(mappedResult).toEqual(['11', '13', '15', '16', '21', '18']);
   });
 
+  test('should handle circular dependencies gracefully', () => {
+    const mockMessages = [
+      { messageId: '1', parentMessageId: '2' },
+      { messageId: '2', parentMessageId: '3' },
+      { messageId: '3', parentMessageId: '1' },
+    ];
+
+    const targetMessageId = '1';
+    const result = getAllMessagesUpToParent(mockMessages, targetMessageId);
+
+    const uniqueIds = new Set(result.map((msg) => msg.messageId));
+    expect(uniqueIds.size).toBe(result.length);
+    expect(result.map((msg) => msg.messageId).sort()).toEqual(['1', '2', '3'].sort());
+  });
+
   test('should return target if only message', async () => {
     const result = getAllMessagesUpToParent([mockMessages[mockMessages.length - 1]], '20');
     const mappedResult = result.map((msg) => msg.messageId);
