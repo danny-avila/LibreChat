@@ -345,14 +345,16 @@ export const alternateName = {
 
 export const defaultModels = {
   [EModelEndpoint.assistants]: [
+    'gpt-3.5-turbo',
     'gpt-3.5-turbo-0125',
+    'gpt-4-turbo',
+    'gpt-4-turbo-2024-04-09',
     'gpt-4-0125-preview',
     'gpt-4-turbo-preview',
     'gpt-4-1106-preview',
     'gpt-3.5-turbo-1106',
     'gpt-3.5-turbo-16k-0613',
     'gpt-3.5-turbo-16k',
-    'gpt-3.5-turbo',
     'gpt-4',
     'gpt-4-0314',
     'gpt-4-32k-0314',
@@ -387,6 +389,8 @@ export const defaultModels = {
   ],
   [EModelEndpoint.openAI]: [
     'gpt-3.5-turbo-0125',
+    'gpt-4-turbo',
+    'gpt-4-turbo-2024-04-09',
     'gpt-3.5-turbo-16k-0613',
     'gpt-3.5-turbo-16k',
     'gpt-4-turbo-preview',
@@ -650,6 +654,10 @@ export enum SettingsTabValues {
    */
   GENERAL = 'general',
   /**
+   * Tab for Messages Settings
+   */
+  MESSAGES = 'messages',
+  /**
    * Tab for Beta Features
    */
   BETA = 'beta',
@@ -694,6 +702,21 @@ export enum LocalStorageKeys {
   FILES_TO_DELETE = 'filesToDelete',
   /** Prefix key for the last selected assistant ID by index */
   ASST_ID_PREFIX = 'assistant_id__',
+  /** Key for the last selected fork setting */
+  FORK_SETTING = 'forkSetting',
+  /** Key for remembering the last selected option, instead of manually selecting */
+  REMEMBER_FORK_OPTION = 'rememberForkOption',
+  /** Key for remembering the split at target fork option modifier */
+  FORK_SPLIT_AT_TARGET = 'splitAtTarget',
+}
+
+export enum ForkOptions {
+  /** Key for direct path option */
+  DIRECT_PATH = 'directPath',
+  /** Key for including branches */
+  INCLUDE_BRANCHES = 'includeBranches',
+  /** Key for target level fork (default) */
+  TARGET_LEVEL = '',
 }
 
 /**
