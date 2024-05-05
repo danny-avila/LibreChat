@@ -68,7 +68,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
             setActiveSetting(optionLabels.default);
           }, 175);
         }}
-        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white transition duration-300 ease-in-out hover:bg-black dark:border-gray-400 dark:bg-gray-700/95 dark:text-gray-400 hover:dark:border-gray-200 hover:dark:text-gray-200"
+        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white text-gray-700 transition duration-300 ease-in-out hover:bg-gray-200 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600 dark:hover:text-gray-100 "
         type="button"
       >
         {children}
@@ -192,7 +192,7 @@ export default function Fork({
           <Popover.Content
             side="top"
             role="menu"
-            className="bg-token-surface-primary flex min-h-[120px] min-w-[215px] flex-col gap-3 overflow-hidden rounded-lg bg-white p-2 px-3 shadow-lg dark:bg-gray-700/95"
+            className="bg-token-surface-primary flex min-h-[120px] min-w-[215px] flex-col gap-3 overflow-hidden rounded-lg bg-white p-2 px-3 shadow-lg dark:bg-gray-700"
             style={{ outline: 'none', pointerEvents: 'auto', boxSizing: 'border-box' }}
             tabIndex={-1}
             sideOffset={5}
@@ -202,7 +202,7 @@ export default function Fork({
               {localize(activeSetting)}
               <HoverCard openDelay={50}>
                 <HoverCardTrigger asChild>
-                  <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-white/50" />
+                  <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-gray-500 dark:text-white/50" />
                 </HoverCardTrigger>
                 <HoverCardPortal>
                   <HoverCardContent
