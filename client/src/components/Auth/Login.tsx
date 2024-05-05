@@ -117,9 +117,9 @@ function Login() {
   );
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-between bg-white pt-6 dark:bg-gray-900 sm:pt-0">
+    <div className="relative flex min-h-screen flex-col items-center justify-between bg-white pt-6 dark:bg-gray-900 sm:pt-0">
       <img src="/assets/maskable-icon.png" className="m-4 mt-12 h-24 w-24"></img>
-      <div className="absolute bottom-0 left-0 m-4">
+      <div className="absolute bottom-0 left-0 md:m-4">
         <ThemeSelector />
       </div>
       <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
