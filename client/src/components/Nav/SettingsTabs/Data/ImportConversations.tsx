@@ -1,15 +1,17 @@
+import { useState } from 'react';
 import { Import } from 'lucide-react';
-import { cn } from '~/utils';
 import { useUploadConversationsMutation } from '~/data-provider';
 import { useLocalize, useConversations } from '~/hooks';
-import { useState } from 'react';
 import { useToastContext } from '~/Providers';
+import { Spinner } from '~/components/svg';
+import { cn } from '~/utils';
 
 function ImportConversations() {
   const localize = useLocalize();
 
   const { showToast } = useToastContext();
   const [, setErrors] = useState<string[]>([]);
+  const [allowImport, setAllowImport] = useState(true);
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
   const { refreshConversations } = useConversations();
 
@@ -17,9 +19,11 @@ function ImportConversations() {
     onSuccess: () => {
       refreshConversations();
       showToast({ message: localize('com_ui_import_conversation_success') });
+      setAllowImport(true);
     },
     onError: (error) => {
       console.error('Error: ', error);
+      setAllowImport(true);
       setError(
         (error as { response: { data: { message?: string } } })?.response?.data?.message ??
           'An error occurred while uploading the file.',
@@ -33,6 +37,9 @@ function ImportConversations() {
         showToast({ message: localize('com_ui_import_conversation_error'), status: 'error' });
       }
     },
+    onMutate: () => {
+      setAllowImport(false);
+    },
   });
 
   const startUpload = async (file: File) => {
@@ -43,8 +50,6 @@ function ImportConversations() {
   };
 
   const handleFiles = async (_file: File) => {
-    console.log('Handling files...');
-
     /* Process files */
     try {
       await startUpload(_file);
@@ -55,7 +60,6 @@ function ImportConversations() {
   };
 
   const handleFileChange = (event) => {
-    console.log('file change');
     const file = event.target.files[0];
     if (file) {
       handleFiles(file);
@@ -67,12 +71,17 @@ function ImportConversations() {
       <span>{localize('com_ui_import_conversation_info')}</span>
       <label
         htmlFor={'import-conversations-file'}
-        className="flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium font-normal transition-colors hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
+        className="flex h-auto cursor-pointer items-center rounded bg-transparent px-2 py-3 text-xs font-medium font-normal transition-colors hover:bg-gray-100 hover:text-green-700 dark:bg-transparent dark:text-white dark:hover:bg-gray-600 dark:hover:text-green-500"
       >
-        <Import className="mr-1 flex w-[22px] items-center stroke-1" />
+        {allowImport ? (
+          <Import className="mr-1 flex h-4 w-4 items-center stroke-1" />
+        ) : (
+          <Spinner className="mr-1 w-4" />
+        )}
         <span>{localize('com_ui_import_conversation')}</span>
         <input
           id={'import-conversations-file'}
+          disabled={!allowImport}
           value=""
           type="file"
           className={cn('hidden')}

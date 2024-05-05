@@ -1,4 +1,4 @@
-import { TPreset, TDeleteConversationResponse, TDeleteConversationRequest } from '../types';
+import type * as types from '../types';
 import {
   Assistant,
   AssistantCreateParams,
@@ -8,6 +8,18 @@ import {
   AssistantDocument,
   Action,
 } from './assistants';
+
+export type MutationOptions<
+  Response,
+  Request,
+  Context = unknown,
+  Error = unknown,
+  Snapshot = void,
+> = {
+  onSuccess?: (data: Response, variables: Request, context?: Context) => void;
+  onMutate?: (variables: Request) => Snapshot | Promise<Snapshot>;
+  onError?: (error: Error, variables: Request, context?: Context, snapshot?: Snapshot) => void;
+};
 
 export type TGenTitleRequest = {
   conversationId: string;
@@ -22,27 +34,11 @@ export type PresetDeleteResponse = {
   deletedCount: number;
 };
 
-export type UpdatePresetOptions = {
-  onSuccess?: (data: TPreset, variables: TPreset, context?: unknown) => void;
-  onMutate?: (variables: TPreset) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: TPreset, context?: unknown) => void;
-};
+export type UpdatePresetOptions = MutationOptions<types.TPreset, types.TPreset>;
 
-export type DeletePresetOptions = {
-  onSuccess?: (
-    data: PresetDeleteResponse,
-    variables: TPreset | undefined,
-    context?: unknown,
-  ) => void;
-  onMutate?: (variables: TPreset | undefined) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: TPreset | undefined, context?: unknown) => void;
-};
+export type DeletePresetOptions = MutationOptions<PresetDeleteResponse, types.TPreset | undefined>;
 
-export type LogoutOptions = {
-  onSuccess?: (data: unknown, variables: undefined, context?: unknown) => void;
-  onMutate?: (variables: undefined) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: undefined, context?: unknown) => void;
-};
+export type LogoutOptions = MutationOptions<unknown, undefined>;
 
 export type AssistantAvatarVariables = {
   assistant_id: string;
@@ -59,53 +55,26 @@ export type UpdateActionVariables = {
   model: string;
 };
 
-export type UploadAssistantAvatarOptions = {
-  onSuccess?: (data: Assistant, variables: AssistantAvatarVariables, context?: unknown) => void;
-  onMutate?: (variables: AssistantAvatarVariables) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: AssistantAvatarVariables, context?: unknown) => void;
+export type UploadAssistantAvatarOptions = MutationOptions<Assistant, AssistantAvatarVariables>;
+
+export type CreateAssistantMutationOptions = MutationOptions<Assistant, AssistantCreateParams>;
+
+export type UpdateAssistantVariables = {
+  assistant_id: string;
+  data: AssistantUpdateParams;
 };
 
-export type CreateAssistantMutationOptions = {
-  onSuccess?: (data: Assistant, variables: AssistantCreateParams, context?: unknown) => void;
-  onMutate?: (variables: AssistantCreateParams) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: AssistantCreateParams, context?: unknown) => void;
-};
-
-export type UpdateAssistantMutationOptions = {
-  onSuccess?: (
-    data: Assistant,
-    variables: { assistant_id: string; data: AssistantUpdateParams },
-    context?: unknown,
-  ) => void;
-  onMutate?: (variables: {
-    assistant_id: string;
-    data: AssistantUpdateParams;
-  }) => void | Promise<unknown>;
-  onError?: (
-    error: unknown,
-    variables: { assistant_id: string; data: AssistantUpdateParams },
-    context?: unknown,
-  ) => void;
-};
+export type UpdateAssistantMutationOptions = MutationOptions<Assistant, UpdateAssistantVariables>;
 
 export type DeleteAssistantBody = { assistant_id: string; model: string };
 
-export type DeleteAssistantMutationOptions = {
-  onSuccess?: (data: void, variables: { assistant_id: string }, context?: unknown) => void;
-  onMutate?: (variables: { assistant_id: string }) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: { assistant_id: string }, context?: unknown) => void;
-};
+export type DeleteAssistantMutationOptions = MutationOptions<
+  void,
+  Pick<DeleteAssistantBody, 'assistant_id'>
+>;
 
 export type UpdateActionResponse = [AssistantDocument, Assistant, Action];
-export type UpdateActionOptions = {
-  onSuccess?: (
-    data: UpdateActionResponse,
-    variables: UpdateActionVariables,
-    context?: unknown,
-  ) => void;
-  onMutate?: (variables: UpdateActionVariables) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: UpdateActionVariables, context?: unknown) => void;
-};
+export type UpdateActionOptions = MutationOptions<UpdateActionResponse, UpdateActionVariables>;
 
 export type DeleteActionVariables = {
   assistant_id: string;
@@ -113,18 +82,11 @@ export type DeleteActionVariables = {
   model: string;
 };
 
-export type DeleteActionOptions = {
-  onSuccess?: (data: void, variables: DeleteActionVariables, context?: unknown) => void;
-  onMutate?: (variables: DeleteActionVariables) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: DeleteActionVariables, context?: unknown) => void;
-};
+export type DeleteActionOptions = MutationOptions<void, DeleteActionVariables>;
 
-export type DeleteConversationOptions = {
-  onSuccess?: (
-    data: TDeleteConversationResponse,
-    variables: TDeleteConversationRequest,
-    context?: unknown,
-  ) => void;
-  onMutate?: (variables: TDeleteConversationRequest) => void | Promise<unknown>;
-  onError?: (error: unknown, variables: TDeleteConversationRequest, context?: unknown) => void;
-};
+export type DeleteConversationOptions = MutationOptions<
+  types.TDeleteConversationResponse,
+  types.TDeleteConversationRequest
+>;
+
+export type ForkConvoOptions = MutationOptions<types.TForkConvoResponse, types.TForkConvoRequest>;
