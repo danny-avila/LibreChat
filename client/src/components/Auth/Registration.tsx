@@ -64,13 +64,13 @@ const Registration: React.FC = () => {
             validation,
           )}
           aria-invalid={!!errors[id]}
-          className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-black/10 bg-white px-2.5 pb-2.5 pt-5 text-sm text-gray-800 focus:border-green-500 focus:outline-none dark:border-white/20 dark:bg-gray-900 dark:text-white dark:focus:border-green-500"
+          className="webkit-dark-styles peer block w-full appearance-none rounded-md border border-gray-300 bg-transparent px-3.5 pb-3.5 pt-4 text-sm text-gray-900 focus:border-green-500 focus:outline-none focus:ring-0 dark:border-gray-600 dark:text-white dark:focus:border-green-500"
           placeholder=" "
           data-testid={id}
         ></input>
         <label
           htmlFor={id}
-          className="pointer-events-none absolute left-2.5 top-4 z-10 origin-[0] -translate-y-4 scale-75 transform text-sm text-gray-500 duration-100 peer-placeholder-shown:translate-y-0 peer-placeholder-shown:scale-100 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:text-green-500 dark:text-gray-200"
+          className="absolute start-1 top-2 z-10 origin-[0] -translate-y-4 scale-75 transform bg-white px-3 text-sm text-gray-500 duration-100 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-2 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-3 peer-focus:text-green-600 dark:bg-gray-900 dark:text-gray-400 peer-focus:dark:text-green-500 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
         >
           {localize(label)}
         </label>
@@ -147,9 +147,35 @@ const Registration: React.FC = () => {
     ),
   };
 
+  const privacyPolicy = startupConfig.interface?.privacyPolicy;
+  const termsOfService = startupConfig.interface?.termsOfService;
+
+  const privacyPolicyRender = privacyPolicy?.externalUrl && (
+    <a
+      className="text-sm text-green-500"
+      href={privacyPolicy.externalUrl}
+      target={privacyPolicy.openNewTab ? '_blank' : undefined}
+      rel="noreferrer"
+    >
+      {localize('com_ui_privacy_policy')}
+    </a>
+  );
+
+  const termsOfServiceRender = termsOfService?.externalUrl && (
+    <a
+      className="text-sm text-green-500"
+      href={termsOfService.externalUrl}
+      target={termsOfService.openNewTab ? '_blank' : undefined}
+      rel="noreferrer"
+    >
+      {localize('com_ui_terms_of_service')}
+    </a>
+  );
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-white pt-6 dark:bg-gray-900 sm:pt-0">
-      <div className="absolute bottom-0 left-0 m-4">
+    <div className="relative flex min-h-screen flex-col items-center justify-between bg-white pt-6 dark:bg-gray-900 sm:pt-0">
+      <img src="/assets/logo.svg" className="m-4 mt-12 h-24 w-24"></img>
+      <div className="absolute bottom-0 left-0 md:m-4">
         <ThemeSelector />
       </div>
       <div className="mt-6 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
@@ -245,7 +271,7 @@ const Registration: React.FC = () => {
           <>
             {startupConfig.emailLoginEnabled && (
               <>
-                <div className="relative mt-6 flex w-full items-center justify-center border border-t uppercase">
+                <div className="relative mt-6 flex w-full items-center justify-center border border-t border-gray-300 uppercase dark:border-gray-600">
                   <div className="absolute bg-white px-3 text-xs text-black dark:bg-gray-900 dark:text-white">
                     Or
                   </div>
@@ -258,6 +284,13 @@ const Registration: React.FC = () => {
             </div>
           </>
         )}
+      </div>
+      <div className="align-end m-4 flex justify-center gap-2">
+        {privacyPolicyRender}
+        {privacyPolicyRender && termsOfServiceRender && (
+          <div className="border-r-[1px] border-gray-300 dark:border-gray-600" />
+        )}
+        {termsOfServiceRender}
       </div>
     </div>
   );
