@@ -64,7 +64,8 @@
 - 🔍 Search all messages/conversations
 - 🔌 Plugins, including web access, image generation with DALL-E-3 and more
 - 👥 Multi-User, Secure Authentication with Moderation and Token spend tools
-- ⚙️ Configure Proxy, Reverse Proxy, Docker, & many Deployment options
+- ⚙️ Configure Proxy, Reverse Proxy, Docker, & many Deployment options:
+  - Use completely local or deploy on the cloud
 - 📖 Completely Open-Source & Built in Public
 - 🧑‍🤝‍🧑 Community-driven development, support, and feedback
 
