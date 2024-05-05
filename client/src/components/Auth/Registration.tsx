@@ -76,7 +76,7 @@ const Registration: React.FC = () => {
         </label>
       </div>
       {errors[id] && (
-        <span role="alert" className="mt-1 text-sm text-black dark:text-white">
+        <span role="alert" className="mt-1 text-sm text-red-500 dark:text-red-900">
           {String(errors[id]?.message) ?? ''}
         </span>
       )}
