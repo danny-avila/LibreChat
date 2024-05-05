@@ -1,6 +1,6 @@
 function validatePasswordReset(req, res, next) {
   const setting = process.env.ALLOW_PASSWORD_RESET?.toLowerCase();
-  if (setting === 'true' || setting === undefined) {
+  if (setting === 'true') {
     next();
   } else {
     res.status(403).send('Password reset is not allowed.');
