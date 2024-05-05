@@ -318,7 +318,7 @@ export default function Fork({
               </HoverCardTrigger>
               <OptionHover
                 side={ESide.Right}
-                description="com_ui_fork_info_start"
+                description="com_ui_fork_info_remember"
                 langCode={true}
                 sideOffset={20}
               />
