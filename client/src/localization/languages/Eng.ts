@@ -261,6 +261,7 @@ export default {
     'WARNING: Misuse of this feature can get you BANNED from using Bing! Click on \'System Message\' for full instructions and the default message if omitted, which is the \'Sydney\' preset that is considered safe.',
   com_endpoint_system_message: 'System Message',
   com_endpoint_message: 'Message',
+  com_endpoint_messages: 'Messages',
   com_endpoint_message_not_appendable: 'Edit your message or Regenerate.',
   com_endpoint_default_blank: 'default: blank',
   com_endpoint_default_false: 'default: false',

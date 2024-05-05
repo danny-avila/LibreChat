@@ -654,6 +654,10 @@ export enum SettingsTabValues {
    */
   GENERAL = 'general',
   /**
+   * Tab for Messages Settings
+   */
+  MESSAGES = 'messages',
+  /**
    * Tab for Beta Features
    */
   BETA = 'beta',

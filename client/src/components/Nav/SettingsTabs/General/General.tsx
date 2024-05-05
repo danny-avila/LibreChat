@@ -2,13 +2,10 @@ import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
 import React, { useContext, useCallback, useRef } from 'react';
-import { ThemeContext, useLocalize, useLocalStorage } from '~/hooks';
 import type { TDangerButtonProps } from '~/common';
+import { ThemeContext, useLocalize, useLocalStorage } from '~/hooks';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
 import AutoScrollSwitch from './AutoScrollSwitch';
-import SendMessageKeyEnter from './EnterToSend';
-import ShowCodeSwitch from './ShowCodeSwitch';
-import { ForkSettings } from './ForkSettings';
 import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
 import store from '~/store';
@@ -154,22 +151,14 @@ function General() {
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <LangSelector langcode={selectedLang} onChange={changeLang} />
         </div>
-
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <AutoScrollSwitch />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <SendMessageKeyEnter />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <ShowCodeSwitch />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <HideSidePanelSwitch />
         </div>
         {/* <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
         </div> */}
-        <ForkSettings />
       </div>
     </Tabs.Content>
   );
