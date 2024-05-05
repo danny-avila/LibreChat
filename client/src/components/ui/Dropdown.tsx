@@ -67,7 +67,7 @@ const Dropdown: FC<DropdownProps> = ({
           </Listbox.Button>
           <Listbox.Options
             className={cn(
-              'absolute z-50 mt-1 flex max-h-[40vh] flex-col items-center overflow-hidden rounded-md border-gray-300 bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600',
+              'absolute z-50 mt-1 flex max-h-[40vh] flex-col items-center gap-1 overflow-hidden rounded-md border border-gray-300 bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white',
               className,
             )}
             style={{ width: width ? `${width}px` : 'auto' }}
@@ -77,7 +77,7 @@ const Dropdown: FC<DropdownProps> = ({
                 key={index}
                 value={typeof item === 'string' ? item : item.value}
                 className={cn(
-                  'relative cursor-pointer select-none rounded-md border-gray-300 bg-white py-3 pl-3 pr-6 text-gray-700 hover:bg-gray-300 dark:border-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600',
+                  'relative cursor-pointer select-none rounded-sm border-gray-300 bg-white py-3 pl-3 pr-6 text-gray-700 hover:bg-gray-100 dark:border-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600',
                 )}
                 style={{ width: width ? `${width - 10}px` : 'auto' }}
                 data-theme={typeof item === 'string' ? item : (item as OptionType).value}
