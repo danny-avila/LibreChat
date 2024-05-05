@@ -109,15 +109,10 @@ function NavLinks() {
               leaveFrom="translate-y-0 opacity-100"
               leaveTo="translate-y-2 opacity-0"
             >
-              <Menu.Items className="absolute bottom-full left-0 z-20 mb-1 mt-1 w-full translate-y-0 overflow-hidden rounded-lg bg-white py-1.5 opacity-100 outline-none dark:bg-gray-800">
-                <Menu.Item as="div">
+              <Menu.Items className="absolute bottom-full left-0 z-20 mb-1 mt-1 w-full translate-y-0 overflow-hidden rounded-lg border bg-white p-1.5 opacity-100 shadow-lg outline-none dark:bg-gray-800">
+                <Menu.Item as="div" disabled={!exportable}>
                   <NavLink
-                    className={cn(
-                      'flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700',
-                      exportable
-                        ? 'cursor-pointer text-black dark:text-white'
-                        : 'cursor-not-allowed text-black/50 dark:text-white/50',
-                    )}
+                    disabled={!exportable}
                     svg={() => <Download size={16} />}
                     text={localize('com_nav_export_conversation')}
                     clickHandler={clickHandler}
@@ -126,7 +121,6 @@ function NavLinks() {
                 <div className="my-1 h-px bg-black/20 dark:bg-white/20" role="none" />
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                     svg={() => <FileText className="icon-md" />}
                     text={localize('com_nav_my_files')}
                     clickHandler={() => setShowFiles(true)}
@@ -135,7 +129,6 @@ function NavLinks() {
                 {startupConfig?.helpAndFaqURL !== '/' && (
                   <Menu.Item as="div">
                     <NavLink
-                      className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                       svg={() => <LinkIcon />}
                       text={localize('com_nav_help_faq')}
                       clickHandler={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}
@@ -144,13 +137,12 @@ function NavLinks() {
                 )}
                 <Menu.Item as="div">
                   <NavLink
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-none px-3 py-3 text-sm text-black transition-colors duration-200 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
                     svg={() => <GearIcon className="icon-md" />}
                     text={localize('com_nav_settings')}
                     clickHandler={() => setShowSettings(true)}
                   />
                 </Menu.Item>
-                <div className="my-1 h-px bg-black/20 bg-white/20" role="none" />
+                <div className="my-1 h-px bg-black/20 dark:bg-white/20" role="none" />
                 <Menu.Item as="div">
                   <Logout />
                 </Menu.Item>
