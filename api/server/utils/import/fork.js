@@ -189,13 +189,15 @@ function getMessagesUpToTargetLevel(messages, targetMessageId) {
 
   const visited = new Set();
 
-  // Initialize the first level with the root messages
   const rootMessages = parentToChildrenMap.get(Constants.NO_PARENT) || [];
-  let currentLevel = [...rootMessages];
+  let currentLevel = rootMessages.length > 0 ? [...rootMessages] : [targetMessage];
   const results = new Set(currentLevel);
 
   // Check if the target message is at the root level
-  if (currentLevel.some((msg) => msg.messageId === targetMessageId)) {
+  if (
+    currentLevel.some((msg) => msg.messageId === targetMessageId) &&
+    targetMessage.parentMessageId === Constants.NO_PARENT
+  ) {
     return Array.from(results);
   }
 

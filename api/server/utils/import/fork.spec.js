@@ -242,18 +242,16 @@ describe('getMessagesUpToTargetLevel', () => {
     expect(result).toEqual([]);
   });
 
-  // eslint-disable-next-line jest/no-commented-out-tests
-  // test('should correctly handle case with circular dependencies', async () => {
-  //   const circularMessages = [
-  //     { messageId: '40', parentMessageId: '42', text: 'Message 40' },
-  //     { messageId: '41', parentMessageId: '40', text: 'Message 41' },
-  //     { messageId: '42', parentMessageId: '41', text: 'Message 42' },
-  //   ];
-  //   console.debug('circularMessages\n', printMessageTree(circularMessages));
-  //   const result = getMessagesUpToTargetLevel(circularMessages, '40');
-  //   const mappedResult = result.map((msg) => msg.messageId);
-  //   expect(new Set(mappedResult)).toEqual(new Set(['40', '41', '42']));
-  // });
+  test('should correctly handle case with circular dependencies', async () => {
+    const circularMessages = [
+      { messageId: '40', parentMessageId: '42', text: 'Message 40' },
+      { messageId: '41', parentMessageId: '40', text: 'Message 41' },
+      { messageId: '42', parentMessageId: '41', text: 'Message 42' },
+    ];
+    const result = getMessagesUpToTargetLevel(circularMessages, '40');
+    const mappedResult = result.map((msg) => msg.messageId);
+    expect(new Set(mappedResult)).toEqual(new Set(['40', '41', '42']));
+  });
 
   test('should return all messages when all are interconnected and target is deep in hierarchy', async () => {
     const interconnectedMessages = [
