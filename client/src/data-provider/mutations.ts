@@ -136,7 +136,7 @@ export const useUploadConversationsMutation = (
   _options?: t.MutationOptions<t.TImportJobStatus, FormData>,
 ) => {
   const queryClient = useQueryClient();
-  const { onSuccess, onError } = _options || {};
+  const { onSuccess, onError, onMutate } = _options || {};
 
   // returns the job status or reason of failure
   const checkJobStatus = async (jobId) => {
@@ -183,6 +183,7 @@ export const useUploadConversationsMutation = (
       }
     }, pollInterval);
   };
+
   return useMutation<t.TImportStartResponse, unknown, FormData>({
     mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
     onSuccess: (data, variables, context) => {
@@ -214,6 +215,7 @@ export const useUploadConversationsMutation = (
         onError(err, variables, context);
       }
     },
+    onMutate,
   });
 };
 
