@@ -7,7 +7,7 @@ version: 1.0.6
 # Cache settings: Set to true to enable caching
 cache: true
 
-# Custom nterface configuration
+# Custom interface configuration
 interface:
   # Privacy policy settings
   privacyPolicy:

@@ -13,6 +13,7 @@ import {
   Spinner,
 } from '~/components/svg';
 import { useGenerationsByLatest, useLocalize, useTextToSpeech } from '~/hooks';
+import { Fork } from '~/components/Conversations';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -51,13 +52,14 @@ export default function HoverButtons({
     message?.text ?? '',
   );
 
-  const { hideEditButton, regenerateEnabled, continueSupported } = useGenerationsByLatest({
-    isEditing,
-    isSubmitting,
-    message,
-    endpoint: endpoint ?? '',
-    latestMessage,
-  });
+  const { hideEditButton, regenerateEnabled, continueSupported, forkingSupported } =
+    useGenerationsByLatest({
+      isEditing,
+      isSubmitting,
+      message,
+      endpoint: endpoint ?? '',
+      latestMessage,
+    });
   if (!conversation) {
     return null;
   }
@@ -151,6 +153,13 @@ export default function HoverButtons({
           <ContinueIcon className="h-4 w-4 hover:text-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
+      <Fork
+        isLast={isLast}
+        messageId={message.messageId}
+        conversationId={conversation.conversationId}
+        forkingSupported={forkingSupported}
+        latestMessage={latestMessage}
+      />
     </div>
   );
 }
