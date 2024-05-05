@@ -193,14 +193,14 @@ const mockMessagesComplex = [
 describe('getMessagesUpToTargetLevel', () => {
   test('should get all messages up to target level', async () => {
     const result = getMessagesUpToTargetLevel(mockMessagesComplex, '5');
-    const mappedResult = result.map((msg) => msg.text);
+    const mappedResult = result.map((msg) => msg.messageId);
     console.debug(
       '[getMessagesUpToTargetLevel] should get all messages up to target level\n',
       mappedResult,
     );
     console.debug('mockMessages\n', printMessageTree(mockMessagesComplex));
     console.debug('result\n', printMessageTree(result));
-    expect(mappedResult).toEqual(['Message 7', 'Message 8', 'Message 5', 'Message 6', 'Message 9']);
+    expect(mappedResult).toEqual(['7', '8', '5', '6', '9']);
   });
 
   test('should get all messages if target is deepest level', async () => {
@@ -221,6 +221,50 @@ describe('getMessagesUpToTargetLevel', () => {
     console.debug('mockMessages\n', printMessageTree(mockMessages));
     console.debug('result\n', printMessageTree(result));
     expect(mappedResult).toEqual(['10']);
+  });
+
+  test('should return empty array if target message ID does not exist', async () => {
+    const result = getMessagesUpToTargetLevel(mockMessagesComplex, '123');
+    expect(result).toEqual([]);
+  });
+
+  test('should return correct messages when target is a root message', async () => {
+    const result = getMessagesUpToTargetLevel(mockMessagesComplex, '7');
+    const mappedResult = result.map((msg) => msg.messageId);
+    expect(mappedResult).toEqual(['7', '8']);
+  });
+
+  test('should correctly handle single message with non-matching ID', async () => {
+    const singleMessage = [
+      { messageId: '30', parentMessageId: Constants.NO_PARENT, text: 'Message 30' },
+    ];
+    const result = getMessagesUpToTargetLevel(singleMessage, '31');
+    expect(result).toEqual([]);
+  });
+
+  // eslint-disable-next-line jest/no-commented-out-tests
+  // test('should correctly handle case with circular dependencies', async () => {
+  //   const circularMessages = [
+  //     { messageId: '40', parentMessageId: '42', text: 'Message 40' },
+  //     { messageId: '41', parentMessageId: '40', text: 'Message 41' },
+  //     { messageId: '42', parentMessageId: '41', text: 'Message 42' },
+  //   ];
+  //   console.debug('circularMessages\n', printMessageTree(circularMessages));
+  //   const result = getMessagesUpToTargetLevel(circularMessages, '40');
+  //   const mappedResult = result.map((msg) => msg.messageId);
+  //   expect(new Set(mappedResult)).toEqual(new Set(['40', '41', '42']));
+  // });
+
+  test('should return all messages when all are interconnected and target is deep in hierarchy', async () => {
+    const interconnectedMessages = [
+      { messageId: '50', parentMessageId: Constants.NO_PARENT, text: 'Root Message' },
+      { messageId: '51', parentMessageId: '50', text: 'Child Level 1' },
+      { messageId: '52', parentMessageId: '51', text: 'Child Level 2' },
+      { messageId: '53', parentMessageId: '52', text: 'Child Level 3' },
+    ];
+    const result = getMessagesUpToTargetLevel(interconnectedMessages, '53');
+    const mappedResult = result.map((msg) => msg.messageId);
+    expect(mappedResult).toEqual(['50', '51', '52', '53']);
   });
 });
 

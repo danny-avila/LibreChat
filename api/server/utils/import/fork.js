@@ -177,6 +177,8 @@ function getMessagesUpToTargetLevel(messages, targetMessageId) {
     return [];
   }
 
+  const visited = new Set();
+
   // Initialize the first level with the root messages
   const rootMessages = parentToChildrenMap.get(Constants.NO_PARENT) || [];
   let currentLevel = [...rootMessages];
@@ -192,8 +194,17 @@ function getMessagesUpToTargetLevel(messages, targetMessageId) {
   while (!targetFound && currentLevel.length > 0) {
     const nextLevel = [];
     for (const node of currentLevel) {
+      if (visited.has(node.messageId)) {
+        logger.warn('Cycle detected in message tree');
+        continue;
+      }
+      visited.add(node.messageId);
       const children = parentToChildrenMap.get(node.messageId) || [];
       for (const child of children) {
+        if (visited.has(child.messageId)) {
+          logger.warn('Cycle detected in message tree');
+          continue;
+        }
         nextLevel.push(child);
         results.add(child);
         if (child.messageId === targetMessageId) {
