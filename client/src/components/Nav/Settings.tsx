@@ -1,9 +1,10 @@
 import * as Tabs from '@radix-ui/react-tabs';
+import { MessageSquare } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
 import type { TDialogProps } from '~/common';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui';
 import { GearIcon, DataIcon, UserIcon, ExperimentIcon } from '~/components/svg';
-import { General, Beta, Data, Account } from './SettingsTabs';
+import { General, Messages, Beta, Data, Account } from './SettingsTabs';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -62,6 +63,20 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                     : 'bg-white radix-state-active:bg-gray-200',
                   isSmallScreen ? '' : 'dark:bg-gray-700',
                 )}
+                value={SettingsTabValues.MESSAGES}
+                style={{ userSelect: 'none' }}
+              >
+                <MessageSquare className="icon-sm" />
+                {localize('com_endpoint_messages')}
+              </Tabs.Trigger>
+              <Tabs.Trigger
+                className={cn(
+                  'group m-1 flex items-center justify-start gap-2 rounded-md px-2 py-1.5 text-sm text-black radix-state-active:bg-white radix-state-active:text-black dark:text-white dark:radix-state-active:bg-gray-600',
+                  isSmallScreen
+                    ? 'flex-1 flex-col items-center justify-center text-sm dark:text-gray-500 dark:radix-state-active:text-white'
+                    : 'bg-white radix-state-active:bg-gray-200',
+                  isSmallScreen ? '' : 'dark:bg-gray-700',
+                )}
                 value={SettingsTabValues.BETA}
                 style={{ userSelect: 'none' }}
               >
@@ -98,6 +113,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               </Tabs.Trigger>
             </Tabs.List>
             <General />
+            <Messages />
             <Beta />
             <Data />
             <Account />

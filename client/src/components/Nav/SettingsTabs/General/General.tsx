@@ -1,21 +1,11 @@
 import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
-import React, { useState, useContext, useCallback, useRef } from 'react';
-import { useClearConversationsMutation } from 'librechat-data-provider/react-query';
-import {
-  ThemeContext,
-  useLocalize,
-  useOnClickOutside,
-  useConversation,
-  useConversations,
-  useLocalStorage,
-} from '~/hooks';
+import React, { useContext, useCallback, useRef } from 'react';
 import type { TDangerButtonProps } from '~/common';
+import { ThemeContext, useLocalize, useLocalStorage } from '~/hooks';
 import HideSidePanelSwitch from './HideSidePanelSwitch';
 import AutoScrollSwitch from './AutoScrollSwitch';
-import SendMessageKeyEnter from './EnterToSend';
-import ShowCodeSwitch from './ShowCodeSwitch';
 import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
 import store from '~/store';
@@ -119,33 +109,11 @@ export const LangSelector = ({
 
 function General() {
   const { theme, setTheme } = useContext(ThemeContext);
-  const clearConvosMutation = useClearConversationsMutation();
-  const [confirmClear, setConfirmClear] = useState(false);
+
   const [langcode, setLangcode] = useRecoilState(store.lang);
   const [selectedLang, setSelectedLang] = useLocalStorage('selectedLang', langcode);
-  const { newConversation } = useConversation();
-  const { refreshConversations } = useConversations();
 
   const contentRef = useRef(null);
-  useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
-
-  const clearConvos = () => {
-    if (confirmClear) {
-      console.log('Clearing conversations...');
-      setConfirmClear(false);
-      clearConvosMutation.mutate(
-        {},
-        {
-          onSuccess: () => {
-            newConversation();
-            refreshConversations();
-          },
-        },
-      );
-    } else {
-      setConfirmClear(true);
-    }
-  };
 
   const changeTheme = useCallback(
     (value: string) => {
@@ -183,28 +151,14 @@ function General() {
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <LangSelector langcode={selectedLang} onChange={changeLang} />
         </div>
-
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <AutoScrollSwitch />
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <SendMessageKeyEnter />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <ShowCodeSwitch />
-        </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
           <HideSidePanelSwitch />
         </div>
-        {/* Clear Chats should be last */}
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
-          <ClearChatsButton
-            confirmClear={confirmClear}
-            onClick={clearConvos}
-            showText={true}
-            mutation={clearConvosMutation}
-          />
-        </div>
+        {/* <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        </div> */}
       </div>
     </Tabs.Content>
   );

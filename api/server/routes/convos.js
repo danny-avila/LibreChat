@@ -6,6 +6,7 @@ const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models
 const { IMPORT_CONVERSATION_JOB_NAME } = require('~/server/utils/import/jobDefinition');
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { forkConversation } = require('~/server/utils/import/fork');
 const { createImportLimiters } = require('~/server/middleware');
 const jobScheduler = require('~/server/utils/jobScheduler');
 const getLogStores = require('~/cache/getLogStores');
@@ -130,6 +131,35 @@ router.post(
     }
   },
 );
+
+/**
+ * POST /fork
+ * This route handles forking a conversation based on the TForkConvoRequest and responds with TForkConvoResponse.
+ * @route POST /fork
+ * @param {express.Request<{}, TForkConvoResponse, TForkConvoRequest>} req - Express request object.
+ * @param {express.Response<TForkConvoResponse>} res - Express response object.
+ * @returns {Promise<void>} - The response after forking the conversation.
+ */
+router.post('/fork', async (req, res) => {
+  try {
+    /** @type {TForkConvoRequest} */
+    const { conversationId, messageId, option, splitAtTarget, latestMessageId } = req.body;
+    const result = await forkConversation({
+      requestUserId: req.user.id,
+      originalConvoId: conversationId,
+      targetMessageId: messageId,
+      latestMessageId,
+      records: true,
+      splitAtTarget,
+      option,
+    });
+
+    res.json(result);
+  } catch (error) {
+    logger.error('Error forking conversation', error);
+    res.status(500).send('Error forking conversation');
+  }
+});
 
 // Get the status of an import job for polling
 router.get('/import/jobs/:jobId', async (req, res) => {
