@@ -239,6 +239,55 @@ describe('getAllMessagesUpToParent', () => {
     { messageId: '20', parentMessageId: '19', text: 'Message 20' },
   ];
 
+  test('should handle empty message list', async () => {
+    const result = getAllMessagesUpToParent([], '10');
+    expect(result).toEqual([]);
+  });
+
+  test('should handle target message not found', async () => {
+    const result = getAllMessagesUpToParent(mockMessages, 'invalid-id');
+    expect(result).toEqual([]);
+  });
+
+  test('should handle single level tree (no parents)', async () => {
+    const result = getAllMessagesUpToParent(
+      [
+        { messageId: '11', parentMessageId: Constants.NO_PARENT, text: 'Message 11' },
+        { messageId: '12', parentMessageId: Constants.NO_PARENT, text: 'Message 12' },
+      ],
+      '11',
+    );
+    const mappedResult = result.map((msg) => msg.messageId);
+    expect(mappedResult).toEqual(['11']);
+  });
+
+  test('should correctly retrieve messages in a deeply nested structure', async () => {
+    const result = getAllMessagesUpToParent(mockMessages, '20');
+    const mappedResult = result.map((msg) => msg.messageId);
+    expect(mappedResult).toContain('11');
+    expect(mappedResult).toContain('13');
+    expect(mappedResult).toContain('16');
+    expect(mappedResult).toContain('18');
+    expect(mappedResult).toContain('19');
+    expect(mappedResult).toContain('20');
+  });
+
+  test('should return only the target message if it has no parent', async () => {
+    const result = getAllMessagesUpToParent(mockMessages, '11');
+    const mappedResult = result.map((msg) => msg.messageId);
+    expect(mappedResult).toEqual(['11']);
+  });
+
+  test('should handle messages without a parent ID defined', async () => {
+    const additionalMessages = [
+      ...mockMessages,
+      { messageId: '22', text: 'Message 22' }, // No parentMessageId field
+    ];
+    const result = getAllMessagesUpToParent(additionalMessages, '22');
+    const mappedResult = result.map((msg) => msg.messageId);
+    expect(mappedResult).toEqual(['22']);
+  });
+
   test('should retrieve all messages from the target to the root (including indirect ancestors)', async () => {
     const result = getAllMessagesUpToParent(mockMessages, '18');
     const mappedResult = result.map((msg) => msg.messageId);

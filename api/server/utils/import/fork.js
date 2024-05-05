@@ -125,10 +125,6 @@ async function forkConversation({
  * @returns {TMessage[]} The list of messages up to the root from the target message.
  */
 function getAllMessagesUpToParent(messages, targetMessageId) {
-  if (messages.length === 1 && messages[0] && messages[0].messageId === targetMessageId) {
-    return messages;
-  }
-
   const targetMessage = messages.find((msg) => msg.messageId === targetMessageId);
   if (!targetMessage) {
     return [];
@@ -140,7 +136,8 @@ function getAllMessagesUpToParent(messages, targetMessageId) {
   // Traverse up to root to capture the path
   while (current) {
     pathToRoot.add(current.messageId);
-    current = messages.find((msg) => msg.messageId === current.parentMessageId);
+    const currentParentId = current.parentMessageId ?? Constants.NO_PARENT;
+    current = messages.find((msg) => msg.messageId === currentParentId);
   }
 
   // Include all messages that are in the path or whose parent is in the path
@@ -148,7 +145,8 @@ function getAllMessagesUpToParent(messages, targetMessageId) {
   return messages.filter(
     (msg) =>
       (pathToRoot.has(msg.messageId) && msg.messageId !== targetMessageId) ||
-      (pathToRoot.has(msg.parentMessageId) && msg.parentMessageId !== targetMessageId),
+      (pathToRoot.has(msg.parentMessageId) && msg.parentMessageId !== targetMessageId) ||
+      msg.messageId === targetMessageId,
   );
 }
 
