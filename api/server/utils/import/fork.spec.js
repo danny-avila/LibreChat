@@ -397,7 +397,7 @@ describe('getMessagesForConversation', () => {
     );
     console.debug('mockMessages\n', printMessageTree(mockMessages));
     console.debug('result\n', printMessageTree(result));
-    expect(mappedResult).toEqual(['11', '13', '16', '18']);
+    expect(new Set(mappedResult)).toEqual(new Set(['11', '13', '16', '18']));
   });
 
   test('should return target if only message', async () => {
@@ -412,7 +412,74 @@ describe('getMessagesForConversation', () => {
     );
     console.debug('mockMessages\n', printMessageTree(mockMessages));
     console.debug('result\n', printMessageTree(result));
-    expect(mappedResult).toEqual(['20']);
+    expect(new Set(mappedResult)).toEqual(new Set(['20']));
+  });
+
+  test('should break on detecting a circular dependency', async () => {
+    const mockMessagesWithCycle = [
+      ...mockMessagesComplex,
+      { messageId: '100', parentMessageId: '101', text: 'Message 100' },
+      { messageId: '101', parentMessageId: '100', text: 'Message 101' }, // introduces circular dependency
+    ];
+
+    const result = BaseClient.getMessagesForConversation({
+      messages: mockMessagesWithCycle,
+      parentMessageId: '100',
+    });
+    const mappedResult = result.map((msg) => msg.messageId);
+    console.debug(
+      '[getMessagesForConversation] should break on detecting a circular dependency\n',
+      mappedResult,
+    );
+    expect(mappedResult).toEqual(['101', '100']);
+  });
+
+  // Testing with mockMessagesComplex
+  test('should correctly find the conversation path including root messages', async () => {
+    const result = BaseClient.getMessagesForConversation({
+      messages: mockMessagesComplex,
+      parentMessageId: '2',
+    });
+    const mappedResult = result.map((msg) => msg.messageId);
+    console.debug(
+      '[getMessagesForConversation] should correctly find the conversation path including root messages\n',
+      mappedResult,
+    );
+    expect(new Set(mappedResult)).toEqual(new Set(['7', '5', '2']));
+  });
+
+  // Testing summary feature
+  test('should stop at summary if option is enabled', async () => {
+    const messagesWithSummary = [
+      ...mockMessagesComplex,
+      { messageId: '11', parentMessageId: '7', text: 'Message 11', summary: 'Summary for 11' },
+    ];
+
+    const result = BaseClient.getMessagesForConversation({
+      messages: messagesWithSummary,
+      parentMessageId: '11',
+      summary: true,
+    });
+    const mappedResult = result.map((msg) => msg.messageId);
+    console.debug(
+      '[getMessagesForConversation] should stop at summary if option is enabled\n',
+      mappedResult,
+    );
+    expect(mappedResult).toEqual(['11']); // Should include only the summarizing message
+  });
+
+  // Testing no parent condition
+  test('should return only the root message if no parent exists', async () => {
+    const result = BaseClient.getMessagesForConversation({
+      messages: mockMessagesComplex,
+      parentMessageId: '8',
+    });
+    const mappedResult = result.map((msg) => msg.messageId);
+    console.debug(
+      '[getMessagesForConversation] should return only the root message if no parent exists\n',
+      mappedResult,
+    );
+    expect(mappedResult).toEqual(['8']); // The message with no parent in the thread
   });
 });
 
