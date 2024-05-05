@@ -1,13 +1,21 @@
 import { useState, useRef } from 'react';
-import { GitFork } from 'lucide-react';
 import { useRecoilState } from 'recoil';
+import { GitFork, InfoIcon } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import { ForkOptions, TMessage } from 'librechat-data-provider';
 import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
+import {
+  Checkbox,
+  HoverCard,
+  HoverCardTrigger,
+  HoverCardPortal,
+  HoverCardContent,
+} from '~/components/ui';
+import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
 import { useToastContext, useChatContext } from '~/Providers';
 import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
-import { Checkbox } from '~/components/ui';
+import { ESide } from '~/common';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -16,7 +24,11 @@ interface PopoverButtonProps {
   setting: string;
   onClick: (setting: string) => void;
   setActiveSetting: React.Dispatch<React.SetStateAction<string>>;
+  sideOffset?: number;
   timeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
+  hoverInfo?: React.ReactNode;
+  hoverTitle?: React.ReactNode;
+  hoverDescription?: React.ReactNode;
 }
 
 const optionLabels = {
@@ -31,31 +43,54 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
   setting,
   onClick,
   setActiveSetting,
+  sideOffset = 30,
   timeoutRef,
+  hoverInfo,
+  hoverTitle,
+  hoverDescription,
 }) => {
   return (
-    <Popover.Close
-      onClick={() => onClick(setting)}
-      onMouseEnter={() => {
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-          timeoutRef.current = null;
-        }
-        setActiveSetting(optionLabels[setting]);
-      }}
-      onMouseLeave={() => {
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-        }
-        timeoutRef.current = setTimeout(() => {
-          setActiveSetting(optionLabels.default);
-        }, 175);
-      }}
-      className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white transition duration-300 ease-in-out hover:bg-black dark:border-gray-400 dark:bg-gray-700/95 dark:text-gray-400 hover:dark:border-gray-200 hover:dark:text-gray-200"
-      type="button"
-    >
-      {children}
-    </Popover.Close>
+    <HoverCard openDelay={200}>
+      <Popover.Close
+        onClick={() => onClick(setting)}
+        onMouseEnter={() => {
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+          }
+          setActiveSetting(optionLabels[setting]);
+        }}
+        onMouseLeave={() => {
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+          }
+          timeoutRef.current = setTimeout(() => {
+            setActiveSetting(optionLabels.default);
+          }, 175);
+        }}
+        className="mx-1 max-w-14 flex-1 rounded-lg border-2 bg-white transition duration-300 ease-in-out hover:bg-black dark:border-gray-400 dark:bg-gray-700/95 dark:text-gray-400 hover:dark:border-gray-200 hover:dark:text-gray-200"
+        type="button"
+      >
+        {children}
+      </Popover.Close>
+      {(hoverInfo || hoverTitle || hoverDescription) && (
+        <HoverCardPortal>
+          <HoverCardContent
+            side="right"
+            className="z-[999] w-80 dark:bg-gray-700"
+            sideOffset={sideOffset}
+          >
+            <div className="space-y-2">
+              <p className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-300">
+                {hoverInfo && hoverInfo}
+                {hoverTitle && <span className="flex flex-wrap gap-1 font-bold">{hoverTitle}</span>}
+                {hoverDescription && hoverDescription}
+              </p>
+            </div>
+          </HoverCardContent>
+        </HoverCardPortal>
+      )}
+    </HoverCard>
   );
 };
 
@@ -157,7 +192,7 @@ export default function Fork({
           <Popover.Content
             side="top"
             role="menu"
-            className="bg-token-surface-primary flex min-h-[120px] flex-col gap-3 overflow-hidden rounded-lg bg-white p-2 px-3 shadow-lg dark:bg-gray-700/95"
+            className="bg-token-surface-primary flex min-h-[120px] min-w-[215px] flex-col gap-3 overflow-hidden rounded-lg bg-white p-2 px-3 shadow-lg dark:bg-gray-700/95"
             style={{ outline: 'none', pointerEvents: 'auto', boxSizing: 'border-box' }}
             tabIndex={-1}
             sideOffset={5}
@@ -165,57 +200,129 @@ export default function Fork({
           >
             <div className="flex h-6 w-full items-center justify-center text-sm dark:text-gray-200">
               {localize(activeSetting)}
+              <HoverCard openDelay={50}>
+                <HoverCardTrigger asChild>
+                  <InfoIcon className="ml-auto flex h-4 w-4 gap-2 text-white/50" />
+                </HoverCardTrigger>
+                <HoverCardPortal>
+                  <HoverCardContent
+                    side="right"
+                    className="z-[999] w-80 dark:bg-gray-700"
+                    sideOffset={19}
+                  >
+                    <div className="flex flex-col gap-2 space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                      <span>{localize('com_ui_fork_info_1')}</span>
+                      <span>{localize('com_ui_fork_info_2')}</span>
+                      <span>
+                        {localize('com_ui_fork_info_3', localize('com_ui_fork_split_target'))}
+                      </span>
+                    </div>
+                  </HoverCardContent>
+                </HoverCardPortal>
+              </HoverCard>
             </div>
             <div className="flex h-full w-full items-center justify-center gap-1">
               <PopoverButton
+                sideOffset={155}
                 setActiveSetting={setActiveSetting}
                 timeoutRef={timeoutRef}
                 onClick={onClick}
                 setting={ForkOptions.DIRECT_PATH}
+                hoverTitle={
+                  <>
+                    <GitCommit className="h-5 w-5 rotate-90" />
+                    {localize(optionLabels[ForkOptions.DIRECT_PATH])}
+                  </>
+                }
+                hoverDescription={localize('com_ui_fork_info_visible')}
               >
-                <GitCommit className="h-full w-full rotate-90 p-2" />
+                <HoverCardTrigger asChild>
+                  <GitCommit className="h-full w-full rotate-90 p-2" />
+                </HoverCardTrigger>
               </PopoverButton>
               <PopoverButton
+                sideOffset={90}
                 setActiveSetting={setActiveSetting}
                 timeoutRef={timeoutRef}
                 onClick={onClick}
                 setting={ForkOptions.INCLUDE_BRANCHES}
+                hoverTitle={
+                  <>
+                    <GitBranchPlus className="h-4 w-4 rotate-180" />
+                    {localize(optionLabels[ForkOptions.INCLUDE_BRANCHES])}
+                  </>
+                }
+                hoverDescription={localize('com_ui_fork_info_branches')}
               >
-                <GitBranchPlus className="h-full w-full rotate-180 p-2" />
+                <HoverCardTrigger asChild>
+                  <GitBranchPlus className="h-full w-full rotate-180 p-2" />
+                </HoverCardTrigger>
               </PopoverButton>
               <PopoverButton
+                sideOffset={25}
                 setActiveSetting={setActiveSetting}
                 timeoutRef={timeoutRef}
                 onClick={onClick}
                 setting={ForkOptions.TARGET_LEVEL}
+                hoverTitle={
+                  <>
+                    <ListTree className="h-5 w-5" />
+                    {`${localize(optionLabels[ForkOptions.TARGET_LEVEL])} (${localize(
+                      'com_endpoint_default',
+                    )})`}
+                  </>
+                }
+                hoverDescription={localize('com_ui_fork_info_target')}
               >
-                <ListTree className="h-full w-full p-2" />
+                <HoverCardTrigger asChild>
+                  <ListTree className="h-full w-full p-2" />
+                </HoverCardTrigger>
               </PopoverButton>
             </div>
-            <div className="flex h-6 w-full items-center justify-start text-xs dark:text-gray-300">
-              <Checkbox
-                checked={splitAtTarget}
-                onCheckedChange={(checked: boolean) => setSplitAtTarget(checked)}
-                className="m-2 transition duration-300 ease-in-out"
+            <HoverCard openDelay={50}>
+              <HoverCardTrigger asChild>
+                <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300">
+                  <Checkbox
+                    checked={splitAtTarget}
+                    onCheckedChange={(checked: boolean) => setSplitAtTarget(checked)}
+                    className="m-2 transition duration-300 ease-in-out"
+                  />
+                  {localize('com_ui_fork_split_target')}
+                </div>
+              </HoverCardTrigger>
+              <OptionHover
+                side={ESide.Right}
+                description="com_ui_fork_info_start"
+                langCode={true}
+                sideOffset={20}
               />
-              {localize('com_ui_fork_split_target')}
-            </div>
-            <div className="flex h-6 w-full items-center justify-start text-xs dark:text-gray-300">
-              <Checkbox
-                checked={remember}
-                onCheckedChange={(checked: boolean) => {
-                  if (checked) {
-                    showToast({
-                      message: localize('com_ui_fork_remember_checked'),
-                      status: 'info',
-                    });
-                  }
-                  setRemember(checked);
-                }}
-                className="m-2 transition duration-300 ease-in-out"
+            </HoverCard>
+            <HoverCard openDelay={50}>
+              <HoverCardTrigger asChild>
+                <div className="flex h-6 w-full items-center justify-start text-sm dark:text-gray-300">
+                  <Checkbox
+                    checked={remember}
+                    onCheckedChange={(checked: boolean) => {
+                      if (checked) {
+                        showToast({
+                          message: localize('com_ui_fork_remember_checked'),
+                          status: 'info',
+                        });
+                      }
+                      setRemember(checked);
+                    }}
+                    className="m-2 transition duration-300 ease-in-out"
+                  />
+                  {localize('com_ui_fork_remember')}
+                </div>
+              </HoverCardTrigger>
+              <OptionHover
+                side={ESide.Right}
+                description="com_ui_fork_info_start"
+                langCode={true}
+                sideOffset={20}
               />
-              {localize('com_ui_fork_remember')}
-            </div>
+            </HoverCard>
           </Popover.Content>
         </div>
       </Popover.Portal>
