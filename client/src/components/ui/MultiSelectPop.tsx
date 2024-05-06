@@ -1,8 +1,8 @@
-import React from 'react';
 import { Wrench } from 'lucide-react';
 import { Root, Trigger, Content, Portal } from '@radix-ui/react-popover';
 import type { TPlugin } from 'librechat-data-provider';
 import MenuItem from '~/components/Chat/Menus/UI/MenuItem';
+import { useMultiSearch } from './MultiSearch';
 import { cn } from '~/utils/';
 
 type SelectDropDownProps = {
@@ -17,6 +17,7 @@ type SelectDropDownProps = {
   isSelected: (value: string) => boolean;
   className?: string;
   optionValueKey?: string;
+  searchPlaceholder?: string;
 };
 
 function MultiSelectPop({
@@ -29,11 +30,21 @@ function MultiSelectPop({
   containerClassName,
   isSelected,
   optionValueKey = 'value',
+  searchPlaceholder,
 }: SelectDropDownProps) {
   // const localize = useLocalize();
 
   const title = _title;
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
+
+  // Detemine if we should to convert this component into a searchable select
+  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>({
+    availableOptions: availableValues,
+    placeholder: searchPlaceholder,
+    getTextKeyOverride: (option) => (option.name || '').toUpperCase(),
+  });
+  const hasSearchRender = Boolean(searchRender);
+  const options = hasSearchRender ? filteredValues : availableValues;
 
   return (
     <Root>
@@ -43,9 +54,9 @@ function MultiSelectPop({
             <button
               data-testid="select-dropdown-button"
               className={cn(
-                'relative flex flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 dark:bg-gray-800 sm:text-sm',
+                'relative flex flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-700 dark:bg-gray-800 dark:bg-gray-800 sm:text-sm',
                 'pointer-cursor font-normal',
-                'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-black/10 dark:radix-state-open:bg-black/20',
+                'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
               )}
             >
               {' '}
@@ -68,11 +79,7 @@ function MultiSelectPop({
                       {value.map((v, i) => (
                         <div key={i} className="relative">
                           {v.icon ? (
-                            <img
-                              src={v.icon}
-                              alt={`${v} logo`}
-                              className="icon-lg rounded-sm bg-white"
-                            />
+                            <img src={v.icon} alt={`${v} logo`} className="icon-lg rounded-sm" />
                           ) : (
                             <Wrench className="icon-lg rounded-sm bg-white" />
                           )}
@@ -106,9 +113,13 @@ function MultiSelectPop({
             <Content
               side="bottom"
               align="center"
-              className="mt-2 max-h-60 min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              className={cn(
+                'mt-2 max-h-[52vh] min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white',
+                hasSearchRender && 'relative',
+              )}
             >
-              {availableValues.map((option) => {
+              {searchRender}
+              {options.map((option) => {
                 if (!option) {
                   return null;
                 }
@@ -125,7 +136,7 @@ function MultiSelectPop({
                         <img
                           src={option.icon}
                           alt={`${option.name} logo`}
-                          className="icon-sm mr-1 rounded-sm bg-white bg-cover dark:bg-gray-800"
+                          className="icon-sm mr-1 rounded-sm bg-cover"
                         />
                       ) : (
                         <Wrench className="icon-sm mr-1 rounded-sm bg-white bg-cover dark:bg-gray-800" />

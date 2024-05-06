@@ -3,6 +3,7 @@ const defaultRate = 6;
 
 /**
  * Mapping of model token sizes to their respective multipliers for prompt and completion.
+ * The rates are 1 USD per 1M tokens.
  * @type {Object.<string, {prompt: number, completion: number}>}
  */
 const tokenValues = {
@@ -19,6 +20,15 @@ const tokenValues = {
   'claude-2.1': { prompt: 8, completion: 24 },
   'claude-2': { prompt: 8, completion: 24 },
   'claude-': { prompt: 0.8, completion: 2.4 },
+  'command-r-plus': { prompt: 3, completion: 15 },
+  'command-r': { prompt: 0.5, completion: 1.5 },
+  /* cohere doesn't have rates for the older command models,
+  so this was from https://artificialanalysis.ai/models/command-light/providers */
+  command: { prompt: 0.38, completion: 0.38 },
+  // 'gemini-1.5': { prompt: 7, completion: 21 }, // May 2nd, 2024 pricing
+  // 'gemini': { prompt: 0.5, completion: 1.5 }, // May 2nd, 2024 pricing
+  'gemini-1.5': { prompt: 0, completion: 0 }, // currently free
+  gemini: { prompt: 0, completion: 0 }, // currently free
 };
 
 /**
@@ -42,6 +52,8 @@ const getValueKey = (model, endpoint) => {
     return 'gpt-3.5-turbo-1106';
   } else if (modelName.includes('gpt-3.5')) {
     return '4k';
+  } else if (modelName.includes('gpt-4-vision')) {
+    return 'gpt-4-1106';
   } else if (modelName.includes('gpt-4-1106')) {
     return 'gpt-4-1106';
   } else if (modelName.includes('gpt-4-0125')) {

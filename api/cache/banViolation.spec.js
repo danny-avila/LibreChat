@@ -6,6 +6,7 @@ jest.mock('../models/Session');
 jest.mock('./getLogStores', () => {
   return jest.fn().mockImplementation(() => {
     const EventEmitter = require('events');
+    const { CacheKeys } = require('librechat-data-provider');
     const math = require('../server/utils/math');
     const mockGet = jest.fn();
     const mockSet = jest.fn();
@@ -33,7 +34,7 @@ jest.mock('./getLogStores', () => {
     }
 
     return new KeyvMongo('', {
-      namespace: 'bans',
+      namespace: CacheKeys.BANS,
       ttl: math(process.env.BAN_DURATION, 7200000),
     });
   });

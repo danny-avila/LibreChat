@@ -50,7 +50,7 @@ const SaveAsPresetDialog = ({ open, onOpenChange, preset }: TEditPresetProps) =>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTemplate
         title={localize('com_endpoint_save_as_preset')}
-        className="w-11/12 sm:w-2/4"
+        className="w-11/12 sm:w-1/4"
         showCloseButton={false}
         main={
           <div className="flex w-full flex-col items-center gap-2">

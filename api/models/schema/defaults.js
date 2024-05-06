@@ -70,8 +70,12 @@ const conversationPreset = {
     type: String,
   },
   file_ids: { type: [{ type: String }], default: undefined },
-  // vision
+  // deprecated
   resendImages: {
+    type: Boolean,
+  },
+  // files
+  resendFiles: {
     type: Boolean,
   },
   imageDetail: {
@@ -84,6 +88,18 @@ const conversationPreset = {
   instructions: {
     type: String,
   },
+  stop: { type: [{ type: String }], default: undefined },
+  /* UI Components */
+  iconURL: {
+    type: String,
+  },
+  greeting: {
+    type: String,
+  },
+  spec: {
+    type: String,
+  },
+  tools: { type: [{ type: String }], default: undefined },
 };
 
 const agentOptions = {

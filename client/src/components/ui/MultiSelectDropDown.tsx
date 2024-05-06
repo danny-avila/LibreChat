@@ -3,6 +3,7 @@ import { Listbox, Transition } from '@headlessui/react';
 import { Wrench, ArrowRight } from 'lucide-react';
 import { CheckMark } from '~/components/svg';
 import useOnClickOutside from '~/hooks/useOnClickOutside';
+import { useMultiSearch } from './MultiSearch';
 import { cn } from '~/utils/';
 import type { TPlugin } from 'librechat-data-provider';
 
@@ -15,8 +16,11 @@ export type TMultiSelectDropDownProps = {
   showAbove?: boolean;
   showLabel?: boolean;
   containerClassName?: string;
+  optionsClassName?: string;
+  labelClassName?: string;
   isSelected: (value: string) => boolean;
   className?: string;
+  searchPlaceholder?: string;
   optionValueKey?: string;
 };
 
@@ -29,8 +33,11 @@ function MultiSelectDropDown({
   showAbove = false,
   showLabel = true,
   containerClassName,
+  optionsClassName = '',
+  labelClassName = '',
   isSelected,
   className,
+  searchPlaceholder,
   optionValueKey = 'value',
 }: TMultiSelectDropDownProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -43,6 +50,17 @@ function MultiSelectDropDown({
     setIsOpen(true);
   };
 
+  // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
+  // reset once the component is unmounted (as per a normal search)
+  const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>({
+    availableOptions: availableValues,
+    placeholder: searchPlaceholder,
+    getTextKeyOverride: (option) => (option.name || '').toUpperCase(),
+  });
+
+  const hasSearchRender = Boolean(searchRender);
+  const options = hasSearchRender ? filteredValues : availableValues;
+
   const transitionProps = { className: 'top-full mt-3' };
   if (showAbove) {
     transitionProps.className = 'bottom-full mb-3';
@@ -52,12 +70,13 @@ function MultiSelectDropDown({
     <div className={cn('flex items-center justify-center gap-2', containerClassName ?? '')}>
       <div className="relative w-full">
         {/* the function typing is correct but there's still an issue here */}
+        {/* @ts-ignore */}
         <Listbox value={value} onChange={handleSelect} disabled={disabled}>
           {() => (
             <>
               <Listbox.Button
                 className={cn(
-                  'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
+                  'relative flex w-full cursor-default flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-600 dark:border-white/20 dark:bg-gray-800 sm:text-sm',
                   className ?? '',
                 )}
                 id={excludeIds[0]}
@@ -67,7 +86,7 @@ function MultiSelectDropDown({
                 {' '}
                 {showLabel && (
                   <Listbox.Label
-                    className="block text-xs text-gray-700 dark:text-gray-500"
+                    className={cn('block text-xs text-gray-700 dark:text-gray-500', labelClassName)}
                     id={excludeIds[1]}
                     data-headlessui-state=""
                   >
@@ -136,9 +155,13 @@ function MultiSelectDropDown({
               >
                 <Listbox.Options
                   ref={menuRef}
-                  className="absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]"
+                  className={cn(
+                    'absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded bg-white text-base text-xs ring-1 ring-black/10 focus:outline-none dark:bg-gray-800 dark:ring-white/20 dark:last:border-0 md:w-[100%]',
+                    optionsClassName,
+                  )}
                 >
-                  {availableValues.map((option, i: number) => {
+                  {searchRender}
+                  {options.map((option, i: number) => {
                     if (!option) {
                       return null;
                     }

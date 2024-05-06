@@ -8,8 +8,8 @@ weight: 2
 
   * ⚙️ [Environment Variables](./dotenv.md)
   * 🖥️ [Custom Config](./custom_config.md)
-    * 🅰️ [Azure OpenAI](./azure_openai.md)
-    * ✅ [Compatible AI Endpoints](./ai_endpoints.md) 
+  * 🅰️ [Azure OpenAI](./azure_openai.md)
+  * ✅ [Compatible AI Endpoints](./ai_endpoints.md) 
   * 🐋 [Docker Compose Override](./docker_override.md) 
 ---
   * 🤖 [AI Setup](./ai_setup.md)

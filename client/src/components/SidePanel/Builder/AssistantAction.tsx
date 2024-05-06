@@ -15,7 +15,7 @@ export default function AssistantAction({
         className="border-token-border-medium flex w-full rounded-lg border text-sm hover:cursor-pointer"
       >
         <div
-          className="h-9 grow px-3 py-2"
+          className="h-9 grow whitespace-nowrap px-3 py-2"
           style={{ textOverflow: 'ellipsis', wordBreak: 'break-all', overflow: 'hidden' }}
         >
           {action.metadata.domain}

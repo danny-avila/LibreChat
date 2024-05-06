@@ -1,20 +1,21 @@
-import { useRecoilState } from 'recoil';
-import { useState, useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import { ChevronDownIcon } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
 import type { TPlugin } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import {
+  Button,
+  MultiSelectPop,
   SelectDropDown,
   SelectDropDownPop,
   MultiSelectDropDown,
-  MultiSelectPop,
-  Button,
 } from '~/components/ui';
-import { useSetIndexOptions, useAuthContext, useMediaQuery } from '~/hooks';
-import { cn, cardStyle } from '~/utils/';
+import { useSetIndexOptions, useAuthContext, useMediaQuery, useLocalize } from '~/hooks';
+import { cn, cardStyle, selectPlugins, processPlugins } from '~/utils';
 import store from '~/store';
 
+<<<<<<< HEAD
 const pluginStore: TPlugin = {
   name: 'Plugin store',
   pluginKey: 'pluginStore',
@@ -29,6 +30,8 @@ const pluginStore: TPlugin = {
 const whitelist = ['web_search', 'dalle'];
 
 
+=======
+>>>>>>> 2aec4a6250b8e8efe0c199851e255a1ca4f6e194
 export default function PluginsByIndex({
   conversation,
   setOption,
@@ -36,12 +39,17 @@ export default function PluginsByIndex({
   showAbove,
   popover = false,
 }: TModelSelectProps) {
-  const { data: allPlugins } = useAvailablePluginsQuery();
-  const [visible, setVisibility] = useState<boolean>(true);
-  const [availableTools, setAvailableTools] = useRecoilState(store.availableTools);
-  const { checkPluginSelection, setTools } = useSetIndexOptions();
+  const localize = useLocalize();
   const { user } = useAuthContext();
+  const [visible, setVisibility] = useState<boolean>(true);
   const isSmallScreen = useMediaQuery('(max-width: 640px)');
+  const availableTools = useRecoilValue(store.availableTools);
+  const { checkPluginSelection, setTools } = useSetIndexOptions();
+
+  const { data: allPlugins } = useAvailablePluginsQuery({
+    enabled: !!user?.plugins,
+    select: selectPlugins,
+  });
 
   useEffect(() => {
     if (isSmallScreen) {
@@ -49,39 +57,20 @@ export default function PluginsByIndex({
     }
   }, [isSmallScreen]);
 
-  useEffect(() => {
-    if (!user) {
-      return;
+  const conversationTools: TPlugin[] = useMemo(() => {
+    if (!conversation?.tools) {
+      return [];
+    }
+    return processPlugins(conversation.tools, allPlugins?.map);
+  }, [conversation, allPlugins]);
+
+  const availablePlugins = useMemo(() => {
+    if (!availableTools) {
+      return [];
     }
 
-    if (!allPlugins) {
-      return;
-    }
-
-    if (!user.plugins || user.plugins.length === 0) {
-      setAvailableTools([pluginStore]);
-      return;
-    }
-
-    const tools = [...user.plugins]
-      .map((el) => allPlugins.find((plugin: TPlugin) => plugin.pluginKey === el))
-      .filter((el): el is TPlugin => el !== undefined);
-
-    /* Filter Last Selected Tools */
-    const localStorageItem = localStorage.getItem('lastSelectedTools');
-    if (!localStorageItem) {
-      return setAvailableTools([...tools, pluginStore]);
-    }
-    const lastSelectedTools = JSON.parse(localStorageItem);
-    const filteredTools = lastSelectedTools.filter((tool: TPlugin) =>
-      tools.some((existingTool) => existingTool.pluginKey === tool.pluginKey),
-    );
-    localStorage.setItem('lastSelectedTools', JSON.stringify(filteredTools));
-
-    setAvailableTools([...tools, pluginStore]);
-    // setAvailableTools is a recoil state setter, so it's safe to use it in useEffect
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allPlugins, user]);
+    return Object.values(availableTools);
+  }, [availableTools]);
 
   if (!conversation) {
     return null;
@@ -96,7 +85,7 @@ export default function PluginsByIndex({
         type="button"
         className={cn(
           cardStyle,
-          'min-w-4 z-40 flex h-[40px] flex-none items-center justify-center px-3 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
+          'z-40 flex h-[40px] min-w-4 flex-none items-center justify-center px-3 hover:bg-white focus:ring-0 focus:ring-offset-0 dark:hover:bg-gray-700',
         )}
         onClick={() => setVisibility((prev) => !prev)}
       >
@@ -115,15 +104,20 @@ export default function PluginsByIndex({
             availableValues={models}
             showAbove={showAbove}
             showLabel={false}
+            className={cn(
+              cardStyle,
+              'z-50 flex h-[40px] w-48 min-w-48 flex-none items-center justify-center px-4 hover:cursor-pointer',
+            )}
           />
           <PluginsMenu
-            value={conversation.tools || []}
-            isSelected={checkPluginSelection}
-            setSelected={setTools}
-            availableValues={availableTools.filter((el) => whitelist.includes(el.pluginKey))}
-            optionValueKey="pluginKey"
             showAbove={false}
             showLabel={false}
+            setSelected={setTools}
+            value={conversationTools}
+            optionValueKey="pluginKey"
+            availableValues={availableTools.filter((el) => whitelist.includes(el.pluginKey))}
+            isSelected={checkPluginSelection}
+            searchPlaceholder={localize('com_ui_select_search_plugin')}
           />
         </>
       )}

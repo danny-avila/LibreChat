@@ -1,13 +1,16 @@
 import { Search, X } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
-import { useState, useEffect } from 'react';
-import {
-  useAvailablePluginsQuery,
-  useUpdateUserPluginsMutation,
-} from 'librechat-data-provider/react-query';
-import type { TError, TPluginAction } from 'librechat-data-provider';
+import { useState, useEffect, useCallback } from 'react';
+import { useAvailablePluginsQuery } from 'librechat-data-provider/react-query';
+import type { TError, TPlugin, TPluginAction } from 'librechat-data-provider';
 import type { TPluginStoreDialogProps } from '~/common/types';
-import { useLocalize, usePluginDialogHelpers, useSetIndexOptions, useAuthContext } from '~/hooks';
+import {
+  usePluginDialogHelpers,
+  useSetIndexOptions,
+  usePluginInstall,
+  useAuthContext,
+  useLocalize,
+} from '~/hooks';
 import PluginPagination from './PluginPagination';
 import PluginStoreItem from './PluginStoreItem';
 import PluginAuthForm from './PluginAuthForm';
@@ -16,7 +19,6 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { data: availablePlugins } = useAvailablePluginsQuery();
-  const updateUserPlugins = useUpdateUserPluginsMutation();
   const { setTools } = useSetIndexOptions();
 
   const [userPlugins, setUserPlugins] = useState<string[]>([]);
@@ -44,50 +46,49 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
     setSelectedPlugin,
   } = usePluginDialogHelpers();
 
-  const handleInstallError = (error: TError) => {
-    setError(true);
-    if (error.response?.data?.message) {
-      setErrorMessage(error.response?.data?.message);
-    }
-    setTimeout(() => {
-      setError(false);
-      setErrorMessage('');
-    }, 5000);
-  };
+  const handleInstallError = useCallback(
+    (error: TError) => {
+      setError(true);
+      if (error.response?.data?.message) {
+        setErrorMessage(error.response?.data?.message);
+      }
+      setTimeout(() => {
+        setError(false);
+        setErrorMessage('');
+      }, 5000);
+    },
+    [setError, setErrorMessage],
+  );
 
-  const handleInstall = (pluginAction: TPluginAction) => {
-    updateUserPlugins.mutate(pluginAction, {
-      onError: (error: unknown) => {
-        handleInstallError(error as TError);
-      },
-    });
+  const { installPlugin, uninstallPlugin } = usePluginInstall({
+    onInstallError: handleInstallError,
+    onUninstallError: handleInstallError,
+    onUninstallSuccess: (_data, variables) => {
+      setTools(variables.pluginKey, true);
+    },
+  });
+
+  const handleInstall = (pluginAction: TPluginAction, plugin?: TPlugin) => {
+    if (!plugin) {
+      return;
+    }
+    installPlugin(pluginAction, plugin);
     setShowPluginAuthForm(false);
   };
 
-  const onPluginUninstall = (plugin: string) => {
-    updateUserPlugins.mutate(
-      { pluginKey: plugin, action: 'uninstall', auth: null },
-      {
-        onError: (error: unknown) => {
-          handleInstallError(error as TError);
-        },
-        onSuccess: () => {
-          setTools(plugin, true);
-        },
-      },
-    );
-  };
-
   const onPluginInstall = (pluginKey: string) => {
-    const getAvailablePluginFromKey = availablePlugins?.find((p) => p.pluginKey === pluginKey);
-    setSelectedPlugin(getAvailablePluginFromKey);
+    const plugin = availablePlugins?.find((p) => p.pluginKey === pluginKey);
+    if (!plugin) {
+      return;
+    }
+    setSelectedPlugin(plugin);
 
-    const { authConfig, authenticated } = getAvailablePluginFromKey ?? {};
+    const { authConfig, authenticated } = plugin ?? {};
 
     if (authConfig && authConfig.length > 0 && !authenticated) {
       setShowPluginAuthForm(true);
     } else {
-      handleInstall({ pluginKey, action: 'install', auth: null });
+      handleInstall({ pluginKey, action: 'install', auth: null }, plugin);
     }
   };
 
@@ -107,10 +108,17 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
         setSearchChanged(false);
       }
     }
-
-    // Disabled due to state setters erroneously being flagged as dependencies
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availablePlugins, itemsPerPage, user, searchValue, filteredPlugins, searchChanged]);
+  }, [
+    availablePlugins,
+    itemsPerPage,
+    user,
+    searchValue,
+    filteredPlugins,
+    searchChanged,
+    setMaxPage,
+    setCurrentPage,
+    setSearchChanged,
+  ]);
 
   return (
     <Dialog
@@ -125,9 +133,9 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
       {/* The backdrop, rendered as a fixed sibling to the panel container */}
       <div className="fixed inset-0 bg-gray-600/65 transition-opacity dark:bg-black/80" />
       {/* Full-screen container to center the panel */}
-      <div className="fixed inset-0 flex p-4">
+      <div className="fixed inset-0 flex items-center justify-center p-4">
         <Dialog.Panel
-          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-800 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
+          className="relative w-full transform overflow-hidden overflow-y-auto rounded-lg bg-white text-left shadow-xl transition-all dark:bg-gray-700 max-sm:h-full sm:mx-7 sm:my-8 sm:max-w-2xl lg:max-w-5xl xl:max-w-7xl"
           style={{ minHeight: '610px' }}
         >
           <div className="flex items-center justify-between border-b-[1px] border-black/10 p-6 pb-4 dark:border-white/10">
@@ -165,24 +173,24 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
             <div className="p-4 sm:p-6 sm:pt-4">
               <PluginAuthForm
                 plugin={selectedPlugin}
-                onSubmit={(installActionData: TPluginAction) => handleInstall(installActionData)}
+                onSubmit={(action: TPluginAction) => handleInstall(action, selectedPlugin)}
               />
             </div>
           )}
           <div className="p-4 sm:p-6 sm:pt-4">
             <div className="mt-4 flex flex-col gap-4">
               <div className="flex items-center">
-                  <div class="relative flex items-center">
-                    <Search className="h-6 w-6 text-gray-500 absolute left-2" />
-                    <input
-                      type="text"
-                      value={searchValue}
-                      onChange={handleSearch}
-                      placeholder={localize('com_nav_plugin_search')}
-                      className="dark:focus:ring-offset-slate-900 rounded-md border border-gray-200 focus:border-slate-400 focus:bg-gray-50 bg-transparent shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:ring-gray-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-800 focus:dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0 flex pl-10 pr-2 py-2 focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0"
-                    />
-                  </div>
+                <div className="relative flex items-center">
+                  <Search className="absolute left-2 h-6 w-6 text-gray-500" />
+                  <input
+                    type="text"
+                    value={searchValue}
+                    onChange={handleSearch}
+                    placeholder={localize('com_nav_plugin_search')}
+                    className="flex rounded-md border border-gray-200 bg-transparent py-2 pl-10 pr-2 shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:border-gray-400 focus:bg-gray-50 focus:outline-none focus:ring-0 focus:ring-gray-400 focus:ring-opacity-0 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-500 focus:dark:bg-gray-600 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-500 dark:focus:ring-offset-0 dark:focus:ring-offset-gray-900"
+                  />
                 </div>
+              </div>
               <div
                 ref={gridRef}
                 className="grid grid-cols-1 grid-rows-2 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
@@ -197,7 +205,7 @@ function PluginStoreDialog({ isOpen, setIsOpen }: TPluginStoreDialogProps) {
                         plugin={plugin}
                         isInstalled={userPlugins.includes(plugin.pluginKey)}
                         onInstall={() => onPluginInstall(plugin.pluginKey)}
-                        onUninstall={() => onPluginUninstall(plugin.pluginKey)}
+                        onUninstall={() => uninstallPlugin(plugin.pluginKey)}
                       />
                     ))}
               </div>

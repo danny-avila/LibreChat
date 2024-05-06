@@ -1,3 +1,5 @@
+# v0.7.1
+
 # Build API, Client and Data Provider
 FROM node:20-alpine AS base
 
@@ -11,11 +13,12 @@ RUN npm run build
 # React client build
 FROM data-provider-build AS client-build
 WORKDIR /app/client
-COPY ./client/ ./
+COPY ./client/package*.json ./
 # Copy data-provider to client's node_modules
 RUN mkdir -p /app/client/node_modules/librechat-data-provider/
 RUN cp -R /app/packages/data-provider/* /app/client/node_modules/librechat-data-provider/
 RUN npm install
+COPY ./client/ ./
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
 
@@ -24,6 +27,8 @@ FROM data-provider-build AS api-build
 WORKDIR /app/api
 COPY api/package*.json ./
 COPY api/ ./
+# Copy helper scripts
+COPY config/ ./
 # Copy data-provider to API's node_modules
 RUN mkdir -p /app/api/node_modules/librechat-data-provider/
 RUN cp -R /app/packages/data-provider/* /app/api/node_modules/librechat-data-provider/

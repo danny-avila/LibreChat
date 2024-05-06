@@ -2,6 +2,12 @@ const Conversation = require('./schema/convoSchema');
 const { getMessages, deleteMessages } = require('./Message');
 const logger = require('~/config/winston');
 
+/**
+ * Retrieves a single conversation for a given user and conversation ID.
+ * @param {string} user - The user's ID.
+ * @param {string} conversationId - The conversation's ID.
+ * @returns {Promise<TConversation>} The conversation object.
+ */
 const getConvo = async (user, conversationId) => {
   try {
     return await Conversation.findOne({ user, conversationId }).lean();
@@ -28,6 +34,24 @@ module.exports = {
     } catch (error) {
       logger.error('[saveConvo] Error saving conversation', error);
       return { message: 'Error saving conversation' };
+    }
+  },
+  bulkSaveConvos: async (conversations) => {
+    try {
+      const bulkOps = conversations.map((convo) => ({
+        updateOne: {
+          filter: { conversationId: convo.conversationId, user: convo.user },
+          update: convo,
+          upsert: true,
+          timestamps: false,
+        },
+      }));
+
+      const result = await Conversation.bulkWrite(bulkOps);
+      return result;
+    } catch (error) {
+      logger.error('[saveBulkConversations] Error saving conversations in bulk', error);
+      throw new Error('Failed to save conversations in bulk.');
     }
   },
   getConvosByPage: async (user, pageNumber = 1, pageSize = 25) => {

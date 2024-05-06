@@ -1,12 +1,14 @@
 const { parseConvo, EModelEndpoint } = require('librechat-data-provider');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
-const { processFiles } = require('~/server/services/Files/process');
+const assistants = require('~/server/services/Endpoints/assistants');
 const gptPlugins = require('~/server/services/Endpoints/gptPlugins');
+const { processFiles } = require('~/server/services/Files/process');
 const anthropic = require('~/server/services/Endpoints/anthropic');
-const assistant = require('~/server/services/Endpoints/assistant');
 const openAI = require('~/server/services/Endpoints/openAI');
 const custom = require('~/server/services/Endpoints/custom');
 const google = require('~/server/services/Endpoints/google');
+const enforceModelSpec = require('./enforceModelSpec');
+const { handleError } = require('~/server/utils');
 
 const buildFunction = {
   [EModelEndpoint.openAI]: openAI.buildOptions,
@@ -15,12 +17,37 @@ const buildFunction = {
   [EModelEndpoint.azureOpenAI]: openAI.buildOptions,
   [EModelEndpoint.anthropic]: anthropic.buildOptions,
   [EModelEndpoint.gptPlugins]: gptPlugins.buildOptions,
-  [EModelEndpoint.assistants]: assistant.buildOptions,
+  [EModelEndpoint.assistants]: assistants.buildOptions,
 };
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
   const parsedBody = parseConvo({ endpoint, endpointType, conversation: req.body });
+
+  if (req.app.locals.modelSpecs?.list && req.app.locals.modelSpecs?.enforce) {
+    /** @type {{ list: TModelSpec[] }}*/
+    const { list } = req.app.locals.modelSpecs;
+    const { spec } = parsedBody;
+
+    if (!spec) {
+      return handleError(res, { text: 'No model spec selected' });
+    }
+
+    const currentModelSpec = list.find((s) => s.name === spec);
+    if (!currentModelSpec) {
+      return handleError(res, { text: 'Invalid model spec' });
+    }
+
+    if (endpoint !== currentModelSpec.preset.endpoint) {
+      return handleError(res, { text: 'Model spec mismatch' });
+    }
+
+    const isValidModelSpec = enforceModelSpec(currentModelSpec, parsedBody);
+    if (!isValidModelSpec) {
+      return handleError(res, { text: 'Model spec mismatch' });
+    }
+  }
+
   req.body.endpointOption = buildFunction[endpointType ?? endpoint](
     endpoint,
     parsedBody,

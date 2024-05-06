@@ -1,5 +1,5 @@
 const path = require('path');
-const { CacheKeys, configSchema } = require('librechat-data-provider');
+const { CacheKeys, configSchema, EImageOutputType } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const loadYaml = require('~/utils/loadYaml');
 const { logger } = require('~/config');
@@ -42,6 +42,12 @@ async function loadCustomConfig() {
       i === 0 && i++;
       return null;
     }
+
+    if (customConfig.reason || customConfig.stack) {
+      i === 0 && logger.error('Config file YAML format is invalid:', customConfig);
+      i === 0 && i++;
+      return null;
+    }
   }
 
   if (typeof customConfig === 'string') {
@@ -55,6 +61,20 @@ async function loadCustomConfig() {
   }
 
   const result = configSchema.strict().safeParse(customConfig);
+  if (result?.error?.errors?.some((err) => err?.path && err.path?.includes('imageOutputType'))) {
+    throw new Error(
+      `
+Please specify a correct \`imageOutputType\` value (case-sensitive).
+
+      The available options are:
+      - ${EImageOutputType.JPEG}
+      - ${EImageOutputType.PNG}
+      - ${EImageOutputType.WEBP}
+      
+      Refer to the latest config file guide for more information:
+      https://docs.librechat.ai/install/configuration/custom_config.html`,
+    );
+  }
   if (!result.success) {
     i === 0 && logger.error(`Invalid custom config file at ${configPath}`, result.error);
     i === 0 && i++;
@@ -68,6 +88,10 @@ async function loadCustomConfig() {
   if (customConfig.cache) {
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     await cache.set(CacheKeys.CUSTOM_CONFIG, customConfig);
+  }
+
+  if (result.data.modelSpecs) {
+    customConfig.modelSpecs = result.data.modelSpecs;
   }
 
   return customConfig;

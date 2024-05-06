@@ -164,6 +164,39 @@ describe('ActionRequest', () => {
       );
       await expect(actionRequest.execute()).rejects.toThrow('Unsupported HTTP method: INVALID');
     });
+
+    it('replaces path parameters with values from toolInput', async () => {
+      const actionRequest = new ActionRequest(
+        'https://example.com',
+        '/stocks/{stocksTicker}/bars/{multiplier}',
+        'GET',
+        'getAggregateBars',
+        false,
+        'application/json',
+      );
+
+      await actionRequest.setParams({
+        stocksTicker: 'AAPL',
+        multiplier: 5,
+        startDate: '2023-01-01',
+        endDate: '2023-12-31',
+      });
+
+      expect(actionRequest.path).toBe('/stocks/AAPL/bars/5');
+      expect(actionRequest.params).toEqual({
+        startDate: '2023-01-01',
+        endDate: '2023-12-31',
+      });
+
+      await actionRequest.execute();
+      expect(mockedAxios.get).toHaveBeenCalledWith('https://example.com/stocks/AAPL/bars/5', {
+        headers: expect.anything(),
+        params: {
+          startDate: '2023-01-01',
+          endDate: '2023-12-31',
+        },
+      });
+    });
   });
 
   it('throws an error for unsupported HTTP method', async () => {

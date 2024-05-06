@@ -1,12 +1,16 @@
 const buildOptions = (endpoint, parsedBody, endpointType) => {
-  const { chatGptLabel, promptPrefix, resendImages, imageDetail, ...rest } = parsedBody;
+  const { chatGptLabel, promptPrefix, resendFiles, imageDetail, iconURL, greeting, spec, ...rest } =
+    parsedBody;
   const endpointOption = {
     endpoint,
     endpointType,
     chatGptLabel,
     promptPrefix,
-    resendImages,
+    resendFiles,
     imageDetail,
+    iconURL,
+    greeting,
+    spec,
     modelOptions: {
       ...rest,
     },

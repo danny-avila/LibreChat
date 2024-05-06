@@ -59,29 +59,31 @@ function NavLinks() {
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
-            {startupConfig?.checkBalance && balanceQuery.data && (
+            {startupConfig?.checkBalance &&
+              balanceQuery.data &&
+              !isNaN(parseFloat(balanceQuery.data)) && (
               <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-black dark:text-gray-200">
-                {`Balance: ${balanceQuery.data}`}
+                {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
               </div>
             )}
             <Menu.Button
               className={cn(
-                'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm mb-1 flex w-full items-center gap-3 text-sm rounded-md px-3 py-3 transition-colors hover:bg-gray-100 dark:hover:bg-gray-700',
+                'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm mb-1 flex h-11 w-full items-center gap-2 rounded-lg px-3 py-3 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700',
                 open ? 'bg-gray-100 dark:bg-gray-700' : '',
               )}
               data-testid="nav-user"
             >
-              <div className="-ml-0.9 -mt-0.8 h-5 w-5 flex-shrink-0">
+              <div className="-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0">
                 <div className="relative flex">
                   {!user?.avatar && !user?.username ? (
                     <div
                       style={{
                         backgroundColor: 'rgb(121, 137, 255)',
-                        width: '20px',
-                        height: '20px',
+                        width: '32px',
+                        height: '32px',
                         boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
                       }}
-                      className="relative flex h-9 w-9 items-center justify-center rounded-full p-1 text-white"
+                      className="relative flex items-center justify-center rounded-full p-1 text-white"
                     >
                       <UserIcon />
                     </div>
@@ -91,10 +93,10 @@ function NavLinks() {
                 </div>
               </div>
               <div
-                className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left font-bold text-black dark:text-white"
+                className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-black dark:text-white"
                 style={{ marginTop: '0', marginLeft: '0' }}
               >
-                {user?.name || localize('com_nav_user')}
+                {user?.name || user?.username || localize('com_nav_user')}
               </div>
             </Menu.Button>
 

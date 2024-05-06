@@ -1,4 +1,5 @@
 import type { OpenAPIV3 } from 'openapi-types';
+import type { TFile } from './files';
 
 export type Schema = OpenAPIV3.SchemaObject & { description?: string };
 export type Reference = OpenAPIV3.ReferenceObject & { description?: string };
@@ -131,7 +132,7 @@ export type ToolCallsStepDetails = {
   type: 'tool_calls'; // Always 'tool_calls'.
 };
 
-export type ImageFile = {
+export type ImageFile = TFile & {
   /**
    * The [File](https://platform.openai.com/docs/api-reference/files) ID of the image
    * in the message content.
@@ -182,10 +183,16 @@ export type Text = {
   value: string;
 };
 
+export enum AnnotationTypes {
+  FILE_CITATION = 'file_citation',
+  FILE_PATH = 'file_path',
+}
+
 export enum ContentTypes {
   TEXT = 'text',
   TOOL_CALL = 'tool_call',
   IMAGE_FILE = 'image_file',
+  ERROR = 'error',
 }
 
 export enum StepTypes {
@@ -236,6 +243,7 @@ export type ContentPart = (CodeToolCall | RetrievalToolCall | FunctionToolCall |
   PartMetadata;
 
 export type TMessageContentParts =
+  | { type: ContentTypes.ERROR; text: Text & PartMetadata }
   | { type: ContentTypes.TEXT; text: Text & PartMetadata }
   | {
       type: ContentTypes.TOOL_CALL;
@@ -243,16 +251,25 @@ export type TMessageContentParts =
     }
   | { type: ContentTypes.IMAGE_FILE; image_file: ImageFile & PartMetadata };
 
-export type TContentData = TMessageContentParts & {
+export type StreamContentData = TMessageContentParts & {
+  /** The index of the current content part */
+  index: number;
+  /** The current text content was already served but edited to replace elements therein */
+  edited?: boolean;
+};
+
+export type TContentData = StreamContentData & {
   messageId: string;
   conversationId: string;
   userMessageId: string;
   thread_id: string;
-  index: number;
   stream?: boolean;
 };
 
 export const actionDelimiter = '_action_';
+export const actionDomainSeparator = '---';
+export const hostImageIdSuffix = '_host_copy';
+export const hostImageNamePrefix = 'host_copy_';
 
 export enum AuthTypeEnum {
   ServiceHttp = 'service_http',
@@ -321,4 +338,38 @@ export enum FilePurpose {
   FineTuneResults = 'fine-tune-results',
   Assistants = 'assistants',
   AssistantsOutput = 'assistants_output',
+}
+
+export const defaultOrderQuery: {
+  order: 'desc';
+  limit: 100;
+} = {
+  order: 'desc',
+  limit: 100,
+};
+
+export enum AssistantStreamEvents {
+  ThreadCreated = 'thread.created',
+  ThreadRunCreated = 'thread.run.created',
+  ThreadRunQueued = 'thread.run.queued',
+  ThreadRunInProgress = 'thread.run.in_progress',
+  ThreadRunRequiresAction = 'thread.run.requires_action',
+  ThreadRunCompleted = 'thread.run.completed',
+  ThreadRunFailed = 'thread.run.failed',
+  ThreadRunCancelling = 'thread.run.cancelling',
+  ThreadRunCancelled = 'thread.run.cancelled',
+  ThreadRunExpired = 'thread.run.expired',
+  ThreadRunStepCreated = 'thread.run.step.created',
+  ThreadRunStepInProgress = 'thread.run.step.in_progress',
+  ThreadRunStepCompleted = 'thread.run.step.completed',
+  ThreadRunStepFailed = 'thread.run.step.failed',
+  ThreadRunStepCancelled = 'thread.run.step.cancelled',
+  ThreadRunStepExpired = 'thread.run.step.expired',
+  ThreadRunStepDelta = 'thread.run.step.delta',
+  ThreadMessageCreated = 'thread.message.created',
+  ThreadMessageInProgress = 'thread.message.in_progress',
+  ThreadMessageCompleted = 'thread.message.completed',
+  ThreadMessageIncomplete = 'thread.message.incomplete',
+  ThreadMessageDelta = 'thread.message.delta',
+  ErrorEvent = 'error',
 }

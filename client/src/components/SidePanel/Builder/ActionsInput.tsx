@@ -14,9 +14,11 @@ import type {
 } from 'librechat-data-provider';
 import type { ActionAuthForm } from '~/common';
 import type { Spec } from './ActionsTable';
+import { useAssistantsMapContext, useToastContext } from '~/Providers';
 import { ActionsTable, columns } from './ActionsTable';
 import { useUpdateAction } from '~/data-provider';
 import { cn, removeFocusOutlines } from '~/utils';
+import useLocalize from '~/hooks/useLocalize';
 import { Spinner } from '~/components/svg';
 
 const debouncedValidation = debounce(
@@ -44,6 +46,9 @@ export default function ActionsInput({
     setValidationResult(result);
   };
 
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
+  const assistantMap = useAssistantsMapContext();
   const { handleSubmit, reset } = useFormContext<ActionAuthForm>();
   const [validationResult, setValidationResult] = useState<null | ValidationResult>(null);
   const [inputValue, setInputValue] = useState('');
@@ -81,8 +86,18 @@ export default function ActionsInput({
 
   const updateAction = useUpdateAction({
     onSuccess(data) {
+      showToast({
+        message: localize('com_assistants_update_actions_success'),
+        status: 'success',
+      });
       reset();
       setAction(data[2]);
+    },
+    onError(error) {
+      showToast({
+        message: (error as Error)?.message ?? localize('com_assistants_update_actions_error'),
+        status: 'error',
+      });
     },
   });
 
@@ -158,6 +173,7 @@ export default function ActionsInput({
       metadata,
       functions,
       assistant_id,
+      model: assistantMap[assistant_id].model,
     });
   });
 
@@ -185,7 +201,8 @@ export default function ActionsInput({
               onChange={(e) => console.log(e.target.value)}
               className="border-token-border-medium h-8 min-w-[100px] rounded-lg border bg-transparent px-2 py-0 text-sm"
             >
-              <option value="label">Examples</option>
+              <option value="label">{localize('com_ui_examples')}</option>
+              {/* TODO: make these appear and function correctly */}
               <option value="0">Weather (JSON)</option>
               <option value="1">Pet Store (YAML)</option>
               <option value="2">Blank Template</option>
@@ -218,7 +235,9 @@ export default function ActionsInput({
       {!!data && (
         <div>
           <div className="mb-1.5 flex items-center">
-            <label className="text-token-text-primary block font-medium">Available actions</label>
+            <label className="text-token-text-primary block font-medium">
+              {localize('com_assistants_available_actions')}
+            </label>
           </div>
           <ActionsTable columns={columns} data={data} />
         </div>
@@ -226,10 +245,12 @@ export default function ActionsInput({
       <div className="mt-4">
         <div className="mb-1.5 flex items-center">
           <span className="" data-state="closed">
-            <label className="text-token-text-primary block font-medium">Privacy policy</label>
+            <label className="text-token-text-primary block font-medium">
+              {localize('com_ui_privacy_policy')}
+            </label>
           </span>
         </div>
-        <div className="rounded-md border border-gray-300 px-3 py-2 shadow-none focus-within:border-gray-800 focus-within:ring-1 focus-within:ring-gray-800 dark:bg-gray-700 dark:focus-within:border-white dark:focus-within:ring-white">
+        <div className="rounded-md border border-gray-300 px-3 py-2 shadow-none focus-within:border-gray-800 focus-within:ring-1 focus-within:ring-gray-800 dark:border-gray-700 dark:bg-gray-700 dark:focus-within:border-gray-500 dark:focus-within:ring-gray-500">
           <label
             htmlFor="privacyPolicyUrl"
             className="block text-xs font-medium text-gray-900 dark:text-gray-100"
@@ -252,13 +273,12 @@ export default function ActionsInput({
           className="focus:shadow-outline mt-1 flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0 disabled:bg-green-400"
           type="button"
         >
-          {/* TODO: Add localization */}
           {updateAction.isLoading ? (
             <Spinner className="icon-md" />
           ) : action?.action_id ? (
-            'Update'
+            localize('com_ui_update')
           ) : (
-            'Create'
+            localize('com_ui_create')
           )}
         </button>
       </div>
