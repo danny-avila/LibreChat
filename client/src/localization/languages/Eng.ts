@@ -154,6 +154,7 @@ export default {
   com_ui_fork_branches: 'Include related branches',
   com_ui_fork_visible: 'Visible messages only',
   com_ui_fork_from_message: 'Select a fork option',
+  com_ui_mention: 'Mention an endpoint, assistant, or preset to quickly switch to it',
   com_ui_regenerate: 'Regenerate',
   com_ui_continue: 'Continue',
   com_ui_edit: 'Edit',
