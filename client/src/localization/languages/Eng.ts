@@ -125,6 +125,35 @@ export default {
   com_user_message: 'You',
   com_ui_copy_to_clipboard: 'Copy to clipboard',
   com_ui_copied_to_clipboard: 'Copied to clipboard',
+  com_ui_fork_info_1: 'Use this setting to fork messages with the desired behavior.',
+  com_ui_fork_info_2:
+    '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
+  com_ui_fork_info_3:
+    'The "target message" refers to either the message this popup was opened from, or, if you check "{0}", the latest message in the conversation.',
+  com_ui_fork_info_visible:
+    'This option forks only the visible messages; in other words, the direct path to the target message, without any branches.',
+  com_ui_fork_info_branches:
+    'This option forks the visible messages, along with related branches; in other words, the direct path to the target message, including branches along the path.',
+  com_ui_fork_info_target:
+    'This option forks all messages leading up to the target message, including its neighbors; in other words, all message branches, whether or not they are visible or along the same path, are included.',
+  com_ui_fork_info_start:
+    'If checked, forking will commence from this message to the latest message in the conversation, according to the behavior selected above.',
+  com_ui_fork_info_remember:
+    'Check this to remember the options you select for future usage, making it quicker to fork conversations as preferred.',
+  com_ui_fork_success: 'Successfully forked conversation',
+  com_ui_fork_processing: 'Forking conversation...',
+  com_ui_fork_error: 'There was an error forking the conversation',
+  com_ui_fork_change_default: 'Change default fork option',
+  com_ui_fork_default: 'Use default fork option',
+  com_ui_fork_remember: 'Remember',
+  com_ui_fork_split_target_setting: 'Start fork from target message by default',
+  com_ui_fork_split_target: 'Start fork here',
+  com_ui_fork_remember_checked:
+    'Your selection will be remembered after usage. Change this at any time in the settings.',
+  com_ui_fork_all_target: 'Include all to/from here',
+  com_ui_fork_branches: 'Include related branches',
+  com_ui_fork_visible: 'Visible messages only',
+  com_ui_fork_from_message: 'Select a fork option',
   com_ui_regenerate: 'Regenerate',
   com_ui_continue: 'Continue',
   com_ui_edit: 'Edit',
@@ -232,6 +261,7 @@ export default {
     'WARNING: Misuse of this feature can get you BANNED from using Bing! Click on \'System Message\' for full instructions and the default message if omitted, which is the \'Sydney\' preset that is considered safe.',
   com_endpoint_system_message: 'System Message',
   com_endpoint_message: 'Message',
+  com_endpoint_messages: 'Messages',
   com_endpoint_message_not_appendable: 'Edit your message or Regenerate.',
   com_endpoint_default_blank: 'default: blank',
   com_endpoint_default_false: 'default: false',

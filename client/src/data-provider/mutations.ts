@@ -2,44 +2,13 @@ import { LocalStorageKeys } from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
-import type {
-  TFile,
-  BatchFile,
-  TFileUpload,
-  TImportStartResponse,
-  AssistantListResponse,
-  UploadMutationOptions,
-  UploadConversationsMutationOptions,
-  DeleteFilesResponse,
-  DeleteFilesBody,
-  DeleteMutationOptions,
-  UpdatePresetOptions,
-  DeletePresetOptions,
-  PresetDeleteResponse,
-  LogoutOptions,
-  TPreset,
-  UploadAvatarOptions,
-  AvatarUploadResponse,
-  TConversation,
-  Assistant,
-  AssistantCreateParams,
-  AssistantUpdateParams,
-  UploadAssistantAvatarOptions,
-  AssistantAvatarVariables,
-  CreateAssistantMutationOptions,
-  UpdateAssistantMutationOptions,
-  DeleteAssistantMutationOptions,
-  DeleteAssistantBody,
-  DeleteConversationOptions,
-  UpdateActionOptions,
-  UpdateActionVariables,
-  UpdateActionResponse,
-  DeleteActionOptions,
-  DeleteActionVariables,
-  Action,
-} from 'librechat-data-provider';
+import {
+  addConversation,
+  updateConversation,
+  deleteConversation,
+  updateConvoFields,
+} from '~/utils';
 import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
-import { updateConversation, deleteConversation, updateConvoFields } from '~/utils';
 import { useSetRecoilState } from 'recoil';
 import store from '~/store';
 
@@ -55,7 +24,7 @@ export const useGenTitleMutation = (): UseMutationResult<
     onSuccess: (response, vars) => {
       queryClient.setQueryData(
         [QueryKeys.conversation, vars.conversationId],
-        (convo: TConversation | undefined) => {
+        (convo: t.TConversation | undefined) => {
           if (!convo) {
             return convo;
           }
@@ -69,7 +38,7 @@ export const useGenTitleMutation = (): UseMutationResult<
         return updateConvoFields(convoData, {
           conversationId: vars.conversationId,
           title: response.title,
-        } as TConversation);
+        } as t.TConversation);
       });
       document.title = response.title;
     },
@@ -102,7 +71,7 @@ export const useUpdateConversationMutation = (
 };
 
 export const useDeleteConversationMutation = (
-  options?: DeleteConversationOptions,
+  options?: t.DeleteConversationOptions,
 ): UseMutationResult<
   t.TDeleteConversationResponse,
   unknown,
@@ -133,9 +102,41 @@ export const useDeleteConversationMutation = (
   );
 };
 
-export const useUploadConversationsMutation = (_options?: UploadConversationsMutationOptions) => {
+export const useForkConvoMutation = (
+  options?: t.ForkConvoOptions,
+): UseMutationResult<t.TForkConvoResponse, unknown, t.TForkConvoRequest, unknown> => {
   const queryClient = useQueryClient();
-  const { onSuccess, onError } = _options || {};
+  const { onSuccess, ..._options } = options || {};
+  return useMutation((payload: t.TForkConvoRequest) => dataService.forkConversation(payload), {
+    onSuccess: (data, vars, context) => {
+      if (!vars.conversationId) {
+        return;
+      }
+      queryClient.setQueryData(
+        [QueryKeys.conversation, data.conversation.conversationId],
+        data.conversation,
+      );
+      queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+        if (!convoData) {
+          return convoData;
+        }
+        return addConversation(convoData, data.conversation);
+      });
+      queryClient.setQueryData<t.TMessage[]>(
+        [QueryKeys.messages, data.conversation.conversationId],
+        data.messages,
+      );
+      onSuccess?.(data, vars, context);
+    },
+    ...(_options || {}),
+  });
+};
+
+export const useUploadConversationsMutation = (
+  _options?: t.MutationOptions<t.TImportJobStatus, FormData>,
+) => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError, onMutate } = _options || {};
 
   // returns the job status or reason of failure
   const checkJobStatus = async (jobId) => {
@@ -182,7 +183,8 @@ export const useUploadConversationsMutation = (_options?: UploadConversationsMut
       }
     }, pollInterval);
   };
-  return useMutation<TImportStartResponse, unknown, FormData>({
+
+  return useMutation<t.TImportStartResponse, unknown, FormData>({
     mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
@@ -213,13 +215,14 @@ export const useUploadConversationsMutation = (_options?: UploadConversationsMut
         onError(err, variables, context);
       }
     },
+    onMutate,
   });
 };
 
 export const useUploadFileMutation = (
-  _options?: UploadMutationOptions,
+  _options?: t.UploadMutationOptions,
 ): UseMutationResult<
-  TFileUpload, // response data
+  t.TFileUpload, // response data
   unknown, // error
   FormData, // request
   unknown // context
@@ -238,7 +241,7 @@ export const useUploadFileMutation = (
     },
     ...(options || {}),
     onSuccess: (data, formData, context) => {
-      queryClient.setQueryData<TFile[] | undefined>([QueryKeys.files], (_files) => [
+      queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
         data,
         ...(_files ?? []),
       ]);
@@ -251,7 +254,7 @@ export const useUploadFileMutation = (
         return;
       }
 
-      queryClient.setQueryData<AssistantListResponse>(
+      queryClient.setQueryData<t.AssistantListResponse>(
         [QueryKeys.assistants, defaultOrderQuery],
         (prev) => {
           if (!prev) {
@@ -278,26 +281,26 @@ export const useUploadFileMutation = (
 };
 
 export const useDeleteFilesMutation = (
-  _options?: DeleteMutationOptions,
+  _options?: t.DeleteMutationOptions,
 ): UseMutationResult<
-  DeleteFilesResponse, // response data
+  t.DeleteFilesResponse, // response data
   unknown, // error
-  DeleteFilesBody, // request
+  t.DeleteFilesBody, // request
   unknown // context
 > => {
   const queryClient = useQueryClient();
   const { onSuccess, ...options } = _options || {};
   return useMutation([MutationKeys.fileDelete], {
-    mutationFn: (body: DeleteFilesBody) => dataService.deleteFiles(body.files, body.assistant_id),
+    mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body.files, body.assistant_id),
     ...(options || {}),
     onSuccess: (data, ...args) => {
-      queryClient.setQueryData<TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
+      queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
         const { files: filesDeleted } = args[0];
 
         const fileMap = filesDeleted.reduce((acc, file) => {
           acc.set(file.file_id, file);
           return acc;
-        }, new Map<string, BatchFile>());
+        }, new Map<string, t.BatchFile>());
 
         return (cachefiles ?? []).filter((file) => !fileMap.has(file.file_id));
       });
@@ -307,36 +310,36 @@ export const useDeleteFilesMutation = (
 };
 
 export const useUpdatePresetMutation = (
-  options?: UpdatePresetOptions,
+  options?: t.UpdatePresetOptions,
 ): UseMutationResult<
-  TPreset, // response data
+  t.TPreset, // response data
   unknown,
-  TPreset,
+  t.TPreset,
   unknown
 > => {
   return useMutation([MutationKeys.updatePreset], {
-    mutationFn: (preset: TPreset) => dataService.updatePreset(preset),
+    mutationFn: (preset: t.TPreset) => dataService.updatePreset(preset),
     ...(options || {}),
   });
 };
 
 export const useDeletePresetMutation = (
-  options?: DeletePresetOptions,
+  options?: t.DeletePresetOptions,
 ): UseMutationResult<
-  PresetDeleteResponse, // response data
+  t.PresetDeleteResponse, // response data
   unknown,
-  TPreset | undefined,
+  t.TPreset | undefined,
   unknown
 > => {
   return useMutation([MutationKeys.deletePreset], {
-    mutationFn: (preset: TPreset | undefined) => dataService.deletePreset(preset),
+    mutationFn: (preset: t.TPreset | undefined) => dataService.deletePreset(preset),
     ...(options || {}),
   });
 };
 
 /* login/logout */
 export const useLogoutUserMutation = (
-  options?: LogoutOptions,
+  options?: t.LogoutOptions,
 ): UseMutationResult<unknown, unknown, undefined, unknown> => {
   const queryClient = useQueryClient();
   const setDefaultPreset = useSetRecoilState(store.defaultPreset);
@@ -362,9 +365,9 @@ export const useLogoutUserMutation = (
 
 /* Avatar upload */
 export const useUploadAvatarMutation = (
-  options?: UploadAvatarOptions,
+  options?: t.UploadAvatarOptions,
 ): UseMutationResult<
-  AvatarUploadResponse, // response data
+  t.AvatarUploadResponse, // response data
   unknown, // error
   FormData, // request
   unknown // context
@@ -383,16 +386,16 @@ export const useUploadAvatarMutation = (
  * Create a new assistant
  */
 export const useCreateAssistantMutation = (
-  options?: CreateAssistantMutationOptions,
-): UseMutationResult<Assistant, Error, AssistantCreateParams> => {
+  options?: t.CreateAssistantMutationOptions,
+): UseMutationResult<t.Assistant, Error, t.AssistantCreateParams> => {
   const queryClient = useQueryClient();
   return useMutation(
-    (newAssistantData: AssistantCreateParams) => dataService.createAssistant(newAssistantData),
+    (newAssistantData: t.AssistantCreateParams) => dataService.createAssistant(newAssistantData),
     {
       onMutate: (variables) => options?.onMutate?.(variables),
       onError: (error, variables, context) => options?.onError?.(error, variables, context),
       onSuccess: (newAssistant, variables, context) => {
-        const listRes = queryClient.getQueryData<AssistantListResponse>([
+        const listRes = queryClient.getQueryData<t.AssistantListResponse>([
           QueryKeys.assistants,
           defaultOrderQuery,
         ]);
@@ -403,10 +406,13 @@ export const useCreateAssistantMutation = (
 
         const currentAssistants = [newAssistant, ...JSON.parse(JSON.stringify(listRes.data))];
 
-        queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
-          ...listRes,
-          data: currentAssistants,
-        });
+        queryClient.setQueryData<t.AssistantListResponse>(
+          [QueryKeys.assistants, defaultOrderQuery],
+          {
+            ...listRes,
+            data: currentAssistants,
+          },
+        );
         return options?.onSuccess?.(newAssistant, variables, context);
       },
     },
@@ -417,17 +423,21 @@ export const useCreateAssistantMutation = (
  * Hook for updating an assistant
  */
 export const useUpdateAssistantMutation = (
-  options?: UpdateAssistantMutationOptions,
-): UseMutationResult<Assistant, Error, { assistant_id: string; data: AssistantUpdateParams }> => {
+  options?: t.UpdateAssistantMutationOptions,
+): UseMutationResult<
+  t.Assistant,
+  Error,
+  { assistant_id: string; data: t.AssistantUpdateParams }
+> => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ assistant_id, data }: { assistant_id: string; data: AssistantUpdateParams }) =>
+    ({ assistant_id, data }: { assistant_id: string; data: t.AssistantUpdateParams }) =>
       dataService.updateAssistant(assistant_id, data),
     {
       onMutate: (variables) => options?.onMutate?.(variables),
       onError: (error, variables, context) => options?.onError?.(error, variables, context),
       onSuccess: (updatedAssistant, variables, context) => {
-        const listRes = queryClient.getQueryData<AssistantListResponse>([
+        const listRes = queryClient.getQueryData<t.AssistantListResponse>([
           QueryKeys.assistants,
           defaultOrderQuery,
         ]);
@@ -436,15 +446,18 @@ export const useUpdateAssistantMutation = (
           return options?.onSuccess?.(updatedAssistant, variables, context);
         }
 
-        queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
-          ...listRes,
-          data: listRes.data.map((assistant) => {
-            if (assistant.id === variables.assistant_id) {
-              return updatedAssistant;
-            }
-            return assistant;
-          }),
-        });
+        queryClient.setQueryData<t.AssistantListResponse>(
+          [QueryKeys.assistants, defaultOrderQuery],
+          {
+            ...listRes,
+            data: listRes.data.map((assistant) => {
+              if (assistant.id === variables.assistant_id) {
+                return updatedAssistant;
+              }
+              return assistant;
+            }),
+          },
+        );
         return options?.onSuccess?.(updatedAssistant, variables, context);
       },
     },
@@ -455,17 +468,17 @@ export const useUpdateAssistantMutation = (
  * Hook for deleting an assistant
  */
 export const useDeleteAssistantMutation = (
-  options?: DeleteAssistantMutationOptions,
-): UseMutationResult<void, Error, DeleteAssistantBody> => {
+  options?: t.DeleteAssistantMutationOptions,
+): UseMutationResult<void, Error, t.DeleteAssistantBody> => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ assistant_id, model }: DeleteAssistantBody) =>
+    ({ assistant_id, model }: t.DeleteAssistantBody) =>
       dataService.deleteAssistant(assistant_id, model),
     {
       onMutate: (variables) => options?.onMutate?.(variables),
       onError: (error, variables, context) => options?.onError?.(error, variables, context),
       onSuccess: (_data, variables, context) => {
-        const listRes = queryClient.getQueryData<AssistantListResponse>([
+        const listRes = queryClient.getQueryData<t.AssistantListResponse>([
           QueryKeys.assistants,
           defaultOrderQuery,
         ]);
@@ -476,10 +489,13 @@ export const useDeleteAssistantMutation = (
 
         const data = listRes.data.filter((assistant) => assistant.id !== variables.assistant_id);
 
-        queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
-          ...listRes,
-          data,
-        });
+        queryClient.setQueryData<t.AssistantListResponse>(
+          [QueryKeys.assistants, defaultOrderQuery],
+          {
+            ...listRes,
+            data,
+          },
+        );
 
         return options?.onSuccess?.(_data, variables, data);
       },
@@ -491,16 +507,16 @@ export const useDeleteAssistantMutation = (
  * Hook for uploading an assistant avatar
  */
 export const useUploadAssistantAvatarMutation = (
-  options?: UploadAssistantAvatarOptions,
+  options?: t.UploadAssistantAvatarOptions,
 ): UseMutationResult<
-  Assistant, // response data
+  t.Assistant, // response data
   unknown, // error
-  AssistantAvatarVariables, // request
+  t.AssistantAvatarVariables, // request
   unknown // context
 > => {
   return useMutation([MutationKeys.assistantAvatarUpload], {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    mutationFn: ({ postCreation, ...variables }: AssistantAvatarVariables) =>
+    mutationFn: ({ postCreation, ...variables }: t.AssistantAvatarVariables) =>
       dataService.uploadAssistantAvatar(variables),
     ...(options || {}),
   });
@@ -510,21 +526,21 @@ export const useUploadAssistantAvatarMutation = (
  * Hook for updating Assistant Actions
  */
 export const useUpdateAction = (
-  options?: UpdateActionOptions,
+  options?: t.UpdateActionOptions,
 ): UseMutationResult<
-  UpdateActionResponse, // response data
+  t.UpdateActionResponse, // response data
   unknown, // error
-  UpdateActionVariables, // request
+  t.UpdateActionVariables, // request
   unknown // context
 > => {
   const queryClient = useQueryClient();
   return useMutation([MutationKeys.updateAction], {
-    mutationFn: (variables: UpdateActionVariables) => dataService.updateAction(variables),
+    mutationFn: (variables: t.UpdateActionVariables) => dataService.updateAction(variables),
 
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),
     onSuccess: (updateActionResponse, variables, context) => {
-      const listRes = queryClient.getQueryData<AssistantListResponse>([
+      const listRes = queryClient.getQueryData<t.AssistantListResponse>([
         QueryKeys.assistants,
         defaultOrderQuery,
       ]);
@@ -535,7 +551,7 @@ export const useUpdateAction = (
 
       const updatedAssistant = updateActionResponse[1];
 
-      queryClient.setQueryData<AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
+      queryClient.setQueryData<t.AssistantListResponse>([QueryKeys.assistants, defaultOrderQuery], {
         ...listRes,
         data: listRes.data.map((assistant) => {
           if (assistant.id === variables.assistant_id) {
@@ -545,7 +561,7 @@ export const useUpdateAction = (
         }),
       });
 
-      queryClient.setQueryData<Action[]>([QueryKeys.actions], (prev) => {
+      queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
         return prev
           ?.map((action) => {
             if (action.action_id === variables.action_id) {
@@ -565,30 +581,30 @@ export const useUpdateAction = (
  * Hook for deleting an Assistant Action
  */
 export const useDeleteAction = (
-  options?: DeleteActionOptions,
+  options?: t.DeleteActionOptions,
 ): UseMutationResult<
   void, // response data for a delete operation is typically void
   Error, // error type
-  DeleteActionVariables, // request variables
+  t.DeleteActionVariables, // request variables
   unknown // context
 > => {
   const queryClient = useQueryClient();
   return useMutation([MutationKeys.deleteAction], {
-    mutationFn: (variables: DeleteActionVariables) =>
+    mutationFn: (variables: t.DeleteActionVariables) =>
       dataService.deleteAction(variables.assistant_id, variables.action_id, variables.model),
 
     onMutate: (variables) => options?.onMutate?.(variables),
     onError: (error, variables, context) => options?.onError?.(error, variables, context),
     onSuccess: (_data, variables, context) => {
       let domain: string | undefined = '';
-      queryClient.setQueryData<Action[]>([QueryKeys.actions], (prev) => {
+      queryClient.setQueryData<t.Action[]>([QueryKeys.actions], (prev) => {
         return prev?.filter((action) => {
           domain = action.metadata.domain;
           return action.action_id !== variables.action_id;
         });
       });
 
-      queryClient.setQueryData<AssistantListResponse>(
+      queryClient.setQueryData<t.AssistantListResponse>(
         [QueryKeys.assistants, defaultOrderQuery],
         (prev) => {
           if (!prev) {

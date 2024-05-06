@@ -79,11 +79,11 @@ function NavLinks() {
                     <div
                       style={{
                         backgroundColor: 'rgb(121, 137, 255)',
-                        width: '20px',
-                        height: '20px',
+                        width: '32px',
+                        height: '32px',
                         boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
                       }}
-                      className="relative flex h-8 w-8 items-center justify-center rounded-full p-1 text-white"
+                      className="relative flex items-center justify-center rounded-full p-1 text-white"
                     >
                       <UserIcon />
                     </div>
