@@ -107,7 +107,7 @@ const showPopoverFamily = atomFamily({
   default: false,
 });
 
-const showMentionPopoverFamily = atomFamily({
+const showMentionPopoverFamily = atomFamily<boolean, string | number | null>({
   key: 'showMentionPopoverByIndex',
   default: false,
 });
