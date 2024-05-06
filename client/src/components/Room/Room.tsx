@@ -6,11 +6,12 @@ import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from '../Conversations/DeleteButton';
 import RenameButton from '../Conversations/RenameButton';
-import { EModelEndpoint, TUser, request } from 'librechat-data-provider';
+import { EModelEndpoint, TConversation, TUser, request } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import store from '~/store';
 import LeaveButton from '../Conversations/LeaveButton';
-import { isRoomOwner } from '~/utils/checkUserValid';
+import { isRoomOwner, isYou } from '~/utils/checkUserValid';
+import Marquee from 'react-fast-marquee';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
@@ -139,7 +140,7 @@ export default function Room({ room, toggleNav, retainView }) {
       data-testid="convo-item"
       onClick={clickHandler}
       {...aProps}
-      title={title}
+      title={`${title} - ${room.users ? room.users.length : 0} Participants`}
     >
       {/* {icon} */}
       <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">
@@ -153,8 +154,28 @@ export default function Room({ room, toggleNav, retainView }) {
             onBlur={onRename}
             onKeyDown={handleKeyDown}
           />
+        ) : (title.length > 8 &&
+            currentRoomId === conversationId &&
+            isRoomOwner(user as TUser, room)) ||
+          title.length > 15 ? (
+          <Marquee
+            speed={30}
+            style={
+              currentRoomId === conversationId && isRoomOwner(user as TUser, room)
+                ? { width: '70%' }
+                : currentRoomId === conversationId && isYou(user as TUser, room)
+                ? { width: '90%' }
+                : { width: '100%' }
+            }
+          >
+            {title} &#160;-&#160;{room.users ? room.users.length : 0}&#160; Participants
+            &#160;&#160;&#160;
+          </Marquee>
         ) : (
-          title
+          <>
+            {title} &#160;-&#160;{room.users ? room.users.length : 0}&#160; Participants
+            &#160;&#160;&#160;
+          </>
         )}
       </div>
       {currentRoomId === conversationId ? (
@@ -167,7 +188,10 @@ export default function Room({ room, toggleNav, retainView }) {
         <div className="absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%"></div>
       )}
       {currentRoomId === conversationId ? (
-        <div className="visible absolute right-1 z-10 flex from-gray-900 text-gray-500 dark:text-gray-300">
+        <div
+          className="visible absolute right-1 z-10 flex from-gray-900 text-gray-500 dark:text-gray-300"
+          style={{ backgroundColor: 'hsla(0, 0%, 100%, 0.1)' }}
+        >
           {isRoomOwner(user as TUser, room) && (
             <>
               <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
@@ -179,7 +203,9 @@ export default function Room({ room, toggleNav, retainView }) {
               />
             </>
           )}
-          <LeaveButton conversationId={conversationId} title={title} />
+          {isYou(user as TUser, room) && (
+            <LeaveButton conversationId={conversationId} title={title} />
+          )}
         </div>
       ) : (
         <div className="absolute bottom-0 right-0 top-0 w-14 rounded-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 dark:from-gray-750 dark:group-hover:from-gray-800" />

@@ -46,15 +46,15 @@ function UserList({
     [],
   );
 
-  useEffect(() => {
-    if (isSmallScreen) {
-      setIsCollapsed(true);
-      setMinSize(20);
-      setCollapsedSize(20);
-      panelRef.current?.collapse();
-      return;
-    }
-  }, [isSmallScreen]);
+  // useEffect(() => {
+  //   if (isSmallScreen) {
+  //     setIsCollapsed(true);
+  //     setMinSize(20);
+  //     setCollapsedSize(20);
+  //     panelRef.current?.collapse();
+  //     return;
+  //   }
+  // }, [isSmallScreen]);
 
   const toggleNavVisible = () => {
     if (newUser) {

@@ -17,11 +17,14 @@ export const isYou = (user: TUser, conversation: TConversation) => {
     isValid = true;
   }
 
-  if (typeof conversation.user !== 'string' && checkUser.id === conversation.user?._id) {
+  if (
+    typeof conversation.user !== 'string' &&
+    (checkUser.id === conversation.user?._id || checkUser.id === conversation.user?.id)
+  ) {
     isValid = true;
   }
 
-  if (users?.map((i) => i._id || i.id).indexOf(checkUser.id) !== -1) {
+  if (users?.map((i) => (typeof i === 'string' ? i : i._id || i.id)).indexOf(checkUser.id) !== -1) {
     isValid = true;
   }
 

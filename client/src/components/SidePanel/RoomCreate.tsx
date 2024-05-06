@@ -42,7 +42,7 @@ export default function RoomCreate() {
         e.preventDefault();
         handleSubmit();
       }}
-      className="mt-10 flex w-1/3 flex-col gap-5"
+      className="mt-10 flex w-full flex-col gap-5 px-8 lg:w-1/3"
     >
       <EndpointsMenu />
 

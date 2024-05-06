@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useCallback, useEffect, useState, useMemo, memo } from 'react';
-import type { ConversationListResponse, TUser } from 'librechat-data-provider';
+import type { ConversationListResponse } from 'librechat-data-provider';
 import {
   useMediaQuery,
   useAuthContext,
@@ -23,7 +23,6 @@ import store from '~/store';
 import SubscriptionBtn from '../SidePanel/Subscription/SubscriptionBtn';
 import NewRoom from './NewRoom';
 import CategorySwitch from './CategorySwitch';
-import { isPremiumUser } from '~/utils/checkUserValid';
 import Rooms from '../Room/Rooms';
 
 const Nav = ({ navVisible, setNavVisible }) => {
@@ -41,8 +40,6 @@ const Nav = ({ navVisible, setNavVisible }) => {
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isToggleHovering, setIsToggleHovering] = useState(false);
-
-  const user = useRecoilValue(store.user);
 
   useEffect(() => {
     if (isSmallScreen) {
@@ -85,6 +82,8 @@ const Nav = ({ navVisible, setNavVisible }) => {
       [],
     [data, searchQuery, searchQueryRes?.data],
   );
+
+  console.log(conversations);
 
   const onSearchSuccess = useCallback(({ data }: { data: ConversationListResponse }) => {
     const res = data;
@@ -177,7 +176,10 @@ const Nav = ({ navVisible, setNavVisible }) => {
                       ) : (
                         <>
                           {/* {isPremiumUser(user as TUser) && <NewRoom toggleNav={itemToggleNav} />} */}
-                          <NewRoom toggleNav={itemToggleNav} />
+                          <NewRoom
+                            toggleNav={itemToggleNav}
+                            subHeaders={<SearchBar clearSearch={clearSearch} />}
+                          />
                           <Rooms toggleNav={itemToggleNav} moveToTop={moveToTop} />
                         </>
                       )}

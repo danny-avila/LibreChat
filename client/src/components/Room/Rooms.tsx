@@ -1,13 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { TConversation, request } from 'librechat-data-provider';
 import Room from './Room';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import {
-  useConversationsInfiniteQuery,
-  useRoomsInfiniteQuery,
-  useSearchInfiniteQuery,
-} from '~/data-provider';
-import { useAuthContext } from '~/hooks';
+import { useSearchInfiniteQuery } from '~/data-provider';
 import store from '~/store';
 
 export default function Rooms({
@@ -17,53 +12,56 @@ export default function Rooms({
   moveToTop: () => void;
   toggleNav: () => void;
 }) {
-  // const [rooms, setRooms] = useState<{ owned: TConversation[]; joined: TConversation[] }>({
-  //   owned: [],
-  //   joined: [],
-  // });
   const [rooms, setRooms] = useRecoilState(store.rooms);
-  // const { isAuthenticated } = useAuthContext();
-  // const [pageNumber, setPageNumber] = useState(1);
-  // const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useRoomsInfiniteQuery(
-  //   { pageNumber: pageNumber.toString() },
-  //   { enabled: isAuthenticated },
-  // );
+  const searchQuery = useRecoilValue(store.searchQuery);
+  const searchQueryRes = useSearchInfiniteQuery(
+    { pageNumber: '1', searchQuery: searchQuery },
+    { enabled: true },
+  );
 
-  // const searchQuery = useRecoilValue(store.searchQuery);
-  // const searchQueryRes = useSearchInfiniteQuery(
-  //   { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
-  //   { enabled: isAuthenticated && !!searchQuery.length },
-  // );
-
-  // const conversations = useMemo(
-  //   () =>
-  //     (searchQuery ? searchQueryRes?.data : data)?.pages.flatMap((page) => page.conversations) ||
-  //     [],
-  //   [data, searchQuery, searchQueryRes?.data],
-  // );
-  // console.log('=== data in rooms ===', data);
+  const [searchResult, setSearchResult] = useState<TConversation[]>([]);
 
   useEffect(() => {
     request
       .get('/api/rooms')
       .then((res: unknown) => setRooms(res as TConversation[]))
       .catch((error) => console.error(error));
-  }, []);
+  }, [setRooms]);
+
+  useEffect(() => {
+    setSearchResult(
+      searchQueryRes.data?.pages[0].conversations
+        .map((obj) => (!obj.users ? { ...obj, users: [] } : obj))
+        .sort((a, b) => (b.users?.length ?? 0) - (a.users?.length ?? 0)) ?? [],
+    );
+  }, [searchQueryRes.data?.pages, setSearchResult]);
 
   return (
     <div className="text-token-text-primary flex flex-col gap-2 pb-2 text-sm">
       <div>
         <div>
           <span>
-            {rooms.map((room) => (
-              <Room
-                key={`${room.conversationId}-${room}`}
-                // isLatestConvo={room.conversationId === firstTodayConvoId}
-                room={room}
-                retainView={moveToTop}
-                toggleNav={toggleNav}
-              />
-            ))}
+            {!searchQuery &&
+              rooms.map((room) => (
+                <Room
+                  key={`${room.conversationId}-${room}`}
+                  // isLatestConvo={room.conversationId === firstTodayConvoId}
+                  room={room}
+                  retainView={moveToTop}
+                  toggleNav={toggleNav}
+                />
+              ))}
+            {searchQuery &&
+              searchResult &&
+              searchResult.map((room) => (
+                <Room
+                  key={`${room.conversationId}-${room}`}
+                  // isLatestConvo={room.conversationId === firstTodayConvoId}
+                  room={room}
+                  retainView={moveToTop}
+                  toggleNav={toggleNav}
+                />
+              ))}
           </span>
         </div>
       </div>

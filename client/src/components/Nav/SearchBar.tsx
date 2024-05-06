@@ -1,6 +1,6 @@
 import { forwardRef, useState, useCallback, useMemo, Ref } from 'react';
 import { Search, X } from 'lucide-react';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import debounce from 'lodash/debounce';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -11,6 +11,7 @@ type SearchBarProps = {
 };
 
 const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) => {
+  const convoType = useRecoilValue(store.convoType);
   const { clearSearch } = props;
   const setSearchQuery = useSetRecoilState(store.searchQuery);
   const [showClearIcon, setShowClearIcon] = useState(false);
@@ -55,7 +56,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: Ref<HTMLDivElement>) =
         onKeyDown={(e) => {
           e.code === 'Space' ? e.stopPropagation() : null;
         }}
-        placeholder={localize('com_nav_search_placeholder')}
+        placeholder={convoType === 'c' ? localize('com_nav_search_placeholder') : 'Search Rooms'}
         onKeyUp={handleKeyUp}
       />
       <X
