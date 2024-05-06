@@ -100,7 +100,7 @@ function Data() {
     <Tabs.Content
       value={SettingsTabValues.DATA}
       role="tabpanel"
-      className="w-full md:min-h-[300px]"
+      className="w-full md:min-h-[271px]"
       ref={dataTabRef}
     >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">

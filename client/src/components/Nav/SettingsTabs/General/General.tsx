@@ -141,7 +141,7 @@ function General() {
     <Tabs.Content
       value={SettingsTabValues.GENERAL}
       role="tabpanel"
-      className="w-full md:min-h-[300px]"
+      className="w-full md:min-h-[271px]"
       ref={contentRef}
     >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
