@@ -1,26 +1,34 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { SetterOrUpdater } from 'recoil';
-import MentionItem from './MentionItem';
+import type { OptionWithIcon } from '~/common';
+import { useAssistantsMapContext } from '~/Providers';
+import useMentions from '~/hooks/Input/useMentions';
 import { useLocalize, useCombobox } from '~/hooks';
+import MentionItem from './MentionItem';
 
 export default function Mention({
   setShowMentionPopover,
+  textAreaRef,
 }: {
   setShowMentionPopover: SetterOrUpdater<boolean>;
+  textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
 }) {
   const localize = useLocalize();
-  const mentions = ['Alice', 'Bob', 'Charlie'].map((name) => ({ label: name, value: name }));
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const assistantMap = useAssistantsMapContext();
+  const { options } = useMentions({ assistantMap });
   const [selectedMention, setSelectedMention] = useState('');
 
   const { open, setOpen, searchValue, setSearchValue, matches } = useCombobox({
     value: selectedMention,
-    options: mentions,
+    options,
   });
 
-  const handleSelect = (mention) => {
-    setSelectedMention(mention.value);
+  const handleSelect = (mention: OptionWithIcon) => {
+    // setSelectedMention(mention.value);
     setSearchValue('');
     setOpen(false);
+    setShowMentionPopover(false);
   };
 
   return (
@@ -28,10 +36,21 @@ export default function Mention({
       <div className="popover border-token-border-light rounded-2xl border bg-transparent p-2 shadow-lg">
         <input
           autoFocus
+          ref={inputRef}
           placeholder={localize('com_ui_mention')}
           className="mb-1 w-full border-0 bg-transparent p-2 text-sm focus:outline-none dark:text-gray-200"
           autoComplete="off"
           value={searchValue}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === 'Tab') {
+              handleSelect(matches[0]);
+            }
+            if (e.key === 'Backspace' && searchValue === '') {
+              setOpen(false);
+              setShowMentionPopover(false);
+              textAreaRef.current?.focus();
+            }
+          }}
           onChange={(e) => setSearchValue(e.target.value)}
           onFocus={() => setOpen(true)}
           onBlur={() => {
@@ -49,6 +68,7 @@ export default function Mention({
                 key={`${mention.value}-${index}`}
                 onClick={() => handleSelect(mention)}
                 name={mention.label ?? ''}
+                icon={mention.icon}
               />
             ))}
           </div>
