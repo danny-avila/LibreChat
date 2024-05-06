@@ -1,4 +1,5 @@
 import { Clock4 } from 'lucide-react';
+import { cn } from '~/utils';
 
 const fakeItem = {
   name: 'WebGPT🤖',
@@ -6,10 +7,23 @@ const fakeItem = {
     'ChatGPT with unbiased access to the Web in a variety of ways (Navigates pages, search engines & can build and send REST API Calls to external services). This results in fewer hallucinations. WebGPT🤖 can also build products using No-Code deployable playgrounds. Powered by Web Requests.',
 };
 
-export default function MentionItem() {
+export default function MentionItem({
+  name,
+  onClick,
+  index,
+}: {
+  name: string;
+  onClick: () => void;
+  index: number;
+}) {
   return (
-    <div tabIndex={0}>
-      <div className="hover:bg-token-main-surface-secondary text-token-text-primary bg-token-main-surface-secondary group flex h-10 items-center gap-2 rounded-lg px-2 text-sm font-medium">
+    <div tabIndex={index} onClick={onClick}>
+      <div
+        className={cn(
+          'hover:bg-token-main-surface-secondary text-token-text-primary bg-token-main-surface-secondary group flex h-10 items-center gap-2 rounded-lg px-2 text-sm font-medium dark:hover:bg-gray-700',
+          index === 0 ? 'dark:bg-gray-700' : '',
+        )}
+      >
         <div className="icon-xl h-7 w-7 flex-shrink-0">
           <div className="gizmo-shadow-stroke overflow-hidden rounded-full">
             <img
@@ -23,7 +37,7 @@ export default function MentionItem() {
         </div>
         <div className="flex h-fit grow flex-row justify-between space-x-2 overflow-hidden text-ellipsis whitespace-nowrap">
           <div className="flex flex-row space-x-2">
-            <span className="shrink-0 truncate">{fakeItem.name}</span>
+            <span className="shrink-0 truncate">{name}</span>
             <span className="text-token-text-tertiary flex-grow truncate text-sm font-light sm:max-w-xs lg:max-w-md">
               {fakeItem.description}
             </span>
