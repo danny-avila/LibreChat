@@ -4,10 +4,9 @@ import { useState, useRef, useMemo } from 'react';
 import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
-import { MinimalIcon, ConvoIconURL } from '~/components/Endpoints';
+import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 import { useUpdateConversationMutation } from '~/data-provider';
 import { useConversations, useNavigateToConvo } from '~/hooks';
-import { getEndpointField, getIconEndpoint } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import { useToastContext } from '~/Providers';
 import DeleteButton from './DeleteButton';
@@ -102,36 +101,6 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     );
   };
 
-  const iconURL = conversation.iconURL ?? '';
-  let endpoint = conversation.endpoint;
-  endpoint = getIconEndpoint({ endpointsConfig, iconURL, endpoint });
-
-  const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-  const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
-
-  let icon: React.ReactNode | null = null;
-  if (iconURL && iconURL.includes('http')) {
-    icon = ConvoIconURL({
-      preset: conversation,
-      context: 'menu-item',
-      endpointIconURL,
-    });
-  } else {
-    icon = MinimalIcon({
-      size: 20,
-      iconURL: endpointIconURL,
-      endpoint,
-      endpointType,
-      model: conversation.model,
-      error: false,
-      className: 'mr-0',
-      isCreatedByUser: false,
-      chatGptLabel: undefined,
-      modelLabel: undefined,
-      jailbreak: undefined,
-    });
-  }
-
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Enter') {
       onRename(e);
@@ -160,7 +129,12 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       {...aProps}
       title={title}
     >
-      {icon}
+      <EndpointIcon
+        conversation={conversation}
+        endpointsConfig={endpointsConfig}
+        size={20}
+        context="menu-item"
+      />
       <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">
         {renaming === true ? (
           <input
