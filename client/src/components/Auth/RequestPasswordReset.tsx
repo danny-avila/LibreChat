@@ -165,24 +165,28 @@ function RequestPasswordReset() {
   );
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-between bg-white pt-6 dark:bg-gray-900 sm:pt-0">
-      <img src="/assets/logo.svg" className="m-4 mt-12 h-24 w-24"></img>
+    <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
+      <div className="mt-12 h-24 w-full bg-cover">
+        <img src="/assets/logo.svg" className="h-full w-full object-contain" alt="Logo" />
+      </div>
       <div className="absolute bottom-0 left-0 md:m-4">
         <ThemeSelector />
       </div>
-      <div className="mt-5 w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
-        <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
-          {headerText}
-        </h1>
-        {requestError && (
-          <div
-            className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
-            role="alert"
-          >
-            {localize('com_auth_error_reset_password')}
-          </div>
-        )}
-        {renderFormContent()}
+      <div className="flex flex-grow items-center justify-center">
+        <div className="w-authPageWidth overflow-hidden bg-white px-6 py-4 dark:bg-gray-900 sm:max-w-md sm:rounded-lg">
+          <h1 className="mb-4 text-center text-3xl font-semibold text-black dark:text-white">
+            {headerText}
+          </h1>
+          {requestError && (
+            <div
+              className="rounded-md border border-red-500 bg-red-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
+              role="alert"
+            >
+              {localize('com_auth_error_reset_password')}
+            </div>
+          )}
+          {renderFormContent()}
+        </div>
       </div>
       <div className="align-end m-4 flex justify-center gap-2">
         {privacyPolicyRender}
