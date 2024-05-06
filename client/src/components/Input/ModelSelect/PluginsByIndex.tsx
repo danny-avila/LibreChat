@@ -25,6 +25,10 @@ const pluginStore: TPlugin = {
   authenticated: false,
 };
 
+// todo: add whitelist to config
+const whitelist = ['web_search', 'dalle'];
+
+
 export default function PluginsByIndex({
   conversation,
   setOption,
@@ -116,7 +120,7 @@ export default function PluginsByIndex({
             value={conversation.tools || []}
             isSelected={checkPluginSelection}
             setSelected={setTools}
-            availableValues={availableTools}
+            availableValues={availableTools.filter((el) => whitelist.includes(el.pluginKey))}
             optionValueKey="pluginKey"
             showAbove={false}
             showLabel={false}
