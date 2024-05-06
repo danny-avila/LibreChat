@@ -1,6 +1,6 @@
 import { useLocation } from 'react-router-dom';
 import { Fragment, useState, memo } from 'react';
-import { Download, FileText } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { Menu, Transition } from '@headlessui/react';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import { useGetUserBalance, useGetStartupConfig } from 'librechat-data-provider/react-query';
@@ -8,7 +8,6 @@ import type { TConversation } from 'librechat-data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
-import { ExportModal } from './ExportConversation';
 import { LinkIcon, GearIcon } from '~/components';
 import { UserIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
@@ -26,7 +25,6 @@ function NavLinks() {
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.checkBalance,
   });
-  const [showExports, setShowExports] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useRecoilState(store.showFiles);
 
@@ -42,30 +40,11 @@ function NavLinks() {
     conversation = activeConvo;
   }
 
-  const exportable =
-    conversation &&
-    conversation.conversationId &&
-    conversation.conversationId !== 'new' &&
-    conversation.conversationId !== 'search';
-
-  const clickHandler = () => {
-    if (exportable) {
-      setShowExports(true);
-    }
-  };
-
   return (
     <>
       <Menu as="div" className="group relative">
         {({ open }) => (
           <>
-            {startupConfig?.checkBalance &&
-              balanceQuery.data &&
-              !isNaN(parseFloat(balanceQuery.data)) && (
-              <div className="m-1 ml-3 whitespace-nowrap text-left text-sm text-black dark:text-gray-200">
-                {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
-              </div>
-            )}
             <Menu.Button
               className={cn(
                 'group-ui-open:bg-gray-100 dark:group-ui-open:bg-gray-700 duration-350 mt-text-sm flex h-auto w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800',
@@ -114,15 +93,16 @@ function NavLinks() {
                   {user?.email || localize('com_nav_user')}
                 </div>
                 <div className="my-1.5 h-px bg-black/10 dark:bg-white/10" role="none" />
-                <Menu.Item as="div" disabled={!exportable}>
-                  <NavLink
-                    disabled={!exportable}
-                    svg={() => <Download size={16} />}
-                    text={localize('com_nav_export_conversation')}
-                    clickHandler={clickHandler}
-                  />
-                </Menu.Item>
-                <div className="my-1.5 h-px bg-black/10 dark:bg-white/10" role="none" />
+                {startupConfig?.checkBalance &&
+                  balanceQuery.data &&
+                  !isNaN(parseFloat(balanceQuery.data)) && (
+                  <>
+                    <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm">
+                      {`Balance: ${parseFloat(balanceQuery.data).toFixed(2)}`}
+                    </div>
+                    <div className="my-1.5 h-px bg-black/10 dark:bg-white/10" role="none" />
+                  </>
+                )}
                 <Menu.Item as="div">
                   <NavLink
                     svg={() => <FileText className="icon-md" />}
@@ -155,9 +135,6 @@ function NavLinks() {
           </>
         )}
       </Menu>
-      {showExports && (
-        <ExportModal open={showExports} onOpenChange={setShowExports} conversation={conversation} />
-      )}
       {showFiles && <FilesView open={showFiles} onOpenChange={setShowFiles} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </>
