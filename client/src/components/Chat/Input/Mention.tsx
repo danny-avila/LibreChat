@@ -5,6 +5,7 @@ import type { MentionOption } from '~/common';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
 import { useLocalize, useCombobox } from '~/hooks';
+import { removeAtSymbolIfLast } from '~/utils';
 import MentionItem from './MentionItem';
 
 export default function Mention({
@@ -38,6 +39,10 @@ export default function Mention({
       setOpen(false);
       setShowMentionPopover(false);
       onSelectMention(mention);
+
+      if (textAreaRef.current) {
+        removeAtSymbolIfLast(textAreaRef.current);
+      }
     };
 
     if (mention.type === 'endpoint' && mention.value === EModelEndpoint.assistants) {

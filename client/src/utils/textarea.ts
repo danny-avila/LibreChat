@@ -57,3 +57,19 @@ export const trimUndoneRange = (textAreaRef: React.RefObject<HTMLTextAreaElement
   textAreaRef.current.value = newValue;
   textAreaRef.current.setSelectionRange(selectionStart, selectionStart);
 };
+
+/**
+ * Remove the "@" character from the end of the textarea's text if it's present.
+ * This function ensures that the "@" is only removed if it's the last character.
+ *
+ * @param {HTMLTextAreaElement} textarea - The textarea element where text manipulation will occur.
+ */
+export function removeAtSymbolIfLast(textarea: HTMLTextAreaElement) {
+  if (textarea.value.endsWith('@')) {
+    textarea.value = textarea.value.slice(0, -1);
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  textarea.focus();
+}
