@@ -8,9 +8,9 @@ const uuid = require('uuid');
  * @param {string} name
  * @returns [Room]
  */
-const getRooms = async (name) => {
+const getRooms = async (name = '') => {
   try {
-    const rooms = await Conversation.find({ name: RegExp(name, 'i'), isRoom: true })
+    const rooms = await Conversation.find({ title: RegExp(name, 'i'), isRoom: true })
       .populate('user')
       .populate('users');
     return rooms.reverse();

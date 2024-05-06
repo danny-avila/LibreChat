@@ -9,6 +9,7 @@ const { isEnabled } = require('~/server/utils');
 const { Message } = require('~/models/Message');
 const keyvRedis = require('~/cache/keyvRedis');
 const { logger } = require('~/config');
+const { getRooms } = require('~/models');
 
 const router = express.Router();
 
@@ -27,9 +28,18 @@ router.get('/sync', async function (req, res) {
 
 router.get('/', async function (req, res) {
   try {
-    const isRoom = req.query.isRoom;
+    const searchType = req.query.searchType;
+
     let user = req.user.id ?? '';
     const { q } = req.query;
+
+    // Searching room Feature
+    if (searchType == 'r') {
+      const rooms = await getRooms(q);
+      console.log('--- searchedRooms ---', rooms);
+      return res.status(200).send({ conversations: rooms });
+    }
+
     const pageNumber = req.query.pageNumber || 1;
     const key = `${user}:search:${q}`;
     const cached = await cache.get(key);
@@ -65,7 +75,7 @@ router.get('/', async function (req, res) {
     // debugging:
     // logger.debug('user:', user, 'message hits:', messages.length, 'convo hits:', titles.length);
     // logger.debug('sorted hits:', sortedHits.length);
-    const result = await getConvosQueried(user, sortedHits, pageNumber, isRoom);
+    const result = await getConvosQueried(user, sortedHits, pageNumber);
 
     const activeMessages = [];
     for (let i = 0; i < messages.length; i++) {
