@@ -34,7 +34,7 @@ export default function EndpointIcon({
   const iconURL = assistantAvatar || convoIconURL;
 
   let icon: React.ReactNode | null = null;
-  if (iconURL && iconURL.includes('http')) {
+  if (iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))) {
     icon = ConvoIconURL({
       preset: {
         ...(conversation as TPreset),
