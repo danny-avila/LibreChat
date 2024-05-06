@@ -261,6 +261,10 @@ export const deleteAction = async (
 
 /* conversations */
 
+export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkConvoResponse> {
+  return request.post(endpoints.forkConversation(), payload);
+}
+
 export function deleteConversation(payload: t.TDeleteConversationRequest) {
   //todo: this should be a DELETE request
   return request.post(endpoints.deleteConversation(), { arg: payload });

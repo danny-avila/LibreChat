@@ -48,7 +48,7 @@ async function importChatBotUiConvo(
 ) {
   // this have been tested with chatbot-ui V1 export https://github.com/mckaywrigley/chatbot-ui/tree/b865b0555f53957e96727bc0bbb369c9eaecd83b#legacy-code
   try {
-    /** @type {import('./importBatchBuilder').ImportBatchBuilder} */
+    /** @type {ImportBatchBuilder} */
     const importBatchBuilder = builderFactory(requestUserId);
 
     for (const historyItem of jsonData.history) {
@@ -83,7 +83,7 @@ async function importLibreChatConvo(
   builderFactory = createImportBatchBuilder,
 ) {
   try {
-    /** @type {import('./importBatchBuilder').ImportBatchBuilder} */
+    /** @type {ImportBatchBuilder} */
     const importBatchBuilder = builderFactory(requestUserId);
     importBatchBuilder.startConversation(EModelEndpoint.openAI);
 
@@ -163,7 +163,7 @@ async function importChatGptConvo(
  * It directly manages the addition of messages for different roles and handles citations for assistant messages.
  *
  * @param {ChatGPTConvo} conv - A single conversation object that contains multiple messages and other details.
- * @param {import('./importBatchBuilder').ImportBatchBuilder} importBatchBuilder - The batch builder instance used to manage and batch conversation data.
+ * @param {ImportBatchBuilder} importBatchBuilder - The batch builder instance used to manage and batch conversation data.
  * @param {string} requestUserId - The ID of the user who initiated the import process.
  * @returns {void}
  */

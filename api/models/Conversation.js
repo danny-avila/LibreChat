@@ -2,6 +2,12 @@ const Conversation = require('./schema/convoSchema');
 const { getMessages, deleteMessages } = require('./Message');
 const logger = require('~/config/winston');
 
+/**
+ * Retrieves a single conversation for a given user and conversation ID.
+ * @param {string} user - The user's ID.
+ * @param {string} conversationId - The conversation's ID.
+ * @returns {Promise<TConversation>} The conversation object.
+ */
 const getConvo = async (user, conversationId) => {
   try {
     return await Conversation.findOne({ user, conversationId }).lean();
