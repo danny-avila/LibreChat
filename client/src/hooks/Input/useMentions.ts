@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import {
-  // useGetModelsQuery,
+  useGetModelsQuery,
   useGetStartupConfig,
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
@@ -8,17 +8,19 @@ import { alternateName } from 'librechat-data-provider';
 import type { Assistant } from 'librechat-data-provider';
 import { EndpointIcon } from '~/components/Endpoints';
 import { useGetPresetsQuery } from '~/data-provider';
+import useSelectMention from './useSelectMention';
 import { mapEndpoints } from '~/utils';
 
 export default function useMentions({ assistantMap }: { assistantMap: Record<string, Assistant> }) {
-  // const { data: models } = useGetModelsQuery();
   const { data: presets } = useGetPresetsQuery();
+  const { data: modelsConfig } = useGetModelsQuery();
   const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { data: endpoints = [] } = useGetEndpointsQuery({
     select: mapEndpoints,
   });
   const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
+  const { onSelectMention } = useSelectMention({ modelSpecs, endpointsConfig, presets });
 
   const options = useMemo(() => {
     const mentions = [
@@ -64,5 +66,7 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
 
   return {
     options,
+    modelsConfig,
+    onSelectMention,
   };
 }
