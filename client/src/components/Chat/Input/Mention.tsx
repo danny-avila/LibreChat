@@ -1,8 +1,13 @@
 import { useState } from 'react';
+import type { SetterOrUpdater } from 'recoil';
 import MentionItem from './MentionItem';
 import { useLocalize, useCombobox } from '~/hooks';
 
-export default function Mention() {
+export default function Mention({
+  setShowMentionPopover,
+}: {
+  setShowMentionPopover: SetterOrUpdater<boolean>;
+}) {
   const localize = useLocalize();
   const mentions = ['Alice', 'Bob', 'Charlie'].map((name) => ({ label: name, value: name }));
   const [selectedMention, setSelectedMention] = useState('');
@@ -22,13 +27,19 @@ export default function Mention() {
     <div className="absolute bottom-16 z-10 w-full space-y-2">
       <div className="popover border-token-border-light rounded-2xl border bg-transparent p-2 shadow-lg">
         <input
+          autoFocus
           placeholder={localize('com_ui_mention')}
           className="mb-1 w-full border-0 bg-transparent p-2 text-sm focus:outline-none dark:text-gray-200"
           autoComplete="off"
           value={searchValue}
           onChange={(e) => setSearchValue(e.target.value)}
           onFocus={() => setOpen(true)}
-          onBlur={() => setOpen(false)}
+          onBlur={() => {
+            setTimeout(() => {
+              setOpen(false);
+              setShowMentionPopover(false);
+            }, 100);
+          }}
         />
         {open && (
           <div className="max-h-40 overflow-y-auto">
