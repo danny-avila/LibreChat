@@ -65,7 +65,7 @@ export default function Header() {
         <div className="juice:gap-1 flex gap-2 pr-1">
           <TooltipProvider delayDuration={50}>
             <Tooltip>
-              <TooltipTrigger>
+              <TooltipTrigger asChild>
                 <button
                   className="btn btn-neutral btn-small relative flex h-9 w-9 items-center justify-center whitespace-nowrap rounded-lg"
                   onClick={clickHandler}
