@@ -22,18 +22,21 @@ export default function MentionItem({
   onClick,
   index,
   icon,
+  isActive,
 }: {
   name: string;
   onClick: () => void;
   index: number;
   icon?: React.ReactNode;
+  isActive?: boolean;
 }) {
   return (
-    <div tabIndex={index} onClick={onClick}>
+    <div tabIndex={index} onClick={onClick} id={`mention-item-${index}`}>
       <div
         className={cn(
           'hover:bg-token-main-surface-secondary text-token-text-primary bg-token-main-surface-secondary group flex h-10 items-center gap-2 rounded-lg px-2 text-sm font-medium dark:hover:bg-gray-600',
           index === 0 ? 'dark:bg-gray-600' : '',
+          isActive ? 'dark:bg-gray-600' : '',
         )}
       >
         {icon ? icon : null}

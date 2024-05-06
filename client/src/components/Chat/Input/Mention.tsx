@@ -18,12 +18,13 @@ export default function Mention({
   const assistantMap = useAssistantsMapContext();
   const { options, modelsConfig, onSelectMention } = useMentions({ assistantMap });
 
+  const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [inputOptions, setInputOptions] = useState<MentionOption[]>(options);
 
   const { open, setOpen, searchValue, setSearchValue, matches } = useCombobox({
-    value: '', // not necessary here
+    value: '',
     options: inputOptions,
   });
 
@@ -41,8 +42,7 @@ export default function Mention({
 
     if (mention.type === 'endpoint' && mention.value === EModelEndpoint.assistants) {
       defaultSelect();
-    }
-    if (mention.type === 'endpoint') {
+    } else if (mention.type === 'endpoint') {
       const models = (modelsConfig?.[mention.value ?? ''] ?? []).map((model) => ({
         value: mention.value,
         label: model,
@@ -51,9 +51,8 @@ export default function Mention({
 
       setSearchValue('');
       setInputOptions(models);
+      setActiveIndex(0);
       inputRef.current?.focus();
-    } else if (mention.type === 'model') {
-      defaultSelect();
     } else {
       defaultSelect();
     }
@@ -62,8 +61,14 @@ export default function Mention({
   useEffect(() => {
     if (!open) {
       setInputOptions(options);
+      setActiveIndex(0);
     }
   }, [open, options]);
+
+  useEffect(() => {
+    const currentActiveItem = document.getElementById(`mention-item-${activeIndex}`);
+    currentActiveItem?.scrollIntoView({ behavior: 'instant', block: 'nearest' });
+  }, [activeIndex]);
 
   return (
     <div className="absolute bottom-16 z-10 w-full space-y-2">
@@ -76,14 +81,17 @@ export default function Mention({
           autoComplete="off"
           value={searchValue}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === 'Tab') {
+            if (e.key === 'ArrowDown') {
+              setActiveIndex((prevIndex) => (prevIndex + 1) % matches.length);
+            } else if (e.key === 'ArrowUp') {
+              setActiveIndex((prevIndex) => (prevIndex - 1 + matches.length) % matches.length);
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
               const mentionOption = matches[0] as MentionOption | undefined;
               if (mentionOption?.type === 'endpoint') {
                 e.preventDefault();
               }
-              handleSelect(mentionOption);
-            }
-            if (e.key === 'Backspace' && searchValue === '') {
+              handleSelect(matches[activeIndex] as MentionOption);
+            } else if (e.key === 'Backspace' && searchValue === '') {
               setOpen(false);
               setShowMentionPopover(false);
               textAreaRef.current?.focus();
@@ -113,6 +121,7 @@ export default function Mention({
                 }}
                 name={mention.label ?? ''}
                 icon={mention.icon}
+                isActive={index === activeIndex}
               />
             ))}
           </div>
