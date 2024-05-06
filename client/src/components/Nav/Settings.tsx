@@ -36,7 +36,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               role="tablist"
               aria-orientation="vertical"
               className={cn(
-                'min-w-auto -ml-[8px] flex max-w-[300px] md:max-w-none flex-shrink-0 flex-col overflow-auto',
+                'min-w-auto max-w-auto -ml-[8px] flex flex-shrink-0 flex-col overflow-auto sm:max-w-none',
                 isSmallScreen ? 'flex-row rounded-lg bg-gray-200 p-1 dark:bg-gray-700' : '',
               )}
               style={{ outline: 'none' }}
@@ -112,7 +112,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                 {localize('com_nav_setting_account')}
               </Tabs.Trigger>
             </Tabs.List>
-            <div className="max-h-[271px] max-w-[300px] md:w-full overflow-auto overflow-auto">
+            <div className="max-h-[271px] max-w-[300px] overflow-auto overflow-auto sm:w-full sm:max-w-none">
               <General />
               <Messages />
               <Beta />
