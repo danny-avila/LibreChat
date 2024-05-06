@@ -138,13 +138,17 @@ export default function useTextarea({
 
   const handleKeyUp = useCallback(
     (e: KeyEvent) => {
-      const key = e.key;
-      const textarea = textAreaRef.current;
+      let isMention = false;
+      if (e.key === '@' || e.key === '2') {
+        const text = textAreaRef.current?.value;
+        isMention = !!(text && text[text.length - 1] === '@');
+      }
 
-      if (key === '@' && textarea) {
-        const startPos = textarea.selectionStart;
+      if (isMention) {
+        const startPos = textAreaRef.current?.selectionStart;
         const isAtStart = startPos === 1;
-        const isPrecededBySpace = textarea.value.charAt(startPos - 2) === ' ';
+        const isPrecededBySpace =
+          startPos && textAreaRef.current?.value.charAt(startPos - 2) === ' ';
 
         if (isAtStart || isPrecededBySpace) {
           setShowMentionPopover(true);
