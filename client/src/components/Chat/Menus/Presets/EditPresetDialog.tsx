@@ -105,7 +105,6 @@ const EditPresetDialog = ({
                 conversation={preset}
                 setOption={setOption}
                 isPreset={true}
-                isMultiChat={true}
                 className="h-full md:mb-4 md:h-[440px]"
               />
             </div>

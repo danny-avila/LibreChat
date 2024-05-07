@@ -26,8 +26,7 @@ export default {
     'ファイルをナレッジとしてアップロードする前に、アシスタントを作成し、Code InterpreterまたはRetrievalを有効にして保存する必要があります。',
   com_assistants_image_vision: 'Image Vision',
   com_assistants_code_interpreter: 'Code Interpreter',
-  com_assistants_code_interpreter_files:
-    '次のファイルはCode Interpreterでのみ使用できます。',
+  com_assistants_code_interpreter_files: '次のファイルはCode Interpreterでのみ使用できます。',
   com_assistants_retrieval: 'Retrieval',
   com_assistants_search_name: 'Assistantの名前で検索',
   com_assistants_tools: 'Tools',
@@ -44,7 +43,8 @@ export default {
   com_assistants_update_actions_success: 'アクションが作成または更新されました',
   com_assistants_update_actions_error: 'アクションの作成または更新中にエラーが発生しました。',
   com_assistants_delete_actions_error: 'アクションの削除中にエラーが発生しました。',
-  com_assistants_actions_info: 'アシスタントが API を介して情報を取得したり、アクションを実行したりできるようにします\'s',
+  com_assistants_actions_info:
+    'アシスタントが API を介して情報を取得したり、アクションを実行したりできるようにします\'s',
   com_assistants_name_placeholder: 'オプション: アシスタントの名前',
   com_assistants_instructions_placeholder: 'アシスタントが使用するシステム指示',
   com_assistants_description_placeholder: 'オプション: ここにアシスタントについて説明します',
@@ -54,7 +54,8 @@ export default {
   com_assistants_create_success: 'アシスタントが正常に作成されました。',
   com_assistants_create_error: 'アシスタントの作成中にエラーが発生しました。',
   com_ui_field_required: '必須入力項目です',
-  com_ui_download_error: 'ファイルのダウンロード中にエラーが発生しました。ファイルが削除された可能性があります。',
+  com_ui_download_error:
+    'ファイルのダウンロード中にエラーが発生しました。ファイルが削除された可能性があります。',
   com_ui_attach_error_type: 'エンドポイントでサポートされていないファイル タイプ:',
   com_ui_attach_error_size: 'エンドポイントのファイル サイズ制限を超えました:',
   com_ui_attach_error:
@@ -130,6 +131,10 @@ export default {
   com_ui_clear: '削除する',
   com_ui_revoke: '無効にする',
   com_ui_revoke_info: 'ユーザへ発行した認証情報をすべて無効にする。',
+  com_ui_import_conversation: 'インポート',
+  com_ui_import_conversation_info: 'JSONファイルから会話をインポートする',
+  com_ui_import_conversation_success: '会話のインポートに成功しました',
+  com_ui_import_conversation_error: '会話のインポート時にエラーが発生しました',
   com_ui_confirm_action: '実行する',
   com_ui_chats: 'チャット',
   com_ui_avatar: 'アバター',
@@ -144,8 +149,7 @@ export default {
   com_ui_create: '作成',
   com_ui_delete_conversation: 'チャットを削除しますか？',
   com_ui_delete_conversation_confirm: 'このチャットは削除されます。',
-  com_ui_delete_assistant_confirm:
-    'このアシスタントを削除しますか？ この操作は元に戻せません。',
+  com_ui_delete_assistant_confirm: 'このアシスタントを削除しますか？ この操作は元に戻せません。',
   com_ui_preview: 'プレビュー',
   com_ui_upload: 'アップロード',
   com_ui_connect: '接続',
@@ -340,7 +344,8 @@ export default {
     'コンプリーションのステップをスキップする。(最終的な回答と生成されたステップをレビューする機能)',
   com_endpoint_stop: 'シーケンスを停止',
   com_endpoint_stop_placeholder: 'Enterキー押下で値を区切ります',
-  com_endpoint_openai_stop: 'APIがさらにトークンを生成するのを止めるため、最大で4つのシーケンスを設定可能',
+  com_endpoint_openai_stop:
+    'APIがさらにトークンを生成するのを止めるため、最大で4つのシーケンスを設定可能',
   com_endpoint_config_key: 'API Keyを設定',
   com_endpoint_assistant_placeholder: '右側のサイドパネルからアシスタントを選択してください',
   com_endpoint_config_placeholder: 'ヘッダーメニューからAPI Keyを設定してください。',
@@ -391,7 +396,8 @@ export default {
   com_nav_plugin_uninstall: 'アンインストール',
   com_nav_tool_add: '追加',
   com_nav_tool_dialog: 'アシスタントツール',
-  com_nav_tool_dialog_description: 'ツールの選択を維持するには、アシスタントを保存する必要があります。',
+  com_nav_tool_dialog_description:
+    'ツールの選択を維持するには、アシスタントを保存する必要があります。',
   com_nav_tool_remove: '削除',
   com_nav_tool_search: 'ツールを検索',
   com_show_agent_settings: 'エージェント設定を表示',

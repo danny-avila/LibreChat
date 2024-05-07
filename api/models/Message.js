@@ -11,6 +11,7 @@ module.exports = {
   async saveMessage({
     user,
     endpoint,
+    iconURL,
     messageId,
     newMessageId,
     conversationId,
@@ -37,6 +38,7 @@ module.exports = {
 
       const update = {
         user,
+        iconURL,
         endpoint,
         messageId: newMessageId || messageId,
         conversationId,
@@ -75,6 +77,25 @@ module.exports = {
       throw new Error('Failed to save message.');
     }
   },
+
+  async bulkSaveMessages(messages) {
+    try {
+      const bulkOps = messages.map((message) => ({
+        updateOne: {
+          filter: { messageId: message.messageId },
+          update: message,
+          upsert: true,
+        },
+      }));
+
+      const result = await Message.bulkWrite(bulkOps);
+      return result;
+    } catch (err) {
+      logger.error('Error saving messages in bulk:', err);
+      throw new Error('Failed to save messages in bulk.');
+    }
+  },
+
   /**
    * Records a message in the database.
    *

@@ -7,7 +7,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { useGetFiles } from '~/data-provider';
 import { buildTree, mapFiles } from '~/utils';
 import { Spinner } from '../svg';
-import MultiMessage from '../Messages/MultiMessage';
+import OldMultiMessage from '../Messages/MultiMessage';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
 import { useScreenshot } from '~/hooks/';
 // import { useRecoilValue } from 'recoil';
@@ -385,7 +385,7 @@ export default function SharedConvo() {
               >
                 <div className="dark:gpt-dark-gray flex h-auto flex-col items-center text-sm">
                   {conversation && msgTree && convoUser ? (
-                    <MultiMessage
+                    <OldMultiMessage
                       key={conversation.conversationId} // avoid internal state mixture
                       messageId={conversation.conversationId}
                       conversation={conversation}

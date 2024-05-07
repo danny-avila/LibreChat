@@ -141,6 +141,7 @@ const fetchModels = async ({
  * @param {object} opts - The options for fetching the models.
  * @param {string} opts.user - The user ID to send to the API.
  * @param {boolean} [opts.azure=false] - Whether to fetch models from Azure.
+ * @param {boolean} [opts.assistants=false] - Whether to fetch models from Azure.
  * @param {boolean} [opts.plugins=false] - Whether to fetch models from the plugins.
  * @param {string[]} [_models=[]] - The models to use as a fallback.
  */
@@ -150,7 +151,10 @@ const fetchOpenAIModels = async (opts, _models = []) => {
   const openaiBaseURL = 'https://api.openai.com/v1';
   let baseURL = openaiBaseURL;
   let reverseProxyUrl = process.env.OPENAI_REVERSE_PROXY;
-  if (opts.azure) {
+
+  if (opts.assistants && process.env.ASSISTANTS_BASE_URL) {
+    reverseProxyUrl = process.env.ASSISTANTS_BASE_URL;
+  } else if (opts.azure) {
     return models;
     // const azure = getAzureCredentials();
     // baseURL = (genAzureChatCompletion(azure))
@@ -242,10 +246,6 @@ const getOpenAIModels = async (opts) => {
   }
 
   if (userProvidedOpenAI && !process.env.OPENROUTER_API_KEY) {
-    return models;
-  }
-
-  if (opts.assistants) {
     return models;
   }
 

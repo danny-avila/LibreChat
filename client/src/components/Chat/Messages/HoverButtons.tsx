@@ -14,6 +14,9 @@ import {
   StopIcon,
 } from '~/components/svg';
 import { useGenerationsByLatest, useGenerations, useLocalize } from '~/hooks';
+// import { Clipboard, CheckMark, EditIcon, RegenerateIcon, ContinueIcon } from '~/components/svg';
+// import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { Fork } from '~/components/Conversations';
 import { cn } from '~/utils';
 
 type THoverButtons = {
@@ -62,13 +65,14 @@ export default function HoverButtons({
   const endpoint = endpointType ?? _endpoint;
   const [isCopied, setIsCopied] = useState(false);
   const [playbackStatus, setPlaybackStatus] = useState({ isPaused: false, isStopped: true });
-  const { hideEditButton, regenerateEnabled, continueSupported } = useGenerations({
-    isEditing,
-    isSubmitting,
-    message,
-    endpoint: endpoint ?? '',
-    latestMessage,
-  });
+  const { hideEditButton, regenerateEnabled, continueSupported, forkingSupported } =
+    useGenerationsByLatest({
+      isEditing,
+      isSubmitting,
+      message,
+      endpoint: endpoint ?? '',
+      latestMessage,
+    });
   if (!conversation) {
     return null;
   }
@@ -170,6 +174,13 @@ export default function HoverButtons({
           <ContinueIcon className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
+      <Fork
+        isLast={isLast}
+        messageId={message.messageId}
+        conversationId={conversation.conversationId}
+        forkingSupported={forkingSupported}
+        latestMessage={latestMessage}
+      />
     </div>
   );
 }

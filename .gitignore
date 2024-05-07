@@ -77,6 +77,7 @@ config.local.ts
 junit.xml
 **/.venv/
 .hintrc
+**/venv/
 
 # docker override file
 docker-compose.override.yaml

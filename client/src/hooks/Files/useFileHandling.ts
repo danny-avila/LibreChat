@@ -123,7 +123,7 @@ const useFileHandling = (params?: UseFileHandling) => {
       return;
     }
 
-    startUploadTimer(extendedFile.file_id, extendedFile.file?.name || 'File');
+    startUploadTimer(extendedFile.file_id, extendedFile.file?.name || 'File', extendedFile.size);
 
     const formData = new FormData();
     formData.append(
@@ -163,6 +163,10 @@ const useFileHandling = (params?: UseFileHandling) => {
   const validateFiles = (fileList: File[]) => {
     const existingFiles = Array.from(files.values());
     const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
+    if (incomingTotalSize === 0) {
+      setError('Empty files are not allowed.');
+      return false;
+    }
     const currentTotalSize = existingFiles.reduce((total, file) => total + file.size, 0);
 
     if (fileList.length + files.size > fileLimit) {

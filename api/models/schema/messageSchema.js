@@ -117,6 +117,10 @@ const messageSchema = mongoose.Schema(
     thread_id: {
       type: String,
     },
+    /* frontend components */
+    iconURL: {
+      type: String,
+    },
   },
   { timestamps: true },
 );

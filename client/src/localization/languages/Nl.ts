@@ -47,6 +47,11 @@ export default {
   com_ui_clear: 'Wissen',
   com_ui_revoke: 'Intrekken',
   com_ui_revoke_info: 'Trek alle door de gebruiker verstrekte referenties in',
+  com_ui_import_conversation: 'Importeren',
+  com_ui_import_conversation_info: 'Gesprekken importeren vanuit een JSON-bestand',
+  com_ui_import_conversation_success: 'Gesprekken succesvol geïmporteerd',
+  com_ui_import_conversation_error:
+    'Er is een fout opgetreden bij het importeren van je gesprekken',
   com_ui_confirm_action: 'Bevestig actie',
   com_ui_chats: 'chats',
   com_ui_delete: 'Verwijderen',

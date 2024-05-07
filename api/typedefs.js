@@ -301,6 +301,18 @@
  */
 
 /**
+ * @exports TStartupConfig
+ * @typedef {import('librechat-data-provider').TStartupConfig} TStartupConfig
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TConfigDefaults
+ * @typedef {import('librechat-data-provider').TConfigDefaults} TConfigDefaults
+ * @memberof typedefs
+ */
+
+/**
  * @exports TPlugin
  * @typedef {import('librechat-data-provider').TPlugin} TPlugin
  * @memberof typedefs
@@ -339,6 +351,18 @@
 /**
  * @exports TMessage
  * @typedef {import('librechat-data-provider').TMessage} TMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TConversation
+ * @typedef {import('librechat-data-provider').TConversation} TConversation
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TModelSpec
+ * @typedef {import('librechat-data-provider').TModelSpec} TModelSpec
  * @memberof typedefs
  */
 
@@ -617,6 +641,12 @@
 /**
  * @exports RunManager
  * @typedef {import('./server/services/Runs/RunManager.js').RunManager} RunManager
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ImportBatchBuilder
+ * @typedef {import('./server/utils/import/importBatchBuilder.js').ImportBatchBuilder} ImportBatchBuilder
  * @memberof typedefs
  */
 
@@ -1176,5 +1206,74 @@
 /**
  * @typedef {Object} OllamaListResponse
  * @property {OllamaModel[]} models - the list of models available.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTAuthor
+ * @property {string} role - The role of the author (e.g., 'assistant', 'system', 'user').
+ * @property {?string} name - The name of the author, if available.
+ * @property {Object} metadata - Additional metadata related to the author.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTContentPart
+ * @property {string} content_type - The type of content (e.g., 'text').
+ * @property {string[]} parts - The textual parts of the message.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTMetadata
+ * @property {boolean} is_visually_hidden_from_conversation - Indicates if the message should be hidden.
+ * @property {?Array<Object>} citations - Potential citations included in the message.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTMessage
+ * @property {string} id - Unique identifier for the message.
+ * @property {?ChatGPTAuthor} author - The author of the message.
+ * @property {?number} create_time - Creation time as a Unix timestamp.
+ * @property {?number} update_time - Last update time as a Unix timestamp.
+ * @property {ChatGPTContentPart} content - Content of the message.
+ * @property {string} status - Status of the message (e.g., 'finished_successfully').
+ * @property {boolean} end_turn - Indicates if it's the end of a conversation turn.
+ * @property {number} weight - A numerical value representing the weight/importance of the message.
+ * @property {ChatGPTMetadata} metadata - Metadata associated with the message.
+ * @property {string} recipient - Intended recipient of the message.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTMapping
+ * @property {ChatGPTMessage} message - Details of the message.
+ * @property {string} id - Identifier of the message.
+ * @property {?string} parent - Parent message ID.
+ * @property {string[]} children - Child message IDs.
+ * @memberof typedefs
+ */
+
+/**
+ * @typedef {Object} ChatGPTConvo
+ * @property {string} title - Title of the conversation.
+ * @property {number} create_time - Creation time of the conversation as a Unix timestamp.
+ * @property {number} update_time - Last update time of the conversation as a Unix timestamp.
+ * @property {Object.<string, ChatGPTMapping>} mapping - Mapping of message nodes within the conversation.
+ * @memberof typedefs
+ */
+
+/** Mutations */
+
+/**
+ * @exports TForkConvoResponse
+ * @typedef {import('librechat-data-provider').TForkConvoResponse} TForkConvoResponse
+ * @memberof typedefs
+ */
+
+/**
+ * @exports TForkConvoRequest
+ * @typedef {import('librechat-data-provider').TForkConvoRequest} TForkConvoRequest
  * @memberof typedefs
  */

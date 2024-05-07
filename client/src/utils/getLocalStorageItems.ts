@@ -1,9 +1,11 @@
+import { LocalStorageKeys } from 'librechat-data-provider';
+
 export default function getLocalStorageItems() {
   const items = {
-    lastSelectedModel: localStorage.getItem('lastSelectedModel'),
-    lastSelectedTools: localStorage.getItem('lastSelectedTools'),
-    lastBingSettings: localStorage.getItem('lastBingSettings'),
-    lastConversationSetup: localStorage.getItem('lastConversationSetup'),
+    lastSelectedModel: localStorage.getItem(LocalStorageKeys.LAST_MODEL),
+    lastSelectedTools: localStorage.getItem(LocalStorageKeys.LAST_TOOLS),
+    lastBingSettings: localStorage.getItem(LocalStorageKeys.LAST_BING),
+    lastConversationSetup: localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP),
   };
 
   const lastSelectedModel = items.lastSelectedModel ? JSON.parse(items.lastSelectedModel) : {};

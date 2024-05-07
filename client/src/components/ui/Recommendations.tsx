@@ -3,7 +3,7 @@ import { Tabs, TabsList, TabsTrigger } from './Tabs';
 import { cn } from '~/utils';
 import { CSSTransition } from 'react-transition-group';
 import useDocumentTitle from '~/hooks/useDocumentTitle';
-import MultiMessage from '../Messages/MultiMessage';
+import OldMultiMessage from '../Messages/MultiMessage';
 import { useGetFiles } from '~/data-provider';
 import { buildTree, mapFiles } from '~/utils';
 import { useScreenshot } from '~/hooks/';
@@ -561,7 +561,7 @@ export default function Recommendations() {
                 ) : (
                   <>
                     {convoData && convoData?.length > 0 && msgTree && convoUser ? (
-                      <MultiMessage
+                      <OldMultiMessage
                         key={convoData[convoIdx].conversationId} // avoid internal state mixture
                         messageId={convoData[convoIdx].conversationId}
                         conversation={convoData[convoIdx]}

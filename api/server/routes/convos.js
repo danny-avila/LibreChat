@@ -1,3 +1,4 @@
+const multer = require('multer');
 const express = require('express');
 // const router = express.Router();
 // const { getConvo, saveConvo, likeConvo } = require('../../models');
@@ -20,7 +21,12 @@ const Conversation = require('../../models/schema/convoSchema');
 const { CacheKeys } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getConvosByPage, deleteConvos, getConvo, saveConvo } = require('~/models/Conversation');
+const { IMPORT_CONVERSATION_JOB_NAME } = require('~/server/utils/import/jobDefinition');
+const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { forkConversation } = require('~/server/utils/import/fork');
+const { createImportLimiters } = require('~/server/middleware');
+const jobScheduler = require('~/server/utils/jobScheduler');
 const getLogStores = require('~/cache/getLogStores');
 const { sleep } = require('~/server/utils');
 const { logger } = require('~/config');
@@ -235,6 +241,82 @@ router.post('/:conversationId/viewcount/increment', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).send(error);
+  }
+});
+
+const { importIpLimiter, importUserLimiter } = createImportLimiters();
+const upload = multer({ storage: storage, fileFilter: importFileFilter });
+
+/**
+ * Imports a conversation from a JSON file and saves it to the database.
+ * @route POST /import
+ * @param {Express.Multer.File} req.file - The JSON file to import.
+ * @returns {object} 201 - success response - application/json
+ */
+router.post(
+  '/import',
+  importIpLimiter,
+  importUserLimiter,
+  upload.single('file'),
+  async (req, res) => {
+    try {
+      const filepath = req.file.path;
+      const job = await jobScheduler.now(IMPORT_CONVERSATION_JOB_NAME, filepath, req.user.id);
+
+      res.status(201).json({ message: 'Import started', jobId: job.id });
+    } catch (error) {
+      logger.error('Error processing file', error);
+      res.status(500).send('Error processing file');
+    }
+  },
+);
+
+/**
+ * POST /fork
+ * This route handles forking a conversation based on the TForkConvoRequest and responds with TForkConvoResponse.
+ * @route POST /fork
+ * @param {express.Request<{}, TForkConvoResponse, TForkConvoRequest>} req - Express request object.
+ * @param {express.Response<TForkConvoResponse>} res - Express response object.
+ * @returns {Promise<void>} - The response after forking the conversation.
+ */
+router.post('/fork', async (req, res) => {
+  try {
+    /** @type {TForkConvoRequest} */
+    const { conversationId, messageId, option, splitAtTarget, latestMessageId } = req.body;
+    const result = await forkConversation({
+      requestUserId: req.user.id,
+      originalConvoId: conversationId,
+      targetMessageId: messageId,
+      latestMessageId,
+      records: true,
+      splitAtTarget,
+      option,
+    });
+
+    res.json(result);
+  } catch (error) {
+    logger.error('Error forking conversation', error);
+    res.status(500).send('Error forking conversation');
+  }
+});
+
+// Get the status of an import job for polling
+router.get('/import/jobs/:jobId', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const { userId, ...jobStatus } = await jobScheduler.getJobStatus(jobId);
+    if (!jobStatus) {
+      return res.status(404).json({ message: 'Job not found.' });
+    }
+
+    if (userId !== req.user.id) {
+      return res.status(403).json({ message: 'Unauthorized' });
+    }
+
+    res.json(jobStatus);
+  } catch (error) {
+    logger.error('Error getting job details', error);
+    res.status(500).send('Error getting job details');
   }
 });
 

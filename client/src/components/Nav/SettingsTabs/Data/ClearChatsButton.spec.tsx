@@ -2,7 +2,7 @@ import 'test/matchMedia.mock';
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import { ClearChatsButton } from './General';
+import { ClearChatsButton } from './ClearChats';
 import { RecoilRoot } from 'recoil';
 
 describe('ClearChatsButton', () => {
