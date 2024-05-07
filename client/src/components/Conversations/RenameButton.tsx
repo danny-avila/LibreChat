@@ -6,7 +6,6 @@ interface RenameButtonProps {
   renaming: boolean;
   renameHandler: (e: MouseEvent<HTMLButtonElement>) => void;
   onRename: (e: MouseEvent<HTMLButtonElement>) => void;
-  twcss?: string;
   appendLabel?: boolean;
 }
 
@@ -14,19 +13,16 @@ export default function RenameButton({
   renaming,
   renameHandler,
   onRename,
-  twcss,
   appendLabel = false,
 }: RenameButtonProps): ReactElement {
   const localize = useLocalize();
   const handler = renaming ? onRename : renameHandler;
-  const classProp: { className?: string } = {
-    className: 'p-1 hover:text-black dark:hover:text-white',
-  };
-  if (twcss) {
-    classProp.className = twcss;
-  }
+
   return (
-    <button {...classProp} onClick={handler}>
+    <button
+      className="group m-1.5 flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
+      onClick={handler}
+    >
       {renaming ? (
         <CheckMark />
       ) : appendLabel ? (

@@ -44,7 +44,11 @@ const EditMenuButton: FC<EditMenuButtonProps> = ({ children }: EditMenuButtonPro
         <Content
           side="bottom"
           align="start"
-          className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white md:min-w-[200px]"
+          className={cn(
+            'popover radix-side-bottom:animate-slideUpAndFade radix-side-left:animate-slideRightAndFade radix-side-right:animate-slideLeftAndFade radix-side-top:animate-slideDownAndFade overflow-hidden rounded-lg shadow-lg',
+            'border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-700 dark:text-white',
+            'flex min-w-[200px] max-w-xs flex-wrap',
+          )}
         >
           {children}
         </Content>

@@ -133,27 +133,19 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       ) : (
         <HoverToggle isActiveConvo={isActiveConvo}>
           <EditMenuButton>
-            <div className="flex flex-col gap-4 p-3">
-              <div className="flex items-center gap-2">
-                <RenameButton
-                  renaming={renaming}
-                  onRename={onRename}
-                  renameHandler={renameHandler}
-                  twcss="flex items-center gap-2"
-                  appendLabel={true}
-                />
-              </div>
-              <div className="flex items-center gap-2 text-red-500">
-                <DeleteButton
-                  conversationId={conversationId}
-                  retainView={retainView}
-                  renaming={renaming}
-                  title={title}
-                  twcss="flex items-center gap-2"
-                  appendLabel={true}
-                />
-              </div>
-            </div>
+            <RenameButton
+              renaming={renaming}
+              onRename={onRename}
+              renameHandler={renameHandler}
+              appendLabel={true}
+            />
+            <DeleteButton
+              conversationId={conversationId}
+              retainView={retainView}
+              renaming={renaming}
+              title={title}
+              appendLabel={true}
+            />
           </EditMenuButton>
           <ArchiveButton
             conversationId={conversationId}

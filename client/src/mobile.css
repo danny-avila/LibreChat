@@ -182,3 +182,92 @@
 .rotate {
   animation: tuning 2.1s 1;
 }
+
+@-webkit-keyframes slideUpAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateY(2px);
+    transform:translateY(2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateY(0);
+    transform:translateY(0)
+  }
+}
+@keyframes slideUpAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateY(2px);
+    transform:translateY(2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateY(0);
+    transform:translateY(0)
+  }
+}
+.radix-side-bottom\:animate-slideUpAndFade[data-side=bottom] {
+  -webkit-animation:slideUpAndFade .4s cubic-bezier(.16,1,.3,1);
+  animation:slideUpAndFade .4s cubic-bezier(.16,1,.3,1)
+}
+@-webkit-keyframes slideRightAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateX(-2px);
+    transform:translateX(-2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateX(0);
+    transform:translateX(0)
+  }
+}
+@keyframes slideRightAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateX(-2px);
+    transform:translateX(-2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateX(0);
+    transform:translateX(0)
+  }
+}
+.radix-side-left\:animate-slideRightAndFade[data-side=left] {
+  -webkit-animation:slideRightAndFade .4s cubic-bezier(.16,1,.3,1);
+  animation:slideRightAndFade .4s cubic-bezier(.16,1,.3,1)
+}
+@keyframes slideLeftAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateX(2px);
+    transform:translateX(2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateX(0);
+    transform:translateX(0)
+  }
+}
+.radix-side-right\:animate-slideLeftAndFade[data-side=right] {
+  -webkit-animation:slideLeftAndFade .4s cubic-bezier(.16,1,.3,1);
+  animation:slideLeftAndFade .4s cubic-bezier(.16,1,.3,1)
+}
+@keyframes slideDownAndFade {
+  0% {
+    opacity:0;
+    -webkit-transform:translateY(-2px);
+    transform:translateY(-2px)
+  }
+  to {
+    opacity:1;
+    -webkit-transform:translateY(0);
+    transform:translateY(0)
+  }
+}
+.radix-side-top\:animate-slideDownAndFade[data-side=top] {
+  -webkit-animation:slideDownAndFade .4s cubic-bezier(.16,1,.3,1);
+  animation:slideDownAndFade .4s cubic-bezier(.16,1,.3,1)
+}
