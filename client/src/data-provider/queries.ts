@@ -136,9 +136,13 @@ export const useConversationsInfiniteQuery = (
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
   return useInfiniteQuery<ConversationListResponse, unknown>(
-    [QueryKeys.allConversations],
+    params?.isArchived ? [QueryKeys.archivedConversations] : [QueryKeys.allConversations],
     ({ pageParam = '' }) =>
-      dataService.listConversations({ ...params, pageNumber: pageParam?.toString() }),
+      dataService.listConversations({
+        ...params,
+        pageNumber: pageParam?.toString(),
+        isArchived: params?.isArchived || false,
+      }),
     {
       getNextPageParam: (lastPage) => {
         const currentPageNumber = Number(lastPage.pageNumber);

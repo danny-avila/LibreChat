@@ -54,6 +54,12 @@ export default {
   com_ui_delete: 'حذف',
   com_ui_delete_conversation: 'حذف الدردشة؟',
   com_ui_delete_conversation_confirm: 'سيتم حذف هذا',
+  com_ui_rename: 'إعادة تسمية',
+  com_ui_archive: 'أرشفة',
+  com_ui_archive_error: 'فشل في أرشفة المحادثة',
+  com_ui_unarchive: 'إلغاء الأرشفة',
+  com_ui_unarchive_error: 'فشل في إلغاء الأرشفة',
+  com_ui_more_options: 'المزيد',
   com_auth_error_login:
     'تعذر تسجيل الدخول باستخدام المعلومات المقدمة. يرجى التحقق من بيانات الاعتماد الخاصة بك والمحاولة مرة أخرى.',
   com_auth_error_login_rl:
@@ -258,6 +264,13 @@ export default {
   com_nav_open_sidebar: 'افتح القائمة الجانبية',
   com_nav_log_out: 'تسجيل الخروج',
   com_nav_user: 'المستخدم',
+  com_nav_archived_chats: 'الدردشات المؤرشفة',
+  com_nav_archived_chats_manage: 'إدارة',
+  com_nav_archived_chats_empty: 'ليس لديك أي دردشات مؤرشفة.',
+  com_nav_archive_all_chats: 'الأرشفة على كل الدردشات',
+  com_nav_archive_all: 'الأرشفة على كل الدردشات',
+  com_nav_archive_name: 'الاسم',
+  com_nav_archive_created_at: 'تاريخ الإنشاء',
   com_nav_clear_conversation: 'مسح المحادثات',
   com_nav_clear_conversation_confirm_message:
     'هل أنت متأكد أنك تريد مسح جميع المحادثات؟ هذا لا يمكن التراجع عنه.',

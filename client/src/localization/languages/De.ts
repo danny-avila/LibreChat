@@ -36,19 +36,23 @@ export default {
   com_assistants_domain_info: 'Assistent hat diese Info an {0} gesendet',
   com_assistants_delete_actions_success: 'Aktion vom Assistant erfolgreich gelöscht',
   com_assistants_update_actions_success: 'Erfolgreich erstellte oder aktualisierte Aktion',
-  com_assistants_update_actions_error: 'Beim Erstellen oder Aktualisieren der Aktion ist ein Fehler aufgetreten.',
+  com_assistants_update_actions_error:
+    'Beim Erstellen oder Aktualisieren der Aktion ist ein Fehler aufgetreten.',
   com_assistants_delete_actions_error: 'Beim Löschen der Aktion ist ein Fehler aufgetreten.',
-  com_assistants_actions_info: 'Lass deinen Assistenten Informationen abrufen oder Aktionen über API\'s ausführen',
+  com_assistants_actions_info:
+    'Lass deinen Assistenten Informationen abrufen oder Aktionen über API\'s ausführen',
   com_assistants_name_placeholder: 'Optional: Der Name des Assistenten',
   com_assistants_instructions_placeholder: 'Die Systemanweisungen, die der Assistent verwendet',
   com_assistants_description_placeholder: 'Optional: Beschreibe hier deinen Assistenten',
-  com_assistants_actions_disabled: 'Du musst einen Assistenten erstellen, bevor du Aktionen hinzufügen kannst.',
+  com_assistants_actions_disabled:
+    'Du musst einen Assistenten erstellen, bevor du Aktionen hinzufügen kannst.',
   com_assistants_update_success: 'Erfolgreich aktualisiert',
   com_assistants_update_error: 'Beim Aktualisieren deines Assistenten ist ein Fehler aufgetreten.',
   com_assistants_create_success: 'Erfolgreich erstellt',
   com_assistants_create_error: 'Bei der Erstellung deines Assistenten ist ein Fehler aufgetreten.',
   com_ui_field_required: 'Dieses Feld ist erforderlich',
-  com_ui_download_error: 'Fehler beim Herunterladen der Datei. Die Datei wurde möglicherweise gelöscht.',
+  com_ui_download_error:
+    'Fehler beim Herunterladen der Datei. Die Datei wurde möglicherweise gelöscht.',
   com_ui_attach_error_type: 'Nicht unterstützter Dateityp für Endpunkt:',
   com_ui_attach_error_size: 'Dateigrößenlimit für den Endpunkt überschritten:',
   com_ui_attach_error:
@@ -57,10 +61,12 @@ export default {
   com_ui_new_chat: 'Neuer Chat',
   com_ui_happy_birthday: 'Es ist mein 1. Geburtstag!',
   com_ui_example_quantum_computing: 'Erkläre Quantencomputing in einfachen Worten',
-  com_ui_example_10_year_old_b_day: 'Hast du eine kreative Idee für den Geburtstag eines 10-Jährigen?',
+  com_ui_example_10_year_old_b_day:
+    'Hast du eine kreative Idee für den Geburtstag eines 10-Jährigen?',
   com_ui_example_http_in_js: 'Wie stelle ich eine HTTP-Anfrage in Javascript?',
   com_ui_capabilities: 'Funktionen',
-  com_ui_capability_remember: 'Erinnert sich daran, was der Benutzer zu einem früheren Zeitpunkt in der Konversation gesagt hat',
+  com_ui_capability_remember:
+    'Erinnert sich daran, was der Benutzer zu einem früheren Zeitpunkt in der Konversation gesagt hat',
   com_ui_capability_correction: 'Ermöglicht es dem Benutzer, nachträgliche Korrekturen vorzunehmen',
   com_ui_capability_decline_requests: 'Ermöglicht es, unangemessene Anfragen abzulehnen',
   com_ui_limitations: 'Limitationen',
@@ -110,7 +116,8 @@ export default {
   com_ui_submit: 'Abschicken',
   com_ui_upload_success: 'Erfolgreich hochgeladene Datei',
   com_ui_upload_error: 'Beim Hochladen deiner Datei ist ein Fehler aufgetreten',
-  com_ui_upload_invalid: 'Ungültige Datei zum Hochladen. Muss ein Bild sein, das nicht größer als 2 MB ist',
+  com_ui_upload_invalid:
+    'Ungültige Datei zum Hochladen. Muss ein Bild sein, das nicht größer als 2 MB ist',
   com_ui_cancel: 'Abbrechen',
   com_ui_save: 'Speichern',
   com_ui_save_submit: 'Speichern & Absenden',
@@ -145,6 +152,12 @@ export default {
   com_ui_delete_conversation_confirm: 'Damit wird gelöscht',
   com_ui_delete_assistant_confirm:
     'Bist du sicher, dass du diesen Assistenten löschen willst? Dies kann nicht rückgängig gemacht werden.',
+  com_ui_rename: 'Umbenennen',
+  com_ui_archive: 'Archiv',
+  com_ui_archive_error: 'Fehler beim Archivieren der Konversation',
+  com_ui_unarchive: 'Entarchivieren',
+  com_ui_unarchive_error: 'Fehler beim Entarchivieren der Konversation',
+  com_ui_more_options: 'Mehr',
   com_ui_preview: 'Vorschau',
   com_ui_upload: 'Hochladen',
   com_ui_connect: 'Verbinden',
@@ -240,7 +253,8 @@ export default {
   com_endpoint_google_maxoutputtokens:
     ' Maximale Anzahl von Token, die in der Antwort erzeugt werden können. Gib einen niedrigeren Wert für kürzere Antworten und einen höheren Wert für längere Antworten an.',
   com_endpoint_google_custom_name_placeholder: 'Setze einen benutzerdefinierten Namen für Google',
-  com_endpoint_prompt_prefix_placeholder: 'Setze benutzerdefinierte Anweisungen oder Kontext. Ignoriert, wenn leer.',
+  com_endpoint_prompt_prefix_placeholder:
+    'Setze benutzerdefinierte Anweisungen oder Kontext. Ignoriert, wenn leer.',
   com_endpoint_instructions_assistants_placeholder:
     'Setzt die Anweisungen des Assistenten außer Kraft. Dies ist nützlich, um das Verhalten pro Lauf zu ändern.',
   com_endpoint_prompt_prefix_assistants_placeholder:
@@ -294,13 +308,18 @@ export default {
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
     'Setzt benutzerdefinierte Anweisungen, die in die Systemaufforderung aufgenommen werden. Standard: keine',
   com_endpoint_import: 'Importieren',
-  com_endpoint_set_custom_name: 'Lege einen benutzerdefinierten Namen fest, für den Fall, dass du diese Vorgabe finden kannst',
+  com_endpoint_set_custom_name:
+    'Lege einen benutzerdefinierten Namen fest, für den Fall, dass du diese Vorgabe finden kannst',
   com_endpoint_preset_delete_confirm: 'Bist du sicher, dass du diese Vorgabe löschen willst?',
-  com_endpoint_preset_clear_all_confirm: 'Bist du sicher, dass du alle deine Voreinstellungen löschen willst?',
+  com_endpoint_preset_clear_all_confirm:
+    'Bist du sicher, dass du alle deine Voreinstellungen löschen willst?',
   com_endpoint_preset_import: 'Voreinstellung importiert!',
-  com_endpoint_preset_import_error: 'Beim Import deiner Voreinstellung ist ein Fehler aufgetreten. Bitte versuche es erneut.',
-  com_endpoint_preset_save_error: 'Es ist ein Fehler beim Speichern deiner Voreinstellung aufgetreten. Bitte versuche es noch einmal.',
-  com_endpoint_preset_delete_error: 'Beim Löschen deiner Voreinstellung ist ein Fehler aufgetreten. Bitte versuche es noch einmal.',
+  com_endpoint_preset_import_error:
+    'Beim Import deiner Voreinstellung ist ein Fehler aufgetreten. Bitte versuche es erneut.',
+  com_endpoint_preset_save_error:
+    'Es ist ein Fehler beim Speichern deiner Voreinstellung aufgetreten. Bitte versuche es noch einmal.',
+  com_endpoint_preset_delete_error:
+    'Beim Löschen deiner Voreinstellung ist ein Fehler aufgetreten. Bitte versuche es noch einmal.',
   com_endpoint_preset_default_removed: 'ist nicht mehr die Standardvorgabe.',
   com_endpoint_preset_default_item: 'Standard:',
   com_endpoint_preset_default_none: 'Keine Standardvoreinstellung aktiv.',
@@ -328,7 +347,8 @@ export default {
   com_endpoint_presets_clear_warning:
     'Bist du sicher, dass du alle Voreinstellungen löschen willst? Dies ist nicht umkehrbar.',
   com_endpoint_not_implemented: 'Nicht implementiert',
-  com_endpoint_no_presets: 'Es gibt noch keine Voreinstellungen, verwende die Schaltfläche Einstellungen, um eine zu erstellen',
+  com_endpoint_no_presets:
+    'Es gibt noch keine Voreinstellungen, verwende die Schaltfläche Einstellungen, um eine zu erstellen',
   com_endpoint_not_available: 'Kein Endpunkt verfügbar',
   com_endpoint_view_options: 'Ansichtsoptionen',
   com_endpoint_save_convo_as_preset: 'Konversation als Voreinstellung speichern',
@@ -339,7 +359,8 @@ export default {
   com_endpoint_skip_hover:
     'Aktiviere das Überspringen des Abschlussschritts, der die endgültige Antwort und die generierten Schritte überprüft',
   com_endpoint_config_key: 'API-Schlüssel festlegen',
-  com_endpoint_assistant_placeholder: 'Bitte wähle einen Assistenten aus dem rechter Seitenleiste aus',
+  com_endpoint_assistant_placeholder:
+    'Bitte wähle einen Assistenten aus dem rechter Seitenleiste aus',
   com_endpoint_config_placeholder: 'Setze deinen Schlüssel im Header-Menü ein, um zu chatten.',
   com_endpoint_config_key_for: 'Setze den API-Schlüssel für',
   com_endpoint_config_key_name: 'Schlüssel',
@@ -352,17 +373,22 @@ export default {
   com_endpoint_config_google_cloud_platform: '(von Google Cloud Platform)',
   com_endpoint_config_google_api_key: 'Google API Key',
   com_endpoint_config_google_gemini_api: '(Gemini API)',
-  com_endpoint_config_google_api_info: 'Um deinen Generative Language API-Schlüssel (für Gemini) zu erhalten,',
+  com_endpoint_config_google_api_info:
+    'Um deinen Generative Language API-Schlüssel (für Gemini) zu erhalten,',
   com_endpoint_config_key_import_json_key: 'Import Service Account JSON Key.',
-  com_endpoint_config_key_import_json_key_success: 'Erfolgreich importierter Service Account JSON Key',
+  com_endpoint_config_key_import_json_key_success:
+    'Erfolgreich importierter Service Account JSON Key',
   com_endpoint_config_key_import_json_key_invalid:
     'Ungültiger Service Account JSON Key, Hast du die richtige Datei importiert?',
-  com_endpoint_config_key_get_edge_key: 'Um dein Access Token für Bing zu erhalten, melde dich an bei',
+  com_endpoint_config_key_get_edge_key:
+    'Um dein Access Token für Bing zu erhalten, melde dich an bei',
   com_endpoint_config_key_get_edge_key_dev_tool:
     'Verwende Dev-Tools oder eine Erweiterung, während du auf der Website angemeldet bist, um den Inhalt des _U-Cookies zu kopieren. Wenn dies fehlschlägt, befolge die folgenden Anweisungen',
   com_endpoint_config_key_edge_instructions: 'Anweisungen',
-  com_endpoint_config_key_edge_full_key_string: 'um die vollständigen Cookie-Strings bereitzustellen.',
-  com_endpoint_config_key_chatgpt: 'Um dein Zugangstoken für ChatGPT \'Free Version\' zu erhalten, melde dich bei',
+  com_endpoint_config_key_edge_full_key_string:
+    'um die vollständigen Cookie-Strings bereitzustellen.',
+  com_endpoint_config_key_chatgpt:
+    'Um dein Zugangstoken für ChatGPT \'Free Version\' zu erhalten, melde dich bei',
   com_endpoint_config_key_chatgpt_then_visit: 'dann besuche',
   com_endpoint_config_key_chatgpt_copy_token: 'Kopiere das Zugangstoken.',
   com_endpoint_config_key_google_need_to: 'Du musst',
@@ -385,7 +411,8 @@ export default {
   com_nav_tool_add: 'Hinzufügen',
   com_nav_tool_remove: 'Löschen',
   com_nav_tool_dialog: 'Assistententools',
-  com_nav_tool_dialog_description: 'Der Assistent muss gespeichert werden, um die Werkzeugauswahl beizubehalten.',
+  com_nav_tool_dialog_description:
+    'Der Assistent muss gespeichert werden, um die Werkzeugauswahl beizubehalten.',
   com_show_agent_settings: 'Agent-Einstellungen anzeigen',
   com_show_completion_settings: 'Fertigstellungseinstellungen anzeigen',
   com_hide_examples: 'Beispiele ausblenden',
@@ -418,6 +445,13 @@ export default {
   com_nav_send_message: 'Nachricht senden',
   com_nav_log_out: 'Abmelden',
   com_nav_user: 'NUTZER',
+  com_nav_archived_chats: 'Archivierte Chats',
+  com_nav_archived_chats_manage: 'Verwalten',
+  com_nav_archived_chats_empty: 'Keine archivierten Chats',
+  com_nav_archive_all_chats: 'Alle Chats archivieren',
+  com_nav_archive_all: 'Archivieren',
+  com_nav_archive_name: 'Name',
+  com_nav_archive_created_at: 'ErstelltAm',
   com_nav_clear_conversation: 'Unterhaltungen löschen',
   com_nav_clear_conversation_confirm_message:
     'Bist du sicher, dass du alle Unterhaltungen löschen willst? Dies ist unumkehrbar.',
