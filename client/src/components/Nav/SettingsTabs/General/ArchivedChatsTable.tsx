@@ -1,11 +1,11 @@
-import { useAuthContext, useLocalize, useNavScrolling } from '~/hooks';
-import { MessageCircle, ArchiveRestore, Archive } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { MessageCircle, ArchiveRestore } from 'lucide-react';
 import { useConversationsInfiniteQuery } from '~/data-provider';
-import DeleteButton from '~/components/Conversations/DeleteButton';
-import { cn } from '~/utils';
-import { Spinner } from '~/components';
+import { useAuthContext, useLocalize, useNavScrolling } from '~/hooks';
 import ArchiveButton from '~/components/Conversations/ArchiveButton';
+import DeleteButton from '~/components/Conversations/DeleteButton';
+import { Spinner } from '~/components/svg';
+import { cn } from '~/utils';
 
 export default function ArchivedChatsTable({ className }: { className?: string }) {
   const localize = useLocalize();
@@ -44,7 +44,7 @@ export default function ArchivedChatsTable({ className }: { className?: string }
     <div
       className={cn(
         'grid w-full gap-2',
-        '-mr-2 flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
+        'flex-1 flex-col overflow-y-auto pr-2 transition-opacity duration-500',
         'max-h-[350px]',
       )}
       ref={containerRef}
@@ -66,7 +66,7 @@ export default function ArchivedChatsTable({ className }: { className?: string }
                 <MessageCircle className="mr-1 h-5 w-5" />
                 {conversation.title}
               </td>
-              <td className="p-3">
+              <td className="p-1">
                 <div className="flex justify-between">
                   <div className="flex justify-start dark:text-gray-200">
                     {new Date(conversation.createdAt).toLocaleDateString('en-US', {
@@ -75,7 +75,7 @@ export default function ArchivedChatsTable({ className }: { className?: string }
                       year: 'numeric',
                     })}
                   </div>
-                  <div className="flex items-center justify-end gap-1 text-gray-400">
+                  <div className="ml-auto mr-4 flex items-center justify-end gap-1 text-gray-400">
                     {conversation.conversationId && (
                       <>
                         <ArchiveButton
@@ -84,15 +84,14 @@ export default function ArchivedChatsTable({ className }: { className?: string }
                           shouldArchive={false}
                           icon={<ArchiveRestore className="h-4 w-4 hover:text-gray-300" />}
                         />
-
                         <div className="h-4 w-4 hover:text-gray-300">
                           <DeleteButton
                             conversationId={conversation.conversationId}
                             retainView={moveToTop}
                             renaming={false}
                             title={conversation.title}
-                            twcss="flex items-center gap-2"
                             appendLabel={false}
+                            className="mx-3 flex items-center"
                           />
                         </div>
                       </>
