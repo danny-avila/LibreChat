@@ -16,13 +16,14 @@ import {
 import DialogTemplate from '~/components/ui/DialogTemplate';
 import { TrashIcon, CrossIcon } from '~/components/svg';
 import { useLocalize, useNewConvo } from '~/hooks';
+import { cn } from '~/utils';
 
 export default function DeleteButton({
   conversationId,
   renaming,
   retainView,
   title,
-  twcss,
+  className,
   appendLabel = false,
 }) {
   const localize = useLocalize();
@@ -46,11 +47,8 @@ export default function DeleteButton({
   }, [conversationId, deleteConvoMutation, queryClient]);
 
   const classProp: { className?: string } = {
-    className: 'p-1 hover:text-black dark:hover:text-white',
+    className: cn(className),
   };
-  if (twcss) {
-    classProp.className = twcss;
-  }
 
   const renderDeleteButton = () => {
     if (appendLabel) {

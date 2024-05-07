@@ -109,7 +109,7 @@ export const LangSelector = ({
         value={langcode}
         onChange={onChange}
         position={'left'}
-        maxHeight="199px"
+        maxHeight="271px"
         options={languageOptions}
       />
     </div>

@@ -189,25 +189,21 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
         <div className="visible absolute right-1 z-10 flex items-center gap-1.5 from-gray-900 text-gray-500 dark:text-gray-300">
           {!renaming && (
             <EditMenuButton>
-              <div className="group m-1.5 flex cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50">
-                <RenameButton
-                  renaming={renaming}
-                  onRename={onRename}
-                  renameHandler={renameHandler}
-                  twcss="flex items-center gap-2"
-                  appendLabel={true}
-                />
-              </div>
-              <div className="group m-1.5 flex cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50">
-                <DeleteButton
-                  conversationId={conversationId}
-                  retainView={retainView}
-                  renaming={renaming}
-                  title={title}
-                  twcss="flex items-center gap-2"
-                  appendLabel={true}
-                />
-              </div>
+              <RenameButton
+                renaming={renaming}
+                onRename={onRename}
+                renameHandler={renameHandler}
+                className="group flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
+                appendLabel={true}
+              />
+              <DeleteButton
+                conversationId={conversationId}
+                retainView={retainView}
+                renaming={renaming}
+                title={title}
+                className="group flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
+                appendLabel={true}
+              />
             </EditMenuButton>
           )}
           {!renaming && (

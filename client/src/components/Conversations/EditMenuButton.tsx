@@ -42,7 +42,7 @@ const EditMenuButton: FC<EditMenuButtonProps> = ({ children }: EditMenuButtonPro
         <Content
           side="bottom"
           align="start"
-          className="mt-2 max-h-[495px] overflow-x-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white md:min-w-[200px]"
+          className="mt-2 flex max-h-[495px] flex-col gap-2 overflow-x-hidden rounded-lg border border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white md:min-w-[200px]"
         >
           {children}
         </Content>
