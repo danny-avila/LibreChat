@@ -54,6 +54,12 @@ export default {
   com_ui_delete: 'Radera',
   com_ui_delete_conversation: 'Radera chatt?',
   com_ui_delete_conversation_confirm: 'Detta kommer att radera',
+  com_ui_rename: 'byta namn på',
+  com_ui_archive: 'Arkiv',
+  com_ui_archive_error: 'Kunde inte arkivera chatt',
+  com_ui_unarchive: 'Avarkivera',
+  com_ui_unarchive_error: 'Kunde inte avarkivera chatt',
+  com_ui_more_options: 'Mer',
   com_auth_error_login:
     'Kunde inte logga in med den angivna informationen. Kontrollera dina uppgifter och försök igen.',
   com_auth_error_login_rl:
@@ -254,6 +260,13 @@ export default {
   com_nav_send_message: 'Skicka meddelande',
   com_nav_log_out: 'Logga ut',
   com_nav_user: 'ANVÄNDARE',
+  com_nav_archived_chats: 'Arkiverade chattar',
+  com_nav_archived_chats_manage: 'Hantera',
+  com_nav_archived_chats_empty: 'Du har inga arkiverade chattar.',
+  com_nav_archive_all_chats: 'Arkivera alla chattar',
+  com_nav_archive_all: 'Arkivera alla',
+  com_nav_archive_name: 'Namn',
+  com_nav_archive_created_at: 'Skapad',
   com_nav_clear_conversation: 'Rensa konversationer',
   com_nav_clear_conversation_confirm_message:
     'Är du säker på att du vill rensa alla konversationer? Detta går inte att ångra.',

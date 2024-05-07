@@ -21,8 +21,8 @@ export const abortRequest = (endpoint: string) => `/api/ask/${endpoint}/abort`;
 
 export const conversationsRoot = '/api/convos';
 
-export const conversations = (pageNumber: string) =>
-  `${conversationsRoot}?pageNumber=${pageNumber}`;
+export const conversations = (pageNumber: string, isArchived?: boolean) =>
+  `${conversationsRoot}?pageNumber=${pageNumber}${isArchived ? '&isArchived=true' : ''}`;
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 

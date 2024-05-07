@@ -25,7 +25,7 @@ const TooltipContent = React.forwardRef<
   <TooltipPortal forceMount={forceMount}>
     <TooltipPrimitive.Content
       className={cn(
-        'shadow-xs relative max-w-xs rounded-lg border border-gray-900/10 bg-gray-900 p-1 transition-opacity',
+        'shadow-xs relative z-[1000] max-w-xs rounded-lg border border-gray-900/10 bg-gray-900 p-1 transition-opacity',
         className,
       )}
       ref={ref}
