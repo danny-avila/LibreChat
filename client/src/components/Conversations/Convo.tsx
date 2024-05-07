@@ -187,11 +187,6 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
         ) : (
           <div className="absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%" />
         )}
-        {/* {isActiveConvo ? (
-          null
-        ) : (
-          <div className="absolute bottom-0 right-0 top-0 w-14 rounded-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 dark:from-gray-750 dark:group-hover:from-gray-800" />
-        )} */}
       </a>
     </div>
   );
