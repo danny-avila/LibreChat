@@ -28,7 +28,7 @@ const EditMenuButton: FC<EditMenuButtonProps> = ({ children }: EditMenuButtonPro
             <Tooltip>
               <TooltipTrigger asChild>
                 <button type="button" className="">
-                  <DotsIcon className="h-4 w-4 flex-shrink-0 text-gray-500 hover:text-gray-400 dark:text-gray-300 dark:hover:text-gray-400" />
+                  <DotsIcon className="text-token-text-primary h-4 w-4 flex-shrink-0 transition hover:text-gray-400 dark:text-gray-300 dark:hover:text-gray-400" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top" sideOffset={0}>

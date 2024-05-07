@@ -60,7 +60,7 @@ export default function ArchiveButton({
   };
   const classProp: { className?: string } = {
     className:
-      'flex items-center justify-center text-token-text-primary transition hover:text-gray-500 radix-state-open:text-gray-500',
+      'flex items-center justify-center text-token-text-primary transition hover:text-gray-400 dark:text-gray-300 dark:hover:text-gray-400',
   };
   if (twcss) {
     classProp.className = twcss;
