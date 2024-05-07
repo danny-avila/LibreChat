@@ -9,6 +9,7 @@ import AutoScrollSwitch from './AutoScrollSwitch';
 import { Dropdown } from '~/components/ui';
 import DangerButton from '../DangerButton';
 import store from '~/store';
+import ArchivedChats from './ArchivedChats';
 
 export const ThemeSelector = ({
   theme,
@@ -156,6 +157,9 @@ function General() {
         </div>
         <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <HideSidePanelSwitch />
+        </div>
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
+          <ArchivedChats />
         </div>
         {/* <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
         </div> */}
