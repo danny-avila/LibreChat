@@ -30,6 +30,12 @@ export default {
   com_ui_entries: 'wpisów',
   com_ui_pay_per_call:
     'Wszystkie rozmowy z AI w jednym miejscu. Płatność za połączenie, a nie za miesiąc',
+  com_ui_rename: 'Zmień nazwę',
+  com_ui_archive: 'Archiwum',
+  com_ui_archive_error: 'Nie udało się archiwizować rozmowy',
+  com_ui_unarchive: 'Przywróć z archiwum',
+  com_ui_unarchive_error: 'Nie udało się odtworzyć rozmowy z archiwum',
+  com_ui_more_options: 'Więcej',
   com_auth_error_login:
     'Nie udało się zalogować przy użyciu podanych danych. Sprawdź swoje dane logowania i spróbuj ponownie.',
   com_auth_no_account: 'Nie masz konta?',
@@ -198,6 +204,13 @@ export default {
   com_nav_send_message: 'Wyślij wiadomość',
   com_nav_log_out: 'Wyloguj',
   com_nav_user: 'Użytkownik',
+  com_nav_archived_chats: 'Zarchiwizowane rozmowy',
+  com_nav_archived_chats_manage: 'Zarządzaj',
+  com_nav_archived_chats_empty: 'Nie masz żadnych zarchiwizowanych rozmów.',
+  com_nav_archive_all_chats: 'Archiwizuj wszystkie rozmowy',
+  com_nav_archive_all: 'Archiwizuj wszystkie',
+  com_nav_archive_name: 'Nazwa',
+  com_nav_archive_created_at: 'Utworzono',
   com_nav_clear_conversation: 'Wyczyść rozmowę',
   com_nav_clear_conversation_confirm_message:
     'Czy na pewno chcesz usunąć wszystkie konwersacje? Tej operacji nie można cofnąć.',

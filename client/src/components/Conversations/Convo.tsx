@@ -13,6 +13,9 @@ import { useToastContext } from '~/Providers';
 import DeleteButton from './DeleteButton';
 import RenameButton from './RenameButton';
 import store from '~/store';
+import EditMenuButton from './EditMenuButton';
+import ArchiveButton from './ArchiveButton';
+import { Archive } from 'lucide-react';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
@@ -183,14 +186,40 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
         <div className="absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%"></div>
       )}
       {activeConvo ? (
-        <div className="visible absolute right-1 z-10 flex from-gray-900 text-gray-500 dark:text-gray-300">
-          <RenameButton renaming={renaming} onRename={onRename} renameHandler={renameHandler} />
-          <DeleteButton
-            conversationId={conversationId}
-            retainView={retainView}
-            renaming={renaming}
-            title={title}
-          />
+        <div className="visible absolute right-1 z-10 flex items-center from-gray-900 text-gray-500 dark:text-gray-300">
+          {!renaming && (
+            <EditMenuButton>
+              <div className="flex flex-col gap-4 p-3">
+                <div className="flex items-center gap-2">
+                  <RenameButton
+                    renaming={renaming}
+                    onRename={onRename}
+                    renameHandler={renameHandler}
+                    twcss="flex items-center gap-2"
+                    appendLabel={true}
+                  />
+                </div>
+                <div className="flex items-center gap-2 text-red-500">
+                  <DeleteButton
+                    conversationId={conversationId}
+                    retainView={retainView}
+                    renaming={renaming}
+                    title={title}
+                    twcss="flex items-center gap-2"
+                    appendLabel={true}
+                  />
+                </div>
+              </div>
+            </EditMenuButton>
+          )}
+          {!renaming && (
+            <ArchiveButton
+              conversationId={conversationId}
+              retainView={retainView}
+              shouldArchive={true}
+              icon={<Archive className="h-5 w-5 hover:text-gray-400" />}
+            />
+          )}
         </div>
       ) : (
         <div className="absolute bottom-0 right-0 top-0 w-14 rounded-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 dark:from-gray-750 dark:group-hover:from-gray-800" />
