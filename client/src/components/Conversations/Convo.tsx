@@ -4,17 +4,17 @@ import { useState, useRef, useMemo } from 'react';
 import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from 'librechat-data-provider/react-query';
 import type { MouseEvent, FocusEvent, KeyboardEvent } from 'react';
-import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 import { useUpdateConversationMutation } from '~/data-provider';
+import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 import { useConversations, useNavigateToConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
+import { ArchiveIcon } from '~/components/svg';
 import { useToastContext } from '~/Providers';
+import EditMenuButton from './EditMenuButton';
+import ArchiveButton from './ArchiveButton';
 import DeleteButton from './DeleteButton';
 import RenameButton from './RenameButton';
 import store from '~/store';
-import EditMenuButton from './EditMenuButton';
-import ArchiveButton from './ArchiveButton';
-import { Archive } from 'lucide-react';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
 
@@ -191,7 +191,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
               conversationId={conversationId}
               retainView={retainView}
               shouldArchive={true}
-              icon={<Archive className="h-5 w-5 hover:text-gray-400" />}
+              icon={<ArchiveIcon className="w-full hover:text-gray-400" />}
             />
           )}
         </div>
