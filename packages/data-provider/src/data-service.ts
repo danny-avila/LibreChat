@@ -279,7 +279,8 @@ export const listConversations = (
 ): Promise<q.ConversationListResponse> => {
   // Assuming params has a pageNumber property
   const pageNumber = params?.pageNumber || '1'; // Default to page 1 if not provided
-  return request.get(endpoints.conversations(pageNumber));
+  const isArchived = params?.isArchived || false; // Default to false if not provided
+  return request.get(endpoints.conversations(pageNumber, isArchived));
 };
 
 export const listConversationsByQuery = (
@@ -313,6 +314,12 @@ export function getConversationById(id: string): Promise<s.TConversation> {
 export function updateConversation(
   payload: t.TUpdateConversationRequest,
 ): Promise<t.TUpdateConversationResponse> {
+  return request.post(endpoints.updateConversation(), { arg: payload });
+}
+
+export function archiveConversation(
+  payload: t.TArchiveConversationRequest,
+): Promise<t.TArchiveConversationResponse> {
   return request.post(endpoints.updateConversation(), { arg: payload });
 }
 

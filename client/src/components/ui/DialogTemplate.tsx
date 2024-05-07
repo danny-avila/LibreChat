@@ -26,6 +26,7 @@ type DialogTemplateProps = {
   className?: string;
   headerClassName?: string;
   showCloseButton?: boolean;
+  showCancelButton?: boolean;
 };
 
 const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivElement>) => {
@@ -40,6 +41,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
     className,
     headerClassName,
     showCloseButton,
+    showCancelButton = true,
   } = props;
   const { selectHandler, selectClasses, selectText } = selection || {};
   const Cancel = localize('com_ui_cancel');
@@ -67,9 +69,11 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
       <DialogFooter>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex h-auto gap-3">
-          <DialogClose className="border-gray-100 hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-600">
-            {Cancel}
-          </DialogClose>
+          {showCancelButton && (
+            <DialogClose className="border-gray-100 hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-600">
+              {Cancel}
+            </DialogClose>
+          )}
           {buttons ? buttons : null}
           {selection ? (
             <DialogClose

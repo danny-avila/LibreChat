@@ -16,6 +16,7 @@ export type ConversationListParams = {
   order?: 'asc' | 'desc';
   pageNumber: string; // Add this line
   conversationId?: string;
+  isArchived: boolean;
 };
 
 // Type for the response from the conversation list API

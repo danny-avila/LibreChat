@@ -24,7 +24,15 @@ router.get('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid page number' });
   }
 
-  res.status(200).send(await getConvosByPage(req.user.id, pageNumber));
+  let pageSize = req.query.pageSize || 25;
+  pageSize = parseInt(pageSize, 10);
+
+  if (isNaN(pageSize) || pageSize < 1) {
+    return res.status(400).json({ error: 'Invalid page size' });
+  }
+  const isArchived = req.query.isArchived === 'true';
+
+  res.status(200).send(await getConvosByPage(req.user.id, pageNumber, pageSize, isArchived));
 });
 
 router.get('/:conversationId', async (req, res) => {
