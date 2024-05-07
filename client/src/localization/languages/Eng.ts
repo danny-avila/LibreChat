@@ -125,6 +125,7 @@ export default {
   com_user_message: 'You',
   com_ui_copy_to_clipboard: 'Copy to clipboard',
   com_ui_copied_to_clipboard: 'Copied to clipboard',
+  com_ui_fork: 'Fork',
   com_ui_fork_info_1: 'Use this setting to fork messages with the desired behavior.',
   com_ui_fork_info_2:
     '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
