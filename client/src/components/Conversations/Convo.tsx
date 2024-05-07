@@ -14,6 +14,8 @@ import EditMenuButton from './EditMenuButton';
 import ArchiveButton from './ArchiveButton';
 import DeleteButton from './DeleteButton';
 import RenameButton from './RenameButton';
+import HoverToggle from './HoverToggle';
+import { cn } from '~/utils';
 import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLInputElement>;
@@ -110,27 +112,67 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     }
   };
 
-  const activeConvo =
+  const isActiveConvo =
     currentConvoId === conversationId ||
     (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
 
-  const aProps = {
-    className:
-      'group relative rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg bg-gray-200 dark:bg-gray-700 py-2 px-2',
-  };
-
-  if (!activeConvo) {
-    aProps.className =
-      'group relative grow overflow-hidden whitespace-nowrap rounded-lg active:opacity-50 flex cursor-pointer items-center mt-2 gap-2 break-all rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 py-2 px-2';
-  }
-
   return (
     <div className="hover:bg-token-sidebar-surface-secondary group relative rounded-lg active:opacity-90">
+      {renaming ? (
+        <div className="absolute bottom-0 left-0 right-0 top-0 z-50 flex w-full items-center rounded-lg bg-gray-200 dark:bg-gray-700">
+          <input
+            ref={inputRef}
+            type="text"
+            className="w-full border border-blue-500 bg-transparent p-0 text-sm leading-tight outline-none"
+            value={titleInput}
+            onChange={(e) => setTitleInput(e.target.value)}
+            onBlur={onRename}
+            onKeyDown={handleKeyDown}
+          />
+        </div>
+      ) : (
+        <HoverToggle isActiveConvo={isActiveConvo}>
+          <EditMenuButton>
+            <div className="flex flex-col gap-4 p-3">
+              <div className="flex items-center gap-2">
+                <RenameButton
+                  renaming={renaming}
+                  onRename={onRename}
+                  renameHandler={renameHandler}
+                  twcss="flex items-center gap-2"
+                  appendLabel={true}
+                />
+              </div>
+              <div className="flex items-center gap-2 text-red-500">
+                <DeleteButton
+                  conversationId={conversationId}
+                  retainView={retainView}
+                  renaming={renaming}
+                  title={title}
+                  twcss="flex items-center gap-2"
+                  appendLabel={true}
+                />
+              </div>
+            </div>
+          </EditMenuButton>
+          <ArchiveButton
+            conversationId={conversationId}
+            retainView={retainView}
+            shouldArchive={true}
+            icon={<ArchiveIcon className="w-full hover:text-gray-400" />}
+          />
+        </HoverToggle>
+      )}
       <a
         href={`/c/${conversationId}`}
         data-testid="convo-item"
         onClick={clickHandler}
-        {...aProps}
+        className={cn(
+          isActiveConvo
+            ? 'group relative mt-2 flex cursor-pointer items-center gap-2 break-all rounded-lg rounded-lg bg-gray-200 px-2 py-2 active:opacity-50 dark:bg-gray-700'
+            : 'group relative mt-2 flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg rounded-lg px-2 py-2 hover:bg-gray-200 active:opacity-50 dark:hover:bg-gray-800',
+          !isActiveConvo && !renaming ? 'peer-hover:bg-gray-200 dark:peer-hover:bg-gray-800' : '',
+        )}
         title={title}
       >
         <EndpointIcon
@@ -142,69 +184,22 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
         {!renaming && (
           <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">{title}</div>
         )}
-        {activeConvo ? (
+        {isActiveConvo ? (
           <div
-            className={`absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l ${
-              !renaming ? 'from-gray-200 from-60% to-transparent dark:from-gray-700' : ''
-            }`}
+            className={cn(
+              'absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l',
+              !renaming ? 'from-gray-200 from-60% to-transparent dark:from-gray-700' : '',
+            )}
           />
         ) : (
-          <div className="absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%"></div>
+          <div className="absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%" />
         )}
-        {activeConvo ? (
-          <div className="visible absolute right-1 z-10 flex items-center from-gray-900 text-gray-500 dark:text-gray-300">
-            {!renaming && (
-              <EditMenuButton>
-                <div className="flex flex-col gap-4 p-3">
-                  <div className="flex items-center gap-2">
-                    <RenameButton
-                      renaming={renaming}
-                      onRename={onRename}
-                      renameHandler={renameHandler}
-                      twcss="flex items-center gap-2"
-                      appendLabel={true}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 text-red-500">
-                    <DeleteButton
-                      conversationId={conversationId}
-                      retainView={retainView}
-                      renaming={renaming}
-                      title={title}
-                      twcss="flex items-center gap-2"
-                      appendLabel={true}
-                    />
-                  </div>
-                </div>
-              </EditMenuButton>
-            )}
-            {!renaming && (
-              <ArchiveButton
-                conversationId={conversationId}
-                retainView={retainView}
-                shouldArchive={true}
-                icon={<ArchiveIcon className="w-full hover:text-gray-400" />}
-              />
-            )}
-          </div>
+        {/* {isActiveConvo ? (
+          null
         ) : (
           <div className="absolute bottom-0 right-0 top-0 w-14 rounded-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 dark:from-gray-750 dark:group-hover:from-gray-800" />
-        )}
+        )} */}
       </a>
-      {renaming && (
-        <div className="absolute bottom-0 left-[7px] right-2 top-0 flex items-center bg-gray-200 dark:bg-gray-700">
-          <input
-            ref={inputRef}
-            type="text"
-            className="w-full border border-blue-500 bg-transparent p-0 text-sm leading-tight outline-none"
-            value={titleInput}
-            onChange={(e) => setTitleInput(e.target.value)}
-            onBlur={onRename}
-            onKeyDown={handleKeyDown}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
     </div>
   );
 }
