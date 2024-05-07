@@ -123,7 +123,7 @@ export default function useSelectMention({
         newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
         return;
       }
-      // delete template.endpointType;
+
       newConversation({
         template: { ...(template as Partial<TConversation>) },
         preset: { ...kwargs, endpoint: newEndpoint },
@@ -140,16 +140,6 @@ export default function useSelectMention({
 
       const newPreset = removeUnavailableTools(_newPreset, availableTools);
       const newEndpoint = newPreset.endpoint ?? '';
-
-      // const toastTitle = newPreset.title
-      //   ? `"${newPreset.title}"`
-      //   : localize('com_endpoint_preset_title');
-
-      // showToast({
-      //   message: `${toastTitle} ${localize('com_endpoint_preset_selected_title')}`,
-      //   showIcon: false,
-      //   duration: 750,
-      // });
 
       const {
         shouldSwitch,
