@@ -17,7 +17,7 @@ export default function Mention({
 }) {
   const localize = useLocalize();
   const assistantMap = useAssistantsMapContext();
-  const { options, modelsConfig, onSelectMention } = useMentions({ assistantMap });
+  const { options, modelsConfig, assistants, onSelectMention } = useMentions({ assistantMap });
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -46,7 +46,10 @@ export default function Mention({
     };
 
     if (mention.type === 'endpoint' && mention.value === EModelEndpoint.assistants) {
-      defaultSelect();
+      setSearchValue('');
+      setInputOptions(assistants);
+      setActiveIndex(0);
+      inputRef.current?.focus();
     } else if (mention.type === 'endpoint') {
       const models = (modelsConfig?.[mention.value ?? ''] ?? []).map((model) => ({
         value: mention.value,
@@ -93,6 +96,8 @@ export default function Mention({
             } else if (e.key === 'Enter' || e.key === 'Tab') {
               const mentionOption = matches[0] as MentionOption | undefined;
               if (mentionOption?.type === 'endpoint') {
+                e.preventDefault();
+              } else if (e.key === 'Enter') {
                 e.preventDefault();
               }
               handleSelect(matches[activeIndex] as MentionOption);

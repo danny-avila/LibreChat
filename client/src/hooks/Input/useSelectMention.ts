@@ -69,8 +69,13 @@ export default function useSelectMention({
     [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
   );
 
+  type Kwargs = {
+    model?: string;
+    assistant_id?: string;
+  };
+
   const onSelectEndpoint = useCallback(
-    (newEndpoint?: EModelEndpoint | string | null, model?: string) => {
+    (newEndpoint?: EModelEndpoint | string | null, kwargs: Kwargs = {}) => {
       if (!newEndpoint) {
         return;
       }
@@ -89,8 +94,12 @@ export default function useSelectMention({
         endpointsConfig,
       });
 
-      if (model) {
-        template.model = model;
+      if (kwargs.model) {
+        template.model = kwargs.model;
+      }
+
+      if (kwargs.assistant_id) {
+        template.assistant_id = kwargs.assistant_id;
       }
 
       if (isExistingConversation && isCurrentModular && isNewModular && shouldSwitch) {
@@ -180,9 +189,11 @@ export default function useSelectMention({
         const modelSpec = modelSpecs.find((spec) => spec.name === key);
         onSelectSpec(modelSpec);
       } else if (option.type === 'model') {
-        onSelectEndpoint(key, option.label);
+        onSelectEndpoint(key, { model: option.label });
       } else if (option.type === 'endpoint') {
         onSelectEndpoint(key);
+      } else if (option.type === 'assistant') {
+        onSelectEndpoint(EModelEndpoint.assistants, { assistant_id: key });
       }
     },
     [modelSpecs, onSelectEndpoint, onSelectPreset, onSelectSpec, presets],
