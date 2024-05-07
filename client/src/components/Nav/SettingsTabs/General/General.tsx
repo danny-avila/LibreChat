@@ -34,6 +34,8 @@ export const ThemeSelector = ({
         onChange={onChange}
         options={themeOptions}
         width={220}
+        position={'left'}
+        maxHeight="200px"
         testId="theme-selector"
       />
     </div>
@@ -103,7 +105,13 @@ export const LangSelector = ({
   return (
     <div className="flex items-center justify-between">
       <div> {localize('com_nav_language')} </div>
-      <Dropdown value={langcode} onChange={onChange} options={languageOptions} />
+      <Dropdown
+        value={langcode}
+        onChange={onChange}
+        position={'left'}
+        maxHeight="199px"
+        options={languageOptions}
+      />
     </div>
   );
 };

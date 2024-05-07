@@ -26,6 +26,8 @@ export const ForkSettings = () => {
             onChange={setForkSetting}
             options={forkOptions}
             width={200}
+            position={'left'}
+            maxHeight="199px"
             testId="fork-setting-dropdown"
           />
         </div>

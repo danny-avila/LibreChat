@@ -25,7 +25,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
             {localize('com_nav_settings')}
           </DialogTitle>
         </DialogHeader>
-        <div className="max-h-[373px] overflow-hidden px-6 md:min-h-[373px] md:w-[680px]">
+        <div className="max-h-[373px] overflow-auto px-6 md:min-h-[373px] md:w-[680px]">
           <Tabs.Root
             defaultValue={SettingsTabValues.GENERAL}
             className="flex flex-col gap-10 md:flex-row"
@@ -37,7 +37,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
               aria-orientation="horizontal"
               className={cn(
                 'min-w-auto max-w-auto -ml-[8px] flex flex-shrink-0 flex-col flex-wrap overflow-auto sm:max-w-none',
-                isSmallScreen ? 'flex-row rounded-lg bg-gray-200 p-1 dark:bg-gray-700' : '',
+                isSmallScreen ? 'flex-row rounded-lg bg-gray-200 p-1 dark:bg-gray-800' : '',
               )}
               style={{ outline: 'none' }}
             >
@@ -112,7 +112,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                 {localize('com_nav_setting_account')}
               </Tabs.Trigger>
             </Tabs.List>
-            <div className="max-h-[373px] overflow-auto overflow-auto sm:w-full sm:max-w-none">
+            <div className="h-screen max-h-[373px] overflow-auto sm:w-full sm:max-w-none">
               <General />
               <Messages />
               <Beta />
