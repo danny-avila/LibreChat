@@ -57,9 +57,9 @@ export default function Mention({
         type: 'model',
       }));
 
+      setActiveIndex(0);
       setSearchValue('');
       setInputOptions(models);
-      setActiveIndex(0);
       inputRef.current?.focus();
     } else {
       defaultSelect();
@@ -89,6 +89,11 @@ export default function Mention({
           autoComplete="off"
           value={searchValue}
           onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setOpen(false);
+              setShowMentionPopover(false);
+              textAreaRef.current?.focus();
+            }
             if (e.key === 'ArrowDown') {
               setActiveIndex((prevIndex) => (prevIndex + 1) % matches.length);
             } else if (e.key === 'ArrowUp') {
@@ -118,7 +123,7 @@ export default function Mention({
         />
         {open && (
           <div className="max-h-40 overflow-y-auto">
-            {matches.map((mention, index) => (
+            {(matches as MentionOption[]).map((mention, index) => (
               <MentionItem
                 index={index}
                 key={`${mention.value}-${index}`}
@@ -127,10 +132,11 @@ export default function Mention({
                     clearTimeout(timeoutRef.current);
                   }
                   timeoutRef.current = null;
-                  handleSelect(mention as MentionOption);
+                  handleSelect(mention);
                 }}
                 name={mention.label ?? ''}
                 icon={mention.icon}
+                description={mention.description}
                 isActive={index === activeIndex}
               />
             ))}
