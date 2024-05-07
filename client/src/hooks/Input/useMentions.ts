@@ -57,7 +57,10 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
         value: modelSpec.name,
         label: modelSpec.label,
         icon: EndpointIcon({
-          conversation: modelSpec.preset,
+          conversation: {
+            ...modelSpec.preset,
+            iconURL: modelSpec.iconURL,
+          },
           endpointsConfig,
           context: 'menu-item',
           size: 20,
