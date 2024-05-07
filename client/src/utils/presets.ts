@@ -14,11 +14,13 @@ export const getPresetIcon = (preset: TPreset, Icon) => {
 
 type TEndpoints = Array<string | EModelEndpoint>;
 
-export const getPresetTitle = (preset: TPreset) => {
+export const getPresetTitle = (preset: TPreset, mention?: boolean) => {
   const {
     endpoint,
     title: presetTitle,
     model,
+    tools,
+    promptPrefix,
     chatGptLabel,
     modelLabel,
     jailbreak,
@@ -49,6 +51,21 @@ export const getPresetTitle = (preset: TPreset) => {
     label = '';
   } else if (presetTitle && presetTitle.trim() !== 'New Chat') {
     title = presetTitle + ': ';
+  }
+
+  if (mention) {
+    return `${modelInfo}${label ? ` | ${label}` : ''}${promptPrefix ? ` | ${promptPrefix}` : ''}${
+      tools
+        ? ` | ${tools
+          .map((tool: TPlugin | string) => {
+            if (typeof tool === 'string') {
+              return tool;
+            }
+            return tool.pluginKey;
+          })
+          .join(', ')}`
+        : ''
+    }`;
   }
 
   return `${title}${modelInfo}${label ? ` (${label})` : ''}`.trim();

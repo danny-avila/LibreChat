@@ -29,7 +29,7 @@ export const icons = {
       return (
         <img
           src={avatar}
-          className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full"
+          className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
           alt={assistantName}
           width="80"
           height="80"

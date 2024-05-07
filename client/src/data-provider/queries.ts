@@ -1,4 +1,4 @@
-import { EModelEndpoint, QueryKeys, dataService } from 'librechat-data-provider';
+import { EModelEndpoint, QueryKeys, dataService, defaultOrderQuery } from 'librechat-data-provider';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   UseInfiniteQueryOptions,
@@ -187,7 +187,7 @@ export const useAvailableToolsQuery = (): QueryObserverResult<TPlugin[]> => {
  * Hook for listing all assistants, with optional parameters provided for pagination and sorting
  */
 export const useListAssistantsQuery = <TData = AssistantListResponse>(
-  params?: AssistantListParams,
+  params: AssistantListParams = defaultOrderQuery,
   config?: UseQueryOptions<AssistantListResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
   const queryClient = useQueryClient();
