@@ -22,8 +22,8 @@ export default function DeleteButton({
   renaming,
   retainView,
   title,
-  twcss,
   appendLabel = false,
+  className = '',
 }) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
@@ -44,13 +44,6 @@ export default function DeleteButton({
 
     deleteConvoMutation.mutate({ conversationId, thread_id, source: 'button' });
   }, [conversationId, deleteConvoMutation, queryClient]);
-
-  const classProp: { className?: string } = {
-    className: 'p-1 hover:text-black dark:hover:text-white',
-  };
-  if (twcss) {
-    classProp.className = twcss;
-  }
 
   const renderDeleteButton = () => {
     if (appendLabel) {
@@ -79,7 +72,7 @@ export default function DeleteButton({
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <button {...classProp}>{renaming ? <CrossIcon /> : renderDeleteButton()}</button>
+        <button className={className}>{renaming ? <CrossIcon /> : renderDeleteButton()}</button>
       </DialogTrigger>
       <DialogTemplate
         showCloseButton={false}

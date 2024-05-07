@@ -102,6 +102,13 @@ export default function HoverButtons({
           <RegenerateIcon className="hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
+      <Fork
+        isLast={isLast}
+        messageId={message.messageId}
+        conversationId={conversation.conversationId}
+        forkingSupported={forkingSupported}
+        latestMessage={latestMessage}
+      />
       {continueSupported ? (
         <button
           className={cn(
@@ -115,13 +122,6 @@ export default function HoverButtons({
           <ContinueIcon className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>
       ) : null}
-      <Fork
-        isLast={isLast}
-        messageId={message.messageId}
-        conversationId={conversation.conversationId}
-        forkingSupported={forkingSupported}
-        latestMessage={latestMessage}
-      />
     </div>
   );
 }
