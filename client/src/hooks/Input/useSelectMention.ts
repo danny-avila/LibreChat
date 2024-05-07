@@ -1,7 +1,13 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { TModelSpec, TConversation, TEndpointsConfig, TPreset } from 'librechat-data-provider';
+import type {
+  TModelSpec,
+  TConversation,
+  TEndpointsConfig,
+  TPreset,
+  Assistant,
+} from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
 import { getConvoSwitchLogic, getModelSpecIconURL, removeUnavailableTools } from '~/utils';
 import { useDefaultConvo, useNewConvo } from '~/hooks';
@@ -9,13 +15,15 @@ import { useChatContext } from '~/Providers';
 import store from '~/store';
 
 export default function useSelectMention({
+  presets,
   modelSpecs,
   endpointsConfig,
-  presets,
+  assistantMap,
 }: {
   presets?: TPreset[];
   modelSpecs: TModelSpec[];
   endpointsConfig: TEndpointsConfig;
+  assistantMap: Record<string, Assistant>;
 }) {
   const { conversation } = useChatContext();
   const { newConversation } = useNewConvo();
@@ -112,10 +120,14 @@ export default function useSelectMention({
         });
 
         /* We don't reset the latest message, only when changing settings mid-converstion */
-        newConversation({ template: currentConvo, preset: template, keepLatestMessage: true });
+        newConversation({ template: currentConvo, preset: currentConvo, keepLatestMessage: true });
         return;
       }
-      newConversation({ template: { ...(template as Partial<TConversation>) }, preset: template });
+      // delete template.endpointType;
+      newConversation({
+        template: { ...(template as Partial<TConversation>) },
+        preset: { ...kwargs, endpoint: newEndpoint },
+      });
     },
     [conversation, getDefaultConversation, modularChat, newConversation, endpointsConfig],
   );
@@ -167,7 +179,7 @@ export default function useSelectMention({
         return;
       }
 
-      newConversation({ template: { ...(template as Partial<TConversation>) }, preset: newPreset });
+      newConversation({ preset: newPreset });
     },
     [
       availableTools,
@@ -193,10 +205,13 @@ export default function useSelectMention({
       } else if (option.type === 'endpoint') {
         onSelectEndpoint(key);
       } else if (option.type === 'assistant') {
-        onSelectEndpoint(EModelEndpoint.assistants, { assistant_id: key });
+        onSelectEndpoint(EModelEndpoint.assistants, {
+          assistant_id: key,
+          model: assistantMap?.[key]?.model ?? '',
+        });
       }
     },
-    [modelSpecs, onSelectEndpoint, onSelectPreset, onSelectSpec, presets],
+    [modelSpecs, onSelectEndpoint, onSelectPreset, onSelectSpec, presets, assistantMap],
   );
 
   return {

@@ -38,7 +38,12 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
         .filter(Boolean),
   });
   const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
-  const { onSelectMention } = useSelectMention({ modelSpecs, endpointsConfig, presets });
+  const { onSelectMention } = useSelectMention({
+    modelSpecs,
+    endpointsConfig,
+    presets,
+    assistantMap,
+  });
 
   const options = useMemo(() => {
     const mentions = [
