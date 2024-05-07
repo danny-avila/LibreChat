@@ -4,12 +4,14 @@ import {
   useGetStartupConfig,
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
-import { EModelEndpoint, alternateName } from 'librechat-data-provider';
+import { getConfigDefaults, EModelEndpoint, alternateName } from 'librechat-data-provider';
 import type { Assistant } from 'librechat-data-provider';
-import { EndpointIcon } from '~/components/Endpoints';
 import { useGetPresetsQuery, useListAssistantsQuery } from '~/data-provider';
+import { EndpointIcon } from '~/components/Endpoints';
 import useSelectMention from './useSelectMention';
 import { mapEndpoints } from '~/utils';
+
+const defaultInterface = getConfigDefaults().interface;
 
 export default function useMentions({ assistantMap }: { assistantMap: Record<string, Assistant> }) {
   const { data: presets } = useGetPresetsQuery();
@@ -38,6 +40,10 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
         .filter(Boolean),
   });
   const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
+  const interfaceConfig = useMemo(
+    () => startupConfig?.interface ?? defaultInterface,
+    [startupConfig],
+  );
   const { onSelectMention } = useSelectMention({
     modelSpecs,
     endpointsConfig,
@@ -47,7 +53,7 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
 
   const options = useMemo(() => {
     const mentions = [
-      ...modelSpecs.map((modelSpec) => ({
+      ...(modelSpecs?.length > 0 ? modelSpecs : []).map((modelSpec) => ({
         value: modelSpec.name,
         label: modelSpec.label,
         icon: EndpointIcon({
@@ -58,7 +64,7 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
         }),
         type: 'modelSpec',
       })),
-      ...endpoints.map((endpoint) => ({
+      ...(interfaceConfig.endpointsMenu ? endpoints : []).map((endpoint) => ({
         value: endpoint,
         label: alternateName[endpoint] ?? endpoint ?? '',
         type: 'endpoint',
@@ -69,8 +75,8 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
           size: 20,
         }),
       })),
-      ...assistants,
-      ...(presets?.map((preset, index) => ({
+      ...(endpointsConfig?.[EModelEndpoint.assistants] ? assistants : []),
+      ...((interfaceConfig.presets ? presets : [])?.map((preset, index) => ({
         value: preset.presetId ?? `preset-${index}`,
         label: preset.title ?? preset.modelLabel ?? preset.chatGptLabel ?? '',
         icon: EndpointIcon({
@@ -86,7 +92,16 @@ export default function useMentions({ assistantMap }: { assistantMap: Record<str
     ];
 
     return mentions;
-  }, [modelSpecs, endpoints, presets, endpointsConfig, assistantMap, assistants]);
+  }, [
+    presets,
+    endpoints,
+    modelSpecs,
+    assistants,
+    assistantMap,
+    endpointsConfig,
+    interfaceConfig.presets,
+    interfaceConfig.endpointsMenu,
+  ]);
 
   return {
     options,
