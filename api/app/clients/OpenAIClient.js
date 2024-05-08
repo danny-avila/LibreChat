@@ -1079,11 +1079,8 @@ ${convo}
         ...opts,
       });
 
-      /* hacky fixes for Mistral AI API:
-      - Re-orders system message to the top of the messages payload, as not allowed anywhere else
-      - If there is only one message and it's a system message, change the role to user
-      */
-      if (opts.baseURL.includes('https://api.mistral.ai/v1') && modelOptions.messages) {
+      /* Re-orders system message to the top of the messages payload, as not allowed anywhere else */
+      if (opts.baseURL.includes('api.mistral.ai') && modelOptions.messages) {
         const { messages } = modelOptions;
 
         const systemMessageIndex = messages.findIndex((msg) => msg.role === 'system');
@@ -1094,10 +1091,16 @@ ${convo}
         }
 
         modelOptions.messages = messages;
+      }
 
-        if (messages.length === 1 && messages[0].role === 'system') {
-          modelOptions.messages[0].role = 'user';
-        }
+      /* If there is only one message and it's a system message, change the role to user */
+      if (
+        (opts.baseURL.includes('api.mistral.ai') || opts.baseURL.includes('api.perplexity.ai')) &&
+        modelOptions.messages &&
+        modelOptions.messages.length === 1 &&
+        modelOptions.messages[0]?.role === 'system'
+      ) {
+        modelOptions.messages[0].role = 'user';
       }
 
       if (this.options.addParams && typeof this.options.addParams === 'object') {
