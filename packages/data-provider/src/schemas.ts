@@ -231,6 +231,7 @@ export const tUserSchema = z.object({
 
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
+  active: z.boolean(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
   user: tUserSchema.or(z.string()).optional(),
   endpoint: eModelEndpointSchema.nullable(),

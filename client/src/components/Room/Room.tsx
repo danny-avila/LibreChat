@@ -140,7 +140,7 @@ export default function Room({ room, toggleNav, retainView }) {
       data-testid="convo-item"
       onClick={clickHandler}
       {...aProps}
-      title={`${title} - ${room.users ? room.users.length : 0} Participants`}
+      title={`${title} - ${room.users ? room.users.length + 1 : 1} Participants`}
     >
       {/* {icon} */}
       <div className="relative line-clamp-1 max-h-5 flex-1 grow overflow-hidden">
@@ -168,12 +168,12 @@ export default function Room({ room, toggleNav, retainView }) {
                 : { width: '100%' }
             }
           >
-            {title} &#160;-&#160;{room.users ? room.users.length : 0}&#160; Participants
+            {title} &#160;-&#160;{room.users ? room.users.length + 1 : 1}&#160; Participants
             &#160;&#160;&#160;
           </Marquee>
         ) : (
           <>
-            {title} &#160;-&#160;{room.users ? room.users.length : 0}&#160; Participants
+            {title} &#160;-&#160;{room.users ? room.users.length + 1 : 1}&#160; Participants
             &#160;&#160;&#160;
           </>
         )}

@@ -1,7 +1,15 @@
 const { addUserToRoom } = require('~/models/Room');
 const { v4: uuidV4 } = require('uuid');
-const { getRoom, getRoomsByUser, saveConvo, saveMessage, removeUserFromRoom } = require('~/models');
+const {
+  getRoom,
+  getRoomsByUser,
+  saveConvo,
+  saveMessage,
+  removeUserFromRoom,
+  getConvo,
+} = require('~/models');
 const bcrypt = require('bcryptjs');
+const ReportModel = require('~/models/Report');
 
 const createNewRoom = async (req, res) => {
   // const { title, isPrivate, password, endpoint } = req.body;
@@ -122,6 +130,45 @@ const kickUser = async (req, res) => {
   }
 };
 
+/**
+ * @param {Request} req
+ * @param {Response} res
+ * @returns
+ */
+const reportRoom = async (req, res) => {
+  const { roomId } = req.params;
+  const { reason } = req.body;
+
+  try {
+    const room = await getConvo(req.user, roomId);
+
+    const report = await ReportModel.findOne({
+      user: req.user._id,
+      room: room._id,
+    });
+
+    if (report && report.accepted) {
+      return res.status(400).json({
+        message: 'You have already reported this room',
+      });
+    }
+
+    const newReport = new ReportModel({
+      user: req.user._id,
+      room: room._id,
+      description: reason,
+      reportType: 'room',
+    });
+
+    const result = await newReport.save();
+
+    res.json(result);
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json(error);
+  }
+};
+
 module.exports = {
   createNewRoom,
   getRoomById,
@@ -130,4 +177,5 @@ module.exports = {
   joinRoom,
   leaveRoom,
   kickUser,
+  reportRoom,
 };

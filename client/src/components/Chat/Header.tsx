@@ -5,6 +5,7 @@ import HeaderOptions from './Input/HeaderOptions';
 import { useRecoilValue } from 'recoil';
 import store from '~/store';
 import { useChatContext } from '~/Providers';
+import RoomReport from './RoomReport';
 
 export default function Header() {
   const { navVisible } = useOutletContext<ContextType>();
@@ -21,6 +22,7 @@ export default function Header() {
         )}
         <HeaderOptions />
         <PresetsMenu />
+        {convoType === 'r' && <RoomReport conversationId={conversation?.conversationId ?? ''} />}
       </div>
       {/* Empty div for spacing */}
       <div />

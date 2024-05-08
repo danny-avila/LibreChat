@@ -125,7 +125,7 @@ const ChatForm = ({ index = 0 }: { index: number }) => {
                 ref={(e) => {
                   textAreaRef.current = e;
                 }}
-                disabled={disableInputs || isNewRoom}
+                disabled={disableInputs || isNewRoom || !conversation?.active}
                 onPaste={handlePaste}
                 onKeyUp={handleKeyUp}
                 onKeyDown={handleKeyDown}

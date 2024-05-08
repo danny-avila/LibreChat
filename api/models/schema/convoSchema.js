@@ -67,6 +67,10 @@ const convoSchema = mongoose.Schema(
       type: String,
       default: '',
     },
+    active: {
+      type: Boolean,
+      default: true,
+    },
   },
   { timestamps: true },
 );
