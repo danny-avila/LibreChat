@@ -68,6 +68,12 @@ export default {
   com_ui_connect: 'Подключить',
   com_ui_delete_conversation: 'Удалить чат?',
   com_ui_delete_conversation_confirm: 'Будет удален следующий чат: ',
+  com_ui_rename: 'Переименовать',
+  com_ui_archive: 'Архивировать',
+  com_ui_archive_error: 'Nie udało się archiwizować rozmowy',
+  com_ui_unarchive: 'разархивировать',
+  com_ui_unarchive_error: 'Nie udało się odtworzyć rozmowy z archiwum',
+  com_ui_more_options: 'Еще',
   com_auth_error_login:
     'Не удалось войти с предоставленной информацией. Пожалуйста, проверьте ваши учетные данные и попробуйте снова.',
   com_auth_error_login_rl:
@@ -315,6 +321,13 @@ export default {
   com_nav_send_message: 'Отправить сообщение',
   com_nav_log_out: 'Выйти',
   com_nav_user: 'ПОЛЬЗОВАТЕЛЬ',
+  com_nav_archived_chats: 'Архивированные чаты',
+  com_nav_archived_chats_manage: 'Управление',
+  com_nav_archived_chats_empty: 'У вас нет архивированных разговоров.',
+  com_nav_archive_all_chats: 'Архивировать все чаты',
+  com_nav_archive_all: 'Архивировать все',
+  com_nav_archive_name: 'Имя',
+  com_nav_archive_created_at: 'Дата создания',
   com_nav_clear_conversation: 'Удалить разговоры',
   com_nav_clear_conversation_confirm_message:
     'Вы уверены, что хотите удалить все разговоры? Это действие нельзя отменить.',
