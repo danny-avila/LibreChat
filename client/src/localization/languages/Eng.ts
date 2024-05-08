@@ -125,6 +125,7 @@ export default {
   com_user_message: 'You',
   com_ui_copy_to_clipboard: 'Copy to clipboard',
   com_ui_copied_to_clipboard: 'Copied to clipboard',
+  com_ui_fork: 'Fork',
   com_ui_fork_info_1: 'Use this setting to fork messages with the desired behavior.',
   com_ui_fork_info_2:
     '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
@@ -154,6 +155,7 @@ export default {
   com_ui_fork_branches: 'Include related branches',
   com_ui_fork_visible: 'Visible messages only',
   com_ui_fork_from_message: 'Select a fork option',
+  com_ui_mention: 'Mention an endpoint, assistant, or preset to quickly switch to it',
   com_ui_regenerate: 'Regenerate',
   com_ui_continue: 'Continue',
   com_ui_edit: 'Edit',

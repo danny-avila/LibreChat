@@ -182,7 +182,7 @@ export default function Fork({
             }
           }}
           type="button"
-          title={localize('com_ui_continue')}
+          title={localize('com_ui_fork')}
         >
           <GitFork className="h-4 w-4 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400" />
         </button>

@@ -1,7 +1,7 @@
 import debounce from 'lodash/debounce';
-import { useRecoilValue } from 'recoil';
+import { useEffect, useRef, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import React, { useEffect, useRef, useCallback } from 'react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import { forceResize, insertTextAtCursor, getAssistantName } from '~/utils';
@@ -23,20 +23,24 @@ export default function useTextarea({
   submitButtonRef: React.RefObject<HTMLButtonElement>;
   disabled?: boolean;
 }) {
-  const assistantMap = useAssistantsMapContext();
-  const enterToSend = useRecoilValue(store.enterToSend);
-  const {
-    conversation,
-    isSubmitting,
-    latestMessage,
-    setShowBingToneSetting,
-    filesLoading,
-    setFilesLoading,
-  } = useChatContext();
+  const localize = useLocalize();
+  const getSender = useGetSender();
   const isComposing = useRef(false);
   const { handleFiles } = useFileHandling();
-  const getSender = useGetSender();
-  const localize = useLocalize();
+  const assistantMap = useAssistantsMapContext();
+  const enterToSend = useRecoilValue(store.enterToSend);
+
+  const {
+    index,
+    conversation,
+    isSubmitting,
+    filesLoading,
+    latestMessage,
+    setFilesLoading,
+    setShowBingToneSetting,
+  } = useChatContext();
+
+  const setShowMentionPopover = useSetRecoilState(store.showMentionPopoverFamily(index));
 
   const { conversationId, jailbreak, endpoint = '', assistant_id } = conversation || {};
   const isNotAppendable =
@@ -132,6 +136,30 @@ export default function useTextarea({
     assistantMap,
   ]);
 
+  const handleKeyUp = useCallback(
+    (e: KeyEvent) => {
+      let isMention = false;
+      if (e.key === '@' || e.key === '2') {
+        const text = textAreaRef.current?.value;
+        isMention = !!(text && text[text.length - 1] === '@');
+      }
+
+      if (isMention) {
+        const startPos = textAreaRef.current?.selectionStart;
+        const isAtStart = startPos === 1;
+        const isPrecededBySpace =
+          startPos && textAreaRef.current?.value.charAt(startPos - 2) === ' ';
+
+        if (isAtStart || isPrecededBySpace) {
+          setShowMentionPopover(true);
+        } else {
+          setShowMentionPopover(false);
+        }
+      }
+    },
+    [textAreaRef, setShowMentionPopover],
+  );
+
   const handleKeyDown = useCallback(
     (e: KeyEvent) => {
       if (e.key === 'Enter' && isSubmitting) {
@@ -213,6 +241,7 @@ export default function useTextarea({
   return {
     textAreaRef,
     handlePaste,
+    handleKeyUp,
     handleKeyDown,
     handleCompositionStart,
     handleCompositionEnd,

@@ -1,18 +1,20 @@
 import type { FC } from 'react';
 import { DotsIcon } from '~/components/svg';
 import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
+import { useToggle } from './ToggleContext';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '~/components/ui';
 
 type EditMenuButtonProps = {
   children: React.ReactNode;
 };
 const EditMenuButton: FC<EditMenuButtonProps> = ({ children }: EditMenuButtonProps) => {
   const localize = useLocalize();
+  const { setPopoverActive } = useToggle();
 
   return (
-    <Root>
+    <Root onOpenChange={(open) => setPopoverActive(open)}>
       <Trigger asChild>
         <div
           className={cn(
@@ -22,13 +24,13 @@ const EditMenuButton: FC<EditMenuButtonProps> = ({ children }: EditMenuButtonPro
           )}
           id="edit-menu-button"
           data-testid="edit-menu-button"
-          title={localize('com_endpoint_examples')}
+          title={localize('com_ui_more_options')}
         >
-          <TooltipProvider delayDuration={250}>
+          <TooltipProvider delayDuration={500}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button type="button" className="">
-                  <DotsIcon className="text-token-text-primary h-4 w-4 flex-shrink-0 transition hover:text-gray-400 dark:text-gray-300 dark:hover:text-gray-400" />
+                  <DotsIcon className="h-[18px] w-[18px] flex-shrink-0 text-gray-500 hover:text-gray-400 dark:text-gray-300 dark:hover:text-gray-400" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top" sideOffset={0}>
@@ -42,7 +44,11 @@ const EditMenuButton: FC<EditMenuButtonProps> = ({ children }: EditMenuButtonPro
         <Content
           side="bottom"
           align="start"
-          className="mt-2 flex max-h-[495px] flex-col gap-2 overflow-x-hidden rounded-lg border border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-600 dark:bg-gray-700 dark:text-white md:min-w-[200px]"
+          className={cn(
+            'popover radix-side-bottom:animate-slideUpAndFade radix-side-left:animate-slideRightAndFade radix-side-right:animate-slideLeftAndFade radix-side-top:animate-slideDownAndFade overflow-hidden rounded-lg shadow-lg',
+            'border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-700 dark:text-white',
+            'flex min-w-[200px] max-w-xs flex-wrap',
+          )}
         >
           {children}
         </Content>

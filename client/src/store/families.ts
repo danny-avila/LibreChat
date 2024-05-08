@@ -107,6 +107,11 @@ const showPopoverFamily = atomFamily({
   default: false,
 });
 
+const showMentionPopoverFamily = atomFamily<boolean, string | number | null>({
+  key: 'showMentionPopoverByIndex',
+  default: false,
+});
+
 const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
   key: 'latestMessageByIndex',
   default: null,
@@ -142,4 +147,5 @@ export default {
   latestMessageFamily,
   allConversationsSelector,
   useCreateConversationAtom,
+  showMentionPopoverFamily,
 };
