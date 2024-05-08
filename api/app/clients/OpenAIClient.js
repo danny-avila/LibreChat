@@ -1151,7 +1151,7 @@ ${convo}
             }
           });
 
-        const azureDelay = this.modelOptions.model?.includes('gpt-4') ? 30 : 20;
+        const azureDelay = this.modelOptions.model?.includes('gpt-4') ? 30 : 17;
         for await (const chunk of stream) {
           const token = chunk.choices[0]?.delta?.content || '';
           intermediateReply += token;
