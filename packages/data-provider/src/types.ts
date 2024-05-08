@@ -249,8 +249,6 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   emailEnabled: boolean;
   checkBalance: boolean;
-  speechToTextExternal: boolean;
-  textToSpeechExternal: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   customFooter?: string;
