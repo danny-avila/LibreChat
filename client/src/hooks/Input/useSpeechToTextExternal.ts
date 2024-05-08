@@ -2,13 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { useSpeechToTextMutation } from '~/data-provider';
 import { useToastContext } from '~/Providers';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import store from '~/store';
 
 const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void) => {
   const { showToast } = useToastContext();
-  const { data: startupConfig } = useGetStartupConfig();
-  const isExternalSpeechEnabled = startupConfig?.speechToTextExternal ?? false;
+  const [endpointSTT] = useRecoilState<string>(store.endpointSTT);
   const [speechToText] = useRecoilState<boolean>(store.SpeechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
   const [autoSendText] = useRecoilState<boolean>(store.autoSendText);
@@ -198,7 +196,7 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
   };
 
   const handleKeyDown = async (e: KeyboardEvent) => {
-    if (e.shiftKey && e.altKey && e.code === 'KeyL' && isExternalSpeechEnabled) {
+    if (e.shiftKey && e.altKey && e.code === 'KeyL' && endpointSTT !== 'browser') {
       if (!window.MediaRecorder) {
         showToast({ message: 'MediaRecorder is not supported in this browser', status: 'error' });
         return;
@@ -219,16 +217,12 @@ const useSpeechToTextExternal = (onTranscriptionComplete: (text: string) => void
   };
 
   useEffect(() => {
-    if (isExternalSpeechEnabled === false) {
-      return;
-    }
-
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isExternalSpeechEnabled, isListening]);
+  }, [isListening]);
 
   return {
     isListening,

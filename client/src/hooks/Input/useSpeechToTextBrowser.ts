@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useGetStartupConfig } from 'librechat-data-provider/react-query';
+import { useRecoilState } from 'recoil';
 import { useToastContext } from '~/Providers';
+import store from '~/store';
 
 const useSpeechToTextBrowser = () => {
-  const { data: startupConfig } = useGetStartupConfig();
   const { showToast } = useToastContext();
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [endpointSTT] = useRecoilState<string>(store.endpointSTT);
   const [text, setText] = useState('');
 
   const initializeSpeechRecognition = () => {
@@ -36,16 +37,13 @@ const useSpeechToTextBrowser = () => {
   };
 
   useEffect(() => {
-    if (startupConfig?.speechToTextExternal) {
-      setIsSpeechSupported(false);
-      return;
-    }
-
-    if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+    if (
+      ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) &&
+      endpointSTT === 'browser'
+    ) {
       setIsSpeechSupported(true);
     } else {
       setIsSpeechSupported(false);
-      return;
     }
 
     const recognition = initializeSpeechRecognition();
@@ -57,19 +55,22 @@ const useSpeechToTextBrowser = () => {
     return () => {
       recognition.stop();
     };
-  }, [isListening, startupConfig?.speechToTextExternal, showToast]);
+  }, [isListening, endpointSTT, showToast]);
 
   const toggleListening = () => {
     if (isSpeechSupported) {
       setIsListening((prevState) => !prevState);
     } else {
-      showToast({ message: 'Browser does not support SpeechRecognition', status: 'error' });
+      showToast({
+        message: 'Browser does not support SpeechRecognition',
+        status: 'error',
+      });
     }
   };
 
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.shiftKey && e.altKey && e.code === 'KeyL' && !startupConfig?.speechToTextExternal) {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.shiftKey && e.altKey && e.code === 'KeyL' && endpointSTT === 'browser') {
         toggleListening();
       }
     };
