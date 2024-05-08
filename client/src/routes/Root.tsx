@@ -5,7 +5,7 @@ import { useGetSearchEnabledQuery } from 'librechat-data-provider/react-query';
 import type { ContextType } from '~/common';
 import { useAuthContext, useAssistantsMap, useFileMap } from '~/hooks';
 import { AssistantsMapContext, FileMapContext } from '~/Providers';
-import { Nav, MobileNav } from '~/components/Nav';
+import { Nav } from '~/components/Nav';
 import store from '~/store';
 
 export default function Root() {
@@ -45,7 +45,6 @@ export default function Root() {
           <div className="relative z-0 flex h-full w-full overflow-hidden">
             <Nav navVisible={navVisible} setNavVisible={setNavVisible} />
             <div className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden">
-              <MobileNav setNavVisible={setNavVisible} />
               <Outlet context={{ navVisible, setNavVisible } satisfies ContextType} />
             </div>
           </div>

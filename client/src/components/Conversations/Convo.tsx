@@ -138,6 +138,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
               onRename={onRename}
               renameHandler={renameHandler}
               appendLabel={true}
+              className="group m-1.5 flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
             />
             <DeleteButton
               conversationId={conversationId}
@@ -152,7 +153,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             conversationId={conversationId}
             retainView={retainView}
             shouldArchive={true}
-            icon={<ArchiveIcon className="w-full hover:text-gray-400" />}
+            icon={<ArchiveIcon className="hover:text-gray-400" />}
           />
         </HoverToggle>
       )}
