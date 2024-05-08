@@ -29,6 +29,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const { refreshConversations } = useConversations();
   const { navigateToConvo } = useNavigateToConvo();
   const { showToast } = useToastContext();
+  const [isHovering, setIsHovering] = useState(false);
 
   const { conversationId, title } = conversation;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -112,12 +113,20 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     }
   };
 
+  const handleMouseEnter = () => setIsHovering(true);
+
+  const handleMouseLeave = () => setIsHovering(false);
+
   const isActiveConvo =
     currentConvoId === conversationId ||
     (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
 
   return (
-    <div className="hover:bg-token-sidebar-surface-secondary group relative rounded-lg active:opacity-90">
+    <div
+      className="hover:bg-token-sidebar-surface-secondary group relative rounded-lg active:opacity-90"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
       {renaming ? (
         <div className="absolute bottom-0 left-0 right-0 top-0 z-50 flex w-full items-center rounded-lg bg-gray-200 dark:bg-gray-700">
           <input
@@ -163,7 +172,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
         className={cn(
           isActiveConvo
             ? 'group relative mt-2 flex cursor-pointer items-center gap-2 break-all rounded-lg rounded-lg bg-gray-200 px-2 py-2 active:opacity-50 dark:bg-gray-700'
-            : 'group relative mt-2 flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg rounded-lg px-2 py-2 hover:bg-gray-200 active:opacity-50 dark:hover:bg-gray-800',
+            : 'group relative mt-2 flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg rounded-lg px-2 py-2 hover:bg-gray-200 active:opacity-50 dark:hover:bg-gray-700',
           !isActiveConvo && !renaming ? 'peer-hover:bg-gray-200 dark:peer-hover:bg-gray-800' : '',
         )}
         title={title}
@@ -185,7 +194,15 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             )}
           />
         ) : (
-          <div className="absolute bottom-0 right-0 top-0 w-2 bg-gradient-to-l from-0% to-transparent group-hover:w-1 group-hover:from-60%" />
+          <div
+            className={`absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l ${
+              !renaming
+                ? `from-gray-50 dark:from-[#181818] ${
+                  isHovering ? 'from-60%' : 'from-0%'
+                } to-transparent group-hover:from-gray-200 dark:group-hover:from-gray-700`
+                : ''
+            }`}
+          ></div>
         )}
       </a>
     </div>
