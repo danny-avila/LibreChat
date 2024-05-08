@@ -1,4 +1,5 @@
 const OpenAI = require('openai');
+const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
   Constants,
@@ -744,6 +745,10 @@ class OpenAIClient extends BaseClient {
    *                            In case of failure, it will return the default title, "New Chat".
    */
   async titleConvo({ text, conversationId, responseText = '' }) {
+    if (this.options.attachments) {
+      delete this.options.attachments;
+    }
+
     let title = 'New Chat';
     const convo = `||>User:
 "${truncateText(text)}"
@@ -1150,6 +1155,15 @@ ${convo}
         logger.debug('[OpenAIClient] chatCompletion: dropped params', {
           dropParams: this.options.dropParams,
           modelOptions,
+        });
+      }
+
+      if (this.options.attachments && this.options.endpoint?.toLowerCase() === 'ollama') {
+        const ollamaClient = new OllamaClient({ baseURL });
+        return await ollamaClient.chatCompletion({
+          payload: modelOptions,
+          onProgress,
+          abortController,
         });
       }
 
