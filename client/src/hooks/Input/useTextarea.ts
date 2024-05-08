@@ -14,6 +14,11 @@ import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
+const keyMap = {
+  50: '2',
+  192: '@',
+};
+
 export default function useTextarea({
   textAreaRef,
   submitButtonRef,
@@ -138,24 +143,30 @@ export default function useTextarea({
 
   const handleKeyUp = useCallback(
     (e: KeyEvent) => {
-      let isMention = false;
-      if (e.key === '@' || e.key === '2') {
-        const text = textAreaRef.current?.value;
-        isMention = !!(text && text[text.length - 1] === '@');
+      let normalizedKey = e.key;
+
+      if (!normalizedKey || normalizedKey === 'Unidentified') {
+        normalizedKey = keyMap[e.keyCode] || normalizedKey;
       }
 
-      if (isMention) {
-        const startPos = textAreaRef.current?.selectionStart;
-        const isAtStart = startPos === 1;
-        const isPrecededBySpace =
-          startPos && textAreaRef.current?.value.charAt(startPos - 2) === ' ';
-
-        if (isAtStart || isPrecededBySpace) {
-          setShowMentionPopover(true);
-        } else {
-          setShowMentionPopover(false);
-        }
+      if (normalizedKey !== '@' && normalizedKey !== '2') {
+        return;
       }
+
+      const text = textAreaRef.current?.value;
+      if (!(text && text[text.length - 1] === '@')) {
+        return;
+      }
+
+      const startPos = textAreaRef.current?.selectionStart;
+      if (!startPos) {
+        return;
+      }
+
+      const isAtStart = startPos === 1;
+      const isPrecededBySpace = textAreaRef.current?.value.charAt(startPos - 2) === ' ';
+
+      setShowMentionPopover(isAtStart || isPrecededBySpace);
     },
     [textAreaRef, setShowMentionPopover],
   );
