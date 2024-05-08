@@ -101,7 +101,7 @@ const hideSidePanel = atom<boolean>({
 
 const modularChat = atom<boolean>({
   key: 'modularChat',
-  default: localStorage.getItem('modularChat') === 'true',
+  default: true,
   effects: [
     ({ setSelf, onSet }) => {
       const savedValue = localStorage.getItem('modularChat');

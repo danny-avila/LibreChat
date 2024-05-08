@@ -89,6 +89,10 @@ const conversationPreset = {
     type: String,
   },
   stop: { type: [{ type: String }], default: undefined },
+  isArchived: {
+    type: Boolean,
+    default: false,
+  },
   /* UI Components */
   iconURL: {
     type: String,
