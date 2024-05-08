@@ -26,11 +26,11 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { isEnabled, sleep } = require('~/server/utils');
 const { handleOpenAIErrors } = require('./tools/util');
 const spendTokens = require('~/models/spendTokens');
 const { createLLM, RunManager } = require('./llm');
 const ChatGPTClient = require('./ChatGPTClient');
-const { isEnabled } = require('~/server/utils');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
@@ -1151,6 +1151,7 @@ ${convo}
             }
           });
 
+        const azureDelay = this.modelOptions.model?.includes('gpt-4') ? 30 : 20;
         for await (const chunk of stream) {
           const token = chunk.choices[0]?.delta?.content || '';
           intermediateReply += token;
@@ -1158,6 +1159,10 @@ ${convo}
           if (abortController.signal.aborted) {
             stream.controller.abort();
             break;
+          }
+
+          if (this.azure) {
+            await sleep(azureDelay);
           }
         }
 
