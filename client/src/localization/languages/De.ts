@@ -192,6 +192,12 @@ export default {
   com_ui_delete_conversation_confirm: 'Damit wird gelöscht',
   com_ui_delete_assistant_confirm:
     'Bist du sicher, dass du diesen Assistenten löschen willst? Dies kann nicht rückgängig gemacht werden.',
+  com_ui_rename: 'Umbenennen',
+  com_ui_archive: 'Archiv',
+  com_ui_archive_error: 'Fehler beim Archivieren der Konversation',
+  com_ui_unarchive: 'Entarchivieren',
+  com_ui_unarchive_error: 'Fehler beim Entarchivieren der Konversation',
+  com_ui_more_options: 'Mehr',
   com_ui_preview: 'Vorschau',
   com_ui_upload: 'Hochladen',
   com_ui_connect: 'Verbinden',
@@ -340,7 +346,8 @@ export default {
   com_endpoint_disabled_with_tools: 'Mit Werkzeugen deaktiviert',
   com_endpoint_disabled_with_tools_placeholder: 'Deaktiviert mit ausgewählten Werkzeugen',
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
-    'Setzt benutzerdefinierte Anweisungen, die in die System Nachricht aufgenommen werden. Standardmäßig: keine',
+    'Setzt benutzerdefinierte Anweisungen, die in die Systemaufforderung aufgenommen werden. Standard: keine',
+  com_endpoint_import: 'Importieren',
   com_endpoint_set_custom_name:
     'Lege einen benutzerdefinierten Namen fest, für den Fall, dass du diese Vorgabe finden kannst',
   com_endpoint_preset_delete_confirm: 'Bist du sicher, dass du diese Vorgabe löschen willst?',
@@ -382,7 +389,6 @@ export default {
   com_endpoint_presets_clear_warning:
     'Bist du sicher, dass du alle Voreinstellungen löschen willst? Dies ist nicht umkehrbar.',
   com_endpoint_not_implemented: 'Nicht implementiert',
-  com_endpoint_import: 'Importieren',
   com_endpoint_confirm: 'Bestätigen Sie',
   com_endpoint_edit_preset: 'Bearbeite Preset',
   com_endpoint_clear_presets: 'Voreinstellungen löschen',
@@ -511,6 +517,13 @@ export default {
   com_nav_send_message: 'Nachricht senden',
   com_nav_log_out: 'Abmelden',
   com_nav_user: 'NUTZER',
+  com_nav_archived_chats: 'Archivierte Chats',
+  com_nav_archived_chats_manage: 'Verwalten',
+  com_nav_archived_chats_empty: 'Keine archivierten Chats',
+  com_nav_archive_all_chats: 'Alle Chats archivieren',
+  com_nav_archive_all: 'Archivieren',
+  com_nav_archive_name: 'Name',
+  com_nav_archive_created_at: 'ErstelltAm',
   com_nav_clear_conversation: 'Unterhaltungen löschen',
   com_nav_clear_conversation_confirm_message:
     'Bist du sicher, dass du alle Unterhaltungen löschen willst? Dies ist unumkehrbar.',

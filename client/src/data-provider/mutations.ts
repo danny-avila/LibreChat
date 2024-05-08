@@ -70,6 +70,53 @@ export const useUpdateConversationMutation = (
   );
 };
 
+export const useArchiveConversationMutation = (
+  id: string,
+): UseMutationResult<
+  t.TArchiveConversationResponse,
+  unknown,
+  t.TArchiveConversationRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TArchiveConversationRequest) => dataService.archiveConversation(payload),
+    {
+      onSuccess: (_data, vars) => {
+        if (vars.isArchived) {
+          queryClient.setQueryData([QueryKeys.conversation, id], null);
+        } else {
+          queryClient.setQueryData([QueryKeys.conversation, id], _data);
+        }
+
+        queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+          if (!convoData) {
+            return convoData;
+          }
+          if (vars.isArchived) {
+            return deleteConversation(convoData, id as string);
+          } else {
+            return addConversation(convoData, _data);
+          }
+        });
+        queryClient.setQueryData<t.ConversationData>(
+          [QueryKeys.archivedConversations],
+          (convoData) => {
+            if (!convoData) {
+              return convoData;
+            }
+            if (vars.isArchived) {
+              return addConversation(convoData, _data);
+            } else {
+              return deleteConversation(convoData, id as string);
+            }
+          },
+        );
+      },
+    },
+  );
+};
+
 export const useDeleteConversationMutation = (
   options?: t.DeleteConversationOptions,
 ): UseMutationResult<
@@ -87,14 +134,20 @@ export const useDeleteConversationMutation = (
         if (!vars.conversationId) {
           return;
         }
-        queryClient.setQueryData([QueryKeys.conversation, vars.conversationId], null);
-        queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], (convoData) => {
+
+        const handleDelete = (convoData) => {
           if (!convoData) {
             return convoData;
           }
-          const update = deleteConversation(convoData, vars.conversationId as string);
-          return update;
-        });
+          return deleteConversation(convoData, vars.conversationId as string);
+        };
+
+        queryClient.setQueryData([QueryKeys.conversation, vars.conversationId], null);
+        queryClient.setQueryData<t.ConversationData>([QueryKeys.allConversations], handleDelete);
+        queryClient.setQueryData<t.ConversationData>(
+          [QueryKeys.archivedConversations],
+          handleDelete,
+        );
         onSuccess?.(_data, vars, context);
       },
       ...(_options || {}),

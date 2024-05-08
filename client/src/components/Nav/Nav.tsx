@@ -77,7 +77,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
   const setSearchResultMessages = useSetRecoilState(store.searchResultMessages);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversationsInfiniteQuery(
-    { pageNumber: pageNumber.toString() },
+    { pageNumber: pageNumber.toString(), isArchived: false },
     { enabled: isAuthenticated },
   );
 
@@ -93,7 +93,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
   // });
 
   const searchQueryRes = useSearchInfiniteQuery(
-    { pageNumber: pageNumber.toString(), searchQuery: searchQuery },
+    { pageNumber: pageNumber.toString(), searchQuery: searchQuery, isArchived: false },
     { enabled: isAuthenticated && !!searchQuery.length },
   );
 

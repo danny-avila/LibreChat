@@ -326,6 +326,7 @@ export type Option = Record<string, unknown> & {
 };
 
 export type OptionWithIcon = Option & { icon?: React.ReactNode };
+export type MentionOption = OptionWithIcon & { type: string; value: string; description?: string };
 
 export type TOptionSettings = {
   showExamples?: boolean;
