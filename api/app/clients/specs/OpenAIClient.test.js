@@ -157,12 +157,19 @@ describe('OpenAIClient', () => {
     azureOpenAIApiVersion: '2020-07-01-preview',
   };
 
+  let originalWarn;
+
   beforeAll(() => {
-    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    originalWarn = console.warn;
+    console.warn = jest.fn();
   });
 
   afterAll(() => {
-    console.warn.mockRestore();
+    console.warn = originalWarn;
+  });
+
+  beforeEach(() => {
+    console.warn.mockClear();
   });
 
   beforeEach(() => {
@@ -660,6 +667,37 @@ describe('OpenAIClient', () => {
       const constructorArgs = OpenAI.mock.calls[0][0];
       const expectedURL = genAzureChatCompletion(defaultAzureOptions).split('/chat')[0];
       expect(constructorArgs.baseURL).toBe(expectedURL);
+    });
+  });
+
+  describe('checkVisionRequest functionality', () => {
+    let client;
+    const attachments = [{ type: 'image/png' }];
+
+    beforeEach(() => {
+      client = new OpenAIClient('test-api-key', {
+        endpoint: 'ollama',
+        modelOptions: {
+          model: 'initial-model',
+        },
+        modelsConfig: {
+          ollama: ['initial-model', 'llava', 'other-model'],
+        },
+      });
+
+      client.defaultVisionModel = 'non-valid-default-model';
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('should set "llava" as the model if it is the first valid model when default validation fails', () => {
+      client.checkVisionRequest(attachments);
+
+      expect(client.modelOptions.model).toBe('llava');
+      expect(client.isVisionModel).toBeTruthy();
+      expect(client.modelOptions.stop).toBeUndefined();
     });
   });
 });

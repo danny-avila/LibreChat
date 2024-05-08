@@ -234,23 +234,52 @@ class OpenAIClient extends BaseClient {
    * @param {MongoFile[]} attachments
    */
   checkVisionRequest(attachments) {
-    const availableModels = this.options.modelsConfig?.[this.options.endpoint];
-    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
-
-    const visionModelAvailable = availableModels?.includes(this.defaultVisionModel);
-    if (
-      attachments &&
-      attachments.some((file) => file?.type && file?.type?.includes('image')) &&
-      visionModelAvailable &&
-      !this.isVisionModel
-    ) {
-      this.modelOptions.model = this.defaultVisionModel;
-      this.isVisionModel = true;
+    if (!attachments) {
+      return;
     }
 
+    const availableModels = this.options.modelsConfig?.[this.options.endpoint];
+    if (!availableModels) {
+      return;
+    }
+
+    let visionRequestDetected = false;
+    for (const file of attachments) {
+      if (file?.type?.includes('image')) {
+        visionRequestDetected = true;
+        break;
+      }
+    }
+    if (!visionRequestDetected) {
+      return;
+    }
+
+    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
     if (this.isVisionModel) {
       delete this.modelOptions.stop;
+      return;
     }
+
+    for (const model of availableModels) {
+      if (!validateVisionModel({ model, availableModels })) {
+        continue;
+      }
+      this.modelOptions.model = model;
+      this.isVisionModel = true;
+      delete this.modelOptions.stop;
+      return;
+    }
+
+    if (!availableModels.includes(this.defaultVisionModel)) {
+      return;
+    }
+    if (!validateVisionModel({ model: this.defaultVisionModel, availableModels })) {
+      return;
+    }
+
+    this.modelOptions.model = this.defaultVisionModel;
+    this.isVisionModel = true;
+    delete this.modelOptions.stop;
   }
 
   setupTokens() {
