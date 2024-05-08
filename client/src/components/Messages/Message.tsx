@@ -7,7 +7,7 @@ import { SubRow, Plugin, MessageContent } from './Content';
 // eslint-disable-next-line import/no-cycle
 import MultiMessage from './MultiMessage';
 import HoverButtons from './HoverButtons';
-import SiblingSwitch from './SiblingSwitch';
+import SiblingSwitch from '../Chat/Messages/SiblingSwitch';
 import { Icon } from '~/components/Endpoints';
 import { useMessageHandler, useConversation } from '~/hooks';
 import type { TMessageProps } from '~/common';
