@@ -27,10 +27,10 @@ const {
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { handleOpenAIErrors } = require('./tools/util');
+const { isEnabled, sleep } = require('~/server/utils');
 const spendTokens = require('~/models/spendTokens');
 const { createLLM, RunManager } = require('./llm');
 const ChatGPTClient = require('./ChatGPTClient');
-const { isEnabled } = require('~/server/utils');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
@@ -1159,6 +1159,8 @@ ${convo}
             stream.controller.abort();
             break;
           }
+
+          await sleep(25);
         }
 
         if (!UnexpectedRoleError) {
