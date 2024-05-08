@@ -31,7 +31,7 @@ export default function User({
 
   return (
     <a data-testid="convo-item" {...aProps}>
-      <div className="flex">
+      <div className="flex gap-3">
         <img
           src={user && user.avatar ? user.avatar : avatarSrc}
           alt={user.name}
@@ -39,7 +39,9 @@ export default function User({
         />
         {!isCollapsed && user.name}
       </div>
-      {you?.id === conversation?.user._id && you.id !== user._id && <UserKickButton user={user} />}
+      {!isCollapsed && you?.id === conversation?.user._id && you.id !== user._id && (
+        <UserKickButton user={user} />
+      )}
     </a>
   );
 }
