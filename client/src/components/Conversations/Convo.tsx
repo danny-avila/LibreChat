@@ -104,6 +104,10 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     );
   };
 
+  const handleMouseEnter = () => setIsHovering(true);
+
+  const handleMouseLeave = () => setIsHovering(false);
+
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Escape') {
       setTitleInput(title);
@@ -112,10 +116,6 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
       onRename(e);
     }
   };
-
-  const handleMouseEnter = () => setIsHovering(true);
-
-  const handleMouseLeave = () => setIsHovering(false);
 
   const isActiveConvo =
     currentConvoId === conversationId ||
