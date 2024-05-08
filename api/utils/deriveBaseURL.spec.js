@@ -22,12 +22,6 @@ jest.mock('~/config', () => ({
     error: jest.fn(),
   },
 }));
-jest.mock('./Config/EndpointService', () => ({
-  config: {
-    openAIApiKey: 'mockedApiKey',
-    userProvidedOpenAI: false,
-  },
-}));
 
 axios.get.mockResolvedValue({
   data: {
