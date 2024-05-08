@@ -147,6 +147,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
               onRename={onRename}
               renameHandler={renameHandler}
               appendLabel={true}
+              className="mb-[3.5px]"
             />
             <DeleteButton
               conversationId={conversationId}
@@ -154,6 +155,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
               renaming={renaming}
               title={title}
               appendLabel={true}
+              className="mt-[3.5px]"
             />
           </EditMenuButton>
           <ArchiveButton

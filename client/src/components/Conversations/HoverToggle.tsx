@@ -21,7 +21,7 @@ const HoverToggle = ({
           'peer absolute bottom-0 right-0 top-0 items-center gap-1.5 rounded-r-lg from-gray-900 pl-2 pr-2 text-gray-500 dark:text-gray-300',
           isActiveConvo
             ? 'from-gray-50 from-85% to-transparent group-hover:bg-gradient-to-l group-hover:from-gray-200 dark:from-gray-750 dark:group-hover:from-gray-750'
-            : 'z-50 from-gray-50 from-85% to-transparent group-hover:bg-gradient-to-l group-hover:from-gray-200 dark:from-gray-750 dark:group-hover:from-gray-750',
+            : 'z-50 from-gray-50 from-85% to-transparent group-hover:bg-gradient-to-l group-hover:from-gray-200 dark:from-gray-750 dark:group-hover:from-gray-800',
           isPopoverActive || isActiveConvo ? 'flex' : 'hidden group-hover:flex',
           isPopoverActive && !isActiveConvo ? 'bg-gray-50 dark:bg-gray-750' : '',
         )}
