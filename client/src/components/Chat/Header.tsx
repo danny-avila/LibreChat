@@ -1,18 +1,15 @@
 import { useMemo } from 'react';
-import { useLocation, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import { getConfigDefaults } from 'librechat-data-provider';
 import { useGetStartupConfig } from 'librechat-data-provider/react-query';
 import type { ContextType } from '~/common';
 import { EndpointsMenu, ModelSpecsMenu, PresetsMenu, HeaderNewChat } from './Menus';
 import HeaderOptions from './Input/HeaderOptions';
-import { useLocalize } from '~/hooks';
 import ExportButton from './ExportButton';
 
 const defaultInterface = getConfigDefaults().interface;
 
 export default function Header() {
-  const localize = useLocalize();
-  const location = useLocation();
   const { data: startupConfig } = useGetStartupConfig();
   const { navVisible } = useOutletContext<ContextType>();
   const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list ?? [], [startupConfig]);
