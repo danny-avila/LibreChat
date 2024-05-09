@@ -161,11 +161,13 @@ class OpenAIClient extends BaseClient {
       model.startsWith('text-chat') || model.startsWith('text-davinci-002-render');
 
     this.maxContextTokens =
+      this.options.maxContextTokens ??
       getModelMaxTokens(
         model,
         this.options.endpointType ?? this.options.endpoint,
         this.options.endpointTokenConfig,
-      ) ?? 4095; // 1 less than maximum
+      ) ??
+      4095; // 1 less than maximum
 
     if (this.shouldSummarize) {
       this.maxContextTokens = Math.floor(this.maxContextTokens / 2);
@@ -407,6 +409,7 @@ class OpenAIClient extends BaseClient {
 
   getSaveOptions() {
     return {
+      maxContextTokens: this.options.maxContextTokens,
       chatGptLabel: this.options.chatGptLabel,
       promptPrefix: this.options.promptPrefix,
       resendFiles: this.options.resendFiles,
@@ -435,7 +438,11 @@ class OpenAIClient extends BaseClient {
    * @returns {Promise<MongoFile[]>}
    */
   async addImageURLs(message, attachments) {
-    const { files, image_urls } = await encodeAndFormat(this.options.req, attachments);
+    const { files, image_urls } = await encodeAndFormat(
+      this.options.req,
+      attachments,
+      this.options.endpoint,
+    );
     message.image_urls = image_urls.length ? image_urls : undefined;
     return files;
   }
@@ -1158,7 +1165,7 @@ ${convo}
         });
       }
 
-      if (this.options.attachments && this.options.endpoint?.toLowerCase() === 'ollama') {
+      if (this.message_file_map && this.options.endpoint?.toLowerCase() === 'ollama') {
         const ollamaClient = new OllamaClient({ baseURL });
         return await ollamaClient.chatCompletion({
           payload: modelOptions,

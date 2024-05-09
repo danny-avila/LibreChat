@@ -138,7 +138,10 @@ class GoogleClient extends BaseClient {
       !isGenerativeModel && !isChatModel && /code|text/.test(this.modelOptions.model);
     const { isTextModel } = this;
 
-    this.maxContextTokens = getModelMaxTokens(this.modelOptions.model, EModelEndpoint.google);
+    this.maxContextTokens =
+      this.options.maxContextTokens ??
+      getModelMaxTokens(this.modelOptions.model, EModelEndpoint.google);
+
     // The max prompt tokens is determined by the max context tokens minus the max response tokens.
     // Earlier messages will be dropped until the prompt is within the limit.
     this.maxResponseTokens = this.modelOptions.maxOutputTokens || settings.maxOutputTokens.default;

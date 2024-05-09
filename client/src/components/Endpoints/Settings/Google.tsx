@@ -11,8 +11,9 @@ import {
   SelectDropDown,
   HoverCardTrigger,
 } from '~/components/ui';
-import OptionHover from './OptionHover';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils';
+import { DynamicInputNumber } from '~/components/SidePanel/Parameters';
+import OptionHover from './OptionHover';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
@@ -103,6 +104,28 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         </div>
       </div>
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 px-3 sm:col-span-2">
+        <DynamicInputNumber
+          columnSpan={2}
+          settingKey="maxContextTokens"
+          setOption={setOption}
+          label="com_endpoint_context_tokens"
+          labelCode={true}
+          description="com_endpoint_context_info"
+          descriptionCode={true}
+          placeholder="com_nav_theme_system"
+          placeholderCode={true}
+          descriptionSide="right"
+          conversation={conversation}
+          readonly={readonly}
+          range={{
+            min: 10,
+            max: 2000000,
+            step: 1000,
+          }}
+          className="mt-1 w-full justify-between"
+          inputClassName="w-1/3"
+          showDefault={false}
+        />
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
