@@ -161,11 +161,13 @@ class OpenAIClient extends BaseClient {
       model.startsWith('text-chat') || model.startsWith('text-davinci-002-render');
 
     this.maxContextTokens =
+      this.options.maxContextTokens ??
       getModelMaxTokens(
         model,
         this.options.endpointType ?? this.options.endpoint,
         this.options.endpointTokenConfig,
-      ) ?? 4095; // 1 less than maximum
+      ) ??
+      4095; // 1 less than maximum
 
     if (this.shouldSummarize) {
       this.maxContextTokens = Math.floor(this.maxContextTokens / 2);
