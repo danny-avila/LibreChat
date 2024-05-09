@@ -280,6 +280,9 @@ export default {
   com_endpoint_tone_style: 'Tone Style',
   com_endpoint_token_count: 'Token count',
   com_endpoint_output: 'Output',
+  com_endpoint_context_tokens: 'Max Context Tokens',
+  com_endpoint_context_info: `The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.
+  If unspecified, will use system defaults based on known models' context size. Setting higher values may result in errors and/or higher token cost.`,
   com_endpoint_google_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
   com_endpoint_google_topp:

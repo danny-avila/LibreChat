@@ -105,6 +105,9 @@ export const openAISettings = {
   resendFiles: {
     default: true,
   },
+  maxContextTokens: {
+    default: undefined,
+  },
   imageDetail: {
     default: ImageDetail.auto,
   },
@@ -309,6 +312,11 @@ export const tConversationSchema = z.object({
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   file_ids: z.array(z.string()).optional(),
+  maxContextTokens: z
+    .any()
+    .transform((value) =>
+      !isNaN(value) || (typeof value === 'number' && value > 0) ? Number(value) : undefined,
+    ),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /* vision */
@@ -382,6 +390,7 @@ export const openAISchema = tConversationSchema
     iconURL: true,
     greeting: true,
     spec: true,
+    maxContextTokens: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -399,6 +408,7 @@ export const openAISchema = tConversationSchema
     iconURL: obj.iconURL ?? undefined,
     greeting: obj.greeting ?? undefined,
     spec: obj.spec ?? undefined,
+    maxContextTokens: obj.maxContextTokens ?? undefined,
   }))
   .catch(() => ({
     model: openAISettings.model.default,
@@ -414,6 +424,7 @@ export const openAISchema = tConversationSchema
     iconURL: undefined,
     greeting: undefined,
     spec: undefined,
+    maxContextTokens: undefined,
   }));
 
 export const googleSchema = tConversationSchema
@@ -429,6 +440,7 @@ export const googleSchema = tConversationSchema
     iconURL: true,
     greeting: true,
     spec: true,
+    maxContextTokens: true,
   })
   .transform((obj) => {
     const isGemini = obj?.model?.toLowerCase()?.includes('gemini');
@@ -456,6 +468,7 @@ export const googleSchema = tConversationSchema
       iconURL: obj.iconURL ?? undefined,
       greeting: obj.greeting ?? undefined,
       spec: obj.spec ?? undefined,
+      maxContextTokens: obj.maxContextTokens ?? undefined,
     };
   })
   .catch(() => ({
@@ -470,6 +483,7 @@ export const googleSchema = tConversationSchema
     iconURL: undefined,
     greeting: undefined,
     spec: undefined,
+    maxContextTokens: undefined,
   }));
 
 export const bingAISchema = tConversationSchema
@@ -520,6 +534,7 @@ export const anthropicSchema = tConversationSchema
     iconURL: true,
     greeting: true,
     spec: true,
+    maxContextTokens: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -534,6 +549,7 @@ export const anthropicSchema = tConversationSchema
     iconURL: obj.iconURL ?? undefined,
     greeting: obj.greeting ?? undefined,
     spec: obj.spec ?? undefined,
+    maxContextTokens: obj.maxContextTokens ?? undefined,
   }))
   .catch(() => ({
     model: 'claude-1',
@@ -547,6 +563,7 @@ export const anthropicSchema = tConversationSchema
     iconURL: undefined,
     greeting: undefined,
     spec: undefined,
+    maxContextTokens: undefined,
   }));
 
 export const chatGPTBrowserSchema = tConversationSchema
@@ -576,6 +593,7 @@ export const gptPluginsSchema = tConversationSchema
     iconURL: true,
     greeting: true,
     spec: true,
+    maxContextTokens: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -596,6 +614,7 @@ export const gptPluginsSchema = tConversationSchema
     iconURL: obj.iconURL ?? undefined,
     greeting: obj.greeting ?? undefined,
     spec: obj.spec ?? undefined,
+    maxContextTokens: obj.maxContextTokens ?? undefined,
   }))
   .catch(() => ({
     model: 'gpt-3.5-turbo',
@@ -615,6 +634,7 @@ export const gptPluginsSchema = tConversationSchema
     iconURL: undefined,
     greeting: undefined,
     spec: undefined,
+    maxContextTokens: undefined,
   }));
 
 export function removeNullishValues<T extends object>(obj: T): T {
@@ -688,6 +708,7 @@ export const compactOpenAISchema = tConversationSchema
     iconURL: true,
     greeting: true,
     spec: true,
+    maxContextTokens: true,
   })
   .transform((obj: Partial<TConversation>) => {
     const newObj: Partial<TConversation> = { ...obj };
@@ -727,6 +748,7 @@ export const compactGoogleSchema = tConversationSchema
     iconURL: true,
     greeting: true,
     spec: true,
+    maxContextTokens: true,
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
@@ -760,6 +782,7 @@ export const compactAnthropicSchema = tConversationSchema
     iconURL: true,
     greeting: true,
     spec: true,
+    maxContextTokens: true,
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };
@@ -807,6 +830,7 @@ export const compactPluginsSchema = tConversationSchema
     iconURL: true,
     greeting: true,
     spec: true,
+    maxContextTokens: true,
   })
   .transform((obj) => {
     const newObj: Partial<TConversation> = { ...obj };

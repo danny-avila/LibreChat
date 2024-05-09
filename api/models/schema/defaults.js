@@ -104,6 +104,9 @@ const conversationPreset = {
     type: String,
   },
   tools: { type: [{ type: String }], default: undefined },
+  maxContextTokens: {
+    type: Number,
+  },
 };
 
 const agentOptions = {

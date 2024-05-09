@@ -652,6 +652,7 @@ class AnthropicClient extends BaseClient {
 
   getSaveOptions() {
     return {
+      maxContextTokens: this.options.maxContextTokens,
       promptPrefix: this.options.promptPrefix,
       modelLabel: this.options.modelLabel,
       resendFiles: this.options.resendFiles,
