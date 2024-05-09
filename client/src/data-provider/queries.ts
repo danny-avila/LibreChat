@@ -20,6 +20,8 @@ import type {
   AssistantDocument,
   TEndpointsConfig,
   TCheckUserKeyResponse,
+  SharedLinkListParams,
+  SharedLinksResponse,
 } from 'librechat-data-provider';
 import { findPageForConversation, addFileToCache } from '~/utils';
 
@@ -142,6 +144,33 @@ export const useConversationsInfiniteQuery = (
         ...params,
         pageNumber: pageParam?.toString(),
         isArchived: params?.isArchived || false,
+      }),
+    {
+      getNextPageParam: (lastPage) => {
+        const currentPageNumber = Number(lastPage.pageNumber);
+        const totalPages = Number(lastPage.pages); // Convert totalPages to a number
+        // If the current page number is less than total pages, return the next page number
+        return currentPageNumber < totalPages ? currentPageNumber + 1 : undefined;
+      },
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
+export const useSharedLinksInfiniteQuery = (
+  params?: SharedLinkListParams,
+  config?: UseInfiniteQueryOptions<SharedLinksResponse, unknown>,
+) => {
+  return useInfiniteQuery<SharedLinksResponse, unknown>(
+    [QueryKeys.sharedLinks],
+    ({ pageParam = '' }) =>
+      dataService.listSharedLinks({
+        ...params,
+        pageNumber: pageParam?.toString(),
+        isPublic: params?.isPublic || true,
       }),
     {
       getNextPageParam: (lastPage) => {
