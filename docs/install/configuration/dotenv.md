@@ -296,14 +296,48 @@ GOOGLE_KEY=user_provided
 GOOGLE_REVERSE_PROXY=
 ```
 
-- Customize the available models, separated by commas, **without spaces**.
-    - The first will be default.
-    - Leave it blank or commented out to use internal settings (default: all listed below).
+Depending on whether you are using the Vertex AI or Gemini API, you can choose the corresponding set of models. Customize the available models, separated by commas, **without spaces**. The first model in the list will be used as the default. Leave the line blank or commented out to use the internal settings (default: all models listed below).
 
 ```bash
-# all available models as of 12/16/23
-GOOGLE_MODELS=gemini-pro,gemini-pro-vision,chat-bison,chat-bison-32k,codechat-bison,codechat-bison-32k,text-bison,text-bison-32k,text-unicorn,code-gecko,code-bison,code-bison-32k
+# Gemini API
+# GOOGLE_MODELS=gemini-1.0-pro,gemini-1.0-pro-001,gemini-1.0-pro-latest,gemini-1.0-pro-vision-latest,gemini-1.5-pro-latest,gemini-pro,gemini-pro-vision
+
+# Vertex AI
+# GOOGLE_MODELS=gemini-1.5-pro-preview-0409,gemini-1.0-pro-vision-001,gemini-pro,gemini-pro-vision,chat-bison,chat-bison-32k,codechat-bison,codechat-bison-32k,text-bison,text-bison-32k,text-unicorn,code-gecko,code-bison,code-bison-32k
 ```
+
+Both the Vertex AI and Gemini API provide safety settings that allow you to control the level of content filtering based on different categories. You can configure these settings using the following environment variables:
+
+```bash
+# Google Safety Settings
+# NOTE: You do not have access to the BLOCK_NONE setting by default.
+# To use this restricted HarmBlockThreshold setting, you will need to either:
+#
+# (a) Get access through an allowlist via your Google account team
+# (b) Switch your account type to monthly invoiced billing following this instruction:
+#     https://cloud.google.com/billing/docs/how-to/invoiced-billing
+#
+# GOOGLE_SAFETY_SEXUALLY_EXPLICIT=BLOCK_ONLY_HIGH
+# GOOGLE_SAFETY_HATE_SPEECH=BLOCK_ONLY_HIGH
+# GOOGLE_SAFETY_HARASSMENT=BLOCK_ONLY_HIGH
+# GOOGLE_SAFETY_DANGEROUS_CONTENT=BLOCK_ONLY_HIGH
+```
+
+The available safety settings are:
+
+- `GOOGLE_SAFETY_SEXUALLY_EXPLICIT`: Controls the filtering of sexually explicit content.
+- `GOOGLE_SAFETY_HATE_SPEECH`: Controls the filtering of hate speech content.
+- `GOOGLE_SAFETY_HARASSMENT`: Controls the filtering of harassment content.
+- `GOOGLE_SAFETY_DANGEROUS_CONTENT`: Controls the filtering of dangerous content.
+
+For each setting, you can choose one of the following values:
+
+- `BLOCK_NONE`: Do not block any content in this category (requires additional access).
+- `BLOCK_LOW_AND_ABOVE`: Block content with low or higher probability of belonging to this category.
+- `BLOCK_MED_AND_ABOVE`: Block content with medium or higher probability of belonging to this category.
+- `BLOCK_ONLY_HIGH`: Only block content with high probability of belonging to this category.
+
+If you leave the safety settings commented out, the default values provided by the API will be used.
 
 ### OpenAI
 
