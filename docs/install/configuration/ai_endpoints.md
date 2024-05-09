@@ -261,7 +261,7 @@ Some of the endpoints are marked as **Known,** which means they might have speci
   - Fetching models isn't supported
   - Note: Some models currently work better than others, answers are very short (at least when using the free tier).
 
-- The example includes a model list, which was last updated on February 27, 2024, for your convenience.
+- The example includes a model list, which was last updated on May 09, 2024, for your convenience.
 
 ```yaml
    - name: 'HuggingFace'
