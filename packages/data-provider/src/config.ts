@@ -306,6 +306,7 @@ export enum KnownEndpoints {
   cohere = 'cohere',
   fireworks = 'fireworks',
   groq = 'groq',
+  huggingface = 'huggingface',
   mistral = 'mistral',
   mlx = 'mlx',
   ollama = 'ollama',
