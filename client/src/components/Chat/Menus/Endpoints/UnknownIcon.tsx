@@ -8,6 +8,7 @@ const knownEndpointAssets = {
   [KnownEndpoints.cohere]: '/assets/cohere.png',
   [KnownEndpoints.fireworks]: '/assets/fireworks.png',
   [KnownEndpoints.groq]: '/assets/groq.png',
+  [KnownEndpoints.huggingface]: '/assets/huggingface.svg',
   [KnownEndpoints.mistral]: '/assets/mistral.png',
   [KnownEndpoints.mlx]: '/assets/mlx.png',
   [KnownEndpoints.ollama]: '/assets/ollama.png',
