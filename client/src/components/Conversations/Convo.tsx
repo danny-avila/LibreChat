@@ -29,7 +29,6 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const { refreshConversations } = useConversations();
   const { navigateToConvo } = useNavigateToConvo();
   const { showToast } = useToastContext();
-  const [isHovering, setIsHovering] = useState(false);
 
   const { conversationId, title } = conversation;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -104,10 +103,6 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     );
   };
 
-  const handleMouseEnter = () => setIsHovering(true);
-
-  const handleMouseLeave = () => setIsHovering(false);
-
   const handleKeyDown = (e: KeyEvent) => {
     if (e.key === 'Escape') {
       setTitleInput(title);
@@ -122,11 +117,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
 
   return (
-    <div
-      className="hover:bg-token-sidebar-surface-secondary group relative rounded-lg active:opacity-90"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
+    <div className="hover:bg-token-sidebar-surface-secondary group relative rounded-lg active:opacity-90">
       {renaming ? (
         <div className="absolute bottom-0 left-0 right-0 top-0 z-50 flex w-full items-center rounded-lg bg-gray-200 dark:bg-gray-700">
           <input
@@ -194,11 +185,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
             )}
           />
         ) : (
-          <div
-            className={`absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l ${`from-gray-50 dark:from-[#181818] ${
-              isHovering ? 'from-60%' : 'from-0%'
-            } to-transparent group-hover:from-gray-200 dark:group-hover:from-gray-700`}`}
-          ></div>
+          <div className="absolute bottom-0 right-0 top-0 w-20 rounded-r-lg bg-gradient-to-l from-gray-50 from-0% to-transparent group-hover:from-gray-200 group-hover:from-60% dark:from-[#181818] dark:group-hover:from-gray-700" />
         )}
       </a>
     </div>
