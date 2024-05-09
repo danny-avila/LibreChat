@@ -7,6 +7,13 @@
  * @typedef {import('openai').OpenAI} OpenAI
  * @memberof typedefs
  */
+
+/**
+ * @exports Ollama
+ * @typedef {import('ollama').Ollama} Ollama
+ * @memberof typedefs
+ */
+
 /**
  * @exports AxiosResponse
  * @typedef {import('axios').AxiosResponse} AxiosResponse
@@ -62,8 +69,14 @@
  */
 
 /**
- * @exports ChatCompletionMessages
- * @typedef {import('openai').OpenAI.ChatCompletionMessageParam} ChatCompletionMessages
+ * @exports OllamaMessage
+ * @typedef {import('ollama').Message} OllamaMessage
+ * @memberof typedefs
+ */
+
+/**
+ * @exports ChatCompletionMessage
+ * @typedef {import('openai').OpenAI.ChatCompletionMessageParam} ChatCompletionMessage
  * @memberof typedefs
  */
 
@@ -1153,7 +1166,7 @@
 /**
  * Main entrypoint for API completion calls
  * @callback sendCompletion
- * @param {Array<ChatCompletionMessages> | string} payload - The messages or prompt to send to the model
+ * @param {Array<ChatCompletionMessage> | string} payload - The messages or prompt to send to the model
  * @param {object} opts - Options for the completion
  * @param {onTokenProgress} opts.onProgress - Callback function to handle token progress
  * @param {AbortController} opts.abortController - AbortController instance
@@ -1164,7 +1177,7 @@
 /**
  * Legacy completion handler for OpenAI API.
  * @callback getCompletion
- * @param {Array<ChatCompletionMessages> | string} input - Array of messages or a single prompt string
+ * @param {Array<ChatCompletionMessage> | string} input - Array of messages or a single prompt string
  * @param {(event: object | string) => Promise<void>} onProgress - SSE progress handler
  * @param {onTokenProgress} onTokenProgress - Token progress handler
  * @param {AbortController} [abortController] - AbortController instance
