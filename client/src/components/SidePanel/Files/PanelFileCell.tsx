@@ -92,7 +92,7 @@ export default function PanelFileCell({ row }: { row: Row<TFile> }) {
   return (
     <div
       onClick={handleFileClick}
-      className="flex cursor-pointer gap-2 rounded-md dark:hover:bg-gray-900"
+      className="flex cursor-pointer gap-2 rounded-md dark:hover:bg-gray-700"
     >
       {fileType && <FilePreview fileType={fileType} />}
       <span className="self-center truncate">{file.filename}</span>

@@ -33,7 +33,9 @@ export const ThemeSelector = ({
         value={theme}
         onChange={onChange}
         options={themeOptions}
-        width={150}
+        width={220}
+        position={'left'}
+        maxHeight="200px"
         testId="theme-selector"
       />
     </div>
@@ -103,7 +105,13 @@ export const LangSelector = ({
   return (
     <div className="flex items-center justify-between">
       <div> {localize('com_nav_language')} </div>
-      <Dropdown value={langcode} onChange={onChange} options={languageOptions} />
+      <Dropdown
+        value={langcode}
+        onChange={onChange}
+        position={'left'}
+        maxHeight="271px"
+        options={languageOptions}
+      />
     </div>
   );
 };
@@ -142,26 +150,26 @@ function General() {
     <Tabs.Content
       value={SettingsTabValues.GENERAL}
       role="tabpanel"
-      className="w-full md:min-h-[300px]"
+      className="w-full md:min-h-[271px]"
       ref={contentRef}
     >
       <div className="flex flex-col gap-3 text-sm text-gray-600 dark:text-gray-50">
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ThemeSelector theme={theme} onChange={changeTheme} />
         </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <LangSelector langcode={selectedLang} onChange={changeLang} />
         </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <AutoScrollSwitch />
         </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <HideSidePanelSwitch />
         </div>
-        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
           <ArchivedChats />
         </div>
-        {/* <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+        {/* <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
         </div> */}
       </div>
     </Tabs.Content>
