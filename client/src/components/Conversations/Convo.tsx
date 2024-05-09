@@ -34,6 +34,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [titleInput, setTitleInput] = useState(title);
   const [renaming, setRenaming] = useState(false);
+  const [isPopoverActive, setIsPopoverActive] = useState(false);
 
   const clickHandler = async (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (event.button === 0 && event.ctrlKey) {
@@ -117,13 +118,17 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
     (isLatestConvo && currentConvoId === 'new' && activeConvos[0] && activeConvos[0] !== 'new');
 
   return (
-    <div className="hover:bg-token-sidebar-surface-secondary group relative rounded-lg active:opacity-90">
+    <div
+      className={cn(
+        'hover:bg-token-sidebar-surface-secondary group relative rounded-lg active:opacity-90',
+      )}
+    >
       {renaming ? (
-        <div className="absolute bottom-0 left-0 right-0 top-0 z-50 flex w-full items-center rounded-lg bg-gray-200 dark:bg-gray-700">
+        <div className="absolute inset-0 z-50 flex w-full items-center rounded-lg bg-gray-200 p-1.5 dark:bg-gray-700">
           <input
             ref={inputRef}
             type="text"
-            className="w-full border border-blue-500 bg-transparent p-0 text-sm leading-tight outline-none"
+            className="w-full rounded border border-blue-500 bg-transparent p-0.5 text-sm leading-tight outline-none"
             value={titleInput}
             onChange={(e) => setTitleInput(e.target.value)}
             onBlur={onRename}
@@ -131,14 +136,18 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
           />
         </div>
       ) : (
-        <HoverToggle isActiveConvo={isActiveConvo}>
+        <HoverToggle
+          isActiveConvo={isActiveConvo}
+          isPopoverActive={isPopoverActive}
+          setIsPopoverActive={setIsPopoverActive}
+        >
           <EditMenuButton>
             <RenameButton
               renaming={renaming}
               onRename={onRename}
               renameHandler={renameHandler}
               appendLabel={true}
-              className="group m-1.5 flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
+              className="mb-[3.5px]"
             />
             <DeleteButton
               conversationId={conversationId}
@@ -146,7 +155,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
               renaming={renaming}
               title={title}
               appendLabel={true}
-              className="group m-1.5 flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
+              className="mt-[3.5px]"
             />
           </EditMenuButton>
           <ArchiveButton
@@ -162,7 +171,7 @@ export default function Conversation({ conversation, retainView, toggleNav, isLa
         data-testid="convo-item"
         onClick={clickHandler}
         className={cn(
-          isActiveConvo
+          isActiveConvo || isPopoverActive
             ? 'group relative mt-2 flex cursor-pointer items-center gap-2 break-all rounded-lg rounded-lg bg-gray-200 px-2 py-2 active:opacity-50 dark:bg-gray-700'
             : 'group relative mt-2 flex grow cursor-pointer items-center gap-2 overflow-hidden whitespace-nowrap break-all rounded-lg rounded-lg px-2 py-2 hover:bg-gray-200 active:opacity-50 dark:hover:bg-gray-700',
           !isActiveConvo && !renaming ? 'peer-hover:bg-gray-200 dark:peer-hover:bg-gray-800' : '',

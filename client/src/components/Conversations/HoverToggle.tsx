@@ -5,11 +5,14 @@ import { cn } from '~/utils';
 const HoverToggle = ({
   children,
   isActiveConvo,
+  isPopoverActive,
+  setIsPopoverActive,
 }: {
   children: React.ReactNode;
   isActiveConvo: boolean;
+  isPopoverActive: boolean;
+  setIsPopoverActive: (isActive: boolean) => void;
 }) => {
-  const [isPopoverActive, setIsPopoverActive] = useState(false);
   const setPopoverActive = (value: boolean) => setIsPopoverActive(value);
   return (
     <ToggleContext.Provider value={{ setPopoverActive }}>
