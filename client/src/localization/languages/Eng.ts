@@ -280,6 +280,9 @@ export default {
   com_endpoint_tone_style: 'Tone Style',
   com_endpoint_token_count: 'Token count',
   com_endpoint_output: 'Output',
+  com_endpoint_context_tokens: 'Max Context Tokens',
+  com_endpoint_context_info: `The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.
+  If unspecified, will use system defaults based on known models' context size. Setting higher values may result in errors and/or higher token cost.`,
   com_endpoint_google_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
   com_endpoint_google_topp:
@@ -305,6 +308,9 @@ export default {
   com_endpoint_max_output_tokens: 'Max Output Tokens',
   com_endpoint_stop: 'Stop Sequences',
   com_endpoint_stop_placeholder: 'Separate values by pressing `Enter`',
+  com_endpoint_openai_max_tokens: `Optional \`max_tokens\` field, representing the maximum number of tokens that can be generated in the chat completion.
+    
+    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.`,
   com_endpoint_openai_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
   com_endpoint_openai_max:

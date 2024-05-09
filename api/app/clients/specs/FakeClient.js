@@ -40,7 +40,8 @@ class FakeClient extends BaseClient {
       };
     }
 
-    this.maxContextTokens = getModelMaxTokens(this.modelOptions.model) ?? 4097;
+    this.maxContextTokens =
+      this.options.maxContextTokens ?? getModelMaxTokens(this.modelOptions.model) ?? 4097;
   }
   buildMessages() {}
   getTokenCount(str) {
