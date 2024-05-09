@@ -312,11 +312,7 @@ export const tConversationSchema = z.object({
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   file_ids: z.array(z.string()).optional(),
-  maxContextTokens: z
-    .any()
-    .transform((value) =>
-      !isNaN(value) || (typeof value === 'number' && value > 0) ? Number(value) : undefined,
-    ),
+  maxContextTokens: z.number().optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /* vision */
