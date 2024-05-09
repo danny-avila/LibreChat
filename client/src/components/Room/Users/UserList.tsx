@@ -1,12 +1,10 @@
 import React, { memo } from 'react';
 import throttle from 'lodash/throttle';
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { useGetEndpointsQuery, useUserKeyQuery } from 'librechat-data-provider/react-query';
+import { useState, useRef, useCallback } from 'react';
 import type { ImperativePanelHandle } from 'react-resizable-panels';
-import { EModelEndpoint, type TEndpointsConfig } from 'librechat-data-provider';
 import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup } from '~/components/ui/Resizable';
 import { TooltipProvider, Tooltip } from '~/components/ui/Tooltip';
-import { useMediaQuery, useLocalStorage } from '~/hooks';
+import { useLocalStorage } from '~/hooks';
 import NavToggle from '~/components/Nav/NavToggle';
 import { cn } from '~/utils';
 import Users from './Users';
@@ -31,7 +29,6 @@ function UserList({
   const [newUser, setNewUser] = useLocalStorage('newUser', true);
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
   const [collapsedSize, setCollapsedSize] = useState(navCollapsedSize);
-  const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
   const panelRef = useRef<ImperativePanelHandle>(null);
 
@@ -45,16 +42,6 @@ function UserList({
     }, 350),
     [],
   );
-
-  // useEffect(() => {
-  //   if (isSmallScreen) {
-  //     setIsCollapsed(true);
-  //     setMinSize(20);
-  //     setCollapsedSize(20);
-  //     panelRef.current?.collapse();
-  //     return;
-  //   }
-  // }, [isSmallScreen]);
 
   const toggleNavVisible = () => {
     if (newUser) {

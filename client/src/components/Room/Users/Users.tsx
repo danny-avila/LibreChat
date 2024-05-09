@@ -9,6 +9,13 @@ export default function Users({ isCollapsed = false }: { isCollapsed?: boolean }
 
   return (
     <>
+      <p className="w-full pt-3 text-center">
+        {conversation?.users
+          ? conversation.users.length > 0
+            ? `${conversation.users.length + 1} ${isCollapsed ? '' : 'Participants'}`
+            : `1 ${isCollapsed ? '' : 'Participant'}`
+          : `1 ${isCollapsed ? '' : 'Participant'}`}
+      </p>
       <div
         style={{
           color: '#aaa',
@@ -38,7 +45,7 @@ export default function Users({ isCollapsed = false }: { isCollapsed?: boolean }
         conversation.users
           .filter((u) => u !== undefined && typeof u !== 'string')
           .map((u) => (
-            <User key={`user-${u._id || ''}`} user={u as TUser} isCollapsed={isCollapsed} />
+            <User key={`user-${u?._id || ''}`} user={u as TUser} isCollapsed={isCollapsed} />
           ))}
     </>
   );

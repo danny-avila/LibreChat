@@ -66,9 +66,9 @@ export default function SubscriptionBtn() {
           )}
       </button>
       <SubscriptionPopup open={popupOpen} setOpen={setPopupOpen} />
-      {(user?.subscription.active ||
-        (!isEmpty(user?.subscription.renewalDate) &&
-          !isPast(user?.subscription.renewalDate as Date))) && (
+      {user?.subscription.active ||
+      (!isEmpty(user?.subscription.renewalDate) &&
+        !isPast(user?.subscription.renewalDate as Date)) ? (
         <>
           <button
             onClick={topupSubscribeAction}
@@ -84,6 +84,11 @@ export default function SubscriptionBtn() {
             <p>ChatG Credits: {user?.credits ?? 0}</p>
           </button>
         </>
+      ) : (
+        <div className="flex w-full cursor-pointer items-center gap-3 rounded-md p-[8px] text-sm font-bold text-black hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700">
+          <img src="/assets/ChatGCreditsIcon.png" width={30} height={10} />
+          <p>Your Trial Credits: {user?.credits ?? 0}</p>
+        </div>
       )}
     </div>
   );

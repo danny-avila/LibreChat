@@ -110,6 +110,10 @@ const userSchema = mongoose.Schema(
       type: Number,
       default: 50,
     },
+    karma: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true },
 );

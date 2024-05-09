@@ -527,12 +527,6 @@ class BaseClient {
 
   async saveMessageToDatabase(message, endpointOptions, user = null) {
     await saveMessage({ ...message, endpoint: this.options.endpoint, user, unfinished: false });
-    console.log('=== BaseClient saveConvo ===', user, {
-      conversationId: message.conversationId,
-      endpoint: this.options.endpoint,
-      endpointType: this.options.endpointType,
-      ...endpointOptions,
-    });
     await saveConvo(user, {
       conversationId: message.conversationId,
       endpoint: this.options.endpoint,

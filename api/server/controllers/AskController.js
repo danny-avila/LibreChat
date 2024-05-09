@@ -54,15 +54,21 @@ const AskController = async (req, res, next, initializeClient, addTitle) => {
   };
 
   let getText;
-
   try {
     if (!subscription.active && credits <= 0) {
       throw new Error('unsubscribed error');
     }
-    // if (isPremiumModel(endpointOption.modelOptions.model) && credits <= 0) {
+
     if (credits <= 0) {
       throw new Error('credits error');
     }
+
+    // if (isPremiumModel(endpointOption.modelOptions.model) && credits <= 0) {
+    //   throw new Error(
+    //     'You have run out of credits. If you want to continue chatting with the premium models, you need to purchase more credits. Simply click the "Add Credits" button on the left to do so. Alternatively, you can continue chatting with our free models.',
+    //   );
+    // }
+
     const { client } = await initializeClient({ req, res, endpointOption });
 
     const { onProgress: progressCallback, getPartialText } = createOnProgress({
