@@ -7,6 +7,7 @@ const buildOptions = (endpoint, parsedBody) => {
     iconURL,
     greeting,
     spec,
+    maxContextTokens,
     ...modelOptions
   } = parsedBody;
   const endpointOption = {
@@ -21,6 +22,7 @@ const buildOptions = (endpoint, parsedBody) => {
     iconURL,
     greeting,
     spec,
+    maxContextTokens,
     modelOptions,
   };
 

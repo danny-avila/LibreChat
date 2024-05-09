@@ -14,9 +14,16 @@ import {
   HoverCardTrigger,
   MultiSelectDropDown,
 } from '~/components/ui';
-import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils';
+import {
+  cn,
+  defaultTextProps,
+  optionText,
+  removeFocusOutlines,
+  processPlugins,
+  selectPlugins,
+} from '~/utils';
+import { DynamicInputNumber } from '~/components/SidePanel/Parameters';
 import { useLocalize, useDebouncedInput } from '~/hooks';
-import { processPlugins, selectPlugins } from '~/utils';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
 import store from '~/store';
@@ -169,6 +176,28 @@ export default function Settings({
           optionsClassName="w-full max-h-[275px] dark:bg-gray-700 z-10 border dark:border-gray-600"
           containerClassName="flex w-full resize-none border border-transparent"
           labelClassName="dark:text-white"
+        />
+        <DynamicInputNumber
+          columnSpan={2}
+          settingKey="maxContextTokens"
+          setOption={setOption}
+          label="com_endpoint_context_tokens"
+          labelCode={true}
+          description="com_endpoint_context_info"
+          descriptionCode={true}
+          placeholder="com_nav_theme_system"
+          placeholderCode={true}
+          descriptionSide="right"
+          conversation={conversation}
+          readonly={readonly}
+          range={{
+            min: 10,
+            max: 2000000,
+            step: 1000,
+          }}
+          className="mt-1 w-full justify-between"
+          inputClassName="w-1/3"
+          showDefault={false}
         />
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
