@@ -90,3 +90,13 @@ export type DeleteConversationOptions = MutationOptions<
 >;
 
 export type ForkConvoOptions = MutationOptions<types.TForkConvoResponse, types.TForkConvoRequest>;
+
+export type CreateSharedLinkOptions = MutationOptions<
+  types.TSharedLink,
+  Partial<types.TSharedLink>
+>;
+export type UpdateSharedLinkOptions = MutationOptions<
+  types.TSharedLink,
+  Partial<types.TSharedLink>
+>;
+export type DeleteSharedLinkOptions = MutationOptions<types.TSharedLink, { shareId: string }>;
