@@ -1165,7 +1165,7 @@ ${convo}
         });
       }
 
-      if (this.options.attachments && this.options.endpoint?.toLowerCase() === 'ollama') {
+      if (this.message_file_map && this.options.endpoint?.toLowerCase() === 'ollama') {
         const ollamaClient = new OllamaClient({ baseURL });
         return await ollamaClient.chatCompletion({
           payload: modelOptions,
