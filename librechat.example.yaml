@@ -2,7 +2,7 @@
 # https://docs.librechat.ai/install/configuration/custom_config.html
 
 # Configuration version (required)
-version: 1.0.6
+version: 1.0.9
 
 # Cache settings: Set to true to enable caching
 cache: true
