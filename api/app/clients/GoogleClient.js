@@ -29,13 +29,6 @@ const tokenizersCache = {};
 
 const settings = endpointSettings[EModelEndpoint.google];
 
-require('dotenv').config();
-
-let GOOGLE_SAFETY_SEXUALLY_EXPLICIT = process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
-let GOOGLE_SAFETY_HATE_SPEECH = process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
-let GOOGLE_SAFETY_HARASSMENT = process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
-let GOOGLE_SAFETY_DANGEROUS_CONTENT = process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
-
 class GoogleClient extends BaseClient {
   constructor(credentials, options = {}) {
     super('apiKey', options);
@@ -735,6 +728,10 @@ class GoogleClient extends BaseClient {
     const modelName = payload.parameters?.model;
   
     if (modelName && modelName.toLowerCase().includes('gemini')) {
+      const GOOGLE_SAFETY_SEXUALLY_EXPLICIT = process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
+      const GOOGLE_SAFETY_HATE_SPEECH = process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
+      const GOOGLE_SAFETY_HARASSMENT = process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
+      const GOOGLE_SAFETY_DANGEROUS_CONTENT = process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED';
       const safetySettings = [
         {
           category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
