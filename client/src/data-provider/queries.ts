@@ -92,10 +92,10 @@ export const useGetConvoIdQuery = (
         return defaultQuery();
       }
 
-      const { pageIndex, convIndex } = findPageForConversation(convosQuery, { conversationId: id });
+      const { pageIndex, index } = findPageForConversation(convosQuery, { conversationId: id });
 
-      if (pageIndex > -1 && convIndex > -1) {
-        return convosQuery.pages[pageIndex].conversations[convIndex];
+      if (pageIndex > -1 && index > -1) {
+        return convosQuery.pages[pageIndex].conversations[index];
       }
 
       return defaultQuery();
