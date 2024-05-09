@@ -176,6 +176,28 @@ export default function Settings({ conversation, setOption, models, readonly }: 
           inputClassName="w-1/3"
           showDefault={false}
         />
+        <DynamicInputNumber
+          columnSpan={2}
+          settingKey="max_tokens"
+          setOption={setOption}
+          label="com_endpoint_max_output_tokens"
+          labelCode={true}
+          description="com_endpoint_openai_max_tokens"
+          descriptionCode={true}
+          placeholder="com_nav_theme_system"
+          placeholderCode={true}
+          descriptionSide="top"
+          conversation={conversation}
+          readonly={readonly}
+          range={{
+            min: 10,
+            max: 2000000,
+            step: 1000,
+          }}
+          className="mt-1 w-full justify-between"
+          inputClassName="w-1/3"
+          showDefault={false}
+        />
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">

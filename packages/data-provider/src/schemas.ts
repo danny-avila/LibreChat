@@ -108,6 +108,9 @@ export const openAISettings = {
   maxContextTokens: {
     default: undefined,
   },
+  max_tokens: {
+    default: undefined,
+  },
   imageDetail: {
     default: ImageDetail.auto,
   },
@@ -313,6 +316,7 @@ export const tConversationSchema = z.object({
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   file_ids: z.array(z.string()).optional(),
   maxContextTokens: z.number().optional(),
+  max_tokens: z.number().optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /* vision */
@@ -387,6 +391,7 @@ export const openAISchema = tConversationSchema
     greeting: true,
     spec: true,
     maxContextTokens: true,
+    max_tokens: true,
   })
   .transform((obj) => ({
     ...obj,
@@ -405,6 +410,7 @@ export const openAISchema = tConversationSchema
     greeting: obj.greeting ?? undefined,
     spec: obj.spec ?? undefined,
     maxContextTokens: obj.maxContextTokens ?? undefined,
+    max_tokens: obj.max_tokens ?? undefined,
   }))
   .catch(() => ({
     model: openAISettings.model.default,
@@ -421,6 +427,7 @@ export const openAISchema = tConversationSchema
     greeting: undefined,
     spec: undefined,
     maxContextTokens: undefined,
+    max_tokens: undefined,
   }));
 
 export const googleSchema = tConversationSchema
@@ -705,6 +712,7 @@ export const compactOpenAISchema = tConversationSchema
     greeting: true,
     spec: true,
     maxContextTokens: true,
+    max_tokens: true,
   })
   .transform((obj: Partial<TConversation>) => {
     const newObj: Partial<TConversation> = { ...obj };
