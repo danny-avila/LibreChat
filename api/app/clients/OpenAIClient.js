@@ -1,4 +1,5 @@
 const OpenAI = require('openai');
+const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
   Constants,
@@ -26,11 +27,11 @@ const {
   createContextHandlers,
 } = require('./prompts');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { isEnabled, sleep } = require('~/server/utils');
 const { handleOpenAIErrors } = require('./tools/util');
 const spendTokens = require('~/models/spendTokens');
 const { createLLM, RunManager } = require('./llm');
 const ChatGPTClient = require('./ChatGPTClient');
-const { isEnabled } = require('~/server/utils');
 const { summaryBuffer } = require('./memory');
 const { runTitleChain } = require('./chains');
 const { tokenSplit } = require('./document');
@@ -234,23 +235,52 @@ class OpenAIClient extends BaseClient {
    * @param {MongoFile[]} attachments
    */
   checkVisionRequest(attachments) {
-    const availableModels = this.options.modelsConfig?.[this.options.endpoint];
-    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
-
-    const visionModelAvailable = availableModels?.includes(this.defaultVisionModel);
-    if (
-      attachments &&
-      attachments.some((file) => file?.type && file?.type?.includes('image')) &&
-      visionModelAvailable &&
-      !this.isVisionModel
-    ) {
-      this.modelOptions.model = this.defaultVisionModel;
-      this.isVisionModel = true;
+    if (!attachments) {
+      return;
     }
 
+    const availableModels = this.options.modelsConfig?.[this.options.endpoint];
+    if (!availableModels) {
+      return;
+    }
+
+    let visionRequestDetected = false;
+    for (const file of attachments) {
+      if (file?.type?.includes('image')) {
+        visionRequestDetected = true;
+        break;
+      }
+    }
+    if (!visionRequestDetected) {
+      return;
+    }
+
+    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
     if (this.isVisionModel) {
       delete this.modelOptions.stop;
+      return;
     }
+
+    for (const model of availableModels) {
+      if (!validateVisionModel({ model, availableModels })) {
+        continue;
+      }
+      this.modelOptions.model = model;
+      this.isVisionModel = true;
+      delete this.modelOptions.stop;
+      return;
+    }
+
+    if (!availableModels.includes(this.defaultVisionModel)) {
+      return;
+    }
+    if (!validateVisionModel({ model: this.defaultVisionModel, availableModels })) {
+      return;
+    }
+
+    this.modelOptions.model = this.defaultVisionModel;
+    this.isVisionModel = true;
+    delete this.modelOptions.stop;
   }
 
   setupTokens() {
@@ -715,6 +745,10 @@ class OpenAIClient extends BaseClient {
    *                            In case of failure, it will return the default title, "New Chat".
    */
   async titleConvo({ text, conversationId, responseText = '' }) {
+    if (this.options.attachments) {
+      delete this.options.attachments;
+    }
+
     let title = 'New Chat';
     const convo = `||>User:
 "${truncateText(text)}"
@@ -1079,11 +1113,8 @@ ${convo}
         ...opts,
       });
 
-      /* hacky fixes for Mistral AI API:
-      - Re-orders system message to the top of the messages payload, as not allowed anywhere else
-      - If there is only one message and it's a system message, change the role to user
-      */
-      if (opts.baseURL.includes('https://api.mistral.ai/v1') && modelOptions.messages) {
+      /* Re-orders system message to the top of the messages payload, as not allowed anywhere else */
+      if (opts.baseURL.includes('api.mistral.ai') && modelOptions.messages) {
         const { messages } = modelOptions;
 
         const systemMessageIndex = messages.findIndex((msg) => msg.role === 'system');
@@ -1094,10 +1125,16 @@ ${convo}
         }
 
         modelOptions.messages = messages;
+      }
 
-        if (messages.length === 1 && messages[0].role === 'system') {
-          modelOptions.messages[0].role = 'user';
-        }
+      /* If there is only one message and it's a system message, change the role to user */
+      if (
+        (opts.baseURL.includes('api.mistral.ai') || opts.baseURL.includes('api.perplexity.ai')) &&
+        modelOptions.messages &&
+        modelOptions.messages.length === 1 &&
+        modelOptions.messages[0]?.role === 'system'
+      ) {
+        modelOptions.messages[0].role = 'user';
       }
 
       if (this.options.addParams && typeof this.options.addParams === 'object') {
@@ -1118,6 +1155,15 @@ ${convo}
         logger.debug('[OpenAIClient] chatCompletion: dropped params', {
           dropParams: this.options.dropParams,
           modelOptions,
+        });
+      }
+
+      if (this.options.attachments && this.options.endpoint?.toLowerCase() === 'ollama') {
+        const ollamaClient = new OllamaClient({ baseURL });
+        return await ollamaClient.chatCompletion({
+          payload: modelOptions,
+          onProgress,
+          abortController,
         });
       }
 
@@ -1151,6 +1197,7 @@ ${convo}
             }
           });
 
+        const azureDelay = this.modelOptions.model?.includes('gpt-4') ? 30 : 17;
         for await (const chunk of stream) {
           const token = chunk.choices[0]?.delta?.content || '';
           intermediateReply += token;
@@ -1158,6 +1205,10 @@ ${convo}
           if (abortController.signal.aborted) {
             stream.controller.abort();
             break;
+          }
+
+          if (this.azure) {
+            await sleep(azureDelay);
           }
         }
 

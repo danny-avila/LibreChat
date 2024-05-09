@@ -677,6 +677,9 @@ class GoogleClient extends BaseClient {
         };
       }
 
+      const safetySettings = _payload.safetySettings;
+      requestOptions.safetySettings = safetySettings;
+
       const result = await client.generateContentStream(requestOptions);
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();
@@ -688,9 +691,11 @@ class GoogleClient extends BaseClient {
       return reply;
     }
 
+    const safetySettings = _payload.safetySettings;
     const stream = await model.stream(messages, {
       signal: abortController.signal,
       timeout: 7000,
+      safetySettings: safetySettings,
     });
 
     for await (const chunk of stream) {
@@ -720,6 +725,33 @@ class GoogleClient extends BaseClient {
   }
 
   async sendCompletion(payload, opts = {}) {
+    const modelName = payload.parameters?.model;
+
+    if (modelName && modelName.toLowerCase().includes('gemini')) {
+      const safetySettings = [
+        {
+          category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+          threshold:
+            process.env.GOOGLE_SAFETY_SEXUALLY_EXPLICIT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        },
+        {
+          category: 'HARM_CATEGORY_HATE_SPEECH',
+          threshold: process.env.GOOGLE_SAFETY_HATE_SPEECH || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        },
+        {
+          category: 'HARM_CATEGORY_HARASSMENT',
+          threshold: process.env.GOOGLE_SAFETY_HARASSMENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        },
+        {
+          category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+          threshold:
+            process.env.GOOGLE_SAFETY_DANGEROUS_CONTENT || 'HARM_BLOCK_THRESHOLD_UNSPECIFIED',
+        },
+      ];
+
+      payload.safetySettings = safetySettings;
+    }
+
     let reply = '';
     reply = await this.getCompletion(payload, opts);
     return reply.trim();
