@@ -1,4 +1,5 @@
 const OpenAI = require('openai');
+const { OllamaClient } = require('./OllamaClient');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const {
   Constants,
@@ -234,23 +235,52 @@ class OpenAIClient extends BaseClient {
    * @param {MongoFile[]} attachments
    */
   checkVisionRequest(attachments) {
-    const availableModels = this.options.modelsConfig?.[this.options.endpoint];
-    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
-
-    const visionModelAvailable = availableModels?.includes(this.defaultVisionModel);
-    if (
-      attachments &&
-      attachments.some((file) => file?.type && file?.type?.includes('image')) &&
-      visionModelAvailable &&
-      !this.isVisionModel
-    ) {
-      this.modelOptions.model = this.defaultVisionModel;
-      this.isVisionModel = true;
+    if (!attachments) {
+      return;
     }
 
+    const availableModels = this.options.modelsConfig?.[this.options.endpoint];
+    if (!availableModels) {
+      return;
+    }
+
+    let visionRequestDetected = false;
+    for (const file of attachments) {
+      if (file?.type?.includes('image')) {
+        visionRequestDetected = true;
+        break;
+      }
+    }
+    if (!visionRequestDetected) {
+      return;
+    }
+
+    this.isVisionModel = validateVisionModel({ model: this.modelOptions.model, availableModels });
     if (this.isVisionModel) {
       delete this.modelOptions.stop;
+      return;
     }
+
+    for (const model of availableModels) {
+      if (!validateVisionModel({ model, availableModels })) {
+        continue;
+      }
+      this.modelOptions.model = model;
+      this.isVisionModel = true;
+      delete this.modelOptions.stop;
+      return;
+    }
+
+    if (!availableModels.includes(this.defaultVisionModel)) {
+      return;
+    }
+    if (!validateVisionModel({ model: this.defaultVisionModel, availableModels })) {
+      return;
+    }
+
+    this.modelOptions.model = this.defaultVisionModel;
+    this.isVisionModel = true;
+    delete this.modelOptions.stop;
   }
 
   setupTokens() {
@@ -715,6 +745,10 @@ class OpenAIClient extends BaseClient {
    *                            In case of failure, it will return the default title, "New Chat".
    */
   async titleConvo({ text, conversationId, responseText = '' }) {
+    if (this.options.attachments) {
+      delete this.options.attachments;
+    }
+
     let title = 'New Chat';
     const convo = `||>User:
 "${truncateText(text)}"
@@ -1121,6 +1155,15 @@ ${convo}
         logger.debug('[OpenAIClient] chatCompletion: dropped params', {
           dropParams: this.options.dropParams,
           modelOptions,
+        });
+      }
+
+      if (this.options.attachments && this.options.endpoint?.toLowerCase() === 'ollama') {
+        const ollamaClient = new OllamaClient({ baseURL });
+        return await ollamaClient.chatCompletion({
+          payload: modelOptions,
+          onProgress,
+          abortController,
         });
       }
 
