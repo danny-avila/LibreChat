@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { logger } = require('~/config');
 
-const { fetchModels, getOpenAIModels, deriveBaseURL } = require('./ModelService');
+const { fetchModels, getOpenAIModels } = require('./ModelService');
 jest.mock('~/utils', () => {
   const originalUtils = jest.requireActual('~/utils');
   return {
@@ -327,49 +327,5 @@ describe('fetchModels with Ollama specific logic', () => {
       'https://api.test.com/models', // Ensure the correct API endpoint is called
       expect.any(Object), // Ensuring some object (headers, etc.) is passed
     );
-  });
-});
-
-describe('deriveBaseURL', () => {
-  it('should extract the base URL correctly from a full URL with a port', () => {
-    const fullURL = 'https://example.com:8080/path?query=123';
-    const baseURL = deriveBaseURL(fullURL);
-    expect(baseURL).toEqual('https://example.com:8080');
-  });
-
-  it('should extract the base URL correctly from a full URL without a port', () => {
-    const fullURL = 'https://example.com/path?query=123';
-    const baseURL = deriveBaseURL(fullURL);
-    expect(baseURL).toEqual('https://example.com');
-  });
-
-  it('should handle URLs using the HTTP protocol', () => {
-    const fullURL = 'http://example.com:3000/path?query=123';
-    const baseURL = deriveBaseURL(fullURL);
-    expect(baseURL).toEqual('http://example.com:3000');
-  });
-
-  it('should return only the protocol and hostname if no port is specified', () => {
-    const fullURL = 'http://example.com/path?query=123';
-    const baseURL = deriveBaseURL(fullURL);
-    expect(baseURL).toEqual('http://example.com');
-  });
-
-  it('should handle URLs with uncommon protocols', () => {
-    const fullURL = 'ftp://example.com:2121/path?query=123';
-    const baseURL = deriveBaseURL(fullURL);
-    expect(baseURL).toEqual('ftp://example.com:2121');
-  });
-
-  it('should handle edge case where URL ends with a slash', () => {
-    const fullURL = 'https://example.com/';
-    const baseURL = deriveBaseURL(fullURL);
-    expect(baseURL).toEqual('https://example.com');
-  });
-
-  it('should return the original URL if the URL is invalid', () => {
-    const invalidURL = 'htp:/example.com:8080';
-    const result = deriveBaseURL(invalidURL);
-    expect(result).toBe(invalidURL);
   });
 });

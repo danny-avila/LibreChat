@@ -17,6 +17,7 @@ export type TEndpointOption = {
   endpointType?: EModelEndpoint;
   modelDisplayLabel?: string;
   resendFiles?: boolean;
+  maxContextTokens?: number;
   imageDetail?: ImageDetail;
   model?: string | null;
   promptPrefix?: string;

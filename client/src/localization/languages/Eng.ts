@@ -184,7 +184,7 @@ export default {
   com_ui_fork_success: 'Successfully forked conversation',
   com_ui_fork_processing: 'Forking conversation...',
   com_ui_fork_error: 'There was an error forking the conversation',
-  com_ui_fork_change_default: 'Change default fork option',
+  com_ui_fork_change_default: 'Default fork option',
   com_ui_fork_default: 'Use default fork option',
   com_ui_fork_remember: 'Remember',
   com_ui_fork_split_target_setting: 'Start fork from target message by default',
@@ -327,6 +327,9 @@ export default {
   com_endpoint_tone_style: 'Tone Style',
   com_endpoint_token_count: 'Token count',
   com_endpoint_output: 'Output',
+  com_endpoint_context_tokens: 'Max Context Tokens',
+  com_endpoint_context_info: `The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.
+  If unspecified, will use system defaults based on known models' context size. Setting higher values may result in errors and/or higher token cost.`,
   com_endpoint_google_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
   com_endpoint_google_topp:
@@ -354,6 +357,9 @@ export default {
   com_endpoint_max_output_tokens: 'Max Output Tokens',
   com_endpoint_stop: 'Stop Sequences',
   com_endpoint_stop_placeholder: 'Separate values by pressing `Enter`',
+  com_endpoint_openai_max_tokens: `Optional \`max_tokens\` field, representing the maximum number of tokens that can be generated in the chat completion.
+    
+    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.`,
   com_endpoint_openai_temp:
     'Higher values = more random, while lower values = more focused and deterministic. We recommend altering this or Top P but not both.',
   com_endpoint_openai_max:
@@ -482,8 +488,8 @@ export default {
   com_nav_welcome_message:
     '[New!] Support GPT-4-1106、GPT-4-Vision, Improved UI and Prompt Presets',
   com_nav_welcome_assistant: 'Please Select an Assistant',
-  com_nav_auto_scroll: 'Auto-scroll to Newest on Open',
-  com_nav_hide_panel: 'Hide Right-most Side Panel',
+  com_nav_auto_scroll: 'Auto-Scroll to latest message on chat open',
+  com_nav_hide_panel: 'Hide right-most side panel',
   com_nav_modular_chat: 'Enable switching Endpoints mid-conversation',
   com_nav_latex_parsing: 'Parsing LaTeX in messages (may affect performance)',
   com_nav_profile_picture: 'Profile Picture',

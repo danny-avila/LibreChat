@@ -23,7 +23,7 @@ async function fetchImageToBase64(url) {
   }
 }
 
-const base64Only = new Set([EModelEndpoint.google, EModelEndpoint.anthropic]);
+const base64Only = new Set([EModelEndpoint.google, EModelEndpoint.anthropic, 'Ollama', 'ollama']);
 
 /**
  * Encodes and formats the given files.

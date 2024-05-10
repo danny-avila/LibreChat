@@ -69,6 +69,8 @@ src/style - official.css
 /playwright/.cache/
 .DS_Store
 *.code-workspace
+.idx
+monospace.json
 .idea
 *.iml
 *.pem
