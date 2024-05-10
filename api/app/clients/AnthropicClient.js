@@ -7,10 +7,10 @@ const {
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const {
-  titleFunctionPrompt,
-  parseTitleFromPrompt,
   truncateText,
   formatMessage,
+  titleFunctionPrompt,
+  parseParamFromPrompt,
   createContextHandlers,
 } = require('./prompts');
 const spendTokens = require('~/models/spendTokens');
@@ -748,7 +748,7 @@ class AnthropicClient extends BaseClient {
           context: 'title',
         });
         const text = response.content[0].text;
-        title = parseTitleFromPrompt(text);
+        title = parseParamFromPrompt(text, 'title');
       } catch (e) {
         logger.error('[AnthropicClient] There was an issue generating the title', e);
       }
