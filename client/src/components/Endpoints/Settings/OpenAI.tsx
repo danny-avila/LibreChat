@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import * as InputNumberPrimitive from 'rc-input-number';
 import {
   EModelEndpoint,
   ImageDetail,
   imageDetailNumeric,
   imageDetailValue,
 } from 'librechat-data-provider';
+import type { TModelSelectProps, OnInputNumberChange } from '~/common';
 import {
   Input,
   Label,
@@ -18,13 +18,11 @@ import {
   HoverCardTrigger,
 } from '~/components/ui';
 import { cn, defaultTextProps, optionText, removeFocusOutlines } from '~/utils';
-import { DynamicTags, DynamicInputNumber } from '~/components/SidePanel/Parameters';
+import OptionHoverAlt from '~/components/SidePanel/Parameters/OptionHover';
+import { DynamicTags } from '~/components/SidePanel/Parameters';
 import { useLocalize, useDebouncedInput } from '~/hooks';
-import type { TModelSelectProps } from '~/common';
 import OptionHover from './OptionHover';
 import { ESide } from '~/common';
-
-type OnInputNumberChange = InputNumberPrimitive.InputNumberProps['onChange'];
 
 export default function Settings({ conversation, setOption, models, readonly }: TModelSelectProps) {
   const localize = useLocalize();
@@ -41,6 +39,8 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     presence_penalty: presP,
     resendFiles,
     imageDetail,
+    maxContextTokens,
+    max_tokens,
   } = conversation ?? {};
 
   const [setChatGptLabel, chatGptLabelValue] = useDebouncedInput<string | null | undefined>({
@@ -72,6 +72,18 @@ export default function Settings({ conversation, setOption, models, readonly }: 
     setOption,
     optionKey: 'presence_penalty',
     initialValue: presP,
+  });
+  const [setMaxContextTokens, maxContextTokensValue] = useDebouncedInput<number | null | undefined>(
+    {
+      setOption,
+      optionKey: 'maxContextTokens',
+      initialValue: maxContextTokens,
+    },
+  );
+  const [setMaxOutputTokens, maxOutputTokensValue] = useDebouncedInput<number | null | undefined>({
+    setOption,
+    optionKey: 'max_tokens',
+    initialValue: max_tokens,
   });
 
   const optionEndpoint = useMemo(() => endpointType ?? endpoint, [endpoint, endpointType]);
@@ -154,50 +166,74 @@ export default function Settings({ conversation, setOption, models, readonly }: 
         </div>
       </div>
       <div className="col-span-5 flex flex-col items-center justify-start gap-6 px-3 sm:col-span-2">
-        <DynamicInputNumber
-          columnSpan={2}
-          settingKey="maxContextTokens"
-          setOption={setOption}
-          label="com_endpoint_context_tokens"
-          labelCode={true}
-          description="com_endpoint_context_info"
-          descriptionCode={true}
-          placeholder="com_nav_theme_system"
-          placeholderCode={true}
-          descriptionSide="right"
-          conversation={conversation}
-          readonly={readonly}
-          range={{
-            min: 10,
-            max: 2000000,
-            step: 1000,
-          }}
-          className="mt-1 w-full justify-between"
-          inputClassName="w-1/3"
-          showDefault={false}
-        />
-        <DynamicInputNumber
-          columnSpan={2}
-          settingKey="max_tokens"
-          setOption={setOption}
-          label="com_endpoint_max_output_tokens"
-          labelCode={true}
-          description="com_endpoint_openai_max_tokens"
-          descriptionCode={true}
-          placeholder="com_nav_theme_system"
-          placeholderCode={true}
-          descriptionSide="top"
-          conversation={conversation}
-          readonly={readonly}
-          range={{
-            min: 10,
-            max: 2000000,
-            step: 1000,
-          }}
-          className="mt-1 w-full justify-between"
-          inputClassName="w-1/3"
-          showDefault={false}
-        />
+        <HoverCard openDelay={300}>
+          <HoverCardTrigger className="grid w-full items-center gap-2">
+            <div className="mt-1 flex w-full justify-between">
+              <Label htmlFor="max-context-tokens" className="text-left text-sm font-medium">
+                {localize('com_endpoint_context_tokens')}{' '}
+              </Label>
+              <InputNumber
+                id="max-context-tokens"
+                stringMode={false}
+                disabled={readonly}
+                value={maxContextTokensValue as number}
+                onChange={setMaxContextTokens as OnInputNumberChange}
+                placeholder={localize('com_nav_theme_system')}
+                min={10}
+                max={2000000}
+                step={1000}
+                controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'w-1/3',
+                  ),
+                )}
+              />
+            </div>
+          </HoverCardTrigger>
+          <OptionHoverAlt
+            description="com_endpoint_context_info"
+            langCode={true}
+            side={ESide.Left}
+          />
+        </HoverCard>
+        <HoverCard openDelay={300}>
+          <HoverCardTrigger className="grid w-full items-center gap-2">
+            <div className="mt-1 flex w-full justify-between">
+              <Label htmlFor="max-output-tokens" className="text-left text-sm font-medium">
+                {localize('com_endpoint_max_output_tokens')}{' '}
+              </Label>
+              <InputNumber
+                id="max-output-tokens"
+                stringMode={false}
+                disabled={readonly}
+                value={maxOutputTokensValue as number}
+                onChange={setMaxOutputTokens as OnInputNumberChange}
+                placeholder={localize('com_nav_theme_system')}
+                min={10}
+                max={2000000}
+                step={1000}
+                controls={false}
+                className={cn(
+                  defaultTextProps,
+                  cn(
+                    optionText,
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'w-1/3',
+                  ),
+                )}
+              />
+            </div>
+          </HoverCardTrigger>
+          <OptionHoverAlt
+            description="com_endpoint_openai_max_tokens"
+            langCode={true}
+            side={ESide.Left}
+          />
+        </HoverCard>
         <HoverCard openDelay={300}>
           <HoverCardTrigger className="grid w-full items-center gap-2">
             <div className="flex justify-between">
