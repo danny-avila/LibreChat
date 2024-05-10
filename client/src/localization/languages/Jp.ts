@@ -454,7 +454,74 @@ export default {
   com_nav_setting_beta: 'ベータ版の機能',
   com_nav_setting_data: 'データ管理',
   com_nav_setting_account: 'アカウント',
+  /* The following are AI translated */
+  com_error_invalid_user_key: '無効なキーが提供されました。キーを入力して再試行してください。',
+  com_ui_none_selected: '選択されていません',
+  com_ui_fork: '分岐',
+  com_ui_fork_info_1: 'この設定を使うと、希望の動作でメッセージを分岐させることができます。',
+  com_ui_fork_info_2:
+    '「フォーク」とは、現在の会話から特定のメッセージを開始/終了点として新しい会話を作成し、選択したオプションに従ってコピーを作成することを指します。',
+  com_ui_fork_info_3:
+    '「ターゲットメッセージ」とは、このポップアップを開いたメッセージか、"{0}"にチェックを入れた場合は会話の最新のメッセージを指します。',
+  com_ui_fork_info_visible:
+    'この設定は、ターゲットメッセージへの直接の経路のみを表示し、分岐は表示しません。つまり、可視メッセージのみを抽出して表示するということです。',
+  com_ui_fork_info_branches:
+    'この設定では、表示されているメッセージとそれに関連するブランチ（つまり、ターゲットメッセージに至る直接の経路上のブランチを含む）を分岐させます。',
+  com_ui_fork_info_target:
+    'この設定では、対象のメッセージとその近傍のメッセージを含む、すべてのメッセージの枝を分岐させます。つまり、表示されているかどうか、同じ経路上にあるかどうかに関係なく、すべてのメッセージ枝が含まれます。',
+  com_ui_fork_info_start:
+    'チェックを入れると、上記で選択した動作に従って、このメッセージから会話の最新のメッセージまでフォークが開始されます。',
+  com_ui_fork_info_remember:
+    'この設定を有効にすると、今後の会話で同じオプションを選択する手間が省けるようになります。お好みの設定を記憶させることで、会話の分岐をスムーズに行えるようになります。',
+  com_ui_fork_success: '会話のフォークに成功しました',
+  com_ui_fork_processing: '会話をフォークしています...',
+  com_ui_fork_error: '会話を分岐できませんでした。エラーが発生しました。',
+  com_ui_fork_change_default: 'デフォルトのフォークオプション',
+  com_ui_fork_default: 'デフォルトのフォークオプションを使用する',
+  com_ui_fork_remember: '以前の会話内容を記憶する',
+  com_ui_fork_split_target_setting: 'デフォルトで対象メッセージからフォークを開始する',
+  com_ui_fork_split_target: 'ここでフォークを開始',
+  com_ui_fork_remember_checked:
+    '選択した内容は、次回の利用時にも記憶されます。設定から変更できます。',
+  com_ui_fork_all_target: 'すべてを対象に含める',
+  com_ui_fork_branches: '関連ブランチを含める',
+  com_ui_fork_visible: 'メッセージを表示のみ',
+  com_ui_fork_from_message: 'フォークオプションを選択する',
+  com_ui_mention:
+    'エンドポイント、アシスタント、またはプリセットを素早く切り替えるには、それらを言及してください。',
+  com_ui_import_conversation_file_type_error: 'サポートされていないインポート形式です',
+  com_endpoint_messages: 'メッセージ',
+  com_endpoint_context_tokens: 'コンテキストトークン数の最大値',
+  com_endpoint_context_info:
+    'コンテキストに使用できるトークンの最大数です。リクエストごとに送信されるトークン数を制御するために使用します。指定しない場合は、既知のモデルのコンテキストサイズに基づいてシステムのデフォルト値が使用されます。高い値を設定すると、エラーが発生したり、トークンコストが高くなる可能性があります。',
+  com_endpoint_prompt_prefix_assistants: '追加の指示',
+  com_endpoint_instructions_assistants: '指示をオーバーライドする',
+  com_endpoint_openai_max_tokens:
+    'オプションの `max_tokens` フィールドで、チャット補完時に生成可能な最大トークン数を設定します。入力トークンと生成されたトークンの合計長さは、モデルのコンテキスト長によって制限されています。この数値がコンテキストの最大トークン数を超えると、エラーが発生する可能性があります。',
+  com_nav_welcome_assistant: 'アシスタントを選択してください',
+  com_nav_language: '言語',
+  com_nav_lang_auto: '自動検出',
+  com_nav_lang_english: '英語',
+  com_nav_lang_chinese: '中国語',
+  com_nav_lang_german: 'ドイツ語',
+  com_nav_lang_spanish: 'スペイン語',
+  com_nav_lang_french: 'フランス語',
+  com_nav_lang_italian: 'イタリア語',
+  com_nav_lang_polish: 'ポーランド語',
+  com_nav_lang_brazilian_portuguese: 'ブラジルポルトガル語',
+  com_nav_lang_russian: 'ロシア語',
+  com_nav_lang_japanese: 'ナビゲーションメニュー',
+  com_nav_lang_swedish: 'スウェーデン語',
+  com_nav_lang_korean: '韓国語',
+  com_nav_lang_vietnamese: 'ベトナム語',
+  com_nav_lang_traditionalchinese: '繁體中文',
+  com_nav_lang_arabic: 'アラビア語',
+  com_nav_lang_turkish: 'トルコ語',
+  com_nav_lang_dutch: 'オランダ語',
+  com_nav_lang_indonesia: 'インドネシア語',
+  com_nav_lang_hebrew: 'ヘブライ語',
 };
+
 export const comparisons = {
   com_error_moderation: {
     english:
