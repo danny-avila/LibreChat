@@ -103,11 +103,23 @@ Please consult the breaking changes before updating.
 
 <p align="center">
 <a href="https://trendshift.io/repositories/4685" target="_blank"><img src="https://trendshift.io/api/badge/repositories/4685" alt="danny-avila%2FLibreChat | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-</p>
-
+<a
+     href="https://runacap.com/ross-index/q1-24/"
+     target="_blank"
+     rel="noopener"
+>
+    <img
+        style="width: 260px; height: 56px"
+        src="https://runacap.com/wp-content/uploads/2024/04/ROSS_badge_white_Q1_2024.svg"
+        alt="ROSS Index - Fastest Growing Open-Source Startups in Q1 2024 | Runa Capital"
+        width="260"
+        height="56"
+    />
+</a>
 <a href="https://star-history.com/#danny-avila/LibreChat&Date">
   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
 </a>
+</p>
 
 ---
 
