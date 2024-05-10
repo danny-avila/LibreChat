@@ -18,7 +18,7 @@ export const ForkSettings = () => {
 
   return (
     <>
-      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
         <div className="flex items-center justify-between">
           <div> {localize('com_ui_fork_change_default')} </div>
           <Dropdown
@@ -26,11 +26,13 @@ export const ForkSettings = () => {
             onChange={setForkSetting}
             options={forkOptions}
             width={200}
+            position={'left'}
+            maxHeight="199px"
             testId="fork-setting-dropdown"
           />
         </div>
       </div>
-      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
         <div className="flex items-center justify-between">
           <div> {localize('com_ui_fork_default')} </div>
           <Switch
@@ -42,7 +44,7 @@ export const ForkSettings = () => {
           />
         </div>
       </div>
-      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-700">
+      <div className="border-b pb-3 last-of-type:border-b-0 dark:border-gray-600">
         <div className="flex items-center justify-between">
           <div> {localize('com_ui_fork_split_target_setting')} </div>
           <Switch

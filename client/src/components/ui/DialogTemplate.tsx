@@ -25,6 +25,7 @@ type DialogTemplateProps = {
   selection?: SelectionProps;
   className?: string;
   headerClassName?: string;
+  footerClassName?: string;
   showCloseButton?: boolean;
   showCancelButton?: boolean;
 };
@@ -40,6 +41,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
     selection,
     className,
     headerClassName,
+    footerClassName,
     showCloseButton,
     showCancelButton = true,
   } = props;
@@ -66,7 +68,7 @@ const DialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivE
         )}
       </DialogHeader>
       <div className="px-6">{main ? main : null}</div>
-      <DialogFooter>
+      <DialogFooter className={footerClassName}>
         <div>{leftButtons ? leftButtons : null}</div>
         <div className="flex h-auto gap-3">
           {showCancelButton && (
