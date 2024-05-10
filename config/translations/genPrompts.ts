@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 const baseDirPath = './client/src/localization/languages';
-const promptsDirPath = './client/src/localization/create/prompts';
+const promptsDirPath = './client/src/localization/prompts/instructions';
 
 async function ensureDirectoryExists(directory: string) {
   return fs.promises.access(directory).catch(() => fs.promises.mkdir(directory, { recursive: true }));
