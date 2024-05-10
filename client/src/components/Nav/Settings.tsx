@@ -112,7 +112,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                 {localize('com_nav_setting_account')}
               </Tabs.Trigger>
             </Tabs.List>
-            <div className="h-screen max-h-[373px] overflow-auto sm:w-full sm:max-w-none pr-1">
+            <div className="h-screen max-h-[373px] overflow-auto sm:w-full sm:max-w-none md:pr-0.5 md:pt-0.5">
               <General />
               <Messages />
               <Beta />
