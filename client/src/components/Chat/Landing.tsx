@@ -44,12 +44,7 @@ export default function Landing({ Header }: { Header?: ReactNode }) {
         <div className="relative h-full">
           <div className="absolute left-0 right-0">{Header && Header}</div>
           <div className="flex h-full flex-col items-center justify-center">
-            <div
-              className={cn(
-                'relative h-[72px] w-[72px]',
-                assistantName && avatar ? 'mb-0' : 'mb-3',
-              )}
-            >
+            <div className={cn('relative h-12 w-12', assistantName && avatar ? 'mb-0' : 'mb-3')}>
               <ConvoIcon
                 conversation={conversation}
                 assistantMap={assistantMap}

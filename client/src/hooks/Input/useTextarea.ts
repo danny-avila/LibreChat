@@ -136,29 +136,22 @@ export default function useTextarea({
     assistantMap,
   ]);
 
-  const handleKeyUp = useCallback(
-    (e: KeyEvent) => {
-      let isMention = false;
-      if (e.key === '@' || e.key === '2') {
-        const text = textAreaRef.current?.value;
-        isMention = !!(text && text[text.length - 1] === '@');
-      }
+  const handleKeyUp = useCallback(() => {
+    const text = textAreaRef.current?.value;
+    if (!(text && text[text.length - 1] === '@')) {
+      return;
+    }
 
-      if (isMention) {
-        const startPos = textAreaRef.current?.selectionStart;
-        const isAtStart = startPos === 1;
-        const isPrecededBySpace =
-          startPos && textAreaRef.current?.value.charAt(startPos - 2) === ' ';
+    const startPos = textAreaRef.current?.selectionStart;
+    if (!startPos) {
+      return;
+    }
 
-        if (isAtStart || isPrecededBySpace) {
-          setShowMentionPopover(true);
-        } else {
-          setShowMentionPopover(false);
-        }
-      }
-    },
-    [textAreaRef, setShowMentionPopover],
-  );
+    const isAtStart = startPos === 1;
+    const isPrecededBySpace = textAreaRef.current?.value.charAt(startPos - 2) === ' ';
+
+    setShowMentionPopover(isAtStart || isPrecededBySpace);
+  }, [textAreaRef, setShowMentionPopover]);
 
   const handleKeyDown = useCallback(
     (e: KeyEvent) => {

@@ -1,6 +1,6 @@
 import { cn } from '~/utils';
 
-export default function EditIcon({ className = '', size = '1.2em' }) {
+export default function EditIcon({ className = 'icon-md', size = '1.2em' }) {
   return (
     <svg
       fill="none"
