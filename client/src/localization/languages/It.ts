@@ -507,7 +507,38 @@ export default {
   com_nav_setting_beta: 'Funzionalità beta',
   com_nav_setting_data: 'Controlli dati',
   com_nav_setting_account: 'Account',
+  /* The following are AI Translated */
+  com_user_message: 'Mostra nome utente nei messaggi',
+  com_ui_fork: 'Duplica',
+  com_ui_mention: 'Menziona un endpoint, assistente o preset per passare rapidamente ad esso',
+  com_endpoint_context_tokens: 'Token di Contesto Massimi',
+  com_endpoint_context_info:
+    'Il numero massimo di token che possono essere utilizzati per il contesto. Usalo per controllare quanti token vengono inviati per richiesta. Se non specificato, verranno utilizzate le impostazioni di sistema predefinite in base alle dimensioni del contesto dei modelli noti. Impostare valori più alti potrebbe causare errori e/o costi di token più elevati.',
+  com_endpoint_openai_max_tokens:
+    'Campo `max_tokens` opzionale, che rappresenta il numero massimo di token che possono essere generati nel completamento della chat.\n\nLa lunghezza totale dei token di input e dei token generati è limitata dalla lunghezza del contesto del modello. Potresti riscontrare errori se questo numero supera il massimo dei token di contesto.',
+  com_nav_language: 'Lingua',
+  com_nav_lang_auto: 'Rileva automaticamente',
+  com_nav_lang_english: 'Inglese',
+  com_nav_lang_chinese: 'Cinese',
+  com_nav_lang_german: 'Tedesco',
+  com_nav_lang_spanish: 'Spagnolo',
+  com_nav_lang_french: 'Francese',
+  com_nav_lang_italian: 'Italiano',
+  com_nav_lang_polish: 'Polacco',
+  com_nav_lang_brazilian_portuguese: 'Portoghese brasiliano',
+  com_nav_lang_russian: 'Russo',
+  com_nav_lang_japanese: 'Giapponese',
+  com_nav_lang_swedish: 'Svedese',
+  com_nav_lang_korean: 'Coreano',
+  com_nav_lang_vietnamese: 'Vietnamita',
+  com_nav_lang_traditionalchinese: 'Cinese tradizionale',
+  com_nav_lang_arabic: 'Arabo',
+  com_nav_lang_turkish: 'Turco',
+  com_nav_lang_dutch: 'Olandese',
+  com_nav_lang_indonesia: 'Indonesiano',
+  com_nav_lang_hebrew: 'ebraico',
 };
+
 export const comparisons = {
   com_error_moderation: {
     english:
