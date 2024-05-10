@@ -21,8 +21,11 @@ coverage
 # Grunt intermediate storage (http://gruntjs.com/creating-plugins#storing-task-files)
 .grunt
 
+# translation services
+config/translations/stores/*
+client/src/localization/languages/*_missing_keys.json
+
 # Compiled Dirs (http://nodejs.org/api/addons.html)
-config/translations/store/*
 build/
 dist/
 public/main.js
