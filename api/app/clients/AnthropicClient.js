@@ -7,10 +7,11 @@ const {
 } = require('librechat-data-provider');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const {
-  titleFunctionPrompt,
-  parseTitleFromPrompt,
   truncateText,
   formatMessage,
+  titleFunctionPrompt,
+  parseParamFromPrompt,
+  genTranslationPrompt,
   createContextHandlers,
 } = require('./prompts');
 const spendTokens = require('~/models/spendTokens');
@@ -748,7 +749,7 @@ class AnthropicClient extends BaseClient {
           context: 'title',
         });
         const text = response.content[0].text;
-        title = parseTitleFromPrompt(text);
+        title = parseParamFromPrompt(text, 'title');
       } catch (e) {
         logger.error('[AnthropicClient] There was an issue generating the title', e);
       }
@@ -757,6 +758,66 @@ class AnthropicClient extends BaseClient {
     await titleChatCompletion();
     logger.debug('[AnthropicClient] Convo Title: ' + title);
     return title;
+  }
+
+  /**
+   * This function capitlizes on [Anthropic's function calling training](https://docs.anthropic.com/claude/docs/functions-external-tools).
+   *
+   * @param {Object} params - The parameters for the generation.
+   * @param {string} params.key
+   * @param {string} params.baselineTranslation
+   * @param {string} params.translationPrompt
+   * @param {Array<{ pageContent: string }>} params.context
+   *
+   * @returns {Promise<string | 'New Chat'>} A promise that resolves to the generated conversation title.
+   *                            In case of failure, it will return the default title, "New Chat".
+   */
+  async translateKeyPhrase({ key, baselineTranslation, translationPrompt, context }) {
+    let translation;
+    const model = 'claude-3-sonnet-20240229';
+    const prompt = genTranslationPrompt(translationPrompt);
+    const system = prompt;
+
+    const translateCompletion = async () => {
+      const content = `Current key: \`${key}\`
+
+    Baseline translation: ${baselineTranslation}
+    
+    Please generate a translation for the key in the target language as described by the function.
+    
+    Similar key and phrases: ${context.map((c) => c.pageContent).join(', ')}`;
+
+      const message = { role: 'user', content };
+      const requestOptions = {
+        model,
+        temperature: 0.3,
+        max_tokens: 1024,
+        system,
+        stop_sequences: ['\n\nHuman:', '\n\nAssistant', '</function_calls>'],
+        messages: [message],
+      };
+
+      try {
+        const response = await this.createResponse(this.getClient(), requestOptions, true);
+        let promptTokens = response?.usage?.input_tokens;
+        let completionTokens = response?.usage?.output_tokens;
+        if (!promptTokens) {
+          promptTokens = this.getTokenCountForMessage(message);
+          promptTokens += this.getTokenCountForMessage({ role: 'system', content: system });
+        }
+        if (!completionTokens) {
+          completionTokens = this.getTokenCountForMessage(response.content[0]);
+        }
+        const text = response.content[0].text;
+        translation = parseParamFromPrompt(text, 'translation');
+      } catch (e) {
+        logger.error('[AnthropicClient] There was an issue generating the translation', e);
+      }
+    };
+
+    await translateCompletion();
+    logger.debug('[AnthropicClient] Translation: ' + translation);
+    return translation;
   }
 }
 
