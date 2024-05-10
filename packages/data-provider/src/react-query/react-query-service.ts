@@ -60,11 +60,11 @@ export const useGetMessagesByConvoId = <TData = s.TMessage[]>(
   );
 };
 
-export const useGetSharedMessages = <TData = s.TMessage[]>(
+export const useGetSharedMessages = (
   shareId: string,
-  config?: UseQueryOptions<s.TMessage[], unknown, TData>,
-): QueryObserverResult<TData> => {
-  return useQuery<s.TMessage[], unknown, TData>(
+  config?: UseQueryOptions<t.TSharedMessagesResponse>,
+): QueryObserverResult<t.TSharedMessagesResponse> => {
+  return useQuery<t.TSharedMessagesResponse>(
     [QueryKeys.sharedMessages, shareId],
     () => dataService.getSharedMessages(shareId),
     {

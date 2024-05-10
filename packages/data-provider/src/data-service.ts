@@ -31,7 +31,7 @@ export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage
   return request.get(endpoints.messages(conversationId));
 }
 
-export function getSharedMessages(shareId: string): Promise<s.TMessage[]> {
+export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
   return request.get(endpoints.shareMessages(shareId));
 }
 

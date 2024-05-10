@@ -11,7 +11,8 @@ module.exports = {
       if (!share || !share.conversationId || !share.isPublic) {
         return null;
       }
-      return share.messages.map((message) => {
+
+      const anonymousMessage = share.messages.map((message) => {
         if (share.isAnonymous) {
           return {
             ...message,
@@ -20,6 +21,10 @@ module.exports = {
         }
         return message;
       });
+      return {
+        ...share,
+        messages: anonymousMessage,
+      };
     } catch (error) {
       logger.error('[getShare] Error getting share link', error);
       return { message: 'Error getting share link' };

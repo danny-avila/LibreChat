@@ -34,6 +34,9 @@ export type ConversationUpdater = (
   conversation: TConversation,
 ) => ConversationData;
 
+export type SharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
+  messages: TMessage[];
+};
 export type SharedLinkListParams = Omit<ConversationListParams, 'isArchived' | 'conversationId'> & {
   isPublic?: boolean;
 };

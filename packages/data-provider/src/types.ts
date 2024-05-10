@@ -140,6 +140,9 @@ export type TArchiveConversationRequest = {
 
 export type TArchiveConversationResponse = TConversation;
 
+export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
+  messages: TMessage[];
+};
 export type TSharedLinkRequest = Partial<
   Omit<TSharedLink, 'messages' | 'createdAt' | 'updatedAt'>
 > & {
