@@ -280,6 +280,13 @@ export type TMessage = z.input<typeof tMessageSchema> & {
   files?: Partial<TFile>[];
 };
 
+export const coerceNumber = z.union([z.number(), z.string()]).transform((val) => {
+  if (typeof val === 'string') {
+    return val.trim() === '' ? undefined : parseFloat(val);
+  }
+  return val;
+});
+
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
@@ -315,8 +322,8 @@ export const tConversationSchema = z.object({
   maxOutputTokens: z.number().optional(),
   agentOptions: tAgentOptionsSchema.nullable().optional(),
   file_ids: z.array(z.string()).optional(),
-  maxContextTokens: z.number().optional(),
-  max_tokens: z.number().optional(),
+  maxContextTokens: coerceNumber.optional(),
+  max_tokens: coerceNumber.optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /* vision */
