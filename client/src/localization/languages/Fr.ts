@@ -1533,7 +1533,7 @@ export const comparisons = {
     translated: 'Comment puis-je vous aider aujourd\'hui?',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'Défilement automatique jusqu\'au plus récent à l\'ouverture',
   },
   com_nav_modular_chat: {
@@ -1729,5 +1729,591 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: 'Compte',
+  },
+  com_error_moderation: {
+    english:
+      'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
+    translated:
+      'Il semble que le contenu soumis ait été signalé par notre système de modération pour ne pas être conforme à nos lignes directrices communautaires. Nous ne pouvons pas procéder avec ce sujet spécifique. Si vous avez d\'autres questions ou sujets que vous souhaitez explorer, veuillez modifier votre message ou créer une nouvelle conversation.',
+  },
+  com_error_no_user_key: {
+    english: 'No key found. Please provide a key and try again.',
+    translated: 'Aucune clé trouvée. Veuillez fournir une clé et réessayer.',
+  },
+  com_error_no_base_url: {
+    english: 'No base URL found. Please provide one and try again.',
+    translated: 'Aucune URL de base trouvée. Veuillez en fournir une et réessayer.',
+  },
+  com_error_invalid_user_key: {
+    english: 'Invalid key provided. Please provide a key and try again.',
+    translated: 'Clé fournie non valide. Veuillez fournir une clé valide et réessayer.',
+  },
+  com_error_expired_user_key: {
+    english: 'Provided key for {0} expired at {1}. Please provide a key and try again.',
+    translated: 'La clé fournie pour {0} a expiré à {1}. Veuillez fournir une clé et réessayer.',
+  },
+  com_files_no_results: {
+    english: 'No results.',
+    translated: 'Aucun résultat.',
+  },
+  com_files_filter: {
+    english: 'Filter files...',
+    translated: 'Filtrer les fichiers...',
+  },
+  com_files_number_selected: {
+    english: '{0} of {1} file(s) selected',
+    translated: '{0} sur {1} fichier(s) sélectionné(s)',
+  },
+  com_sidepanel_select_assistant: {
+    english: 'Select an Assistant',
+    translated: 'Sélectionner un assistant',
+  },
+  com_sidepanel_parameters: {
+    english: 'Parameters',
+    translated: 'Paramètres',
+  },
+  com_sidepanel_assistant_builder: {
+    english: 'Assistant Builder',
+    translated: 'Constructeur d\'assistant',
+  },
+  com_sidepanel_hide_panel: {
+    english: 'Hide Panel',
+    translated: 'Masquer le panneau',
+  },
+  com_sidepanel_attach_files: {
+    english: 'Attach Files',
+    translated: 'Joindre des fichiers',
+  },
+  com_sidepanel_manage_files: {
+    english: 'Manage Files',
+    translated: 'Gérer les fichiers',
+  },
+  com_assistants_capabilities: {
+    english: 'Capabilities',
+    translated: 'Capacités des assistants',
+  },
+  com_assistants_knowledge: {
+    english: 'Knowledge',
+    translated: 'Connaissances',
+  },
+  com_assistants_knowledge_info: {
+    english:
+      'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
+    translated:
+      'Si vous téléchargez des fichiers dans la section Connaissances, les conversations avec votre Assistant pourront inclure le contenu de ces fichiers.',
+  },
+  com_assistants_knowledge_disabled: {
+    english:
+      'Assistant must be created, and Code Interpreter or Retrieval must be enabled and saved before uploading files as Knowledge.',
+    translated:
+      'L\'assistant doit être créé, et l\'interpréteur de code ou la récupération doivent être activés et enregistrés avant de pouvoir importer des fichiers en tant que connaissances.',
+  },
+  com_assistants_image_vision: {
+    english: 'Image Vision',
+    translated: 'Vision d\'image',
+  },
+  com_assistants_code_interpreter: {
+    english: 'Code Interpreter',
+    translated: 'Interpréteur de code',
+  },
+  com_assistants_code_interpreter_files: {
+    english: 'The following files are only available for Code Interpreter:',
+    translated: 'Les fichiers suivants sont disponibles uniquement pour l\'interpréteur de code :',
+  },
+  com_assistants_retrieval: {
+    english: 'Retrieval',
+    translated: 'Récupération',
+  },
+  com_assistants_search_name: {
+    english: 'Search assistants by name',
+    translated: 'Rechercher des assistants par nom',
+  },
+  com_assistants_tools: {
+    english: 'Tools',
+    translated: 'Outils',
+  },
+  com_assistants_actions: {
+    english: 'Actions',
+    translated: 'Actions',
+  },
+  com_assistants_add_tools: {
+    english: 'Add Tools',
+    translated: 'Ajouter des outils',
+  },
+  com_assistants_add_actions: {
+    english: 'Add Actions',
+    translated: 'Ajouter des actions',
+  },
+  com_assistants_available_actions: {
+    english: 'Available Actions',
+    translated: 'Actions disponibles',
+  },
+  com_assistants_running_action: {
+    english: 'Running action',
+    translated: 'Action en cours',
+  },
+  com_assistants_completed_action: {
+    english: 'Talked to {0}',
+    translated: 'A parlé à {0}',
+  },
+  com_assistants_completed_function: {
+    english: 'Ran {0}',
+    translated: 'A exécuté {0}',
+  },
+  com_assistants_function_use: {
+    english: 'Assistant used {0}',
+    translated: 'L\'assistant a utilisé {0}',
+  },
+  com_assistants_domain_info: {
+    english: 'Assistant sent this info to {0}',
+    translated: 'L\'assistant a envoyé ces informations à {0}',
+  },
+  com_assistants_delete_actions_success: {
+    english: 'Successfully deleted Action from Assistant',
+    translated: 'Action supprimée avec succès de l\'Assistant',
+  },
+  com_assistants_update_actions_success: {
+    english: 'Successfully created or updated Action',
+    translated: 'Action créée ou mise à jour avec succès',
+  },
+  com_assistants_update_actions_error: {
+    english: 'There was an error creating or updating the action.',
+    translated: 'Une erreur s\'est produite lors de la création ou de la mise à jour de l\'action.',
+  },
+  com_assistants_delete_actions_error: {
+    english: 'There was an error deleting the action.',
+    translated: 'Une erreur s\'est produite lors de la suppression de l\'action.',
+  },
+  com_assistants_actions_info: {
+    english: 'Let your Assistant retrieve information or take actions via API\'s',
+    translated:
+      'Permettez à votre Assistant de récupérer des informations ou d\'effectuer des actions via des API',
+  },
+  com_assistants_name_placeholder: {
+    english: 'Optional: The name of the assistant',
+    translated: 'Nom de l\'assistant (facultatif)',
+  },
+  com_assistants_instructions_placeholder: {
+    english: 'The system instructions that the assistant uses',
+    translated: 'Les instructions système que l\'assistant utilise',
+  },
+  com_assistants_description_placeholder: {
+    english: 'Optional: Describe your Assistant here',
+    translated: 'Décrivez votre assistant ici (facultatif)',
+  },
+  com_assistants_actions_disabled: {
+    english: 'You need to create an assistant before adding actions.',
+    translated: 'Vous devez créer un assistant avant d\'ajouter des actions.',
+  },
+  com_assistants_update_success: {
+    english: 'Successfully updated',
+    translated: 'Mise à jour réussie',
+  },
+  com_assistants_update_error: {
+    english: 'There was an error updating your assistant.',
+    translated: 'Une erreur s\'est produite lors de la mise à jour de votre assistant.',
+  },
+  com_assistants_create_success: {
+    english: 'Successfully created',
+    translated: 'Création réussie',
+  },
+  com_assistants_create_error: {
+    english: 'There was an error creating your assistant.',
+    translated: 'Une erreur s\'est produite lors de la création de votre assistant.',
+  },
+  com_ui_field_required: {
+    english: 'This field is required',
+    translated: 'Ce champ est obligatoire',
+  },
+  com_ui_download_error: {
+    english: 'Error downloading file. The file may have been deleted.',
+    translated: 'Erreur lors du téléchargement du fichier. Le fichier a peut-être été supprimé.',
+  },
+  com_ui_attach_error_type: {
+    english: 'Unsupported file type for endpoint:',
+    translated: 'Type de fichier non pris en charge pour ce point d\'accès :',
+  },
+  com_ui_attach_error_size: {
+    english: 'File size limit exceeded for endpoint:',
+    translated: 'Limite de taille de fichier dépassée pour le point de terminaison :',
+  },
+  com_ui_attach_error: {
+    english: 'Cannot attach file. Create or select a conversation, or try refreshing the page.',
+    translated:
+      'Impossible de joindre le fichier. Créez ou sélectionnez une conversation, ou essayez d\'actualiser la page.',
+  },
+  com_ui_on: {
+    english: 'On',
+    translated: 'Activé',
+  },
+  com_ui_off: {
+    english: 'Off',
+    translated: 'Désactivé',
+  },
+  com_ui_yes: {
+    english: 'Yes',
+    translated: 'Oui',
+  },
+  com_ui_no: {
+    english: 'No',
+    translated: 'Non',
+  },
+  com_ui_ascending: {
+    english: 'Asc',
+    translated: 'Croissant',
+  },
+  com_ui_descending: {
+    english: 'Desc',
+    translated: 'Décroissant',
+  },
+  com_ui_show_all: {
+    english: 'Show All',
+    translated: 'Tout afficher',
+  },
+  com_ui_name: {
+    english: 'Name',
+    translated: 'Nom',
+  },
+  com_ui_date: {
+    english: 'Date',
+    translated: 'Date',
+  },
+  com_ui_storage: {
+    english: 'Storage',
+    translated: 'Stockage',
+  },
+  com_ui_context: {
+    english: 'Context',
+    translated: 'Contexte',
+  },
+  com_ui_size: {
+    english: 'Size',
+    translated: 'Taille',
+  },
+  com_ui_host: {
+    english: 'Host',
+    translated: 'Hôte',
+  },
+  com_ui_update: {
+    english: 'Update',
+    translated: 'Mettre à jour',
+  },
+  com_ui_authentication: {
+    english: 'Authentication',
+    translated: 'Authentification',
+  },
+  com_ui_instructions: {
+    english: 'Instructions',
+    translated: 'Instructions',
+  },
+  com_ui_description: {
+    english: 'Description',
+    translated: 'Description',
+  },
+  com_ui_error: {
+    english: 'Error',
+    translated: 'Erreur',
+  },
+  com_ui_select: {
+    english: 'Select',
+    translated: 'Sélectionner',
+  },
+  com_ui_select_search_model: {
+    english: 'Search model by name',
+    translated: 'Rechercher un modèle par nom',
+  },
+  com_ui_select_search_plugin: {
+    english: 'Search plugin by name',
+    translated: 'Rechercher un plugin par nom',
+  },
+  com_ui_upload_files: {
+    english: 'Upload files',
+    translated: 'Téléverser des fichiers',
+  },
+  com_ui_none_selected: {
+    english: 'None selected',
+    translated: 'Aucune sélection',
+  },
+  com_ui_fork: {
+    english: 'Fork',
+    translated: 'Bifurquer',
+  },
+  com_ui_fork_info_1: {
+    english: 'Use this setting to fork messages with the desired behavior.',
+    translated:
+      'Utilisez ce paramètre pour créer une bifurcation des messages avec le comportement souhaité.',
+  },
+  com_ui_fork_info_2: {
+    english:
+      '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
+    translated:
+      '"Forker" fait référence à la création d\'une nouvelle conversation qui commence/se termine à partir de messages spécifiques dans la conversation actuelle, en créant une copie selon les options sélectionnées.',
+  },
+  com_ui_fork_info_3: {
+    english:
+      'The "target message" refers to either the message this popup was opened from, or, if you check "{0}", the latest message in the conversation.',
+    translated:
+      'Le terme "message cible" fait référence soit au message à partir duquel cette fenêtre contextuelle a été ouverte, soit, si vous cochez "{0}", au dernier message de la conversation.',
+  },
+  com_ui_fork_info_visible: {
+    english:
+      'This option forks only the visible messages; in other words, the direct path to the target message, without any branches.',
+    translated:
+      'Cette option permet de diviser uniquement les messages visibles ; en d\'autres termes, le chemin direct vers le message cible, sans aucune branche.',
+  },
+  com_ui_fork_info_branches: {
+    english:
+      'This option forks the visible messages, along with related branches; in other words, the direct path to the target message, including branches along the path.',
+    translated:
+      'Cette option divise les messages visibles, ainsi que les branches associées ; en d\'autres termes, le chemin direct vers le message cible, y compris les branches le long du chemin.',
+  },
+  com_ui_fork_info_target: {
+    english:
+      'This option forks all messages leading up to the target message, including its neighbors; in other words, all message branches, whether or not they are visible or along the same path, are included.',
+    translated:
+      'Cette option divise tous les messages menant au message cible, y compris ses voisins ; en d\'autres termes, toutes les branches de messages, qu\'elles soient visibles ou non et quel que soit leur chemin, sont incluses.',
+  },
+  com_ui_fork_info_start: {
+    english:
+      'If checked, forking will commence from this message to the latest message in the conversation, according to the behavior selected above.',
+    translated:
+      'Si cette option est cochée, le fork commencera à partir de ce message jusqu\'au dernier message de la conversation, selon le comportement sélectionné ci-dessus.',
+  },
+  com_ui_fork_info_remember: {
+    english:
+      'Check this to remember the options you select for future usage, making it quicker to fork conversations as preferred.',
+    translated:
+      'Cochez cette case pour mémoriser les options que vous sélectionnez pour une utilisation future, ce qui vous permettra de bifurquer plus rapidement les conversations selon vos préférences.',
+  },
+  com_ui_fork_success: {
+    english: 'Successfully forked conversation',
+    translated: 'Conversation bifurquée avec succès',
+  },
+  com_ui_fork_processing: {
+    english: 'Forking conversation...',
+    translated: 'Bifurquer la conversation...',
+  },
+  com_ui_fork_error: {
+    english: 'There was an error forking the conversation',
+    translated: 'Une erreur s\'est produite lors du dédoublement de la conversation',
+  },
+  com_ui_fork_change_default: {
+    english: 'Default fork option',
+    translated: 'Option de fourche par défaut',
+  },
+  com_ui_fork_default: {
+    english: 'Use default fork option',
+    translated: 'Utiliser l\'option de fourche par défaut',
+  },
+  com_ui_fork_remember: {
+    english: 'Remember',
+    translated: 'Se souvenir',
+  },
+  com_ui_fork_split_target_setting: {
+    english: 'Start fork from target message by default',
+    translated: 'Démarrer la bifurcation à partir du message cible par défaut',
+  },
+  com_ui_fork_split_target: {
+    english: 'Start fork here',
+    translated: 'Démarrer la bifurcation ici',
+  },
+  com_ui_fork_remember_checked: {
+    english:
+      'Your selection will be remembered after usage. Change this at any time in the settings.',
+    translated:
+      'Votre sélection sera mémorisée après utilisation. Vous pouvez la modifier à tout moment dans les paramètres.',
+  },
+  com_ui_fork_all_target: {
+    english: 'Include all to/from here',
+    translated: 'Inclure tout à partir d\'ici',
+  },
+  com_ui_fork_branches: {
+    english: 'Include related branches',
+    translated: 'Inclure les branches associées',
+  },
+  com_ui_fork_visible: {
+    english: 'Visible messages only',
+    translated: 'Messages visibles uniquement',
+  },
+  com_ui_fork_from_message: {
+    english: 'Select a fork option',
+    translated: 'Sélectionner une option de bifurcation',
+  },
+  com_ui_mention: {
+    english: 'Mention an endpoint, assistant, or preset to quickly switch to it',
+    translated:
+      'Mentionnez un point de terminaison, un assistant ou un préréglage pour basculer rapidement vers celui-ci',
+  },
+  com_ui_import_conversation_file_type_error: {
+    english: 'Unsupported import type',
+    translated: 'Type de fichier non pris en charge pour l\'importation',
+  },
+  com_ui_avatar: {
+    english: 'Avatar',
+    translated: 'Avatar',
+  },
+  com_ui_unknown: {
+    english: 'Unknown',
+    translated: 'Inconnu',
+  },
+  com_ui_result: {
+    english: 'Result',
+    translated: 'Résultat',
+  },
+  com_ui_image_gen: {
+    english: 'Image Gen',
+    translated: 'Génération d\'image',
+  },
+  com_ui_assistant: {
+    english: 'Assistant',
+    translated: 'Assistant',
+  },
+  com_ui_assistants: {
+    english: 'Assistants',
+    translated: 'Assistants virtuels',
+  },
+  com_ui_attachment: {
+    english: 'Attachment',
+    translated: 'Pièce jointe',
+  },
+  com_ui_assistants_output: {
+    english: 'Assistants Output',
+    translated: 'Sortie des assistants',
+  },
+  com_ui_create: {
+    english: 'Create',
+    translated: 'Créer',
+  },
+  com_ui_delete_assistant_confirm: {
+    english: 'Are you sure you want to delete this Assistant? This cannot be undone.',
+    translated: 'Êtes-vous sûr de vouloir supprimer cet Assistant ? Cette action est irréversible.',
+  },
+  com_ui_upload_delay: {
+    english:
+      'Uploading "{0}" is taking more time than anticipated. Please wait while the file finishes indexing for retrieval.',
+    translated:
+      'Le téléversement de "{0}" prend plus de temps que prévu. Veuillez patienter pendant que le fichier termine son indexation pour la récupération.',
+  },
+  com_ui_privacy_policy: {
+    english: 'Privacy policy',
+    translated: 'Politique de confidentialité',
+  },
+  com_ui_terms_of_service: {
+    english: 'Terms of service',
+    translated: 'Conditions d\'utilisation',
+  },
+  com_ui_min_tags: {
+    english: 'Cannot remove more values, a minimum of {0} are required.',
+    translated: 'Impossible de supprimer plus de valeurs, un minimum de {0} est requis.',
+  },
+  com_ui_max_tags: {
+    english: 'Maximum number allowed is {0}, using latest values.',
+    translated: 'Le nombre maximum autorisé est {0}, en utilisant les dernières valeurs.',
+  },
+  com_auth_back_to_login: {
+    english: 'Back to Login',
+    translated: 'Retour à la connexion',
+  },
+  com_endpoint_messages: {
+    english: 'Messages',
+    translated: 'Messages',
+  },
+  com_endpoint_context_tokens: {
+    english: 'Max Context Tokens',
+    translated: 'Jetons de contexte maximum',
+  },
+  com_endpoint_context_info: {
+    english:
+      'The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.\n  If unspecified, will use system defaults based on known models\' context size. Setting higher values may result in errors and/or higher token cost.',
+    translated:
+      'Le nombre maximum de jetons qui peuvent être utilisés pour le contexte. Utilisez ceci pour contrôler le nombre de jetons envoyés par requête. Si non spécifié, les valeurs par défaut du système seront utilisées en fonction de la taille de contexte connue des modèles. Définir des valeurs plus élevées peut entraîner des erreurs et/ou un coût en jetons plus élevé.',
+  },
+  com_endpoint_prompt_prefix_placeholder: {
+    english: 'Set custom instructions or context. Ignored if empty.',
+    translated: 'Définir des instructions ou un contexte personnalisé. Ignoré si vide.',
+  },
+  com_endpoint_instructions_assistants_placeholder: {
+    english:
+      'Overrides the instructions of the assistant. This is useful for modifying the behavior on a per-run basis.',
+    translated:
+      'Remplace les instructions de l\'assistant. Cela est utile pour modifier le comportement au cas par cas.',
+  },
+  com_endpoint_prompt_prefix_assistants_placeholder: {
+    english:
+      'Set additional instructions or context on top of the Assistant\'s main instructions. Ignored if empty.',
+    translated:
+      'Définir des instructions ou un contexte supplémentaire en plus des instructions principales de l\'Assistant. Ignoré si vide.',
+  },
+  com_endpoint_prompt_prefix_assistants: {
+    english: 'Additional Instructions',
+    translated: 'Instructions supplémentaires pour les assistants',
+  },
+  com_endpoint_instructions_assistants: {
+    english: 'Override Instructions',
+    translated: 'Instructions de remplacement',
+  },
+  com_endpoint_stop: {
+    english: 'Stop Sequences',
+    translated: 'Séquences d\'arrêt',
+  },
+  com_endpoint_stop_placeholder: {
+    english: 'Separate values by pressing `Enter`',
+    translated: 'Séparez les valeurs en appuyant sur `Entrée`',
+  },
+  com_endpoint_openai_max_tokens: {
+    english:
+      'Optional `max_tokens` field, representing the maximum number of tokens that can be generated in the chat completion.\n    \n    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.',
+    translated:
+      'Champ `max_tokens` optionnel, représentant le nombre maximum de jetons pouvant être générés dans la complétion de conversation. La longueur totale des jetons d\'entrée et des jetons générés est limitée par la longueur du contexte du modèle. Vous pouvez rencontrer des erreurs si ce nombre dépasse le maximum de jetons de contexte.',
+  },
+  com_endpoint_openai_resend_files: {
+    english:
+      'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
+    translated:
+      'Renvoyer tous les fichiers précédemment joints. Remarque : cela augmentera le coût en jetons et vous pourriez rencontrer des erreurs avec de nombreuses pièces jointes.',
+  },
+  com_endpoint_openai_stop: {
+    english: 'Up to 4 sequences where the API will stop generating further tokens.',
+    translated: 'Jusqu\'à 4 séquences où l\'API cessera de générer d\'autres jetons.',
+  },
+  com_endpoint_plug_resend_files: {
+    english: 'Resend Files',
+    translated: 'Renvoyer les fichiers',
+  },
+  com_endpoint_plug_image_detail: {
+    english: 'Image Detail',
+    translated: 'Détail de l\'image',
+  },
+  com_endpoint_assistant: {
+    english: 'Assistant',
+    translated: 'Assistant de point de terminaison',
+  },
+  com_endpoint_use_active_assistant: {
+    english: 'Use Active Assistant',
+    translated: 'Utiliser l\'assistant actif',
+  },
+  com_endpoint_assistant_model: {
+    english: 'Assistant Model',
+    translated: 'Modèle d\'assistant',
+  },
+  com_endpoint_assistant_placeholder: {
+    english: 'Please select an Assistant from the right-hand Side Panel',
+    translated: 'Veuillez sélectionner un assistant dans le panneau latéral droit',
+  },
+  com_nav_welcome_assistant: {
+    english: 'Please Select an Assistant',
+    translated: 'Veuillez sélectionner un assistant',
+  },
+  com_nav_hide_panel: {
+    english: 'Hide right-most side panel',
+    translated: 'Masquer le panneau latéral le plus à droite',
+  },
+  com_nav_plugin_install: {
+    english: 'Install',
+    translated: 'Installer',
+  },
+  com_nav_plugin_uninstall: {
+    english: 'Uninstall',
+    translated: 'Désinstaller',
   },
 };

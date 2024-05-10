@@ -1959,11 +1959,11 @@ export const comparisons = {
     translated: 'Wie kann ich dir heute helfen?',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'Beim Öffnen automatisch zum Neuesten scrollen',
   },
   com_nav_hide_panel: {
-    english: 'Hide Right-most Side Panel',
+    english: 'Hide right-most side panel',
     translated: 'Rechtsseitige Seitenleiste ausblenden',
   },
   com_nav_modular_chat: {
@@ -2202,5 +2202,271 @@ export const comparisons = {
   com_nav_language: {
     english: 'Language',
     translated: 'Sprache',
+  },
+  com_error_moderation: {
+    english:
+      'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
+    translated:
+      'Es sieht so aus, als ob der übermittelte Inhalt von unserem Moderationssystem als nicht konform mit unseren Gemeinschaftsrichtlinien markiert wurde. Wir können mit diesem spezifischen Thema leider nicht fortfahren. Wenn du andere Fragen oder Themen hast, die du gerne erörtern möchtest, bearbeite bitte deine Nachricht oder starte eine neue Konversation.',
+  },
+  com_error_no_user_key: {
+    english: 'No key found. Please provide a key and try again.',
+    translated: 'Kein Schlüssel gefunden. Bitte gib einen Schlüssel ein und versuche es erneut.',
+  },
+  com_error_no_base_url: {
+    english: 'No base URL found. Please provide one and try again.',
+    translated: 'Es wurde keine Basis-URL gefunden. Bitte gib eine an und versuche es erneut.',
+  },
+  com_error_invalid_user_key: {
+    english: 'Invalid key provided. Please provide a key and try again.',
+    translated:
+      'Ungültiger Schlüssel angegeben. Bitte gib einen gültigen Schlüssel ein und versuche es erneut.',
+  },
+  com_error_expired_user_key: {
+    english: 'Provided key for {0} expired at {1}. Please provide a key and try again.',
+    translated:
+      'Der bereitgestellte Schlüssel für {0} ist um {1} abgelaufen. Bitte gib einen neuen Schlüssel ein und versuche es erneut.',
+  },
+  com_ui_none_selected: {
+    english: 'None selected',
+    translated: 'Keine ausgewählt',
+  },
+  com_ui_fork: {
+    english: 'Fork',
+    translated: 'Abzweigen',
+  },
+  com_ui_fork_info_1: {
+    english: 'Use this setting to fork messages with the desired behavior.',
+    translated:
+      'Verwende diese Einstellung, um Nachrichten mit dem gewünschten Verhalten abzuzweigen.',
+  },
+  com_ui_fork_info_2: {
+    english:
+      '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
+    translated:
+      '"Forken" bezieht sich darauf, einen neuen Konversationsverlauf zu erstellen, der an bestimmten Nachrichten der aktuellen Konversation beginnt bzw. endet und eine Kopie gemäß den ausgewählten Optionen erstellt.',
+  },
+  com_ui_fork_info_3: {
+    english:
+      'The "target message" refers to either the message this popup was opened from, or, if you check "{0}", the latest message in the conversation.',
+    translated:
+      'Der Begriff "Zielnachricht" bezieht sich entweder auf die Nachricht, von der dieses Popup geöffnet wurde, oder, wenn du "{0}" auswählst, auf die letzte Nachricht im Gespräch.',
+  },
+  com_ui_fork_info_visible: {
+    english:
+      'This option forks only the visible messages; in other words, the direct path to the target message, without any branches.',
+    translated:
+      'Diese Option gabelt nur die sichtbaren Nachrichten ab; mit anderen Worten, den direkten Pfad zur Zielnachricht, ohne Verzweigungen.',
+  },
+  com_ui_fork_info_branches: {
+    english:
+      'This option forks the visible messages, along with related branches; in other words, the direct path to the target message, including branches along the path.',
+    translated:
+      'Mit dieser Option werden die sichtbaren Nachrichten zusammen mit den zugehörigen Zweigen aufgeteilt; anders gesagt, der direkte Pfad zur Zielnachricht, einschließlich der Zweige entlang des Pfades.',
+  },
+  com_ui_fork_info_target: {
+    english:
+      'This option forks all messages leading up to the target message, including its neighbors; in other words, all message branches, whether or not they are visible or along the same path, are included.',
+    translated:
+      'Diese Option verzweigt alle Nachrichten bis zur Zielnachricht, einschließlich ihrer Nachbarn; mit anderen Worten, alle Nachrichtenzweige werden einbezogen, unabhängig davon, ob sie sichtbar sind oder demselben Pfad folgen.',
+  },
+  com_ui_fork_info_start: {
+    english:
+      'If checked, forking will commence from this message to the latest message in the conversation, according to the behavior selected above.',
+    translated:
+      'Wenn aktiviert, beginnt die Abspaltung ab dieser Nachricht bis zur letzten Nachricht im Gespräch, entsprechend dem oben ausgewählten Verhalten.',
+  },
+  com_ui_fork_info_remember: {
+    english:
+      'Check this to remember the options you select for future usage, making it quicker to fork conversations as preferred.',
+    translated:
+      'Aktiviere diese Option, um deine gewählten Einstellungen für zukünftige Verwendungen zu speichern. So kannst du Konversationen schneller nach deinen Vorlieben aufteilen.',
+  },
+  com_ui_fork_success: {
+    english: 'Successfully forked conversation',
+    translated: 'Konversation erfolgreich abgespalten',
+  },
+  com_ui_fork_processing: {
+    english: 'Forking conversation...',
+    translated: 'Konversation wird aufgespalten...',
+  },
+  com_ui_fork_error: {
+    english: 'There was an error forking the conversation',
+    translated: 'Bei der Aufspaltung des Gesprächs ist ein Fehler aufgetreten.',
+  },
+  com_ui_fork_change_default: {
+    english: 'Default fork option',
+    translated: 'Standardgabel-Option',
+  },
+  com_ui_fork_default: {
+    english: 'Use default fork option',
+    translated: 'Standardverzweigungsoption verwenden',
+  },
+  com_ui_fork_remember: {
+    english: 'Remember',
+    translated: 'Merken',
+  },
+  com_ui_fork_split_target_setting: {
+    english: 'Start fork from target message by default',
+    translated: 'Fork standardmäßig vom Ziel-Nachricht starten',
+  },
+  com_ui_fork_split_target: {
+    english: 'Start fork here',
+    translated: 'Hier Gabelung starten',
+  },
+  com_ui_fork_remember_checked: {
+    english:
+      'Your selection will be remembered after usage. Change this at any time in the settings.',
+    translated:
+      'Deine Auswahl wird nach der Verwendung gespeichert. Du kannst dies jederzeit in den Einstellungen ändern.',
+  },
+  com_ui_fork_all_target: {
+    english: 'Include all to/from here',
+    translated: 'Alle einbeziehen',
+  },
+  com_ui_fork_branches: {
+    english: 'Include related branches',
+    translated: 'Verwandte Branches einbeziehen',
+  },
+  com_ui_fork_visible: {
+    english: 'Visible messages only',
+    translated: 'Nur sichtbare Nachrichten',
+  },
+  com_ui_fork_from_message: {
+    english: 'Select a fork option',
+    translated: 'Wähle eine Fork-Option',
+  },
+  com_ui_mention: {
+    english: 'Mention an endpoint, assistant, or preset to quickly switch to it',
+    translated:
+      'Erwähne einen Endpunkt, Assistenten oder eine Vorlage, um schnell dorthin zu wechseln',
+  },
+  com_ui_import_conversation_file_type_error: {
+    english: 'Unsupported import type',
+    translated: 'Nicht unterstützter Importtyp',
+  },
+  com_ui_min_tags: {
+    english: 'Cannot remove more values, a minimum of {0} are required.',
+    translated: 'Es können keine weiteren Werte entfernt werden, mindestens {0} sind erforderlich.',
+  },
+  com_ui_max_tags: {
+    english: 'Maximum number allowed is {0}, using latest values.',
+    translated: 'Die maximal erlaubte Anzahl ist {0}, die neuesten Werte werden verwendet.',
+  },
+  com_endpoint_messages: {
+    english: 'Messages',
+    translated: 'Nachrichten',
+  },
+  com_endpoint_context_tokens: {
+    english: 'Max Context Tokens',
+    translated: 'Max. Kontexttoken',
+  },
+  com_endpoint_context_info: {
+    english:
+      'The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.\n  If unspecified, will use system defaults based on known models\' context size. Setting higher values may result in errors and/or higher token cost.',
+    translated:
+      'Die maximale Anzahl an Token, die für den Kontext verwendet werden kann. Verwenden Sie dies, um zu steuern, wie viele Token pro Anfrage gesendet werden. Wenn nicht angegeben, werden systemseitige Standardwerte basierend auf der bekannten Kontextgröße der Modelle verwendet. Höhere Werte können zu Fehlern und/oder höheren Tokenkosten führen.',
+  },
+  com_endpoint_stop: {
+    english: 'Stop Sequences',
+    translated: 'Stoppsequenzen',
+  },
+  com_endpoint_stop_placeholder: {
+    english: 'Separate values by pressing `Enter`',
+    translated: 'Trenne Werte durch Drücken der `Eingabetaste`',
+  },
+  com_endpoint_openai_max_tokens: {
+    english:
+      'Optional `max_tokens` field, representing the maximum number of tokens that can be generated in the chat completion.\n    \n    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.',
+    translated:
+      'Optionales `max_tokens`-Feld, das die maximale Anzahl der Token darstellt, die in der Chat-Vervollständigung generiert werden können.\n\nDie Gesamtlänge der eingegebenen Token und der generierten Token ist durch die Kontextlänge der Modelle begrenzt. Möglicherweise treten Fehler auf, wenn diese Zahl die maximale Kontexttoken-Anzahl überschreitet.',
+  },
+  com_endpoint_openai_stop: {
+    english: 'Up to 4 sequences where the API will stop generating further tokens.',
+    translated: 'Bis zu 4 Sequenzen, bei denen die API die Generierung weiterer Token stoppt.',
+  },
+  com_nav_enter_to_send: {
+    english: 'Press Enter to send messages',
+    translated: 'Drücke Enter, um Nachrichten zu senden',
+  },
+  com_nav_lang_auto: {
+    english: 'Auto detect',
+    translated: 'Automatisch erkennen',
+  },
+  com_nav_lang_english: {
+    english: 'English',
+    translated: 'Englisch',
+  },
+  com_nav_lang_chinese: {
+    english: '中文',
+    translated: 'Chinesisch',
+  },
+  com_nav_lang_german: {
+    english: 'Deutsch',
+    translated: 'Deutsch',
+  },
+  com_nav_lang_spanish: {
+    english: 'Español',
+    translated: 'Spanisch',
+  },
+  com_nav_lang_french: {
+    english: 'Français ',
+    translated: 'Französisch',
+  },
+  com_nav_lang_italian: {
+    english: 'Italiano',
+    translated: 'Italienisch',
+  },
+  com_nav_lang_polish: {
+    english: 'Polski',
+    translated: 'Polnisch',
+  },
+  com_nav_lang_brazilian_portuguese: {
+    english: 'Português Brasileiro',
+    translated: 'Brasilianisches Portugiesisch',
+  },
+  com_nav_lang_russian: {
+    english: 'Русский',
+    translated: 'Russisch',
+  },
+  com_nav_lang_japanese: {
+    english: '日本語',
+    translated: 'Japanisch',
+  },
+  com_nav_lang_swedish: {
+    english: 'Svenska',
+    translated: 'Schwedisch',
+  },
+  com_nav_lang_korean: {
+    english: '한국어',
+    translated: 'Koreanisch',
+  },
+  com_nav_lang_vietnamese: {
+    english: 'Tiếng Việt',
+    translated: 'Vietnamesisch',
+  },
+  com_nav_lang_traditionalchinese: {
+    english: '繁體中文',
+    translated: 'Traditionelles Chinesisch',
+  },
+  com_nav_lang_arabic: {
+    english: 'العربية',
+    translated: 'Arabisch',
+  },
+  com_nav_lang_turkish: {
+    english: 'Türkçe',
+    translated: 'Türkisch',
+  },
+  com_nav_lang_dutch: {
+    english: 'Nederlands',
+    translated: 'Niederländisch',
+  },
+  com_nav_lang_indonesia: {
+    english: 'Indonesia',
+    translated: 'Indonesisch',
+  },
+  com_nav_lang_hebrew: {
+    english: 'עברית',
+    translated: 'Hebräisch',
   },
 };

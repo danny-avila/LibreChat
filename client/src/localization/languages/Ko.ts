@@ -261,6 +261,7 @@ export default {
   com_nav_setting_general: '일반',
   com_nav_setting_data: '데이터 제어',
 };
+
 export const comparisons = {
   com_ui_examples: {
     english: 'Examples',

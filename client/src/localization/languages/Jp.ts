@@ -1950,11 +1950,11 @@ export const comparisons = {
     translated: 'How can I help you today?',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'チャットを開いたときに最新まで自動でスクロール',
   },
   com_nav_hide_panel: {
-    english: 'Hide Right-most Side Panel',
+    english: 'Hide right-most side panel',
     translated: '右側のパネルを非表示',
   },
   com_nav_modular_chat: {
@@ -2192,5 +2192,241 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: 'アカウント',
+  },
+  com_error_invalid_user_key: {
+    english: 'Invalid key provided. Please provide a key and try again.',
+    translated: '無効なキーが提供されました。キーを入力して再試行してください。',
+  },
+  com_ui_none_selected: {
+    english: 'None selected',
+    translated: '選択されていません',
+  },
+  com_ui_fork: {
+    english: 'Fork',
+    translated: '分岐',
+  },
+  com_ui_fork_info_1: {
+    english: 'Use this setting to fork messages with the desired behavior.',
+    translated: 'この設定を使うと、希望の動作でメッセージを分岐させることができます。',
+  },
+  com_ui_fork_info_2: {
+    english:
+      '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
+    translated:
+      '「フォーク」とは、現在の会話から特定のメッセージを開始/終了点として新しい会話を作成し、選択したオプションに従ってコピーを作成することを指します。',
+  },
+  com_ui_fork_info_3: {
+    english:
+      'The "target message" refers to either the message this popup was opened from, or, if you check "{0}", the latest message in the conversation.',
+    translated:
+      '「ターゲットメッセージ」とは、このポップアップを開いたメッセージか、"{0}"にチェックを入れた場合は会話の最新のメッセージを指します。',
+  },
+  com_ui_fork_info_visible: {
+    english:
+      'This option forks only the visible messages; in other words, the direct path to the target message, without any branches.',
+    translated:
+      'この設定は、ターゲットメッセージへの直接の経路のみを表示し、分岐は表示しません。つまり、可視メッセージのみを抽出して表示するということです。',
+  },
+  com_ui_fork_info_branches: {
+    english:
+      'This option forks the visible messages, along with related branches; in other words, the direct path to the target message, including branches along the path.',
+    translated:
+      'この設定では、表示されているメッセージとそれに関連するブランチ（つまり、ターゲットメッセージに至る直接の経路上のブランチを含む）を分岐させます。',
+  },
+  com_ui_fork_info_target: {
+    english:
+      'This option forks all messages leading up to the target message, including its neighbors; in other words, all message branches, whether or not they are visible or along the same path, are included.',
+    translated:
+      'この設定では、対象のメッセージとその近傍のメッセージを含む、すべてのメッセージの枝を分岐させます。つまり、表示されているかどうか、同じ経路上にあるかどうかに関係なく、すべてのメッセージ枝が含まれます。',
+  },
+  com_ui_fork_info_start: {
+    english:
+      'If checked, forking will commence from this message to the latest message in the conversation, according to the behavior selected above.',
+    translated:
+      'チェックを入れると、上記で選択した動作に従って、このメッセージから会話の最新のメッセージまでフォークが開始されます。',
+  },
+  com_ui_fork_info_remember: {
+    english:
+      'Check this to remember the options you select for future usage, making it quicker to fork conversations as preferred.',
+    translated:
+      'この設定を有効にすると、今後の会話で同じオプションを選択する手間が省けるようになります。お好みの設定を記憶させることで、会話の分岐をスムーズに行えるようになります。',
+  },
+  com_ui_fork_success: {
+    english: 'Successfully forked conversation',
+    translated: '会話のフォークに成功しました',
+  },
+  com_ui_fork_processing: {
+    english: 'Forking conversation...',
+    translated: '会話をフォークしています...',
+  },
+  com_ui_fork_error: {
+    english: 'There was an error forking the conversation',
+    translated: '会話を分岐できませんでした。エラーが発生しました。',
+  },
+  com_ui_fork_change_default: {
+    english: 'Default fork option',
+    translated: 'デフォルトのフォークオプション',
+  },
+  com_ui_fork_default: {
+    english: 'Use default fork option',
+    translated: 'デフォルトのフォークオプションを使用する',
+  },
+  com_ui_fork_remember: {
+    english: 'Remember',
+    translated: '以前の会話内容を記憶する',
+  },
+  com_ui_fork_split_target_setting: {
+    english: 'Start fork from target message by default',
+    translated: 'デフォルトで対象メッセージからフォークを開始する',
+  },
+  com_ui_fork_split_target: {
+    english: 'Start fork here',
+    translated: 'ここでフォークを開始',
+  },
+  com_ui_fork_remember_checked: {
+    english:
+      'Your selection will be remembered after usage. Change this at any time in the settings.',
+    translated: '選択した内容は、次回の利用時にも記憶されます。設定から変更できます。',
+  },
+  com_ui_fork_all_target: {
+    english: 'Include all to/from here',
+    translated: 'すべてを対象に含める',
+  },
+  com_ui_fork_branches: {
+    english: 'Include related branches',
+    translated: '関連ブランチを含める',
+  },
+  com_ui_fork_visible: {
+    english: 'Visible messages only',
+    translated: 'メッセージを表示のみ',
+  },
+  com_ui_fork_from_message: {
+    english: 'Select a fork option',
+    translated: 'フォークオプションを選択する',
+  },
+  com_ui_mention: {
+    english: 'Mention an endpoint, assistant, or preset to quickly switch to it',
+    translated:
+      'エンドポイント、アシスタント、またはプリセットを素早く切り替えるには、それらを言及してください。',
+  },
+  com_ui_import_conversation_file_type_error: {
+    english: 'Unsupported import type',
+    translated: 'サポートされていないインポート形式です',
+  },
+  com_endpoint_messages: {
+    english: 'Messages',
+    translated: 'メッセージ',
+  },
+  com_endpoint_context_tokens: {
+    english: 'Max Context Tokens',
+    translated: 'コンテキストトークン数の最大値',
+  },
+  com_endpoint_context_info: {
+    english:
+      'The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.\n  If unspecified, will use system defaults based on known models\' context size. Setting higher values may result in errors and/or higher token cost.',
+    translated:
+      'コンテキストに使用できるトークンの最大数です。リクエストごとに送信されるトークン数を制御するために使用します。指定しない場合は、既知のモデルのコンテキストサイズに基づいてシステムのデフォルト値が使用されます。高い値を設定すると、エラーが発生したり、トークンコストが高くなる可能性があります。',
+  },
+  com_endpoint_prompt_prefix_assistants: {
+    english: 'Additional Instructions',
+    translated: '追加の指示',
+  },
+  com_endpoint_instructions_assistants: {
+    english: 'Override Instructions',
+    translated: '指示をオーバーライドする',
+  },
+  com_endpoint_openai_max_tokens: {
+    english:
+      'Optional `max_tokens` field, representing the maximum number of tokens that can be generated in the chat completion.\n    \n    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.',
+    translated:
+      'オプションの `max_tokens` フィールドで、チャット補完時に生成可能な最大トークン数を設定します。入力トークンと生成されたトークンの合計長さは、モデルのコンテキスト長によって制限されています。この数値がコンテキストの最大トークン数を超えると、エラーが発生する可能性があります。',
+  },
+  com_nav_welcome_assistant: {
+    english: 'Please Select an Assistant',
+    translated: 'アシスタントを選択してください',
+  },
+  com_nav_language: {
+    english: 'Language',
+    translated: '言語',
+  },
+  com_nav_lang_auto: {
+    english: 'Auto detect',
+    translated: '自動検出',
+  },
+  com_nav_lang_english: {
+    english: 'English',
+    translated: '英語',
+  },
+  com_nav_lang_chinese: {
+    english: '中文',
+    translated: '中国語',
+  },
+  com_nav_lang_german: {
+    english: 'Deutsch',
+    translated: 'ドイツ語',
+  },
+  com_nav_lang_spanish: {
+    english: 'Español',
+    translated: 'スペイン語',
+  },
+  com_nav_lang_french: {
+    english: 'Français ',
+    translated: 'フランス語',
+  },
+  com_nav_lang_italian: {
+    english: 'Italiano',
+    translated: 'イタリア語',
+  },
+  com_nav_lang_polish: {
+    english: 'Polski',
+    translated: 'ポーランド語',
+  },
+  com_nav_lang_brazilian_portuguese: {
+    english: 'Português Brasileiro',
+    translated: 'ブラジルポルトガル語',
+  },
+  com_nav_lang_russian: {
+    english: 'Русский',
+    translated: 'ロシア語',
+  },
+  com_nav_lang_japanese: {
+    english: '日本語',
+    translated: 'ナビゲーションメニュー',
+  },
+  com_nav_lang_swedish: {
+    english: 'Svenska',
+    translated: 'スウェーデン語',
+  },
+  com_nav_lang_korean: {
+    english: '한국어',
+    translated: '韓国語',
+  },
+  com_nav_lang_vietnamese: {
+    english: 'Tiếng Việt',
+    translated: 'ベトナム語',
+  },
+  com_nav_lang_traditionalchinese: {
+    english: '繁體中文',
+    translated: '繁體中文',
+  },
+  com_nav_lang_arabic: {
+    english: 'العربية',
+    translated: 'アラビア語',
+  },
+  com_nav_lang_turkish: {
+    english: 'Türkçe',
+    translated: 'トルコ語',
+  },
+  com_nav_lang_dutch: {
+    english: 'Nederlands',
+    translated: 'オランダ語',
+  },
+  com_nav_lang_indonesia: {
+    english: 'Indonesia',
+    translated: 'インドネシア語',
+  },
+  com_nav_lang_hebrew: {
+    english: 'עברית',
+    translated: 'ヘブライ語',
   },
 };

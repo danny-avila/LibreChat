@@ -1928,11 +1928,11 @@ export const comparisons = {
     translated: '¿En qué puedo ayudarte hoy?',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'Desplazamiento automático al más reciente al abrir',
   },
   com_nav_hide_panel: {
-    english: 'Hide Right-most Side Panel',
+    english: 'Hide right-most side panel',
     translated: 'Ocultar el panel lateral derecho',
   },
   com_nav_enter_to_send: {
@@ -2183,5 +2183,290 @@ export const comparisons = {
   com_nav_lang_spanish: {
     english: 'Español',
     translated: 'Español',
+  },
+  com_error_moderation: {
+    english:
+      'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
+    translated:
+      'Parece que el contenido enviado ha sido marcado por nuestro sistema de moderación por no estar alineado con nuestras pautas comunitarias. No podemos proceder con este tema específico. Si tiene alguna otra pregunta o tema que le gustaría explorar, por favor edite su mensaje o cree una nueva conversación.',
+  },
+  com_error_no_user_key: {
+    english: 'No key found. Please provide a key and try again.',
+    translated:
+      'No se encontró ninguna clave. Por favor, proporcione una clave e inténtelo de nuevo.',
+  },
+  com_error_invalid_user_key: {
+    english: 'Invalid key provided. Please provide a key and try again.',
+    translated:
+      'Clave proporcionada no válida. Por favor proporcione una clave válida e inténtelo de nuevo.',
+  },
+  com_error_expired_user_key: {
+    english: 'Provided key for {0} expired at {1}. Please provide a key and try again.',
+    translated:
+      'La clave proporcionada para {0} expiró en {1}. Por favor, proporcione una clave nueva e inténtelo de nuevo.',
+  },
+  com_ui_off: {
+    english: 'Off',
+    translated: 'Desactivado',
+  },
+  com_ui_none_selected: {
+    english: 'None selected',
+    translated: 'No se ha seleccionado ninguno',
+  },
+  com_ui_fork_info_1: {
+    english: 'Use this setting to fork messages with the desired behavior.',
+    translated:
+      'com_ui_fork_info_1: \'Utilice esta configuración para bifurcar los mensajes con el comportamiento deseado.\'',
+  },
+  com_ui_fork_info_2: {
+    english:
+      '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
+    translated:
+      '"Bifurcar" se refiere a crear una nueva conversación que comienza/termina desde mensajes específicos en la conversación actual, creando una copia según las opciones seleccionadas.',
+  },
+  com_ui_fork_info_visible: {
+    english:
+      'This option forks only the visible messages; in other words, the direct path to the target message, without any branches.',
+    translated:
+      'Esta opción bifurca únicamente los mensajes visibles; es decir, la ruta directa hacia el mensaje objetivo, sin ninguna ramificación.',
+  },
+  com_ui_fork_info_start: {
+    english:
+      'If checked, forking will commence from this message to the latest message in the conversation, according to the behavior selected above.',
+    translated:
+      'Si se marca, la bifurcación comenzará desde este mensaje hasta el último mensaje de la conversación, según el comportamiento seleccionado anteriormente.',
+  },
+  com_ui_fork_success: {
+    english: 'Successfully forked conversation',
+    translated: 'Se ha bifurcado la conversación con éxito',
+  },
+  com_ui_fork_processing: {
+    english: 'Forking conversation...',
+    translated: 'Bifurcando conversación...',
+  },
+  com_ui_fork_error: {
+    english: 'There was an error forking the conversation',
+    translated: 'Hubo un error al bifurcar la conversación',
+  },
+  com_ui_fork_split_target_setting: {
+    english: 'Start fork from target message by default',
+    translated: 'Iniciar bifurcación desde el mensaje objetivo de forma predeterminada',
+  },
+  com_ui_import_conversation_file_type_error: {
+    english: 'Unsupported import type',
+    translated:
+      'com_ui_import_conversation_file_type_error: Tipo de archivo no compatible para importar',
+  },
+  com_ui_min_tags: {
+    english: 'Cannot remove more values, a minimum of {0} are required.',
+    translated: 'No se pueden eliminar más valores, se requiere un mínimo de {0}.',
+  },
+  com_endpoint_messages: {
+    english: 'Messages',
+    translated: 'Mensajes',
+  },
+  com_endpoint_context_tokens: {
+    english: 'Max Context Tokens',
+    translated: 'Máximo de tokens de contexto',
+  },
+  com_endpoint_stop_placeholder: {
+    english: 'Separate values by pressing `Enter`',
+    translated: 'Separe los valores presionando `Intro`',
+  },
+  com_error_no_base_url: {
+    english: 'No base URL found. Please provide one and try again.',
+    translated: 'No se encontró URL base. Por favor proporcione una y vuelva a intentarlo.',
+  },
+  com_sidepanel_parameters: {
+    english: 'Parameters',
+    translated: 'Parámetros',
+  },
+  com_ui_field_required: {
+    english: 'This field is required',
+    translated: 'Este campo es obligatorio',
+  },
+  com_ui_download_error: {
+    english: 'Error downloading file. The file may have been deleted.',
+    translated:
+      'Hubo un error al descargar el archivo. Es posible que el archivo haya sido eliminado.',
+  },
+  com_ui_on: {
+    english: 'On',
+    translated: 'Encendido',
+  },
+  com_ui_yes: {
+    english: 'Yes',
+    translated: 'Sí',
+  },
+  com_ui_no: {
+    english: 'No',
+    translated: 'No',
+  },
+  com_ui_fork: {
+    english: 'Fork',
+    translated: 'Bifurcar',
+  },
+  com_ui_fork_info_3: {
+    english:
+      'The "target message" refers to either the message this popup was opened from, or, if you check "{0}", the latest message in the conversation.',
+    translated:
+      'El término "mensaje objetivo" se refiere ya sea al mensaje desde el cual se abrió este popup, o, si marca "{0}", al último mensaje en la conversación.',
+  },
+  com_ui_fork_info_branches: {
+    english:
+      'This option forks the visible messages, along with related branches; in other words, the direct path to the target message, including branches along the path.',
+    translated:
+      'Esta opción bifurca los mensajes visibles, junto con las ramas relacionadas; en otras palabras, la ruta directa hacia el mensaje objetivo, incluyendo las ramas a lo largo de esa ruta.',
+  },
+  com_ui_fork_info_target: {
+    english:
+      'This option forks all messages leading up to the target message, including its neighbors; in other words, all message branches, whether or not they are visible or along the same path, are included.',
+    translated:
+      'Esta opción bifurca todos los mensajes que conducen al mensaje objetivo, incluyendo sus vecinos; en otras palabras, se incluyen todas las ramas de mensajes, ya sean visibles o no, o estén en el mismo camino.',
+  },
+  com_ui_fork_info_remember: {
+    english:
+      'Check this to remember the options you select for future usage, making it quicker to fork conversations as preferred.',
+    translated:
+      'Marque esta opción para recordar las preferencias que seleccione para su uso futuro, lo que agilizará la bifurcación de conversaciones según sus preferencias.',
+  },
+  com_ui_fork_change_default: {
+    english: 'Default fork option',
+    translated: 'Opción de bifurcación predeterminada',
+  },
+  com_ui_fork_default: {
+    english: 'Use default fork option',
+    translated: 'Utilizar opción de bifurcación predeterminada',
+  },
+  com_ui_fork_remember: {
+    english: 'Remember',
+    translated: 'Recuerde',
+  },
+  com_ui_fork_split_target: {
+    english: 'Start fork here',
+    translated: 'Iniciar bifurcación aquí',
+  },
+  com_ui_fork_remember_checked: {
+    english:
+      'Your selection will be remembered after usage. Change this at any time in the settings.',
+    translated:
+      'Su selección se recordará después de utilizarla. Puede cambiar esta opción en cualquier momento en la configuración.',
+  },
+  com_ui_fork_all_target: {
+    english: 'Include all to/from here',
+    translated: 'Incluir todo desde/hacia aquí',
+  },
+  com_ui_fork_branches: {
+    english: 'Include related branches',
+    translated: 'Incluir ramas relacionadas',
+  },
+  com_ui_fork_visible: {
+    english: 'Visible messages only',
+    translated: 'Mostrar únicamente mensajes visibles',
+  },
+  com_ui_fork_from_message: {
+    english: 'Select a fork option',
+    translated: 'Seleccione una opción de bifurcación',
+  },
+  com_ui_mention: {
+    english: 'Mention an endpoint, assistant, or preset to quickly switch to it',
+    translated:
+      'Menciona un punto de conexión, asistente o preconfiguración para cambiar rápidamente a él.',
+  },
+  com_ui_max_tags: {
+    english: 'Maximum number allowed is {0}, using latest values.',
+    translated: 'El número máximo permitido es {0}, utilizando los valores más recientes.',
+  },
+  com_endpoint_context_info: {
+    english:
+      'The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.\n  If unspecified, will use system defaults based on known models\' context size. Setting higher values may result in errors and/or higher token cost.',
+    translated:
+      'La cantidad máxima de tokens que se pueden utilizar para el contexto. Utilice esto para controlar cuántos tokens se envían por solicitud. Si no se especifica, se utilizarán los valores predeterminados del sistema basados en el tamaño de contexto conocido de los modelos. Establecer valores más altos puede resultar en errores y/o un mayor costo de tokens.',
+  },
+  com_endpoint_stop: {
+    english: 'Stop Sequences',
+    translated: 'Secuencias de detención',
+  },
+  com_endpoint_openai_max_tokens: {
+    english:
+      'Optional `max_tokens` field, representing the maximum number of tokens that can be generated in the chat completion.\n    \n    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.',
+    translated:
+      'Campo opcional `max_tokens`, que representa el número máximo de tokens que se pueden generar en la finalización del chat.\n\nLa longitud total de los tokens de entrada y los tokens generados está limitada por la longitud del contexto del modelo. Puede experimentar errores si este número excede los tokens máximos de contexto.',
+  },
+  com_endpoint_openai_stop: {
+    english: 'Up to 4 sequences where the API will stop generating further tokens.',
+    translated: 'Hasta 4 secuencias donde la API dejará de generar más tokens.',
+  },
+  com_nav_lang_english: {
+    english: 'English',
+    translated: 'Inglés',
+  },
+  com_nav_lang_chinese: {
+    english: '中文',
+    translated: 'Chino',
+  },
+  com_nav_lang_german: {
+    english: 'Deutsch',
+    translated: 'Alemán',
+  },
+  com_nav_lang_french: {
+    english: 'Français ',
+    translated: 'Francés',
+  },
+  com_nav_lang_italian: {
+    english: 'Italiano',
+    translated: 'Español',
+  },
+  com_nav_lang_polish: {
+    english: 'Polski',
+    translated: 'Polaco',
+  },
+  com_nav_lang_brazilian_portuguese: {
+    english: 'Português Brasileiro',
+    translated: 'Portugués de Brasil',
+  },
+  com_nav_lang_russian: {
+    english: 'Русский',
+    translated: 'Ruso',
+  },
+  com_nav_lang_japanese: {
+    english: '日本語',
+    translated: 'Japonés',
+  },
+  com_nav_lang_swedish: {
+    english: 'Svenska',
+    translated: 'Idioma sueco',
+  },
+  com_nav_lang_korean: {
+    english: '한국어',
+    translated: 'Coreano',
+  },
+  com_nav_lang_vietnamese: {
+    english: 'Tiếng Việt',
+    translated: 'Vietnamita',
+  },
+  com_nav_lang_traditionalchinese: {
+    english: '繁體中文',
+    translated: 'Chino tradicional',
+  },
+  com_nav_lang_arabic: {
+    english: 'العربية',
+    translated: 'Árabe',
+  },
+  com_nav_lang_turkish: {
+    english: 'Türkçe',
+    translated: 'Idioma turco',
+  },
+  com_nav_lang_dutch: {
+    english: 'Nederlands',
+    translated: 'Holandés',
+  },
+  com_nav_lang_indonesia: {
+    english: 'Indonesia',
+    translated: 'Indonesia',
+  },
+  com_nav_lang_hebrew: {
+    english: 'עברית',
+    translated: 'עברית',
   },
 };

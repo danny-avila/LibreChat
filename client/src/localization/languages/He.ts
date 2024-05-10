@@ -375,6 +375,7 @@ export default {
   com_nav_setting_data: 'בקרות נתונים',
   com_nav_setting_account: 'חשבון',
 };
+
 export const comparisons = {
   com_sidepanel_select_assistant: {
     english: 'Select an Assistant',
@@ -1539,11 +1540,11 @@ export const comparisons = {
     translated: 'איך אני יכול לעזור לך היום?',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'Auto-s גלול אל הכי חדש בפתיחה',
   },
   com_nav_hide_panel: {
-    english: 'Hide Right-most Side Panel',
+    english: 'Hide right-most side panel',
     translated: 'הסתר לוח הצד הימני ביותר',
   },
   com_nav_modular_chat: {

@@ -495,6 +495,7 @@ export default {
   com_nav_lang_indonesia: '印尼語',
   com_nav_lang_hebrew: 'עברית',
 };
+
 export const comparisons = {
   com_ui_examples: {
     english: 'Examples',
@@ -834,7 +835,7 @@ export const comparisons = {
     translated: '建立您的帳號',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: '開啟時自動捲動至最新內容',
   },
   com_auth_error_create: {
@@ -1507,5 +1508,884 @@ export const comparisons = {
   com_nav_setting_data: {
     english: 'Data controls',
     translated: '資料控制',
+  },
+  com_error_moderation: {
+    english:
+      'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
+    translated:
+      '似乎您所提交的內容被我們的內容審查系統標記為不符合社群準則。我們無法就此特定主題繼續進行。如果您有任何其他問題或想要探討的主題,請編輯您的訊息或開啟新的對話。',
+  },
+  com_error_no_user_key: {
+    english: 'No key found. Please provide a key and try again.',
+    translated: '找不到金鑰，請提供金鑰後再試一次。',
+  },
+  com_error_no_base_url: {
+    english: 'No base URL found. Please provide one and try again.',
+    translated: '找不到基礎 URL。請提供一個基礎 URL 後再試一次。',
+  },
+  com_error_invalid_user_key: {
+    english: 'Invalid key provided. Please provide a key and try again.',
+    translated: '提供的金鑰無效。請提供有效的金鑰並重試。',
+  },
+  com_error_expired_user_key: {
+    english: 'Provided key for {0} expired at {1}. Please provide a key and try again.',
+    translated: '提供給 {0} 的金鑰已於 {1} 到期。請提供一個新的金鑰並重試。',
+  },
+  com_files_no_results: {
+    english: 'No results.',
+    translated: '沒有結果。',
+  },
+  com_files_filter: {
+    english: 'Filter files...',
+    translated: '篩選檔案...',
+  },
+  com_files_number_selected: {
+    english: '{0} of {1} file(s) selected',
+    translated: '已選取 {0} 個檔案，共 {1} 個檔案',
+  },
+  com_sidepanel_select_assistant: {
+    english: 'Select an Assistant',
+    translated: '選擇一位助理',
+  },
+  com_sidepanel_parameters: {
+    english: 'Parameters',
+    translated: '參數',
+  },
+  com_sidepanel_assistant_builder: {
+    english: 'Assistant Builder',
+    translated: '助手建構器',
+  },
+  com_sidepanel_hide_panel: {
+    english: 'Hide Panel',
+    translated: '隱藏側邊選單',
+  },
+  com_sidepanel_attach_files: {
+    english: 'Attach Files',
+    translated: '附加檔案',
+  },
+  com_sidepanel_manage_files: {
+    english: 'Manage Files',
+    translated: '管理檔案',
+  },
+  com_assistants_capabilities: {
+    english: 'Capabilities',
+    translated: '功能',
+  },
+  com_assistants_knowledge: {
+    english: 'Knowledge',
+    translated: '知識',
+  },
+  com_assistants_knowledge_info: {
+    english:
+      'If you upload files under Knowledge, conversations with your Assistant may include file contents.',
+    translated: '如果您在「知識」下上傳檔案，與您的助理的對話可能會包含檔案內容。',
+  },
+  com_assistants_knowledge_disabled: {
+    english:
+      'Assistant must be created, and Code Interpreter or Retrieval must be enabled and saved before uploading files as Knowledge.',
+    translated:
+      '助理必須先建立，並啟用及儲存「程式碼解譯器」或「資訊檢索」功能，才能上傳檔案作為知識庫。',
+  },
+  com_assistants_image_vision: {
+    english: 'Image Vision',
+    translated: '影像視覺',
+  },
+  com_assistants_code_interpreter: {
+    english: 'Code Interpreter',
+    translated: '程式碼解譯器',
+  },
+  com_assistants_code_interpreter_files: {
+    english: 'The following files are only available for Code Interpreter:',
+    translated: '以下檔案僅適用於代碼解譯器：',
+  },
+  com_assistants_retrieval: {
+    english: 'Retrieval',
+    translated: '檢索',
+  },
+  com_assistants_search_name: {
+    english: 'Search assistants by name',
+    translated: '搜尋助理名稱',
+  },
+  com_assistants_tools: {
+    english: 'Tools',
+    translated: '工具',
+  },
+  com_assistants_actions: {
+    english: 'Actions',
+    translated: '操作',
+  },
+  com_assistants_add_tools: {
+    english: 'Add Tools',
+    translated: '新增工具',
+  },
+  com_assistants_add_actions: {
+    english: 'Add Actions',
+    translated: '新增操作',
+  },
+  com_assistants_available_actions: {
+    english: 'Available Actions',
+    translated: '可用操作',
+  },
+  com_assistants_running_action: {
+    english: 'Running action',
+    translated: '執行中的動作',
+  },
+  com_assistants_completed_action: {
+    english: 'Talked to {0}',
+    translated: '與 {0} 對話完成',
+  },
+  com_assistants_completed_function: {
+    english: 'Ran {0}',
+    translated: '已執行 {0}',
+  },
+  com_assistants_function_use: {
+    english: 'Assistant used {0}',
+    translated: '助理使用了 {0}',
+  },
+  com_assistants_domain_info: {
+    english: 'Assistant sent this info to {0}',
+    translated: '助理將此資訊傳送給 {0}',
+  },
+  com_assistants_delete_actions_success: {
+    english: 'Successfully deleted Action from Assistant',
+    translated: '已成功刪除助理的操作',
+  },
+  com_assistants_update_actions_success: {
+    english: 'Successfully created or updated Action',
+    translated: '動作已成功建立或更新',
+  },
+  com_assistants_update_actions_error: {
+    english: 'There was an error creating or updating the action.',
+    translated: '更新或建立動作時發生錯誤。',
+  },
+  com_assistants_delete_actions_error: {
+    english: 'There was an error deleting the action.',
+    translated: '刪除操作時發生錯誤',
+  },
+  com_assistants_actions_info: {
+    english: 'Let your Assistant retrieve information or take actions via API\'s',
+    translated: '讓您的助理透過 API 取得資訊或執行操作',
+  },
+  com_assistants_name_placeholder: {
+    english: 'Optional: The name of the assistant',
+    translated: '選填：助理的名稱',
+  },
+  com_assistants_instructions_placeholder: {
+    english: 'The system instructions that the assistant uses',
+    translated: '系統指令是助理使用的指示',
+  },
+  com_assistants_description_placeholder: {
+    english: 'Optional: Describe your Assistant here',
+    translated: '選擇性：在此描述您的助理',
+  },
+  com_assistants_actions_disabled: {
+    english: 'You need to create an assistant before adding actions.',
+    translated: '您需要先建立一個助手，才能新增動作。',
+  },
+  com_assistants_update_success: {
+    english: 'Successfully updated',
+    translated: '更新成功',
+  },
+  com_assistants_update_error: {
+    english: 'There was an error updating your assistant.',
+    translated: '更新您的助理時發生錯誤。',
+  },
+  com_assistants_create_success: {
+    english: 'Successfully created',
+    translated: '已成功建立',
+  },
+  com_assistants_create_error: {
+    english: 'There was an error creating your assistant.',
+    translated: '建立您的助理時發生錯誤。',
+  },
+  com_ui_field_required: {
+    english: 'This field is required',
+    translated: '此欄位為必填',
+  },
+  com_ui_download_error: {
+    english: 'Error downloading file. The file may have been deleted.',
+    translated: '下載檔案時發生錯誤。該檔案可能已被刪除。',
+  },
+  com_ui_attach_error_type: {
+    english: 'Unsupported file type for endpoint:',
+    translated: '不支援的檔案類型，無法上傳至端點:',
+  },
+  com_ui_attach_error_size: {
+    english: 'File size limit exceeded for endpoint:',
+    translated: '檔案大小超過端點的限制',
+  },
+  com_ui_attach_error: {
+    english: 'Cannot attach file. Create or select a conversation, or try refreshing the page.',
+    translated: '無法附加檔案。請建立或選擇對話，或嘗試重新整理頁面。',
+  },
+  com_ui_experimental: {
+    english: 'Experimental Features',
+    translated: '實驗性功能',
+  },
+  com_ui_on: {
+    english: 'On',
+    translated: '開啟',
+  },
+  com_ui_off: {
+    english: 'Off',
+    translated: '關閉',
+  },
+  com_ui_yes: {
+    english: 'Yes',
+    translated: '是',
+  },
+  com_ui_no: {
+    english: 'No',
+    translated: '否',
+  },
+  com_ui_ascending: {
+    english: 'Asc',
+    translated: '升冪',
+  },
+  com_ui_descending: {
+    english: 'Desc',
+    translated: '遞減',
+  },
+  com_ui_show_all: {
+    english: 'Show All',
+    translated: '顯示全部',
+  },
+  com_ui_name: {
+    english: 'Name',
+    translated: '名稱',
+  },
+  com_ui_date: {
+    english: 'Date',
+    translated: '日期',
+  },
+  com_ui_storage: {
+    english: 'Storage',
+    translated: '儲存空間',
+  },
+  com_ui_context: {
+    english: 'Context',
+    translated: '情境',
+  },
+  com_ui_size: {
+    english: 'Size',
+    translated: '大小',
+  },
+  com_ui_host: {
+    english: 'Host',
+    translated: '主機',
+  },
+  com_ui_update: {
+    english: 'Update',
+    translated: '更新',
+  },
+  com_ui_authentication: {
+    english: 'Authentication',
+    translated: '驗證',
+  },
+  com_ui_instructions: {
+    english: 'Instructions',
+    translated: '說明',
+  },
+  com_ui_description: {
+    english: 'Description',
+    translated: '描述',
+  },
+  com_ui_error: {
+    english: 'Error',
+    translated: '錯誤',
+  },
+  com_ui_select: {
+    english: 'Select',
+    translated: '選擇',
+  },
+  com_ui_select_search_model: {
+    english: 'Search model by name',
+    translated: '依名稱搜尋模型',
+  },
+  com_ui_select_search_plugin: {
+    english: 'Search plugin by name',
+    translated: '依名稱搜尋外掛程式',
+  },
+  com_ui_stop: {
+    english: 'Stop',
+    translated: '停止',
+  },
+  com_ui_upload_files: {
+    english: 'Upload files',
+    translated: '上傳檔案',
+  },
+  com_ui_new_footer: {
+    english: 'All AI conversations in one place.',
+    translated: '將所有 AI 對話集中在一處。',
+  },
+  com_ui_none_selected: {
+    english: 'None selected',
+    translated: '未選取任何項目',
+  },
+  com_ui_upload_error: {
+    english: 'There was an error uploading your file',
+    translated: '檔案上傳時發生錯誤',
+  },
+  com_ui_save_submit: {
+    english: 'Save & Submit',
+    translated: '儲存並送出',
+  },
+  com_user_message: {
+    english: 'You',
+    translated: '您',
+  },
+  com_ui_fork: {
+    english: 'Fork',
+    translated: '分支',
+  },
+  com_ui_fork_info_1: {
+    english: 'Use this setting to fork messages with the desired behavior.',
+    translated: '使用此設定來分支訊息，以獲得所需的行為。',
+  },
+  com_ui_fork_info_2: {
+    english:
+      '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
+    translated: '「分支」是指從目前對話中的特定訊息開始/結束，根據所選的選項建立新對話的副本。',
+  },
+  com_ui_fork_info_3: {
+    english:
+      'The "target message" refers to either the message this popup was opened from, or, if you check "{0}", the latest message in the conversation.',
+    translated:
+      '「目標訊息」指的是此彈出視窗所開啟的訊息，或者如果您勾選「{0}」，則是對話中最新的訊息。',
+  },
+  com_ui_fork_info_visible: {
+    english:
+      'This option forks only the visible messages; in other words, the direct path to the target message, without any branches.',
+    translated:
+      '此選項只會分支顯示的訊息，換句話說，只會顯示直接通往目標訊息的路徑，而不會顯示任何分支。',
+  },
+  com_ui_fork_info_branches: {
+    english:
+      'This option forks the visible messages, along with related branches; in other words, the direct path to the target message, including branches along the path.',
+    translated:
+      '此選項會分叉可見的訊息，以及相關的分支；換句話說，它包含了通往目標訊息的直接路徑，包括路徑上的所有分支。',
+  },
+  com_ui_fork_info_target: {
+    english:
+      'This option forks all messages leading up to the target message, including its neighbors; in other words, all message branches, whether or not they are visible or along the same path, are included.',
+    translated:
+      '這個選項會分叉所有導向目標訊息的訊息，包括其鄰近訊息；換句話說，不論是否可見或在同一路徑上，所有訊息分支都會包含在內。',
+  },
+  com_ui_fork_info_start: {
+    english:
+      'If checked, forking will commence from this message to the latest message in the conversation, according to the behavior selected above.',
+    translated:
+      '如果勾選，則從此訊息開始，根據上方選擇的行為，將會分支出一個新的對話直到最新的訊息。',
+  },
+  com_ui_fork_info_remember: {
+    english:
+      'Check this to remember the options you select for future usage, making it quicker to fork conversations as preferred.',
+    translated: '勾選此項目可記住您選擇的選項，以便日後分支對話時更快速地套用您偏好的設定。',
+  },
+  com_ui_fork_success: {
+    english: 'Successfully forked conversation',
+    translated: '已成功分支對話',
+  },
+  com_ui_fork_processing: {
+    english: 'Forking conversation...',
+    translated: '分支對話中...',
+  },
+  com_ui_fork_error: {
+    english: 'There was an error forking the conversation',
+    translated: '分支對話時發生錯誤',
+  },
+  com_ui_fork_change_default: {
+    english: 'Default fork option',
+    translated: '預設分支選項',
+  },
+  com_ui_fork_default: {
+    english: 'Use default fork option',
+    translated: '使用預設分支選項',
+  },
+  com_ui_fork_remember: {
+    english: 'Remember',
+    translated: '記住',
+  },
+  com_ui_fork_split_target_setting: {
+    english: 'Start fork from target message by default',
+    translated: '預設從目標訊息開始分支',
+  },
+  com_ui_fork_split_target: {
+    english: 'Start fork here',
+    translated: '在此分叉',
+  },
+  com_ui_fork_remember_checked: {
+    english:
+      'Your selection will be remembered after usage. Change this at any time in the settings.',
+    translated: '您的選擇將在使用後被記住。您可以隨時在設定中更改。',
+  },
+  com_ui_fork_all_target: {
+    english: 'Include all to/from here',
+    translated: '包含所有從這裡開始',
+  },
+  com_ui_fork_branches: {
+    english: 'Include related branches',
+    translated: '包含相關分支',
+  },
+  com_ui_fork_visible: {
+    english: 'Visible messages only',
+    translated: '僅顯示分支訊息',
+  },
+  com_ui_fork_from_message: {
+    english: 'Select a fork option',
+    translated: '選擇分支選項',
+  },
+  com_ui_mention: {
+    english: 'Mention an endpoint, assistant, or preset to quickly switch to it',
+    translated: '提及端點、助理或預設設定以快速切換',
+  },
+  com_ui_import_conversation_file_type_error: {
+    english: 'Unsupported import type',
+    translated: '不支援的導入檔案類型',
+  },
+  com_ui_avatar: {
+    english: 'Avatar',
+    translated: '大頭照',
+  },
+  com_ui_unknown: {
+    english: 'Unknown',
+    translated: '未知',
+  },
+  com_ui_result: {
+    english: 'Result',
+    translated: '結果',
+  },
+  com_ui_image_gen: {
+    english: 'Image Gen',
+    translated: '圖像生成',
+  },
+  com_ui_assistant: {
+    english: 'Assistant',
+    translated: '助理',
+  },
+  com_ui_assistants: {
+    english: 'Assistants',
+    translated: '助理',
+  },
+  com_ui_attachment: {
+    english: 'Attachment',
+    translated: '附件',
+  },
+  com_ui_assistants_output: {
+    english: 'Assistants Output',
+    translated: '助理輸出',
+  },
+  com_ui_create: {
+    english: 'Create',
+    translated: '創建',
+  },
+  com_ui_delete_assistant_confirm: {
+    english: 'Are you sure you want to delete this Assistant? This cannot be undone.',
+    translated: '您確定要刪除這個助理嗎？此操作無法復原。',
+  },
+  com_ui_preview: {
+    english: 'Preview',
+    translated: '預覽',
+  },
+  com_ui_upload: {
+    english: 'Upload',
+    translated: '上傳',
+  },
+  com_ui_connect: {
+    english: 'Connect',
+    translated: '連線',
+  },
+  com_ui_upload_delay: {
+    english:
+      'Uploading "{0}" is taking more time than anticipated. Please wait while the file finishes indexing for retrieval.',
+    translated: '正在上傳 "{0}" 的過程比預期花費更多時間。請耐心等候檔案完成索引以供檢索。',
+  },
+  com_ui_privacy_policy: {
+    english: 'Privacy policy',
+    translated: '隱私權政策',
+  },
+  com_ui_terms_of_service: {
+    english: 'Terms of service',
+    translated: '服務條款',
+  },
+  com_ui_min_tags: {
+    english: 'Cannot remove more values, a minimum of {0} are required.',
+    translated: '無法再移除更多值，至少需要 {0} 個。',
+  },
+  com_ui_max_tags: {
+    english: 'Maximum number allowed is {0}, using latest values.',
+    translated: '允許的最大數量為 {0}，已使用最新值。',
+  },
+  com_auth_back_to_login: {
+    english: 'Back to Login',
+    translated: '返回登入',
+  },
+  com_endpoint_message: {
+    english: 'Message',
+    translated: '訊息',
+  },
+  com_endpoint_messages: {
+    english: 'Messages',
+    translated: '訊息',
+  },
+  com_endpoint_message_not_appendable: {
+    english: 'Edit your message or Regenerate.',
+    translated: '無法附加訊息或重新生成。',
+  },
+  com_endpoint_context_tokens: {
+    english: 'Max Context Tokens',
+    translated: '最大前後文 Token 數',
+  },
+  com_endpoint_context_info: {
+    english:
+      'The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.\n  If unspecified, will use system defaults based on known models\' context size. Setting higher values may result in errors and/or higher token cost.',
+    translated:
+      '可用於上下文的最大 token 數量。用於控制每個請求發送的 token 數量。如果未指定，將根據已知模型的上下文大小使用系統預設值。設置較高的值可能會導致錯誤和/或更高的 token 成本。',
+  },
+  com_endpoint_instructions_assistants_placeholder: {
+    english:
+      'Overrides the instructions of the assistant. This is useful for modifying the behavior on a per-run basis.',
+    translated: '覆寫助理的指示。這對於在每次執行時修改行為很有用。',
+  },
+  com_endpoint_prompt_prefix_assistants_placeholder: {
+    english:
+      'Set additional instructions or context on top of the Assistant\'s main instructions. Ignored if empty.',
+    translated: '在助手的主要指示之上設定額外的指示或上下文。如果為空白，則會被忽略。',
+  },
+  com_endpoint_prompt_prefix_assistants: {
+    english: 'Additional Instructions',
+    translated: '提示前綴',
+  },
+  com_endpoint_instructions_assistants: {
+    english: 'Override Instructions',
+    translated: '覆寫指示',
+  },
+  com_endpoint_stop: {
+    english: 'Stop Sequences',
+    translated: '停止序列',
+  },
+  com_endpoint_stop_placeholder: {
+    english: 'Separate values by pressing `Enter`',
+    translated: '以 `Enter` 鍵分隔值',
+  },
+  com_endpoint_openai_max_tokens: {
+    english:
+      'Optional `max_tokens` field, representing the maximum number of tokens that can be generated in the chat completion.\n    \n    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.',
+    translated:
+      '可選的 `max_tokens` 欄位，代表在對話完成中可以生成的最大 token 數。\n\n輸入 token 和生成 token 的總長度受限於模型的上下文長度。如果此數字超過最大上下文 token 數，您可能會遇到錯誤。',
+  },
+  com_endpoint_openai_resend: {
+    english:
+      'Resend all previously attached images. Note: this can significantly increase token cost and you may experience errors with many image attachments.',
+    translated:
+      '重新發送之前所有附加的圖片。注意:這可能會大幅增加 token 成本,如果附加了太多圖片,您可能會遇到錯誤。',
+  },
+  com_endpoint_openai_resend_files: {
+    english:
+      'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
+    translated:
+      '重新傳送之前附加的所有檔案。注意：這將增加 token 成本，如果附件過多，您可能會遇到錯誤。',
+  },
+  com_endpoint_openai_detail: {
+    english:
+      'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
+    translated:
+      '「低」解析度的視覺請求較便宜且快速，「高」解析度則更詳細但成本較高，而「自動」會根據圖像解析度自動在兩者之間選擇。',
+  },
+  com_endpoint_openai_stop: {
+    english: 'Up to 4 sequences where the API will stop generating further tokens.',
+    translated: '最多 4 個序列，API 將在生成更多 token 時停止。',
+  },
+  com_endpoint_plug_resend_files: {
+    english: 'Resend Files',
+    translated: '重新傳送檔案',
+  },
+  com_endpoint_plug_resend_images: {
+    english: 'Resend Images',
+    translated: '重新傳送圖片',
+  },
+  com_endpoint_plug_image_detail: {
+    english: 'Image Detail',
+    translated: '圖像詳細資訊',
+  },
+  com_endpoint_preset_delete_confirm: {
+    english: 'Are you sure you want to delete this preset?',
+    translated: '您確定要刪除這個預設設定嗎？',
+  },
+  com_endpoint_preset_clear_all_confirm: {
+    english: 'Are you sure you want to delete all of your presets?',
+    translated: '您確定要刪除所有的預設設定嗎？',
+  },
+  com_endpoint_preset_import: {
+    english: 'Preset Imported!',
+    translated: '預設設定已匯入！',
+  },
+  com_endpoint_preset_import_error: {
+    english: 'There was an error importing your preset. Please try again.',
+    translated: '匯入您的預設設定時發生錯誤。請再試一次。',
+  },
+  com_endpoint_preset_save_error: {
+    english: 'There was an error saving your preset. Please try again.',
+    translated: '儲存您的預設設定時發生錯誤。請再試一次。',
+  },
+  com_endpoint_preset_delete_error: {
+    english: 'There was an error deleting your preset. Please try again.',
+    translated: '刪除您的預設設定時發生錯誤。請重試。',
+  },
+  com_endpoint_preset_default_removed: {
+    english: 'is no longer the default preset.',
+    translated: '不再是預設設定',
+  },
+  com_endpoint_preset_default_item: {
+    english: 'Default:',
+    translated: '預設值',
+  },
+  com_endpoint_preset_default_none: {
+    english: 'No default preset active.',
+    translated: '無啟用的預設設定。',
+  },
+  com_endpoint_preset_title: {
+    english: 'Preset',
+    translated: '預設項目',
+  },
+  com_endpoint_preset_saved: {
+    english: 'Saved!',
+    translated: '已儲存！',
+  },
+  com_endpoint_preset_default: {
+    english: 'is now the default preset.',
+    translated: '現在是預設的預設設定。',
+  },
+  com_endpoint_preset_selected: {
+    english: 'Preset Active!',
+    translated: '已選擇預設設定！',
+  },
+  com_endpoint_preset_selected_title: {
+    english: 'Active!',
+    translated: '已選取！',
+  },
+  com_endpoint_assistant: {
+    english: 'Assistant',
+    translated: '助手',
+  },
+  com_endpoint_use_active_assistant: {
+    english: 'Use Active Assistant',
+    translated: '使用活躍助手',
+  },
+  com_endpoint_assistant_model: {
+    english: 'Assistant Model',
+    translated: 'AI 模型',
+  },
+  com_endpoint_assistant_placeholder: {
+    english: 'Please select an Assistant from the right-hand Side Panel',
+    translated: '請從右側面板選擇一位助理',
+  },
+  com_endpoint_config_placeholder: {
+    english: 'Set your Key in the Header menu to chat.',
+    translated: '在標頭選單中設定您的金鑰以開始對話。',
+  },
+  com_endpoint_config_click_here: {
+    english: 'Click Here',
+    translated: '點此',
+  },
+  com_endpoint_config_google_service_key: {
+    english: 'Google Service Account Key',
+    translated: 'Google 服務帳戶金鑰',
+  },
+  com_endpoint_config_google_cloud_platform: {
+    english: '(from Google Cloud Platform)',
+    translated: 'Google 雲端平台設定',
+  },
+  com_endpoint_config_google_api_key: {
+    english: 'Google API Key',
+    translated: 'Google API 金鑰',
+  },
+  com_endpoint_config_google_gemini_api: {
+    english: '(Gemini API)',
+    translated: 'Google Gemini API 設定',
+  },
+  com_endpoint_config_google_api_info: {
+    english: 'To get your Generative Language API key (for Gemini),',
+    translated: '要取得 Generative Language API 金鑰（適用於 Gemini），',
+  },
+  com_nav_welcome_assistant: {
+    english: 'Please Select an Assistant',
+    translated: '請選擇一位助理',
+  },
+  com_nav_welcome_message: {
+    english: 'How can I help you today?',
+    translated: '您今天有什麼需要我協助的嗎？',
+  },
+  com_nav_hide_panel: {
+    english: 'Hide right-most side panel',
+    translated: '隱藏最右側的面板',
+  },
+  com_nav_modular_chat: {
+    english: 'Enable switching Endpoints mid-conversation',
+    translated: '允許在對話中途切換端點',
+  },
+  com_nav_latex_parsing: {
+    english: 'Parsing LaTeX in messages (may affect performance)',
+    translated: '解析訊息中的 LaTeX 內容（可能影響效能）',
+  },
+  com_nav_profile_picture: {
+    english: 'Profile Picture',
+    translated: '個人頭像',
+  },
+  com_nav_change_picture: {
+    english: 'Change picture',
+    translated: '更換圖片',
+  },
+  com_nav_plugin_install: {
+    english: 'Install',
+    translated: '安裝',
+  },
+  com_nav_plugin_uninstall: {
+    english: 'Uninstall',
+    translated: '解除安裝',
+  },
+  com_nav_tool_add: {
+    english: 'Add',
+    translated: '新增',
+  },
+  com_nav_tool_remove: {
+    english: 'Remove',
+    translated: '移除',
+  },
+  com_nav_tool_dialog: {
+    english: 'Assistant Tools',
+    translated: 'AI 工具',
+  },
+  com_nav_tool_dialog_description: {
+    english: 'Assistant must be saved to persist tool selections.',
+    translated: '必須儲存 Assistant 才能保留工具選擇。',
+  },
+  com_show_agent_settings: {
+    english: 'Show Agent Settings',
+    translated: '顯示代理設定',
+  },
+  com_show_completion_settings: {
+    english: 'Show Completion Settings',
+    translated: '顯示完成設定',
+  },
+  com_hide_examples: {
+    english: 'Hide Examples',
+    translated: '隱藏範例',
+  },
+  com_show_examples: {
+    english: 'Show Examples',
+    translated: '顯示範例',
+  },
+  com_nav_tool_search: {
+    english: 'Search tools',
+    translated: '搜尋工具',
+  },
+  com_nav_my_files: {
+    english: 'My Files',
+    translated: '我的檔案',
+  },
+  com_nav_enter_to_send: {
+    english: 'Press Enter to send messages',
+    translated: '按 Enter 鍵傳送訊息',
+  },
+  com_nav_user_name_display: {
+    english: 'Display username in messages',
+    translated: '在訊息中顯示使用者名稱',
+  },
+  com_nav_show_code: {
+    english: 'Always show code when using code interpreter',
+    translated: '一律顯示使用程式碼解譯器時的程式碼',
+  },
+  com_nav_setting_beta: {
+    english: 'Beta features',
+    translated: '測試功能',
+  },
+  com_nav_setting_account: {
+    english: 'Account',
+    translated: '帳號',
+  },
+  com_nav_language: {
+    english: 'Language',
+    translated: '語言',
+  },
+  com_nav_lang_auto: {
+    english: 'Auto detect',
+    translated: '自動偵測',
+  },
+  com_nav_lang_english: {
+    english: 'English',
+    translated: '英文',
+  },
+  com_nav_lang_chinese: {
+    english: '中文',
+    translated: '繁體中文',
+  },
+  com_nav_lang_german: {
+    english: 'Deutsch',
+    translated: '德語',
+  },
+  com_nav_lang_spanish: {
+    english: 'Español',
+    translated: '西班牙語',
+  },
+  com_nav_lang_french: {
+    english: 'Français ',
+    translated: '法語',
+  },
+  com_nav_lang_italian: {
+    english: 'Italiano',
+    translated: '義大利文',
+  },
+  com_nav_lang_polish: {
+    english: 'Polski',
+    translated: '波蘭文',
+  },
+  com_nav_lang_brazilian_portuguese: {
+    english: 'Português Brasileiro',
+    translated: '葡萄牙語（巴西）',
+  },
+  com_nav_lang_russian: {
+    english: 'Русский',
+    translated: 'Русский',
+  },
+  com_nav_lang_japanese: {
+    english: '日本語',
+    translated: '日本語',
+  },
+  com_nav_lang_swedish: {
+    english: 'Svenska',
+    translated: '瑞典語',
+  },
+  com_nav_lang_korean: {
+    english: '한국어',
+    translated: '한국어',
+  },
+  com_nav_lang_vietnamese: {
+    english: 'Tiếng Việt',
+    translated: '越南語',
+  },
+  com_nav_lang_traditionalchinese: {
+    english: '繁體中文',
+    translated: '繁體中文',
+  },
+  com_nav_lang_arabic: {
+    english: 'العربية',
+    translated: '阿拉伯語',
+  },
+  com_nav_lang_turkish: {
+    english: 'Türkçe',
+    translated: 'Türkçe',
+  },
+  com_nav_lang_dutch: {
+    english: 'Nederlands',
+    translated: '荷蘭文',
+  },
+  com_nav_lang_indonesia: {
+    english: 'Indonesia',
+    translated: '印尼語',
+  },
+  com_nav_lang_hebrew: {
+    english: 'עברית',
+    translated: 'עברית',
   },
 };

@@ -452,6 +452,7 @@ export default {
   com_nav_lang_auto: 'Detecção automática',
   com_nav_lang_brazilian_portuguese: 'Português Brasileiro',
 };
+
 export const comparisons = {
   com_files_no_results: {
     english: 'No results.',
@@ -1827,11 +1828,11 @@ export const comparisons = {
     translated: 'Como posso ajudar você hoje?',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'Auto-rolagem para o mais recente ao abrir',
   },
   com_nav_hide_panel: {
-    english: 'Hide Right-most Side Panel',
+    english: 'Hide right-most side panel',
     translated: 'Ocultar painel mais à direita',
   },
   com_nav_enter_to_send: {

@@ -1063,7 +1063,7 @@ export const comparisons = {
     translated: 'Si è verificato un errore durante la duplicazione della conversazione',
   },
   com_ui_fork_change_default: {
-    english: 'Change default fork option',
+    english: 'Default fork option',
     translated: 'Cambia opzione di duplicazione predefinita',
   },
   com_ui_fork_default: {
@@ -2096,11 +2096,11 @@ export const comparisons = {
     translated: 'Come posso aiutarti oggi?',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'Scorri automaticamente ai nuovi messaggi all\'apertura',
   },
   com_nav_hide_panel: {
-    english: 'Hide Right-most Side Panel',
+    english: 'Hide right-most side panel',
     translated: 'Nascondi il Pannello laterale più a destra',
   },
   com_nav_modular_chat: {
@@ -2340,5 +2340,117 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: 'Account',
+  },
+  com_user_message: {
+    english: 'You',
+    translated: 'Mostra nome utente nei messaggi',
+  },
+  com_ui_fork: {
+    english: 'Fork',
+    translated: 'Duplica',
+  },
+  com_ui_mention: {
+    english: 'Mention an endpoint, assistant, or preset to quickly switch to it',
+    translated: 'Menziona un endpoint, assistente o preset per passare rapidamente ad esso',
+  },
+  com_endpoint_context_tokens: {
+    english: 'Max Context Tokens',
+    translated: 'Token di Contesto Massimi',
+  },
+  com_endpoint_context_info: {
+    english:
+      'The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.\n  If unspecified, will use system defaults based on known models\' context size. Setting higher values may result in errors and/or higher token cost.',
+    translated:
+      'Il numero massimo di token che possono essere utilizzati per il contesto. Usalo per controllare quanti token vengono inviati per richiesta. Se non specificato, verranno utilizzate le impostazioni di sistema predefinite in base alle dimensioni del contesto dei modelli noti. Impostare valori più alti potrebbe causare errori e/o costi di token più elevati.',
+  },
+  com_endpoint_openai_max_tokens: {
+    english:
+      'Optional `max_tokens` field, representing the maximum number of tokens that can be generated in the chat completion.\n    \n    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.',
+    translated:
+      'Campo `max_tokens` opzionale, che rappresenta il numero massimo di token che possono essere generati nel completamento della chat.\n\nLa lunghezza totale dei token di input e dei token generati è limitata dalla lunghezza del contesto del modello. Potresti riscontrare errori se questo numero supera il massimo dei token di contesto.',
+  },
+  com_nav_language: {
+    english: 'Language',
+    translated: 'Lingua',
+  },
+  com_nav_lang_auto: {
+    english: 'Auto detect',
+    translated: 'Rileva automaticamente',
+  },
+  com_nav_lang_english: {
+    english: 'English',
+    translated: 'Inglese',
+  },
+  com_nav_lang_chinese: {
+    english: '中文',
+    translated: 'Cinese',
+  },
+  com_nav_lang_german: {
+    english: 'Deutsch',
+    translated: 'Tedesco',
+  },
+  com_nav_lang_spanish: {
+    english: 'Español',
+    translated: 'Spagnolo',
+  },
+  com_nav_lang_french: {
+    english: 'Français ',
+    translated: 'Francese',
+  },
+  com_nav_lang_italian: {
+    english: 'Italiano',
+    translated: 'Italiano',
+  },
+  com_nav_lang_polish: {
+    english: 'Polski',
+    translated: 'Polacco',
+  },
+  com_nav_lang_brazilian_portuguese: {
+    english: 'Português Brasileiro',
+    translated: 'Portoghese brasiliano',
+  },
+  com_nav_lang_russian: {
+    english: 'Русский',
+    translated: 'Russo',
+  },
+  com_nav_lang_japanese: {
+    english: '日本語',
+    translated: 'Giapponese',
+  },
+  com_nav_lang_swedish: {
+    english: 'Svenska',
+    translated: 'Svedese',
+  },
+  com_nav_lang_korean: {
+    english: '한국어',
+    translated: 'Coreano',
+  },
+  com_nav_lang_vietnamese: {
+    english: 'Tiếng Việt',
+    translated: 'Vietnamita',
+  },
+  com_nav_lang_traditionalchinese: {
+    english: '繁體中文',
+    translated: 'Cinese tradizionale',
+  },
+  com_nav_lang_arabic: {
+    english: 'العربية',
+    translated: 'Arabo',
+  },
+  com_nav_lang_turkish: {
+    english: 'Türkçe',
+    translated: 'Turco',
+  },
+  com_nav_lang_dutch: {
+    english: 'Nederlands',
+    translated: 'Olandese',
+  },
+  com_nav_lang_indonesia: {
+    english: 'Indonesia',
+    translated: 'Indonesiano',
+  },
+  com_nav_lang_hebrew: {
+    english: 'עברית',
+    translated: 'ebraico',
   },
 };

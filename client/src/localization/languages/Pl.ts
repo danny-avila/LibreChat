@@ -223,6 +223,7 @@ export default {
   com_ui_import_conversation_success: 'Konwersacje zostały pomyślnie zaimportowane',
   com_ui_import_conversation_error: 'Wystąpił błąd podczas importowania konwersacji',
 };
+
 export const comparisons = {
   com_ui_examples: {
     english: 'Examples',

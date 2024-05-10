@@ -288,6 +288,7 @@ export default {
   com_nav_setting_general: 'Algemeen',
   com_nav_setting_data: 'Gegevensbesturing',
 };
+
 export const comparisons = {
   com_ui_examples: {
     english: 'Examples',
@@ -1164,7 +1165,7 @@ export const comparisons = {
       'Zorg ervoor dat u op \'Maken en doorgaan\' klikt om ten minste de \'Vertex AI-gebruiker\'-rol te geven. Maak ten slotte een JSON-sleutel aan om hier te importeren.',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'Automatisch scrollen naar Nieuwste bij openen',
   },
   com_nav_plugin_store: {

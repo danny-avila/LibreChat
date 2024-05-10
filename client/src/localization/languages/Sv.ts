@@ -276,6 +276,7 @@ export default {
   com_nav_setting_general: 'Allmänt',
   com_nav_setting_data: 'Datakontroller',
 };
+
 export const comparisons = {
   com_ui_examples: {
     english: 'Examples',

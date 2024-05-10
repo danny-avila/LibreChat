@@ -304,6 +304,7 @@ export default {
   com_nav_setting_general: 'Genel',
   com_nav_setting_data: 'Veri kontrolleri',
 };
+
 export const comparisons = {
   com_ui_examples: {
     english: 'Examples',
@@ -1246,7 +1247,7 @@ export const comparisons = {
     translated: 'Bugün size nasıl yardımcı olabilirim?',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'Açıkta En Yeniye Otomatik Kaydır',
   },
   com_nav_plugin_store: {

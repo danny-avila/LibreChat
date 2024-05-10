@@ -354,6 +354,7 @@ export default {
   com_nav_lang_dutch: 'Nederlands',
   com_nav_lang_indonesia: 'Indonesia',
 };
+
 export const comparisons = {
   com_ui_examples: {
     english: 'Examples',
@@ -1369,7 +1370,7 @@ export const comparisons = {
     translated: 'Bagaimana saya bisa membantu Anda hari ini?',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'Otomatis gulir ke Baru saat Buka',
   },
   com_nav_modular_chat: {

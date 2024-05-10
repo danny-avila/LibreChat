@@ -274,6 +274,7 @@ export default {
   com_nav_setting_general: 'Chung',
   com_nav_setting_data: 'Kiểm soát dữ liệu',
 };
+
 export const comparisons = {
   com_ui_examples: {
     english: 'Examples',
@@ -1137,7 +1138,7 @@ export const comparisons = {
       'Hãy chắc chắn nhấp vào \'Tạo và Tiếp tục\' để cấp ít nhất vai trò \'Người dùng Vertex AI\' thì còn lại, tạo một khóa JSON để nhập vào đây.',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'Cuộn tự động đến tin nhắn mới nhất khi mở',
   },
   com_nav_plugin_store: {

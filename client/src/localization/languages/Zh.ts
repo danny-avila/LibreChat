@@ -1857,11 +1857,11 @@ export const comparisons = {
     translated: '我今天能帮你做什么？',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: '打开时自动滚动到最新内容',
   },
   com_nav_hide_panel: {
-    english: 'Hide Right-most Side Panel',
+    english: 'Hide right-most side panel',
     translated: '隐藏最右侧面板',
   },
   com_nav_modular_chat: {
@@ -2095,5 +2095,286 @@ export const comparisons = {
   com_nav_setting_account: {
     english: 'Account',
     translated: '账户',
+  },
+  com_error_moderation: {
+    english:
+      'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
+    translated:
+      '很抱歉,您提交的内容被我们的审核系统标记为不符合社区指引。我们无法就此特定主题继续交流。如果您有任何其他问题或想探讨的话题,请编辑您的消息或开启新的对话。',
+  },
+  com_error_no_user_key: {
+    english: 'No key found. Please provide a key and try again.',
+    translated: '没有找到密钥。请提供密钥后重试。',
+  },
+  com_error_no_base_url: {
+    english: 'No base URL found. Please provide one and try again.',
+    translated: '未找到基础URL,请提供一个后重试。',
+  },
+  com_error_invalid_user_key: {
+    english: 'Invalid key provided. Please provide a key and try again.',
+    translated: '提供的密钥无效。请提供有效的密钥后重试。',
+  },
+  com_error_expired_user_key: {
+    english: 'Provided key for {0} expired at {1}. Please provide a key and try again.',
+    translated: '您提供的 {0} 密钥已于 {1} 过期。请提供新的密钥并重试。',
+  },
+  com_sidepanel_parameters: {
+    english: 'Parameters',
+    translated: '参数',
+  },
+  com_ui_on: {
+    english: 'On',
+    translated: '开启',
+  },
+  com_ui_off: {
+    english: 'Off',
+    translated: '关闭',
+  },
+  com_ui_yes: {
+    english: 'Yes',
+    translated: '是的',
+  },
+  com_ui_no: {
+    english: 'No',
+    translated: '否',
+  },
+  com_ui_none_selected: {
+    english: 'None selected',
+    translated: '未选择任何项目',
+  },
+  com_ui_fork: {
+    english: 'Fork',
+    translated: '分支',
+  },
+  com_ui_fork_info_1: {
+    english: 'Use this setting to fork messages with the desired behavior.',
+    translated: '使用此设置可以分叉消息,以获得所需的行为。',
+  },
+  com_ui_fork_info_2: {
+    english:
+      '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
+    translated:
+      '"分叉"是指从当前对话中选择特定消息作为起点/终点,根据所选选项创建一个新的对话副本。',
+  },
+  com_ui_fork_info_3: {
+    english:
+      'The "target message" refers to either the message this popup was opened from, or, if you check "{0}", the latest message in the conversation.',
+    translated: '"目标消息"是指此弹出窗口所打开的消息,或者如果您选中"{0}",则是对话中最新的消息。',
+  },
+  com_ui_fork_info_visible: {
+    english:
+      'This option forks only the visible messages; in other words, the direct path to the target message, without any branches.',
+    translated: '此选项仅分叉可见的消息;换句话说,是直接路径到目标消息,没有任何分支。',
+  },
+  com_ui_fork_info_branches: {
+    english:
+      'This option forks the visible messages, along with related branches; in other words, the direct path to the target message, including branches along the path.',
+    translated:
+      '此选项会分叉可见消息及相关分支;换言之,包括沿路径的直接路线到目标消息,以及路径上的分支。',
+  },
+  com_ui_fork_info_target: {
+    english:
+      'This option forks all messages leading up to the target message, including its neighbors; in other words, all message branches, whether or not they are visible or along the same path, are included.',
+    translated:
+      '此选项会分叉所有导向目标消息的消息分支,包括其相邻消息;换句话说,无论是否可见或在同一路径上,所有消息分支都会被包含在内。',
+  },
+  com_ui_fork_info_start: {
+    english:
+      'If checked, forking will commence from this message to the latest message in the conversation, according to the behavior selected above.',
+    translated: '如果勾选,则根据上述选择的行为,从此消息开始到对话中最新的消息将被分叉。',
+  },
+  com_ui_fork_info_remember: {
+    english:
+      'Check this to remember the options you select for future usage, making it quicker to fork conversations as preferred.',
+    translated: '选中此项可记住您的选择,以便下次分支对话时更快捷地使用您偏好的选项。',
+  },
+  com_ui_fork_success: {
+    english: 'Successfully forked conversation',
+    translated: '对话分支成功',
+  },
+  com_ui_fork_processing: {
+    english: 'Forking conversation...',
+    translated: '正在分叉对话...',
+  },
+  com_ui_fork_error: {
+    english: 'There was an error forking the conversation',
+    translated: '分叉对话时出现错误',
+  },
+  com_ui_fork_change_default: {
+    english: 'Default fork option',
+    translated: '默认分支选项',
+  },
+  com_ui_fork_default: {
+    english: 'Use default fork option',
+    translated: '使用默认分支选项',
+  },
+  com_ui_fork_remember: {
+    english: 'Remember',
+    translated: '记住',
+  },
+  com_ui_fork_split_target_setting: {
+    english: 'Start fork from target message by default',
+    translated: '默认以目标消息开始分支',
+  },
+  com_ui_fork_split_target: {
+    english: 'Start fork here',
+    translated: '在此分叉',
+  },
+  com_ui_fork_remember_checked: {
+    english:
+      'Your selection will be remembered after usage. Change this at any time in the settings.',
+    translated: '您的选择将在使用后被记住。您可以随时在设置中更改。',
+  },
+  com_ui_fork_all_target: {
+    english: 'Include all to/from here',
+    translated: '包含所有目标',
+  },
+  com_ui_fork_branches: {
+    english: 'Include related branches',
+    translated: '包含相关分支',
+  },
+  com_ui_fork_visible: {
+    english: 'Visible messages only',
+    translated: '仅显示可见消息',
+  },
+  com_ui_fork_from_message: {
+    english: 'Select a fork option',
+    translated: '选择分支选项',
+  },
+  com_ui_mention: {
+    english: 'Mention an endpoint, assistant, or preset to quickly switch to it',
+    translated: '提及一个端点、助手或预设以快速切换到它',
+  },
+  com_ui_import_conversation_file_type_error: {
+    english: 'Unsupported import type',
+    translated: '不支持的导入类型',
+  },
+  com_ui_min_tags: {
+    english: 'Cannot remove more values, a minimum of {0} are required.',
+    translated: '无法再移除更多值,至少需要保留{0}个。',
+  },
+  com_ui_max_tags: {
+    english: 'Maximum number allowed is {0}, using latest values.',
+    translated: '最多允许{0}个,使用最新值。',
+  },
+  com_endpoint_messages: {
+    english: 'Messages',
+    translated: '消息',
+  },
+  com_endpoint_context_tokens: {
+    english: 'Max Context Tokens',
+    translated: '最大上下文词元数',
+  },
+  com_endpoint_context_info: {
+    english:
+      'The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.\n  If unspecified, will use system defaults based on known models\' context size. Setting higher values may result in errors and/or higher token cost.',
+    translated:
+      '可用于上下文的最大词元数。用于控制每个请求发送的词元数量。如果未指定,将根据已知模型的上下文大小使用系统默认值。设置较高的值可能会导致错误和/或更高的词元成本。',
+  },
+  com_endpoint_stop: {
+    english: 'Stop Sequences',
+    translated: '停止序列',
+  },
+  com_endpoint_stop_placeholder: {
+    english: 'Separate values by pressing `Enter`',
+    translated: '按Enter键分隔多个值',
+  },
+  com_endpoint_openai_max_tokens: {
+    english:
+      'Optional `max_tokens` field, representing the maximum number of tokens that can be generated in the chat completion.\n    \n    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.',
+    translated:
+      '可选的`max_tokens`字段,表示在聊天补全中可生成的最大token数量。\n\n输入token和生成token的总长度受模型上下文长度的限制。如果该数值超过最大上下文token数,您可能会遇到错误。',
+  },
+  com_endpoint_openai_stop: {
+    english: 'Up to 4 sequences where the API will stop generating further tokens.',
+    translated: '最多4个序列,API将停止生成更多词元。',
+  },
+  com_nav_enter_to_send: {
+    english: 'Press Enter to send messages',
+    translated: '请按Enter键发送消息',
+  },
+  com_nav_language: {
+    english: 'Language',
+    translated: '语言',
+  },
+  com_nav_lang_auto: {
+    english: 'Auto detect',
+    translated: '自动检测语言',
+  },
+  com_nav_lang_english: {
+    english: 'English',
+    translated: '英语',
+  },
+  com_nav_lang_chinese: {
+    english: '中文',
+    translated: '中文',
+  },
+  com_nav_lang_german: {
+    english: 'Deutsch',
+    translated: '德语',
+  },
+  com_nav_lang_spanish: {
+    english: 'Español',
+    translated: '西班牙语',
+  },
+  com_nav_lang_french: {
+    english: 'Français ',
+    translated: '法语',
+  },
+  com_nav_lang_italian: {
+    english: 'Italiano',
+    translated: '语言',
+  },
+  com_nav_lang_polish: {
+    english: 'Polski',
+    translated: '语言',
+  },
+  com_nav_lang_brazilian_portuguese: {
+    english: 'Português Brasileiro',
+    translated: '葡萄牙语(巴西)',
+  },
+  com_nav_lang_russian: {
+    english: 'Русский',
+    translated: '俄语',
+  },
+  com_nav_lang_japanese: {
+    english: '日本語',
+    translated: '日语',
+  },
+  com_nav_lang_swedish: {
+    english: 'Svenska',
+    translated: '语言',
+  },
+  com_nav_lang_korean: {
+    english: '한국어',
+    translated: '韩语',
+  },
+  com_nav_lang_vietnamese: {
+    english: 'Tiếng Việt',
+    translated: '越南语',
+  },
+  com_nav_lang_traditionalchinese: {
+    english: '繁體中文',
+    translated: '繁體中文',
+  },
+  com_nav_lang_arabic: {
+    english: 'العربية',
+    translated: 'العربية',
+  },
+  com_nav_lang_turkish: {
+    english: 'Türkçe',
+    translated: '土耳其语',
+  },
+  com_nav_lang_dutch: {
+    english: 'Nederlands',
+    translated: '荷兰语',
+  },
+  com_nav_lang_indonesia: {
+    english: 'Indonesia',
+    translated: '印度尼西亚语',
+  },
+  com_nav_lang_hebrew: {
+    english: 'עברית',
+    translated: '希伯来语',
   },
 };

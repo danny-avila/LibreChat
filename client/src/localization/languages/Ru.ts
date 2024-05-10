@@ -1549,11 +1549,11 @@ export const comparisons = {
     translated: 'Чем я могу помочь вам сегодня?',
   },
   com_nav_auto_scroll: {
-    english: 'Auto-scroll to Newest on Open',
+    english: 'Auto-Scroll to latest message on chat open',
     translated: 'Автоматически проматывать к самым новым сообщениям при открытии',
   },
   com_nav_hide_panel: {
-    english: 'Hide Right-most Side Panel',
+    english: 'Hide right-most side panel',
     translated: 'Скрыть правую боковую панель',
   },
   com_nav_modular_chat: {
@@ -1845,5 +1845,602 @@ export const comparisons = {
   com_user_message: {
     english: 'You',
     translated: 'Вы',
+  },
+  com_error_moderation: {
+    english:
+      'It appears that the content submitted has been flagged by our moderation system for not aligning with our community guidelines. We\'re unable to proceed with this specific topic. If you have any other questions or topics you\'d like to explore, please edit your message, or create a new conversation.',
+    translated:
+      'К сожалению, отправленный вами контент был помечен нашей системой модерации как не соответствующий правилам сообщества. Мы не можем продолжить обсуждение этой конкретной темы. Если у вас есть другие вопросы или темы, которые вы хотели бы обсудить, пожалуйста, отредактируйте сообщение или начните новый диалог.',
+  },
+  com_error_no_user_key: {
+    english: 'No key found. Please provide a key and try again.',
+    translated: 'Ключ не найден. Пожалуйста, укажите ключ и повторите попытку.',
+  },
+  com_error_no_base_url: {
+    english: 'No base URL found. Please provide one and try again.',
+    translated: 'Базовый URL не найден. Пожалуйста, укажите его и повторите попытку.',
+  },
+  com_error_invalid_user_key: {
+    english: 'Invalid key provided. Please provide a key and try again.',
+    translated:
+      'Предоставлен некорректный ключ. Пожалуйста, укажите действительный ключ и повторите попытку.',
+  },
+  com_error_expired_user_key: {
+    english: 'Provided key for {0} expired at {1}. Please provide a key and try again.',
+    translated:
+      'Предоставленный ключ для {0} истек {1}. Пожалуйста, укажите новый ключ и повторите попытку.',
+  },
+  com_files_no_results: {
+    english: 'No results.',
+    translated: 'Нет результатов',
+  },
+  com_files_filter: {
+    english: 'Filter files...',
+    translated: 'Фильтр файлов',
+  },
+  com_files_number_selected: {
+    english: '{0} of {1} file(s) selected',
+    translated: 'Выбрано {0} из {1} файл(а/ов)',
+  },
+  com_sidepanel_parameters: {
+    english: 'Parameters',
+    translated: 'Параметры',
+  },
+  com_sidepanel_hide_panel: {
+    english: 'Hide Panel',
+    translated: 'Скрыть панель',
+  },
+  com_assistants_capabilities: {
+    english: 'Capabilities',
+    translated: 'Возможности',
+  },
+  com_assistants_image_vision: {
+    english: 'Image Vision',
+    translated: 'Анализ изображений',
+  },
+  com_assistants_search_name: {
+    english: 'Search assistants by name',
+    translated: 'Поиск ассистентов по имени',
+  },
+  com_assistants_tools: {
+    english: 'Tools',
+    translated: 'Инструменты',
+  },
+  com_assistants_actions: {
+    english: 'Actions',
+    translated: 'Действия',
+  },
+  com_assistants_add_tools: {
+    english: 'Add Tools',
+    translated: 'Добавить инструменты',
+  },
+  com_assistants_add_actions: {
+    english: 'Add Actions',
+    translated: 'Добавить действия',
+  },
+  com_assistants_available_actions: {
+    english: 'Available Actions',
+    translated: 'Доступные действия',
+  },
+  com_assistants_running_action: {
+    english: 'Running action',
+    translated: 'Выполняется действие',
+  },
+  com_assistants_completed_action: {
+    english: 'Talked to {0}',
+    translated: 'Общался с {0}',
+  },
+  com_assistants_completed_function: {
+    english: 'Ran {0}',
+    translated: 'Выполнено: {0}',
+  },
+  com_assistants_function_use: {
+    english: 'Assistant used {0}',
+    translated: 'Ассистент использовал {0}',
+  },
+  com_assistants_domain_info: {
+    english: 'Assistant sent this info to {0}',
+    translated: 'Ассистент отправил эту информацию {0}',
+  },
+  com_assistants_delete_actions_success: {
+    english: 'Successfully deleted Action from Assistant',
+    translated: 'Действие успешно удалено из ассистента',
+  },
+  com_assistants_update_actions_success: {
+    english: 'Successfully created or updated Action',
+    translated: 'Действие успешно создано или обновлено',
+  },
+  com_assistants_update_actions_error: {
+    english: 'There was an error creating or updating the action.',
+    translated: 'Произошла ошибка при создании или обновлении действия.',
+  },
+  com_assistants_delete_actions_error: {
+    english: 'There was an error deleting the action.',
+    translated: 'Произошла ошибка при удалении действия.',
+  },
+  com_assistants_actions_info: {
+    english: 'Let your Assistant retrieve information or take actions via API\'s',
+    translated: 'Позвольте вашему ассистенту получать информацию или выполнять действия через API',
+  },
+  com_ui_field_required: {
+    english: 'This field is required',
+    translated: 'Это поле обязательно для заполнения',
+  },
+  com_ui_download_error: {
+    english: 'Error downloading file. The file may have been deleted.',
+    translated: 'Ошибка загрузки файла. Возможно, файл был удален.',
+  },
+  com_ui_on: {
+    english: 'On',
+    translated: 'Вкл.',
+  },
+  com_ui_off: {
+    english: 'Off',
+    translated: 'Выкл.',
+  },
+  com_ui_yes: {
+    english: 'Yes',
+    translated: 'Да',
+  },
+  com_ui_no: {
+    english: 'No',
+    translated: 'Нет',
+  },
+  com_ui_ascending: {
+    english: 'Asc',
+    translated: 'По возрастанию',
+  },
+  com_ui_descending: {
+    english: 'Desc',
+    translated: 'По убыванию',
+  },
+  com_ui_show_all: {
+    english: 'Show All',
+    translated: 'Показать все',
+  },
+  com_ui_date: {
+    english: 'Date',
+    translated: 'Дата',
+  },
+  com_ui_storage: {
+    english: 'Storage',
+    translated: 'Хранилище',
+  },
+  com_ui_context: {
+    english: 'Context',
+    translated: 'Контекст',
+  },
+  com_ui_size: {
+    english: 'Size',
+    translated: 'Размер',
+  },
+  com_ui_host: {
+    english: 'Host',
+    translated: 'Хост',
+  },
+  com_ui_update: {
+    english: 'Update',
+    translated: 'Обновить',
+  },
+  com_ui_authentication: {
+    english: 'Authentication',
+    translated: 'Аутентификация',
+  },
+  com_ui_select_search_model: {
+    english: 'Search model by name',
+    translated: 'Поиск модели по названию',
+  },
+  com_ui_select_search_plugin: {
+    english: 'Search plugin by name',
+    translated: 'Поиск плагина по названию',
+  },
+  com_ui_none_selected: {
+    english: 'None selected',
+    translated: 'Ничего не выбрано',
+  },
+  com_ui_fork: {
+    english: 'Fork',
+    translated: 'Разделить',
+  },
+  com_ui_fork_info_1: {
+    english: 'Use this setting to fork messages with the desired behavior.',
+    translated: 'Используйте эту настройку для разделения сообщений с нужным поведением.',
+  },
+  com_ui_fork_info_2: {
+    english:
+      '"Forking" refers to creating a new conversation that start/end from specific messages in the current conversation, creating a copy according to the options selected.',
+    translated:
+      '"Форкинг" означает создание новой ветви разговора, которая начинается или заканчивается на определенных сообщениях текущего разговора, создавая копию в соответствии с выбранными параметрами.',
+  },
+  com_ui_fork_info_3: {
+    english:
+      'The "target message" refers to either the message this popup was opened from, or, if you check "{0}", the latest message in the conversation.',
+    translated:
+      '"Целевое сообщение" относится либо к сообщению, из которого было открыто это всплывающее окно, либо, если вы отметите "{0}", к последнему сообщению в диалоге.',
+  },
+  com_ui_fork_info_visible: {
+    english:
+      'This option forks only the visible messages; in other words, the direct path to the target message, without any branches.',
+    translated:
+      'Эта опция создает ветвь только для видимых сообщений, то есть прямой путь к целевому сообщению без боковых ветвей.',
+  },
+  com_ui_fork_info_branches: {
+    english:
+      'This option forks the visible messages, along with related branches; in other words, the direct path to the target message, including branches along the path.',
+    translated:
+      'Эта опция создает ветвление видимых сообщений вместе со связанными ветвями; другими словами, прямой путь к целевому сообщению, включая ветви на этом пути.',
+  },
+  com_ui_fork_info_target: {
+    english:
+      'This option forks all messages leading up to the target message, including its neighbors; in other words, all message branches, whether or not they are visible or along the same path, are included.',
+    translated:
+      'Эта опция создает ветвление всех сообщений, ведущих к целевому сообщению, включая соседние. Другими словами, включаются все ветви сообщений, независимо от того, видны они или находятся по одному пути.',
+  },
+  com_ui_fork_info_start: {
+    english:
+      'If checked, forking will commence from this message to the latest message in the conversation, according to the behavior selected above.',
+    translated:
+      'Если отмечено, ветвление начнется с этого сообщения до последнего сообщения в разговоре в соответствии с выбранным выше поведением.',
+  },
+  com_ui_fork_info_remember: {
+    english:
+      'Check this to remember the options you select for future usage, making it quicker to fork conversations as preferred.',
+    translated:
+      'Отметьте это, чтобы запомнить выбранные вами параметры для будущего использования, что позволит быстрее создавать ответвления бесед по вашим предпочтениям.',
+  },
+  com_ui_fork_success: {
+    english: 'Successfully forked conversation',
+    translated: 'Разветвление беседы успешно выполнено',
+  },
+  com_ui_fork_processing: {
+    english: 'Forking conversation...',
+    translated: 'Разделение беседы...',
+  },
+  com_ui_fork_error: {
+    english: 'There was an error forking the conversation',
+    translated: 'Произошла ошибка при создании ответвления разговора',
+  },
+  com_ui_fork_change_default: {
+    english: 'Default fork option',
+    translated: 'Изменить вариант ветвления по умолчанию',
+  },
+  com_ui_fork_default: {
+    english: 'Use default fork option',
+    translated: 'Использовать вариант по умолчанию',
+  },
+  com_ui_fork_remember: {
+    english: 'Remember',
+    translated: 'Запомнить',
+  },
+  com_ui_fork_split_target_setting: {
+    english: 'Start fork from target message by default',
+    translated: 'По умолчанию создавать ветку от целевого сообщения',
+  },
+  com_ui_fork_split_target: {
+    english: 'Start fork here',
+    translated: 'Начать ветвление здесь',
+  },
+  com_ui_fork_remember_checked: {
+    english:
+      'Your selection will be remembered after usage. Change this at any time in the settings.',
+    translated:
+      'Ваш выбор будет сохранен после использования. Вы можете изменить его в любое время в настройках.',
+  },
+  com_ui_fork_all_target: {
+    english: 'Include all to/from here',
+    translated: 'Включить все сюда',
+  },
+  com_ui_fork_branches: {
+    english: 'Include related branches',
+    translated: 'Включить связанные ветки',
+  },
+  com_ui_fork_visible: {
+    english: 'Visible messages only',
+    translated: 'Только видимые сообщения',
+  },
+  com_ui_fork_from_message: {
+    english: 'Select a fork option',
+    translated: 'Выберите вариант ответвления',
+  },
+  com_ui_mention: {
+    english: 'Mention an endpoint, assistant, or preset to quickly switch to it',
+    translated: 'Упомянуть конечную точку, помощника или предустановку для быстрого переключения',
+  },
+  com_ui_import_conversation_file_type_error: {
+    english: 'Unsupported import type',
+    translated: 'Неподдерживаемый тип импорта',
+  },
+  com_ui_avatar: {
+    english: 'Avatar',
+    translated: 'Аватар',
+  },
+  com_ui_unknown: {
+    english: 'Unknown',
+    translated: 'Неизвестно',
+  },
+  com_ui_result: {
+    english: 'Result',
+    translated: 'Результат',
+  },
+  com_ui_image_gen: {
+    english: 'Image Gen',
+    translated: 'Генератор изображений',
+  },
+  com_ui_assistant: {
+    english: 'Assistant',
+    translated: 'Помощник',
+  },
+  com_ui_assistants: {
+    english: 'Assistants',
+    translated: 'Ассистенты',
+  },
+  com_ui_attachment: {
+    english: 'Attachment',
+    translated: 'Вложение',
+  },
+  com_ui_assistants_output: {
+    english: 'Assistants Output',
+    translated: 'Вывод ассистентов',
+  },
+  com_ui_create: {
+    english: 'Create',
+    translated: 'Создать',
+  },
+  com_ui_delete_assistant_confirm: {
+    english: 'Are you sure you want to delete this Assistant? This cannot be undone.',
+    translated: 'Вы действительно хотите удалить этого ассистента? Это действие необратимо.',
+  },
+  com_ui_upload_delay: {
+    english:
+      'Uploading "{0}" is taking more time than anticipated. Please wait while the file finishes indexing for retrieval.',
+    translated:
+      'Загрузка "{0}" занимает больше времени, чем ожидалось. Пожалуйста, подождите, пока файл полностью проиндексируется для доступа.',
+  },
+  com_ui_privacy_policy: {
+    english: 'Privacy policy',
+    translated: 'Политика конфиденциальности',
+  },
+  com_ui_terms_of_service: {
+    english: 'Terms of service',
+    translated: 'Условия использования',
+  },
+  com_ui_min_tags: {
+    english: 'Cannot remove more values, a minimum of {0} are required.',
+    translated: 'Нельзя удалить больше значений, требуется минимум {0}.',
+  },
+  com_ui_max_tags: {
+    english: 'Maximum number allowed is {0}, using latest values.',
+    translated: 'Максимально допустимое количество - {0}, используются последние значения.',
+  },
+  com_endpoint_messages: {
+    english: 'Messages',
+    translated: 'Сообщения',
+  },
+  com_endpoint_context_tokens: {
+    english: 'Max Context Tokens',
+    translated: 'Максимальное количество контекстных токенов',
+  },
+  com_endpoint_context_info: {
+    english:
+      'The maximum number of tokens that can be used for context. Use this for control of how many tokens are sent per request.\n  If unspecified, will use system defaults based on known models\' context size. Setting higher values may result in errors and/or higher token cost.',
+    translated:
+      'Максимальное количество токенов, которое может быть использовано для контекста. Используется для контроля количества токенов, отправляемых за один запрос. Если не указано, будут использованы системные значения по умолчанию, основанные на известном размере контекста моделей. Установка более высоких значений может привести к ошибкам и/или более высокой стоимости токенов.',
+  },
+  com_endpoint_instructions_assistants_placeholder: {
+    english:
+      'Overrides the instructions of the assistant. This is useful for modifying the behavior on a per-run basis.',
+    translated:
+      'Переопределяет инструкции для ассистента. Это полезно для изменения поведения для отдельного запуска.',
+  },
+  com_endpoint_prompt_prefix_assistants_placeholder: {
+    english:
+      'Set additional instructions or context on top of the Assistant\'s main instructions. Ignored if empty.',
+    translated:
+      'Задайте дополнительные инструкции или контекст сверху основных инструкций ассистента. Игнорируется, если пусто.',
+  },
+  com_endpoint_prompt_prefix_assistants: {
+    english: 'Additional Instructions',
+    translated: 'Дополнительные инструкции',
+  },
+  com_endpoint_instructions_assistants: {
+    english: 'Override Instructions',
+    translated: 'Инструкции для ассистентов',
+  },
+  com_endpoint_stop: {
+    english: 'Stop Sequences',
+    translated: 'Стоп-последовательности',
+  },
+  com_endpoint_stop_placeholder: {
+    english: 'Separate values by pressing `Enter`',
+    translated: 'Разделяйте значения нажатием `Enter`',
+  },
+  com_endpoint_openai_max_tokens: {
+    english:
+      'Optional `max_tokens` field, representing the maximum number of tokens that can be generated in the chat completion.\n    \n    The total length of input tokens and generated tokens is limited by the models context length. You may experience errors if this number exceeds the max context tokens.',
+    translated:
+      'Необязательное поле `max_tokens`, задающее максимальное количество токенов, которое может быть сгенерировано в ответе чата. Общая длина входных токенов и сгенерированных токенов ограничена длиной контекста модели. Вы можете получить ошибку, если это число превысит максимальную длину контекста.',
+  },
+  com_endpoint_openai_resend: {
+    english:
+      'Resend all previously attached images. Note: this can significantly increase token cost and you may experience errors with many image attachments.',
+    translated:
+      'Повторно отправить все ранее прикрепленные изображения. Примечание: это может значительно увеличить стоимость токенов, и при большом количестве прикрепленных изображений могут возникнуть ошибки.',
+  },
+  com_endpoint_openai_resend_files: {
+    english:
+      'Resend all previously attached files. Note: this will increase token cost and you may experience errors with many attachments.',
+    translated:
+      'Повторно отправить все ранее прикрепленные файлы. Примечание: это увеличит расход токенов, и при большом количестве вложений могут возникнуть ошибки.',
+  },
+  com_endpoint_openai_detail: {
+    english:
+      'The resolution for Vision requests. "Low" is cheaper and faster, "High" is more detailed and expensive, and "Auto" will automatically choose between the two based on the image resolution.',
+    translated:
+      'Разрешение для запросов Vision. "Низкое" - дешевле и быстрее, "Высокое" - более детализировано и дорогое, а "Авто" автоматически выберет один из двух вариантов в зависимости от разрешения изображения.',
+  },
+  com_endpoint_openai_stop: {
+    english: 'Up to 4 sequences where the API will stop generating further tokens.',
+    translated:
+      'До 4 последовательностей, после которых API прекратит генерировать дальнейшие токены.',
+  },
+  com_endpoint_plug_resend_files: {
+    english: 'Resend Files',
+    translated: 'Повторить отправку файлов',
+  },
+  com_endpoint_plug_resend_images: {
+    english: 'Resend Images',
+    translated: 'Повторно отправить изображения',
+  },
+  com_endpoint_plug_image_detail: {
+    english: 'Image Detail',
+    translated: 'Детали изображения',
+  },
+  com_endpoint_assistant: {
+    english: 'Assistant',
+    translated: 'Ассистент',
+  },
+  com_endpoint_use_active_assistant: {
+    english: 'Use Active Assistant',
+    translated: 'Использовать активного ассистента',
+  },
+  com_endpoint_assistant_model: {
+    english: 'Assistant Model',
+    translated: 'Модель ассистента',
+  },
+  com_endpoint_assistant_placeholder: {
+    english: 'Please select an Assistant from the right-hand Side Panel',
+    translated: 'Выберите Ассистента в правой боковой панели',
+  },
+  com_nav_welcome_assistant: {
+    english: 'Please Select an Assistant',
+    translated: 'Выберите ассистента',
+  },
+  com_nav_plugin_install: {
+    english: 'Install',
+    translated: 'Установить',
+  },
+  com_nav_plugin_uninstall: {
+    english: 'Uninstall',
+    translated: 'Удалить',
+  },
+  com_nav_tool_add: {
+    english: 'Add',
+    translated: 'Добавить',
+  },
+  com_nav_tool_remove: {
+    english: 'Remove',
+    translated: 'Удалить',
+  },
+  com_nav_tool_dialog: {
+    english: 'Assistant Tools',
+    translated: 'Инструменты помощника',
+  },
+  com_nav_tool_dialog_description: {
+    english: 'Assistant must be saved to persist tool selections.',
+    translated: 'Ассистент должен быть сохранен для применения выбранных инструментов.',
+  },
+  com_show_agent_settings: {
+    english: 'Show Agent Settings',
+    translated: 'Настройки агента',
+  },
+  com_show_completion_settings: {
+    english: 'Show Completion Settings',
+    translated: 'Показать настройки завершения',
+  },
+  com_hide_examples: {
+    english: 'Hide Examples',
+    translated: 'Скрыть примеры',
+  },
+  com_show_examples: {
+    english: 'Show Examples',
+    translated: 'Показать примеры',
+  },
+  com_nav_tool_search: {
+    english: 'Search tools',
+    translated: 'Поиск инструментов',
+  },
+  com_nav_enter_to_send: {
+    english: 'Press Enter to send messages',
+    translated: 'Отправить сообщение нажатием Enter',
+  },
+  com_nav_show_code: {
+    english: 'Always show code when using code interpreter',
+    translated: 'Всегда показывать код при использовании интерпретатора',
+  },
+  com_nav_lang_english: {
+    english: 'English',
+    translated: 'Английский',
+  },
+  com_nav_lang_chinese: {
+    english: '中文',
+    translated: 'Китайский',
+  },
+  com_nav_lang_german: {
+    english: 'Deutsch',
+    translated: 'Немецкий',
+  },
+  com_nav_lang_spanish: {
+    english: 'Español',
+    translated: 'Испанский',
+  },
+  com_nav_lang_french: {
+    english: 'Français ',
+    translated: 'Французский',
+  },
+  com_nav_lang_italian: {
+    english: 'Italiano',
+    translated: 'Итальянский',
+  },
+  com_nav_lang_polish: {
+    english: 'Polski',
+    translated: 'Польский',
+  },
+  com_nav_lang_brazilian_portuguese: {
+    english: 'Português Brasileiro',
+    translated: 'Португальский (Бразилия)',
+  },
+  com_nav_lang_russian: {
+    english: 'Русский',
+    translated: 'Русский',
+  },
+  com_nav_lang_japanese: {
+    english: '日本語',
+    translated: 'Язык',
+  },
+  com_nav_lang_swedish: {
+    english: 'Svenska',
+    translated: 'Шведский',
+  },
+  com_nav_lang_korean: {
+    english: '한국어',
+    translated: 'Корейский',
+  },
+  com_nav_lang_vietnamese: {
+    english: 'Tiếng Việt',
+    translated: 'Вьетнамский',
+  },
+  com_nav_lang_traditionalchinese: {
+    english: '繁體中文',
+    translated: 'Традиционный китайский',
+  },
+  com_nav_lang_arabic: {
+    english: 'العربية',
+    translated: 'Арабский',
+  },
+  com_nav_lang_turkish: {
+    english: 'Türkçe',
+    translated: 'Турецкий',
+  },
+  com_nav_lang_dutch: {
+    english: 'Nederlands',
+    translated: 'Голландский',
+  },
+  com_nav_lang_indonesia: {
+    english: 'Indonesia',
+    translated: 'Индонезийский',
+  },
+  com_nav_lang_hebrew: {
+    english: 'עברית',
+    translated: 'Иврит',
   },
 };
