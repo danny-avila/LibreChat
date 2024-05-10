@@ -1,6 +1,6 @@
 {
   "name": "@librechat/backend",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "",
   "scripts": {
     "start": "echo 'please run this from the root directory'",
@@ -58,7 +58,6 @@
     "firebase": "^10.6.0",
     "googleapis": "^126.0.1",
     "handlebars": "^4.7.7",
-    "hnswlib-node": "^1.4.2",
     "html": "^1.0.0",
     "ioredis": "^5.3.2",
     "js-yaml": "^4.1.0",
