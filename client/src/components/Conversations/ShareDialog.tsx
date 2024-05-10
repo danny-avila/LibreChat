@@ -6,7 +6,6 @@ import { TSharedLink } from 'librechat-data-provider';
 import { useToastContext } from '~/Providers';
 import { NotificationSeverity } from '~/common';
 import { Spinner } from '~/components/svg';
-import { Settings } from 'lucide-react';
 
 export default function ShareDialog({
   conversationId,
@@ -72,10 +71,7 @@ export default function ShareDialog({
           isNewSharedLink ? (
             localize('com_ui_share_created_message')
           ) : (
-            <>
-              {localize('com_ui_share_updated_message')}
-              <Settings className="ml-2 inline-block h-5 w-5" />
-            </>
+            <>{localize('com_ui_share_updated_message')}</>
           )
         ) : share?.isPublic ? (
           localize('com_ui_share_update_message')
