@@ -79,19 +79,20 @@ export default function ArchivedChatsTable({ className }: { className?: string }
                     {conversation.conversationId && (
                       <>
                         <ArchiveButton
+                          className="hover:text-black dark:hover:text-white"
                           conversationId={conversation.conversationId}
                           retainView={moveToTop}
                           shouldArchive={false}
                           icon={<ArchiveRestore className="h-4 w-4 hover:text-gray-300" />}
                         />
-                        <div className="h-4 w-4 hover:text-gray-300">
+                        <div className="h-5 w-5 hover:text-gray-300">
                           <DeleteButton
                             conversationId={conversation.conversationId}
                             retainView={moveToTop}
                             renaming={false}
                             title={conversation.title}
                             appendLabel={false}
-                            className="mx-3 flex items-center"
+                            className="group ml-4 flex w-full cursor-pointer items-center items-center gap-2 rounded text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600"
                           />
                         </div>
                       </>
