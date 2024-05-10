@@ -463,7 +463,88 @@ export default {
   com_nav_setting_data: 'Datenkontrollen',
   com_nav_setting_account: 'Konto',
   com_nav_language: 'Sprache',
+  /* The following are AI Translated */
+  com_error_moderation:
+    'Es sieht so aus, als ob der übermittelte Inhalt von unserem Moderationssystem als nicht konform mit unseren Gemeinschaftsrichtlinien markiert wurde. Wir können mit diesem spezifischen Thema leider nicht fortfahren. Wenn du andere Fragen oder Themen hast, die du gerne erörtern möchtest, bearbeite bitte deine Nachricht oder starte eine neue Konversation.',
+  com_error_no_user_key:
+    'Kein Schlüssel gefunden. Bitte gib einen Schlüssel ein und versuche es erneut.',
+  com_error_no_base_url:
+    'Es wurde keine Basis-URL gefunden. Bitte gib eine an und versuche es erneut.',
+  com_error_invalid_user_key:
+    'Ungültiger Schlüssel angegeben. Bitte gib einen gültigen Schlüssel ein und versuche es erneut.',
+  com_error_expired_user_key:
+    'Der bereitgestellte Schlüssel für {0} ist um {1} abgelaufen. Bitte gib einen neuen Schlüssel ein und versuche es erneut.',
+  com_ui_none_selected: 'Keine ausgewählt',
+  com_ui_fork: 'Abzweigen',
+  com_ui_fork_info_1:
+    'Verwende diese Einstellung, um Nachrichten mit dem gewünschten Verhalten abzuzweigen.',
+  com_ui_fork_info_2:
+    '"Forken" bezieht sich darauf, einen neuen Konversationsverlauf zu erstellen, der an bestimmten Nachrichten der aktuellen Konversation beginnt bzw. endet und eine Kopie gemäß den ausgewählten Optionen erstellt.',
+  com_ui_fork_info_3:
+    'Der Begriff "Zielnachricht" bezieht sich entweder auf die Nachricht, von der dieses Popup geöffnet wurde, oder, wenn du "{0}" auswählst, auf die letzte Nachricht im Gespräch.',
+  com_ui_fork_info_visible:
+    'Diese Option gabelt nur die sichtbaren Nachrichten ab; mit anderen Worten, den direkten Pfad zur Zielnachricht, ohne Verzweigungen.',
+  com_ui_fork_info_branches:
+    'Mit dieser Option werden die sichtbaren Nachrichten zusammen mit den zugehörigen Zweigen aufgeteilt; anders gesagt, der direkte Pfad zur Zielnachricht, einschließlich der Zweige entlang des Pfades.',
+  com_ui_fork_info_target:
+    'Diese Option verzweigt alle Nachrichten bis zur Zielnachricht, einschließlich ihrer Nachbarn; mit anderen Worten, alle Nachrichtenzweige werden einbezogen, unabhängig davon, ob sie sichtbar sind oder demselben Pfad folgen.',
+  com_ui_fork_info_start:
+    'Wenn aktiviert, beginnt die Abspaltung ab dieser Nachricht bis zur letzten Nachricht im Gespräch, entsprechend dem oben ausgewählten Verhalten.',
+  com_ui_fork_info_remember:
+    'Aktiviere diese Option, um deine gewählten Einstellungen für zukünftige Verwendungen zu speichern. So kannst du Konversationen schneller nach deinen Vorlieben aufteilen.',
+  com_ui_fork_success: 'Konversation erfolgreich abgespalten',
+  com_ui_fork_processing: 'Konversation wird aufgespalten...',
+  com_ui_fork_error: 'Bei der Aufspaltung des Gesprächs ist ein Fehler aufgetreten.',
+  com_ui_fork_change_default: 'Standardgabel-Option',
+  com_ui_fork_default: 'Standardverzweigungsoption verwenden',
+  com_ui_fork_remember: 'Merken',
+  com_ui_fork_split_target_setting: 'Fork standardmäßig vom Ziel-Nachricht starten',
+  com_ui_fork_split_target: 'Hier Gabelung starten',
+  com_ui_fork_remember_checked:
+    'Deine Auswahl wird nach der Verwendung gespeichert. Du kannst dies jederzeit in den Einstellungen ändern.',
+  com_ui_fork_all_target: 'Alle einbeziehen',
+  com_ui_fork_branches: 'Verwandte Branches einbeziehen',
+  com_ui_fork_visible: 'Nur sichtbare Nachrichten',
+  com_ui_fork_from_message: 'Wähle eine Fork-Option',
+  com_ui_mention:
+    'Erwähne einen Endpunkt, Assistenten oder eine Vorlage, um schnell dorthin zu wechseln',
+  com_ui_import_conversation_file_type_error: 'Nicht unterstützter Importtyp',
+  com_ui_min_tags:
+    'Es können keine weiteren Werte entfernt werden, mindestens {0} sind erforderlich.',
+  com_ui_max_tags: 'Die maximal erlaubte Anzahl ist {0}, die neuesten Werte werden verwendet.',
+  com_endpoint_messages: 'Nachrichten',
+  com_endpoint_context_tokens: 'Max. Kontexttoken',
+  com_endpoint_context_info:
+    'Die maximale Anzahl an Token, die für den Kontext verwendet werden kann. Verwenden Sie dies, um zu steuern, wie viele Token pro Anfrage gesendet werden. Wenn nicht angegeben, werden systemseitige Standardwerte basierend auf der bekannten Kontextgröße der Modelle verwendet. Höhere Werte können zu Fehlern und/oder höheren Tokenkosten führen.',
+  com_endpoint_stop: 'Stoppsequenzen',
+  com_endpoint_stop_placeholder: 'Trenne Werte durch Drücken der `Eingabetaste`',
+  com_endpoint_openai_max_tokens:
+    'Optionales `max_tokens`-Feld, das die maximale Anzahl der Token darstellt, die in der Chat-Vervollständigung generiert werden können.\n\nDie Gesamtlänge der eingegebenen Token und der generierten Token ist durch die Kontextlänge der Modelle begrenzt. Möglicherweise treten Fehler auf, wenn diese Zahl die maximale Kontexttoken-Anzahl überschreitet.',
+  com_endpoint_openai_stop:
+    'Bis zu 4 Sequenzen, bei denen die API die Generierung weiterer Token stoppt.',
+  com_nav_enter_to_send: 'Drücke Enter, um Nachrichten zu senden',
+  com_nav_lang_auto: 'Automatisch erkennen',
+  com_nav_lang_english: 'Englisch',
+  com_nav_lang_chinese: 'Chinesisch',
+  com_nav_lang_german: 'Deutsch',
+  com_nav_lang_spanish: 'Spanisch',
+  com_nav_lang_french: 'Französisch',
+  com_nav_lang_italian: 'Italienisch',
+  com_nav_lang_polish: 'Polnisch',
+  com_nav_lang_brazilian_portuguese: 'Brasilianisches Portugiesisch',
+  com_nav_lang_russian: 'Russisch',
+  com_nav_lang_japanese: 'Japanisch',
+  com_nav_lang_swedish: 'Schwedisch',
+  com_nav_lang_korean: 'Koreanisch',
+  com_nav_lang_vietnamese: 'Vietnamesisch',
+  com_nav_lang_traditionalchinese: 'Traditionelles Chinesisch',
+  com_nav_lang_arabic: 'Arabisch',
+  com_nav_lang_turkish: 'Türkisch',
+  com_nav_lang_dutch: 'Niederländisch',
+  com_nav_lang_indonesia: 'Indonesisch',
+  com_nav_lang_hebrew: 'Hebräisch',
 };
+
 export const comparisons = {
   com_files_no_results: {
     english: 'No results.',

@@ -85,7 +85,8 @@ Submit a translation in the target language, following the parameter description
 <parameter>
 <name>translation</name>
 <type>string</type>
-<description>${translationPrompt}</description>
+<description>${translationPrompt}
+ONLY include the generated translation without quotations, nor its related key</description>
 </parameter>
 </parameters>
 </tool_description>
