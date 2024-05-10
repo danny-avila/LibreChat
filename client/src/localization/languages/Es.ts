@@ -487,6 +487,43 @@ export default {
   com_endpoint_messages: 'Mensajes',
   com_endpoint_context_tokens: 'Máximo de tokens de contexto',
   com_endpoint_stop_placeholder: 'Separe los valores presionando `Intro`',
+  com_error_no_base_url:
+    'No se encontró URL base. Por favor proporcione una y vuelva a intentarlo.',
+  com_sidepanel_parameters: 'Parámetros',
+  com_ui_field_required: 'Este campo es obligatorio',
+  com_ui_download_error:
+    'Hubo un error al descargar el archivo. Es posible que el archivo haya sido eliminado.',
+  com_ui_on: 'Encendido',
+  com_ui_yes: 'Sí',
+  com_ui_no: 'No',
+  com_ui_fork: 'Bifurcar',
+  com_ui_fork_info_3:
+    'El término "mensaje objetivo" se refiere ya sea al mensaje desde el cual se abrió este popup, o, si marca "{0}", al último mensaje en la conversación.',
+  com_ui_fork_info_branches:
+    'Esta opción bifurca los mensajes visibles, junto con las ramas relacionadas; en otras palabras, la ruta directa hacia el mensaje objetivo, incluyendo las ramas a lo largo de esa ruta.',
+  com_ui_fork_info_target:
+    'Esta opción bifurca todos los mensajes que conducen al mensaje objetivo, incluyendo sus vecinos; en otras palabras, se incluyen todas las ramas de mensajes, ya sean visibles o no, o estén en el mismo camino.',
+  com_ui_fork_info_remember:
+    'Marque esta opción para recordar las preferencias que seleccione para su uso futuro, lo que agilizará la bifurcación de conversaciones según sus preferencias.',
+  com_ui_fork_change_default: 'Opción de bifurcación predeterminada',
+  com_ui_fork_default: 'Utilizar opción de bifurcación predeterminada',
+  com_ui_fork_remember: 'Recuerde',
+  com_ui_fork_split_target: 'Iniciar bifurcación aquí',
+  com_ui_fork_remember_checked:
+    'Su selección se recordará después de utilizarla. Puede cambiar esta opción en cualquier momento en la configuración.',
+  com_ui_fork_all_target: 'Incluir todo desde/hacia aquí',
+  com_ui_fork_branches: 'Incluir ramas relacionadas',
+  com_ui_fork_visible: 'Mostrar únicamente mensajes visibles',
+  com_ui_fork_from_message: 'Seleccione una opción de bifurcación',
+  com_ui_mention:
+    'Menciona un punto de conexión, asistente o preconfiguración para cambiar rápidamente a él.',
+  com_ui_max_tags: 'El número máximo permitido es {0}, utilizando los valores más recientes.',
+  com_endpoint_context_info:
+    'La cantidad máxima de tokens que se pueden utilizar para el contexto. Utilice esto para controlar cuántos tokens se envían por solicitud. Si no se especifica, se utilizarán los valores predeterminados del sistema basados en el tamaño de contexto conocido de los modelos. Establecer valores más altos puede resultar en errores y/o un mayor costo de tokens.',
+  com_endpoint_stop: 'Secuencias de detención',
+  com_endpoint_openai_max_tokens:
+    'Campo opcional `max_tokens`, que representa el número máximo de tokens que se pueden generar en la finalización del chat.\n\nLa longitud total de los tokens de entrada y los tokens generados está limitada por la longitud del contexto del modelo. Puede experimentar errores si este número excede los tokens máximos de contexto.',
+  com_endpoint_openai_stop: 'Hasta 4 secuencias donde la API dejará de generar más tokens.',
   com_nav_lang_english: 'Inglés',
   com_nav_lang_chinese: 'Chino',
   com_nav_lang_german: 'Alemán',
