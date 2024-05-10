@@ -116,11 +116,10 @@ Please consult the breaking changes before updating.
         height="56"
     />
 </a>
-</p>
-
 <a href="https://star-history.com/#danny-avila/LibreChat&Date">
   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
 </a>
+</p>
 
 ---
 
