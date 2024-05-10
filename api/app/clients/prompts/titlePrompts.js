@@ -59,7 +59,9 @@ Submit a brief title in the conversation's language, following the parameter des
 </tool_description>
 </tools>`;
 
-const genTranslationPrompt = (translationPrompt) => `In this environment you have access to a set of tools you can use to translate text.
+const genTranslationPrompt = (
+  translationPrompt,
+) => `In this environment you have access to a set of tools you can use to translate text.
   
 You may call them like this:
 <function_calls>
@@ -96,7 +98,7 @@ Submit a translation in the target language, following the parameter description
  * @returns {string} The parsed parameter's value or a default value if not found.
  */
 function parseParamFromPrompt(prompt, paramName) {
-  const paramRegex = new RegExp(`<${paramName}>(.+?)</${paramName}>`);
+  const paramRegex = new RegExp(`<${paramName}>([\\s\\S]+?)</${paramName}>`);
   const paramMatch = prompt.match(paramRegex);
 
   if (paramMatch && paramMatch[1]) {
