@@ -96,7 +96,6 @@ Submit a translation in the target language, following the parameter description
  * @returns {string} The parsed parameter's value or a default value if not found.
  */
 function parseParamFromPrompt(prompt, paramName) {
-  // Construct a regex based on the parameter name
   const paramRegex = new RegExp(`<${paramName}>(.+?)</${paramName}>`);
   const paramMatch = prompt.match(paramRegex);
 
@@ -104,8 +103,9 @@ function parseParamFromPrompt(prompt, paramName) {
     return paramMatch[1].trim();
   }
 
-  // Return a generic default value if no specific parameter is found
-  console.log('prompt', prompt);
+  if (prompt && prompt.length) {
+    return `NO TOOL INVOCATION: ${prompt}`;
+  }
   return `No ${paramName} provided`;
 }
 

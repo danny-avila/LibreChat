@@ -44,7 +44,11 @@ import {
     
     Please generate a translation for the key in the target language as described by the function.
     
-    Similar key and phrases: ${context.map((c) => c.pageContent).join(', ')}`;
+    Similar key and phrases: ${context.map((c) => c.pageContent).join(', ')}
+    
+    Remember to invoke the tool with proper tool invocation; e.g.:
+    
+    <invoke>\n<tool_name>submit_translation</tool_name>\n<parameters>\n<translation>Your Translation Here</translation>\n</parameters>\n</invoke>`;
 
       const message: a.Anthropic.MessageParam = { role: 'user', content };
       const requestOptions: a.Anthropic.MessageCreateParamsNonStreaming = {
@@ -68,6 +72,5 @@ import {
     };
 
     await translateCompletion();
-    console.log('[AnthropicClient] Translation: ' + translation);
     return translation;
   }
