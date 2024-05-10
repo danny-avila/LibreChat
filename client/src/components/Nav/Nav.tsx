@@ -67,7 +67,7 @@ const Nav = ({ navVisible, setNavVisible }) => {
     { enabled: isAuthenticated && !!searchQuery.length },
   );
 
-  const { containerRef, moveToTop } = useNavScrolling({
+  const { containerRef, moveToTop } = useNavScrolling<ConversationListResponse>({
     setShowLoading,
     hasNextPage: searchQuery ? searchQueryRes.hasNextPage : hasNextPage,
     fetchNextPage: searchQuery ? searchQueryRes.fetchNextPage : fetchNextPage,
