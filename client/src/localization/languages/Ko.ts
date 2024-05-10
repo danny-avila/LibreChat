@@ -50,6 +50,17 @@ export default {
   com_ui_import_conversation_error: '대화를 가져오는 동안 오류가 발생했습니다',
   com_ui_confirm_action: '작업 확인',
   com_ui_chats: '채팅',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: '삭제',
   com_ui_delete_conversation: '채팅을 삭제하시겠습니까?',
   com_ui_delete_conversation_confirm: '이 채팅이 삭제됩니다',
@@ -114,9 +125,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: '시드니를 활성화하려면',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-    'Bing은 \'컨텍스트\'로 최대 7,000개의 토큰을 사용할 수 있으며, 대화에서 참조할 수 있습니다. 구체적인 제한은 알려져 있지 않지만, 7,000개의 토큰을 초과하면 오류가 발생할 수 있습니다.',
+    "Bing은 '컨텍스트'로 최대 7,000개의 토큰을 사용할 수 있으며, 대화에서 참조할 수 있습니다. 구체적인 제한은 알려져 있지 않지만, 7,000개의 토큰을 초과하면 오류가 발생할 수 있습니다.",
   com_endpoint_bing_system_message_placeholder:
-    '경고: 이 기능의 오용으로 인해 Bing의 사용이 \'금지\'될 수 있습니다. 모든 내용을 보려면 \'시스템 메시지\'를 클릭하세요. 생략된 경우 \'시드니\' 프리셋이 사용됩니다.',
+    "경고: 이 기능의 오용으로 인해 Bing의 사용이 '금지'될 수 있습니다. 모든 내용을 보려면 '시스템 메시지'를 클릭하세요. 생략된 경우 '시드니' 프리셋이 사용됩니다.",
   com_endpoint_system_message: '시스템 메시지',
   com_endpoint_default_blank: '기본값: 공백',
   com_endpoint_default_false: '기본값: false',
@@ -234,6 +245,11 @@ export default {
   com_nav_export_recursive_or_sequential: '재귀적 또는 순차적?',
   com_nav_export_recursive: '재귀적',
   com_nav_export_conversation: '대화 내보내기',
+  com_nav_shared_links: '공유 링크',
+  com_nav_shared_links_manage: '관리',
+  com_nav_shared_links_empty: '공유 링크가 없습니다.',
+  com_nav_shared_links_name: '이름',
+  com_nav_shared_links_date_shared: '공유 날짜',
   com_nav_theme: '테마',
   com_nav_theme_system: '시스템',
   com_nav_theme_dark: '다크',

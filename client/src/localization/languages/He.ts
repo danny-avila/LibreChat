@@ -91,6 +91,17 @@ export default {
   com_ui_assistant: 'סייען',
   com_ui_delete: 'מחק',
   com_ui_create: 'צור',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'למחוק את השיחה (צאט)?',
   com_ui_delete_conversation_confirm: 'זה ימחק',
   com_ui_delete_assistant_confirm:
@@ -162,9 +173,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'כדי לאפשר את סידני',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-    'בינג יכול להשתמש בעד 7,000 אסימונים עבור \'הקשר\', שאליהם הוא יכול להתייחס לשיחה. המגבלה הספציפית אינה ידועה אך עשויה להיתקל בשגיאות העולות על 7,000 אסימונים',
+    "בינג יכול להשתמש בעד 7,000 אסימונים עבור 'הקשר', שאליהם הוא יכול להתייחס לשיחה. המגבלה הספציפית אינה ידועה אך עשויה להיתקל בשגיאות העולות על 7,000 אסימונים",
   com_endpoint_bing_system_message_placeholder:
-    'אזהרה: שימוש לרעה בתכונה זו יכול לגרום לך לאסור להשתמש ב-Bing! לחץ על \'הודעת מערכת\' לקבלת הוראות מלאות והודעת ברירת המחדל אם הושמטה, שהיא הקביעה המוגדרת מראש של \'Sydney\' שנחשבת בטוחה.',
+    "אזהרה: שימוש לרעה בתכונה זו יכול לגרום לך לאסור להשתמש ב-Bing! לחץ על 'הודעת מערכת' לקבלת הוראות מלאות והודעת ברירת המחדל אם הושמטה, שהיא הקביעה המוגדרת מראש של 'Sydney' שנחשבת בטוחה.",
   com_endpoint_system_message: 'הודעת מערכת',
   com_endpoint_message: 'הודעה',
   com_endpoint_message_not_appendable: 'ערוך את ההודעה שלך או צור מחדש.',
@@ -218,7 +229,7 @@ export default {
   com_endpoint_openai_prompt_prefix_placeholder:
     'הגדר הוראות מותאמות אישית לכלול בהודעת המערכת. ברירת מחדל: אין',
   com_endpoint_anthropic_temp:
-    'נע בין 0 ל-1. השתמש בטמפ\' הקרובה יותר ל-0 עבור בחירה אנליטית / מרובה, וקרוב יותר ל-1 עבור משימות יצירתיות ויצירתיות. אנו ממליצים לשנות את זה או את Top P אבל לא את שניהם.',
+    "נע בין 0 ל-1. השתמש בטמפ' הקרובה יותר ל-0 עבור בחירה אנליטית / מרובה, וקרוב יותר ל-1 עבור משימות יצירתיות ויצירתיות. אנו ממליצים לשנות את זה או את Top P אבל לא את שניהם.",
   com_endpoint_anthropic_topp:
     'Top-p משנה את האופן שבו המודל בוחר אסימונים לפלט. אסימונים נבחרים מבין רוב K (ראה פרמטר topK) הסביר לפחות עד שסכום ההסתברויות שלהם שווה לערך העליון-p.',
   com_endpoint_anthropic_topk:
@@ -305,7 +316,7 @@ export default {
     'השתמש בכלי מפתחים או בתוסף בזמן שאתה מחובר לאתר כדי להעתיק את התוכן של קובץ ה-cookie _U. אם זה נכשל, עקוב אחר אלה',
   com_endpoint_config_key_edge_instructions: 'הוראות',
   com_endpoint_config_key_edge_full_key_string: 'כדי לספק את מחרוזות העוגיות המלאות.',
-  com_endpoint_config_key_chatgpt: 'כדי לקבל את אסימון הגישה שלך ל-ChatGPT \'גרסה חינמית\', היכנס אל',
+  com_endpoint_config_key_chatgpt: "כדי לקבל את אסימון הגישה שלך ל-ChatGPT 'גרסה חינמית', היכנס אל",
   com_endpoint_config_key_chatgpt_then_visit: 'ואז בקר',
   com_endpoint_config_key_chatgpt_copy_token: 'העתק אסימון גישה.',
   com_endpoint_config_key_google_need_to: 'אתה צריך',
@@ -313,7 +324,7 @@ export default {
   com_endpoint_config_key_google_vertex_api: 'API ב-Google Cloud, אז',
   com_endpoint_config_key_google_service_account: 'צור חשבון שירות',
   com_endpoint_config_key_google_vertex_api_role:
-    'הקפד ללחוץ על \'צור והמשך\' כדי לתת לפחות את התפקיד \'Vertex AI User\'. לבסוף, צור מפתח JSON לייבא לכאן.',
+    "הקפד ללחוץ על 'צור והמשך' כדי לתת לפחות את התפקיד 'Vertex AI User'. לבסוף, צור מפתח JSON לייבא לכאן.",
   com_nav_welcome_message: 'איך אני יכול לעזור לך היום?',
   com_nav_auto_scroll: 'Auto-s גלול אל הכי חדש בפתיחה',
   com_nav_hide_panel: 'הסתר לוח הצד הימני ביותר',
@@ -345,6 +356,11 @@ export default {
   com_nav_export_recursive_or_sequential: 'רקורסיבי או רציף?',
   com_nav_export_recursive: 'רקורסיבי',
   com_nav_export_conversation: 'ייצא שיחה',
+  com_nav_shared_links: 'קישורים משותפים',
+  com_nav_shared_links_manage: 'ניהול',
+  com_nav_shared_links_empty: 'אין לך קישורים משותפים.',
+  com_nav_shared_links_name: 'שם',
+  com_nav_shared_links_date_shared: 'תאריך שיתוף',
   com_nav_theme: 'נושא',
   com_nav_theme_system: 'מערכת',
   com_nav_theme_dark: 'כהה',

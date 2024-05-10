@@ -7,7 +7,7 @@ export default {
   com_ui_example_quantum_computing: 'Kuantum bilgisayarını basit terimlerle açıkla',
   com_ui_example_10_year_old_b_day:
     '10 yaşındaki bir çocuğun doğum günü için yaratıcı fikirlerin var mı?',
-  com_ui_example_http_in_js: 'Javascript\'te HTTP isteği nasıl yapılır?',
+  com_ui_example_http_in_js: "Javascript'te HTTP isteği nasıl yapılır?",
   com_ui_capabilities: 'Yetenekler',
   com_ui_capability_remember: 'Kullanıcının önceki konuşmada söylediklerini hatırlar',
   com_ui_capability_correction: 'Kullanıcının düzeltme yapmasına izin verir',
@@ -53,6 +53,17 @@ export default {
   com_ui_import_conversation_error: 'Sohbetlerinizi içe aktarırken bir hata oluştu',
   com_ui_confirm_action: 'İşlemi Onayla',
   com_ui_chats: 'sohbetler',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'Sil',
   com_ui_delete_conversation: 'Sohbet silinecek?',
   com_ui_delete_conversation_confirm: 'Bu silinecek',
@@ -120,8 +131,8 @@ export default {
   com_auth_submit_registration: 'Kaydı Gönder',
   com_auth_welcome_back: 'Tekrar Hoş Geldiniz',
   com_endpoint_open_menu: 'Menüyü Aç',
-  com_endpoint_bing_enable_sydney: 'Sydney\'i Etkinleştir',
-  com_endpoint_bing_to_enable_sydney: 'Sydney\'i etkinleştirmek için',
+  com_endpoint_bing_enable_sydney: "Sydney'i Etkinleştir",
+  com_endpoint_bing_to_enable_sydney: "Sydney'i etkinleştirmek için",
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
     'Bing, konuşma için başvurabileceği "bağlam" için 7k tokena kadar kullanabilir. Belirli bir sınır bilinmemekle birlikte, 7k tokeni aşan hatalara neden olabilir',
@@ -142,7 +153,7 @@ export default {
   com_endpoint_google_temp:
     'Daha yüksek değerler = daha rastgele, daha düşük değerler = daha odaklanmış ve belirleyici. Bunlardan birini değiştirmenizi öneririz, ancak her ikisini birden değil.',
   com_endpoint_google_topp:
-    'Top-p, modelin çıkış için token seçme şeklini değiştirir. Token\'lar, en yüksek K (topK parametresini görmek için) olasılıktan en düşük olasılığa kadar seçilir, toplam olasılıkları top-p değerine eşit olana kadar.',
+    "Top-p, modelin çıkış için token seçme şeklini değiştirir. Token'lar, en yüksek K (topK parametresini görmek için) olasılıktan en düşük olasılığa kadar seçilir, toplam olasılıkları top-p değerine eşit olana kadar.",
   com_endpoint_google_topk:
     'Top-k, modelin çıkış için token seçme şeklini değiştirir. 1 top-k, seçilen tokenın modelin kelime dağarcığındaki tüm tokenlar arasında en olası olduğu anlamına gelir (ayrıca aç gözlü kod çözme denir), 3 top-k ise bir sonraki tokenın 3 en olası token arasından seçildiği anlamına gelir (sıcaklık kullanılarak).',
   com_endpoint_google_maxoutputtokens:
@@ -162,18 +173,18 @@ export default {
   com_endpoint_openai_max:
     'Oluşturulacak maksimum token sayısı. Giriş tokenlarının toplam uzunluğu, modelin bağlam uzunluğu tarafından sınırlanır.',
   com_endpoint_openai_topp:
-    'Sıcaklıkla örnekleme alternatifi olan bir başka seçenek, modelin top_p olasılık kütlesine sahip tokenların sonuçlarını düşünmesidir. Bu nedenle 0.1, yalnızca top 10% olasılık kütlesini oluşturan token\'ların düşünüldüğü anlamına gelir. Bunları veya sıcaklığı değiştirmenizi öneririz, ancak her ikisini birden değil.',
+    "Sıcaklıkla örnekleme alternatifi olan bir başka seçenek, modelin top_p olasılık kütlesine sahip tokenların sonuçlarını düşünmesidir. Bu nedenle 0.1, yalnızca top 10% olasılık kütlesini oluşturan token'ların düşünüldüğü anlamına gelir. Bunları veya sıcaklığı değiştirmenizi öneririz, ancak her ikisini birden değil.",
   com_endpoint_openai_freq:
     'Metindeki mevcut frekanslarına dayanarak yeni tokenları cezalandırmak için -2.0 ile 2.0 arasında bir sayı. Pozitif değerler, modelin aynı satırı kelimesi kelimesine tekrar etme olasılığını azaltır.',
   com_endpoint_openai_pres:
     'Metindeki varolup olmadıklarına dayanarak yeni tokenları cezalandırmak için -2.0 ile 2.0 arasında bir sayı. Pozitif değerler, modelin yeni konulardan bahsetme olasılığını artırır.',
   com_endpoint_openai_custom_name_placeholder: 'ChatGPT için özel bir ad belirleyin',
   com_endpoint_openai_prompt_prefix_placeholder:
-    'Sistem Mesajı\'na dahil edilecek özel talimatları ayarlayın. Varsayılan: yok',
+    "Sistem Mesajı'na dahil edilecek özel talimatları ayarlayın. Varsayılan: yok",
   com_endpoint_anthropic_temp:
     '0 ile 1 arasında bir değer. Analitik / çoklu seçim için daha yakın bir sıcaklık kullanın ve yaratıcı ve üretken görevler için daha yakın 1 kullanın. Bunlardan birini değiştirmenizi öneririz, ancak her ikisini birden değil.',
   com_endpoint_anthropic_topp:
-    'Top-p, modelin çıkış için token seçme şeklini değiştirir. Token\'lar, en yüksek K (topK parametresini görmek için) olasılıktan en düşük olasılığa kadar seçilir, toplam olasılıkları top-p değerine eşit olana kadar.',
+    "Top-p, modelin çıkış için token seçme şeklini değiştirir. Token'lar, en yüksek K (topK parametresini görmek için) olasılıktan en düşük olasılığa kadar seçilir, toplam olasılıkları top-p değerine eşit olana kadar.",
   com_endpoint_anthropic_topk:
     'Top-k, modelin çıkış için token seçme şeklini değiştirir. 1 top-k, seçilen tokenın modelin kelime dağarcığındaki tüm tokenlar arasında en olası olduğu anlamına gelir (ayrıca aç gözlü kod çözme denir), 3 top-k ise bir sonraki tokenın 3 en olası token arasından seçildiği anlamına gelir (sıcaklık kullanılarak).',
   com_endpoint_anthropic_maxoutputtokens:
@@ -186,7 +197,7 @@ export default {
   com_endpoint_disabled_with_tools: 'araçlarla devre dışı bırakıldı',
   com_endpoint_disabled_with_tools_placeholder: 'Araçlar Seçiliyken Devre Dışı Bırakıldı',
   com_endpoint_plug_set_custom_instructions_for_gpt_placeholder:
-    'Sistem Mesajı\'na dahil edilecek özel talimatları ayarlayın. Varsayılan: hiçbiri',
+    "Sistem Mesajı'na dahil edilecek özel talimatları ayarlayın. Varsayılan: hiçbiri",
   com_endpoint_import: 'İçe Aktar',
   com_endpoint_set_custom_name: 'Bu ön ayarı bulabilmeniz için özel bir ad belirleyin',
   com_endpoint_preset_delete_confirm: 'Bu ön ayarı silmek istediğinizden emin misiniz?',
@@ -252,15 +263,15 @@ export default {
   com_endpoint_config_key_edge_instructions: 'talimatları',
   com_endpoint_config_key_edge_full_key_string: 'tam çerez dizilerini sağlamak için.',
   com_endpoint_config_key_chatgpt:
-    'ChatGPT \'Free Version\' için Erişim belirtecinizi almak için giriş yapın',
+    "ChatGPT 'Free Version' için Erişim belirtecinizi almak için giriş yapın",
   com_endpoint_config_key_chatgpt_then_visit: 'ardından ziyaret edin',
   com_endpoint_config_key_chatgpt_copy_token: 'Erişim belirtecini kopyalayın.',
   com_endpoint_config_key_google_need_to: 'Şunlara ihtiyacınız var:',
-  com_endpoint_config_key_google_vertex_ai: 'Vertex AI\'yi Etkinleştir',
-  com_endpoint_config_key_google_vertex_api: 'Google Cloud\'da API\'yi Etkinleştirin, ardından',
+  com_endpoint_config_key_google_vertex_ai: "Vertex AI'yi Etkinleştir",
+  com_endpoint_config_key_google_vertex_api: "Google Cloud'da API'yi Etkinleştirin, ardından",
   com_endpoint_config_key_google_service_account: 'Bir Servis Hesabı Oluşturun',
   com_endpoint_config_key_google_vertex_api_role:
-    'Lütfen \'Oluştur ve Devam Et\'e tıklayarak en az \'Vertex AI Kullanıcısı\' rolünü verdiğinizden emin olun. Son olarak, buraya içe aktarmak için bir JSON anahtarı oluşturun.',
+    "Lütfen 'Oluştur ve Devam Et'e tıklayarak en az 'Vertex AI Kullanıcısı' rolünü verdiğinizden emin olun. Son olarak, buraya içe aktarmak için bir JSON anahtarı oluşturun.",
   com_nav_welcome_message: 'Bugün size nasıl yardımcı olabilirim?',
   com_nav_auto_scroll: 'Açıkta En Yeniye Otomatik Kaydır',
   com_nav_plugin_store: 'Eklenti Mağazası',
@@ -277,6 +288,11 @@ export default {
   com_nav_export_recursive_or_sequential: 'Yinelemeli mi yoksa sıralı mı?',
   com_nav_export_recursive: 'Yinelemeli',
   com_nav_export_conversation: 'Konuşmayı dışa aktar',
+  com_nav_shared_links: 'Paylaşılan linkler',
+  com_nav_shared_links_manage: 'Ynetmek',
+  com_nav_shared_links_empty: 'Paylaşılan linkleriniz yok.',
+  com_nav_shared_links_name: 'İsim',
+  com_nav_shared_links_date_shared: 'Paylaşılan tarih',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistem',
   com_nav_theme_dark: 'Koyu',

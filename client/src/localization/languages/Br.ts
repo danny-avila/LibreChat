@@ -135,6 +135,17 @@ export default {
   com_ui_assistants_output: 'Saída dos Assistentes',
   com_ui_delete: 'Excluir',
   com_ui_create: 'Criar',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Excluir conversa?',
   com_ui_delete_conversation_confirm: 'Isso excluirá',
   com_ui_delete_assistant_confirm:
@@ -216,9 +227,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'Para habilitar Sydney',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-    'O Bing pode usar até 7k tokens para \'contexto\', que ele pode referenciar para a conversa. O limite específico não é conhecido, mas pode causar erros ao exceder 7k tokens',
+    "O Bing pode usar até 7k tokens para 'contexto', que ele pode referenciar para a conversa. O limite específico não é conhecido, mas pode causar erros ao exceder 7k tokens",
   com_endpoint_bing_system_message_placeholder:
-    'AVISO: O uso indevido deste recurso pode fazer com que você seja BANIDO de usar o Bing! Clique em \'Mensagem do Sistem\' para obter instruções completas e a mensagem padrão, caso omitida, que é a predefinição \'Sydney\', considerada segura.',
+    "AVISO: O uso indevido deste recurso pode fazer com que você seja BANIDO de usar o Bing! Clique em 'Mensagem do Sistem' para obter instruções completas e a mensagem padrão, caso omitida, que é a predefinição 'Sydney', considerada segura.",
   com_endpoint_system_message: 'Mensagem do Sistema',
   com_endpoint_message: 'Conversar com',
   com_endpoint_message_not_appendable: 'Edite sua mensagem ou Regenere.',
@@ -373,7 +384,7 @@ export default {
   com_endpoint_config_key_edge_instructions: 'instruções',
   com_endpoint_config_key_edge_full_key_string: 'para fornecer as strings completas de cookies.',
   com_endpoint_config_key_chatgpt:
-    'Para obter seu Token de Acesso para o ChatGPT \'Versão Gratuita\', faça login em',
+    "Para obter seu Token de Acesso para o ChatGPT 'Versão Gratuita', faça login em",
   com_endpoint_config_key_chatgpt_then_visit: 'então visite',
   com_endpoint_config_key_chatgpt_copy_token: 'Copiar token de acesso.',
   com_endpoint_config_key_google_need_to: 'Você precisa',
@@ -381,7 +392,7 @@ export default {
   com_endpoint_config_key_google_vertex_api: 'API no Google Cloud, então',
   com_endpoint_config_key_google_service_account: 'Criar uma Conta de Serviço',
   com_endpoint_config_key_google_vertex_api_role:
-    'Certifique-se de clicar em \'Criar e Continuar\' para dar pelo menos a função \'Usuário do Vertex AI\'. Por último, crie uma chave JSON para importar aqui.',
+    "Certifique-se de clicar em 'Criar e Continuar' para dar pelo menos a função 'Usuário do Vertex AI'. Por último, crie uma chave JSON para importar aqui.",
   com_nav_welcome_assistant: 'Por favor, Selecione um Assistente',
   com_nav_welcome_message: 'Como posso ajudar você hoje?',
   com_nav_auto_scroll: 'Auto-rolagem para o mais recente ao abrir',
@@ -417,6 +428,11 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursivo ou sequencial?',
   com_nav_export_recursive: 'Recursivo',
   com_nav_export_conversation: 'Exportar conversa',
+  com_nav_shared_links: 'Links Compartilhados',
+  com_nav_shared_links_manage: 'Gerenciar',
+  com_nav_shared_links_empty: 'Você não tem nenhum link compartilhado.',
+  com_nav_shared_links_name: 'Nome',
+  com_nav_shared_links_date_shared: 'Data compartilhada',
   com_nav_my_files: 'Meus arquivos',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistema',

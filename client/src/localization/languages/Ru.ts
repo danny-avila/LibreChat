@@ -66,6 +66,17 @@ export default {
   com_ui_preview: 'Предпросмотр',
   com_ui_upload: 'Загрузить',
   com_ui_connect: 'Подключить',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Удалить чат?',
   com_ui_delete_conversation_confirm: 'Будет удален следующий чат: ',
   com_ui_rename: 'Переименовать',
@@ -282,7 +293,7 @@ export default {
   com_endpoint_config_key_google_vertex_api: 'API в Google Cloud, после',
   com_endpoint_config_key_google_service_account: 'Создать Service Account',
   com_endpoint_config_key_google_vertex_api_role:
-    'Убедитесь что нажали на \'Create and Continue\' чтобы получить как минимум \'Vertex AI User\'. Наконец, создайте JSON-ключ чтобы импортировать его сюда.',
+    "Убедитесь что нажали на 'Create and Continue' чтобы получить как минимум 'Vertex AI User'. Наконец, создайте JSON-ключ чтобы импортировать его сюда.",
   com_nav_welcome_message: 'Чем я могу помочь вам сегодня?',
   com_nav_auto_scroll: 'Автоматически проматывать к самым новым сообщениям при открытии',
   com_nav_hide_panel: 'Скрыть правую боковую панель',
@@ -302,6 +313,11 @@ export default {
   com_nav_export_recursive_or_sequential: 'Рекурсивно или последовательно?',
   com_nav_export_recursive: 'Рекурсивно',
   com_nav_export_conversation: 'Экспортировать разговор',
+  com_nav_shared_links: 'Связываемые ссылки',
+  com_nav_shared_links_manage: 'Управление',
+  com_nav_shared_links_empty: 'У вас нет связываемых ссылок.',
+  com_nav_shared_links_name: 'Naam',
+  com_nav_shared_links_date_shared: 'Datum gedeeld',
   com_nav_my_files: 'Мои файлы',
   com_nav_theme: 'Тема',
   com_nav_theme_system: 'Системная',

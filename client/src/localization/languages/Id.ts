@@ -61,6 +61,17 @@ export default {
   com_ui_import_conversation_error: 'Terjadi kesalahan saat mengimpor percakapan Anda',
   com_ui_confirm_action: 'Konfirmasi Aksi',
   com_ui_chats: 'chat',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'Hapus',
   com_ui_delete_conversation: 'Hapus chat?',
   com_ui_delete_conversation_confirm: 'Ini akan menghapus',
@@ -134,9 +145,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'Untuk mengaktifkan Sydney',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-    'Bing dapat menggunakan hingga 7k token untuk \'konteks\', yang dapat dirujuk untuk percakapan. Batas spesifik tidak diketahui tetapi mungkin menemui kesalahan melebihi 7k token',
+    "Bing dapat menggunakan hingga 7k token untuk 'konteks', yang dapat dirujuk untuk percakapan. Batas spesifik tidak diketahui tetapi mungkin menemui kesalahan melebihi 7k token",
   com_endpoint_bing_system_message_placeholder:
-    'PERINGATAN: Penyalahgunaan fitur ini dapat membuat Anda DILARANG menggunakan Bing! Klik pada \'Pesan Sistem\' untuk instruksi lengkap dan pesan default jika diabaikan, yang merupakan preset \'Sydney\' yang dianggap aman.',
+    "PERINGATAN: Penyalahgunaan fitur ini dapat membuat Anda DILARANG menggunakan Bing! Klik pada 'Pesan Sistem' untuk instruksi lengkap dan pesan default jika diabaikan, yang merupakan preset 'Sydney' yang dianggap aman.",
   com_endpoint_system_message: 'Pesan Sistem',
   com_endpoint_message: 'Pesan',
   com_endpoint_message_not_appendable: 'Edit pesan Anda atau Regenerasi.',
@@ -271,7 +282,7 @@ export default {
   com_endpoint_config_key_edge_instructions: 'instruksi',
   com_endpoint_config_key_edge_full_key_string: 'untuk memberikan string cookie lengkap.',
   com_endpoint_config_key_chatgpt:
-    'Untuk mendapatkan token akses Anda Untuk ChatGPT \'Versi Gratis\', masuk ke',
+    "Untuk mendapatkan token akses Anda Untuk ChatGPT 'Versi Gratis', masuk ke",
   com_endpoint_config_key_chatgpt_then_visit: 'kemudian kunjungi',
   com_endpoint_config_key_chatgpt_copy_token: 'Salin token akses.',
   com_endpoint_config_key_google_need_to: 'Anda perlu',
@@ -279,7 +290,7 @@ export default {
   com_endpoint_config_key_google_vertex_api: 'API di Google Cloud, kemudian',
   com_endpoint_config_key_google_service_account: 'Buat Akun Layanan',
   com_endpoint_config_key_google_vertex_api_role:
-    'Pastikan untuk mengklik \'Buat dan Lanjutkan\' untuk memberikan setidaknya peran \'Pengguna Vertex AI\'. Terakhir, buat kunci JSON untuk diimpor di sini.',
+    "Pastikan untuk mengklik 'Buat dan Lanjutkan' untuk memberikan setidaknya peran 'Pengguna Vertex AI'. Terakhir, buat kunci JSON untuk diimpor di sini.",
   com_nav_welcome_message: 'Bagaimana saya bisa membantu Anda hari ini?',
   com_nav_auto_scroll: 'Otomatis gulir ke Baru saat Buka',
   com_nav_modular_chat: 'Aktifkan penggantian Endpoint di tengah percakapan',
@@ -304,6 +315,11 @@ export default {
   com_nav_export_recursive_or_sequential: 'Rekursif atau berurutan?',
   com_nav_export_recursive: 'Rekursif',
   com_nav_export_conversation: 'Ekspor percakapan',
+  com_nav_shared_links: 'Link berbagi',
+  com_nav_shared_links_manage: 'Pengeluaran',
+  com_nav_shared_links_empty: 'Anda tidak memiliki link berbagi.',
+  com_nav_shared_links_name: 'Nama',
+  com_nav_shared_links_date_shared: 'Tanggal berbagi',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistem',
   com_nav_theme_dark: 'Gelap',

@@ -30,6 +30,17 @@ export default {
   com_ui_entries: 'wpisów',
   com_ui_pay_per_call:
     'Wszystkie rozmowy z AI w jednym miejscu. Płatność za połączenie, a nie za miesiąc',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_rename: 'Zmień nazwę',
   com_ui_archive: 'Archiwum',
   com_ui_archive_error: 'Nie udało się archiwizować rozmowy',
@@ -92,9 +103,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'Aby aktywować Sydney',
   com_endpoint_bing_jailbreak: 'Odblokuj',
   com_endpoint_bing_context_placeholder:
-    'Bing może użyć do 7k tokenów dla \'kontekstu\', które mogą odnosić się do rozmowy.  Dokładny limit nie jest znany, ale przekroczenie 7 tysięcy tokenów może prowadzić do błędów.',
+    "Bing może użyć do 7k tokenów dla 'kontekstu', które mogą odnosić się do rozmowy.  Dokładny limit nie jest znany, ale przekroczenie 7 tysięcy tokenów może prowadzić do błędów.",
   com_endpoint_bing_system_message_placeholder:
-    'OSTRZEŻENIE: Nadużywanie tej funkcji może skutkować ZAKAZEM korzystania z Bing! Kliknij na \'Wiadomość systemowa\' , aby uzyskać pełne instrukcje oraz domyślną wiadomość, jeśli zostanie pominięta, co jest predefiniowaną opcją \'Sydney\', uważaną za bezpieczną.',
+    "OSTRZEŻENIE: Nadużywanie tej funkcji może skutkować ZAKAZEM korzystania z Bing! Kliknij na 'Wiadomość systemowa' , aby uzyskać pełne instrukcje oraz domyślną wiadomość, jeśli zostanie pominięta, co jest predefiniowaną opcją 'Sydney', uważaną za bezpieczną.",
   com_endpoint_system_message: 'Wiadomość systemowa',
   com_endpoint_default_blank: 'domyślnie: puste',
   com_endpoint_default_false: 'domyślnie: fałsz',
@@ -192,6 +203,11 @@ export default {
   com_nav_export_recursive_or_sequential: 'Rekurencyjny czy sekwencyjny?',
   com_nav_export_recursive: 'Rekurencyjny',
   com_nav_export_conversation: 'Eksportuj konwersację',
+  com_nav_shared_links: 'Linki udostępnione',
+  com_nav_shared_links_manage: 'Beheren',
+  com_nav_shared_links_empty: 'U hebt geen gedeeld links.',
+  com_nav_shared_links_name: 'Naam',
+  com_nav_shared_links_date_shared: 'Datum gedeeld',
   com_nav_theme: 'Motyw',
   com_nav_theme_system: 'Domyślny',
   com_nav_theme_dark: 'Ciemny',

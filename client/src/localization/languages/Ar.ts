@@ -51,6 +51,17 @@ export default {
   com_ui_import_conversation_error: 'حدث خطأ أثناء استيراد محادثاتك',
   com_ui_confirm_action: 'تأكيد الإجراء',
   com_ui_chats: 'الدردشات',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete: 'حذف',
   com_ui_delete_conversation: 'حذف الدردشة؟',
   com_ui_delete_conversation_confirm: 'سيتم حذف هذا',
@@ -122,9 +133,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'لتمكين سيدني',
   com_endpoint_bing_jailbreak: 'الهروب من السجن',
   com_endpoint_bing_context_placeholder:
-    'يمكن أن يستخدم بينغ ما يصل إلى 7 آلاف رمز لـ \'السياق\'، والذي يمكنه الرجوع إليه للمحادثة. الحد الخاص ليس معروفًا ولكن قد يواجه أخطاء تجاوز 7 آلاف رمز',
+    "يمكن أن يستخدم بينغ ما يصل إلى 7 آلاف رمز لـ 'السياق'، والذي يمكنه الرجوع إليه للمحادثة. الحد الخاص ليس معروفًا ولكن قد يواجه أخطاء تجاوز 7 آلاف رمز",
   com_endpoint_bing_system_message_placeholder:
-    'تحذير: يمكن أن يؤدي سوء استخدام هذه الميزة إلى حظرك من استخدام Bing! انقر على \'رسالة النظام\' للحصول على التعليمات الكاملة والرسالة الافتراضية إذا تم حذفها، والتي هي الإعداد المسبق \'سيدني\' الذي يعتبر آمنًا.',
+    "تحذير: يمكن أن يؤدي سوء استخدام هذه الميزة إلى حظرك من استخدام Bing! انقر على 'رسالة النظام' للحصول على التعليمات الكاملة والرسالة الافتراضية إذا تم حذفها، والتي هي الإعداد المسبق 'سيدني' الذي يعتبر آمنًا.",
   com_endpoint_system_message: 'رسالة النظام',
   com_endpoint_default_blank: 'الافتراضي: فارغ',
   com_endpoint_default_false: 'الافتراضي: خاطئ',
@@ -254,6 +265,11 @@ export default {
   com_nav_export_recursive_or_sequential: 'التراجع أو التسلسل؟',
   com_nav_export_recursive: 'تكراري',
   com_nav_export_conversation: 'تصدير المحادثة',
+  com_nav_shared_links: 'روابط مشتركة',
+  com_nav_shared_links_manage: 'الإدارة',
+  com_nav_shared_links_empty: 'ليس لديك أي روابط مشتركة.',
+  com_nav_shared_links_name: 'الاسم',
+  com_nav_shared_links_date_shared: 'تاريخ المشترك',
   com_nav_theme: 'المظهر',
   com_nav_theme_system: 'النظام',
   com_nav_theme_dark: 'داكن',

@@ -38,7 +38,7 @@ export default {
   com_assistants_update_actions_error: 'Hubo un error al crear o actualizar la acción.',
   com_assistants_delete_actions_error: 'Hubo un error al eliminar la acción.',
   com_assistants_actions_info:
-    'Permita que su Asistente recupere información o realice acciones a través de API\'s',
+    "Permita que su Asistente recupere información o realice acciones a través de API's",
   com_assistants_name_placeholder: 'Opcional: El nombre del asistente',
   com_assistants_instructions_placeholder: 'Las instrucciones del sistema que utiliza el asistente',
   com_assistants_description_placeholder: 'Opcional: Describa su Asistente aquí',
@@ -137,6 +137,17 @@ export default {
   com_ui_assistants_output: 'Salida de Asistentes',
   com_ui_delete: 'Eliminar',
   com_ui_create: 'Crear',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: '¿Eliminar Chat?',
   com_ui_delete_conversation_confirm: 'Esto eliminará',
   com_ui_delete_assistant_confirm:
@@ -218,9 +229,9 @@ export default {
   com_endpoint_bing_to_enable_sydney: 'Para habilitar Sydney',
   com_endpoint_bing_jailbreak: 'Jailbreak',
   com_endpoint_bing_context_placeholder:
-    'Bing puede utilizar hasta 7k tokens para el \'contexto\', al que puede hacer referencia en la conversación. El límite específico no se conoce, pero puede producir errores si se exceden los 7k tokens',
+    "Bing puede utilizar hasta 7k tokens para el 'contexto', al que puede hacer referencia en la conversación. El límite específico no se conoce, pero puede producir errores si se exceden los 7k tokens",
   com_endpoint_bing_system_message_placeholder:
-    'ADVERTENCIA: El mal uso de esta función puede hacer que te PROHÍBAN el uso de Bing. Haz clic en \'Mensaje del sistema\' para ver las instrucciones completas y el mensaje predeterminado si se omite, que es la configuración preestablecida \'Sydney\' que se considera segura.',
+    "ADVERTENCIA: El mal uso de esta función puede hacer que te PROHÍBAN el uso de Bing. Haz clic en 'Mensaje del sistema' para ver las instrucciones completas y el mensaje predeterminado si se omite, que es la configuración preestablecida 'Sydney' que se considera segura.",
   com_endpoint_system_message: 'Mensaje del sistema',
   com_endpoint_message: 'Mensaje',
   com_endpoint_message_not_appendable: 'Edita tu mensaje o regénera.',
@@ -379,7 +390,7 @@ export default {
   com_endpoint_config_key_edge_full_key_string:
     'para proporcionar las cadenas de cookies completas.',
   com_endpoint_config_key_chatgpt:
-    'Para obtener tu token de acceso para ChatGPT \'Versión gratuita\', inicia sesión en',
+    "Para obtener tu token de acceso para ChatGPT 'Versión gratuita', inicia sesión en",
   com_endpoint_config_key_chatgpt_then_visit: 'y luego visita',
   com_endpoint_config_key_chatgpt_copy_token: 'Copia el token de acceso.',
   com_endpoint_config_key_google_need_to: 'Necesitas',
@@ -387,7 +398,7 @@ export default {
   com_endpoint_config_key_google_vertex_api: 'API en Google Cloud, luego',
   com_endpoint_config_key_google_service_account: 'Crear una Cuenta de Servicio',
   com_endpoint_config_key_google_vertex_api_role:
-    'Asegúrate de hacer clic en \'Crear y continuar\' para otorgar al menos el rol de \'Usuario de Vertex AI\'. Por último, crea una clave JSON para importar aquí.',
+    "Asegúrate de hacer clic en 'Crear y continuar' para otorgar al menos el rol de 'Usuario de Vertex AI'. Por último, crea una clave JSON para importar aquí.",
   com_nav_welcome_assistant: 'Por favor, selecciona un asistente',
   com_nav_welcome_message: '¿En qué puedo ayudarte hoy?',
   com_nav_auto_scroll: 'Desplazamiento automático al más reciente al abrir',
@@ -423,6 +434,11 @@ export default {
   com_nav_export_recursive_or_sequential: '¿Recursivo o secuencial?',
   com_nav_export_recursive: 'Recursivo',
   com_nav_export_conversation: 'Exportar conversación',
+  com_nav_shared_links: 'Links Compartidos',
+  com_nav_shared_links_manage: 'Gerenciar',
+  com_nav_shared_links_empty: 'Você não tem nenhum link compartilhado.',
+  com_nav_shared_links_name: 'Nome',
+  com_nav_shared_links_date_shared: 'Data compartilhada',
   com_nav_my_files: 'Mis archivos',
   com_nav_theme: 'Tema',
   com_nav_theme_system: 'Sistema',
