@@ -1,0 +1,97 @@
+import { useState } from 'react';
+
+import {
+  Dialog,
+  DialogTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '~/components/ui';
+import DialogTemplate from '~/components/ui/DialogTemplate';
+import { useLocalize } from '~/hooks';
+import { ShareIcon } from 'lucide-react';
+import ShareDialog from './ShareDialog';
+import { TSharedLink } from 'librechat-data-provider';
+import SharedLinkButton from './SharedLinkButton';
+import { cn } from '~/utils';
+
+export default function ShareButton({ conversationId, title, className, appendLabel = false }) {
+  const localize = useLocalize();
+  const [share, setShare] = useState<TSharedLink | null>(null);
+  const [open, setOpen] = useState(false);
+  const [isUpdated, setIsUpdated] = useState(false);
+
+  const classProp: { className?: string } = {
+    className: 'p-1 hover:text-black dark:hover:text-white',
+  };
+  if (className) {
+    classProp.className = className;
+  }
+  const renderShareButton = () => {
+    if (appendLabel) {
+      return (
+        <>
+          <ShareIcon className="h-4 w-4" /> {localize('com_ui_share')}
+        </>
+      );
+    }
+    return (
+      <TooltipProvider delayDuration={250}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>
+              <ShareIcon />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={0}>
+            {localize('com_ui_share')}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  };
+
+  const buttons = share && (
+    <SharedLinkButton
+      share={share}
+      conversationId={conversationId}
+      setShare={setShare}
+      isUpdated={isUpdated}
+      setIsUpdated={setIsUpdated}
+    />
+  );
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          className={cn(
+            'group m-1.5 flex w-full cursor-pointer items-center gap-2 rounded p-2.5 text-sm hover:bg-gray-200 focus-visible:bg-gray-200 focus-visible:outline-0 radix-disabled:pointer-events-none radix-disabled:opacity-50 dark:hover:bg-gray-600 dark:focus-visible:bg-gray-600',
+            className,
+          )}
+        >
+          {renderShareButton()}
+        </button>
+      </DialogTrigger>
+      <DialogTemplate
+        buttons={buttons}
+        showCloseButton={true}
+        showCancelButton={false}
+        title={localize('com_ui_share_link_to_chat')}
+        className="max-w-[550px]"
+        main={
+          <>
+            <ShareDialog
+              setDialogOpen={setOpen}
+              conversationId={conversationId}
+              title={title}
+              share={share}
+              setShare={setShare}
+              isUpdated={isUpdated}
+            />
+          </>
+        }
+      />
+    </Dialog>
+  );
+}

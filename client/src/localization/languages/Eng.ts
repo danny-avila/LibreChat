@@ -181,6 +181,17 @@ export default {
   com_ui_assistants_output: 'Assistants Output',
   com_ui_delete: 'Delete',
   com_ui_create: 'Create',
+  com_ui_share: 'Share',
+  com_ui_share_link_to_chat: 'Share link to chat',
+  com_ui_share_error: 'There was an error sharing the chat link',
+  com_ui_share_create_message: 'Your name and any messages you add after sharing stay private.',
+  com_ui_share_created_message:
+    'A public link to your chat has been created. Manage previously shared chats at any time via Settings.',
+  com_ui_share_update_message:
+    'Your name, custom instructions, and any messages you add after sharing stay private.',
+  com_ui_share_updated_message:
+    'A public link to your chat has been updated. Manage previously shared chats at any time via Settings.',
+  com_ui_shared_link_not_found: 'Shared link not found',
   com_ui_delete_conversation: 'Delete chat?',
   com_ui_delete_conversation_confirm: 'This will delete',
   com_ui_delete_assistant_confirm:
@@ -462,6 +473,12 @@ export default {
   com_nav_export_recursive_or_sequential: 'Recursive or sequential?',
   com_nav_export_recursive: 'Recursive',
   com_nav_export_conversation: 'Export conversation',
+  com_nav_shared_links: 'Shared links',
+  com_nav_shared_links_manage: 'Manage',
+  com_nav_shared_links_empty: 'You have no shared links.',
+  com_nav_shared_links_name: 'Name',
+  com_nav_shared_links_date_shared: 'Date shared',
+  com_nav_source_chat: 'View source chat',
   com_nav_my_files: 'My Files',
   com_nav_theme: 'Theme',
   com_nav_theme_system: 'System',
